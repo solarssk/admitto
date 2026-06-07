@@ -4,9 +4,10 @@ export type EmailDeliveryStatus = 'pending' | 'sent' | 'failed' | 'bounced';
 
 export type WalletPassStatus = 'active' | 'voided' | 'expired';
 
-// CheckInStatus represents scanner validation outcomes, not just CRUD states.
-// NETWORK_ERROR and UNKNOWN_EVENT are scanner-side results that may also be
-// persisted to capture incomplete scans. Kept as project source of truth.
+// CheckInStatus represents scanner validation outcomes returned to the scanner UI.
+// Only VALID / ALREADY_CHECKED_IN / INVALID / REVOKED are written to the CheckIn
+// table — they all have a resolved attendee_id. UNKNOWN_EVENT and NETWORK_ERROR
+// are scanner-side results with no valid attendee; they are never persisted.
 export type CheckInStatus =
   | 'VALID'
   | 'ALREADY_CHECKED_IN'

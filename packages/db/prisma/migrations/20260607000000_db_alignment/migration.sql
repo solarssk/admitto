@@ -18,7 +18,10 @@ CREATE TABLE "new_CheckIn" (
     CONSTRAINT "CheckIn_attendee_id_fkey" FOREIGN KEY ("attendee_id") REFERENCES "Attendee" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
     CONSTRAINT "CheckIn_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "Event" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
-INSERT INTO "new_CheckIn" ("attendee_id", "checked_in_at", "created_at", "device_id", "id") SELECT "attendee_id", "checked_in_at", "created_at", "device_id", "id" FROM "CheckIn";
+INSERT INTO "new_CheckIn" ("id", "attendee_id", "event_id", "checked_in_at", "created_at", "device_id")
+SELECT ci."id", ci."attendee_id", a."event_id", ci."checked_in_at", ci."created_at", ci."device_id"
+FROM "CheckIn" ci
+JOIN "Attendee" a ON a."id" = ci."attendee_id";
 DROP TABLE "CheckIn";
 ALTER TABLE "new_CheckIn" RENAME TO "CheckIn";
 PRAGMA foreign_keys=ON;
