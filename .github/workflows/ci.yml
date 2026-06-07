@@ -50,14 +50,14 @@ jobs:
           persist-credentials: false
       - name: No real email addresses in tracked data files
         run: |
-          FILES=$(git ls-files '*.csv' '*.json' '*.tsv' || true)
-          if [ -n "$FILES" ]; then
-            HITS=$(grep -REoh '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' $FILES \
-              | grep -viE '@(example\.(com|org|net)|test\.(com|org|net))' || true)
-            if [ -n "$HITS" ]; then
-              echo "Suspicious real email addresses found in data files:"
-              echo "$HITS"
-              exit 1
-            fi
+          # -z / xargs -0: handle filenames with spaces correctly
+          # domain anchor ($): prevent @example.com.evil bypass
+          HITS=$(git ls-files -z '*.csv' '*.json' '*.tsv' \
+            | xargs -0 grep -hREo '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- \
+            | grep -viE '@(example\.(com|org|net)|test\.(com|org|net))$' || true)
+          if [ -n "$HITS" ]; then
+            echo "Suspicious real email addresses found in data files:"
+            echo "$HITS"
+            exit 1
           fi
           echo "OK: no real email addresses in data files"
