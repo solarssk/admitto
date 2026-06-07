@@ -14,9 +14,7 @@ async function main() {
     },
   });
 
-  console.log(`Event: ${event.title} (${event.id})`);
-
-  const attendees = [
+  const attendeeData = [
     {
       email: 'alice@example.com',
       name: 'Alice Smith',
@@ -37,10 +35,12 @@ async function main() {
     },
   ];
 
-  for (const a of attendees) {
-    const attendee = await prisma.attendee.upsert({
-      where: { token: a.token },
-      update: { name: a.name, status: 'registered' },
+  let upserted = 0;
+  for (const a of attendeeData) {
+    // Upsert by (event_id, email) — mirrors real import identity logic.
+    await prisma.attendee.upsert({
+      where: { event_id_email: { event_id: event.id, email: a.email } },
+      update: { name: a.name, external_uuid: a.external_uuid },
       create: {
         event_id: event.id,
         email: a.email,
@@ -50,8 +50,10 @@ async function main() {
         status: 'registered',
       },
     });
-    console.log(`Attendee: ${attendee.name} <${attendee.email}> token=${attendee.token}`);
+    upserted++;
   }
+
+  console.log(`Seeded event "${event.slug}" (${event.id.slice(0, 8)}…) with ${upserted} attendees.`);
 }
 
 main()
