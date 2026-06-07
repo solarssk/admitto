@@ -1,0 +1,15 @@
+node_modules/
+dist/
+_reference/
+# Prompty procesowe / logistyka — lokalne, NIE do publicznego repo
+docs/prompts/
+# Lokalna denylista sanityzacji (gdyby trafiła do repo) — nigdy nie commitować
+.sanitize-denylist*
+.env
+.env.*
+!.env.example
+*.log
+coverage/
+.DS_Store
+*.db
+*.db-journal

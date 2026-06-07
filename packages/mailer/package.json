@@ -1,0 +1,33 @@
+{
+  "name": "@admitto/mailer",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Admitto mailer — one interface, three transports (Graph, SMTP, Power Automate)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "send": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.14",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/nodemailer": "^6.4.15",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

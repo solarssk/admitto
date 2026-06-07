@@ -1,0 +1,72 @@
+// Portable schema: SQLite for dev, PostgreSQL for production.
+// No Prisma enums (SQLite does not support them) — statuses as String + TS unions in src/status.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Event {
+  id         String     @id @default(cuid())
+  title      String
+  slug       String     @unique
+  date       DateTime
+  location   String?
+  created_at DateTime   @default(now())
+  attendees  Attendee[]
+}
+
+model Attendee {
+  id               String          @id @default(cuid())
+  event_id         String
+  event            Event           @relation(fields: [event_id], references: [id])
+  email            String
+  name             String
+  token            String          @unique
+  external_uuid    String?
+  status           String          @default("registered")
+  created_at       DateTime        @default(now())
+  email_deliveries EmailDelivery[]
+  wallet_pass      WalletPass?
+  check_ins        CheckIn[]
+
+  @@unique([event_id, email])
+  @@index([external_uuid])
+}
+
+model WalletPass {
+  id            String   @id @default(cuid())
+  attendee_id   String   @unique
+  attendee      Attendee @relation(fields: [attendee_id], references: [id])
+  pass_type_id  String
+  serial_number String
+  auth_token    String
+  pass_url      String?
+  status        String   @default("active")
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+}
+
+model EmailDelivery {
+  id          String    @id @default(cuid())
+  attendee_id String
+  attendee    Attendee  @relation(fields: [attendee_id], references: [id])
+  provider    String
+  message_id  String?
+  status      String    @default("pending")
+  sent_at     DateTime?
+  created_at  DateTime  @default(now())
+}
+
+model CheckIn {
+  id            String   @id @default(cuid())
+  attendee_id   String
+  attendee      Attendee @relation(fields: [attendee_id], references: [id])
+  checked_in_at DateTime @default(now())
+  device_id     String?
+  created_at    DateTime @default(now())
+}
