@@ -57,11 +57,14 @@ export class GraphAdapter implements MailerAdapter {
         scope: "https://graph.microsoft.com/.default",
       }),
     });
-    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const raw = await res.text().catch(() => "");
+    let data: Record<string, unknown> = {};
+    try { data = JSON.parse(raw) as Record<string, unknown>; } catch { /* non-JSON body */ }
     if (!res.ok) {
       const code = String(data["error"] ?? `HTTP ${res.status}`);
       const desc = String(data["error_description"] ?? "").split("\n")[0];
-      throw new Error(`Graph token error: ${code}${desc ? " — " + desc : ""}`);
+      const detail = desc || raw.slice(0, 200);
+      throw new Error(`Graph token error: ${code}${detail ? " — " + detail : ""}`);
     }
     const accessToken = String(data["access_token"] ?? "");
     const expiresIn = Number(data["expires_in"] ?? 3600);
@@ -119,9 +122,11 @@ export class GraphAdapter implements MailerAdapter {
         };
       }
 
-      const data = (await res.json().catch(() => ({}))) as { error?: { code?: string; message?: string } };
-      const code = data.error?.code ?? `HTTP ${res.status}`;
-      const msg = data.error?.message ?? "";
+      const rawBody = await res.text().catch(() => "");
+      let errData: { error?: { code?: string; message?: string } } = {};
+      try { errData = JSON.parse(rawBody) as typeof errData; } catch { /* non-JSON body */ }
+      const code = errData.error?.code ?? `HTTP ${res.status}`;
+      const msg = errData.error?.message ?? rawBody.slice(0, 200);
       return { ...base, error: `Graph sendMail: ${code}${msg ? " — " + msg : ""}` };
     } catch (e) {
       return { ...base, error: e instanceof Error ? e.message : String(e) };
