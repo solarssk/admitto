@@ -1,0 +1,40 @@
+name: Task
+description: Implementation task or feature request
+labels: ["type: feature"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should this task accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is in scope? What is explicitly out of scope?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How do we know this is done?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - mailer
+        - db
+        - import
+        - checkin
+        - passcreator
+        - ui
+        - infra
+        - other
+    validations:
+      required: true
