@@ -13,6 +13,7 @@ No secrets, no real personal data are ever committed here.**
 ## Setup
 
 ```bash
+node -v  # should be 22.x
 npm install
 npm test
 ```
