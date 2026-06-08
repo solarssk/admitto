@@ -37,7 +37,8 @@ export function parseAttendees(csvString: string): ParseResult {
   const invalidRows: InvalidRow[] = [];
   const warnings: string[] = [];
 
-  const lines = csvString.split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.length > 0);
+  // Strip UTF-8 BOM — present in CSV files exported from Excel/Windows.
+  const lines = csvString.replace(/^\uFEFF/, "").split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.length > 0);
 
   if (lines.length === 0) {
     warnings.push("CSV is empty");
