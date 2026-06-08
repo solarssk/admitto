@@ -1,0 +1,8 @@
+[config]
+enable_custom_labels = false
+
+[pr_reviewer]
+enable_review_labels_effort = false
+enable_review_labels_security = false
+require_ticket_labels = false
+require_no_ticket_labels = false
