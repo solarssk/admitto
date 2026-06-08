@@ -1,5 +1,4 @@
 import type { PrismaClient } from "@prisma/client";
-import { generateToken, hashToken } from "@admitto/tickets";
 import type { AttendeeRow, ImportOptions, ImportSummary, SkippedRow } from "./types.js";
 
 /** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token_hash. */
@@ -9,7 +8,7 @@ type AttendeeCreateData = {
   event_id: string;
   email: string;
   name: string;
-  token_hash: string;
+  // token_hash intentionally absent — set during ticket issuance (Step 4), not import.
   ticket_type?: string;
   external_uuid?: string;
   qr_payload?: string;
@@ -86,7 +85,7 @@ export async function commitImport(
         continue;
       }
       // overwrite=true — update presentation/profile fields only.
-      // Never touch: status, qr_payload, external_uuid, token.
+      // Never touch: status, qr_payload, external_uuid, token_hash.
       updates.push({
         id: found.id,
         data: {
@@ -101,9 +100,6 @@ export async function commitImport(
         event_id: eventId,
         email: row.email,
         name,
-        // Raw token generated and hashed here; only the hash persists (ADR 0001).
-        // Raw token exists only in the ticket URL / QR — never stored.
-        token_hash: hashToken(generateToken()),
         ...(row.ticket_type !== undefined && { ticket_type: row.ticket_type }),
         ...(row.external_uuid !== undefined && { external_uuid: row.external_uuid }),
         ...(row.qr_payload !== undefined && { qr_payload: row.qr_payload }),

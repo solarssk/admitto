@@ -76,12 +76,12 @@ describe("commitImport — create", () => {
     expect(summary.skipped).toHaveLength(0);
   });
 
-  it("stores token_hash in DB but does not expose raw token in summary", async () => {
+  it("leaves token_hash null — issuance happens in Step 4, not import", async () => {
     const att = await prisma.attendee.findUnique({
       where: { event_id_email: { event_id: EVENT_ID, email: "jan@example.com" } },
     });
-    // SHA-256 hex digest stored; raw token never in DB or summary
-    expect(att?.token_hash).toMatch(/^[0-9a-f]{64}$/);
+    // Import creates the record; token_hash is set during ticket issuance (mailer step).
+    expect(att?.token_hash).toBeNull();
   });
 
   it("preserves agency qr_payload and external_uuid as-is", async () => {
@@ -142,15 +142,17 @@ describe("commitImport — overwrite=true", () => {
     expect(after?.external_uuid).toBe("agency-uuid-001");
   });
 
-  it("never overwrites token even with overwrite=true", async () => {
-    const before = await prisma.attendee.findUnique({
+  it("never overwrites token_hash even with overwrite=true", async () => {
+    // Simulate ticket issuance: manually set a token_hash
+    await prisma.attendee.update({
       where: { event_id_email: { event_id: EVENT_ID, email: "jan@example.com" } },
+      data: { token_hash: "deadbeef".repeat(8) },
     });
     await commitImport(EVENT_ID, [rowA], { overwrite: true }, prisma);
     const after = await prisma.attendee.findUnique({
       where: { event_id_email: { event_id: EVENT_ID, email: "jan@example.com" } },
     });
-    expect(after?.token_hash).toBe(before?.token_hash);
+    expect(after?.token_hash).toBe("deadbeef".repeat(8));
   });
 
   it("never overwrites status", async () => {

@@ -12,8 +12,9 @@ app.get("/t/:token", async (c) => {
   let resolved;
   try {
     resolved = await resolveTicket(token, prisma);
-  } catch {
-    return c.html(renderNotFound(), 503);
+  } catch (err) {
+    console.error("resolveTicket failed:", err);
+    return c.html(renderNotFound(), 500);
   }
 
   if (!resolved) {
@@ -26,13 +27,17 @@ app.get("/t/:token", async (c) => {
     return c.html(renderRevoked(attendee.name, event.title), 200);
   }
 
-  const baseUrl = process.env["BASE_URL"] ?? `https://${c.req.header("host") ?? "localhost"}`;
+  const baseUrl = process.env["BASE_URL"] ?? "http://localhost:3000";
+  const agencyPayload =
+    resolved.mode === "agency" ? (attendee.qr_payload ?? attendee.external_uuid ?? null) : null;
+  if (resolved.mode === "agency" && agencyPayload === null) {
+    console.error(`Agency attendee ${attendee.id} has neither qr_payload nor external_uuid`);
+    return c.html(renderNotFound(), 500);
+  }
   const qrPayload =
     resolved.mode === "internal"
       ? buildQrPayload("internal", { baseUrl, token })
-      : buildQrPayload("agency", {
-          agencyPayload: attendee.qr_payload ?? attendee.external_uuid ?? token,
-        });
+      : buildQrPayload("agency", { agencyPayload: agencyPayload! });
 
   const qrPng = await generateQrPng(qrPayload);
   const qrDataUrl = `data:image/png;base64,${qrPng.toString("base64")}`;
