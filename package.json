@@ -15,7 +15,7 @@
   },
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13.0 <23"
   },
   "devDependencies": {
     "@typescript-eslint/parser": "8.60.1",
