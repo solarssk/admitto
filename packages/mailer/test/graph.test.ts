@@ -15,8 +15,7 @@ function tokenResponse() {
   return {
     ok: true,
     status: 200,
-    json: async () => ({ access_token: "tok-abc", expires_in: 3600 }),
-    text: async () => "",
+    text: async () => JSON.stringify({ access_token: "tok-abc", expires_in: 3600 }),
     headers: { get: () => null },
   };
 }
@@ -25,7 +24,6 @@ function acceptedResponse(requestId = "req-1") {
   return {
     ok: true,
     status: 202,
-    json: async () => ({}),
     text: async () => "",
     headers: { get: (h: string) => (h.toLowerCase() === "request-id" ? requestId : null) },
   };
@@ -89,8 +87,7 @@ describe("GraphAdapter", () => {
       return {
         ok: false,
         status: 403,
-        json: async () => ({ error: { code: "ErrorAccessDenied", message: "no send-as permission" } }),
-        text: async () => "",
+        text: async () => JSON.stringify({ error: { code: "ErrorAccessDenied", message: "no send-as permission" } }),
         headers: { get: () => null },
       };
     });
@@ -104,13 +101,50 @@ describe("GraphAdapter", () => {
     const fetchFn = vi.fn(async () => ({
       ok: false,
       status: 401,
-      json: async () => ({ error: "invalid_client", error_description: "AADSTS7000215: bad secret" }),
-      text: async () => "",
+      text: async () => JSON.stringify({ error: "invalid_client", error_description: "AADSTS7000215: bad secret" }),
       headers: { get: () => null },
     }));
     const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
     const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
     expect(res.status).toBe("failed");
     expect(res.error).toContain("invalid_client");
+  });
+
+  it("returns failed with raw body when token endpoint returns non-JSON error", async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: false,
+      status: 503,
+      text: async () => "Service Unavailable",
+      headers: { get: () => null },
+    }));
+    const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
+    const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
+    expect(res.status).toBe("failed");
+    expect(res.error).toContain("HTTP 503");
+    expect(res.error).toContain("Service Unavailable");
+  });
+
+  it("returns failed with raw body when sendMail returns non-JSON error body", async () => {
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.includes("/oauth2/v2.0/token")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ access_token: "tok-abc", expires_in: 3600 }),
+          headers: { get: () => null },
+        };
+      }
+      return {
+        ok: false,
+        status: 429,
+        text: async () => "Too Many Requests",
+        headers: { get: () => null },
+      };
+    });
+    const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
+    const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
+    expect(res.status).toBe("failed");
+    expect(res.error).toContain("HTTP 429");
+    expect(res.error).toContain("Too Many Requests");
   });
 });
