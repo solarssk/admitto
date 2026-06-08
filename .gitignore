@@ -1,8 +1,8 @@
 node_modules/
 dist/
 _reference/
-# Process prompts / logistics — local only, never publish
-docs/prompts/
+# Local docs (prompts, reports, notes) — never publish
+docs/
 # Local sanitization denylist — never commit
 .sanitize-denylist*
 .env
