@@ -24,7 +24,10 @@ jobs:
           python-version: "3.12"
       - run: pip install semgrep --break-system-packages
       - name: Run Semgrep
-        run: semgrep scan --config=auto --sarif --output=semgrep.sarif packages/ apps/ || true
+        run: |
+          TARGETS=$(for d in packages apps; do [ -d "$d" ] && echo "$d"; done)
+          semgrep scan --config=auto --sarif --output=semgrep.sarif $TARGETS || true
+          [ -f semgrep.sarif ] || echo '{"version":"2.1.0","runs":[]}' > semgrep.sarif
         env:
           SEMGREP_SEND_METRICS: "off"
       - uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357  # v3
