@@ -41,8 +41,10 @@ export function createMailer(config: MailerConfig | unknown, deps: CreateMailerD
   }
 }
 
+const MAX_BATCH_CONCURRENCY = 20;
+
 export interface BatchOptions {
-  /** Max parallel sends. Defaults to 3 (gentle on connectors). */
+  /** Max parallel sends. Defaults to 3 (gentle on connectors). Capped at 20. */
   concurrency?: number;
   /** Callback after each result — for logging / updating DB status. */
   onResult?: (result: SendResult, message: MailMessage, index: number) => void;
@@ -64,7 +66,7 @@ export async function sendBatch(
   messages: MailMessage[],
   options: BatchOptions = {},
 ): Promise<BatchSummary> {
-  const concurrency = Math.max(1, options.concurrency ?? 3);
+  const concurrency = Math.min(MAX_BATCH_CONCURRENCY, Math.max(1, options.concurrency ?? 3));
   const results: SendResult[] = new Array(messages.length);
   let next = 0;
 

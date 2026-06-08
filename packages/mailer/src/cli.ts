@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { configFromEnv } from "./configFromEnv.js";
 import { createMailer, sendBatch } from "./index.js";
 import type { MailMessage } from "./types.js";
+import { splitCsvLine } from "./csvUtils.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,13 +45,15 @@ function renderHtml(firstName?: string): string {
 function readCsv(file: string): { email: string; firstName?: string }[] {
   const p = path.isAbsolute(file) ? file : path.join(process.cwd(), file);
   const lines = fs.readFileSync(p, "utf8").split("\n").map((l) => l.trim()).filter(Boolean);
-  const header = lines.shift()!.split(",").map((h) => h.trim().toLowerCase());
+  const headerLine = lines.shift();
+  if (!headerLine) throw new Error(`CSV file is empty: ${file}`);
+  const header = splitCsvLine(headerLine).map((h) => h.trim().toLowerCase());
   const ei = header.indexOf("email");
   const ni = header.indexOf("first_name");
   if (ei === -1) throw new Error("CSV must have an 'email' column");
   return lines
     .map((l) => {
-      const c = l.split(",");
+      const c = splitCsvLine(l);
       return { email: (c[ei] ?? "").trim(), firstName: ni !== -1 ? (c[ni] ?? "").trim() : undefined };
     })
     .filter((r) => r.email);

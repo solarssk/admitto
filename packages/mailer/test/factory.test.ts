@@ -60,6 +60,28 @@ describe("sendBatch", () => {
     expect(adapter.sent.map((m) => m.to)).toEqual(["a@example.com", "c@example.com"]);
   });
 
+  it("caps concurrency at MAX_BATCH_CONCURRENCY (20) even when caller passes higher value", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const adapter = {
+      provider: "powerautomate" as const,
+      send: async (m: MailMessage) => {
+        active++;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((r) => setTimeout(r, 5));
+        active--;
+        return { status: "sent" as const, provider: "powerautomate" as const, idempotencyKey: m.idempotencyKey };
+      },
+    };
+    const messages: MailMessage[] = Array.from({ length: 50 }, (_, i) => ({
+      to: `u${i}@example.com`,
+      subject: "s",
+      html: "<p>x</p>",
+    }));
+    await sendBatch(adapter, messages, { concurrency: 999 });
+    expect(maxActive).toBeLessThanOrEqual(20);
+  });
+
   it("respects concurrency limit (no more than limit active at once)", async () => {
     let active = 0;
     let maxActive = 0;
