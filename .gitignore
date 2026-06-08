@@ -1,9 +1,9 @@
 node_modules/
 dist/
 _reference/
-# Prompty procesowe / logistyka — lokalne, NIE do publicznego repo
+# Process prompts / logistics — local only, never publish
 docs/prompts/
-# Lokalna denylista sanityzacji (gdyby trafiła do repo) — nigdy nie commitować
+# Local sanitization denylist — never commit
 .sanitize-denylist*
 .env
 .env.*
