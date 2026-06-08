@@ -1,0 +1,4 @@
+first_name,last_name,email,ticket_type,external_uuid,qr_payload,company,department
+Jan,Kowalski,jan@example.com,standard,,,Acme Corp,Engineering
+Ana,Nowak,ana@example.com,vip,agency-uuid-001,AGENCY-QR-001,Example Ltd,Marketing
+Piotr,Wiśniewski,piotr@example.com,standard,,,,

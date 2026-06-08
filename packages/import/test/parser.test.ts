@@ -1,0 +1,140 @@
+import { describe, expect, it } from "vitest";
+import { parseAttendees } from "../src/parser.js";
+
+const VALID_HEADER = "first_name,last_name,email";
+
+describe("parseAttendees — basic valid rows", () => {
+  it("parses a minimal Mode A row", () => {
+    const result = parseAttendees(`${VALID_HEADER}\nJan,Kowalski,jan@example.com`);
+    expect(result.validRows).toHaveLength(1);
+    expect(result.validRows[0]).toMatchObject({ first_name: "Jan", last_name: "Kowalski", email: "jan@example.com" });
+    expect(result.invalidRows).toHaveLength(0);
+  });
+
+  it("parses a Mode B row with external_uuid and qr_payload", () => {
+    const result = parseAttendees(
+      `first_name,last_name,email,external_uuid,qr_payload\nAna,Nowak,ana@example.com,uuid-999,AGENCY-QR-123`,
+    );
+    expect(result.validRows[0]).toMatchObject({
+      email: "ana@example.com",
+      external_uuid: "uuid-999",
+      qr_payload: "AGENCY-QR-123",
+    });
+  });
+
+  it("accepts a single name column instead of first_name + last_name", () => {
+    const result = parseAttendees(`name,email\nJan Kowalski,jan@example.com`);
+    expect(result.validRows[0]).toMatchObject({ first_name: "Jan", last_name: "Kowalski" });
+    expect(result.invalidRows).toHaveLength(0);
+  });
+
+  it("normalises email to lower-case", () => {
+    const result = parseAttendees(`${VALID_HEADER}\nJan,K,JAN@Example.COM`);
+    expect(result.validRows[0]?.email).toBe("jan@example.com");
+  });
+
+  it("trims whitespace from values", () => {
+    const result = parseAttendees(`${VALID_HEADER}\n  Jan ,  K , jan@example.com `);
+    expect(result.validRows[0]?.first_name).toBe("Jan");
+  });
+});
+
+describe("parseAttendees — header normalisation", () => {
+  it("handles case-insensitive headers", () => {
+    const result = parseAttendees(`EMAIL,FIRST_NAME,LAST_NAME\njan@example.com,Jan,K`);
+    expect(result.validRows).toHaveLength(1);
+    expect(result.validRows[0]?.email).toBe("jan@example.com");
+  });
+
+  it("warns about unknown columns but still parses valid rows", () => {
+    const result = parseAttendees(`first_name,last_name,email,unknown_col\nJan,K,jan@example.com,ignored`);
+    expect(result.warnings.some((w) => w.includes("unknown_col"))).toBe(true);
+    expect(result.validRows).toHaveLength(1);
+  });
+});
+
+describe("parseAttendees — invalid rows", () => {
+  it("rejects a row with invalid email", () => {
+    const result = parseAttendees(`${VALID_HEADER}\nJan,K,not-an-email`);
+    expect(result.invalidRows).toHaveLength(1);
+    expect(result.invalidRows[0]?.reason).toMatch(/invalid email/i);
+    expect(result.validRows).toHaveLength(0);
+  });
+
+  it("rejects a row with missing email", () => {
+    const result = parseAttendees(`first_name,last_name,email\nJan,K,`);
+    expect(result.invalidRows).toHaveLength(1);
+    expect(result.invalidRows[0]?.reason).toMatch(/missing email/i);
+  });
+
+  it("rejects a row with only first_name (missing last_name)", () => {
+    const result = parseAttendees(`first_name,last_name,email\nJan,,jan@example.com`);
+    expect(result.invalidRows).toHaveLength(1);
+    expect(result.invalidRows[0]?.reason).toMatch(/last_name/i);
+  });
+
+  it("rejects a row with only last_name (missing first_name)", () => {
+    const result = parseAttendees(`first_name,last_name,email\n,Kowalski,jan@example.com`);
+    expect(result.invalidRows).toHaveLength(1);
+  });
+
+  it("rejects a row with no name information at all", () => {
+    const result = parseAttendees(`email\njan@example.com`);
+    expect(result.invalidRows).toHaveLength(1);
+    expect(result.invalidRows[0]?.reason).toMatch(/missing name/i);
+  });
+});
+
+describe("parseAttendees — duplicate detection", () => {
+  it("flags duplicate email within the file", () => {
+    const csv = `${VALID_HEADER}\nJan,K,jan@example.com\nAna,K,jan@example.com`;
+    const result = parseAttendees(csv);
+    expect(result.validRows).toHaveLength(1);
+    expect(result.invalidRows).toHaveLength(1);
+    expect(result.invalidRows[0]?.reason).toMatch(/duplicate email/i);
+  });
+
+  it("flags duplicate external_uuid within the file", () => {
+    const csv = `first_name,last_name,email,external_uuid\nJan,K,jan@example.com,uuid-1\nAna,K,ana@example.com,uuid-1`;
+    const result = parseAttendees(csv);
+    expect(result.validRows).toHaveLength(1);
+    expect(result.invalidRows).toHaveLength(1);
+    expect(result.invalidRows[0]?.reason).toMatch(/duplicate external_uuid/i);
+  });
+
+  it("does not flag duplicate external_uuid when both are empty", () => {
+    const csv = `first_name,last_name,email,external_uuid\nJan,K,jan@example.com,\nAna,K,ana@example.com,`;
+    const result = parseAttendees(csv);
+    expect(result.validRows).toHaveLength(2);
+    expect(result.invalidRows).toHaveLength(0);
+  });
+});
+
+describe("parseAttendees — edge cases", () => {
+  it("returns empty result with warning for empty CSV string", () => {
+    const result = parseAttendees("");
+    expect(result.validRows).toHaveLength(0);
+    expect(result.warnings.length).toBeGreaterThan(0);
+  });
+
+  it("returns warning when CSV has only a header row", () => {
+    const result = parseAttendees(`${VALID_HEADER}`);
+    expect(result.validRows).toHaveLength(0);
+    expect(result.warnings.some((w) => w.toLowerCase().includes("no data"))).toBe(true);
+  });
+
+  it("handles quoted fields with embedded commas", () => {
+    const result = parseAttendees(`first_name,last_name,email\n"Smith, Jr.",John,john@example.com`);
+    expect(result.validRows[0]?.first_name).toBe("Smith, Jr.");
+  });
+
+  it("skips blank lines between data rows", () => {
+    const result = parseAttendees(`${VALID_HEADER}\nJan,K,jan@example.com\n\nAna,K,ana@example.com`);
+    expect(result.validRows).toHaveLength(2);
+  });
+
+  it("handles CRLF line endings", () => {
+    const result = parseAttendees(`${VALID_HEADER}\r\nJan,K,jan@example.com\r\n`);
+    expect(result.validRows).toHaveLength(1);
+  });
+});
