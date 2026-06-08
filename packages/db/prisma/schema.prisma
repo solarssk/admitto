@@ -18,6 +18,7 @@ model Event {
   location   String?
   created_at DateTime   @default(now())
   attendees  Attendee[]
+  check_ins  CheckIn[]
 }
 
 model Attendee {
@@ -27,6 +28,8 @@ model Attendee {
   email            String
   name             String
   token            String          @unique
+  // Agency-provided QR payload preserved as source of truth for import.
+  qr_payload       String?
   external_uuid    String?
   status           String          @default("registered")
   created_at       DateTime        @default(now())
@@ -35,6 +38,9 @@ model Attendee {
   check_ins        CheckIn[]
 
   @@unique([event_id, email])
+  // Enforce agency-UUID uniqueness per event for idempotent re-import.
+  // NULL external_uuid is allowed for multiple rows (NULLs are not equal in SQL).
+  @@unique([event_id, external_uuid])
   @@index([external_uuid])
 }
 
@@ -66,7 +72,14 @@ model CheckIn {
   id            String   @id @default(cuid())
   attendee_id   String
   attendee      Attendee @relation(fields: [attendee_id], references: [id])
+  event_id      String
+  event         Event    @relation(fields: [event_id], references: [id])
   checked_in_at DateTime @default(now())
+  // CheckInStatus values — see src/status.ts.
+  status        String   @default("VALID")
+  checked_in_by String?
+  source        String?
+  notes         String?
   device_id     String?
   created_at    DateTime @default(now())
 }
