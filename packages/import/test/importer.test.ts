@@ -142,6 +142,17 @@ describe("commitImport — overwrite=true", () => {
     expect(after?.external_uuid).toBe("agency-uuid-001");
   });
 
+  it("never overwrites token even with overwrite=true", async () => {
+    const before = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "jan@example.com" } },
+    });
+    await commitImport(EVENT_ID, [rowA], { overwrite: true }, prisma);
+    const after = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "jan@example.com" } },
+    });
+    expect(after?.token).toBe(before?.token);
+  });
+
   it("never overwrites status", async () => {
     // Manually set status to confirmed
     await prisma.attendee.update({

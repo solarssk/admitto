@@ -46,6 +46,10 @@ export async function commitImport(
   // Lazy-load to keep the package usable without @admitto/db when dry-running with mocks.
   const prisma = db ?? (await import("@admitto/db")).prisma;
 
+  // Fail fast with a readable error rather than a FK constraint from a later create.
+  const event = await prisma.event.findUnique({ where: { id: eventId } });
+  if (!event) throw new Error(`Event not found: "${eventId}"`);
+
   // Pre-fetch all candidates in a single query to avoid N+1.
   const emails = rows.map((r) => r.email);
   const uuids = rows.flatMap((r) => (r.external_uuid ? [r.external_uuid] : []));
