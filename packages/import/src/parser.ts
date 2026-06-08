@@ -27,7 +27,7 @@ function buildRow(
   const record: Record<string, string> = {};
   for (let i = 0; i < headers.length; i++) {
     const key = headers[i];
-    if (key !== undefined) record[key] = (cells[i] ?? "").trim();
+    if (key !== undefined && !(key in record)) record[key] = (cells[i] ?? "").trim();
   }
   return record;
 }
@@ -38,7 +38,7 @@ export function parseAttendees(csvString: string): ParseResult {
   const warnings: string[] = [];
 
   // Strip UTF-8 BOM — present in CSV files exported from Excel/Windows.
-  const lines = csvString.replace(/^\uFEFF/, "").split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.length > 0);
+  const lines = csvString.replace(/^\uFEFF/, "").split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.trim().length > 0);
 
   if (lines.length === 0) {
     warnings.push("CSV is empty");
@@ -47,6 +47,12 @@ export function parseAttendees(csvString: string): ParseResult {
 
   const headerLine = lines[0]!;
   const rawHeaders = splitCsvLine(headerLine).map(normalizeHeader);
+
+  // Warn about duplicate headers — first occurrence wins in buildRow.
+  const dupHeaders = [...new Set(rawHeaders.filter((h, i) => rawHeaders.indexOf(h) !== i))];
+  if (dupHeaders.length > 0) {
+    warnings.push(`Duplicate column(s) detected (first value used): ${dupHeaders.join(", ")}`);
+  }
 
   // Warn about unrecognised columns
   for (const h of rawHeaders) {

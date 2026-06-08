@@ -133,6 +133,18 @@ describe("parseAttendees — edge cases", () => {
     expect(result.validRows).toHaveLength(2);
   });
 
+  it("skips whitespace-only lines between data rows", () => {
+    const result = parseAttendees(`${VALID_HEADER}\nJan,K,jan@example.com\n   \nAna,K,ana@example.com`);
+    expect(result.validRows).toHaveLength(2);
+  });
+
+  it("warns on duplicate headers and uses first value", () => {
+    const result = parseAttendees(`email,first_name,last_name,email\nx@example.com,Jan,K,y@example.com`);
+    expect(result.warnings.some((w) => /duplicate column/i.test(w))).toBe(true);
+    // First email value wins
+    expect(result.validRows[0]?.email).toBe("x@example.com");
+  });
+
   it("handles CRLF line endings", () => {
     const result = parseAttendees(`${VALID_HEADER}\r\nJan,K,jan@example.com\r\n`);
     expect(result.validRows).toHaveLength(1);
