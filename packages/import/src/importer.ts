@@ -69,8 +69,12 @@ export async function commitImport(
   for (const row of rows) {
     const name = [row.first_name, row.last_name].filter(Boolean).join(" ");
 
-    // Match strategy: external_uuid first (Mode B), then email (Mode A).
-    const found = row.external_uuid ? byUUID.get(row.external_uuid) : byEmail.get(row.email);
+    // Match strategy: external_uuid first (Mode B), fall back to email (Mode A).
+    // Fallback handles the case where an existing Mode A attendee is re-imported with a newly
+    // assigned agency UUID — without it, the create path would hit a unique constraint on email.
+    const found = row.external_uuid
+      ? (byUUID.get(row.external_uuid) ?? byEmail.get(row.email))
+      : byEmail.get(row.email);
 
     if (found) {
       if (!overwrite) {

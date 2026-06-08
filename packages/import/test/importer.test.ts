@@ -170,6 +170,21 @@ describe("commitImport — Mode B matching by external_uuid", () => {
   });
 });
 
+describe("commitImport — UUID/email fallback", () => {
+  it("falls back to email match when external_uuid is new for an existing attendee", async () => {
+    // Jan is in DB with no external_uuid (Mode A). Re-import same email with a newly assigned UUID.
+    // Without fallback this would crash with a unique constraint on (event_id, email).
+    const summary = await commitImport(
+      EVENT_ID,
+      [{ ...rowA, external_uuid: "newly-assigned-uuid" }],
+      { overwrite: false },
+      prisma,
+    );
+    expect(summary.toSkip).toBe(1);
+    expect(summary.created).toBe(0);
+  });
+});
+
 describe("commitImport — idempotency", () => {
   it("re-importing same file twice is idempotent (overwrite=false)", async () => {
     const newRow: AttendeeRow = { first_name: "New", last_name: "User", email: "new@example.com" };
