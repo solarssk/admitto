@@ -13,10 +13,12 @@ No secrets, no real personal data are ever committed here.**
 ## Setup
 
 ```bash
-node -v  # should be 22.x
+node -v  # should be 22.13.0 or higher (<23)
 npm install
 npm test
 ```
+
+The repository targets the Node 22 LTS line, but the current toolchain requires Node.js `>=22.13.0 <23`.
 
 ## Packages
 
