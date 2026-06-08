@@ -9,8 +9,8 @@
   ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build -w @admitto/shared && npm run build --workspaces --if-present",
+    "typecheck": "npm run build -w @admitto/shared && npm run build -w @admitto/db && npm run typecheck --workspaces --if-present",
     "lint": "eslint 'packages/*/src/**/*.ts'"
   },
   "type": "module",

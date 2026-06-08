@@ -1,8 +1,8 @@
 {
-  "name": "@admitto/mailer",
+  "name": "@admitto/import",
   "version": "0.0.1",
   "private": true,
-  "description": "Admitto mailer — one interface, three transports (Graph, SMTP, Power Automate)",
+  "description": "Admitto attendee import — CSV parser, validator, and DB commit",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,16 +17,17 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "send": "tsx src/cli.ts"
+    "import": "tsx src/cli.ts"
   },
   "dependencies": {
+    "@admitto/db": "*",
     "@admitto/shared": "*",
-    "nodemailer": "8.0.10",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@prisma/client": "^5.17.0",
     "@types/node": "^22.19.20",
-    "@types/nodemailer": "^6.4.15",
+    "prisma": "^5.17.0",
     "tsx": "^4.16.0",
     "typescript": "^6.0.3",
     "vitest": "4.1.8"

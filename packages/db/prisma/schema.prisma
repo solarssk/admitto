@@ -31,6 +31,9 @@ model Attendee {
   // Agency-provided QR payload preserved as source of truth for import.
   qr_payload       String?
   external_uuid    String?
+  ticket_type      String?
+  company          String?
+  department       String?
   status           String          @default("registered")
   created_at       DateTime        @default(now())
   email_deliveries EmailDelivery[]
