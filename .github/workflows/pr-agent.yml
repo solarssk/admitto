@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: Codium-ai/pr-agent@31d7dd027968e5fad1f9cbb074be047c4869058e  # HEAD 2026-06-08
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC__KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           pr_agent__config__model: "anthropic/claude-sonnet-4-6"
           pr_agent__config__fallback_models: '["anthropic/claude-sonnet-4-6"]'
