@@ -31,7 +31,7 @@ const rowB: AttendeeRow = {
 beforeAll(async () => {
   execSync("npx prisma db push --force-reset", {
     cwd: DB_ROOT,
-    env: { ...process.env, DATABASE_URL: process.env["DATABASE_URL"] },
+    env: { ...process.env, DATABASE_URL: process.env["DATABASE_URL"] ?? "file:./test.db" },
     stdio: "pipe",
   });
 

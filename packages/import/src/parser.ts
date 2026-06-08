@@ -92,11 +92,12 @@ export function parseAttendees(csvString: string): ParseResult {
     } else if (rawName) {
       const spaceIdx = rawName.indexOf(" ");
       if (spaceIdx === -1) {
+        warnings.push(`Row ${rowIdx}: single-word name "${rawName}" — last_name stored as empty string`);
         firstName = rawName;
         lastName = "";
       } else {
         firstName = rawName.slice(0, spaceIdx);
-        lastName = rawName.slice(spaceIdx + 1);
+        lastName = rawName.slice(spaceIdx + 1).trim();
       }
     } else {
       invalidRows.push({ rowIndex: rowIdx, raw, reason: "Missing name: provide first_name + last_name or a name column" });
