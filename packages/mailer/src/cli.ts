@@ -45,7 +45,9 @@ function renderHtml(firstName?: string): string {
 function readCsv(file: string): { email: string; firstName?: string }[] {
   const p = path.isAbsolute(file) ? file : path.join(process.cwd(), file);
   const lines = fs.readFileSync(p, "utf8").split("\n").map((l) => l.trim()).filter(Boolean);
-  const header = splitCsvLine(lines.shift()!).map((h) => h.trim().toLowerCase());
+  const headerLine = lines.shift();
+  if (!headerLine) throw new Error(`CSV file is empty: ${file}`);
+  const header = splitCsvLine(headerLine).map((h) => h.trim().toLowerCase());
   const ei = header.indexOf("email");
   const ni = header.indexOf("first_name");
   if (ei === -1) throw new Error("CSV must have an 'email' column");

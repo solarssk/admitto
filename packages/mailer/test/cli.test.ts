@@ -22,6 +22,14 @@ describe("splitCsvLine", () => {
     expect(splitCsvLine("only")).toEqual(["only"]);
   });
 
+  it("does not append phantom empty field for a single quoted field", () => {
+    expect(splitCsvLine('"only"')).toEqual(["only"]);
+  });
+
+  it("does not append phantom empty field when final field is quoted", () => {
+    expect(splitCsvLine('"a","b"')).toEqual(["a", "b"]);
+  });
+
   it("handles quoted field containing newline-free content and trailing comma", () => {
     expect(splitCsvLine('"quoted",plain,')).toEqual(["quoted", "plain", ""]);
   });

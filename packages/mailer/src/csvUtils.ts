@@ -13,6 +13,7 @@ export function splitCsvLine(line: string): string[] {
       }
       fields.push(field);
       if (line[i] === ",") i++; // skip comma after closing quote
+      else break; // end-of-line after quoted field — no phantom empty field
     } else {
       const end = line.indexOf(",", i);
       if (end === -1) { fields.push(line.slice(i)); break; }
