@@ -1,15 +1,15 @@
-import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
+import { generateToken, hashToken } from "@admitto/tickets";
 import type { AttendeeRow, ImportOptions, ImportSummary, SkippedRow } from "./types.js";
 
-/** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token. */
+/** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token_hash. */
 const OVERWRITE_FIELDS = ["name", "ticket_type", "company", "department"] as const;
 
 type AttendeeCreateData = {
   event_id: string;
   email: string;
   name: string;
-  token: string;
+  token_hash: string;
   ticket_type?: string;
   external_uuid?: string;
   qr_payload?: string;
@@ -101,9 +101,9 @@ export async function commitImport(
         event_id: eventId,
         email: row.email,
         name,
-        // Step-1 compatibility shim — replaced in Step 2 by real token hash.
-        // Must NOT be used for QR generation, ticket URLs, mail sending, or check-in.
-        token: `IMPORT_PLACEHOLDER_${randomUUID()}`,
+        // Raw token generated and hashed here; only the hash persists (ADR 0001).
+        // Raw token exists only in the ticket URL / QR — never stored.
+        token_hash: hashToken(generateToken()),
         ...(row.ticket_type !== undefined && { ticket_type: row.ticket_type }),
         ...(row.external_uuid !== undefined && { external_uuid: row.external_uuid }),
         ...(row.qr_payload !== undefined && { qr_payload: row.qr_payload }),

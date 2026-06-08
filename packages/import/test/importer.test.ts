@@ -76,12 +76,12 @@ describe("commitImport — create", () => {
     expect(summary.skipped).toHaveLength(0);
   });
 
-  it("does not expose token placeholder in summary output", async () => {
+  it("stores token_hash in DB but does not expose raw token in summary", async () => {
     const att = await prisma.attendee.findUnique({
       where: { event_id_email: { event_id: EVENT_ID, email: "jan@example.com" } },
     });
-    // Token exists in DB (shim) but summary object has no token field
-    expect(att?.token).toBeTruthy();
+    // SHA-256 hex digest stored; raw token never in DB or summary
+    expect(att?.token_hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("preserves agency qr_payload and external_uuid as-is", async () => {
@@ -150,7 +150,7 @@ describe("commitImport — overwrite=true", () => {
     const after = await prisma.attendee.findUnique({
       where: { event_id_email: { event_id: EVENT_ID, email: "jan@example.com" } },
     });
-    expect(after?.token).toBe(before?.token);
+    expect(after?.token_hash).toBe(before?.token_hash);
   });
 
   it("never overwrites status", async () => {

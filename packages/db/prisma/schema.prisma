@@ -27,7 +27,9 @@ model Attendee {
   event            Event           @relation(fields: [event_id], references: [id])
   email            String
   name             String
-  token            String          @unique
+  // SHA-256(raw_token) for Mode A tickets; null for Mode B (agency) attendees.
+  // Raw token never stored — exists only in the ticket URL / QR handed to the attendee.
+  token_hash       String?         @unique
   // Agency-provided QR payload preserved as source of truth for import.
   qr_payload       String?
   external_uuid    String?
