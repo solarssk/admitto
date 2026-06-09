@@ -4,6 +4,17 @@ import { prisma } from "@admitto/db";
 import { resolveTicket, generateQrPng, buildQrPayload } from "@admitto/tickets";
 import { renderTicket, renderNotFound, renderRevoked } from "./ticket-page.js";
 
+// Fail-fast in production: BASE_URL must be set explicitly.
+// In non-production environments the localhost fallback is acceptable.
+const baseUrl = (() => {
+  const url = process.env["BASE_URL"];
+  if (url) return url.replace(/\/$/, "");
+  if (process.env["NODE_ENV"] === "production") {
+    throw new Error("BASE_URL environment variable is required in production");
+  }
+  return "http://localhost:3000";
+})();
+
 const app = new Hono();
 
 app.get("/t/:token", async (c) => {
@@ -26,8 +37,6 @@ app.get("/t/:token", async (c) => {
   if (attendee.status === "revoked") {
     return c.html(renderRevoked(attendee.name, event.title), 200);
   }
-
-  const baseUrl = process.env["BASE_URL"] ?? "http://localhost:3000";
   const agencyPayload =
     resolved.mode === "agency" ? (attendee.qr_payload ?? attendee.external_uuid ?? null) : null;
   if (resolved.mode === "agency" && agencyPayload === null) {
