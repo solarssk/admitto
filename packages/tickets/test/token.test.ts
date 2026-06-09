@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { generateToken } from "../src/token.js";
 import { hashToken } from "../src/hash.js";
 import { buildTicketUrl, extractTokenFromUrl, looksLikeInternalToken } from "../src/url.js";
+import { buildQrPayload } from "../src/qr.js";
 
 describe("generateToken", () => {
   it("produces a ~43-char base64url string (256-bit)", () => {
@@ -66,5 +67,16 @@ describe("looksLikeInternalToken", () => {
 
   it("returns false for a full URL", () => {
     expect(looksLikeInternalToken(`https://example.com/t/${generateToken()}`)).toBe(false);
+  });
+});
+
+describe("buildQrPayload", () => {
+  it("builds internal QR payload from base URL and token", () => {
+    expect(buildQrPayload("internal", { baseUrl: "https://example.com/", token: "TOKEN" }))
+      .toBe("https://example.com/t/TOKEN");
+  });
+
+  it("returns agency payload verbatim", () => {
+    expect(buildQrPayload("agency", { agencyPayload: "AGENCY-QR-001" })).toBe("AGENCY-QR-001");
   });
 });

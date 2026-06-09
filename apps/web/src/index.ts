@@ -3,17 +3,11 @@ import { Hono } from "hono";
 import { prisma } from "@admitto/db";
 import { resolveTicket, generateQrPng, buildQrPayload } from "@admitto/tickets";
 import { renderTicket, renderNotFound, renderRevoked } from "./ticket-page.js";
+import { resolveBaseUrl } from "./config.js";
 
 // Fail-fast in production: BASE_URL must be set explicitly.
 // In non-production environments the localhost fallback is acceptable.
-const baseUrl = (() => {
-  const url = process.env["BASE_URL"];
-  if (url) return url.replace(/\/$/, "");
-  if (process.env["NODE_ENV"] === "production") {
-    throw new Error("BASE_URL environment variable is required in production");
-  }
-  return "http://localhost:3000";
-})();
+const baseUrl = resolveBaseUrl();
 
 const app = new Hono();
 
