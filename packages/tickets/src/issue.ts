@@ -24,15 +24,15 @@ export async function issueTicket(
   const attendee = await prisma.attendee.findUnique({ where: { id: attendeeId } });
   if (!attendee) throw new Error(`Attendee not found: ${attendeeId}`);
 
+  if (attendee.status === "cancelled" || attendee.status === "revoked") {
+    const reason = attendee.status === "cancelled" ? "cancelled" : "revoked";
+    return { status: "not_issuable", mode: "internal", attendeeId, reason };
+  }
+
   // Mode B — use agency identifier verbatim, never mint an internal token.
   if (attendee.qr_payload !== null || attendee.external_uuid !== null) {
     const qrPayload = attendee.qr_payload ?? attendee.external_uuid!;
     return { status: "agency", mode: "agency", attendeeId, qrPayload };
-  }
-
-  if (attendee.status === "cancelled" || attendee.status === "revoked") {
-    const reason = attendee.status === "cancelled" ? "cancelled" : "revoked";
-    return { status: "not_issuable", mode: "internal", attendeeId, reason };
   }
 
   // Mode A — already issued; do NOT rotate.
@@ -92,15 +92,15 @@ export async function issueTicketsForEvent(
   const pendingInternal: Array<{ index: number; attendeeId: string }> = [];
 
   for (const [index, attendee] of attendees.entries()) {
-    if (attendee.qr_payload !== null || attendee.external_uuid !== null) {
-      const qrPayload = attendee.qr_payload ?? attendee.external_uuid!;
-      results[index] = { status: "agency", mode: "agency", attendeeId: attendee.id, qrPayload };
-      continue;
-    }
-
     if (attendee.status === "cancelled" || attendee.status === "revoked") {
       const reason = attendee.status === "cancelled" ? "cancelled" : "revoked";
       results[index] = { status: "not_issuable", mode: "internal", attendeeId: attendee.id, reason };
+      continue;
+    }
+
+    if (attendee.qr_payload !== null || attendee.external_uuid !== null) {
+      const qrPayload = attendee.qr_payload ?? attendee.external_uuid!;
+      results[index] = { status: "agency", mode: "agency", attendeeId: attendee.id, qrPayload };
       continue;
     }
 

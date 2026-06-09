@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
+const bobDevToken = "devticketbob0000000000000000000000000000000";
+const daveDevToken = "devticketdave000000000000000000000000000000";
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -32,11 +34,11 @@ async function main() {
     {
       email: "bob@example.com",
       name: "Bob Jones",
-      token_hash: hashToken("dev-ticket-bob"),
+      token_hash: hashToken(bobDevToken),
       external_uuid: null,
       qr_payload: null,
       status: "confirmed",
-      note: "Issued internal attendee with deterministic dev token: /t/dev-ticket-bob",
+      note: `Issued internal attendee with deterministic dev token: /t/${bobDevToken}`,
     },
     {
       email: "carol@example.com",
@@ -50,7 +52,7 @@ async function main() {
     {
       email: "dave@example.com",
       name: "Dave Brown",
-      token_hash: hashToken("dev-ticket-dave"),
+      token_hash: hashToken(daveDevToken),
       external_uuid: null,
       qr_payload: null,
       status: "cancelled",

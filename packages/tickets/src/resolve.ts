@@ -35,12 +35,14 @@ export async function resolveTicket(
   // Mode B lookups are event-scoped only. Agency identifiers are not assumed to be globally unique.
   if (!context.eventId) return null;
 
-  // Mode B — agency qr_payload
-  const byQr = await prisma.attendee.findFirst({
+  // Mode B — agency qr_payload. Ambiguous matches are treated as unresolved.
+  const byQr = await prisma.attendee.findMany({
     where: { event_id: context.eventId, qr_payload: scanned },
     include: { event: true },
+    take: 2,
   });
-  if (byQr) return toResolved(byQr, "agency");
+  if (byQr.length > 1) return null;
+  if (byQr[0]) return toResolved(byQr[0], "agency");
 
   // Mode B — agency external_uuid
   const byUuid = await prisma.attendee.findFirst({

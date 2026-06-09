@@ -147,6 +147,24 @@ describe("issueTicket — Mode B (agency)", () => {
     const att = await prisma.attendee.findUnique({ where: { id: attendeeBId } });
     expect(att?.token_hash).toBeNull();
   });
+
+  it("does not issue a cancelled agency attendee", async () => {
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "cancelled-agency@example.com",
+        name: "Cancelled Agency",
+        status: "cancelled",
+        external_uuid: "cancelled-agency-uuid",
+        qr_payload: "CANCELLED-AGENCY-QR",
+      },
+    });
+
+    const result = await issueTicket(att.id, prisma, BASE_URL);
+    expect(result.status).toBe("not_issuable");
+    if (result.status !== "not_issuable") return;
+    expect(result.reason).toBe("cancelled");
+  });
 });
 
 describe("issueTicket — not issuable statuses", () => {
@@ -266,16 +284,26 @@ describe("issueTicketsForEvent", () => {
         status: "cancelled",
       },
     });
+    const cancelledAgency = await prisma.attendee.create({
+      data: {
+        event_id: scopedEventId,
+        email: "cancelled-agency-summary@example.com",
+        name: "Cancelled Agency Summary",
+        status: "cancelled",
+        external_uuid: "cancelled-agency-summary-uuid",
+        qr_payload: "CANCELLED-AGENCY-SUMMARY-QR",
+      },
+    });
 
     const summary = await issueTicketsForEvent(scopedEventId, prisma, BASE_URL);
 
     expect(summary.issued).toBe(0);
     expect(summary.alreadyIssued).toBe(2);
     expect(summary.agency).toBe(1);
-    expect(summary.notIssuable).toBe(1);
-    expect(summary.results).toHaveLength(4);
+    expect(summary.notIssuable).toBe(2);
+    expect(summary.results).toHaveLength(5);
     expect(summary.results.map((result) => result.attendeeId).sort()).toEqual(
-      [issuedOne.id, issuedTwo.id, agency.id, cancelled.id].sort(),
+      [issuedOne.id, issuedTwo.id, agency.id, cancelled.id, cancelledAgency.id].sort(),
     );
 
     await prisma.attendee.deleteMany({ where: { event_id: scopedEventId } });

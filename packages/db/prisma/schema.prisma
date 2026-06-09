@@ -46,6 +46,9 @@ model Attendee {
   // Enforce agency-UUID uniqueness per event for idempotent re-import.
   // NULL external_uuid is allowed for multiple rows (NULLs are not equal in SQL).
   @@unique([event_id, external_uuid])
+  // Agency QR payloads must resolve to at most one attendee per event.
+  // NULL qr_payload is allowed for multiple internal attendees.
+  @@unique([event_id, qr_payload])
   @@index([external_uuid])
 }
 

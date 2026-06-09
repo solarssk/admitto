@@ -110,6 +110,19 @@ describe("resolveTicket — Mode B (agency)", () => {
     expect(result?.attendee.email).toBe("mode-b@example.com");
   });
 
+  it("rejects duplicate qr_payload values for the same event", async () => {
+    await expect(
+      prisma.attendee.create({
+        data: {
+          event_id: EVENT_ID,
+          email: "mode-b-same-event-duplicate@example.com",
+          name: "Mode B Same Event Duplicate",
+          qr_payload: "AGENCY-QR-001",
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
   it("resolves by external_uuid when event context is provided", async () => {
     const result = await resolveTicket("agency-uuid-001", prisma, { eventId: EVENT_ID });
     expect(result?.mode).toBe("agency");
