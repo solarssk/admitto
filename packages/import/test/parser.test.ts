@@ -110,6 +110,14 @@ describe("parseAttendees — duplicate detection", () => {
     expect(result.invalidRows[0]?.reason).toMatch(/duplicate qr_payload/i);
   });
 
+  it("flags cross-column collisions between external_uuid and qr_payload", () => {
+    const csv = `first_name,last_name,email,external_uuid,qr_payload\nJan,K,jan@example.com,AGENCY-X,\nAna,K,ana@example.com,,AGENCY-X`;
+    const result = parseAttendees(csv);
+    expect(result.validRows).toHaveLength(1);
+    expect(result.invalidRows).toHaveLength(1);
+    expect(result.invalidRows[0]?.reason).toMatch(/collides across columns/i);
+  });
+
   it("does not flag duplicate external_uuid when both are empty", () => {
     const csv = `first_name,last_name,email,external_uuid\nJan,K,jan@example.com,\nAna,K,ana@example.com,`;
     const result = parseAttendees(csv);

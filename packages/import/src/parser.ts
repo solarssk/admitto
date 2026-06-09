@@ -69,6 +69,7 @@ export function parseAttendees(csvString: string): ParseResult {
   const seenEmails = new Set<string>();
   const seenUUIDs = new Set<string>();
   const seenQrPayloads = new Set<string>();
+  const seenAgencyIdentifiers = new Set<string>();
 
   for (let rowIdx = 1; rowIdx < lines.length; rowIdx++) {
     const line = lines[rowIdx]!;
@@ -135,10 +136,28 @@ export function parseAttendees(csvString: string): ParseResult {
       invalidRows.push({ rowIndex: rowIdx, raw, reason: `Duplicate qr_payload in file: "${qrPayload}"` });
       continue;
     }
+    if (externalUUID && seenAgencyIdentifiers.has(externalUUID) && !seenUUIDs.has(externalUUID)) {
+      invalidRows.push({
+        rowIndex: rowIdx,
+        raw,
+        reason: `Agency identifier collides across columns: "${externalUUID}"`,
+      });
+      continue;
+    }
+    if (qrPayload && seenAgencyIdentifiers.has(qrPayload) && !seenQrPayloads.has(qrPayload)) {
+      invalidRows.push({
+        rowIndex: rowIdx,
+        raw,
+        reason: `Agency identifier collides across columns: "${qrPayload}"`,
+      });
+      continue;
+    }
 
     seenEmails.add(email);
     if (externalUUID) seenUUIDs.add(externalUUID);
     if (qrPayload) seenQrPayloads.add(qrPayload);
+    if (externalUUID) seenAgencyIdentifiers.add(externalUUID);
+    if (qrPayload) seenAgencyIdentifiers.add(qrPayload);
 
     validRows.push({
       first_name: firstName,
