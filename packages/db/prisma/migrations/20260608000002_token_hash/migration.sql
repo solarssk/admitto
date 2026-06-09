@@ -3,8 +3,36 @@
 -- This migration intentionally discards Step 1 placeholder tokens by setting token_hash = NULL.
 -- That is acceptable only for greenfield/dev data where no real tickets have been issued yet.
 -- If real issued tickets existed, a dedicated backfill from old raw token -> sha256(token) would be required.
+-- This migration also introduces event-scoped uniqueness for non-null qr_payload.
+-- Fail early with a readable error before table recreation if legacy data already violates that invariant.
 -- SQLite requires full table recreation to drop a column and change constraints.
 PRAGMA foreign_keys=OFF;
+
+CREATE TEMP TABLE "_migration_guard" (
+    "ok" INTEGER NOT NULL CHECK ("ok" = 1)
+);
+
+CREATE TEMP TRIGGER "_abort_duplicate_qr_payloads"
+BEFORE INSERT ON "_migration_guard"
+WHEN NEW."ok" = 0
+BEGIN
+    SELECT RAISE(ABORT, 'Migration blocked: duplicate non-null qr_payload values exist within the same event. Deduplicate legacy attendee data before applying 20260608000002_token_hash.');
+END;
+
+INSERT INTO "_migration_guard" ("ok")
+SELECT CASE
+    WHEN EXISTS (
+        SELECT 1
+        FROM "Attendee"
+        WHERE "qr_payload" IS NOT NULL
+        GROUP BY "event_id", "qr_payload"
+        HAVING COUNT(*) > 1
+    ) THEN 0
+    ELSE 1
+END;
+
+DROP TRIGGER "_abort_duplicate_qr_payloads";
+DROP TABLE "_migration_guard";
 
 CREATE TABLE "_new_Attendee" (
     "id" TEXT NOT NULL PRIMARY KEY,
