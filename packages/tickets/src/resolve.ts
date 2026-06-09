@@ -42,13 +42,18 @@ export async function resolveTicket(
     take: 2,
   });
   if (byQr.length > 1) return null;
-  if (byQr[0]) return toResolved(byQr[0], "agency");
 
   // Mode B — agency external_uuid
   const byUuid = await prisma.attendee.findFirst({
     where: { event_id: context.eventId, external_uuid: scanned },
     include: { event: true },
   });
+
+  if (byQr[0] && byUuid && byQr[0].id !== byUuid.id) {
+    return null;
+  }
+
+  if (byQr[0]) return toResolved(byQr[0], "agency");
   if (byUuid) return toResolved(byUuid, "agency");
 
   return null;
