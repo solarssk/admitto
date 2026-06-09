@@ -15,6 +15,7 @@ let prisma: PrismaClient;
 const EVENT_ID = "test-event-tickets-001";
 const EVENT_ID_2 = "test-event-tickets-002";
 let tokenA: string;
+let tokenB: string;
 
 beforeAll(async () => {
   execSync("npx prisma db push --force-reset", {
@@ -55,6 +56,16 @@ beforeAll(async () => {
       email: "mode-a@example.com",
       name: "Mode A User",
       token_hash: hashToken(tokenA),
+    },
+  });
+
+  tokenB = generateToken();
+  await prisma.attendee.create({
+    data: {
+      event_id: EVENT_ID_2,
+      email: "mode-a-event-2@example.com",
+      name: "Mode A Event 2 User",
+      token_hash: hashToken(tokenB),
     },
   });
 
@@ -100,6 +111,16 @@ describe("resolveTicket — Mode A (internal token)", () => {
     const result = await resolveTicket(url, prisma);
     expect(result?.mode).toBe("internal");
     expect(result?.attendee.email).toBe("mode-a@example.com");
+  });
+
+  it("respects event context for internal tokens", async () => {
+    const correctEvent = await resolveTicket(tokenA, prisma, { eventId: EVENT_ID });
+    const wrongEvent = await resolveTicket(tokenA, prisma, { eventId: EVENT_ID_2 });
+    const secondEvent = await resolveTicket(tokenB, prisma, { eventId: EVENT_ID_2 });
+
+    expect(correctEvent?.attendee.email).toBe("mode-a@example.com");
+    expect(wrongEvent).toBeNull();
+    expect(secondEvent?.attendee.email).toBe("mode-a-event-2@example.com");
   });
 });
 

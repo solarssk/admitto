@@ -25,10 +25,15 @@ export async function resolveTicket(
 
   if (rawToken) {
     const hash = hashToken(rawToken);
-    const row = await prisma.attendee.findUnique({
-      where: { token_hash: hash },
-      include: { event: true },
-    });
+    const row = context.eventId
+      ? await prisma.attendee.findFirst({
+          where: { token_hash: hash, event_id: context.eventId },
+          include: { event: true },
+        })
+      : await prisma.attendee.findUnique({
+          where: { token_hash: hash },
+          include: { event: true },
+        });
     if (row) return toResolved(row, "internal");
   }
 
