@@ -215,6 +215,43 @@ describe("commitImport — UUID/email fallback", () => {
     expect(summary.toSkip).toBe(1);
     expect(summary.created).toBe(0);
   });
+
+  it("skips rows whose identifiers point to different attendees", async () => {
+    await commitImport(
+      EVENT_ID,
+      [
+        {
+          first_name: "Uuid",
+          last_name: "Holder",
+          email: "uuid-holder@example.com",
+          external_uuid: "conflict-uuid-001",
+        },
+        {
+          first_name: "Qr",
+          last_name: "Holder",
+          email: "qr-holder@example.com",
+          qr_payload: "CONFLICT-QR-001",
+        },
+      ],
+      {},
+      prisma,
+    );
+
+    const conflictingRow: AttendeeRow = {
+      first_name: "Conflict",
+      last_name: "Row",
+      email: "uuid-holder@example.com",
+      external_uuid: "conflict-uuid-001",
+      qr_payload: "CONFLICT-QR-001",
+    };
+
+    const summary = await commitImport(EVENT_ID, [conflictingRow], { overwrite: true }, prisma);
+
+    expect(summary.toSkip).toBe(1);
+    expect(summary.created).toBe(0);
+    expect(summary.updated).toBe(0);
+    expect(summary.skipped[0]?.reason).toMatch(/conflicting identifiers/i);
+  });
 });
 
 describe("commitImport — idempotency", () => {

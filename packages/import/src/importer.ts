@@ -77,10 +77,22 @@ export async function commitImport(
 
     // Match strategy: agency identifiers first (Mode B), then email (Mode A).
     // Fallback handles existing Mode A attendees re-imported with newly assigned agency identifiers.
-    const found =
-      (row.external_uuid ? byUUID.get(row.external_uuid) : undefined) ??
-      (row.qr_payload ? byQrPayload.get(row.qr_payload) : undefined) ??
-      byEmail.get(row.email);
+    const candidates = [
+      row.external_uuid ? byUUID.get(row.external_uuid) : undefined,
+      row.qr_payload ? byQrPayload.get(row.qr_payload) : undefined,
+      byEmail.get(row.email),
+    ].filter((attendee): attendee is NonNullable<typeof attendee> => attendee !== undefined);
+
+    const distinctCandidateIds = new Set(candidates.map((attendee) => attendee.id));
+    if (distinctCandidateIds.size > 1) {
+      skipped.push({
+        email: row.email,
+        reason: "Conflicting identifiers match different attendees",
+      });
+      continue;
+    }
+
+    const found = candidates[0];
 
     if (found) {
       if (!overwrite) {
