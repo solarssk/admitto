@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { generateToken } from "./token.js";
 import { hashToken } from "./hash.js";
 import { buildTicketUrl } from "./url.js";
@@ -113,7 +113,7 @@ export async function issueTicketsForEvent(
   }
 
   if (pendingInternal.length > 0) {
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       for (const pending of pendingInternal) {
         const token = generateToken();
         const tokenHash = hashToken(token);
