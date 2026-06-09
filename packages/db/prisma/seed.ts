@@ -10,6 +10,10 @@ function hashToken(token: string): string {
 }
 
 async function main() {
+  if (process.env["NODE_ENV"] === "production") {
+    throw new Error("Refusing to run development seed in production");
+  }
+
   const event = await prisma.event.upsert({
     where: { slug: "test-event-2024" },
     update: {},

@@ -53,13 +53,14 @@ export async function commitImport(
   const emails = rows.map((r) => r.email);
   const uuids = rows.flatMap((r) => (r.external_uuid ? [r.external_uuid] : []));
   const qrPayloads = rows.flatMap((r) => (r.qr_payload ? [r.qr_payload] : []));
+  const agencyIdentifiers = [...new Set([...uuids, ...qrPayloads])];
   const existingList = await prisma.attendee.findMany({
     where: {
       event_id: eventId,
       OR: [
         { email: { in: emails } },
-        ...(uuids.length > 0 ? [{ external_uuid: { in: uuids } }] : []),
-        ...(qrPayloads.length > 0 ? [{ qr_payload: { in: qrPayloads } }] : []),
+        ...(agencyIdentifiers.length > 0 ? [{ external_uuid: { in: agencyIdentifiers } }] : []),
+        ...(agencyIdentifiers.length > 0 ? [{ qr_payload: { in: agencyIdentifiers } }] : []),
       ],
     },
   });
@@ -77,14 +78,30 @@ export async function commitImport(
 
     // Match strategy: agency identifiers first (Mode B), then email (Mode A).
     // Fallback handles existing Mode A attendees re-imported with newly assigned agency identifiers.
+    const emailMatch = byEmail.get(row.email);
+    const uuidMatch = row.external_uuid ? byUUID.get(row.external_uuid) : undefined;
+    const uuidCrossMatch = row.external_uuid ? byQrPayload.get(row.external_uuid) : undefined;
+    const qrMatch = row.qr_payload ? byQrPayload.get(row.qr_payload) : undefined;
+    const qrCrossMatch = row.qr_payload ? byUUID.get(row.qr_payload) : undefined;
+
     const candidates = [
-      row.external_uuid ? byUUID.get(row.external_uuid) : undefined,
-      row.qr_payload ? byQrPayload.get(row.qr_payload) : undefined,
-      byEmail.get(row.email),
+      uuidMatch,
+      uuidCrossMatch,
+      qrMatch,
+      qrCrossMatch,
+      emailMatch,
     ].filter((attendee): attendee is NonNullable<typeof attendee> => attendee !== undefined);
 
     const distinctCandidateIds = new Set(candidates.map((attendee) => attendee.id));
-    if (distinctCandidateIds.size > 1) {
+    const hasCrossColumnConflict =
+      (uuidCrossMatch !== undefined &&
+        uuidCrossMatch.id !== emailMatch?.id &&
+        uuidCrossMatch.id !== uuidMatch?.id) ||
+      (qrCrossMatch !== undefined &&
+        qrCrossMatch.id !== emailMatch?.id &&
+        qrCrossMatch.id !== qrMatch?.id);
+
+    if (distinctCandidateIds.size > 1 || hasCrossColumnConflict) {
       skipped.push({
         email: row.email,
         reason: "Conflicting identifiers match different attendees",

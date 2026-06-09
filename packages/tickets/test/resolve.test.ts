@@ -151,18 +151,27 @@ describe("resolveTicket — Mode B (agency)", () => {
   });
 
   it("returns null when qr_payload and external_uuid collide across different attendees", async () => {
-    await prisma.attendee.create({
-      data: {
-        event_id: EVENT_ID,
-        email: "mode-b-cross-field@example.com",
-        name: "Mode B Cross Field",
-        external_uuid: "AGENCY-QR-001",
-        qr_payload: "AGENCY-QR-002",
-      },
-    });
+    try {
+      await prisma.attendee.create({
+        data: {
+          event_id: EVENT_ID,
+          email: "mode-b-cross-field@example.com",
+          name: "Mode B Cross Field",
+          external_uuid: "AGENCY-QR-001",
+          qr_payload: "AGENCY-QR-002",
+        },
+      });
 
-    const result = await resolveTicket("AGENCY-QR-001", prisma, { eventId: EVENT_ID });
-    expect(result).toBeNull();
+      const result = await resolveTicket("AGENCY-QR-001", prisma, { eventId: EVENT_ID });
+      expect(result).toBeNull();
+    } finally {
+      await prisma.attendee.deleteMany({
+        where: {
+          event_id: EVENT_ID,
+          email: "mode-b-cross-field@example.com",
+        },
+      });
+    }
   });
 
   it("does not resolve agency identifiers without event context", async () => {

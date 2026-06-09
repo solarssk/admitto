@@ -200,6 +200,36 @@ describe("commitImport — Mode B matching by external_uuid", () => {
     expect(summary.toSkip).toBe(1);
     expect(summary.created).toBe(0);
   });
+
+  it("skips rows that collide with existing attendees across agency identifier columns", async () => {
+    await commitImport(
+      EVENT_ID,
+      [
+        {
+          first_name: "Existing",
+          last_name: "Qr",
+          email: "existing-qr@example.com",
+          qr_payload: "CROSS-COLUMN-AGENCY-ID",
+        },
+      ],
+      {},
+      prisma,
+    );
+
+    const conflictingImport: AttendeeRow = {
+      first_name: "Incoming",
+      last_name: "Uuid",
+      email: "incoming-uuid@example.com",
+      external_uuid: "CROSS-COLUMN-AGENCY-ID",
+    };
+
+    const summary = await commitImport(EVENT_ID, [conflictingImport], { overwrite: true }, prisma);
+
+    expect(summary.toSkip).toBe(1);
+    expect(summary.created).toBe(0);
+    expect(summary.updated).toBe(0);
+    expect(summary.skipped[0]?.reason).toMatch(/conflicting identifiers/i);
+  });
 });
 
 describe("commitImport — UUID/email fallback", () => {
