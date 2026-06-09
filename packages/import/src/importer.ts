@@ -52,16 +52,19 @@ export async function commitImport(
   // Pre-fetch all candidates in a single query to avoid N+1.
   const emails = rows.map((r) => r.email);
   const uuids = rows.flatMap((r) => (r.external_uuid ? [r.external_uuid] : []));
+  const qrPayloads = rows.flatMap((r) => (r.qr_payload ? [r.qr_payload] : []));
   const existingList = await prisma.attendee.findMany({
     where: {
       event_id: eventId,
       OR: [
         { email: { in: emails } },
         ...(uuids.length > 0 ? [{ external_uuid: { in: uuids } }] : []),
+        ...(qrPayloads.length > 0 ? [{ qr_payload: { in: qrPayloads } }] : []),
       ],
     },
   });
   const byUUID = new Map(existingList.filter((a) => a.external_uuid).map((a) => [a.external_uuid!, a]));
+  const byQrPayload = new Map(existingList.filter((a) => a.qr_payload).map((a) => [a.qr_payload!, a]));
   const byEmail = new Map(existingList.map((a) => [a.email, a]));
 
   // Classify rows — pure in-memory, no DB calls inside loop.
@@ -72,12 +75,12 @@ export async function commitImport(
   for (const row of rows) {
     const name = [row.first_name, row.last_name].filter(Boolean).join(" ");
 
-    // Match strategy: external_uuid first (Mode B), fall back to email (Mode A).
-    // Fallback handles the case where an existing Mode A attendee is re-imported with a newly
-    // assigned agency UUID — without it, the create path would hit a unique constraint on email.
-    const found = row.external_uuid
-      ? (byUUID.get(row.external_uuid) ?? byEmail.get(row.email))
-      : byEmail.get(row.email);
+    // Match strategy: agency identifiers first (Mode B), then email (Mode A).
+    // Fallback handles existing Mode A attendees re-imported with newly assigned agency identifiers.
+    const found =
+      (row.external_uuid ? byUUID.get(row.external_uuid) : undefined) ??
+      (row.qr_payload ? byQrPayload.get(row.qr_payload) : undefined) ??
+      byEmail.get(row.email);
 
     if (found) {
       if (!overwrite) {

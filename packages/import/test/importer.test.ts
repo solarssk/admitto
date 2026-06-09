@@ -181,6 +181,25 @@ describe("commitImport — Mode B matching by external_uuid", () => {
     // Should skip because external_uuid matches existing
     expect(summary.toSkip).toBe(1);
   });
+
+  it("matches existing attendee by qr_payload when external_uuid is missing", async () => {
+    const rowWithQrOnly: AttendeeRow = {
+      first_name: "Qr",
+      last_name: "Only",
+      email: "qr-only@example.com",
+      qr_payload: "AGENCY-QR-ONLY",
+    };
+    await commitImport(EVENT_ID, [rowWithQrOnly], {}, prisma);
+
+    const reimportWithChangedEmail: AttendeeRow = {
+      ...rowWithQrOnly,
+      email: "qr-only-renamed@example.com",
+    };
+    const summary = await commitImport(EVENT_ID, [reimportWithChangedEmail], { overwrite: false }, prisma);
+
+    expect(summary.toSkip).toBe(1);
+    expect(summary.created).toBe(0);
+  });
 });
 
 describe("commitImport — UUID/email fallback", () => {
