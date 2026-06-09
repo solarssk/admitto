@@ -1,0 +1,32 @@
+{
+  "name": "@admitto/tickets",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Admitto ticket domain — token generation, hashing, QR, and resolver",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepare": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.3"
+  },
+  "devDependencies": {
+    "@prisma/client": "^5.17.0",
+    "@types/node": "^22.19.20",
+    "@types/qrcode": "^1.5.5",
+    "prisma": "^5.17.0",
+    "typescript": "^6.0.3",
+    "vitest": "4.1.8"
+  }
+}

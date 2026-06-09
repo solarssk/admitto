@@ -1,15 +1,14 @@
-import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type { AttendeeRow, ImportOptions, ImportSummary, SkippedRow } from "./types.js";
 
-/** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token. */
+/** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token_hash. */
 const OVERWRITE_FIELDS = ["name", "ticket_type", "company", "department"] as const;
 
 type AttendeeCreateData = {
   event_id: string;
   email: string;
   name: string;
-  token: string;
+  // token_hash intentionally absent — set during ticket issuance (Step 4), not import.
   ticket_type?: string;
   external_uuid?: string;
   qr_payload?: string;
@@ -53,16 +52,20 @@ export async function commitImport(
   // Pre-fetch all candidates in a single query to avoid N+1.
   const emails = rows.map((r) => r.email);
   const uuids = rows.flatMap((r) => (r.external_uuid ? [r.external_uuid] : []));
+  const qrPayloads = rows.flatMap((r) => (r.qr_payload ? [r.qr_payload] : []));
+  const agencyIdentifiers = [...new Set([...uuids, ...qrPayloads])];
   const existingList = await prisma.attendee.findMany({
     where: {
       event_id: eventId,
       OR: [
         { email: { in: emails } },
-        ...(uuids.length > 0 ? [{ external_uuid: { in: uuids } }] : []),
+        ...(agencyIdentifiers.length > 0 ? [{ external_uuid: { in: agencyIdentifiers } }] : []),
+        ...(agencyIdentifiers.length > 0 ? [{ qr_payload: { in: agencyIdentifiers } }] : []),
       ],
     },
   });
   const byUUID = new Map(existingList.filter((a) => a.external_uuid).map((a) => [a.external_uuid!, a]));
+  const byQrPayload = new Map(existingList.filter((a) => a.qr_payload).map((a) => [a.qr_payload!, a]));
   const byEmail = new Map(existingList.map((a) => [a.email, a]));
 
   // Classify rows — pure in-memory, no DB calls inside loop.
@@ -73,12 +76,40 @@ export async function commitImport(
   for (const row of rows) {
     const name = [row.first_name, row.last_name].filter(Boolean).join(" ");
 
-    // Match strategy: external_uuid first (Mode B), fall back to email (Mode A).
-    // Fallback handles the case where an existing Mode A attendee is re-imported with a newly
-    // assigned agency UUID — without it, the create path would hit a unique constraint on email.
-    const found = row.external_uuid
-      ? (byUUID.get(row.external_uuid) ?? byEmail.get(row.email))
-      : byEmail.get(row.email);
+    // Match strategy: agency identifiers first (Mode B), then email (Mode A).
+    // Fallback handles existing Mode A attendees re-imported with newly assigned agency identifiers.
+    const emailMatch = byEmail.get(row.email);
+    const uuidMatch = row.external_uuid ? byUUID.get(row.external_uuid) : undefined;
+    const uuidCrossMatch = row.external_uuid ? byQrPayload.get(row.external_uuid) : undefined;
+    const qrMatch = row.qr_payload ? byQrPayload.get(row.qr_payload) : undefined;
+    const qrCrossMatch = row.qr_payload ? byUUID.get(row.qr_payload) : undefined;
+
+    const candidates = [
+      uuidMatch,
+      uuidCrossMatch,
+      qrMatch,
+      qrCrossMatch,
+      emailMatch,
+    ].filter((attendee): attendee is NonNullable<typeof attendee> => attendee !== undefined);
+
+    const distinctCandidateIds = new Set(candidates.map((attendee) => attendee.id));
+    const hasCrossColumnConflict =
+      (uuidCrossMatch !== undefined &&
+        uuidCrossMatch.id !== emailMatch?.id &&
+        uuidCrossMatch.id !== uuidMatch?.id) ||
+      (qrCrossMatch !== undefined &&
+        qrCrossMatch.id !== emailMatch?.id &&
+        qrCrossMatch.id !== qrMatch?.id);
+
+    if (distinctCandidateIds.size > 1 || hasCrossColumnConflict) {
+      skipped.push({
+        email: row.email,
+        reason: "Conflicting identifiers match different attendees",
+      });
+      continue;
+    }
+
+    const found = candidates[0];
 
     if (found) {
       if (!overwrite) {
@@ -86,7 +117,7 @@ export async function commitImport(
         continue;
       }
       // overwrite=true — update presentation/profile fields only.
-      // Never touch: status, qr_payload, external_uuid, token.
+      // Never touch: status, qr_payload, external_uuid, token_hash.
       updates.push({
         id: found.id,
         data: {
@@ -101,9 +132,6 @@ export async function commitImport(
         event_id: eventId,
         email: row.email,
         name,
-        // Step-1 compatibility shim — replaced in Step 2 by real token hash.
-        // Must NOT be used for QR generation, ticket URLs, mail sending, or check-in.
-        token: `IMPORT_PLACEHOLDER_${randomUUID()}`,
         ...(row.ticket_type !== undefined && { ticket_type: row.ticket_type }),
         ...(row.external_uuid !== undefined && { external_uuid: row.external_uuid }),
         ...(row.qr_payload !== undefined && { qr_payload: row.qr_payload }),

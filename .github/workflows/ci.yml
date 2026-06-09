@@ -26,6 +26,7 @@ jobs:
       - run: npm audit --audit-level=high
       - run: npm run build -w @admitto/shared
       - run: npm run build -w @admitto/db
+      - run: npm run build -w @admitto/tickets
       - run: npm run typecheck --workspaces --if-present
       - run: npm test --workspaces --if-present
       - run: npm run build --workspaces --if-present

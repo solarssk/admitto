@@ -76,12 +76,12 @@ describe("commitImport — create", () => {
     expect(summary.skipped).toHaveLength(0);
   });
 
-  it("does not expose token placeholder in summary output", async () => {
+  it("leaves token_hash null — issuance happens in Step 4, not import", async () => {
     const att = await prisma.attendee.findUnique({
       where: { event_id_email: { event_id: EVENT_ID, email: "jan@example.com" } },
     });
-    // Token exists in DB (shim) but summary object has no token field
-    expect(att?.token).toBeTruthy();
+    // Import creates the record; token_hash is set during ticket issuance (mailer step).
+    expect(att?.token_hash).toBeNull();
   });
 
   it("preserves agency qr_payload and external_uuid as-is", async () => {
@@ -142,15 +142,17 @@ describe("commitImport — overwrite=true", () => {
     expect(after?.external_uuid).toBe("agency-uuid-001");
   });
 
-  it("never overwrites token even with overwrite=true", async () => {
-    const before = await prisma.attendee.findUnique({
+  it("never overwrites token_hash even with overwrite=true", async () => {
+    // Simulate ticket issuance: manually set a token_hash
+    await prisma.attendee.update({
       where: { event_id_email: { event_id: EVENT_ID, email: "jan@example.com" } },
+      data: { token_hash: "deadbeef".repeat(8) },
     });
     await commitImport(EVENT_ID, [rowA], { overwrite: true }, prisma);
     const after = await prisma.attendee.findUnique({
       where: { event_id_email: { event_id: EVENT_ID, email: "jan@example.com" } },
     });
-    expect(after?.token).toBe(before?.token);
+    expect(after?.token_hash).toBe("deadbeef".repeat(8));
   });
 
   it("never overwrites status", async () => {
@@ -179,6 +181,55 @@ describe("commitImport — Mode B matching by external_uuid", () => {
     // Should skip because external_uuid matches existing
     expect(summary.toSkip).toBe(1);
   });
+
+  it("matches existing attendee by qr_payload when external_uuid is missing", async () => {
+    const rowWithQrOnly: AttendeeRow = {
+      first_name: "Qr",
+      last_name: "Only",
+      email: "qr-only@example.com",
+      qr_payload: "AGENCY-QR-ONLY",
+    };
+    await commitImport(EVENT_ID, [rowWithQrOnly], {}, prisma);
+
+    const reimportWithChangedEmail: AttendeeRow = {
+      ...rowWithQrOnly,
+      email: "qr-only-renamed@example.com",
+    };
+    const summary = await commitImport(EVENT_ID, [reimportWithChangedEmail], { overwrite: false }, prisma);
+
+    expect(summary.toSkip).toBe(1);
+    expect(summary.created).toBe(0);
+  });
+
+  it("skips rows that collide with existing attendees across agency identifier columns", async () => {
+    await commitImport(
+      EVENT_ID,
+      [
+        {
+          first_name: "Existing",
+          last_name: "Qr",
+          email: "existing-qr@example.com",
+          qr_payload: "CROSS-COLUMN-AGENCY-ID",
+        },
+      ],
+      {},
+      prisma,
+    );
+
+    const conflictingImport: AttendeeRow = {
+      first_name: "Incoming",
+      last_name: "Uuid",
+      email: "incoming-uuid@example.com",
+      external_uuid: "CROSS-COLUMN-AGENCY-ID",
+    };
+
+    const summary = await commitImport(EVENT_ID, [conflictingImport], { overwrite: true }, prisma);
+
+    expect(summary.toSkip).toBe(1);
+    expect(summary.created).toBe(0);
+    expect(summary.updated).toBe(0);
+    expect(summary.skipped[0]?.reason).toMatch(/conflicting identifiers/i);
+  });
 });
 
 describe("commitImport — UUID/email fallback", () => {
@@ -193,6 +244,43 @@ describe("commitImport — UUID/email fallback", () => {
     );
     expect(summary.toSkip).toBe(1);
     expect(summary.created).toBe(0);
+  });
+
+  it("skips rows whose identifiers point to different attendees", async () => {
+    await commitImport(
+      EVENT_ID,
+      [
+        {
+          first_name: "Uuid",
+          last_name: "Holder",
+          email: "uuid-holder@example.com",
+          external_uuid: "conflict-uuid-001",
+        },
+        {
+          first_name: "Qr",
+          last_name: "Holder",
+          email: "qr-holder@example.com",
+          qr_payload: "CONFLICT-QR-001",
+        },
+      ],
+      {},
+      prisma,
+    );
+
+    const conflictingRow: AttendeeRow = {
+      first_name: "Conflict",
+      last_name: "Row",
+      email: "uuid-holder@example.com",
+      external_uuid: "conflict-uuid-001",
+      qr_payload: "CONFLICT-QR-001",
+    };
+
+    const summary = await commitImport(EVENT_ID, [conflictingRow], { overwrite: true }, prisma);
+
+    expect(summary.toSkip).toBe(1);
+    expect(summary.created).toBe(0);
+    expect(summary.updated).toBe(0);
+    expect(summary.skipped[0]?.reason).toMatch(/conflicting identifiers/i);
   });
 });
 
