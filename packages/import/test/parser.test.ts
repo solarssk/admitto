@@ -102,8 +102,23 @@ describe("parseAttendees — duplicate detection", () => {
     expect(result.invalidRows[0]?.reason).toMatch(/duplicate external_uuid/i);
   });
 
+  it("flags duplicate qr_payload within the file", () => {
+    const csv = `first_name,last_name,email,qr_payload\nJan,K,jan@example.com,QR-1\nAna,K,ana@example.com,QR-1`;
+    const result = parseAttendees(csv);
+    expect(result.validRows).toHaveLength(1);
+    expect(result.invalidRows).toHaveLength(1);
+    expect(result.invalidRows[0]?.reason).toMatch(/duplicate qr_payload/i);
+  });
+
   it("does not flag duplicate external_uuid when both are empty", () => {
     const csv = `first_name,last_name,email,external_uuid\nJan,K,jan@example.com,\nAna,K,ana@example.com,`;
+    const result = parseAttendees(csv);
+    expect(result.validRows).toHaveLength(2);
+    expect(result.invalidRows).toHaveLength(0);
+  });
+
+  it("does not flag duplicate qr_payload when both are empty", () => {
+    const csv = `first_name,last_name,email,qr_payload\nJan,K,jan@example.com,\nAna,K,ana@example.com,`;
     const result = parseAttendees(csv);
     expect(result.validRows).toHaveLength(2);
     expect(result.invalidRows).toHaveLength(0);
