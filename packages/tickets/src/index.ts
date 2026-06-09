@@ -4,4 +4,10 @@ export { buildTicketUrl, extractTokenFromUrl, looksLikeInternalToken } from "./u
 export { generateQrPng, buildQrPayload } from "./qr.js";
 export { resolveTicket } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
-export type { TicketMode, ResolvedTicket, IssuedTicketResult, IssueEventSummary } from "./types.js";
+export type {
+  TicketMode,
+  ResolvedTicket,
+  ResolveTicketContext,
+  IssuedTicketResult,
+  IssueEventSummary,
+} from "./types.js";

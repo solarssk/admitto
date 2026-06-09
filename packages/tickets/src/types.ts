@@ -1,5 +1,9 @@
 export type TicketMode = "internal" | "agency";
 
+export type ResolveTicketContext = {
+  eventId?: string;
+};
+
 /**
  * Result of issueTicket().
  *
@@ -27,6 +31,12 @@ export type IssuedTicketResult =
       mode: "agency";
       attendeeId: string;
       qrPayload: string;
+    }
+  | {
+      status: "not_issuable";
+      mode: "internal";
+      attendeeId: string;
+      reason: "cancelled" | "revoked";
     };
 
 export type IssueEventSummary = {
@@ -34,6 +44,7 @@ export type IssueEventSummary = {
   issued: number;
   alreadyIssued: number;
   agency: number;
+  notIssuable: number;
 };
 
 export type ResolvedTicket = {

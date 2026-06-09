@@ -14,6 +14,7 @@ let prisma: PrismaClient;
 const EVENT_ID = "test-event-issue-001";
 let attendeeAId: string;
 let attendeeBId: string;
+let attendeeCancelledId: string;
 
 beforeAll(async () => {
   execSync("npx prisma db push --force-reset", {
@@ -52,6 +53,16 @@ beforeAll(async () => {
     },
   });
   attendeeBId = attB.id;
+
+  const attCancelled = await prisma.attendee.create({
+    data: {
+      event_id: EVENT_ID,
+      email: "cancelled@example.com",
+      name: "Cancelled User",
+      status: "cancelled",
+    },
+  });
+  attendeeCancelledId = attCancelled.id;
 });
 
 afterAll(async () => {
@@ -103,6 +114,23 @@ describe("issueTicket — Mode A idempotency (second call)", () => {
     const after = await prisma.attendee.findUnique({ where: { id: attendeeAId } });
     expect(after?.token_hash).toBe(before?.token_hash);
   });
+
+  it("is safe under concurrent calls: one issues, the other sees already_issued", async () => {
+    const att = await prisma.attendee.create({
+      data: { event_id: EVENT_ID, email: "race@example.com", name: "Race User" },
+    });
+
+    const [first, second] = await Promise.all([
+      issueTicket(att.id, prisma, BASE_URL),
+      issueTicket(att.id, prisma, BASE_URL),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual(["already_issued", "issued"]);
+
+    const after = await prisma.attendee.findUnique({ where: { id: att.id } });
+    expect(after?.token_hash).not.toBeNull();
+  });
 });
 
 describe("issueTicket — Mode B (agency)", () => {
@@ -121,6 +149,18 @@ describe("issueTicket — Mode B (agency)", () => {
   });
 });
 
+describe("issueTicket — not issuable statuses", () => {
+  it("does not issue a cancelled attendee", async () => {
+    const result = await issueTicket(attendeeCancelledId, prisma, BASE_URL);
+    expect(result.status).toBe("not_issuable");
+    if (result.status !== "not_issuable") return;
+    expect(result.reason).toBe("cancelled");
+
+    const att = await prisma.attendee.findUnique({ where: { id: attendeeCancelledId } });
+    expect(att?.token_hash).toBeNull();
+  });
+});
+
 describe("issueTicket — not found", () => {
   it("throws for unknown attendee id", async () => {
     await expect(issueTicket("nonexistent-id", prisma, BASE_URL)).rejects.toThrow(
@@ -131,13 +171,15 @@ describe("issueTicket — not found", () => {
 
 describe("issueTicketsForEvent", () => {
   it("issues remaining unissued and skips already-issued, returns correct counts", async () => {
-    // attendeeA already issued in previous describe blocks; attendeeB is agency
+    // attendeeA and race@example.com already issued in previous describe blocks;
+    // attendeeB is agency; attendeeCancelled is not issuable.
     const summary = await issueTicketsForEvent(EVENT_ID, prisma, BASE_URL);
-    // attendeeA: already_issued; attendeeB: agency
+    // attendeeA + race@example.com: already_issued; attendeeB: agency; attendeeCancelled: not_issuable
     expect(summary.issued).toBe(0);
-    expect(summary.alreadyIssued).toBe(1);
+    expect(summary.alreadyIssued).toBe(2);
     expect(summary.agency).toBe(1);
-    expect(summary.results).toHaveLength(2);
+    expect(summary.notIssuable).toBe(1);
+    expect(summary.results).toHaveLength(4);
   });
 
   it("throws for unknown event", async () => {

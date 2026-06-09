@@ -13,6 +13,7 @@ const DB_ROOT = path.resolve(__dirname, "../../db");
 
 let prisma: PrismaClient;
 const EVENT_ID = "test-event-tickets-001";
+const EVENT_ID_2 = "test-event-tickets-002";
 let tokenA: string;
 
 beforeAll(async () => {
@@ -32,6 +33,17 @@ beforeAll(async () => {
       title: "Test Event",
       slug: "test-event-tickets-001",
       date: new Date("2026-09-01T09:00:00Z"),
+    },
+  });
+
+  await prisma.event.upsert({
+    where: { id: EVENT_ID_2 },
+    update: {},
+    create: {
+      id: EVENT_ID_2,
+      title: "Second Test Event",
+      slug: "test-event-tickets-002",
+      date: new Date("2026-09-02T09:00:00Z"),
     },
   });
 
@@ -56,11 +68,22 @@ beforeAll(async () => {
       qr_payload: "AGENCY-QR-001",
     },
   });
+
+  // Same agency identifiers in a different event — should require event context.
+  await prisma.attendee.create({
+    data: {
+      event_id: EVENT_ID_2,
+      email: "mode-b-duplicate@example.com",
+      name: "Mode B Duplicate",
+      external_uuid: "agency-uuid-001",
+      qr_payload: "AGENCY-QR-001",
+    },
+  });
 });
 
 afterAll(async () => {
-  await prisma.attendee.deleteMany({ where: { event_id: EVENT_ID } });
-  await prisma.event.deleteMany({ where: { id: EVENT_ID } });
+  await prisma.attendee.deleteMany({ where: { event_id: { in: [EVENT_ID, EVENT_ID_2] } } });
+  await prisma.event.deleteMany({ where: { id: { in: [EVENT_ID, EVENT_ID_2] } } });
   await prisma.$disconnect();
 });
 
@@ -81,16 +104,21 @@ describe("resolveTicket — Mode A (internal token)", () => {
 });
 
 describe("resolveTicket — Mode B (agency)", () => {
-  it("resolves by qr_payload", async () => {
-    const result = await resolveTicket("AGENCY-QR-001", prisma);
+  it("resolves by qr_payload when event context is provided", async () => {
+    const result = await resolveTicket("AGENCY-QR-001", prisma, { eventId: EVENT_ID });
     expect(result?.mode).toBe("agency");
     expect(result?.attendee.email).toBe("mode-b@example.com");
   });
 
-  it("resolves by external_uuid", async () => {
-    const result = await resolveTicket("agency-uuid-001", prisma);
+  it("resolves by external_uuid when event context is provided", async () => {
+    const result = await resolveTicket("agency-uuid-001", prisma, { eventId: EVENT_ID });
     expect(result?.mode).toBe("agency");
     expect(result?.attendee.email).toBe("mode-b@example.com");
+  });
+
+  it("does not resolve agency identifiers without event context", async () => {
+    expect(await resolveTicket("AGENCY-QR-001", prisma)).toBeNull();
+    expect(await resolveTicket("agency-uuid-001", prisma)).toBeNull();
   });
 });
 
@@ -100,7 +128,7 @@ describe("resolveTicket — not found", () => {
   });
 
   it("returns null for unknown agency payload", async () => {
-    expect(await resolveTicket("UNKNOWN-PAYLOAD", prisma)).toBeNull();
+    expect(await resolveTicket("UNKNOWN-PAYLOAD", prisma, { eventId: EVENT_ID })).toBeNull();
   });
 
   it("returns null for full URL with unknown token", async () => {

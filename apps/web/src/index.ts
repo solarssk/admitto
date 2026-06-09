@@ -34,8 +34,8 @@ app.get("/t/:token", async (c) => {
 
   const { attendee, event } = resolved;
 
-  if (attendee.status === "revoked") {
-    return c.html(renderRevoked(attendee.name, event.title), 200);
+  if (attendee.status === "revoked" || attendee.status === "cancelled") {
+    return c.html(renderRevoked(attendee.name, event.title, attendee.status), 200);
   }
   const agencyPayload =
     resolved.mode === "agency" ? (attendee.qr_payload ?? attendee.external_uuid ?? null) : null;

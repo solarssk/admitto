@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { hashToken } from "./hash.js";
 import { extractTokenFromUrl, looksLikeInternalToken } from "./url.js";
-import type { ResolvedTicket } from "./types.js";
+import type { ResolveTicketContext, ResolvedTicket } from "./types.js";
 
 /**
  * Resolve a scanned value to an attendee + event record.
@@ -9,8 +9,8 @@ import type { ResolvedTicket } from "./types.js";
  * Resolution order:
  *   1. Full ticket URL  → extract token → sha256 → lookup by token_hash  (Mode A)
  *   2. Raw internal token (base64url ~43 chars) → sha256 → lookup by token_hash  (Mode A)
- *   3. Exact match on qr_payload  (Mode B)
- *   4. Exact match on external_uuid  (Mode B)
+ *   3. Exact match on qr_payload  (Mode B, requires eventId context)
+ *   4. Exact match on external_uuid  (Mode B, requires eventId context)
  *
  * Returns null when no attendee is found.
  * The same resolver is reused by the check-in flow in Step 3.
@@ -18,6 +18,7 @@ import type { ResolvedTicket } from "./types.js";
 export async function resolveTicket(
   scanned: string,
   prisma: PrismaClient,
+  context: ResolveTicketContext = {},
 ): Promise<ResolvedTicket | null> {
   // Mode A — URL or raw token
   const rawToken = extractTokenFromUrl(scanned) ?? (looksLikeInternalToken(scanned) ? scanned : null);
@@ -31,16 +32,19 @@ export async function resolveTicket(
     if (row) return toResolved(row, "internal");
   }
 
+  // Mode B lookups are event-scoped only. Agency identifiers are not assumed to be globally unique.
+  if (!context.eventId) return null;
+
   // Mode B — agency qr_payload
   const byQr = await prisma.attendee.findFirst({
-    where: { qr_payload: scanned },
+    where: { event_id: context.eventId, qr_payload: scanned },
     include: { event: true },
   });
   if (byQr) return toResolved(byQr, "agency");
 
   // Mode B — agency external_uuid
   const byUuid = await prisma.attendee.findFirst({
-    where: { external_uuid: scanned },
+    where: { event_id: context.eventId, external_uuid: scanned },
     include: { event: true },
   });
   if (byUuid) return toResolved(byUuid, "agency");

@@ -1,5 +1,8 @@
 -- Step 2 (ADR 0001): replace raw token storage with SHA-256 hash.
 -- token_hash is nullable to support Mode B (agency) attendees that have no internal token.
+-- This migration intentionally discards Step 1 placeholder tokens by setting token_hash = NULL.
+-- That is acceptable only for greenfield/dev data where no real tickets have been issued yet.
+-- If real issued tickets existed, a dedicated backfill from old raw token -> sha256(token) would be required.
 -- SQLite requires full table recreation to drop a column and change constraints.
 PRAGMA foreign_keys=OFF;
 

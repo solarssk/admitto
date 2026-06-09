@@ -52,13 +52,18 @@ export function renderNotFound(): string {
 </html>`;
 }
 
-export function renderRevoked(name: string, eventTitle: string): string {
+export function renderRevoked(name: string, eventTitle: string, reason: "revoked" | "cancelled" = "revoked"): string {
+  const heading = reason === "cancelled" ? "Ticket cancelled" : "Ticket revoked";
+  const message =
+    reason === "cancelled"
+      ? `${esc(name)}'s ticket for <strong>${esc(eventTitle)}</strong> has been cancelled.`
+      : `${esc(name)}'s ticket for <strong>${esc(eventTitle)}</strong> has been revoked.`;
   return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Ticket revoked</title></head>
+<head><meta charset="utf-8"><title>${heading}</title></head>
 <body style="font-family:system-ui,sans-serif;max-width:480px;margin:2rem auto;padding:0 1rem">
-  <h1>Ticket revoked</h1>
-  <p>${esc(name)}'s ticket for <strong>${esc(eventTitle)}</strong> has been revoked.</p>
+  <h1>${heading}</h1>
+  <p>${message}</p>
 </body>
 </html>`;
 }

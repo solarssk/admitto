@@ -30,18 +30,43 @@ export async function issueTicket(
     return { status: "agency", mode: "agency", attendeeId, qrPayload };
   }
 
+  if (attendee.status === "cancelled" || attendee.status === "revoked") {
+    const reason = attendee.status === "cancelled" ? "cancelled" : "revoked";
+    return { status: "not_issuable", mode: "internal", attendeeId, reason };
+  }
+
   // Mode A — already issued; do NOT rotate.
   if (attendee.token_hash !== null) {
     return { status: "already_issued", mode: "internal", attendeeId };
   }
 
-  // Mode A — first issuance.
+  // Mode A — first issuance. Atomic compare-and-set: only the first concurrent caller wins.
   const token = generateToken();
   const tokenHash = hashToken(token);
-  await prisma.attendee.update({
-    where: { id: attendeeId },
+  const updated = await prisma.attendee.updateMany({
+    where: {
+      id: attendeeId,
+      token_hash: null,
+      status: { notIn: ["cancelled", "revoked"] },
+    },
     data: { token_hash: tokenHash },
   });
+  if (updated.count === 0) {
+    const current = await prisma.attendee.findUnique({ where: { id: attendeeId } });
+    if (!current) throw new Error(`Attendee not found: ${attendeeId}`);
+    if (current.qr_payload !== null || current.external_uuid !== null) {
+      const qrPayload = current.qr_payload ?? current.external_uuid!;
+      return { status: "agency", mode: "agency", attendeeId, qrPayload };
+    }
+    if (current.status === "cancelled" || current.status === "revoked") {
+      const reason = current.status === "cancelled" ? "cancelled" : "revoked";
+      return { status: "not_issuable", mode: "internal", attendeeId, reason };
+    }
+    if (current.token_hash !== null) {
+      return { status: "already_issued", mode: "internal", attendeeId };
+    }
+    throw new Error(`Ticket issuance failed for attendee ${attendeeId}`);
+  }
   const ticketUrl = buildTicketUrl(baseUrl, token);
   return { status: "issued", mode: "internal", attendeeId, token, tokenHash, ticketUrl };
 }
@@ -65,14 +90,16 @@ export async function issueTicketsForEvent(
   let issued = 0;
   let alreadyIssued = 0;
   let agency = 0;
+  let notIssuable = 0;
 
   for (const attendee of attendees) {
     const result = await issueTicket(attendee.id, prisma, baseUrl);
     results.push(result);
     if (result.status === "issued") issued++;
     else if (result.status === "already_issued") alreadyIssued++;
-    else agency++;
+    else if (result.status === "agency") agency++;
+    else notIssuable++;
   }
 
-  return { results, issued, alreadyIssued, agency };
+  return { results, issued, alreadyIssued, agency, notIssuable };
 }
