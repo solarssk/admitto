@@ -1,9 +1,15 @@
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@admitto/db";
 import { resolveTicket, generateQrPng, buildQrPayload } from "@admitto/tickets";
-import { renderTicket, renderNotFound, renderRevoked, renderServerError } from "./ticket-page.js";
+import {
+  getTicketPageSecurityHeaders,
+  renderTicket,
+  renderNotFound,
+  renderRevoked,
+  renderServerError,
+} from "./ticket-page.js";
 import { resolveBaseUrl } from "./config.js";
 
 // Fail-fast in production: BASE_URL must be set explicitly.
@@ -11,6 +17,14 @@ import { resolveBaseUrl } from "./config.js";
 const baseUrl = resolveBaseUrl();
 
 const app = new Hono();
+const ticketPageHeaders = getTicketPageSecurityHeaders();
+
+function htmlWithSecurityHeaders(c: Context, html: string, status: 200 | 404 | 410 | 500) {
+  for (const [name, value] of Object.entries(ticketPageHeaders)) {
+    c.header(name, value);
+  }
+  return c.html(html, status);
+}
 
 app.get("/t/:token", async (c) => {
   const token = c.req.param("token");
@@ -28,17 +42,17 @@ app.get("/t/:token", async (c) => {
     } else {
       console.error("resolveTicket unexpected error:", err);
     }
-    return c.html(renderServerError(), 500);
+    return htmlWithSecurityHeaders(c, renderServerError(), 500);
   }
 
   if (!resolved) {
-    return c.html(renderNotFound(), 404);
+    return htmlWithSecurityHeaders(c, renderNotFound(), 404);
   }
 
   const { attendee, event } = resolved;
 
   if (attendee.status === "revoked" || attendee.status === "cancelled") {
-    return c.html(renderRevoked(attendee.name, event.title, attendee.status), 410);
+    return htmlWithSecurityHeaders(c, renderRevoked(attendee.name, event.title, attendee.status), 410);
   }
 
   let qrPayload: string;
@@ -48,7 +62,7 @@ app.get("/t/:token", async (c) => {
     const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
     if (!agencyPayload) {
       console.error(`Agency attendee ${attendee.id} has neither qr_payload nor external_uuid`);
-      return c.html(renderServerError(), 500);
+      return htmlWithSecurityHeaders(c, renderServerError(), 500);
     }
     qrPayload = buildQrPayload("agency", { agencyPayload });
   }
@@ -59,10 +73,10 @@ app.get("/t/:token", async (c) => {
     qrDataUrl = `data:image/png;base64,${qrPng.toString("base64")}`;
   } catch (err) {
     console.error("generateQrPng failed:", err);
-    return c.html(renderServerError(), 500);
+    return htmlWithSecurityHeaders(c, renderServerError(), 500);
   }
 
-  return c.html(renderTicket(resolved, qrDataUrl), 200);
+  return htmlWithSecurityHeaders(c, renderTicket(resolved, qrDataUrl), 200);
 });
 
 const port = parseInt(process.env["PORT"] ?? "3000", 10);

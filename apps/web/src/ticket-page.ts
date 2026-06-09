@@ -8,6 +8,33 @@ function formatDate(d: Date): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
+function badgeClass(status: string): string {
+  switch (status) {
+    case "registered":
+      return "badge-registered";
+    case "confirmed":
+      return "badge-confirmed";
+    case "checked_in":
+      return "badge-checked_in";
+    case "revoked":
+      return "badge-revoked";
+    case "cancelled":
+      return "badge-cancelled";
+    default:
+      return "badge-unknown";
+  }
+}
+
+export function getTicketPageSecurityHeaders(): Record<string, string> {
+  return {
+    "Cache-Control": "private, no-store, max-age=0",
+    "Content-Security-Policy":
+      "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'none'; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+  };
+}
+
 export function renderTicket(resolved: ResolvedTicket, qrDataUrl: string): string {
   const { attendee, event } = resolved;
   return `<!DOCTYPE html>
@@ -26,6 +53,8 @@ export function renderTicket(resolved: ResolvedTicket, qrDataUrl: string): strin
     .badge-confirmed  { background: #dcfce7; color: #166534; }
     .badge-checked_in { background: #f0fdf4; color: #15803d; }
     .badge-revoked    { background: #fee2e2; color: #991b1b; }
+    .badge-cancelled  { background: #fff7ed; color: #c2410c; }
+    .badge-unknown    { background: #f3f4f6; color: #374151; }
     .qr { margin-top: 1.5rem; text-align: center; }
     .qr img { width: 220px; height: 220px; }
   </style>
@@ -35,7 +64,7 @@ export function renderTicket(resolved: ResolvedTicket, qrDataUrl: string): strin
   <p class="meta">${esc(formatDate(event.date))}${event.location ? ` · ${esc(event.location)}` : ""}</p>
   <p class="name">${esc(attendee.name)}</p>
   ${attendee.ticket_type ? `<p>${esc(attendee.ticket_type)}</p>` : ""}
-  <span class="badge badge-${esc(attendee.status)}">${esc(attendee.status)}</span>
+  <span class="badge ${badgeClass(attendee.status)}">${esc(attendee.status)}</span>
   <div class="qr"><img src="${qrDataUrl}" alt="QR code for ticket entry"></div>
 </body>
 </html>`;

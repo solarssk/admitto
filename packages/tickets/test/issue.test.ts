@@ -170,6 +170,58 @@ describe("issueTicket — not found", () => {
 });
 
 describe("issueTicketsForEvent", () => {
+  it("issues fresh internal attendees in batch and persists token hashes", async () => {
+    const scopedEventId = "test-event-issue-batch-internal-001";
+    await prisma.event.create({
+      data: {
+        id: scopedEventId,
+        title: "Issue Internal Batch Event",
+        slug: "issue-internal-batch-event",
+        date: new Date("2026-11-01T09:00:00Z"),
+      },
+    });
+
+    const internalA = await prisma.attendee.create({
+      data: {
+        event_id: scopedEventId,
+        email: "batch-internal-a@example.com",
+        name: "Batch Internal A",
+      },
+    });
+    const internalB = await prisma.attendee.create({
+      data: {
+        event_id: scopedEventId,
+        email: "batch-internal-b@example.com",
+        name: "Batch Internal B",
+      },
+    });
+
+    const summary = await issueTicketsForEvent(scopedEventId, prisma, BASE_URL);
+
+    expect(summary.issued).toBe(2);
+    expect(summary.alreadyIssued).toBe(0);
+    expect(summary.agency).toBe(0);
+    expect(summary.notIssuable).toBe(0);
+
+    const issuedResults = summary.results.filter(
+      (result): result is Extract<typeof result, { status: "issued" }> => result.status === "issued",
+    );
+    expect(issuedResults).toHaveLength(2);
+    expect(issuedResults.map((result) => result.attendeeId).sort()).toEqual(
+      [internalA.id, internalB.id].sort(),
+    );
+    expect(issuedResults.every((result) => looksLikeInternalToken(result.token))).toBe(true);
+
+    const persisted = await prisma.attendee.findMany({
+      where: { event_id: scopedEventId },
+      select: { id: true, token_hash: true },
+    });
+    expect(persisted.every((attendee) => attendee.token_hash?.length === 64)).toBe(true);
+
+    await prisma.attendee.deleteMany({ where: { event_id: scopedEventId } });
+    await prisma.event.delete({ where: { id: scopedEventId } });
+  });
+
   it("issues remaining unissued and skips already-issued, returns correct counts", async () => {
     const scopedEventId = "test-event-issue-summary-001";
     await prisma.event.create({
