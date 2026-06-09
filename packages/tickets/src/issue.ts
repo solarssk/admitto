@@ -47,6 +47,8 @@ export async function issueTicket(
     where: {
       id: attendeeId,
       token_hash: null,
+      qr_payload: null,
+      external_uuid: null,
       status: { notIn: ["cancelled", "revoked"] },
     },
     data: { token_hash: tokenHash },

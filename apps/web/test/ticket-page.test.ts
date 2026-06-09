@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderRevoked } from "../src/ticket-page.js";
+import { renderRevoked, renderServerError } from "../src/ticket-page.js";
 
 describe("renderRevoked", () => {
   it("renders cancelled tickets with cancelled wording", () => {
@@ -13,5 +13,13 @@ describe("renderRevoked", () => {
     const html = renderRevoked("Bob Example", "Launch Event", "revoked");
     expect(html).toContain("Ticket revoked");
     expect(html).toContain("has been revoked");
+  });
+});
+
+describe("renderServerError", () => {
+  it("renders a generic support-safe error page", () => {
+    const html = renderServerError();
+    expect(html).toContain("Server error");
+    expect(html).toContain("Unable to render this ticket right now");
   });
 });

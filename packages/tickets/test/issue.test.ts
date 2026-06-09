@@ -171,15 +171,63 @@ describe("issueTicket — not found", () => {
 
 describe("issueTicketsForEvent", () => {
   it("issues remaining unissued and skips already-issued, returns correct counts", async () => {
-    // attendeeA and race@example.com already issued in previous describe blocks;
-    // attendeeB is agency; attendeeCancelled is not issuable.
-    const summary = await issueTicketsForEvent(EVENT_ID, prisma, BASE_URL);
-    // attendeeA + race@example.com: already_issued; attendeeB: agency; attendeeCancelled: not_issuable
+    const scopedEventId = "test-event-issue-summary-001";
+    await prisma.event.create({
+      data: {
+        id: scopedEventId,
+        title: "Issue Summary Event",
+        slug: "issue-summary-event",
+        date: new Date("2026-10-01T09:00:00Z"),
+      },
+    });
+
+    const issuedOne = await prisma.attendee.create({
+      data: {
+        event_id: scopedEventId,
+        email: "already-issued-one@example.com",
+        name: "Already Issued One",
+        token_hash: hashToken("summary-issued-one"),
+      },
+    });
+    const issuedTwo = await prisma.attendee.create({
+      data: {
+        event_id: scopedEventId,
+        email: "already-issued-two@example.com",
+        name: "Already Issued Two",
+        token_hash: hashToken("summary-issued-two"),
+      },
+    });
+    const agency = await prisma.attendee.create({
+      data: {
+        event_id: scopedEventId,
+        email: "agency-summary@example.com",
+        name: "Agency Summary",
+        external_uuid: "agency-summary-uuid",
+        qr_payload: "AGENCY-SUMMARY-QR",
+      },
+    });
+    const cancelled = await prisma.attendee.create({
+      data: {
+        event_id: scopedEventId,
+        email: "cancelled-summary@example.com",
+        name: "Cancelled Summary",
+        status: "cancelled",
+      },
+    });
+
+    const summary = await issueTicketsForEvent(scopedEventId, prisma, BASE_URL);
+
     expect(summary.issued).toBe(0);
     expect(summary.alreadyIssued).toBe(2);
     expect(summary.agency).toBe(1);
     expect(summary.notIssuable).toBe(1);
     expect(summary.results).toHaveLength(4);
+    expect(summary.results.map((result) => result.attendeeId).sort()).toEqual(
+      [issuedOne.id, issuedTwo.id, agency.id, cancelled.id].sort(),
+    );
+
+    await prisma.attendee.deleteMany({ where: { event_id: scopedEventId } });
+    await prisma.event.delete({ where: { id: scopedEventId } });
   });
 
   it("throws for unknown event", async () => {

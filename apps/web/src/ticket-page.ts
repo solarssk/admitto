@@ -52,6 +52,17 @@ export function renderNotFound(): string {
 </html>`;
 }
 
+export function renderServerError(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Server error</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:480px;margin:2rem auto;padding:0 1rem">
+  <h1>Server error</h1>
+  <p>Unable to render this ticket right now. Please contact support.</p>
+</body>
+</html>`;
+}
+
 export function renderRevoked(name: string, eventTitle: string, reason: "revoked" | "cancelled" = "revoked"): string {
   const heading = reason === "cancelled" ? "Ticket cancelled" : "Ticket revoked";
   const message =
