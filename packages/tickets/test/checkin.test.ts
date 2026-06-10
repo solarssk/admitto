@@ -278,8 +278,19 @@ describe("checkInScan — event scoping", () => {
 describe("getRecentCheckIns", () => {
   it("returns check-ins ordered newest first", async () => {
     const history = await getRecentCheckIns(EVENT_ID, prisma);
-    expect(Array.isArray(history)).toBe(true);
-    expect(history.length).toBeGreaterThan(0);
+    expect(history.length).toBeGreaterThan(1);
+    // Adjacent items must be in descending order; when timestamps tie, id breaks the tie (desc).
+    for (let i = 0; i < history.length - 1; i++) {
+      const curr = history[i]!;
+      const next = history[i + 1]!;
+      const currTime = curr.checked_in_at.getTime();
+      const nextTime = next.checked_in_at.getTime();
+      if (currTime === nextTime) {
+        expect(curr.id > next.id).toBe(true);
+      } else {
+        expect(currTime).toBeGreaterThan(nextTime);
+      }
+    }
   });
 
   it("respects limit", async () => {
