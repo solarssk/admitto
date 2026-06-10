@@ -1,7 +1,9 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { hashToken } from "./hash.js";
 import { extractTokenFromUrl, looksLikeInternalToken } from "./url.js";
 import type { ResolveTicketContext, ResolvedTicket } from "./types.js";
+
+type DbClient = PrismaClient | Prisma.TransactionClient;
 
 /**
  * Resolve a scanned value to an attendee + event record.
@@ -17,7 +19,7 @@ import type { ResolveTicketContext, ResolvedTicket } from "./types.js";
  */
 export async function resolveTicket(
   scanned: string,
-  prisma: PrismaClient,
+  prisma: DbClient,
   context: ResolveTicketContext = {},
 ): Promise<ResolvedTicket | null> {
   // Mode A — URL or raw token
