@@ -29,16 +29,20 @@ import { resolveTicket } from "../src/resolve.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
 const EVENT_ID = "test-event-toctou-cas-001";
+const TEST_DATABASE_URL = process.env["DATABASE_URL"] ?? "file:./tickets-test.db";
 
 let prisma: PrismaClient;
 
 beforeAll(async () => {
+  process.env["DATABASE_URL"] = TEST_DATABASE_URL;
   execSync("npx prisma db push --force-reset", {
     cwd: DB_ROOT,
-    env: { ...process.env, DATABASE_URL: process.env["DATABASE_URL"] ?? "file:./tickets-test.db" },
+    env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
     stdio: "pipe",
   });
-  prisma = new PrismaClient();
+  prisma = new PrismaClient({
+    datasources: { db: { url: TEST_DATABASE_URL } },
+  });
   await prisma.event.create({
     data: {
       id: EVENT_ID,
@@ -58,9 +62,7 @@ afterAll(async () => {
 });
 
 describe("checkInScan TOCTOU — CAS re-read branch (count=0 due to status change)", () => {
-  let attendeeId: string;
-
-  it("returns REVOKED (not ALREADY_CHECKED_IN) when status changes to cancelled between resolve and CAS", async () => {
+  it("returns REVOKED, keeps admitted_at null, and logs REVOKED when status changes to cancelled between resolve and CAS", async () => {
     const token = generateToken();
     const att = await prisma.attendee.create({
       data: {
@@ -68,15 +70,10 @@ describe("checkInScan TOCTOU — CAS re-read branch (count=0 due to status chang
         email: "toctou-cas@example.com",
         name: "TOCTOU CAS User",
         token_hash: hashToken(token),
-        // DB state AFTER TOCTOU: status is cancelled, admitted_at is still null.
-        // CAS predicate (status IN admittable) will return count=0.
         status: "cancelled",
       },
     });
-    attendeeId = att.id;
 
-    // Mock resolveTicket to return the PRE-TOCTOU snapshot (status=registered).
-    // This bypasses the early isAdmittable() check and drives execution into the CAS path.
     vi.mocked(resolveTicket).mockResolvedValueOnce({
       mode: "internal",
       attendee: {
@@ -100,24 +97,24 @@ describe("checkInScan TOCTOU — CAS re-read branch (count=0 due to status chang
 
     const result = await checkInScan({ scanned: token, eventId: EVENT_ID }, prisma);
 
-    // CAS: count=0 because DB status is "cancelled" (not in ADMITTABLE_STATUSES).
-    // Re-read: status="cancelled" → !isAdmittable → REVOKED.
+    expect(vi.mocked(resolveTicket)).toHaveBeenCalledOnce();
+    expect(vi.mocked(resolveTicket)).toHaveBeenCalledWith(
+      token,
+      expect.anything(),
+      { eventId: EVENT_ID },
+    );
     expect(result.status).toBe("REVOKED");
-  });
 
-  it("admitted_at stays null after TOCTOU-path REVOKED", async () => {
-    const att = await prisma.attendee.findUnique({ where: { id: attendeeId } });
-    expect(att?.admitted_at).toBeNull();
-  });
+    const requeried = await prisma.attendee.findUnique({ where: { id: att.id } });
+    expect(requeried?.admitted_at).toBeNull();
 
-  it("logs REVOKED to CheckIn — not ALREADY_CHECKED_IN", async () => {
     const revokedLog = await prisma.checkIn.findFirst({
-      where: { attendee_id: attendeeId, status: "REVOKED" },
+      where: { attendee_id: att.id, status: "REVOKED" },
     });
     expect(revokedLog).not.toBeNull();
 
     const wrongLog = await prisma.checkIn.findFirst({
-      where: { attendee_id: attendeeId, status: "ALREADY_CHECKED_IN" },
+      where: { attendee_id: att.id, status: "ALREADY_CHECKED_IN" },
     });
     expect(wrongLog).toBeNull();
   });

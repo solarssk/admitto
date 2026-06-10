@@ -2,7 +2,8 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { resolveTicket } from "./resolve.js";
 import type { CheckInScanParams, CheckInResult, CheckInHistoryEntry } from "./types.js";
 
-// Local alias — avoids cross-package build-order dependency. Follow-up: move to @admitto/shared.
+// Local alias — avoids cross-package build-order dependency.
+// Proper fix: TypeScript project references, or move to @admitto/shared once CI build-order is solved.
 type AttendeeStatus = "registered" | "confirmed" | "cancelled";
 
 // Admittable statuses — single source of truth for both isAdmittable() and the CAS predicate.

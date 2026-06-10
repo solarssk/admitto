@@ -141,6 +141,18 @@ describe("POST /api/checkin/scan — input validation", () => {
       expect.anything(),
     );
   });
+
+  it("returns 500 when domain function throws", async () => {
+    vi.mocked(checkInScan).mockRejectedValueOnce(new Error("DB error"));
+    const res = await app.request("/api/checkin/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scanned: "TOKEN-ABC", eventId: "evt-1" }),
+    });
+    expect(res.status).toBe(500);
+    const json = await res.json() as { error: string };
+    expect(json.error).toBe("server error");
+  });
 });
 
 describe("GET /api/checkin/history — input validation", () => {
@@ -159,5 +171,27 @@ describe("GET /api/checkin/history — input validation", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(Array.isArray(json)).toBe(true);
+    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 10);
+  });
+
+  it("falls back to limit 10 when limit query param is non-numeric", async () => {
+    vi.mocked(getRecentCheckIns).mockResolvedValueOnce([]);
+    const res = await app.request("/api/checkin/history?eventId=evt-1&limit=not-a-number");
+    expect(res.status).toBe(200);
+    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 10);
+  });
+
+  it("passes negative limit through to domain (clamped in getRecentCheckIns)", async () => {
+    vi.mocked(getRecentCheckIns).mockResolvedValueOnce([]);
+    const res = await app.request("/api/checkin/history?eventId=evt-1&limit=-5");
+    expect(res.status).toBe(200);
+    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), -5);
+  });
+
+  it("passes large limit through to domain (clamped in getRecentCheckIns)", async () => {
+    vi.mocked(getRecentCheckIns).mockResolvedValueOnce([]);
+    const res = await app.request("/api/checkin/history?eventId=evt-1&limit=999");
+    expect(res.status).toBe(200);
+    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 999);
   });
 });
