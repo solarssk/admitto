@@ -1,6 +1,8 @@
-import type { PrismaClient } from "@prisma/client";
-import type { AttendeeStatus } from "@admitto/db";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { resolveTicket } from "./resolve.js";
+
+// Local alias matching packages/db/src/status.ts — avoids cross-package build-order dependency.
+type AttendeeStatus = "registered" | "confirmed" | "cancelled";
 import type { CheckInScanParams, CheckInResult } from "./types.js";
 
 export function isAdmittable(status: AttendeeStatus): boolean {
@@ -22,7 +24,7 @@ export async function checkInScan(
 ): Promise<CheckInResult> {
   const { scanned, eventId, operator, deviceId } = params;
 
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient): Promise<CheckInResult> => {
     const resolved = await resolveTicket(scanned, tx, { eventId });
     if (!resolved) return { status: "INVALID" };
 
@@ -48,7 +50,7 @@ export async function checkInScan(
     });
 
     const isFirst = updated.count === 1;
-    const checkInStatus = isFirst ? "VALID" : "ALREADY_CHECKED_IN";
+    const checkInStatus: "VALID" | "ALREADY_CHECKED_IN" = isFirst ? "VALID" : "ALREADY_CHECKED_IN";
 
     let admittedAt: Date;
     if (isFirst) {
