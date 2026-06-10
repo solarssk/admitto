@@ -73,7 +73,7 @@ export type CheckInHistoryEntry = {
   checked_in_at: Date;
   checked_in_by: string | null;
   device_id: string | null;
-  source: string;
+  source: string | null;
   notes: string | null;
   created_at: Date;
   attendee: { name: string; ticket_type: string | null };
