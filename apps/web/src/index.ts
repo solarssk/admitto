@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono, type Context } from "hono";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@admitto/db";
-import { resolveTicket, generateQrPng, buildQrPayload } from "@admitto/tickets";
+import { resolveTicket, generateQrPng, buildQrPayload, checkInScan, getRecentCheckIns } from "@admitto/tickets";
 import {
   getTicketPageSecurityHeaders,
   renderTicket,
@@ -77,6 +77,50 @@ app.get("/t/:token", async (c) => {
   }
 
   return htmlWithSecurityHeaders(c, renderTicket(resolved, qrDataUrl), 200);
+});
+
+// POST /api/checkin/scan — validate a scanned QR/token for a given event
+// Body: { scanned: string, eventId: string, deviceId?: string }
+// Returns domain result: VALID / ALREADY_CHECKED_IN / REVOKED / INVALID (all 200)
+// 400 = malformed input, 500 = server/runtime failure
+app.post("/api/checkin/scan", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  if (!body || typeof body !== "object") return c.json({ error: "body required" }, 400);
+  const { scanned, eventId, deviceId } = body as Record<string, unknown>;
+  if (typeof scanned !== "string" || !scanned) return c.json({ error: "scanned required" }, 400);
+  if (typeof eventId !== "string" || !eventId) return c.json({ error: "eventId required" }, 400);
+
+  try {
+    const result = await checkInScan(
+      { scanned, eventId, deviceId: typeof deviceId === "string" ? deviceId : undefined },
+      prisma,
+    );
+    return c.json(result, 200);
+  } catch (err) {
+    console.error("checkInScan failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
+});
+
+// GET /api/checkin/history?eventId=...&limit=10 — recent scans for operator view
+// No PII (email excluded), hard cap 50
+app.get("/api/checkin/history", async (c) => {
+  const eventId = c.req.query("eventId");
+  if (!eventId) return c.json({ error: "eventId required" }, 400);
+  const limitParam = parseInt(c.req.query("limit") ?? "10", 10);
+  const limit = Number.isFinite(limitParam) ? limitParam : 10;
+  try {
+    const history = await getRecentCheckIns(eventId, prisma, limit);
+    return c.json(history, 200);
+  } catch (err) {
+    console.error("getRecentCheckIns failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
 });
 
 const port = parseInt(process.env["PORT"] ?? "3000", 10);

@@ -47,6 +47,24 @@ export type IssueEventSummary = {
   notIssuable: number;
 };
 
+export type CheckInScanParams = {
+  scanned: string;
+  eventId: string;
+  operator?: string;
+  deviceId?: string;
+};
+
+export type CheckInAttendeeInfo = {
+  name: string;
+  ticket_type: string | null;
+};
+
+export type CheckInResult =
+  | { status: "VALID";              attendee: CheckInAttendeeInfo; admittedAt: Date }
+  | { status: "ALREADY_CHECKED_IN"; attendee: CheckInAttendeeInfo; admittedAt: Date }
+  | { status: "REVOKED";            attendee: CheckInAttendeeInfo }
+  | { status: "INVALID" };
+
 export type ResolvedTicket = {
   mode: TicketMode;
   attendee: {

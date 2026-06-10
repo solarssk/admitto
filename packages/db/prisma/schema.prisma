@@ -37,6 +37,10 @@ model Attendee {
   company          String?
   department       String?
   status           String          @default("registered")
+  // Set atomically on first VALID check-in (CAS WHERE admitted_at IS NULL).
+  // Null = not yet admitted. Reset only by explicit admin revert action.
+  admitted_at      DateTime?
+  admitted_by      String?
   created_at       DateTime        @default(now())
   email_deliveries EmailDelivery[]
   wallet_pass      WalletPass?
