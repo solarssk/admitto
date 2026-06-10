@@ -102,5 +102,5 @@ export async function getRecentCheckIns(
     include: {
       attendee: { select: { name: true, ticket_type: true } },
     },
-  }) as Promise<CheckInHistoryEntry[]>;
+  });
 }
