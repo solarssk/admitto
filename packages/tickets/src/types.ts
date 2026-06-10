@@ -65,6 +65,20 @@ export type CheckInResult =
   | { status: "REVOKED";            attendee: CheckInAttendeeInfo }
   | { status: "INVALID" };
 
+export type CheckInHistoryEntry = {
+  id: string;
+  event_id: string;
+  attendee_id: string;
+  status: string;
+  checked_in_at: Date;
+  checked_in_by: string | null;
+  device_id: string | null;
+  source: string;
+  notes: string | null;
+  created_at: Date;
+  attendee: { name: string; ticket_type: string | null };
+};
+
 export type ResolvedTicket = {
   mode: TicketMode;
   attendee: {

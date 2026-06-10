@@ -10,14 +10,22 @@ import {
   renderRevoked,
   renderServerError,
 } from "./ticket-page.js";
-import { resolveBaseUrl } from "./config.js";
+import { resolveBaseUrl, resolveCheckinToken } from "./config.js";
+import { createCheckinGate } from "./checkin-gate.js";
 
 // Fail-fast in production: BASE_URL must be set explicitly.
 // In non-production environments the localhost fallback is acceptable.
 const baseUrl = resolveBaseUrl();
 
+// Fail-fast in non-development: CHECKIN_OPERATOR_TOKEN must be set explicitly (ADR 0003).
+// In development, null is allowed — check-in routes return 503 when unconfigured.
+const checkinToken = resolveCheckinToken();
+
 const app = new Hono();
 const ticketPageHeaders = getTicketPageSecurityHeaders();
+
+// Gate the entire /api/checkin/* namespace. GET /t/:token is not under this prefix and stays public.
+app.use("/api/checkin/*", createCheckinGate(checkinToken));
 
 function htmlWithSecurityHeaders(c: Context, html: string, status: 200 | 404 | 410 | 500) {
   for (const [name, value] of Object.entries(ticketPageHeaders)) {
@@ -91,8 +99,9 @@ app.post("/api/checkin/scan", async (c) => {
     return c.json({ error: "invalid JSON" }, 400);
   }
   if (!body || typeof body !== "object") return c.json({ error: "body required" }, 400);
-  const { scanned, eventId, deviceId } = body as Record<string, unknown>;
-  if (typeof scanned !== "string" || !scanned) return c.json({ error: "scanned required" }, 400);
+  const { scanned: rawScanned, eventId, deviceId } = body as Record<string, unknown>;
+  const scanned = typeof rawScanned === "string" ? rawScanned.trim() : "";
+  if (!scanned) return c.json({ error: "scanned required" }, 400);
   if (typeof eventId !== "string" || !eventId) return c.json({ error: "eventId required" }, 400);
 
   try {
