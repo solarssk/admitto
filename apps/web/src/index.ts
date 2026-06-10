@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono, type Context } from "hono";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@admitto/db";
-import { resolveTicket, generateQrPng, buildQrPayload, checkInScan, getRecentCheckIns } from "@admitto/tickets";
+import { resolveTicket, generateQrPng, buildQrPayload, checkInScan, getRecentCheckIns, isAdmittable } from "@admitto/tickets";
 import {
   getTicketPageSecurityHeaders,
   renderTicket,
@@ -59,8 +59,9 @@ app.get("/t/:token", async (c) => {
 
   const { attendee, event } = resolved;
 
-  if (attendee.status === "revoked" || attendee.status === "cancelled") {
-    return htmlWithSecurityHeaders(c, renderRevoked(attendee.name, event.title, attendee.status), 410);
+  if (!isAdmittable(attendee.status as "registered" | "confirmed" | "cancelled")) {
+    const reason: "revoked" | "cancelled" = attendee.status === "cancelled" ? "cancelled" : "revoked";
+    return htmlWithSecurityHeaders(c, renderRevoked(attendee.name, event.title, reason), 410);
   }
 
   let qrPayload: string;

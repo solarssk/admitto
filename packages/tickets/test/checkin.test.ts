@@ -203,6 +203,47 @@ describe("checkInScan — cancelled → REVOKED", () => {
   });
 });
 
+describe("checkInScan — TOCTOU regression: status non-admittable at CAS time", () => {
+  // Regression for the TOCTOU fix in the CAS predicate (status: { in: ADMITTABLE_STATUSES }).
+  // True concurrency is serialized by SQLite, so we simulate by placing the attendee in a
+  // cancelled state that is still resolvable by token — verifying that the result is always
+  // REVOKED with admitted_at staying null, never a false ALREADY_CHECKED_IN.
+  it("returns REVOKED when attendee is cancelled at scan time", async () => {
+    const token = generateToken();
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "toctou-regression@example.com",
+        name: "TOCTOU Regression",
+        token_hash: hashToken(token),
+        status: "cancelled",
+      },
+    });
+
+    const result = await checkInScan({ scanned: token, eventId: EVENT_ID }, prisma);
+
+    expect(result.status).toBe("REVOKED");
+
+    const persisted = await prisma.attendee.findUnique({ where: { id: att.id } });
+    expect(persisted?.admitted_at).toBeNull();
+  });
+
+  it("logs REVOKED to CheckIn (not ALREADY_CHECKED_IN) for the cancelled case", async () => {
+    const att = await prisma.attendee.findFirst({
+      where: { email: "toctou-regression@example.com", event_id: EVENT_ID },
+    });
+    const log = await prisma.checkIn.findFirst({
+      where: { attendee_id: att!.id, status: "REVOKED" },
+    });
+    expect(log).not.toBeNull();
+
+    const wrongLog = await prisma.checkIn.findFirst({
+      where: { attendee_id: att!.id, status: "ALREADY_CHECKED_IN" },
+    });
+    expect(wrongLog).toBeNull();
+  });
+});
+
 describe("checkInScan — INVALID (unknown scan)", () => {
   it("returns INVALID for an unknown token", async () => {
     const result = await checkInScan({ scanned: generateToken(), eventId: EVENT_ID }, prisma);
