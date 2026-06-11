@@ -52,9 +52,10 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
-    # @admitto/db postinstall runs prisma generate; schema requires DATABASE_URL (no DB connection).
     env:
-      DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto
+      # prisma generate (postinstall) reads schema.prisma only — never connects to a database.
+      # A syntactically valid DSN is required by Prisma's schema parser; the host is intentionally unreachable.
+      DATABASE_URL: postgresql://localhost/prisma-generate-placeholder
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:

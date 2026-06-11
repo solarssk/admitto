@@ -33,8 +33,9 @@ npm run db:seed
 | Script | Description |
 |---|---|
 | `db:generate` | Generates the Prisma client from `prisma/schema.prisma` |
-| `db:migrate` | Applies pending migrations (`prisma migrate deploy`) |
-| `db:migrate:dev` | Creates a new migration during development (`prisma migrate dev`) |
+| `db:migrate` | Applies pending migrations (`prisma migrate deploy`) — does NOT create new ones |
+| `db:migrate:dev` | Creates a new migration from schema changes during development (`prisma migrate dev`) |
+| `db:migrate:status` | Shows which migrations are applied and whether the schema has local drift |
 | `db:seed` | Inserts 1 event + 4 attendees (upsert by `(event_id, email)` — mirrors real import logic) |
 
 From repo root, `npm run db:test-setup` creates `admitto_tickets_test` and `admitto_import_test`
