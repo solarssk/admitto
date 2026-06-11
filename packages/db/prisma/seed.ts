@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
+import { encryptToString } from "@admitto/crypto";
 
 const prisma = new PrismaClient();
 const bobDevToken = "devticketbob0000000000000000000000000000000";
@@ -47,6 +48,7 @@ async function main() {
       email: "bob@example.com",
       name: "Bob Jones",
       token_hash: hashToken(bobDevToken),
+      token_enc: encryptToString(bobDevToken),
       external_uuid: null,
       qr_payload: null,
       status: "confirmed",
@@ -65,12 +67,13 @@ async function main() {
       email: "dave@example.com",
       name: "Dave Brown",
       token_hash: hashToken(daveDevToken),
+      token_enc: encryptToString(daveDevToken),
       external_uuid: null,
       qr_payload: null,
       status: "cancelled",
       note: "Cancelled attendee should render as an invalid ticket",
     },
-  ] as const;
+  ];
 
   let upserted = 0;
   for (const a of attendeeData) {
@@ -79,6 +82,7 @@ async function main() {
       update: {
         name: a.name,
         token_hash: a.token_hash,
+        token_enc: a.token_enc ?? null,
         external_uuid: a.external_uuid,
         qr_payload: a.qr_payload,
         status: a.status,
@@ -88,6 +92,7 @@ async function main() {
         email: a.email,
         name: a.name,
         token_hash: a.token_hash,
+        token_enc: a.token_enc ?? null,
         external_uuid: a.external_uuid,
         qr_payload: a.qr_payload,
         status: a.status,

@@ -27,6 +27,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@admitto/crypto": "*",
     "@prisma/client": "^5.17.0"
   },
   "devDependencies": {

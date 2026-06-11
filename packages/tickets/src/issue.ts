@@ -10,7 +10,7 @@ import type { IssuedTicketResult, IssueEventSummary } from "./types.js";
  *
  * Mode A (no qr_payload, no external_uuid):
  *   - First call: mints a 256-bit token, stores sha256 hash, returns raw token + URL.
- *   - Subsequent calls: idempotent no-op; raw token NOT returned (not stored in DB).
+ *   - Subsequent calls: idempotent no-op; raw token not re-returned (use token_enc for resend).
  *
  * Mode B (qr_payload or external_uuid present):
  *   - No-op: returns agency payload verbatim, never mints an internal token.
