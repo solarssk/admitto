@@ -16,7 +16,8 @@ function hashToken(token: string): string {
 function tryEncrypt(token: string): string | null {
   try {
     return encryptToString(token);
-  } catch {
+  } catch (err) {
+    console.warn("tryEncrypt failed:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }

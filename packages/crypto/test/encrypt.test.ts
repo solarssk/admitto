@@ -107,4 +107,10 @@ describe("keyVersion guard", () => {
       "Unsupported key version: 0",
     );
   });
+
+  it("throws when keyVersion field is absent (legacy payload)", () => {
+    const { keyVersion: _, ...legacyPayload } = encrypt("hello");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => decrypt(legacyPayload as any)).toThrow("Unsupported key version: undefined");
+  });
 });

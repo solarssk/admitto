@@ -21,6 +21,6 @@ ALTER TABLE "RoleAssignment"
   ADD CONSTRAINT "RoleAssignment_scope_id_check"
     CHECK (
       (scope_type = 'instance'    AND scope_id IS NULL) OR
-      (scope_type = 'organization' AND scope_id IS NOT NULL) OR
-      (scope_type = 'event'        AND scope_id IS NOT NULL)
+      (scope_type = 'organization' AND NULLIF(BTRIM(scope_id), '') IS NOT NULL) OR
+      (scope_type = 'event'        AND NULLIF(BTRIM(scope_id), '') IS NOT NULL)
     );
