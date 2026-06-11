@@ -18,6 +18,7 @@ cp packages/db/.env.example packages/db/.env          # already set for docker-c
 # 3. Generate Prisma client and migrate
 npm run db:migrate -w @admitto/db   # prisma migrate deploy
 npm run db:seed -w @admitto/db      # idempotent — safe to run multiple times
+npm run db:test-setup               # from repo root — creates admitto_*_test DBs for package tests
 ```
 
 Or from the repo root using the delegating scripts:
@@ -35,6 +36,9 @@ npm run db:seed
 | `db:migrate` | Applies pending migrations (`prisma migrate deploy`) |
 | `db:migrate:dev` | Creates a new migration during development (`prisma migrate dev`) |
 | `db:seed` | Inserts 1 event + 4 attendees (upsert by `(event_id, email)` — mirrors real import logic) |
+
+From repo root, `npm run db:test-setup` creates `admitto_tickets_test` and `admitto_import_test`
+(idempotent). Required before `npm test` when using the local Docker Postgres.
 
 ## Import
 
@@ -63,5 +67,5 @@ TypeScript unions in `src/status.ts` are the single source of truth for all stat
 - `Attendee.token_hash` — SHA-256 of the raw token; null for agency (Mode B) attendees.
 - `Attendee.qr_payload` — agency-provided QR payload preserved as source of truth.
 - `Attendee.external_uuid` — agency UUID; unique per event `(event_id, external_uuid)` for idempotent re-import.
-- `CheckIn.event_id` — denormalised for event-scoped queries without an Attendee join.
+- `CheckIn.event_id` — denormalised for event-scoped queries; composite FK `(attendee_id, event_id)` → `Attendee(id, event_id)` prevents cross-event mismatches.
 - `CheckIn.status` — `CheckInStatus` value recorded at scan time.

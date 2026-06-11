@@ -42,9 +42,7 @@ jobs:
       - run: npm run build -w @admitto/db
       - run: npm run build -w @admitto/tickets
       - name: Create test databases
-        run: |
-          PGPASSWORD=admitto createdb -h localhost -U admitto admitto_tickets_test || true
-          PGPASSWORD=admitto createdb -h localhost -U admitto admitto_import_test || true
+        run: bash infra/scripts/create-test-dbs.sh
       - name: Run database migrations
         run: npx prisma migrate deploy
         working-directory: packages/db

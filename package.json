@@ -13,7 +13,8 @@
     "typecheck": "npm run build -w @admitto/shared && npm run build -w @admitto/db && npm run typecheck --workspaces --if-present",
     "lint": "eslint 'packages/*/src/**/*.ts'",
     "db:migrate": "npm run db:migrate -w @admitto/db",
-    "db:seed": "npm run db:seed -w @admitto/db"
+    "db:seed": "npm run db:seed -w @admitto/db",
+    "db:test-setup": "bash infra/scripts/create-test-dbs.sh"
   },
   "type": "module",
   "engines": {

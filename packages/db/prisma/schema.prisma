@@ -53,6 +53,8 @@ model Attendee {
   // Agency QR payloads must resolve to at most one attendee per event.
   // NULL qr_payload is allowed for multiple internal attendees.
   @@unique([event_id, qr_payload])
+  // Composite key for CheckIn FK — attendee_id + event_id must match the same row.
+  @@unique([id, event_id])
   @@index([external_uuid])
 }
 
@@ -83,8 +85,8 @@ model EmailDelivery {
 model CheckIn {
   id            String   @id @default(cuid())
   attendee_id   String
-  attendee      Attendee @relation(fields: [attendee_id], references: [id])
   event_id      String
+  attendee      Attendee @relation(fields: [attendee_id, event_id], references: [id, event_id])
   event         Event    @relation(fields: [event_id], references: [id])
   checked_in_at DateTime @default(now())
   // CheckInStatus values — see src/status.ts.
@@ -94,4 +96,6 @@ model CheckIn {
   notes         String?
   device_id     String?
   created_at    DateTime @default(now())
+
+  @@index([event_id, checked_in_at(sort: Desc), id(sort: Desc)])
 }

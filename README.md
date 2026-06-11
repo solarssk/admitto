@@ -23,9 +23,10 @@ docker compose -f infra/docker-compose.yml up -d db
 # 2. Install dependencies
 npm install
 
-# 3. Migrate and seed
+# 3. Migrate, seed, and create test databases
 npm run db:migrate
 npm run db:seed
+npm run db:test-setup
 
 # 4. Run tests
 npm test

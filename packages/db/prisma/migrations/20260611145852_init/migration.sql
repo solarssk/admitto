@@ -95,6 +95,12 @@ CREATE UNIQUE INDEX "Attendee_event_id_qr_payload_key" ON "Attendee"("event_id",
 -- CreateIndex
 CREATE UNIQUE INDEX "WalletPass_attendee_id_key" ON "WalletPass"("attendee_id");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "Attendee_id_event_id_key" ON "Attendee"("id", "event_id");
+
+-- CreateIndex
+CREATE INDEX "CheckIn_event_id_checked_in_at_id_idx" ON "CheckIn"("event_id", "checked_in_at" DESC, "id" DESC);
+
 -- AddForeignKey
 ALTER TABLE "Attendee" ADD CONSTRAINT "Attendee_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "Event"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -105,7 +111,7 @@ ALTER TABLE "WalletPass" ADD CONSTRAINT "WalletPass_attendee_id_fkey" FOREIGN KE
 ALTER TABLE "EmailDelivery" ADD CONSTRAINT "EmailDelivery_attendee_id_fkey" FOREIGN KEY ("attendee_id") REFERENCES "Attendee"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "CheckIn" ADD CONSTRAINT "CheckIn_attendee_id_fkey" FOREIGN KEY ("attendee_id") REFERENCES "Attendee"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "CheckIn" ADD CONSTRAINT "CheckIn_attendee_event_fkey" FOREIGN KEY ("attendee_id", "event_id") REFERENCES "Attendee"("id", "event_id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "CheckIn" ADD CONSTRAINT "CheckIn_event_id_fkey" FOREIGN KEY ("event_id") REFERENCES "Event"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
