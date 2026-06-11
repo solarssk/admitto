@@ -14,6 +14,13 @@ async function main() {
     throw new Error("Refusing to run development seed in production");
   }
 
+  // Default organization — stable ID 'org_default' matches the tenant_foundation migration backfill.
+  const org = await prisma.organization.upsert({
+    where: { slug: "default" },
+    update: {},
+    create: { id: "org_default", name: "Default", slug: "default" },
+  });
+
   const event = await prisma.event.upsert({
     where: { slug: "test-event-2024" },
     update: {},
@@ -22,6 +29,7 @@ async function main() {
       slug: "test-event-2024",
       date: new Date("2024-09-01T10:00:00Z"),
       location: "Convention Center, City",
+      organization_id: org.id,
     },
   });
 
@@ -89,6 +97,7 @@ async function main() {
     console.log(`Seeded ${a.email} — ${a.note}`);
   }
 
+  console.log(`Seeded org "${org.slug}" (${org.id})`);
   console.log(`Seeded event "${event.slug}" (${event.id.slice(0, 8)}...) with ${upserted} attendees.`);
 }
 

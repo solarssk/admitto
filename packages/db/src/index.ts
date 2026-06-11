@@ -19,3 +19,11 @@ export {
   WALLET_PASS_STATUS,
   CHECKIN_STATUS,
 } from './status.js';
+
+export {
+  type Role,
+  type ScopeType,
+  ROLES,
+  SCOPE_TYPES,
+  hasScope,
+} from './roles.js';

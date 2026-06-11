@@ -29,10 +29,14 @@ beforeAll(async () => {
 
   prisma = new PrismaClient();
 
+  await prisma.organization.create({
+    data: { id: "org_default", name: "Default", slug: "default" },
+  });
+
   await prisma.event.createMany({
     data: [
-      { id: EVENT_ID, title: "Check-In Test Event", slug: "checkin-test-event", date: new Date("2026-09-01T09:00:00Z") },
-      { id: OTHER_EVENT_ID, title: "Other Event", slug: "other-event-checkin", date: new Date("2026-09-02T09:00:00Z") },
+      { id: EVENT_ID, title: "Check-In Test Event", slug: "checkin-test-event", date: new Date("2026-09-01T09:00:00Z"), organization_id: "org_default" },
+      { id: OTHER_EVENT_ID, title: "Other Event", slug: "other-event-checkin", date: new Date("2026-09-02T09:00:00Z"), organization_id: "org_default" },
     ],
   });
 

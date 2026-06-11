@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { encryptToString } from "@admitto/crypto";
 import { generateToken } from "./token.js";
 import { hashToken } from "./hash.js";
 import { buildTicketUrl } from "./url.js";
@@ -41,8 +42,10 @@ export async function issueTicket(
   }
 
   // Mode A — first issuance. Atomic compare-and-set: only the first concurrent caller wins.
+  // token_enc is written in the same update as token_hash — both succeed or neither does.
   const token = generateToken();
   const tokenHash = hashToken(token);
+  const tokenEnc = encryptToString(token);
   const updated = await prisma.attendee.updateMany({
     where: {
       id: attendeeId,
@@ -51,7 +54,7 @@ export async function issueTicket(
       external_uuid: null,
       status: { notIn: ["cancelled", "revoked"] },
     },
-    data: { token_hash: tokenHash },
+    data: { token_hash: tokenHash, token_enc: tokenEnc },
   });
   if (updated.count === 0) {
     const current = await prisma.attendee.findUnique({ where: { id: attendeeId } });
@@ -117,6 +120,7 @@ export async function issueTicketsForEvent(
       for (const pending of pendingInternal) {
         const token = generateToken();
         const tokenHash = hashToken(token);
+        const tokenEnc = encryptToString(token);
         const updated = await tx.attendee.updateMany({
           where: {
             id: pending.attendeeId,
@@ -125,7 +129,7 @@ export async function issueTicketsForEvent(
             external_uuid: null,
             status: { notIn: ["cancelled", "revoked"] },
           },
-          data: { token_hash: tokenHash },
+          data: { token_hash: tokenHash, token_enc: tokenEnc },
         });
 
         if (updated.count === 1) {

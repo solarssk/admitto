@@ -1,8 +1,8 @@
 {
-  "name": "@admitto/tickets",
+  "name": "@admitto/crypto",
   "version": "0.0.1",
   "private": true,
-  "description": "Admitto ticket domain — token generation, hashing, QR, and resolver",
+  "description": "Admitto encryption — AES-256-GCM at-rest encryption utility (ADR 0006)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,15 +18,8 @@
     "prepare": "tsc -p tsconfig.json",
     "test": "vitest run"
   },
-  "dependencies": {
-    "@admitto/crypto": "*",
-    "qrcode": "^1.5.3"
-  },
   "devDependencies": {
-    "@prisma/client": "^5.17.0",
     "@types/node": "^22.19.20",
-    "@types/qrcode": "^1.5.5",
-    "prisma": "^5.17.0",
     "typescript": "^6.0.3",
     "vitest": "4.1.8"
   }
