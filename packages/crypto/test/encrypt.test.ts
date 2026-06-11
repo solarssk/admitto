@@ -87,3 +87,24 @@ describe("fail-fast — missing ENCRYPTION_KEY", () => {
     expect(() => encrypt("x")).toThrow("32 bytes");
   });
 });
+
+describe("keyVersion guard", () => {
+  it("decrypts successfully with keyVersion 1", () => {
+    const payload = encrypt("hello");
+    expect(decrypt(payload)).toBe("hello");
+  });
+
+  it("throws before any crypto operation on unsupported keyVersion", () => {
+    const payload = encrypt("hello");
+    expect(() => decrypt({ ...payload, keyVersion: 99 })).toThrow(
+      "Unsupported key version: 99",
+    );
+  });
+
+  it("throws before any crypto operation on keyVersion 0", () => {
+    const payload = encrypt("hello");
+    expect(() => decrypt({ ...payload, keyVersion: 0 })).toThrow(
+      "Unsupported key version: 0",
+    );
+  });
+});
