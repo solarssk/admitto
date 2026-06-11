@@ -2,7 +2,7 @@ import nodemailer, { type Transporter } from "nodemailer";
 import type { SmtpConfig } from "../config.js";
 import { SMTP_CAPABILITIES } from "../capabilities.js";
 import { mapSmtpError } from "../errorMapping.js";
-import { formatFromHeader, resolveReplyTo } from "../senderUtils.js";
+import { formatFromHeader, parseAddressList, resolveReplyTo } from "../senderUtils.js";
 import type { MailMessage, MailerAdapter, SendResult } from "../types.js";
 
 /**
@@ -50,18 +50,22 @@ export class SmtpAdapter implements MailerAdapter {
   async send(message: MailMessage): Promise<SendResult> {
     const from = formatFromHeader(this.config);
     const replyTo = resolveReplyTo(this.config.replyTo, message);
-    const envelopeFrom = this.config.envelopeFrom ?? this.config.fromAddress;
+    const mail: nodemailer.SendMailOptions = {
+      from,
+      to: message.to,
+      cc: message.cc,
+      replyTo,
+      subject: message.subject,
+      html: message.html,
+    };
+    if (this.config.envelopeFrom) {
+      const recipients = [...parseAddressList(message.to)];
+      if (message.cc) recipients.push(...parseAddressList(message.cc));
+      mail.envelope = { from: this.config.envelopeFrom, to: recipients };
+    }
 
     try {
-      const info = await this.transporter.sendMail({
-        from,
-        to: message.to,
-        cc: message.cc,
-        replyTo,
-        subject: message.subject,
-        html: message.html,
-        envelope: { from: envelopeFrom, to: message.to },
-      });
+      const info = await this.transporter.sendMail(mail);
       return {
         status: "accepted",
         provider: this.provider,

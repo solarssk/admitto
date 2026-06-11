@@ -38,7 +38,7 @@ export function mapSmtpError(err: unknown): MappedFailure {
       return { status: "failed", retryable: true };
     }
     if (code >= 500) {
-      return { status: "failed", retryable: true };
+      return { status: "rejected", retryable: false };
     }
     if (code >= 400 && code < 500) {
       return { status: "rejected", retryable: false };

@@ -53,9 +53,41 @@ describe("SmtpAdapter", () => {
       expect.objectContaining({
         from: "Admitto Events <events@example.com>",
         replyTo: "reply@example.com",
-        envelope: { from: "bounce@example.com", to: "jan@example.com" },
+        envelope: { from: "bounce@example.com", to: ["jan@example.com"] },
       }),
     );
+  });
+
+  it("includes CC recipients in envelope.to when envelopeFrom is set", async () => {
+    const sendMail = vi.fn(async () => ({ messageId: "<id@test>" }));
+    const adapter = new SmtpAdapter(config, { sendMail } as unknown as nodemailer.Transporter);
+
+    await adapter.send({
+      to: "jan@example.com",
+      cc: "cc1@example.com, cc2@example.com",
+      subject: "S",
+      html: "<p>h</p>",
+    });
+
+    expect(sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        envelope: {
+          from: "bounce@example.com",
+          to: ["jan@example.com", "cc1@example.com", "cc2@example.com"],
+        },
+      }),
+    );
+  });
+
+  it("omits envelope when envelopeFrom is not configured", async () => {
+    const sendMail = vi.fn(async () => ({ messageId: "<id@test>" }));
+    const { envelopeFrom: _drop, ...noEnvelope } = config;
+    const adapter = new SmtpAdapter(noEnvelope, { sendMail } as unknown as nodemailer.Transporter);
+
+    await adapter.send({ to: "jan@example.com", subject: "S", html: "<p>h</p>" });
+
+    const args = sendMail.mock.calls[0]![0] as Record<string, unknown>;
+    expect(args.envelope).toBeUndefined();
   });
 
   it("creates transporter with pooling and rate limit from config", () => {

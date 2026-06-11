@@ -22,6 +22,32 @@ describe("ExportOnlyAdapter", () => {
     });
   });
 
+  it("returns failed when exportSink throws (sync)", async () => {
+    const adapter = new ExportOnlyAdapter(
+      { provider: "export_only", fromAddress: "events@example.com" },
+      () => {
+        throw new Error("disk full");
+      },
+    );
+    const res = await adapter.send({ to: "a@example.com", subject: "S", html: "<p>x</p>" });
+    expect(res.status).toBe("failed");
+    expect(res.retryable).toBe(false);
+    expect(res.error).toContain("disk full");
+  });
+
+  it("returns failed when exportSink rejects (async)", async () => {
+    const adapter = new ExportOnlyAdapter(
+      { provider: "export_only", fromAddress: "events@example.com" },
+      async () => {
+        throw new Error("write timeout");
+      },
+    );
+    const res = await adapter.send({ to: "a@example.com", subject: "S", html: "<p>x</p>" });
+    expect(res.status).toBe("failed");
+    expect(res.retryable).toBe(false);
+    expect(res.error).toContain("write timeout");
+  });
+
   it("is created by createMailer factory", () => {
     const sink = vi.fn();
     const mailer = createMailer(

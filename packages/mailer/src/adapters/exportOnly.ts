@@ -3,7 +3,7 @@ import { EXPORT_ONLY_CAPABILITIES } from "../capabilities.js";
 import { toMailSender } from "../senderUtils.js";
 import type { ExportPayload, MailMessage, MailerAdapter, SendResult } from "../types.js";
 
-export type ExportSink = (payload: ExportPayload) => void;
+export type ExportSink = (payload: ExportPayload) => void | Promise<void>;
 
 /**
  * Does not send email — returns accepted and optionally hands the rendered message
@@ -19,8 +19,24 @@ export class ExportOnlyAdapter implements MailerAdapter {
   ) {}
 
   async send(message: MailMessage): Promise<SendResult> {
-    const sender = toMailSender(this.config);
-    this.exportSink?.({ message, sender });
+    const base: SendResult = {
+      status: "failed",
+      provider: this.provider,
+      idempotencyKey: message.idempotencyKey,
+    };
+
+    if (this.exportSink) {
+      try {
+        await this.exportSink({ message, sender: toMailSender(this.config) });
+      } catch (e) {
+        return {
+          ...base,
+          retryable: false,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
+    }
+
     return {
       status: "accepted",
       provider: this.provider,

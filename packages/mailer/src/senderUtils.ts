@@ -14,12 +14,19 @@ export function resolveReplyTo(configReplyTo: string | undefined, message: MailM
 }
 
 export function toMailSender(config: MailSenderConfig): MailSender {
-  return {
-    fromAddress: config.fromAddress,
-    fromName: config.fromName,
-    replyTo: config.replyTo,
-    envelopeFrom: config.envelopeFrom,
-  };
+  const sender: MailSender = { fromAddress: config.fromAddress };
+  if (config.fromName !== undefined) sender.fromName = config.fromName;
+  if (config.replyTo !== undefined) sender.replyTo = config.replyTo;
+  if (config.envelopeFrom !== undefined) sender.envelopeFrom = config.envelopeFrom;
+  return sender;
+}
+
+/** Parse comma-separated RFC5322 address list (to / cc). */
+export function parseAddressList(list: string): string[] {
+  return list
+    .split(",")
+    .map((a) => a.trim())
+    .filter(Boolean);
 }
 
 /** Effective display from address for Graph (defaults to mailbox). */
@@ -32,9 +39,7 @@ export function graphDisplayFromAddress(config: GraphConfig): string {
  * Omit when mailbox alone is sufficient (no display name, no send-as).
  */
 export function shouldSetGraphMessageFrom(config: GraphConfig): boolean {
-  const displayAddress = graphDisplayFromAddress(config);
   if (config.fromName) return true;
   if (config.fromAddress && config.fromAddress !== config.mailbox) return true;
-  if (displayAddress !== config.mailbox) return true;
   return false;
 }

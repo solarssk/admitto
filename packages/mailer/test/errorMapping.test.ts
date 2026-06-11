@@ -28,6 +28,13 @@ describe("mapSmtpError", () => {
     });
   });
 
+  it("maps unlisted permanent 5xx (e.g. 554) to rejected+not retryable", () => {
+    expect(mapSmtpError(new Error("554 Transaction failed"))).toEqual({
+      status: "rejected",
+      retryable: false,
+    });
+  });
+
   it("maps ECONNREFUSED to failed+retryable", () => {
     expect(mapSmtpError(new Error("connect ECONNREFUSED"))).toEqual({
       status: "failed",
