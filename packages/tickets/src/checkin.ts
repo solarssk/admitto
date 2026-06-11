@@ -88,7 +88,7 @@ export async function checkInScan(
 /**
  * Recent scan history for a given event, ordered newest first.
  * Default limit 10, hard cap 50, minimum 1.
- * Secondary sort by id for deterministic order within the same second (SQLite timestamp precision).
+ * Secondary sort by id for deterministic order when timestamps tie.
  */
 export async function getRecentCheckIns(
   eventId: string,

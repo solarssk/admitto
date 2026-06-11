@@ -9,22 +9,34 @@ and check-in scanning. See [SECURITY.md](SECURITY.md) before deploying with real
 **This repository contains only generic code and synthetic data (`@example.com`).
 No secrets, no real personal data are ever committed here.**
 
+## Prerequisites
+
+- Node.js `>=22.13.0 <23` (LTS 22 line)
+- [Docker](https://docs.docker.com/get-docker/) — required to run PostgreSQL locally
+
 ## Setup
 
 ```bash
-node -v  # should be 22.13.0 or higher (<23)
+# 1. Start Postgres
+docker compose -f infra/docker-compose.yml up -d db
+
+# 2. Install dependencies
 npm install
+
+# 3. Migrate and seed
+npm run db:migrate
+npm run db:seed
+
+# 4. Run tests
 npm test
 ```
-
-The repository targets the Node 22 LTS line, but the current toolchain requires Node.js `>=22.13.0 <23`.
 
 ## Packages
 
 | Package | Description |
 |---|---|
 | [`packages/mailer`](packages/mailer/README.md) | Email sending — one interface, three transports (Graph, SMTP, Power Automate) |
-| [`packages/db`](packages/db/README.md) | Database layer — Prisma schema + client (SQLite/dev, portable to PostgreSQL) |
+| [`packages/db`](packages/db/README.md) | Database layer — Prisma schema + client (PostgreSQL) |
 
 ## Security & data
 

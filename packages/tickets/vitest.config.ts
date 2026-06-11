@@ -4,10 +4,10 @@ export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
     environment: "node",
-    // Shared SQLite test DB — sequential to avoid concurrent db push conflicts.
+    // Sequential: tests share a single Postgres test database; concurrent db push --force-reset would race.
     fileParallelism: false,
     env: {
-      DATABASE_URL: "file:./tickets-test.db",
+      DATABASE_URL: "postgresql://admitto:admitto@localhost:5432/admitto_tickets_test",
     },
   },
 });

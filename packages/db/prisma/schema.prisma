@@ -1,12 +1,12 @@
-// Portable schema: SQLite for dev, PostgreSQL for production.
-// No Prisma enums (SQLite does not support them) — statuses as String + TS unions in src/status.ts.
+// PostgreSQL is the single database engine (dev, CI, prod) — see ADR 0004.
+// No Prisma enums — statuses as String + TS unions in src/status.ts.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

@@ -11,7 +11,9 @@
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build -w @admitto/shared && npm run build --workspaces --if-present",
     "typecheck": "npm run build -w @admitto/shared && npm run build -w @admitto/db && npm run typecheck --workspaces --if-present",
-    "lint": "eslint 'packages/*/src/**/*.ts'"
+    "lint": "eslint 'packages/*/src/**/*.ts'",
+    "db:migrate": "npm run db:migrate -w @admitto/db",
+    "db:seed": "npm run db:seed -w @admitto/db"
   },
   "type": "module",
   "engines": {
