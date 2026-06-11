@@ -8,6 +8,8 @@ export type EncryptedData = {
   keyVersion: number;
 };
 
+const CURRENT_KEY_VERSION = 1;
+
 export function encrypt(plaintext: string): EncryptedData {
   const key = getEncryptionKey();
   const iv = randomBytes(12);
@@ -18,11 +20,16 @@ export function encrypt(plaintext: string): EncryptedData {
     ciphertext: encrypted.toString("base64"),
     iv: iv.toString("base64"),
     authTag: authTag.toString("base64"),
-    keyVersion: 1,
+    keyVersion: CURRENT_KEY_VERSION,
   };
 }
 
 export function decrypt(payload: EncryptedData): string {
+  if (payload.keyVersion !== CURRENT_KEY_VERSION) {
+    throw new Error(
+      `Unsupported key version: ${payload.keyVersion}. Current supported version: ${CURRENT_KEY_VERSION}.`,
+    );
+  }
   const key = getEncryptionKey();
   const iv = Buffer.from(payload.iv, "base64");
   const authTag = Buffer.from(payload.authTag, "base64");
