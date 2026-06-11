@@ -25,6 +25,7 @@ Or from the repo root using the delegating scripts:
 
 ```bash
 npm run db:migrate
+npm run db:migrate:status   # check applied migrations / schema drift
 npm run db:seed
 ```
 
