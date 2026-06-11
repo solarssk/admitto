@@ -6,7 +6,8 @@ services:
       POSTGRES_PASSWORD: admitto
       POSTGRES_DB: admitto
     ports:
-      - "5432:5432"
+      # Loopback only — default dev creds must not be reachable on the LAN.
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
