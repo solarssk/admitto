@@ -1,11 +1,9 @@
 /**
  * CLI for manual test sends via a selected transport.
- * Configuration from .env (MAILER_*). Provider selection: MAILER_PROVIDER.
+ * Configuration from .env (EMAIL_PROVIDER, SMTP_*, GRAPH_*, etc.).
  *
  *   npm run send -- --to someone@example.com
  *   npm run send -- --csv recipients.csv          (columns: email,first_name)
- *
- * Useful for testing an SMTP server locally (MAILER_PROVIDER=smtp).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -13,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { configFromEnv } from "./configFromEnv.js";
 import { createMailer, sendBatch } from "./index.js";
 import type { MailMessage } from "./types.js";
+import { isSendSuccess } from "./types.js";
 import { splitCsvLine } from "./csvUtils.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -79,7 +78,9 @@ async function main() {
     const summary = await sendBatch(mailer, messages, {
       concurrency: 3,
       onResult: (res, msg, i) =>
-        console.log(`  [${i + 1}/${messages.length}] ${res.status === "sent" ? "✅" : "❌"} ${msg.to}${res.error ? " — " + res.error : ""}`),
+        console.log(
+          `  [${i + 1}/${messages.length}] ${isSendSuccess(res.status) ? "✅" : "❌"} ${msg.to}${res.error ? " — " + res.error : ""}`,
+        ),
     });
     console.log(`\nSummary: sent=${summary.sent} failed=${summary.failed} total=${summary.total}`);
     process.exit(summary.failed ? 1 : 0);
@@ -91,8 +92,8 @@ async function main() {
     process.exit(1);
   }
   const result = await mailer.send({ to, subject, html: renderHtml(arg("name")) });
-  if (result.status === "sent") {
-    console.log(`✅ sent (id: ${result.providerMessageId ?? "—"})`);
+  if (isSendSuccess(result.status)) {
+    console.log(`✅ accepted (id: ${result.providerMessageId ?? "—"})`);
   } else {
     console.error(`❌ error: ${result.error}`);
     process.exit(1);

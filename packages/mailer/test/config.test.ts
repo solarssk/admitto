@@ -2,36 +2,66 @@ import { describe, expect, it } from "vitest";
 import { parseMailerConfig, safeParseMailerConfig } from "../src/config.js";
 
 describe("config", () => {
-  it("validates powerautomate config and requires a URL", () => {
-    const ok = parseMailerConfig({ provider: "powerautomate", url: "https://example.com/flow" });
+  it("validates powerautomate config and requires a URL + fromAddress", () => {
+    const ok = parseMailerConfig({
+      provider: "powerautomate",
+      url: "https://example.com/flow",
+      fromAddress: "events@example.com",
+    });
     expect(ok.provider).toBe("powerautomate");
 
-    const bad = safeParseMailerConfig({ provider: "powerautomate", url: "not-a-url" });
+    const bad = safeParseMailerConfig({ provider: "powerautomate", url: "not-a-url", fromAddress: "a@example.com" });
     expect(bad.success).toBe(false);
   });
 
-  it("validates smtp and sets default port/secure", () => {
+  it("validates smtp with sender fields and sets default port/secure/TLS/throughput", () => {
     const cfg = parseMailerConfig({
       provider: "smtp",
       host: "smtp.example.com",
       user: "u",
       password: "p",
-      from: "from@example.com",
+      fromAddress: "from@example.com",
     });
     if (cfg.provider !== "smtp") throw new Error("unexpected provider");
     expect(cfg.port).toBe(587);
     expect(cfg.secure).toBe(false);
+    expect(cfg.requireTLS).toBe(true);
+    expect(cfg.pool).toBe(true);
+    expect(cfg.maxConnections).toBe(3);
+    expect(cfg.rateLimitPerMinute).toBe(30);
   });
 
-  it("graph requires sender in email format", () => {
-    const bad = safeParseMailerConfig({
+  it("validates graph with mailbox and optional display sender", () => {
+    const cfg = parseMailerConfig({
       provider: "graph",
+      mailbox: "events@example.com",
       tenantId: "t",
       clientId: "c",
       clientSecret: "s",
-      sender: "not-an-email",
+      fromName: "Admitto",
+    });
+    if (cfg.provider !== "graph") throw new Error("unexpected provider");
+    expect(cfg.mailbox).toBe("events@example.com");
+    expect(cfg.fromName).toBe("Admitto");
+  });
+
+  it("graph rejects invalid mailbox email", () => {
+    const bad = safeParseMailerConfig({
+      provider: "graph",
+      mailbox: "not-an-email",
+      tenantId: "t",
+      clientId: "c",
+      clientSecret: "s",
     });
     expect(bad.success).toBe(false);
+  });
+
+  it("validates export_only with sender fields", () => {
+    const cfg = parseMailerConfig({
+      provider: "export_only",
+      fromAddress: "export@example.com",
+    });
+    expect(cfg.provider).toBe("export_only");
   });
 
   it("rejects unknown provider (discriminated union)", () => {

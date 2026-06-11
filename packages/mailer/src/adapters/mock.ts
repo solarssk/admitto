@@ -1,3 +1,4 @@
+import { MOCK_CAPABILITIES } from "../capabilities.js";
 import type { MailMessage, MailerAdapter, MailerProvider, SendResult } from "../types.js";
 
 /**
@@ -6,6 +7,7 @@ import type { MailMessage, MailerAdapter, MailerProvider, SendResult } from "../
  */
 export class MockAdapter implements MailerAdapter {
   readonly provider: MailerProvider;
+  readonly capabilities = MOCK_CAPABILITIES;
   readonly sent: MailMessage[] = [];
   private readonly failOn?: (m: MailMessage) => boolean;
 
@@ -20,12 +22,13 @@ export class MockAdapter implements MailerAdapter {
         status: "failed",
         provider: this.provider,
         error: "MockAdapter: forced failure",
+        retryable: false,
         idempotencyKey: message.idempotencyKey,
       };
     }
     this.sent.push(message);
     return {
-      status: "sent",
+      status: "accepted",
       provider: this.provider,
       providerMessageId: `mock-${this.sent.length}`,
       idempotencyKey: message.idempotencyKey,

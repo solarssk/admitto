@@ -1,16 +1,16 @@
 import type { PowerAutomateConfig } from "../config.js";
+import { POWER_AUTOMATE_CAPABILITIES } from "../capabilities.js";
+import { mapHttpStatus, mapNetworkError } from "../errorMapping.js";
+import { resolveReplyTo } from "../senderUtils.js";
 import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.js";
 
 /**
  * Power Automate — sends via an HTTP-triggered flow (Admitto POSTs a ready-to-send
  * message; the flow sends it from a shared mailbox).
- *
- * Licensing note: the "When an HTTP request is received" trigger is PREMIUM.
- * A free-tier variant (OneDrive file-drop) is a separate adapter to add later;
- * this adapter assumes an HTTP endpoint returning 2xx (ideally with a Response action).
  */
 export class PowerAutomateAdapter implements MailerAdapter {
   readonly provider = "powerautomate" as const;
+  readonly capabilities = POWER_AUTOMATE_CAPABILITIES;
 
   constructor(
     private readonly config: PowerAutomateConfig,
@@ -27,6 +27,8 @@ export class PowerAutomateAdapter implements MailerAdapter {
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (this.config.key) headers["x-admitto-key"] = this.config.key;
 
+    const replyTo = resolveReplyTo(this.config.replyTo, message);
+
     try {
       const res = await this.fetchFn(this.config.url, {
         method: "POST",
@@ -36,22 +38,37 @@ export class PowerAutomateAdapter implements MailerAdapter {
           subject: message.subject,
           html: message.html,
           cc: message.cc,
-          replyTo: message.replyTo,
+          replyTo,
+          fromAddress: this.config.fromAddress,
+          fromName: this.config.fromName,
+          envelopeFrom: this.config.envelopeFrom,
         }),
       });
 
       if (res.ok) {
         return {
-          status: "sent",
+          status: "accepted",
           provider: this.provider,
           providerMessageId: res.headers.get("x-ms-workflow-run-id") ?? undefined,
           idempotencyKey: message.idempotencyKey,
         };
       }
       const text = (await res.text().catch(() => "")).slice(0, 200);
-      return { ...base, error: `Power Automate: HTTP ${res.status}${text ? " — " + text : ""}` };
+      const mapped = mapHttpStatus(res.status);
+      return {
+        ...base,
+        status: mapped.status,
+        retryable: mapped.retryable,
+        error: `Power Automate: HTTP ${res.status}${text ? " — " + text : ""}`,
+      };
     } catch (e) {
-      return { ...base, error: e instanceof Error ? e.message : String(e) };
+      const mapped = mapNetworkError();
+      return {
+        ...base,
+        status: mapped.status,
+        retryable: mapped.retryable,
+        error: e instanceof Error ? e.message : String(e),
+      };
     }
   }
 }

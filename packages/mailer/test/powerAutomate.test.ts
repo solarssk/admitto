@@ -6,10 +6,13 @@ const config: PowerAutomateConfig = {
   provider: "powerautomate",
   url: "https://prod-1.westeurope.logic.azure.com/workflows/x/triggers/manual/paths/invoke?sig=secret",
   key: "test-secret-key",
+  fromAddress: "events@example.com",
+  fromName: "Events",
+  replyTo: "reply@example.com",
 };
 
 describe("PowerAutomateAdapter", () => {
-  it("POSTs JSON {to,subject,html} with x-admitto-key header and maps 2xx => sent", async () => {
+  it("POSTs JSON with sender fields and x-admitto-key; maps 2xx => accepted", async () => {
     let captured: any;
     const fetchFn = vi.fn(async (_url: string, init: any) => {
       captured = init;
@@ -24,11 +27,19 @@ describe("PowerAutomateAdapter", () => {
     const adapter = new PowerAutomateAdapter(config, fetchFn as unknown as typeof fetch);
     const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>", idempotencyKey: "k1" });
 
-    expect(res.status).toBe("sent");
+    expect(res.status).toBe("accepted");
     expect(res.providerMessageId).toBe("run-9");
     expect(res.idempotencyKey).toBe("k1");
     expect(captured.headers["x-admitto-key"]).toBe("test-secret-key");
-    expect(JSON.parse(captured.body)).toMatchObject({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(JSON.parse(captured.body)).toMatchObject({
+      to: "x@example.com",
+      subject: "S",
+      html: "<p>h</p>",
+      fromAddress: "events@example.com",
+      fromName: "Events",
+      replyTo: "reply@example.com",
+    });
+    expect(adapter.capabilities.deliveryResultSemantics).toBe("accepted_only");
   });
 
   it("omits key header when key is not configured", async () => {
@@ -38,14 +49,14 @@ describe("PowerAutomateAdapter", () => {
       return { ok: true, status: 202, text: async () => "", headers: { get: () => null } };
     });
     const adapter = new PowerAutomateAdapter(
-      { provider: "powerautomate", url: config.url },
+      { provider: "powerautomate", url: config.url, fromAddress: "a@example.com" },
       fetchFn as unknown as typeof fetch,
     );
     await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
     expect(captured.headers["x-admitto-key"]).toBeUndefined();
   });
 
-  it("maps HTTP error to failed", async () => {
+  it("maps HTTP 401 to rejected", async () => {
     const fetchFn = vi.fn(async () => ({
       ok: false,
       status: 401,
@@ -54,17 +65,19 @@ describe("PowerAutomateAdapter", () => {
     }));
     const adapter = new PowerAutomateAdapter(config, fetchFn as unknown as typeof fetch);
     const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
-    expect(res.status).toBe("failed");
+    expect(res.status).toBe("rejected");
+    expect(res.retryable).toBe(false);
     expect(res.error).toContain("401");
   });
 
-  it("catches network exception => failed", async () => {
+  it("catches network exception => failed+retryable", async () => {
     const fetchFn = vi.fn(async () => {
       throw new Error("ECONNREFUSED");
     });
     const adapter = new PowerAutomateAdapter(config, fetchFn as unknown as typeof fetch);
     const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
     expect(res.status).toBe("failed");
+    expect(res.retryable).toBe(true);
     expect(res.error).toContain("ECONNREFUSED");
   });
 });

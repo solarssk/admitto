@@ -1,16 +1,19 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import type { SmtpConfig } from "../config.js";
+import { SMTP_CAPABILITIES } from "../capabilities.js";
+import { mapSmtpError } from "../errorMapping.js";
+import { formatFromHeader, resolveReplyTo } from "../senderUtils.js";
 import type { MailMessage, MailerAdapter, SendResult } from "../types.js";
 
 /**
  * SMTP via nodemailer. Works with any standards-compliant mail server.
- * Note: some M365 tenants disable SMTP AUTH by default — check your org's policy.
  *
  * An optional transporter (or transport options like `{ jsonTransport: true }`)
  * can be injected for testing without sending real email.
  */
 export class SmtpAdapter implements MailerAdapter {
   readonly provider = "smtp" as const;
+  readonly capabilities = SMTP_CAPABILITIES;
   private readonly transporter: Transporter;
 
   constructor(
@@ -18,37 +21,59 @@ export class SmtpAdapter implements MailerAdapter {
     /** Optional transporter (DI for tests). If omitted, created from config. */
     transporter?: Transporter,
   ) {
-    this.transporter =
-      transporter ??
-      nodemailer.createTransport({
-        host: config.host,
-        port: config.port,
-        secure: config.secure, // false => STARTTLS on port 587
-        requireTLS: !config.secure,
-        auth: { user: config.user, pass: config.password },
-      });
+    this.transporter = transporter ?? SmtpAdapter.createTransporter(config);
+  }
+
+  static createTransporter(config: SmtpConfig): Transporter {
+    return nodemailer.createTransport({
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      requireTLS: config.requireTLS,
+      pool: config.pool,
+      maxConnections: config.maxConnections,
+      maxMessages: config.maxMessages,
+      rateLimit: config.rateLimitPerMinute,
+      rateDelta: 60_000,
+      connectionTimeout: config.connectionTimeout,
+      greetingTimeout: config.greetingTimeout,
+      socketTimeout: config.socketTimeout,
+      ...(config.heloName ? { name: config.heloName } : {}),
+      tls: {
+        rejectUnauthorized: config.tlsRejectUnauthorized,
+        ...(config.heloName ? { servername: config.heloName } : {}),
+      },
+      auth: { user: config.user, pass: config.password },
+    } as nodemailer.TransportOptions);
   }
 
   async send(message: MailMessage): Promise<SendResult> {
+    const from = formatFromHeader(this.config);
+    const replyTo = resolveReplyTo(this.config.replyTo, message);
+    const envelopeFrom = this.config.envelopeFrom ?? this.config.fromAddress;
+
     try {
       const info = await this.transporter.sendMail({
-        from: this.config.from,
+        from,
         to: message.to,
         cc: message.cc,
-        replyTo: message.replyTo,
+        replyTo,
         subject: message.subject,
         html: message.html,
+        envelope: { from: envelopeFrom, to: message.to },
       });
       return {
-        status: "sent",
+        status: "accepted",
         provider: this.provider,
         providerMessageId: info.messageId,
         idempotencyKey: message.idempotencyKey,
       };
     } catch (e) {
+      const mapped = mapSmtpError(e);
       return {
-        status: "failed",
+        status: mapped.status,
         provider: this.provider,
+        retryable: mapped.retryable,
         error: e instanceof Error ? e.message : String(e),
         idempotencyKey: message.idempotencyKey,
       };

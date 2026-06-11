@@ -1,4 +1,11 @@
 import type { GraphConfig } from "../config.js";
+import { GRAPH_CAPABILITIES } from "../capabilities.js";
+import { mapHttpStatus, mapNetworkError } from "../errorMapping.js";
+import {
+  graphDisplayFromAddress,
+  resolveReplyTo,
+  shouldSetGraphMessageFrom,
+} from "../senderUtils.js";
 import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.js";
 
 /**
@@ -30,6 +37,7 @@ function recipients(list?: string) {
 
 export class GraphAdapter implements MailerAdapter {
   readonly provider = "graph" as const;
+  readonly capabilities = GRAPH_CAPABILITIES;
   private token: CachedToken | null = null;
 
   constructor(
@@ -59,12 +67,17 @@ export class GraphAdapter implements MailerAdapter {
     });
     const raw = await res.text().catch(() => "");
     let data: Record<string, unknown> = {};
-    try { data = JSON.parse(raw) as Record<string, unknown>; } catch { /* non-JSON body */ }
+    try {
+      data = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      /* non-JSON body */
+    }
     if (!res.ok) {
+      const mapped = mapHttpStatus(res.status);
       const code = String(data["error"] ?? `HTTP ${res.status}`);
       const desc = String(data["error_description"] ?? "").split("\n")[0];
       const detail = desc || raw.slice(0, 200);
-      throw new Error(`Graph token error: ${code}${detail ? " — " + detail : ""}`);
+      throw new TokenError(`Graph token error: ${code}${detail ? " — " + detail : ""}`, mapped);
     }
     const accessToken = String(data["access_token"] ?? "");
     const expiresIn = Number(data["expires_in"] ?? 3600);
@@ -83,6 +96,9 @@ export class GraphAdapter implements MailerAdapter {
     try {
       token = await this.getAccessToken();
     } catch (e) {
+      if (e instanceof TokenError) {
+        return { ...base, status: e.mapped.status, retryable: e.mapped.retryable, error: e.message };
+      }
       return { ...base, error: e instanceof Error ? e.message : String(e) };
     }
 
@@ -92,10 +108,21 @@ export class GraphAdapter implements MailerAdapter {
       toRecipients: recipients(message.to),
     };
     if (message.cc) graphMessage["ccRecipients"] = recipients(message.cc);
-    if (message.replyTo) graphMessage["replyTo"] = recipients(message.replyTo);
+
+    const replyTo = resolveReplyTo(this.config.replyTo, message);
+    if (replyTo) graphMessage["replyTo"] = recipients(replyTo);
+
+    if (shouldSetGraphMessageFrom(this.config)) {
+      const address = graphDisplayFromAddress(this.config);
+      const from: { emailAddress: { address: string; name?: string } } = {
+        emailAddress: { address },
+      };
+      if (this.config.fromName) from.emailAddress.name = this.config.fromName;
+      graphMessage["from"] = from;
+    }
 
     const endpoint = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
-      this.config.sender,
+      this.config.mailbox,
     )}/sendMail`;
 
     try {
@@ -111,11 +138,10 @@ export class GraphAdapter implements MailerAdapter {
         }),
       });
 
-      // sendMail returns 202 Accepted with no body on success.
       if (res.status === 202) {
         const requestId = res.headers.get("request-id") ?? undefined;
         return {
-          status: "sent",
+          status: "accepted",
           provider: this.provider,
           providerMessageId: requestId,
           idempotencyKey: message.idempotencyKey,
@@ -124,12 +150,38 @@ export class GraphAdapter implements MailerAdapter {
 
       const rawBody = await res.text().catch(() => "");
       let errData: { error?: { code?: string; message?: string } } = {};
-      try { errData = JSON.parse(rawBody) as typeof errData; } catch { /* non-JSON body */ }
+      try {
+        errData = JSON.parse(rawBody) as typeof errData;
+      } catch {
+        /* non-JSON body */
+      }
       const code = errData.error?.code ?? `HTTP ${res.status}`;
       const msg = errData.error?.message ?? rawBody.slice(0, 200);
-      return { ...base, error: `Graph sendMail: ${code}${msg ? " — " + msg : ""}` };
+      const mapped = mapHttpStatus(res.status);
+      return {
+        ...base,
+        status: mapped.status,
+        retryable: mapped.retryable,
+        error: `Graph sendMail: ${code}${msg ? " — " + msg : ""}`,
+      };
     } catch (e) {
-      return { ...base, error: e instanceof Error ? e.message : String(e) };
+      const mapped = mapNetworkError();
+      return {
+        ...base,
+        status: mapped.status,
+        retryable: mapped.retryable,
+        error: e instanceof Error ? e.message : String(e),
+      };
     }
+  }
+}
+
+class TokenError extends Error {
+  constructor(
+    message: string,
+    readonly mapped: { status: "failed" | "rejected"; retryable: boolean },
+  ) {
+    super(message);
+    this.name = "TokenError";
   }
 }
