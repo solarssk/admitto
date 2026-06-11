@@ -104,7 +104,9 @@ async function main() {
       update: {
         name: a.name,
         token_hash: a.token_hash,
-        token_enc: a.token_enc,
+        // Only overwrite token_enc when we have a value — preserves an existing encrypted
+        // token if the seed is re-run without ENCRYPTION_KEY configured.
+        ...(a.token_enc !== null ? { token_enc: a.token_enc } : {}),
         external_uuid: a.external_uuid,
         qr_payload: a.qr_payload,
         status: a.status,
