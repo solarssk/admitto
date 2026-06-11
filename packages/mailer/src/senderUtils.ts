@@ -10,7 +10,8 @@ export function formatFromHeader(sender: Pick<MailSender, "fromAddress" | "fromN
 
 /** Message replyTo wins over config default. */
 export function resolveReplyTo(configReplyTo: string | undefined, message: MailMessage): string | undefined {
-  return message.replyTo ?? configReplyTo;
+  const msgReplyTo = message.replyTo?.trim();
+  return msgReplyTo ? msgReplyTo : configReplyTo;
 }
 
 export function toMailSender(config: MailSenderConfig): MailSender {
@@ -21,7 +22,10 @@ export function toMailSender(config: MailSenderConfig): MailSender {
   return sender;
 }
 
-/** Parse comma-separated RFC5322 address list (to / cc). */
+/**
+ * Parse a plain comma-separated email list (to / cc).
+ * Each segment must be a bare address — no quoted display names or RFC5322 grouping.
+ */
 export function parseAddressList(list: string): string[] {
   return list
     .split(",")

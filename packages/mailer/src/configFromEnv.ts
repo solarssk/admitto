@@ -1,14 +1,24 @@
 import { type MailerConfig, parseMailerConfig } from "./config.js";
 
-function parseBool(v: string | undefined, def: boolean): boolean {
-  if (v === undefined || v === "") return def;
-  return v.trim().toLowerCase() === "true";
+function parseBool(v: string | undefined, def: boolean, name: string): boolean {
+  if (v === undefined || v.trim() === "") return def;
+  const normalized = v.trim().toLowerCase();
+  if (normalized === "true") return true;
+  if (normalized === "false") return false;
+  throw new Error(`${name} must be "true" or "false" (got: "${v}")`);
 }
 
-function parseOptionalInt(v: string | undefined): number | undefined {
+function parseOptionalInt(v: string | undefined, name: string): number | undefined {
   if (v === undefined || v.trim() === "") return undefined;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : undefined;
+  const trimmed = v.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(`${name} must be a positive integer (got: "${v}")`);
+  }
+  const n = Number(trimmed);
+  if (!Number.isSafeInteger(n) || n <= 0) {
+    throw new Error(`${name} must be a positive integer (got: "${v}")`);
+  }
+  return n;
 }
 
 function mailSenderFromEnv(env: NodeJS.ProcessEnv) {
@@ -38,7 +48,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): MailerConfi
         tenantId: env.GRAPH_TENANT_ID,
         clientId: env.GRAPH_CLIENT_ID,
         clientSecret: env.GRAPH_CLIENT_SECRET,
-        saveToSentItems: parseBool(env.GRAPH_SAVE_TO_SENT, true),
+        saveToSentItems: parseBool(env.GRAPH_SAVE_TO_SENT, true, "GRAPH_SAVE_TO_SENT"),
         fromAddress: sender.fromAddress,
         fromName: sender.fromName,
         replyTo: sender.replyTo,
@@ -49,20 +59,30 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): MailerConfi
       return parseMailerConfig({
         provider: "smtp",
         host: env.SMTP_HOST,
-        port: parseOptionalInt(env.SMTP_PORT) ?? 587,
-        secure: parseBool(env.SMTP_SECURE, false),
+        port: parseOptionalInt(env.SMTP_PORT, "SMTP_PORT") ?? 587,
+        secure: parseBool(env.SMTP_SECURE, false, "SMTP_SECURE"),
         user: env.SMTP_USER,
         password: env.SMTP_PASSWORD,
-        requireTLS: parseBool(env.SMTP_REQUIRE_TLS, true),
-        tlsRejectUnauthorized: parseBool(env.SMTP_TLS_REJECT_UNAUTHORIZED, true),
+        requireTLS: parseBool(env.SMTP_REQUIRE_TLS, true, "SMTP_REQUIRE_TLS"),
+        tlsRejectUnauthorized: parseBool(
+          env.SMTP_TLS_REJECT_UNAUTHORIZED,
+          true,
+          "SMTP_TLS_REJECT_UNAUTHORIZED",
+        ),
         heloName: env.SMTP_HELO_NAME || undefined,
-        pool: parseBool(env.SMTP_POOL, true),
-        maxConnections: parseOptionalInt(env.SMTP_MAX_CONNECTIONS),
-        maxMessages: parseOptionalInt(env.SMTP_MAX_MESSAGES_PER_CONNECTION),
-        rateLimitPerMinute: parseOptionalInt(env.SMTP_RATE_LIMIT_PER_MINUTE),
-        connectionTimeout: parseOptionalInt(env.SMTP_CONNECTION_TIMEOUT),
-        greetingTimeout: parseOptionalInt(env.SMTP_GREETING_TIMEOUT),
-        socketTimeout: parseOptionalInt(env.SMTP_SOCKET_TIMEOUT),
+        pool: parseBool(env.SMTP_POOL, true, "SMTP_POOL"),
+        maxConnections: parseOptionalInt(env.SMTP_MAX_CONNECTIONS, "SMTP_MAX_CONNECTIONS"),
+        maxMessages: parseOptionalInt(
+          env.SMTP_MAX_MESSAGES_PER_CONNECTION,
+          "SMTP_MAX_MESSAGES_PER_CONNECTION",
+        ),
+        rateLimitPerMinute: parseOptionalInt(
+          env.SMTP_RATE_LIMIT_PER_MINUTE,
+          "SMTP_RATE_LIMIT_PER_MINUTE",
+        ),
+        connectionTimeout: parseOptionalInt(env.SMTP_CONNECTION_TIMEOUT, "SMTP_CONNECTION_TIMEOUT"),
+        greetingTimeout: parseOptionalInt(env.SMTP_GREETING_TIMEOUT, "SMTP_GREETING_TIMEOUT"),
+        socketTimeout: parseOptionalInt(env.SMTP_SOCKET_TIMEOUT, "SMTP_SOCKET_TIMEOUT"),
         ...sender,
       });
     case "powerautomate":

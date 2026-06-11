@@ -28,6 +28,13 @@ describe("mapSmtpError", () => {
     });
   });
 
+  it("maps unlisted transient 4xx (e.g. 454) to failed+retryable", () => {
+    expect(mapSmtpError(new Error("454 TLS not available"))).toEqual({
+      status: "failed",
+      retryable: true,
+    });
+  });
+
   it("maps unlisted permanent 5xx (e.g. 554) to rejected+not retryable", () => {
     expect(mapSmtpError(new Error("554 Transaction failed"))).toEqual({
       status: "rejected",

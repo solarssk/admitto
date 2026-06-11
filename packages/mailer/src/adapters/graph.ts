@@ -55,16 +55,25 @@ export class GraphAdapter implements MailerAdapter {
     if (this.token && this.token.expiresAt > now + 60_000) {
       return this.token.accessToken;
     }
-    const res = await this.fetchFn(`${this.authority}/oauth2/v2.0/token`, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "client_credentials",
-        client_id: this.config.clientId,
-        client_secret: this.config.clientSecret,
-        scope: "https://graph.microsoft.com/.default",
-      }),
-    });
+    let res: Response;
+    try {
+      res = await this.fetchFn(`${this.authority}/oauth2/v2.0/token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "client_credentials",
+          client_id: this.config.clientId,
+          client_secret: this.config.clientSecret,
+          scope: "https://graph.microsoft.com/.default",
+        }),
+      });
+    } catch (e) {
+      const mapped = mapNetworkError();
+      throw new TokenError(
+        `Graph token error: ${e instanceof Error ? e.message : String(e)}`,
+        mapped,
+      );
+    }
     const raw = await res.text().catch(() => "");
     let data: Record<string, unknown> = {};
     try {

@@ -21,7 +21,7 @@ is a configuration concern (ultimately from the UI Settings screen).
 | `powerautomate` | ready | HTTP trigger is a premium licence |
 | `smtp` | ready | Generic SMTP relay (DuoCircle, Postfix, etc.) with pooling + rate limits |
 | `graph` | built, not live-tested | App-only `Mail.Send`; tests use mocked fetch |
-| `export_only` | ready | No send — hands messages to `exportSink` for external delivery |
+| `export_only` | ready | No send — **requires** `exportSink` in `createMailer` deps for real persistence; without it, messages are only marked `accepted` |
 
 ## Usage
 

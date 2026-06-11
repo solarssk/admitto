@@ -1,6 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMailer, sendBatch, MockAdapter, configFromEnv } from "../src/index.js";
-import type { MailMessage } from "../src/types.js";
+import type { EmailProviderCapabilities, MailMessage } from "../src/types.js";
+
+const TEST_CAPABILITIES: EmailProviderCapabilities = {
+  supportsAttachments: false,
+  supportsCustomHeaders: false,
+  supportsSentItems: false,
+  supportsDeliveryEvents: false,
+  supportsBounceMailbox: false,
+  supportsEnvelopeFrom: false,
+  supportsTestConnection: false,
+  deliveryResultSemantics: "accepted_only",
+};
 
 describe("createMailer", () => {
   it("creates the correct adapter for each provider", () => {
@@ -46,6 +57,9 @@ describe("configFromEnv", () => {
       MAIL_FROM_ADDRESS: "a@example.com",
     } as NodeJS.ProcessEnv);
     expect(cfg.provider).toBe("powerautomate");
+    if (cfg.provider !== "powerautomate") throw new Error("unexpected");
+    expect(cfg.fromAddress).toBe("a@example.com");
+    expect(cfg.url).toBe("https://example.com/flow");
   });
 });
 
@@ -77,7 +91,7 @@ describe("sendBatch", () => {
     let maxActive = 0;
     const adapter = {
       provider: "powerautomate" as const,
-      capabilities: {} as any,
+      capabilities: TEST_CAPABILITIES,
       send: async (m: MailMessage) => {
         active++;
         maxActive = Math.max(maxActive, active);
@@ -100,7 +114,7 @@ describe("sendBatch", () => {
     let maxActive = 0;
     const adapter = {
       provider: "powerautomate" as const,
-      capabilities: {} as any,
+      capabilities: TEST_CAPABILITIES,
       send: async (m: MailMessage) => {
         active++;
         maxActive = Math.max(maxActive, active);

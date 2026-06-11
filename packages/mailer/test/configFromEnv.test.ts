@@ -81,4 +81,30 @@ describe("configFromEnv", () => {
   it("throws when EMAIL_PROVIDER is missing", () => {
     expect(() => configFromEnv({} as NodeJS.ProcessEnv)).toThrow(/EMAIL_PROVIDER/);
   });
+
+  it("throws on malformed boolean env values", () => {
+    expect(() =>
+      configFromEnv({
+        EMAIL_PROVIDER: "smtp",
+        SMTP_HOST: "h",
+        SMTP_USER: "u",
+        SMTP_PASSWORD: "p",
+        MAIL_FROM_ADDRESS: "a@example.com",
+        SMTP_REQUIRE_TLS: "treu",
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/SMTP_REQUIRE_TLS/);
+  });
+
+  it("throws on malformed integer env values", () => {
+    expect(() =>
+      configFromEnv({
+        EMAIL_PROVIDER: "smtp",
+        SMTP_HOST: "h",
+        SMTP_USER: "u",
+        SMTP_PASSWORD: "p",
+        MAIL_FROM_ADDRESS: "a@example.com",
+        SMTP_PORT: "58x",
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/SMTP_PORT/);
+  });
 });

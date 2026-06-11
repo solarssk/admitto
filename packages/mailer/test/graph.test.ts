@@ -152,6 +152,18 @@ describe("GraphAdapter", () => {
     expect(res.error).toContain("invalid_client");
   });
 
+  it("returns failed+retryable when token fetch throws (network)", async () => {
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.includes("/oauth2/v2.0/token")) throw new Error("ENOTFOUND");
+      return acceptedResponse();
+    });
+    const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
+    const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
+    expect(res.status).toBe("failed");
+    expect(res.retryable).toBe(true);
+    expect(res.error).toContain("ENOTFOUND");
+  });
+
   it("returns failed+retryable when token endpoint returns 503", async () => {
     const fetchFn = vi.fn(async () => ({
       ok: false,
