@@ -41,6 +41,12 @@ describe("createMailer", () => {
     expect(exp.provider).toBe("export_only");
   });
 
+  it("throws when export_only is created without exportSink", () => {
+    expect(() => createMailer({ provider: "export_only", fromAddress: "a@example.com" })).toThrow(
+      /exportSink/,
+    );
+  });
+
   it("throws on invalid config", () => {
     expect(() =>
       createMailer({ provider: "powerautomate", url: "not-a-url", fromAddress: "a@example.com" }),
@@ -92,6 +98,7 @@ describe("sendBatch", () => {
     const adapter = {
       provider: "powerautomate" as const,
       capabilities: TEST_CAPABILITIES,
+      close: async () => {},
       send: async (m: MailMessage) => {
         active++;
         maxActive = Math.max(maxActive, active);
@@ -115,6 +122,7 @@ describe("sendBatch", () => {
     const adapter = {
       provider: "powerautomate" as const,
       capabilities: TEST_CAPABILITIES,
+      close: async () => {},
       send: async (m: MailMessage) => {
         active++;
         maxActive = Math.max(maxActive, active);

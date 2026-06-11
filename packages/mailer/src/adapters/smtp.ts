@@ -2,7 +2,9 @@ import nodemailer, { type Transporter } from "nodemailer";
 import type { SmtpConfig } from "../config.js";
 import { SMTP_CAPABILITIES } from "../capabilities.js";
 import { mapSmtpError } from "../errorMapping.js";
+import { rejectedSendResult } from "../adapterUtils.js";
 import { formatFromHeader, parseAddressList, resolveReplyTo } from "../senderUtils.js";
+import { validateMailMessage } from "../validation.js";
 import type { MailMessage, MailerAdapter, SendResult } from "../types.js";
 
 /**
@@ -47,7 +49,16 @@ export class SmtpAdapter implements MailerAdapter {
     } as nodemailer.TransportOptions);
   }
 
+  async close(): Promise<void> {
+    this.transporter.close();
+  }
+
   async send(message: MailMessage): Promise<SendResult> {
+    const validationError = validateMailMessage(message);
+    if (validationError) {
+      return rejectedSendResult(this.provider, validationError, message.idempotencyKey);
+    }
+
     const from = formatFromHeader(this.config);
     const replyTo = resolveReplyTo(this.config.replyTo, message);
     const mail: nodemailer.SendMailOptions = {

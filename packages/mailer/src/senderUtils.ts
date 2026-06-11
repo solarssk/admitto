@@ -2,10 +2,16 @@ import addressparser from "nodemailer/lib/addressparser/index.js";
 import type { GraphConfig, MailSenderConfig } from "./config.js";
 import type { MailMessage, MailSender } from "./types.js";
 
+/** Quote a display name for RFC5322 From (escapes backslash and double-quote). */
+export function quoteDisplayName(name: string): string {
+  const escaped = name.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${escaped}"`;
+}
+
 /** Build RFC5322 From header value: "Display Name <addr>" or plain address. */
 export function formatFromHeader(sender: Pick<MailSender, "fromAddress" | "fromName">): string {
   const { fromAddress, fromName } = sender;
-  if (fromName) return `${fromName} <${fromAddress}>`;
+  if (fromName) return `${quoteDisplayName(fromName)} <${fromAddress}>`;
   return fromAddress;
 }
 

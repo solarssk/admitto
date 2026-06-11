@@ -7,6 +7,8 @@ import {
   resolveReplyTo,
   shouldSetGraphMessageFrom,
 } from "../senderUtils.js";
+import { rejectedSendResult } from "../adapterUtils.js";
+import { validateMailMessage } from "../validation.js";
 import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.js";
 
 /**
@@ -87,7 +89,16 @@ export class GraphAdapter implements MailerAdapter {
     return accessToken;
   }
 
+  async close(): Promise<void> {
+    return Promise.resolve();
+  }
+
   async send(message: MailMessage): Promise<SendResult> {
+    const validationError = validateMailMessage(message);
+    if (validationError) {
+      return rejectedSendResult(this.provider, validationError, message.idempotencyKey);
+    }
+
     const base: SendResult = {
       status: "failed",
       provider: this.provider,

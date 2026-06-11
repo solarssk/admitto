@@ -21,7 +21,7 @@ is a configuration concern (ultimately from the UI Settings screen).
 | `powerautomate` | ready | HTTP trigger is a premium licence |
 | `smtp` | ready | Generic SMTP relay (DuoCircle, Postfix, etc.) with pooling + rate limits |
 | `graph` | built, not live-tested | App-only `Mail.Send`; tests use mocked fetch |
-| `export_only` | ready | No send — **requires** `exportSink` in `createMailer` deps for real persistence; without it, messages are only marked `accepted` |
+| `export_only` | ready | No send — `createMailer` **requires** `exportSink`; validates messages like other providers |
 
 ## Usage
 
@@ -50,6 +50,8 @@ Each adapter exposes `capabilities` so callers never assume Graph-like Sent Item
 
 `to` / `cc` / `replyTo` may use RFC5322 address lists (quoted display names, angle addresses);
 the mailer normalizes them to bare email addresses for SMTP envelope and Graph API.
+`validateMailMessage()` runs in every adapter before send. Sender `fromName` must not contain
+control characters and is quoted in SMTP From headers. Power Automate URLs must use HTTPS.
 
 ## Configuration
 

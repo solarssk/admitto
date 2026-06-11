@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NO_CONTROL_CHARS_RE } from "./validation.js";
 
 /**
  * Mailer configuration schemas. Discriminated union on `provider` —
@@ -6,9 +7,16 @@ import { z } from "zod";
  * making this the single source of validation truth.
  */
 
+const noControlChars = (label: string) => (schema: z.ZodString) =>
+  schema.refine((v) => !NO_CONTROL_CHARS_RE.test(v), {
+    message: `${label} must not contain control characters (CR/LF/NUL)`,
+  });
+
+export const safeDisplayNameSchema = noControlChars("fromName")(z.string().min(1).max(200));
+
 export const mailSenderSchema = z.object({
   fromAddress: z.string().email("fromAddress must be a valid email address"),
-  fromName: z.string().min(1).optional(),
+  fromName: safeDisplayNameSchema.optional(),
   replyTo: z.string().email("replyTo must be a valid email address").optional(),
   envelopeFrom: z.string().email("envelopeFrom must be a valid email address").optional(),
 });
@@ -16,7 +24,7 @@ export const mailSenderSchema = z.object({
 /** Sender fields with optional fromAddress (Graph derives default from mailbox). */
 export const optionalFromSenderSchema = z.object({
   fromAddress: z.string().email("fromAddress must be a valid email address").optional(),
-  fromName: z.string().min(1).optional(),
+  fromName: safeDisplayNameSchema.optional(),
   replyTo: z.string().email("replyTo must be a valid email address").optional(),
   envelopeFrom: z.string().email("envelopeFrom must be a valid email address").optional(),
 });
@@ -44,7 +52,7 @@ export const smtpConfigSchema = z
     password: z.string().min(1),
     requireTLS: z.boolean().default(true),
     tlsRejectUnauthorized: z.boolean().default(true),
-    heloName: z.string().min(1).optional(),
+    heloName: noControlChars("heloName")(z.string().min(1)).optional(),
     pool: z.boolean().default(true),
     maxConnections: z.number().int().positive().default(3),
     maxMessages: z.number().int().positive().default(100),
@@ -59,8 +67,13 @@ export const smtpConfigSchema = z
 export const powerAutomateConfigSchema = z
   .object({
     provider: z.literal("powerautomate"),
-    /** HTTP flow trigger URL (secret — contains sig token). */
-    url: z.string().url("url must be a valid flow URL"),
+    /** HTTP flow trigger URL (secret — contains sig token). HTTPS only. */
+    url: z
+      .string()
+      .url("url must be a valid flow URL")
+      .refine((u) => u.toLowerCase().startsWith("https://"), {
+        message: "url must use HTTPS",
+      }),
     /** Optional key sent in x-admitto-key header (endpoint protection). */
     key: z.string().optional(),
   })

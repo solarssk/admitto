@@ -64,6 +64,27 @@ describe("config", () => {
     expect(cfg.provider).toBe("export_only");
   });
 
+  it("rejects fromName with control characters", () => {
+    const bad = safeParseMailerConfig({
+      provider: "smtp",
+      host: "h",
+      user: "u",
+      password: "p",
+      fromAddress: "a@example.com",
+      fromName: "Bad\nName",
+    });
+    expect(bad.success).toBe(false);
+  });
+
+  it("rejects powerautomate URL without HTTPS", () => {
+    const bad = safeParseMailerConfig({
+      provider: "powerautomate",
+      url: "http://example.com/flow",
+      fromAddress: "a@example.com",
+    });
+    expect(bad.success).toBe(false);
+  });
+
   it("rejects unknown provider (discriminated union)", () => {
     const bad = safeParseMailerConfig({ provider: "carrier-pigeon" });
     expect(bad.success).toBe(false);

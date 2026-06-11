@@ -1,4 +1,6 @@
+import { rejectedSendResult } from "../adapterUtils.js";
 import { MOCK_CAPABILITIES } from "../capabilities.js";
+import { validateMailMessage } from "../validation.js";
 import type { MailMessage, MailerAdapter, MailerProvider, SendResult } from "../types.js";
 
 /**
@@ -16,7 +18,16 @@ export class MockAdapter implements MailerAdapter {
     this.failOn = opts.failOn;
   }
 
+  async close(): Promise<void> {
+    return Promise.resolve();
+  }
+
   async send(message: MailMessage): Promise<SendResult> {
+    const validationError = validateMailMessage(message);
+    if (validationError) {
+      return rejectedSendResult(this.provider, validationError, message.idempotencyKey);
+    }
+
     if (this.failOn?.(message)) {
       return {
         status: "failed",

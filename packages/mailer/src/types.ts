@@ -80,6 +80,8 @@ export interface MailerAdapter {
    * configuration / programming errors.
    */
   send(message: MailMessage): Promise<SendResult>;
+  /** Release transport resources (e.g. SMTP connection pool). Safe to call multiple times. */
+  close(): Promise<void>;
 }
 
 /** Injectable fetch (for tests without real network). Defaults to global fetch. */

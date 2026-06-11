@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { parseAddressList, resolveReplyTo } from "../src/senderUtils.js";
+import { formatFromHeader, parseAddressList, quoteDisplayName, resolveReplyTo } from "../src/senderUtils.js";
+
+describe("formatFromHeader", () => {
+  it("quotes display names for RFC5322 safety", () => {
+    expect(formatFromHeader({ fromAddress: "a@example.com", fromName: "Admitto Events" })).toBe(
+      '"Admitto Events" <a@example.com>',
+    );
+    expect(formatFromHeader({ fromAddress: "a@example.com", fromName: 'Acme "HQ"' })).toBe(
+      '"Acme \\"HQ\\"" <a@example.com>',
+    );
+  });
+
+  it("quoteDisplayName escapes embedded quotes", () => {
+    expect(quoteDisplayName('Team, Inc.')).toBe('"Team, Inc."');
+  });
+});
 
 describe("resolveReplyTo", () => {
   it("prefers non-empty message replyTo over config", () => {

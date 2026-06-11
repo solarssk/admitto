@@ -1,7 +1,9 @@
 import type { PowerAutomateConfig } from "../config.js";
 import { POWER_AUTOMATE_CAPABILITIES } from "../capabilities.js";
 import { mapHttpStatus, mapNetworkError } from "../errorMapping.js";
+import { rejectedSendResult } from "../adapterUtils.js";
 import { resolveReplyTo } from "../senderUtils.js";
+import { validateMailMessage } from "../validation.js";
 import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.js";
 
 /**
@@ -17,7 +19,16 @@ export class PowerAutomateAdapter implements MailerAdapter {
     private readonly fetchFn: FetchFn = fetch,
   ) {}
 
+  async close(): Promise<void> {
+    return Promise.resolve();
+  }
+
   async send(message: MailMessage): Promise<SendResult> {
+    const validationError = validateMailMessage(message);
+    if (validationError) {
+      return rejectedSendResult(this.provider, validationError, message.idempotencyKey);
+    }
+
     const base: SendResult = {
       status: "failed",
       provider: this.provider,

@@ -51,7 +51,7 @@ describe("SmtpAdapter", () => {
 
     expect(sendMail).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: "Admitto Events <events@example.com>",
+        from: '"Admitto Events" <events@example.com>',
         replyTo: "reply@example.com",
         envelope: { from: "bounce@example.com", to: ["jan@example.com"] },
       }),
@@ -104,6 +104,18 @@ describe("SmtpAdapter", () => {
       }),
     );
     createSpy.mockRestore();
+  });
+
+  it("returns rejected when message fails validation", async () => {
+    const transporter = nodemailer.createTransport({ jsonTransport: true });
+    const adapter = new SmtpAdapter(config, transporter);
+    const res = await adapter.send({
+      to: "not-an-email",
+      subject: "S",
+      html: "<p>h</p>",
+    });
+    expect(res.status).toBe("rejected");
+    expect(res.retryable).toBe(false);
   });
 
   it("returns rejected (no throw) when the transport throws 535 auth error", async () => {

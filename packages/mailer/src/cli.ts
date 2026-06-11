@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { configFromEnv } from "./configFromEnv.js";
-import { createMailer, sendBatch } from "./index.js";
+import { closeMailer, createMailer, sendBatch } from "./index.js";
 import type { MailMessage } from "./types.js";
 import { isSendSuccess } from "./types.js";
 import { splitCsvLine } from "./csvUtils.js";
@@ -64,39 +64,43 @@ async function main() {
   const mailer = createMailer(config);
   console.log(`provider = ${config.provider}`);
 
-  const subject = arg("subject", "Admitto — test (@admitto/mailer)")!;
-  const csv = arg("csv");
+  try {
+    const subject = arg("subject", "Admitto — test (@admitto/mailer)")!;
+    const csv = arg("csv");
 
-  if (csv) {
-    const rows = readCsv(csv);
-    const messages: MailMessage[] = rows.map((r) => ({
-      to: r.email,
-      subject,
-      html: renderHtml(r.firstName),
-    }));
-    console.log(`Batch: ${messages.length} recipients...`);
-    const summary = await sendBatch(mailer, messages, {
-      concurrency: 3,
-      onResult: (res, msg, i) =>
-        console.log(
-          `  [${i + 1}/${messages.length}] ${isSendSuccess(res.status) ? "✅" : "❌"} ${msg.to}${res.error ? " — " + res.error : ""}`,
-        ),
-    });
-    console.log(`\nSummary: sent=${summary.sent} failed=${summary.failed} total=${summary.total}`);
-    process.exit(summary.failed ? 1 : 0);
-  }
+    if (csv) {
+      const rows = readCsv(csv);
+      const messages: MailMessage[] = rows.map((r) => ({
+        to: r.email,
+        subject,
+        html: renderHtml(r.firstName),
+      }));
+      console.log(`Batch: ${messages.length} recipients...`);
+      const summary = await sendBatch(mailer, messages, {
+        concurrency: 3,
+        onResult: (res, msg, i) =>
+          console.log(
+            `  [${i + 1}/${messages.length}] ${isSendSuccess(res.status) ? "✅" : "❌"} ${msg.to}${res.error ? " — " + res.error : ""}`,
+          ),
+      });
+      console.log(`\nSummary: sent=${summary.sent} failed=${summary.failed} total=${summary.total}`);
+      process.exit(summary.failed ? 1 : 0);
+    }
 
-  const to = arg("to");
-  if (!to) {
-    console.error("Provide --to <address> or --csv <file>");
-    process.exit(1);
-  }
-  const result = await mailer.send({ to, subject, html: renderHtml(arg("name")) });
-  if (isSendSuccess(result.status)) {
-    console.log(`✅ accepted (id: ${result.providerMessageId ?? "—"})`);
-  } else {
-    console.error(`❌ error: ${result.error}`);
-    process.exit(1);
+    const to = arg("to");
+    if (!to) {
+      console.error("Provide --to <address> or --csv <file>");
+      process.exit(1);
+    }
+    const result = await mailer.send({ to, subject, html: renderHtml(arg("name")) });
+    if (isSendSuccess(result.status)) {
+      console.log(`✅ accepted (id: ${result.providerMessageId ?? "—"})`);
+    } else {
+      console.error(`❌ error: ${result.error}`);
+      process.exit(1);
+    }
+  } finally {
+    await closeMailer(mailer);
   }
 }
 

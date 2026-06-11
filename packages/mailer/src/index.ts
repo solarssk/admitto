@@ -15,6 +15,7 @@ export { PowerAutomateAdapter } from "./adapters/powerAutomate.js";
 export { ExportOnlyAdapter, type ExportSink } from "./adapters/exportOnly.js";
 export { MockAdapter } from "./adapters/mock.js";
 export { configFromEnv } from "./configFromEnv.js";
+export { validateMailMessage } from "./validation.js";
 
 export interface CreateMailerDeps {
   /** Injectable fetch (for tests). Applies to graph/powerautomate adapters. */
@@ -38,6 +39,9 @@ export function createMailer(config: MailerConfig | unknown, deps: CreateMailerD
     case "powerautomate":
       return new PowerAutomateAdapter(cfg, deps.fetchFn);
     case "export_only":
+      if (!deps.exportSink) {
+        throw new Error("export_only provider requires exportSink in createMailer deps");
+      }
       return new ExportOnlyAdapter(cfg, deps.exportSink);
     default: {
       const _exhaustive: never = cfg;
@@ -92,4 +96,9 @@ export async function sendBatch(
 
   const sent = results.filter((r) => isSendSuccess(r.status)).length;
   return { total: messages.length, sent, failed: messages.length - sent, results };
+}
+
+/** Release transport resources (SMTP pool, etc.). Call when done with the adapter. */
+export async function closeMailer(adapter: MailerAdapter): Promise<void> {
+  await adapter.close();
 }
