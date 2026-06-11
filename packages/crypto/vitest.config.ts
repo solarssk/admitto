@@ -4,11 +4,10 @@ export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
     environment: "node",
-    // Sequential: tests share a single Postgres test database; concurrent db push --force-reset would race.
-    fileParallelism: false,
     env: {
-      DATABASE_URL: "postgresql://admitto:admitto@localhost:5432/admitto_tickets_test",
+      // Fixed test key — 32 bytes, base64. For tests only, never commit a real key.
       ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      NODE_ENV: "test",
     },
   },
 });

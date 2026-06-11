@@ -6,6 +6,7 @@ import { PrismaClient } from "@prisma/client";
 import { issueTicket, issueTicketsForEvent } from "../src/issue.js";
 import { hashToken } from "../src/hash.js";
 import { looksLikeInternalToken } from "../src/url.js";
+import { decryptFromString } from "@admitto/crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -25,6 +26,10 @@ beforeAll(async () => {
 
   prisma = new PrismaClient();
 
+  await prisma.organization.create({
+    data: { id: "org_default", name: "Default", slug: "default" },
+  });
+
   await prisma.event.upsert({
     where: { id: EVENT_ID },
     update: {},
@@ -33,6 +38,7 @@ beforeAll(async () => {
       title: "Issue Test Event",
       slug: "test-event-issue-001",
       date: new Date("2026-09-01T09:00:00Z"),
+      organization_id: "org_default",
     },
   });
 
@@ -97,6 +103,12 @@ describe("issueTicket — Mode A first issuance", () => {
     const att = await prisma.attendee.findUnique({ where: { id: attendeeAId } });
     expect(att?.token_hash).toBe(hashToken(rawToken));
   });
+
+  it("persists token_enc to DB and decrypts to raw token", async () => {
+    const att = await prisma.attendee.findUnique({ where: { id: attendeeAId } });
+    expect(att?.token_enc).not.toBeNull();
+    expect(decryptFromString(att!.token_enc!)).toBe(rawToken);
+  });
 });
 
 describe("issueTicket — Mode A idempotency (second call)", () => {
@@ -142,10 +154,11 @@ describe("issueTicket — Mode B (agency)", () => {
     expect(result.qrPayload).toBe("AGENCY-QR-ISSUE-001");
   });
 
-  it("does not write token_hash for Mode B attendee", async () => {
+  it("does not write token_hash or token_enc for Mode B attendee", async () => {
     await issueTicket(attendeeBId, prisma, BASE_URL);
     const att = await prisma.attendee.findUnique({ where: { id: attendeeBId } });
     expect(att?.token_hash).toBeNull();
+    expect(att?.token_enc).toBeNull();
   });
 
   it("does not issue a cancelled agency attendee", async () => {
@@ -196,6 +209,7 @@ describe("issueTicketsForEvent", () => {
         title: "Issue Internal Batch Event",
         slug: "issue-internal-batch-event",
         date: new Date("2026-11-01T09:00:00Z"),
+        organization_id: "org_default",
       },
     });
 
@@ -248,6 +262,7 @@ describe("issueTicketsForEvent", () => {
         title: "Issue Summary Event",
         slug: "issue-summary-event",
         date: new Date("2026-10-01T09:00:00Z"),
+        organization_id: "org_default",
       },
     });
 

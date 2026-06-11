@@ -26,6 +26,10 @@ beforeAll(async () => {
 
   prisma = new PrismaClient();
 
+  await prisma.organization.create({
+    data: { id: "org_default", name: "Default", slug: "default" },
+  });
+
   await prisma.event.upsert({
     where: { id: EVENT_ID },
     update: {},
@@ -34,6 +38,7 @@ beforeAll(async () => {
       title: "Test Event",
       slug: "test-event-tickets-001",
       date: new Date("2026-09-01T09:00:00Z"),
+      organization_id: "org_default",
     },
   });
 
@@ -45,6 +50,7 @@ beforeAll(async () => {
       title: "Second Test Event",
       slug: "test-event-tickets-002",
       date: new Date("2026-09-02T09:00:00Z"),
+      organization_id: "org_default",
     },
   });
 

@@ -1,5 +1,7 @@
 // PostgreSQL is the single database engine (dev, CI, prod) — see ADR 0004.
 // No Prisma enums — statuses as String + TS unions in src/status.ts.
+// Tenant boundary: Organization (ADR 0005). Roles: RoleAssignment (exact-match, ADR 0005).
+// Encryption: Attendee.token_enc AES-256-GCM via @admitto/crypto (ADR 0006).
 
 generator client {
   provider = "prisma-client-js"
@@ -10,15 +12,29 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Organization {
+  id               String          @id @default(cuid())
+  name             String
+  slug             String          @unique
+  created_at       DateTime        @default(now())
+  events           Event[]
+  email_deliveries EmailDelivery[]
+  // branding, allowed_from_domain — reserved for future (ADR 0005, ADR 0008)
+}
+
 model Event {
-  id         String     @id @default(cuid())
-  title      String
-  slug       String     @unique
-  date       DateTime
-  location   String?
-  created_at DateTime   @default(now())
-  attendees  Attendee[]
-  check_ins  CheckIn[]
+  id              String       @id @default(cuid())
+  organization_id String
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Restrict)
+  title           String
+  slug            String       @unique
+  date            DateTime
+  location        String?
+  created_at      DateTime     @default(now())
+  attendees       Attendee[]
+  check_ins       CheckIn[]
+
+  @@index([organization_id])
 }
 
 model Attendee {
@@ -30,6 +46,9 @@ model Attendee {
   // SHA-256(raw_token) for Mode A tickets; null for Mode B (agency) attendees.
   // Raw token never stored — exists only in the ticket URL / QR handed to the attendee.
   token_hash       String?         @unique
+  // AES-256-GCM encrypted raw ticket token (for same-link resend — ADR 0006).
+  // Null for Mode B (agency) attendees; null for unissued Mode A attendees.
+  token_enc        String?
   // Agency-provided QR payload preserved as source of truth for import.
   qr_payload       String?
   external_uuid    String?
@@ -72,14 +91,18 @@ model WalletPass {
 }
 
 model EmailDelivery {
-  id          String    @id @default(cuid())
-  attendee_id String
-  attendee    Attendee  @relation(fields: [attendee_id], references: [id])
-  provider    String
-  message_id  String?
-  status      String    @default("pending")
-  sent_at     DateTime?
-  created_at  DateTime  @default(now())
+  id              String       @id @default(cuid())
+  organization_id String
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Restrict)
+  attendee_id     String
+  attendee        Attendee     @relation(fields: [attendee_id], references: [id])
+  provider        String
+  message_id      String?
+  status          String       @default("pending")
+  sent_at         DateTime?
+  created_at      DateTime     @default(now())
+
+  @@index([organization_id])
 }
 
 model CheckIn {
@@ -98,4 +121,16 @@ model CheckIn {
   created_at    DateTime @default(now())
 
   @@index([event_id, checked_in_at(sort: Desc), id(sort: Desc)])
+}
+
+model RoleAssignment {
+  id         String   @id @default(cuid())
+  user_ref   String   // placeholder for future IdP mapping (OIDC/SAML — v1.0)
+  role       String   // "superadmin" | "admin" | "operator"
+  scope_type String   // "instance" | "organization" | "event"
+  scope_id   String?  // null for instance scope
+  created_at DateTime @default(now())
+
+  @@index([user_ref])
+  @@index([scope_type, scope_id])
 }

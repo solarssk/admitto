@@ -43,12 +43,16 @@ beforeAll(async () => {
   prisma = new PrismaClient({
     datasources: { db: { url: TEST_DATABASE_URL } },
   });
+  await prisma.organization.create({
+    data: { id: "org_default", name: "Default", slug: "default" },
+  });
   await prisma.event.create({
     data: {
       id: EVENT_ID,
       title: "TOCTOU Test Event",
       slug: "toctou-test-event",
       date: new Date("2026-09-01T09:00:00Z"),
+      organization_id: "org_default",
     },
   });
 });

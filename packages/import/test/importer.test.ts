@@ -37,6 +37,10 @@ beforeAll(async () => {
 
   prisma = new PrismaClient();
 
+  await prisma.organization.create({
+    data: { id: "org_default", name: "Default", slug: "default" },
+  });
+
   // Seed a test event
   await prisma.event.upsert({
     where: { id: EVENT_ID },
@@ -46,6 +50,7 @@ beforeAll(async () => {
       title: "Test Event",
       slug: "test-event-001",
       date: new Date("2026-09-01T09:00:00Z"),
+      organization_id: "org_default",
     },
   });
 });

@@ -28,6 +28,8 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto
+      # Fixed test key — 32 bytes. Not a production secret; used only in CI test runs.
+      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:
@@ -39,6 +41,7 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run build -w @admitto/shared
+      - run: npm run build -w @admitto/crypto
       - run: npm run build -w @admitto/db
       - run: npm run build -w @admitto/tickets
       - name: Create test databases
@@ -56,6 +59,8 @@ jobs:
       # prisma generate (postinstall) reads schema.prisma only — never connects to a database.
       # A syntactically valid DSN is required by Prisma's schema parser; the host is intentionally unreachable.
       DATABASE_URL: postgresql://localhost/prisma-generate-placeholder
+      # @admitto/crypto postinstall does not run; placeholder satisfies any import-time env checks.
+      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:

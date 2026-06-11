@@ -8,8 +8,8 @@ export type ResolveTicketContext = {
  * Result of issueTicket().
  *
  * "issued"        — Mode A, token minted for the first time. Raw token is returned ONLY here;
- *                   it is not stored in DB and cannot be recovered later.
- * "already_issued" — Mode A, token_hash already set. Idempotent no-op; raw token unavailable.
+ *                   token_enc in DB allows same-link resend (ADR 0006) but not full re-issue.
+ * "already_issued" — Mode A, token_hash already set. Idempotent no-op; raw token not re-returned.
  * "agency"        — Mode B, no internal token minted; agency payload returned verbatim.
  */
 export type IssuedTicketResult =

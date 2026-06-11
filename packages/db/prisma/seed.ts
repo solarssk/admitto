@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
+import { encryptToString } from "@admitto/crypto";
 
 const prisma = new PrismaClient();
 const bobDevToken = "devticketbob0000000000000000000000000000000";
@@ -14,6 +15,13 @@ async function main() {
     throw new Error("Refusing to run development seed in production");
   }
 
+  // Default organization — stable ID 'org_default' matches the tenant_foundation migration backfill.
+  const org = await prisma.organization.upsert({
+    where: { slug: "default" },
+    update: {},
+    create: { id: "org_default", name: "Default", slug: "default" },
+  });
+
   const event = await prisma.event.upsert({
     where: { slug: "test-event-2024" },
     update: {},
@@ -22,6 +30,7 @@ async function main() {
       slug: "test-event-2024",
       date: new Date("2024-09-01T10:00:00Z"),
       location: "Convention Center, City",
+      organization_id: org.id,
     },
   });
 
@@ -39,6 +48,7 @@ async function main() {
       email: "bob@example.com",
       name: "Bob Jones",
       token_hash: hashToken(bobDevToken),
+      token_enc: encryptToString(bobDevToken),
       external_uuid: null,
       qr_payload: null,
       status: "confirmed",
@@ -57,12 +67,13 @@ async function main() {
       email: "dave@example.com",
       name: "Dave Brown",
       token_hash: hashToken(daveDevToken),
+      token_enc: encryptToString(daveDevToken),
       external_uuid: null,
       qr_payload: null,
       status: "cancelled",
       note: "Cancelled attendee should render as an invalid ticket",
     },
-  ] as const;
+  ];
 
   let upserted = 0;
   for (const a of attendeeData) {
@@ -71,6 +82,7 @@ async function main() {
       update: {
         name: a.name,
         token_hash: a.token_hash,
+        token_enc: a.token_enc ?? null,
         external_uuid: a.external_uuid,
         qr_payload: a.qr_payload,
         status: a.status,
@@ -80,6 +92,7 @@ async function main() {
         email: a.email,
         name: a.name,
         token_hash: a.token_hash,
+        token_enc: a.token_enc ?? null,
         external_uuid: a.external_uuid,
         qr_payload: a.qr_payload,
         status: a.status,
@@ -89,6 +102,7 @@ async function main() {
     console.log(`Seeded ${a.email} — ${a.note}`);
   }
 
+  console.log(`Seeded org "${org.slug}" (${org.id})`);
   console.log(`Seeded event "${event.slug}" (${event.id.slice(0, 8)}...) with ${upserted} attendees.`);
 }
 
