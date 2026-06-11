@@ -105,9 +105,11 @@ async function main() {
       update: {
         name: a.name,
         token_hash: a.token_hash,
-        // Only overwrite token_enc when we have a value — preserves an existing encrypted
-        // token if the seed is re-run without ENCRYPTION_KEY configured.
-        ...(a.token_enc !== null ? { token_enc: a.token_enc } : {}),
+        // For attendees that are not pre-issued (token_hash = null in fixture, e.g. Alice,
+        // Carol), always write token_enc: null to clear any stale value.
+        // For pre-issued attendees (Bob, Dave): only overwrite when we have a value — skip
+        // when encryption is unavailable so an existing token_enc isn't wiped mid-run.
+        ...(a.token_hash === null || a.token_enc !== null ? { token_enc: a.token_enc } : {}),
         external_uuid: a.external_uuid,
         qr_payload: a.qr_payload,
         status: a.status,
