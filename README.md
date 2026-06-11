@@ -20,15 +20,18 @@ No secrets, no real personal data are ever committed here.**
 # 1. Start Postgres
 docker compose -f infra/docker-compose.yml up -d db
 
-# 2. Install dependencies
+# 2. Configure database connection (already matches Docker Compose defaults)
+cp packages/db/.env.example packages/db/.env
+
+# 3. Install dependencies
 npm install
 
-# 3. Migrate, seed, and create test databases
+# 4. Migrate, seed, and create test databases
 npm run db:migrate
 npm run db:seed
 npm run db:test-setup
 
-# 4. Run tests
+# 5. Run tests
 npm test
 ```
 
