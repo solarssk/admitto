@@ -1,14 +1,32 @@
 # @admitto/db
 
-Database layer for Admitto. SQLite for local development, portable to PostgreSQL.
+Database layer for Admitto. PostgreSQL is the single engine across dev, CI and production (ADR 0004).
+
+## Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) — required to run PostgreSQL locally
 
 ## First run
 
 ```bash
-cp .env.example .env
-npm run db:generate   # generates the Prisma client
-npm run db:migrate    # creates / migrates the database (dev.db)
-npm run db:seed       # inserts test data (idempotent — safe to run multiple times)
+# 1. Start Postgres
+docker compose -f infra/docker-compose.yml up -d db   # from repo root
+
+# 2. Configure connection
+cp packages/db/.env.example packages/db/.env          # already set for docker-compose defaults
+
+# 3. Generate Prisma client and migrate
+npm run db:migrate -w @admitto/db   # prisma migrate deploy
+npm run db:seed -w @admitto/db      # idempotent — safe to run multiple times
+npm run db:test-setup               # from repo root — creates admitto_*_test DBs for package tests
+```
+
+Or from the repo root using the delegating scripts:
+
+```bash
+npm run db:migrate
+npm run db:migrate:status   # check applied migrations / schema drift
+npm run db:seed
 ```
 
 ## Scripts
@@ -16,8 +34,13 @@ npm run db:seed       # inserts test data (idempotent — safe to run multiple t
 | Script | Description |
 |---|---|
 | `db:generate` | Generates the Prisma client from `prisma/schema.prisma` |
-| `db:migrate` | Creates / updates the database schema (writes to `prisma/migrations/`) |
-| `db:seed` | Inserts 1 event + 3 attendees (upsert by `(event_id, email)` — mirrors real import logic) |
+| `db:migrate` | Applies pending migrations (`prisma migrate deploy`) — does NOT create new ones |
+| `db:migrate:dev` | Creates a new migration from schema changes during development (`prisma migrate dev`) |
+| `db:migrate:status` | Shows which migrations are applied and whether the schema has local drift |
+| `db:seed` | Inserts 1 event + 4 attendees (upsert by `(event_id, email)` — mirrors real import logic) |
+
+From repo root, `npm run db:test-setup` creates `admitto_tickets_test` and `admitto_import_test`
+(idempotent). Required before `npm test` when using the local Docker Postgres.
 
 ## Import
 
@@ -28,8 +51,8 @@ import { type AttendeeStatus, type CheckInStatus, CHECKIN_STATUS } from '@admitt
 
 ## Statuses
 
-Instead of Prisma `enum` (not supported by SQLite), TypeScript unions in `src/status.ts`
-are the single source of truth for all status values.
+TypeScript unions in `src/status.ts` are the single source of truth for all status values
+(no Prisma enums — kept as String for portability and consistency).
 
 | Type | Values |
 |---|---|
@@ -43,8 +66,8 @@ are the single source of truth for all status values.
 
 ## Schema notes
 
-- `Attendee.token` — unique, unguessable identifier for QR/Wallet (generated at import step).
+- `Attendee.token_hash` — SHA-256 of the raw token; null for agency (Mode B) attendees.
 - `Attendee.qr_payload` — agency-provided QR payload preserved as source of truth.
 - `Attendee.external_uuid` — agency UUID; unique per event `(event_id, external_uuid)` for idempotent re-import.
-- `CheckIn.event_id` — denormalised for event-scoped queries without an Attendee join.
+- `CheckIn.event_id` — denormalised for event-scoped queries; composite FK `(attendee_id, event_id)` → `Attendee(id, event_id)` prevents cross-event mismatches.
 - `CheckIn.status` — `CheckInStatus` value recorded at scan time.
