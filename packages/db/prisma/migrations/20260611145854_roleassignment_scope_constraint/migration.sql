@@ -14,8 +14,13 @@ ALTER TABLE "RoleAssignment"
   ADD CONSTRAINT "RoleAssignment_scope_type_check"
     CHECK (scope_type IN ('instance', 'organization', 'event'));
 
--- Only instance scope may have a null scope_id.
--- organization and event scopes require an explicit scope_id.
+-- scope_id must match scope_type exactly:
+--   instance  → scope_id must be NULL  (no target entity)
+--   organization / event → scope_id must be NOT NULL  (target entity required)
 ALTER TABLE "RoleAssignment"
   ADD CONSTRAINT "RoleAssignment_scope_id_check"
-    CHECK (scope_type = 'instance' OR scope_id IS NOT NULL);
+    CHECK (
+      (scope_type = 'instance'    AND scope_id IS NULL) OR
+      (scope_type = 'organization' AND scope_id IS NOT NULL) OR
+      (scope_type = 'event'        AND scope_id IS NOT NULL)
+    );
