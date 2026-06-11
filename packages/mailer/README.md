@@ -48,6 +48,9 @@ const summary = await sendBatch(mailer, messages, { concurrency: 3 });
 
 Each adapter exposes `capabilities` so callers never assume Graph-like Sent Items behaviour.
 
+`to` / `cc` / `replyTo` may use RFC5322 address lists (quoted display names, angle addresses);
+the mailer normalizes them to bare email addresses for SMTP envelope and Graph API.
+
 ## Configuration
 
 `MailerConfig` is a zod discriminated union on `provider`. Build from env via `configFromEnv()`.

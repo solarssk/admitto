@@ -72,6 +72,28 @@ describe("GraphAdapter", () => {
     expect(body.message.from).toBeUndefined();
   });
 
+  it("parses RFC5322 cc with quoted commas into Graph recipients", async () => {
+    const calls: { url: string; init: any }[] = [];
+    const fetchFn = vi.fn(async (url: string, init: any) => {
+      calls.push({ url, init });
+      return url.includes("/oauth2/v2.0/token") ? tokenResponse() : acceptedResponse();
+    });
+
+    const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
+    await adapter.send({
+      to: "jan@example.com",
+      cc: '"Audit, Team" <audit@example.com>, ops@example.com',
+      subject: "x",
+      html: "<p>x</p>",
+    });
+
+    const body = JSON.parse(calls.find((c) => c.url.includes("/sendMail"))!.init.body);
+    expect(body.message.ccRecipients).toEqual([
+      { emailAddress: { address: "audit@example.com" } },
+      { emailAddress: { address: "ops@example.com" } },
+    ]);
+  });
+
   it("sets message.from when fromName is configured", async () => {
     const calls: { url: string; init: any }[] = [];
     const fetchFn = vi.fn(async (url: string, init: any) => {

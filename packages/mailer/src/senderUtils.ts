@@ -1,3 +1,4 @@
+import addressparser from "nodemailer/lib/addressparser/index.js";
 import type { GraphConfig, MailSenderConfig } from "./config.js";
 import type { MailMessage, MailSender } from "./types.js";
 
@@ -23,14 +24,21 @@ export function toMailSender(config: MailSenderConfig): MailSender {
 }
 
 /**
- * Parse a plain comma-separated email list (to / cc).
- * Each segment must be a bare address — no quoted display names or RFC5322 grouping.
+ * Parse an RFC5322 address list (via nodemailer's addressparser).
+ * Returns bare email addresses only — display names are stripped.
  */
 export function parseAddressList(list: string): string[] {
-  return list
-    .split(",")
-    .map((a) => a.trim())
-    .filter(Boolean);
+  const trimmed = list.trim();
+  if (!trimmed) return [];
+  const parsed = addressparser(trimmed, { flatten: true });
+  return parsed
+    .map((entry) => entry.address?.trim())
+    .filter((address): address is string => Boolean(address));
+}
+
+/** Graph API toRecipients / ccRecipients / replyTo shape. */
+export function graphRecipients(list?: string) {
+  return parseAddressList(list ?? "").map((address) => ({ emailAddress: { address } }));
 }
 
 /** Effective display from address for Graph (defaults to mailbox). */

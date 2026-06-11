@@ -22,4 +22,15 @@ describe("parseAddressList", () => {
       "b@example.com",
     ]);
   });
+
+  it("handles quoted display names with commas (RFC5322)", () => {
+    expect(parseAddressList('"Kowalski, Jan" <jan@example.com>, b@example.com')).toEqual([
+      "jan@example.com",
+      "b@example.com",
+    ]);
+  });
+
+  it("extracts address from angle-addr form", () => {
+    expect(parseAddressList("Admitto Events <events@example.com>")).toEqual(["events@example.com"]);
+  });
 });

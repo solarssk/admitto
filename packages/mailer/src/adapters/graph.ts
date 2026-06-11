@@ -3,6 +3,7 @@ import { GRAPH_CAPABILITIES } from "../capabilities.js";
 import { mapHttpStatus, mapNetworkError } from "../errorMapping.js";
 import {
   graphDisplayFromAddress,
+  graphRecipients,
   resolveReplyTo,
   shouldSetGraphMessageFrom,
 } from "../senderUtils.js";
@@ -24,15 +25,6 @@ interface CachedToken {
   accessToken: string;
   /** epoch ms when token expires (with safety margin). */
   expiresAt: number;
-}
-
-function recipients(list?: string) {
-  if (!list) return [];
-  return list
-    .split(",")
-    .map((a) => a.trim())
-    .filter(Boolean)
-    .map((address) => ({ emailAddress: { address } }));
 }
 
 export class GraphAdapter implements MailerAdapter {
@@ -114,12 +106,12 @@ export class GraphAdapter implements MailerAdapter {
     const graphMessage: Record<string, unknown> = {
       subject: message.subject,
       body: { contentType: "HTML", content: message.html },
-      toRecipients: recipients(message.to),
+      toRecipients: graphRecipients(message.to),
     };
-    if (message.cc) graphMessage["ccRecipients"] = recipients(message.cc);
+    if (message.cc) graphMessage["ccRecipients"] = graphRecipients(message.cc);
 
     const replyTo = resolveReplyTo(this.config.replyTo, message);
-    if (replyTo) graphMessage["replyTo"] = recipients(replyTo);
+    if (replyTo) graphMessage["replyTo"] = graphRecipients(replyTo);
 
     if (shouldSetGraphMessageFrom(this.config)) {
       const address = graphDisplayFromAddress(this.config);
