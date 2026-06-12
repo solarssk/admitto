@@ -26,6 +26,7 @@ import { sendTestEmail } from "./testSend.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/** Load DATABASE_URL and other vars from monorepo, db, and package .env files. */
 function loadDotEnv() {
   const monorepoRoot = path.join(__dirname, "..", "..", "..");
   // Merge all existing files (do not stop at first). Later files override earlier
@@ -53,11 +54,13 @@ function loadDotEnv() {
   }
 }
 
+/** Read a `--name value` flag from process.argv. */
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
   return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : undefined;
 }
 
+/** Require a CLI flag or exit with a clear error. */
 function requireArg(name: string): string {
   const value = arg(name);
   if (!value) {
@@ -67,6 +70,7 @@ function requireArg(name: string): string {
   return value;
 }
 
+/** Print CLI usage and exit with code 1. */
 function usage(): never {
   console.error(`Usage:
   test-send --to <addr> --event <id>
@@ -75,14 +79,17 @@ function usage(): never {
   process.exit(1);
 }
 
+/** Type guard for a delivery status CLI filter value. */
 function isEmailDeliveryStatus(value: string): value is EmailDeliveryStatus {
   return (EMAIL_DELIVERY_STATUS as readonly string[]).includes(value);
 }
 
+/** Type guard for a delivery purpose CLI filter value. */
 function isEmailDeliveryPurpose(value: string): value is EmailDeliveryPurpose {
   return (EMAIL_DELIVERY_PURPOSE as readonly string[]).includes(value);
 }
 
+/** Run `test-send --to <addr> --event <id>`. */
 async function cmdTestSend(prisma: PrismaClient): Promise<number> {
   const to = requireArg("to");
   const eventId = requireArg("event");
@@ -99,6 +106,7 @@ async function cmdTestSend(prisma: PrismaClient): Promise<number> {
   return isSendSuccess(result.status) ? 0 : 1;
 }
 
+/** Run `config-describe --event <id>` with secret-safe JSON output. */
 async function cmdConfigDescribe(prisma: PrismaClient): Promise<number> {
   const eventId = requireArg("event");
   const desc = await getMailConfigDescription(eventId, prisma);
@@ -106,6 +114,7 @@ async function cmdConfigDescribe(prisma: PrismaClient): Promise<number> {
   return 0;
 }
 
+/** Run `deliveries --event <id>` with optional status/purpose/attendee filters. */
 async function cmdDeliveries(prisma: PrismaClient): Promise<number> {
   const eventId = requireArg("event");
   const status = arg("status");
@@ -144,6 +153,7 @@ async function cmdDeliveries(prisma: PrismaClient): Promise<number> {
   return 0;
 }
 
+/** CLI entry: parse subcommand, connect Prisma, dispatch, and exit. */
 async function main() {
   loadDotEnv();
 

@@ -26,6 +26,7 @@ export type CliConfigDescriptor = {
     : ConfigDescriptor[K];
 };
 
+/** Map a masked secret field to CLI-safe presence metadata (no value). */
 function secretPresenceField(field: FieldDescriptor<"••••" | null>): SecretPresenceField {
   return {
     // Presence only — never read field.value (CodeQL / no secret material in CLI output).

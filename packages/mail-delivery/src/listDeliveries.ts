@@ -49,6 +49,7 @@ const DELIVERY_LOG_SELECT = {
   created_at: true,
 } as const;
 
+/** Normalize a single status or array for Prisma `{ in: [...] }` filters. */
 function normalizeStatusFilter(
   status: EmailDeliveryStatus | EmailDeliveryStatus[],
 ): EmailDeliveryStatus[] {
