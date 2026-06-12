@@ -15,7 +15,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "cli": "tsx src/cli.ts"
   },
   "dependencies": {
     "@admitto/crypto": "*",
@@ -29,6 +30,7 @@
     "@prisma/client": "^5.17.0",
     "@types/node": "^22.19.20",
     "prisma": "^5.17.0",
+    "tsx": "^4.16.0",
     "typescript": "^6.0.3",
     "vitest": "4.1.8"
   }
