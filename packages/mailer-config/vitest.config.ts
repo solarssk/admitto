@@ -1,0 +1,14 @@
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    include: ["test/**/*.test.ts"],
+    environment: "node",
+    // Sequential: tests share a single Postgres test database.
+    fileParallelism: false,
+    env: {
+      DATABASE_URL: "postgresql://admitto:admitto@localhost:5432/admitto_mailer_config_test",
+      ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    },
+  },
+});
