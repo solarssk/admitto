@@ -1,13 +1,11 @@
 import type { PrismaClient, MailSettings } from "@prisma/client";
 import { rawMailFieldsFromEnv } from "./envFields.js";
+import { getProviderDefaults } from "./providerDefaults.js";
 import type { ConfigDescriptor, FieldDescriptor, FieldSource } from "./types.js";
 
 type Row = MailSettings | null;
 
-function field<T>(
-  value: T,
-  source: FieldSource,
-): FieldDescriptor<T> {
+function field<T>(value: T, source: FieldSource): FieldDescriptor<T> {
   return { value, source, locked: source === "env" };
 }
 
@@ -38,6 +36,9 @@ function secretField(
  * Returns per-field descriptors for the UI Settings screen.
  * Secrets are always masked ("••••") — never decrypted.
  * locked=true means the field is set in env and cannot be edited from the UI.
+ *
+ * Fields with source="default" carry the actual runtime default value (same as
+ * what parseMailerConfig applies), not null, so the UI shows effective config.
  */
 export async function describeMailConfig(
   eventId: string,
@@ -62,59 +63,53 @@ export async function describeMailConfig(
     }),
   ]);
 
+  // Resolve provider first so we can look up its defaults.
+  const providerDesc = resolveField(envFields.provider, ev?.provider, org?.provider, null);
+  const d = getProviderDefaults(providerDesc.value);
+
   return {
-    provider: resolveField(envFields.provider, ev?.provider, org?.provider, null),
+    provider: providerDesc,
     // shared sender
     fromAddress: resolveField(envFields.fromAddress, ev?.from_address, org?.from_address, null),
     fromName: resolveField(envFields.fromName, ev?.from_name, org?.from_name, null),
     replyTo: resolveField(envFields.replyTo, ev?.reply_to, org?.reply_to, null),
     envelopeFrom: resolveField(envFields.envelopeFrom, ev?.envelope_from, org?.envelope_from, null),
-    allowedFromDomain: resolveField(
-      undefined, // no env var for this field
-      ev?.allowed_from_domain,
-      org?.allowed_from_domain,
-      null,
-    ),
-    // smtp non-secret
+    allowedFromDomain: resolveField(undefined, ev?.allowed_from_domain, org?.allowed_from_domain, null),
+    // smtp non-secret (defaults from schema via getProviderDefaults)
     host: resolveField(envFields.host, ev?.host, org?.host, null),
-    port: resolveField(envFields.port, ev?.port, org?.port, null),
-    secure: resolveField(envFields.secure, ev?.secure, org?.secure, null),
+    port: resolveField(envFields.port, ev?.port, org?.port, d.port ?? null),
+    secure: resolveField(envFields.secure, ev?.secure, org?.secure, d.secure ?? null),
     user: resolveField(envFields.user, ev?.user, org?.user, null),
-    requireTls: resolveField(envFields.requireTls, ev?.require_tls, org?.require_tls, null),
+    requireTls: resolveField(envFields.requireTls, ev?.require_tls, org?.require_tls, d.requireTls ?? null),
     tlsRejectUnauthorized: resolveField(
       envFields.tlsRejectUnauthorized,
       ev?.tls_reject_unauthorized,
       org?.tls_reject_unauthorized,
-      null,
+      d.tlsRejectUnauthorized ?? null,
     ),
     heloName: resolveField(envFields.heloName, ev?.helo_name, org?.helo_name, null),
-    pool: resolveField(envFields.pool, ev?.pool, org?.pool, null),
-    maxConnections: resolveField(
-      envFields.maxConnections,
-      ev?.max_connections,
-      org?.max_connections,
-      null,
-    ),
-    maxMessages: resolveField(envFields.maxMessages, ev?.max_messages, org?.max_messages, null),
+    pool: resolveField(envFields.pool, ev?.pool, org?.pool, d.pool ?? null),
+    maxConnections: resolveField(envFields.maxConnections, ev?.max_connections, org?.max_connections, d.maxConnections ?? null),
+    maxMessages: resolveField(envFields.maxMessages, ev?.max_messages, org?.max_messages, d.maxMessages ?? null),
     rateLimitPerMinute: resolveField(
       envFields.rateLimitPerMinute,
       ev?.rate_limit_per_minute,
       org?.rate_limit_per_minute,
-      null,
+      d.rateLimitPerMinute ?? null,
     ),
     connectionTimeout: resolveField(
       envFields.connectionTimeout,
       ev?.connection_timeout,
       org?.connection_timeout,
-      null,
+      d.connectionTimeout ?? null,
     ),
     greetingTimeout: resolveField(
       envFields.greetingTimeout,
       ev?.greeting_timeout,
       org?.greeting_timeout,
-      null,
+      d.greetingTimeout ?? null,
     ),
-    socketTimeout: resolveField(envFields.socketTimeout, ev?.socket_timeout, org?.socket_timeout, null),
+    socketTimeout: resolveField(envFields.socketTimeout, ev?.socket_timeout, org?.socket_timeout, d.socketTimeout ?? null),
     // smtp secret — masked
     smtpPassword: secretField(
       envFields.smtpPassword !== undefined,
@@ -129,7 +124,7 @@ export async function describeMailConfig(
       envFields.saveToSentItems,
       ev?.save_to_sent_items,
       org?.save_to_sent_items,
-      null,
+      d.saveToSentItems ?? null,
     ),
     // graph secret — masked
     graphClientSecret: secretField(
