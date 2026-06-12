@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
-import { resolveBranding } from "./branding.js";
+import { resolveBrandingFromEvent } from "./branding.js";
 import { formatEventDate, resolvePreviewEventTimeZone } from "./formatEventDate.js";
-import { resolveTemplate } from "./mailTemplate.js";
+import { resolveTemplateForEvent } from "./mailTemplate.js";
 import { renderTemplate } from "./render.js";
 import type { RenderedTemplate, TemplateVars } from "./types.js";
 
@@ -36,11 +36,12 @@ export async function previewTemplate(
   sampleVars?: Partial<TemplateVars>,
   options?: PreviewTemplateOptions,
 ): Promise<RenderedTemplate> {
-  const [resolved, branding, event] = await Promise.all([
-    resolveTemplate(eventId, prisma),
-    resolveBranding(eventId, prisma),
-    prisma.event.findUniqueOrThrow({ where: { id: eventId } }),
-  ]);
+  const event = await prisma.event.findUniqueOrThrow({
+    where: { id: eventId },
+    include: { organization: true },
+  });
+  const resolved = await resolveTemplateForEvent(event, prisma);
+  const branding = resolveBrandingFromEvent(event);
 
   const vars: TemplateVars = {
     ...DEFAULT_SAMPLE_VARS,

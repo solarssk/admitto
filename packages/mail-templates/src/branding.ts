@@ -9,6 +9,20 @@ function pickUrl(eventValue: string | null | undefined, orgValue: string | null 
   return org;
 }
 
+type BrandingEvent = {
+  logo_url: string | null;
+  header_image_url: string | null;
+  organization: { logo_url: string | null; header_image_url: string | null };
+};
+
+/** Resolves branding URLs from a preloaded event row (event → organization → empty). */
+export function resolveBrandingFromEvent(event: BrandingEvent): BrandingUrls {
+  return {
+    logo_url: pickUrl(event.logo_url, event.organization.logo_url),
+    header_image_url: pickUrl(event.header_image_url, event.organization.header_image_url),
+  };
+}
+
 /**
  * Resolves branding URLs: event → organization → empty default.
  * MVP: stored as columns on Organization/Event (no separate BrandingSettings model).
@@ -22,10 +36,7 @@ export async function resolveBranding(
     include: { organization: true },
   });
 
-  return {
-    logo_url: pickUrl(event.logo_url, event.organization.logo_url),
-    header_image_url: pickUrl(event.header_image_url, event.organization.header_image_url),
-  };
+  return resolveBrandingFromEvent(event);
 }
 
 export interface SetBrandingInput {

@@ -13,16 +13,15 @@ import { MjmlCompileError, UnknownPlaceholdersError } from "./errors.js";
 export { UnknownPlaceholdersError, MjmlCompileError };
 
 /**
- * Resolves effective template: event MailTemplate → org MailTemplate → built-in default.
+ * Resolves effective template for a preloaded event row:
+ * event MailTemplate → org MailTemplate → built-in default.
  */
-export async function resolveTemplate(
-  eventId: string,
+export async function resolveTemplateForEvent(
+  event: { id: string; organization_id: string },
   prisma: PrismaClient,
 ): Promise<ResolvedTemplate> {
-  const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
-
   const eventRow = await prisma.mailTemplate.findUnique({
-    where: { scope_type_scope_id: { scope_type: "event", scope_id: eventId } },
+    where: { scope_type_scope_id: { scope_type: "event", scope_id: event.id } },
   });
   if (eventRow) {
     return rowToResolved(eventRow, "event");
@@ -41,6 +40,17 @@ export async function resolveTemplate(
   }
 
   return await getBuiltinTemplate();
+}
+
+/**
+ * Resolves effective template: event MailTemplate → org MailTemplate → built-in default.
+ */
+export async function resolveTemplate(
+  eventId: string,
+  prisma: PrismaClient,
+): Promise<ResolvedTemplate> {
+  const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
+  return resolveTemplateForEvent(event, prisma);
 }
 
 function parseTemplateFormat(value: string, source: ResolvedTemplate["source"]): TemplateFormat {
