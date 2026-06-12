@@ -15,6 +15,7 @@ export const DEFAULT_SAMPLE_VARS: TemplateVars = {
   ticket_url: "https://tickets.example.com/t/sample-token",
   qr_image_url: "https://tickets.example.com/q/sample-token.png",
   logo_url: "",
+  header_image_url: "",
   apple_wallet_url: "",
   google_wallet_url: "",
   download_page_url: "",
@@ -44,6 +45,7 @@ export async function previewTemplate(
     event_date: formatEventDate(event.date),
     event_location: event.location ?? "",
     logo_url: branding.logo_url,
+    header_image_url: branding.header_image_url,
     ...sampleVars,
   };
 

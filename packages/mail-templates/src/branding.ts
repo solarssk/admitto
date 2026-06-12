@@ -42,25 +42,41 @@ function normalizeOptionalUrl(field: string, value: string | null | undefined): 
 }
 
 /** Set branding URLs on organization or event scope. */
+type BrandingUpdateData = {
+  logo_url?: string | null;
+  header_image_url?: string | null;
+};
+
+function buildBrandingUpdateData(input: SetBrandingInput): BrandingUpdateData {
+  const data: BrandingUpdateData = {};
+  if (input.logoUrl !== undefined) {
+    data.logo_url = normalizeOptionalUrl("logo_url", input.logoUrl);
+  }
+  if (input.headerImageUrl !== undefined) {
+    data.header_image_url = normalizeOptionalUrl("header_image_url", input.headerImageUrl);
+  }
+  return data;
+}
+
 export async function setBranding(
   scope: { scopeType: "organization" | "event"; scopeId: string },
   input: SetBrandingInput,
   prisma: PrismaClient,
 ): Promise<void> {
-  const logoUrl = normalizeOptionalUrl("logo_url", input.logoUrl);
-  const headerImageUrl = normalizeOptionalUrl("header_image_url", input.headerImageUrl);
+  const data = buildBrandingUpdateData(input);
+  if (Object.keys(data).length === 0) return;
 
   if (scope.scopeType === "organization") {
     await prisma.organization.update({
       where: { id: scope.scopeId },
-      data: { logo_url: logoUrl, header_image_url: headerImageUrl },
+      data,
     });
     return;
   }
 
   await prisma.event.update({
     where: { id: scope.scopeId },
-    data: { logo_url: logoUrl, header_image_url: headerImageUrl },
+    data,
   });
 }
 

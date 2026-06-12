@@ -5,7 +5,7 @@ Outlook-safe mail template renderer for Admitto ticket emails.
 ## Flow
 
 1. **Save:** `body_template` (MJML or HTML) → `compileTemplate` → `compiled_html_template` (placeholders preserved).
-2. **Send:** `compiled_html_template` + attendee vars → `renderTemplate` → `{ subject, html }` for `@admitto/mailer`.
+2. **Send:** `compiled_html_template` + attendee vars → `renderTemplate` → `{ subject, html }` for `@admitto/mailer`. Subject is plain text (no HTML escaping); HTML body is escaped context-aware.
 
 ## Placeholders
 
@@ -15,7 +15,7 @@ Closed whitelist — `{{snake_case}}` only. Unknown placeholders fail validation
 |-------------|-------|
 | `first_name`, `last_name`, `full_name`, `email` | Attendee |
 | `event_name`, `event_date`, `event_location` | Event |
-| `ticket_url`, `qr_image_url`, `logo_url` | URLs — validated as `http(s)://` at render time |
+| `ticket_url`, `qr_image_url`, `logo_url`, `header_image_url` | URLs — validated as `http(s)://` at render time |
 | `apple_wallet_url`, `google_wallet_url`, `download_page_url` | Reserved — empty until v0.5 |
 
 URL validation applies to **runtime values**, not to `href="{{ticket_url}}"` in the template source.

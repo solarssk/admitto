@@ -64,6 +64,26 @@ describe("setBranding", () => {
       ),
     ).rejects.toThrow(InvalidHttpUrlError);
   });
+
+  it("updates only fields provided in partial input", async () => {
+    await prisma.organization.update({
+      where: { id: "org-br" },
+      data: {
+        logo_url: "https://cdn.example.com/org-logo.png",
+        header_image_url: "https://cdn.example.com/org-header.png",
+      },
+    });
+
+    await setBranding(
+      { scopeType: "organization", scopeId: "org-br" },
+      { logoUrl: "https://cdn.example.com/new-logo.png" },
+      prisma,
+    );
+
+    const org = await prisma.organization.findUniqueOrThrow({ where: { id: "org-br" } });
+    expect(org.logo_url).toBe("https://cdn.example.com/new-logo.png");
+    expect(org.header_image_url).toBe("https://cdn.example.com/org-header.png");
+  });
 });
 
 describe("empty logo in custom template", () => {

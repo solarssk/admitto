@@ -30,16 +30,16 @@ describe("escape helpers", () => {
 });
 
 describe("renderTemplate", () => {
-  it("substitutes known placeholders and escapes HTML in text", () => {
+  it("substitutes known placeholders; subject is plain text, HTML body is escaped", () => {
     const result = renderTemplate(
       {
-        subject: "Hello {{first_name}}",
+        subject: "Hello {{first_name}} — {{event_name}}",
         compiledHtml: "<p>Hi {{first_name}}, company &lt;test&gt;</p>",
       },
-      { first_name: `O'Brien <img>` },
+      { first_name: `Tom & Jerry <VIP>`, event_name: "A & B" },
     );
-    expect(result.subject).toBe("Hello O'Brien &lt;img&gt;");
-    expect(result.html).toContain("Hi O'Brien &lt;img&gt;");
+    expect(result.subject).toBe("Hello Tom & Jerry <VIP> — A & B");
+    expect(result.html).toContain("Hi Tom &amp; Jerry &lt;VIP&gt;");
   });
 
   it("throws on unknown placeholder", () => {
@@ -74,6 +74,18 @@ describe("renderTemplate", () => {
         { ticket_url: "not-a-url" },
       ),
     ).toThrow(InvalidHttpUrlError);
+  });
+
+  it("accepts header_image_url placeholder in HTML", () => {
+    const result = renderTemplate(
+      {
+        subject: "T",
+        compiledHtml:
+          '<img src="{{header_image_url}}" alt="header" width="600" height="120" />',
+      },
+      { header_image_url: "https://cdn.example.com/header.png" },
+    );
+    expect(result.html).toContain('src="https://cdn.example.com/header.png"');
   });
 
   it("strips empty src when logo_url is empty", () => {

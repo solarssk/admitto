@@ -27,6 +27,7 @@ export interface TemplateVars {
   ticket_url?: string;
   qr_image_url?: string;
   logo_url?: string;
+  header_image_url?: string;
   apple_wallet_url?: string;
   google_wallet_url?: string;
   download_page_url?: string;

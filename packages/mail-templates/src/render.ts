@@ -47,7 +47,21 @@ export function stripEmptyUrlAttributes(html: string): string {
     .replace(/\s(src|href)=(?:""|'')/gi, "");
 }
 
-function substitutePlaceholders(template: string, vars: TemplateVars): string {
+function formatSubjectPlaceholderValue(name: string, value: string): string {
+  if (URL_PLACEHOLDERS.has(name)) {
+    return validateHttpUrl(name, value);
+  }
+  return value;
+}
+
+function substituteSubjectPlaceholders(template: string, vars: TemplateVars): string {
+  return template.replace(PLACEHOLDER_RE, (_match, name: string) => {
+    const value = resolveVarValue(name, vars);
+    return formatSubjectPlaceholderValue(name, value);
+  });
+}
+
+function substituteHtmlPlaceholders(template: string, vars: TemplateVars): string {
   return template.replace(PLACEHOLDER_RE, (match, name: string, offset: number) => {
     const inAttribute = isInsideAttribute(template, offset);
     const value = resolveVarValue(name, vars);
@@ -69,9 +83,9 @@ export function renderTemplate(
     throw new UnknownPlaceholdersError(unknown);
   }
 
-  const subject = substitutePlaceholders(input.subject, vars);
+  const subject = substituteSubjectPlaceholders(input.subject, vars);
   const html = stripEmptyUrlAttributes(
-    substitutePlaceholders(input.compiledHtml, vars),
+    substituteHtmlPlaceholders(input.compiledHtml, vars),
   );
 
   return { subject, html };
