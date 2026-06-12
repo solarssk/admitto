@@ -3,12 +3,15 @@ export interface HtmlAttributeContext {
   inQuotedAttribute: boolean;
   /** Set when the placeholder sits in an unquoted attribute value. */
   unquotedAttributeName: string | null;
+  /** Set when the placeholder sits in opening-tag markup outside any attribute value. */
+  inBareTagMarkup: boolean;
 }
 
 const EMPTY_CONTEXT: HtmlAttributeContext = {
   inTag: false,
   inQuotedAttribute: false,
   unquotedAttributeName: null,
+  inBareTagMarkup: false,
 };
 
 /** True inside `<!-- ... -->`, including Outlook `<!--[if mso]>...<![endif]-->` blocks. */
@@ -133,6 +136,8 @@ export function getHtmlAttributeContext(html: string, index: number): HtmlAttrib
     inTag: true,
     inQuotedAttribute: inQuote !== null,
     unquotedAttributeName,
+    inBareTagMarkup:
+      inQuote === null && !inUnquotedValue && unquotedAttributeName === null,
   };
 }
 

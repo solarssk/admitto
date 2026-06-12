@@ -49,6 +49,17 @@ describe("getHtmlAttributeContext", () => {
     expect(result.unquotedAttributeName).toBe("alt");
   });
 
+  it("detects placeholder used as a pseudo attribute name", () => {
+    const bare = ctxAt("<td {{first_name}}>Hi</td>");
+    expect(bare.inTag).toBe(true);
+    expect(bare.inBareTagMarkup).toBe(true);
+    expect(bare.inQuotedAttribute).toBe(false);
+    expect(bare.unquotedAttributeName).toBeNull();
+
+    const withValue = ctxAt('<td {{first_name}}="x">Hi</td>');
+    expect(withValue.inBareTagMarkup).toBe(true);
+  });
+
   it("treats placeholder in later attribute on multi-attribute tag as quoted", () => {
     const result = ctxAt('<td class="label" title="{{first_name}}">Hi</td>');
     expect(result.inQuotedAttribute).toBe(true);

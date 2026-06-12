@@ -131,4 +131,19 @@ describe("validateTemplate", () => {
       }),
     ).toThrow(UnquotedAttributePlaceholderError);
   });
+
+  it("rejects placeholders in attribute-name position", () => {
+    expect(() =>
+      assertValidTemplate({
+        subject: "Hi",
+        body: '<td {{first_name}}="x">Hi</td>',
+      }),
+    ).toThrow(UnquotedAttributePlaceholderError);
+    expect(() =>
+      assertValidTemplate({
+        subject: "Hi",
+        body: "<td {{first_name}}>Hi</td>",
+      }),
+    ).toThrow(UnquotedAttributePlaceholderError);
+  });
 });

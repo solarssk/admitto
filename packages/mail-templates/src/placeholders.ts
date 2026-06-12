@@ -70,6 +70,8 @@ export function findUnquotedAttributePlaceholders(html: string): string[] {
     const ctx = getHtmlAttributeContext(html, match.index!);
     if (ctx.unquotedAttributeName) {
       attributes.add(ctx.unquotedAttributeName);
+    } else if (ctx.inBareTagMarkup) {
+      attributes.add(`{{${match[1]!}}}`);
     }
   }
   return [...attributes].sort();

@@ -171,6 +171,18 @@ describe("renderTemplate", () => {
     ).toThrow(UnquotedAttributePlaceholderError);
   });
 
+  it("rejects placeholders in attribute-name position at render time", () => {
+    expect(() =>
+      renderTemplate(
+        {
+          subject: "T",
+          compiledHtml: '<td {{first_name}} onmouseover=alert(1)>Hi</td>',
+        },
+        { first_name: "" },
+      ),
+    ).toThrow(UnquotedAttributePlaceholderError);
+  });
+
   it("throws when required URL placeholders are missing", () => {
     expect(() =>
       renderTemplate(
