@@ -41,7 +41,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): MailerConfi
 
   switch (provider) {
     case "graph": {
-      const mailbox = (env.GRAPH_MAILBOX ?? env.MAIL_FROM_ADDRESS ?? "").trim();
+      const graphMailbox = env.GRAPH_MAILBOX?.trim();
+      const mailbox = graphMailbox || env.MAIL_FROM_ADDRESS?.trim() || "";
       return parseMailerConfig({
         provider: "graph",
         mailbox,
