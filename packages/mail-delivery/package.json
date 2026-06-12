@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "precli": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mailer -w @admitto/mailer-config -w @admitto/mail-templates -w @admitto/mail-delivery",
+    "precli": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/tickets -w @admitto/mailer -w @admitto/mailer-config -w @admitto/mail-templates -w @admitto/mail-delivery",
     "cli": "node dist/cli.js"
   },
   "dependencies": {
