@@ -37,7 +37,7 @@ function normalizeOptionalUrl(field: string, value: string | null | undefined): 
   if (value === undefined || value === null) return null;
   const trimmed = value.trim();
   if (trimmed === "") return null;
-  validateHttpUrl(field, trimmed);
+  validateHttpUrl(field, trimmed, "branding");
   return trimmed;
 }
 

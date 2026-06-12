@@ -1,9 +1,44 @@
+export type UrlValidationContext = "branding" | "template";
+
+const BRANDING_FIELD_LABELS: Record<string, string> = {
+  logo_url: "Logo URL",
+  header_image_url: "Header image URL",
+};
+
+const TEMPLATE_FIELD_LABELS: Record<string, string> = {
+  ticket_url: "Ticket link",
+  qr_image_url: "QR image URL",
+  logo_url: "Logo URL",
+  header_image_url: "Header image URL",
+  apple_wallet_url: "Apple Wallet link",
+  google_wallet_url: "Google Wallet link",
+  download_page_url: "Download page link",
+};
+
+function fieldLabel(field: string, context: UrlValidationContext): string {
+  const labels = context === "branding" ? BRANDING_FIELD_LABELS : TEMPLATE_FIELD_LABELS;
+  return labels[field] ?? field;
+}
+
+/** Human-readable URL validation message — shared by branding save and template render. */
+export function formatInvalidUrlMessage(
+  field: string,
+  context: UrlValidationContext,
+): string {
+  const label = fieldLabel(field, context);
+  if (context === "branding") {
+    return `${label} must be a full http:// or https:// URL.`;
+  }
+  return `${label} must be a full http:// or https:// URL when rendering the email.`;
+}
+
 export class InvalidHttpUrlError extends Error {
   constructor(
     public readonly field: string,
     public readonly value: string,
+    public readonly context: UrlValidationContext = "template",
   ) {
-    super(`Invalid HTTP(S) URL for placeholder "${field}"`);
+    super(formatInvalidUrlMessage(field, context));
     this.name = "InvalidHttpUrlError";
   }
 }
@@ -37,16 +72,20 @@ export function escapeHtmlAttribute(value: string): string {
 }
 
 /** Validate http(s) URL; throws InvalidHttpUrlError when non-empty and invalid. */
-export function validateHttpUrl(field: string, value: string): string {
+export function validateHttpUrl(
+  field: string,
+  value: string,
+  context: UrlValidationContext = "template",
+): string {
   if (value === "") return "";
   let parsed: URL;
   try {
     parsed = new URL(value);
   } catch {
-    throw new InvalidHttpUrlError(field, value);
+    throw new InvalidHttpUrlError(field, value, context);
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new InvalidHttpUrlError(field, value);
+    throw new InvalidHttpUrlError(field, value, context);
   }
   return value;
 }

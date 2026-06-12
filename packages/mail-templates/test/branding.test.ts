@@ -65,7 +65,7 @@ describe("setBranding", () => {
         { logoUrl: "ftp://bad.example/logo.png" },
         prisma,
       ),
-    ).rejects.toThrow(InvalidHttpUrlError);
+    ).rejects.toThrow("Logo URL must be a full http:// or https:// URL.");
   });
 
   it("updates only fields provided in partial input", async () => {

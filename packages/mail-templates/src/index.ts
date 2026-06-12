@@ -2,8 +2,10 @@ export {
   escapeHtmlText,
   escapeHtmlAttribute,
   validateHttpUrl,
+  formatInvalidUrlMessage,
   InvalidHttpUrlError,
 } from "./escape.js";
+export type { UrlValidationContext } from "./escape.js";
 export {
   ALLOWED_PLACEHOLDERS,
   URL_PLACEHOLDERS,
