@@ -18,15 +18,32 @@ import {
 } from "./errors.js";
 import type { RenderedTemplate, TemplateVars } from "./types.js";
 
+/**
+ * True when index points at a placeholder inside a quoted HTML attribute value.
+ * Uses the opening quote for each attribute and only treats the matching quote as
+ * closing — so apostrophes in double-quoted values (Guest's) stay in attribute context.
+ */
 function isInsideAttribute(text: string, index: number): boolean {
   const before = text.slice(0, index);
-  // Quoted attribute value
-  if (/=\s*["'][^"']*$/.test(before)) return true;
-  // Unquoted value starting at placeholder (validated separately — escape if reached)
-  if (/=\s*$/.test(before)) return true;
-  // Unquoted value with literal prefix before placeholder
-  if (/=\s*[^\s"'=<][^>]*$/.test(before)) return true;
-  return false;
+  let insideQuoted = false;
+
+  const attrStartRe = /=\s*("|')/g;
+  let match: RegExpExecArray | null;
+  while ((match = attrStartRe.exec(before)) !== null) {
+    const quote = match[1]!;
+    const valueStart = match.index + match[0].length;
+    const valuePart = before.slice(valueStart);
+    let closed = false;
+    for (let i = 0; i < valuePart.length; i++) {
+      if (valuePart[i] === quote) {
+        closed = true;
+        break;
+      }
+    }
+    insideQuoted = !closed;
+  }
+
+  return insideQuoted;
 }
 
 function resolveVarValue(name: string, vars: TemplateVars): string {

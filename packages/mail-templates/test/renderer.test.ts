@@ -85,6 +85,32 @@ describe("renderTemplate", () => {
     expect(result.html).toBe('<img alt="x&quot; onerror=alert(1)" width="100" />');
   });
 
+  it("escapes placeholders in double-quoted attributes that contain apostrophes", () => {
+    const result = renderTemplate(
+      {
+        subject: "T",
+        compiledHtml: '<td title="Guest\'s {{first_name}}">Hi</td>',
+      },
+      { first_name: 'x" onmouseover=alert(1)' },
+    );
+    expect(result.html).toBe(
+      '<td title="Guest\'s x&quot; onmouseover=alert(1)">Hi</td>',
+    );
+  });
+
+  it("escapes placeholders in single-quoted attributes that contain double quotes", () => {
+    const result = renderTemplate(
+      {
+        subject: "T",
+        compiledHtml: "<td title='Say \"hi\" {{first_name}}'>Hi</td>",
+      },
+      { first_name: "x' onclick=alert(1)" },
+    );
+    expect(result.html).toBe(
+      "<td title='Say \"hi\" x&#39; onclick=alert(1)'>Hi</td>",
+    );
+  });
+
   it("throws when required URL placeholders are missing", () => {
     expect(() =>
       renderTemplate(
