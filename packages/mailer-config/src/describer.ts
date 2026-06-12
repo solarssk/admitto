@@ -80,7 +80,7 @@ export async function describeMailConfig(
     port: resolveField(envFields.port, ev?.port, org?.port, null),
     secure: resolveField(envFields.secure, ev?.secure, org?.secure, null),
     user: resolveField(envFields.user, ev?.user, org?.user, null),
-    requireTLS: resolveField(envFields.requireTLS, ev?.require_tls, org?.require_tls, null),
+    requireTls: resolveField(envFields.requireTls, ev?.require_tls, org?.require_tls, null),
     tlsRejectUnauthorized: resolveField(
       envFields.tlsRejectUnauthorized,
       ev?.tls_reject_unauthorized,

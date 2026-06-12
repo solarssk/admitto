@@ -1,10 +1,9 @@
-import { execSync } from "node:child_process";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createMailer } from "@admitto/mailer";
-import { parseMailerConfig } from "@admitto/mailer";
+import { createMailer, parseMailerConfig } from "@admitto/mailer";
 import { setMailSettings } from "../src/mailSettings.js";
 import { resolveMailConfig } from "../src/resolver.js";
+import { resetDb } from "./resetDb.js";
 
 const prisma = new PrismaClient();
 
@@ -17,11 +16,7 @@ const BASE_SMTP_ENV: NodeJS.ProcessEnv = {
 };
 
 beforeAll(async () => {
-  execSync("npx prisma db push --force-reset --accept-data-loss", {
-    cwd: new URL("../../db", import.meta.url).pathname,
-    env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL },
-    stdio: "pipe",
-  });
+  resetDb();
 
   await prisma.organization.create({
     data: { id: "org-r", name: "Resolver Org", slug: "resolver-org" },

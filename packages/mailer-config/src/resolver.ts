@@ -13,6 +13,20 @@ function first<T>(...values: (T | null | undefined)[]): T | undefined {
   return undefined;
 }
 
+/**
+ * Lazy variant: evaluates thunks in order and returns the first non-null result.
+ * Used for secrets so that lower-priority decryption is skipped when a
+ * higher-priority value already wins — avoids throwing due to a missing
+ * ENCRYPTION_KEY when env already supplies the secret.
+ */
+function firstLazy<T>(...loaders: Array<() => T | null | undefined>): T | undefined {
+  for (const load of loaders) {
+    const value = load();
+    if (value !== null && value !== undefined) return value;
+  }
+  return undefined;
+}
+
 function maybeDecrypt(enc: string | null | undefined): string | undefined {
   if (!enc) return undefined;
   return decryptFromString(enc);
@@ -85,12 +99,13 @@ function buildRawConfig(
         port: first(env.port, ev?.port, org?.port),
         secure: first(env.secure, ev?.secure, org?.secure),
         user: first(env.user, ev?.user, org?.user),
-        password: first(
-          env.smtpPassword,
-          maybeDecrypt(ev?.smtp_password_enc),
-          maybeDecrypt(org?.smtp_password_enc),
+        // firstLazy: skip lower-priority decryptions when env secret already wins
+        password: firstLazy(
+          () => env.smtpPassword,
+          () => maybeDecrypt(ev?.smtp_password_enc),
+          () => maybeDecrypt(org?.smtp_password_enc),
         ),
-        requireTLS: first(env.requireTLS, ev?.require_tls, org?.require_tls),
+        requireTLS: first(env.requireTls, ev?.require_tls, org?.require_tls),
         tlsRejectUnauthorized: first(
           env.tlsRejectUnauthorized,
           ev?.tls_reject_unauthorized,
@@ -119,16 +134,18 @@ function buildRawConfig(
       };
     }
     case "graph": {
+      // mailbox fallback to fromAddress happens here, not in rawMailFieldsFromEnv,
+      // so that a DB-configured mailbox can still win when only MAIL_FROM_ADDRESS is in env.
       const mailbox = first(env.mailbox, ev?.mailbox, org?.mailbox);
       return {
         ...base,
         mailbox: mailbox ?? fromAddress,
         tenantId: first(env.tenantId, ev?.tenant_id, org?.tenant_id),
         clientId: first(env.clientId, ev?.client_id, org?.client_id),
-        clientSecret: first(
-          env.graphClientSecret,
-          maybeDecrypt(ev?.graph_client_secret_enc),
-          maybeDecrypt(org?.graph_client_secret_enc),
+        clientSecret: firstLazy(
+          () => env.graphClientSecret,
+          () => maybeDecrypt(ev?.graph_client_secret_enc),
+          () => maybeDecrypt(org?.graph_client_secret_enc),
         ),
         saveToSentItems: first(
           env.saveToSentItems,
@@ -140,15 +157,15 @@ function buildRawConfig(
     case "powerautomate": {
       return {
         ...base,
-        url: first(
-          env.powerAutomateUrl,
-          maybeDecrypt(ev?.power_automate_url_enc),
-          maybeDecrypt(org?.power_automate_url_enc),
+        url: firstLazy(
+          () => env.powerAutomateUrl,
+          () => maybeDecrypt(ev?.power_automate_url_enc),
+          () => maybeDecrypt(org?.power_automate_url_enc),
         ),
-        key: first(
-          env.powerAutomateKey,
-          maybeDecrypt(ev?.power_automate_key_enc),
-          maybeDecrypt(org?.power_automate_key_enc),
+        key: firstLazy(
+          () => env.powerAutomateKey,
+          () => maybeDecrypt(ev?.power_automate_key_enc),
+          () => maybeDecrypt(org?.power_automate_key_enc),
         ),
       };
     }

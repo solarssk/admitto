@@ -1,17 +1,13 @@
-import { execSync } from "node:child_process";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setMailSettings } from "../src/mailSettings.js";
 import { describeMailConfig } from "../src/describer.js";
+import { resetDb } from "./resetDb.js";
 
 const prisma = new PrismaClient();
 
 beforeAll(async () => {
-  execSync("npx prisma db push --force-reset --accept-data-loss", {
-    cwd: new URL("../../db", import.meta.url).pathname,
-    env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL },
-    stdio: "pipe",
-  });
+  resetDb();
 
   await prisma.organization.create({
     data: { id: "org-d", name: "Describe Org", slug: "describe-org" },
@@ -146,18 +142,21 @@ describe("describeMailConfig — secrets never exposed", () => {
   });
 
   it("null when no secret present in any scope", async () => {
-    // fresh event with no secrets
+    // Use a fresh org with no MailSettings so org-level secrets cannot leak in.
+    await prisma.organization.create({
+      data: { id: "org-d-clean", name: "Clean Org", slug: "clean-org" },
+    });
     await prisma.event.create({
       data: {
-        id: "evt-d2",
-        organization_id: "org-d",
-        title: "Describe Event 2",
-        slug: "describe-event-2",
+        id: "evt-d-clean",
+        organization_id: "org-d-clean",
+        title: "Clean Event",
+        slug: "clean-event",
         date: new Date("2026-09-01"),
       },
     });
 
-    const desc = await describeMailConfig("evt-d2", prisma, {});
+    const desc = await describeMailConfig("evt-d-clean", prisma, {});
     expect(desc.smtpPassword.value).toBeNull();
     expect(desc.smtpPassword.source).toBe("default");
   });

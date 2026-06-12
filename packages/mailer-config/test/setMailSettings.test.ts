@@ -1,16 +1,12 @@
-import { execSync } from "node:child_process";
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setMailSettings } from "../src/mailSettings.js";
+import { resetDb } from "./resetDb.js";
 
 const prisma = new PrismaClient();
 
 beforeAll(async () => {
-  execSync("npx prisma db push --force-reset --accept-data-loss", {
-    cwd: new URL("../../db", import.meta.url).pathname,
-    env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL },
-    stdio: "pipe",
-  });
+  resetDb();
 
   await prisma.organization.create({
     data: { id: "org-1", name: "Test Org", slug: "test-org" },
@@ -99,6 +95,31 @@ describe("setMailSettings", () => {
     });
     expect(rows).toHaveLength(1);
     expect(rows[0].host).toBe("updated.example.com");
+  });
+
+  it("partial update preserves existing encrypted secrets", async () => {
+    // First save with a password
+    await setMailSettings(
+      { scopeType: "organization", scopeId: "org-1" },
+      { provider: "smtp", host: "smtp.example.com", user: "u@example.com", fromAddress: "u@example.com", smtpPassword: "keep-this-secret" },
+      prisma,
+    );
+    const before = await prisma.mailSettings.findUniqueOrThrow({
+      where: { scope_type_scope_id: { scope_type: "organization", scope_id: "org-1" } },
+    });
+    expect(before.smtp_password_enc).toBeTruthy();
+
+    // Second save without password — must NOT wipe the existing encrypted value
+    await setMailSettings(
+      { scopeType: "organization", scopeId: "org-1" },
+      { host: "smtp2.example.com" },
+      prisma,
+    );
+    const after = await prisma.mailSettings.findUniqueOrThrow({
+      where: { scope_type_scope_id: { scope_type: "organization", scope_id: "org-1" } },
+    });
+    expect(after.smtp_password_enc).toBe(before.smtp_password_enc);
+    expect(after.host).toBe("smtp2.example.com");
   });
 
   it("stores graph client secret encrypted", async () => {

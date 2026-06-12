@@ -24,7 +24,7 @@ export type ConfigDescriptor = {
   port: FieldDescriptor<number | null>;
   secure: FieldDescriptor<boolean | null>;
   user: FieldDescriptor<string | null>;
-  requireTLS: FieldDescriptor<boolean | null>;
+  requireTls: FieldDescriptor<boolean | null>;
   tlsRejectUnauthorized: FieldDescriptor<boolean | null>;
   heloName: FieldDescriptor<string | null>;
   pool: FieldDescriptor<boolean | null>;
@@ -91,7 +91,7 @@ export interface RawMailFields {
   port?: number;
   secure?: boolean;
   user?: string;
-  requireTLS?: boolean;
+  requireTls?: boolean;
   tlsRejectUnauthorized?: boolean;
   heloName?: string;
   pool?: boolean;
