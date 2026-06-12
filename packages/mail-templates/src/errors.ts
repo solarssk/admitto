@@ -12,6 +12,15 @@ export class MissingRequiredPlaceholderError extends Error {
   }
 }
 
+export class UnquotedAttributePlaceholderError extends Error {
+  constructor(public readonly attributes: string[]) {
+    super(
+      `Placeholders in HTML attributes must be quoted (e.g. alt="{{first_name}}"): ${attributes.join(", ")}`,
+    );
+    this.name = "UnquotedAttributePlaceholderError";
+  }
+}
+
 export class MjmlCompileError extends Error {
   constructor(
     public readonly errors: Array<{ message: string; formattedMessage?: string }>,

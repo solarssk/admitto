@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   compileTemplate,
   validateTemplate,
+  assertValidTemplate,
   MjmlCompileError,
+  UnquotedAttributePlaceholderError,
 } from "../src/index.js";
 
 describe("compileTemplate", () => {
@@ -52,5 +54,14 @@ describe("validateTemplate", () => {
         body: "<p>{{first-name}}</p>",
       }),
     ).toEqual(["First_Name", "first-name"]);
+  });
+
+  it("rejects unquoted attribute placeholders", () => {
+    expect(() =>
+      assertValidTemplate({
+        subject: "Hi",
+        body: '<img alt={{first_name}} width="100" />',
+      }),
+    ).toThrow(UnquotedAttributePlaceholderError);
   });
 });

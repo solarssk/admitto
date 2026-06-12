@@ -6,6 +6,7 @@ import {
   validateHttpUrl,
   InvalidHttpUrlError,
   MissingRequiredPlaceholderError,
+  UnquotedAttributePlaceholderError,
 } from "../src/index.js";
 
 describe("escape helpers", () => {
@@ -59,6 +60,29 @@ describe("renderTemplate", () => {
         {},
       ),
     ).toThrow(/Unknown template placeholders: First_Name/);
+  });
+
+  it("rejects unquoted attribute placeholders at render time", () => {
+    expect(() =>
+      renderTemplate(
+        {
+          subject: "T",
+          compiledHtml: '<img alt={{first_name}} width="100" />',
+        },
+        { first_name: 'x onerror=alert(1)' },
+      ),
+    ).toThrow(UnquotedAttributePlaceholderError);
+  });
+
+  it("escapes quoted attribute placeholders", () => {
+    const result = renderTemplate(
+      {
+        subject: "T",
+        compiledHtml: '<img alt="{{first_name}}" width="100" />',
+      },
+      { first_name: 'x" onerror=alert(1)' },
+    );
+    expect(result.html).toBe('<img alt="x&quot; onerror=alert(1)" width="100" />');
   });
 
   it("throws when required URL placeholders are missing", () => {

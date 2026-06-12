@@ -22,6 +22,9 @@ Closed whitelist — `{{snake_case}}` only. Any `{{...}}` token is validated: ma
 
 URL validation applies to **runtime values**, not to `href="{{ticket_url}}"` in the template source.
 
+Placeholders in HTML attributes must use **quoted** values (`alt="{{first_name}}"`, not `alt={{first_name}}`).
+Unquoted attribute placeholders are rejected at save and render time (spaces in attendee data can break out of the attribute).
+
 ## Template formats
 
 - **`mjml`** (default) — compiled on save via MJML → table-based, inline CSS HTML.

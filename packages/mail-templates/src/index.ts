@@ -12,10 +12,12 @@ export {
   extractPlaceholderNames,
   extractPlaceholderTokens,
   findUnknownPlaceholders,
+  findUnquotedAttributePlaceholders,
 } from "./placeholders.js";
 export {
   UnknownPlaceholdersError,
   MissingRequiredPlaceholderError,
+  UnquotedAttributePlaceholderError,
   MjmlCompileError,
 } from "./errors.js";
 export { compileTemplate } from "./compile.js";

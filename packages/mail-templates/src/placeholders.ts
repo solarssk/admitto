@@ -46,6 +46,23 @@ const VALID_PLACEHOLDER_NAME_RE = /^[a-z][a-z0-9_]*$/;
 /** Matches only well-formed {{snake_case}} placeholders (for substitution). */
 export const VALID_PLACEHOLDER_RE = /\{\{([a-z][a-z0-9_]*)\}\}/g;
 
+/**
+ * Placeholder immediately after = without a quote — unsafe in HTML (spaces in values
+ * create new attributes even when escaped).
+ */
+const UNQUOTED_ATTR_PLACEHOLDER_RE = /\s([a-zA-Z][\w-]*)\s*=\s*(?!["'])\s*\{\{/g;
+
+/** Attribute names that use unquoted placeholder values (invalid / unsafe markup). */
+export function findUnquotedAttributePlaceholders(html: string): string[] {
+  const attributes = new Set<string>();
+  let match: RegExpExecArray | null;
+  const re = new RegExp(UNQUOTED_ATTR_PLACEHOLDER_RE.source, "g");
+  while ((match = re.exec(html)) !== null) {
+    attributes.add(match[1]!);
+  }
+  return [...attributes].sort();
+}
+
 /** Returns inner text of every {{...}} token in the string. */
 export function extractPlaceholderTokens(text: string): string[] {
   const tokens: string[] = [];

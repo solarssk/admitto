@@ -9,16 +9,24 @@ import {
   WALLET_PLACEHOLDERS,
   VALID_PLACEHOLDER_RE,
   findUnknownPlaceholders,
+  findUnquotedAttributePlaceholders,
 } from "./placeholders.js";
 import {
   MissingRequiredPlaceholderError,
   UnknownPlaceholdersError,
+  UnquotedAttributePlaceholderError,
 } from "./errors.js";
 import type { RenderedTemplate, TemplateVars } from "./types.js";
 
 function isInsideAttribute(text: string, index: number): boolean {
   const before = text.slice(0, index);
-  return /=\s*["'][^"']*$/.test(before);
+  // Quoted attribute value
+  if (/=\s*["'][^"']*$/.test(before)) return true;
+  // Unquoted value starting at placeholder (validated separately — escape if reached)
+  if (/=\s*$/.test(before)) return true;
+  // Unquoted value with literal prefix before placeholder
+  if (/=\s*[^\s"'=<][^>]*$/.test(before)) return true;
+  return false;
 }
 
 function resolveVarValue(name: string, vars: TemplateVars): string {
@@ -92,6 +100,11 @@ export function renderTemplate(
   const unknown = findUnknownPlaceholders(input.subject, input.compiledHtml);
   if (unknown.length > 0) {
     throw new UnknownPlaceholdersError(unknown);
+  }
+
+  const unquotedAttrs = findUnquotedAttributePlaceholders(input.compiledHtml);
+  if (unquotedAttrs.length > 0) {
+    throw new UnquotedAttributePlaceholderError(unquotedAttrs);
   }
 
   const subject = substituteSubjectPlaceholders(input.subject, vars);
