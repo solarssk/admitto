@@ -1,6 +1,6 @@
 # @admitto/mailer
 
-One interface for sending email, three interchangeable transports. The rest of Admitto
+One interface for sending email, four interchangeable transports. The rest of Admitto
 calls `mailer.send(message)` without knowing which transport is active — the choice
 is a configuration concern (ultimately from the UI Settings screen).
 
@@ -9,18 +9,19 @@ is a configuration concern (ultimately from the UI Settings screen).
   Admitto → │  createMailer(config)        │ →  MailerAdapter.send(MailMessage)
             └─────────────────────────────┘
                  │ provider = ...
-     ┌───────────┼─────────────┬──────────────────┐
-     ▼           ▼             ▼                  ▼
-  graph        smtp        powerautomate       (mock — tests/preview)
+     ┌───────────┼─────────────┬──────────────────┬─────────────┐
+     ▼           ▼             ▼                  ▼             ▼
+  graph        smtp        powerautomate       export_only    (mock — tests)
 ```
 
 ## Transport status
 
 | Provider | Status | Notes |
 |---|---|---|
-| `powerautomate` | ready | HTTP trigger is a premium licence; a free-tier variant (OneDrive file-drop) is a separate adapter for later |
-| `smtp` | ready | SMTP AUTH may be disabled by your organisation's M365 policy; works immediately with any standard mail server |
-| `graph` | built, not live-tested | requires app registration (app-only `Mail.Send`); covered by tests with mocked fetch |
+| `powerautomate` | ready | HTTP trigger is a premium licence |
+| `smtp` | ready | Generic SMTP relay (DuoCircle, Postfix, etc.) with pooling + rate limits |
+| `graph` | built, not live-tested | App-only `Mail.Send`; tests use mocked fetch |
+| `export_only` | ready | No send — `createMailer` **requires** `exportSink`; validates messages like other providers |
 
 ## Usage
 
@@ -29,41 +30,48 @@ import { createMailer, sendBatch, type MailMessage } from "@admitto/mailer";
 
 const mailer = createMailer({
   provider: "powerautomate",
-  url: process.env.MAILER_PA_URL!,
-  key: process.env.MAILER_PA_KEY,
+  url: process.env.POWER_AUTOMATE_URL!,
+  key: process.env.POWER_AUTOMATE_KEY,
+  fromAddress: process.env.MAIL_FROM_ADDRESS!,
+  fromName: process.env.MAIL_FROM_NAME,
 });
 
 const res = await mailer.send({
   to: "jan@example.com",
   subject: "Your ticket",
-  html: "<p>Hi Jan, ...</p>", // Admitto renders the final HTML (QR, Wallet) BEFORE sending
+  html: "<p>Hi Jan, ...</p>",
 });
-// res: { status: "sent" | "failed", provider, providerMessageId?, error? }
+// res: { status: "accepted"|"sent"|"failed"|"rejected", provider, retryable?, ... }
 
-// Batch send with bounded concurrency and per-recipient status:
-const summary = await sendBatch(mailer, messages, {
-  concurrency: 3,
-  onResult: (r, m) => console.log(m.to, r.status),
-});
+const summary = await sendBatch(mailer, messages, { concurrency: 3 });
 ```
 
-Dedup/idempotency is the caller's responsibility (send only messages without a `sent` status).
-The `idempotencyKey` field in `MailMessage` is used for log correlation.
+Each adapter exposes `capabilities` so callers never assume Graph-like Sent Items behaviour.
+
+`to` / `cc` / `replyTo` may use RFC5322 address lists (quoted display names, angle addresses);
+the mailer normalizes them to bare email addresses for SMTP envelope and Graph API.
+`validateMailMessage()` runs in every adapter before send. Sender `fromName` must not contain
+control characters and is quoted in SMTP From headers. Power Automate URLs must use HTTPS.
 
 ## Configuration
 
-`MailerConfig` is a zod discriminated union on `provider` — the same schema validates
-both the UI form and the backend. See `.env.example`. Build a config from env via `configFromEnv()`.
+`MailerConfig` is a zod discriminated union on `provider`. Build from env via `configFromEnv()`.
+See `.env.example` for `EMAIL_PROVIDER`, `MAIL_FROM_*`, `SMTP_*`, `GRAPH_*`, `POWER_AUTOMATE_*`.
 
-| provider | fields |
+| provider | key fields |
 |---|---|
-| `graph` | `tenantId, clientId, clientSecret, sender, saveToSentItems?` |
-| `smtp` | `host, port?(587), secure?(false), user, password, from` |
-| `powerautomate` | `url, key?` |
+| `graph` | `mailbox`, `tenantId`, `clientId`, `clientSecret`, sender fields, `saveToSentItems?` |
+| `smtp` | `host`, `port`, `user`, `password`, sender fields, TLS + throughput options |
+| `powerautomate` | `url`, `key?`, sender fields |
+| `export_only` | sender fields only |
+
+### SMTP rate limit
+
+`rateLimitPerMinute` maps to nodemailer `rateLimit` + `rateDelta: 60000` (messages per minute).
 
 ## CLI (manual test send)
 
-Copy `.env.example` → `.env`, set `MAILER_PROVIDER` and the transport fields. Then:
+Copy `.env.example` → `.env`, set `EMAIL_PROVIDER` and transport fields. Then:
 
 ```bash
 npm run send -- --to someone@example.com
@@ -74,15 +82,13 @@ npm run send -- --csv recipients.csv          # columns: email,first_name
 
 ```bash
 npm install      # from admitto/ root (workspaces)
-npm test
+npm test -w @admitto/mailer
 ```
 
-20 tests (config, factory, batch, 3 adapters) — all with mocked fetch / `jsonTransport`,
-no real network. `graph` and `powerautomate` adapters accept injectable `fetchFn`; `smtp`
-accepts an injectable transporter.
+All tests use mocked fetch / `jsonTransport` — no real network.
 
 ## Graph API references
 
 - user: sendMail — https://learn.microsoft.com/en-us/graph/api/user-sendmail
 - client credentials — https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-client-creds-grant-flow
-- send from shared/delegated mailbox — https://learn.microsoft.com/en-us/graph/outlook-send-mail-from-other-user
+- send from shared mailbox — https://learn.microsoft.com/en-us/graph/outlook-send-mail-from-other-user

@@ -1,18 +1,17 @@
 /**
  * CLI for manual test sends via a selected transport.
- * Configuration from .env (MAILER_*). Provider selection: MAILER_PROVIDER.
+ * Configuration from .env (EMAIL_PROVIDER, SMTP_*, GRAPH_*, etc.).
  *
  *   npm run send -- --to someone@example.com
  *   npm run send -- --csv recipients.csv          (columns: email,first_name)
- *
- * Useful for testing an SMTP server locally (MAILER_PROVIDER=smtp).
  */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { configFromEnv } from "./configFromEnv.js";
-import { createMailer, sendBatch } from "./index.js";
+import { closeMailer, createMailer, sendBatch } from "./index.js";
 import type { MailMessage } from "./types.js";
+import { isSendSuccess } from "./types.js";
 import { splitCsvLine } from "./csvUtils.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -65,38 +64,57 @@ async function main() {
   const mailer = createMailer(config);
   console.log(`provider = ${config.provider}`);
 
-  const subject = arg("subject", "Admitto — test (@admitto/mailer)")!;
-  const csv = arg("csv");
+  let exitCode = 0;
+  try {
+    const subject = arg("subject", "Admitto — test (@admitto/mailer)")!;
+    const csv = arg("csv");
 
-  if (csv) {
-    const rows = readCsv(csv);
-    const messages: MailMessage[] = rows.map((r) => ({
-      to: r.email,
-      subject,
-      html: renderHtml(r.firstName),
-    }));
-    console.log(`Batch: ${messages.length} recipients...`);
-    const summary = await sendBatch(mailer, messages, {
-      concurrency: 3,
-      onResult: (res, msg, i) =>
-        console.log(`  [${i + 1}/${messages.length}] ${res.status === "sent" ? "✅" : "❌"} ${msg.to}${res.error ? " — " + res.error : ""}`),
-    });
-    console.log(`\nSummary: sent=${summary.sent} failed=${summary.failed} total=${summary.total}`);
-    process.exit(summary.failed ? 1 : 0);
+    if (csv) {
+      const rows = readCsv(csv);
+      const messages: MailMessage[] = rows.map((r) => ({
+        to: r.email,
+        subject,
+        html: renderHtml(r.firstName),
+      }));
+      console.log(`Batch: ${messages.length} recipients...`);
+      const summary = await sendBatch(mailer, messages, {
+        concurrency: 3,
+        onResult: (res, msg, i) =>
+          console.log(
+            `  [${i + 1}/${messages.length}] ${isSendSuccess(res.status) ? "✅" : "❌"} ${msg.to}${res.error ? " — " + res.error : ""}`,
+          ),
+      });
+      console.log(`\nSummary: sent=${summary.sent} failed=${summary.failed} total=${summary.total}`);
+      exitCode = summary.failed ? 1 : 0;
+      return;
+    }
+
+    const to = arg("to");
+    if (!to) {
+      console.error("Provide --to <address> or --csv <file>");
+      exitCode = 1;
+      return;
+    }
+    const result = await mailer.send({ to, subject, html: renderHtml(arg("name")) });
+    if (isSendSuccess(result.status)) {
+      console.log(`✅ accepted (id: ${result.providerMessageId ?? "—"})`);
+    } else {
+      console.error(`❌ error: ${result.error}`);
+      exitCode = 1;
+    }
+  } finally {
+    try {
+      await closeMailer(mailer);
+    } catch (cleanupErr) {
+      console.error(
+        "⚠️ Error during cleanup:",
+        cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+      );
+      if (exitCode === 0) exitCode = 1;
+    }
   }
 
-  const to = arg("to");
-  if (!to) {
-    console.error("Provide --to <address> or --csv <file>");
-    process.exit(1);
-  }
-  const result = await mailer.send({ to, subject, html: renderHtml(arg("name")) });
-  if (result.status === "sent") {
-    console.log(`✅ sent (id: ${result.providerMessageId ?? "—"})`);
-  } else {
-    console.error(`❌ error: ${result.error}`);
-    process.exit(1);
-  }
+  process.exit(exitCode);
 }
 
 main().catch((e) => {

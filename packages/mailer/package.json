@@ -2,7 +2,7 @@
   "name": "@admitto/mailer",
   "version": "0.0.1",
   "private": true,
-  "description": "Admitto mailer — one interface, three transports (Graph, SMTP, Power Automate)",
+  "description": "Admitto mailer — one interface, pluggable transports (Graph, SMTP, Power Automate, export_only)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

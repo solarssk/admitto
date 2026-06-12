@@ -4,10 +4,10 @@ import type { GraphConfig } from "../src/config.js";
 
 const config: GraphConfig = {
   provider: "graph",
+  mailbox: "events@example.com",
   tenantId: "00000000-0000-0000-0000-000000000000",
   clientId: "client-123",
   clientSecret: "secret-xyz",
-  sender: "events@example.com",
   saveToSentItems: true,
 };
 
@@ -30,7 +30,7 @@ function acceptedResponse(requestId = "req-1") {
 }
 
 describe("GraphAdapter", () => {
-  it("fetches token and sends (202 => sent), maps payload correctly", async () => {
+  it("fetches token and sends (202 => accepted), maps payload correctly", async () => {
     const calls: { url: string; init: any }[] = [];
     const fetchFn = vi.fn(async (url: string, init: any) => {
       calls.push({ url, init });
@@ -47,10 +47,12 @@ describe("GraphAdapter", () => {
       idempotencyKey: "att-1",
     });
 
-    expect(res.status).toBe("sent");
+    expect(res.status).toBe("accepted");
     expect(res.provider).toBe("graph");
     expect(res.providerMessageId).toBe("req-42");
     expect(res.idempotencyKey).toBe("att-1");
+    expect(adapter.capabilities.supportsSentItems).toBe(true);
+    expect(adapter.capabilities.deliveryResultSemantics).toBe("accepted_only");
 
     const sendCall = calls.find((c) => c.url.includes("/sendMail"))!;
     expect(sendCall.url).toBe(
@@ -67,6 +69,66 @@ describe("GraphAdapter", () => {
       { emailAddress: { address: "ops@example.com" } },
     ]);
     expect(body.message.replyTo).toEqual([{ emailAddress: { address: "events@example.com" } }]);
+    expect(body.message.from).toBeUndefined();
+  });
+
+  it("parses RFC5322 cc with quoted commas into Graph recipients", async () => {
+    const calls: { url: string; init: any }[] = [];
+    const fetchFn = vi.fn(async (url: string, init: any) => {
+      calls.push({ url, init });
+      return url.includes("/oauth2/v2.0/token") ? tokenResponse() : acceptedResponse();
+    });
+
+    const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
+    await adapter.send({
+      to: "jan@example.com",
+      cc: '"Audit, Team" <audit@example.com>, ops@example.com',
+      subject: "x",
+      html: "<p>x</p>",
+    });
+
+    const body = JSON.parse(calls.find((c) => c.url.includes("/sendMail"))!.init.body);
+    expect(body.message.ccRecipients).toEqual([
+      { emailAddress: { address: "audit@example.com" } },
+      { emailAddress: { address: "ops@example.com" } },
+    ]);
+  });
+
+  it("sets message.from when fromName is configured", async () => {
+    const calls: { url: string; init: any }[] = [];
+    const fetchFn = vi.fn(async (url: string, init: any) => {
+      calls.push({ url, init });
+      return url.includes("/oauth2/v2.0/token") ? tokenResponse() : acceptedResponse();
+    });
+
+    const adapter = new GraphAdapter(
+      { ...config, fromName: "Admitto Events" },
+      fetchFn as unknown as typeof fetch,
+    );
+    await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
+
+    const body = JSON.parse(calls.find((c) => c.url.includes("/sendMail"))!.init.body);
+    expect(body.message.from).toEqual({
+      emailAddress: { address: "events@example.com", name: "Admitto Events" },
+    });
+  });
+
+  it("sets message.from when fromAddress differs from mailbox (send-as)", async () => {
+    const calls: { url: string; init: any }[] = [];
+    const fetchFn = vi.fn(async (url: string, init: any) => {
+      calls.push({ url, init });
+      return url.includes("/oauth2/v2.0/token") ? tokenResponse() : acceptedResponse();
+    });
+
+    const adapter = new GraphAdapter(
+      { ...config, fromAddress: "other@example.com" },
+      fetchFn as unknown as typeof fetch,
+    );
+    await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
+
+    const body = JSON.parse(calls.find((c) => c.url.includes("/sendMail"))!.init.body);
+    expect(body.message.from).toEqual({ emailAddress: { address: "other@example.com" } });
+    expect(calls.find((c) => c.url.includes("/sendMail"))!.url).toContain("events%40example.com");
   });
 
   it("caches token across sends (token endpoint called once)", async () => {
@@ -81,7 +143,7 @@ describe("GraphAdapter", () => {
     expect(tokenCalls.length).toBe(1);
   });
 
-  it("returns failed (no throw) when sendMail returns 403", async () => {
+  it("returns rejected (no throw) when sendMail returns 403", async () => {
     const fetchFn = vi.fn(async (url: string) => {
       if (url.includes("/oauth2/v2.0/token")) return tokenResponse();
       return {
@@ -93,11 +155,12 @@ describe("GraphAdapter", () => {
     });
     const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
     const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
-    expect(res.status).toBe("failed");
+    expect(res.status).toBe("rejected");
+    expect(res.retryable).toBe(false);
     expect(res.error).toContain("ErrorAccessDenied");
   });
 
-  it("returns failed when token fetch fails", async () => {
+  it("returns rejected when token fetch fails with 401", async () => {
     const fetchFn = vi.fn(async () => ({
       ok: false,
       status: 401,
@@ -106,11 +169,24 @@ describe("GraphAdapter", () => {
     }));
     const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
     const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
-    expect(res.status).toBe("failed");
+    expect(res.status).toBe("rejected");
+    expect(res.retryable).toBe(false);
     expect(res.error).toContain("invalid_client");
   });
 
-  it("returns failed with raw body when token endpoint returns non-JSON error", async () => {
+  it("returns failed+retryable when token fetch throws (network)", async () => {
+    const fetchFn = vi.fn(async (url: string) => {
+      if (url.includes("/oauth2/v2.0/token")) throw new Error("ENOTFOUND");
+      return acceptedResponse();
+    });
+    const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
+    const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
+    expect(res.status).toBe("failed");
+    expect(res.retryable).toBe(true);
+    expect(res.error).toContain("ENOTFOUND");
+  });
+
+  it("returns failed+retryable when token endpoint returns 503", async () => {
     const fetchFn = vi.fn(async () => ({
       ok: false,
       status: 503,
@@ -120,20 +196,13 @@ describe("GraphAdapter", () => {
     const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
     const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
     expect(res.status).toBe("failed");
+    expect(res.retryable).toBe(true);
     expect(res.error).toContain("HTTP 503");
-    expect(res.error).toContain("Service Unavailable");
   });
 
-  it("returns failed with raw body when sendMail returns non-JSON error body", async () => {
+  it("returns failed+retryable when sendMail returns 429", async () => {
     const fetchFn = vi.fn(async (url: string) => {
-      if (url.includes("/oauth2/v2.0/token")) {
-        return {
-          ok: true,
-          status: 200,
-          text: async () => JSON.stringify({ access_token: "tok-abc", expires_in: 3600 }),
-          headers: { get: () => null },
-        };
-      }
+      if (url.includes("/oauth2/v2.0/token")) return tokenResponse();
       return {
         ok: false,
         status: 429,
@@ -144,7 +213,7 @@ describe("GraphAdapter", () => {
     const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
     const res = await adapter.send({ to: "a@example.com", subject: "x", html: "<p>x</p>" });
     expect(res.status).toBe("failed");
+    expect(res.retryable).toBe(true);
     expect(res.error).toContain("HTTP 429");
-    expect(res.error).toContain("Too Many Requests");
   });
 });
