@@ -40,13 +40,17 @@ function frozenFromRow(row: {
   };
 }
 
+type ClassifyResult =
+  | { action: "skip"; reason: "already_sent" | "in_flight" }
+  | { action: "retry_existing"; message: FrozenMessage };
+
 function classifyExisting(row: {
   status: string;
   retryable: boolean | null;
   recipient_email: string | null;
   rendered_subject: string | null;
   rendered_html: string | null;
-}): ClaimResult {
+}): ClassifyResult {
   if (EMAIL_DELIVERY_SUCCESS_STATUSES.includes(row.status as (typeof EMAIL_DELIVERY_SUCCESS_STATUSES)[number])) {
     return { action: "skip", reason: "already_sent" };
   }
@@ -56,7 +60,6 @@ function classifyExisting(row: {
   if (row.status === "failed" && row.retryable) {
     return {
       action: "retry_existing",
-      deliveryId: "",
       message: frozenFromRow(row),
     };
   }

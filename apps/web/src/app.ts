@@ -159,7 +159,13 @@ export function createApp(options: CreateAppOptions = {}) {
       return c.body(null, 404);
     }
     const attendeeId = filename.slice(0, -4);
-    const resolved = await findAttendeeForEventRoute(eventSlug, attendeeId, db);
+    let resolved;
+    try {
+      resolved = await findAttendeeForEventRoute(eventSlug, attendeeId, db);
+    } catch (err) {
+      console.error("findAttendeeForEventRoute error:", err);
+      return c.body(null, 500);
+    }
     if (!resolved || resolved.mode !== "agency") {
       return c.body(null, 404);
     }
@@ -185,10 +191,16 @@ export function createApp(options: CreateAppOptions = {}) {
     }
     const token = filename.slice(0, -4);
     const tokenHash = hashToken(token);
-    const attendee = await db.attendee.findUnique({
-      where: { token_hash: tokenHash },
-      include: { event: true },
-    });
+    let attendee;
+    try {
+      attendee = await db.attendee.findUnique({
+        where: { token_hash: tokenHash },
+        include: { event: true },
+      });
+    } catch (err) {
+      console.error("attendee lookup error:", err);
+      return c.body(null, 500);
+    }
     if (!attendee) {
       return c.body(null, 404);
     }

@@ -168,30 +168,32 @@ export async function sendTicketEmails(
     }
   }
 
-  if (pending.length > 0) {
-    const batchResult = await sendBatch(
-      mailer,
-      pending.map((p) => p.message),
-    );
+  try {
+    if (pending.length > 0) {
+      const batchResult = await sendBatch(
+        mailer,
+        pending.map((p) => p.message),
+      );
 
-    await Promise.all(
-      batchResult.results.map((result, index) => {
-        const item = pending[index];
-        if (!item) return Promise.resolve();
-        const update = mapSendResultToDelivery(result);
-        return prisma.emailDelivery.update({
-          where: { id: item.deliveryId },
-          data: {
-            ...update,
-            provider: result.provider,
-            ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}),
-          },
-        });
-      }),
-    );
+      await Promise.all(
+        batchResult.results.map((result, index) => {
+          const item = pending[index];
+          if (!item) return Promise.resolve();
+          const update = mapSendResultToDelivery(result);
+          return prisma.emailDelivery.update({
+            where: { id: item.deliveryId },
+            data: {
+              ...update,
+              provider: result.provider,
+              ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}),
+            },
+          });
+        }),
+      );
+    }
+  } finally {
+    await mailer.close();
   }
-
-  await mailer.close();
 
   return {
     batchId,

@@ -32,23 +32,26 @@ export async function retryDelivery(
     idempotencyKey: `${delivery.attendee_id}:${delivery.purpose}:retry:${delivery.id}`,
   };
 
-  const summary = await sendBatch(mailer, [message]);
-  await mailer.close();
+  let result;
+  try {
+    const summary = await sendBatch(mailer, [message]);
+    result = summary.results[0];
+    if (!result) {
+      return { ok: false, reason: "no_result" };
+    }
 
-  const result = summary.results[0];
-  if (!result) {
-    return { ok: false, reason: "no_result" };
+    const update = mapSendResultToDelivery(result);
+    await prisma.emailDelivery.update({
+      where: { id: deliveryId },
+      data: {
+        ...update,
+        provider: result.provider,
+        attempts: { increment: 1 },
+      },
+    });
+
+    return { ok: result.status === "accepted" || result.status === "sent" };
+  } finally {
+    await mailer.close();
   }
-
-  const update = mapSendResultToDelivery(result);
-  await prisma.emailDelivery.update({
-    where: { id: deliveryId },
-    data: {
-      ...update,
-      provider: result.provider,
-      attempts: { increment: 1 },
-    },
-  });
-
-  return { ok: result.status === "accepted" || result.status === "sent" };
 }
