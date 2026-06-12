@@ -44,3 +44,4 @@ create_db_if_missing admitto_tickets_test
 create_db_if_missing admitto_import_test
 create_db_if_missing admitto_mailer_config_test
 create_db_if_missing admitto_mail_templates_test
+create_db_if_missing admitto_mail_delivery_test

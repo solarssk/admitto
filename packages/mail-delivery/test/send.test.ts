@@ -1,0 +1,378 @@
+import { PrismaClient } from "@prisma/client";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import * as mailer from "@admitto/mailer";
+import { encryptToString } from "@admitto/crypto";
+import { setMailSettings } from "@admitto/mailer-config";
+import type { ExportPayload } from "@admitto/mailer";
+import { hashToken } from "@admitto/tickets";
+import { resetDb } from "./resetDb.js";
+import {
+  resendTicketEmail,
+  retryDelivery,
+  sendTicketEmails,
+} from "../src/index.js";
+
+const prisma = new PrismaClient();
+const EVENT_ID = "evt-mail-send";
+const exported: ExportPayload[] = [];
+
+beforeAll(async () => {
+  resetDb();
+
+  await prisma.organization.create({
+    data: { id: "org-mail", name: "Mail Org", slug: "mail-org" },
+  });
+  await prisma.event.create({
+    data: {
+      id: EVENT_ID,
+      organization_id: "org-mail",
+      title: "Mail Event",
+      slug: "mail-event",
+      date: new Date("2026-09-01"),
+      location: "Warsaw",
+    },
+  });
+
+  await setMailSettings(
+    { scopeType: "organization", scopeId: "org-mail" },
+    { provider: "export_only", fromAddress: "events@example.com" },
+    prisma,
+  );
+
+  await prisma.attendee.create({
+    data: {
+      id: "att-mode-a",
+      event_id: EVENT_ID,
+      email: "alice@example.com",
+      name: "Alice Example",
+    },
+  });
+  await prisma.attendee.create({
+    data: {
+      id: "att-mode-b-url",
+      event_id: EVENT_ID,
+      email: "bob@example.com",
+      name: "Bob Agency",
+      external_uuid: "https://agency.example.com/t/xyz",
+    },
+  });
+  await prisma.attendee.create({
+    data: {
+      id: "att-mode-b-qr",
+      event_id: EVENT_ID,
+      email: "carol@example.com",
+      name: "Carol Agency",
+      qr_payload: "AGENCY-PAYLOAD-001",
+    },
+  });
+});
+
+afterAll(async () => {
+  await prisma.$disconnect();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("sendTicketEmails", () => {
+  it("sends ticket emails and creates EmailDelivery rows", async () => {
+    exported.length = 0;
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      {},
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    expect(result.sent).toBe(3);
+    expect(exported).toHaveLength(3);
+
+    const deliveries = await prisma.emailDelivery.findMany({
+      where: { event_id: EVENT_ID, purpose: "initial" },
+    });
+    expect(deliveries).toHaveLength(3);
+    expect(deliveries.every((d) => d.status === "accepted")).toBe(true);
+
+    const modeA = deliveries.find((d) => d.attendee_id === "att-mode-a");
+    expect(modeA?.rendered_html).toContain("{{ticket_url}}");
+    expect(modeA?.rendered_html).toContain("{{qr_image_url}}");
+    expect(modeA?.rendered_html).not.toMatch(/\/t\/[A-Za-z0-9_-]{20,}/);
+
+    const aliceExport = exported.find((p) => p.message.to === "alice@example.com");
+    expect(aliceExport?.message.html).toMatch(/\/t\/[A-Za-z0-9_-]{20,}/);
+    expect(aliceExport?.message.html).toContain("https://tickets.example.com");
+  });
+
+  it("dedups second initial send", async () => {
+    exported.length = 0;
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { attendeeIds: ["att-mode-a"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+    expect(result.sent).toBe(0);
+    expect(result.skipped.some((s) => s.reason === "already_sent")).toBe(true);
+    expect(exported).toHaveLength(0);
+  });
+
+  it("race: parallel initial sends produce one delivery for one attendee", async () => {
+    await prisma.emailDelivery.deleteMany({ where: { attendee_id: "att-race" } });
+    await prisma.attendee.create({
+      data: {
+        id: "att-race",
+        event_id: EVENT_ID,
+        email: "race@example.com",
+        name: "Race Test",
+      },
+    });
+
+    exported.length = 0;
+    const env = { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" };
+    const sink = { exportSink: (p: ExportPayload) => exported.push(p) };
+
+    await Promise.all([
+      sendTicketEmails(EVENT_ID, { attendeeIds: ["att-race"] }, prisma, env, sink),
+      sendTicketEmails(EVENT_ID, { attendeeIds: ["att-race"] }, prisma, env, sink),
+    ]);
+
+    const rows = await prisma.emailDelivery.findMany({
+      where: { attendee_id: "att-race", purpose: "initial" },
+    });
+    expect(rows).toHaveLength(1);
+    expect(exported.length).toBeLessThanOrEqual(1);
+  });
+
+  it("marks deliveries failed when sendBatch throws", async () => {
+    await prisma.emailDelivery.deleteMany({ where: { attendee_id: "att-batch-fail" } });
+    await prisma.attendee.create({
+      data: {
+        id: "att-batch-fail",
+        event_id: EVENT_ID,
+        email: "batch-fail@example.com",
+        name: "Batch Fail",
+      },
+    });
+
+    const spy = vi.spyOn(mailer, "sendBatch").mockRejectedValueOnce(new Error("transport down"));
+    exported.length = 0;
+
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { attendeeIds: ["att-batch-fail"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    expect(result.sent).toBe(0);
+    expect(exported).toHaveLength(0);
+
+    const row = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: "att-batch-fail", purpose: "initial" },
+    });
+    expect(row?.status).toBe("failed");
+    expect(row?.retryable).toBe(true);
+    expect(row?.error).toContain("transport down");
+
+    spy.mockRestore();
+  });
+});
+
+describe("resendTicketEmail", () => {
+  it("creates resend row with same links for Mode A", async () => {
+    exported.length = 0;
+    const before = await prisma.emailDelivery.count({
+      where: { attendee_id: "att-mode-a", purpose: "resend" },
+    });
+
+    await resendTicketEmail(
+      "att-mode-a",
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    const after = await prisma.emailDelivery.count({
+      where: { attendee_id: "att-mode-a", purpose: "resend" },
+    });
+    expect(after).toBe(before + 1);
+    expect(exported[0]?.message.html).toMatch(/\/t\/[A-Za-z0-9_-]{40,}/);
+
+    const resendRow = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: "att-mode-a", purpose: "resend" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(resendRow?.rendered_html).toContain("{{ticket_url}}");
+    expect(resendRow?.rendered_html).not.toMatch(/\/t\/[A-Za-z0-9_-]{20,}/);
+  });
+});
+
+describe("retryDelivery", () => {
+  it("re-sends frozen snapshot without re-render", async () => {
+    const token = "tok_retry_snapshot_abcdefghijklmnopqrstuvwxyz";
+    const tokenEnc = encryptToString(token);
+    await prisma.attendee.create({
+      data: {
+        id: "att-retry",
+        event_id: EVENT_ID,
+        email: "retry@example.com",
+        name: "Retry User",
+        token_hash: hashToken(token),
+        token_enc: tokenEnc,
+      },
+    });
+
+    const delivery = await prisma.emailDelivery.create({
+      data: {
+        organization_id: "org-mail",
+        event_id: EVENT_ID,
+        attendee_id: "att-retry",
+        purpose: "initial",
+        provider: "export_only",
+        status: "failed",
+        retryable: true,
+        attempts: 1,
+        recipient_email: "retry@example.com",
+        rendered_subject: "Frozen Subject UNIQUE_MARKER",
+        rendered_html: "<p>Frozen HTML UNIQUE_MARKER</p>",
+      },
+    });
+
+    exported.length = 0;
+    const { ok } = await retryDelivery(
+      delivery.id,
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+    expect(ok).toBe(true);
+    expect(exported[0]?.message.subject).toBe("Frozen Subject UNIQUE_MARKER");
+    expect(exported[0]?.message.html).toContain("UNIQUE_MARKER");
+
+    const updated = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+    expect(updated.status).toBe("accepted");
+    expect(updated.attempts).toBe(2);
+  });
+
+  it("increments attempts when sendBatch returns no result", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-retry-noresult",
+        event_id: EVENT_ID,
+        email: "noresult@example.com",
+        name: "No Result",
+        qr_payload: "AGENCY-NORESULT",
+      },
+    });
+
+    const delivery = await prisma.emailDelivery.create({
+      data: {
+        organization_id: "org-mail",
+        event_id: EVENT_ID,
+        attendee_id: "att-retry-noresult",
+        purpose: "initial",
+        provider: "export_only",
+        status: "failed",
+        retryable: true,
+        attempts: 1,
+        recipient_email: "noresult@example.com",
+        rendered_subject: "S",
+        rendered_html: '<a href="{{ticket_url}}">x</a>',
+      },
+    });
+
+    const spy = vi.spyOn(mailer, "sendBatch").mockResolvedValueOnce({
+      total: 1,
+      sent: 0,
+      failed: 1,
+      results: [],
+    });
+
+    try {
+      const { ok, reason } = await retryDelivery(
+        delivery.id,
+        prisma,
+        { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+        { exportSink: (p) => exported.push(p) },
+      );
+      expect(ok).toBe(false);
+      expect(reason).toBe("no_result");
+
+      const bumped = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+      expect(bumped.attempts).toBe(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("materializes deferred ticket links from token_enc on retry", async () => {
+    const token = "tok_retry_deferred_abcdefghijklmnopqrstuvwxyz";
+    const tokenEnc = encryptToString(token);
+    await prisma.attendee.create({
+      data: {
+        id: "att-retry-deferred",
+        event_id: EVENT_ID,
+        email: "retry-deferred@example.com",
+        name: "Retry Deferred",
+        token_hash: hashToken(token),
+        token_enc: tokenEnc,
+      },
+    });
+
+    const delivery = await prisma.emailDelivery.create({
+      data: {
+        organization_id: "org-mail",
+        event_id: EVENT_ID,
+        attendee_id: "att-retry-deferred",
+        purpose: "initial",
+        provider: "export_only",
+        status: "failed",
+        retryable: true,
+        attempts: 1,
+        recipient_email: "retry-deferred@example.com",
+        rendered_subject: "Retry",
+        rendered_html: '<a href="{{ticket_url}}">ticket</a>',
+      },
+    });
+
+    exported.length = 0;
+    const { ok } = await retryDelivery(
+      delivery.id,
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+    expect(ok).toBe(true);
+    expect(exported[0]?.message.html).toContain(`/t/${token}`);
+    expect(exported[0]?.message.html).not.toContain("{{ticket_url}}");
+  });
+
+  it("does not retry rejected deliveries", async () => {
+    const delivery = await prisma.emailDelivery.create({
+      data: {
+        organization_id: "org-mail",
+        event_id: EVENT_ID,
+        attendee_id: "att-mode-a",
+        purpose: "resend",
+        provider: "export_only",
+        status: "rejected",
+        retryable: false,
+        attempts: 1,
+        recipient_email: "alice@example.com",
+        rendered_subject: "S",
+        rendered_html: "<p>x</p>",
+      },
+    });
+
+    const { ok, reason } = await retryDelivery(delivery.id, prisma, {
+      NODE_ENV: "test",
+      BASE_URL: "https://tickets.example.com",
+    });
+    expect(ok).toBe(false);
+    expect(reason).toBe("not_retryable");
+  });
+});

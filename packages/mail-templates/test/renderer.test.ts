@@ -3,6 +3,9 @@ import {
   escapeHtmlAttribute,
   escapeHtmlText,
   renderTemplate,
+  renderTemplateTrusted,
+  renderTemplateTrustedForStorage,
+  materializeStoredDeliveryMessage,
   validateHttpUrl,
   InvalidHttpUrlError,
   MissingRequiredPlaceholderError,
@@ -289,5 +292,68 @@ describe("renderTemplate", () => {
       { ticket_url: "https://example.com/t?a=1&b=2" },
     );
     expect(result.html).toContain('href="https://example.com/t?a=1&amp;b=2"');
+  });
+});
+
+describe("renderTemplateTrusted", () => {
+  it("escapes HTML without re-validating placeholder whitelist", () => {
+    const result = renderTemplateTrusted(
+      {
+        subject: "Hello {{first_name}}",
+        compiledHtml: "<p>Hi {{first_name}}</p>",
+      },
+      { first_name: `Tom <script>alert(1)</script>` },
+    );
+    expect(result.subject).toBe("Hello Tom <script>alert(1)</script>");
+    expect(result.html).toContain("Hi Tom &lt;script&gt;alert(1)&lt;/script&gt;");
+  });
+
+  it("does not throw on templates that would fail whitelist validation at save time", () => {
+    expect(() =>
+      renderTemplateTrusted(
+        {
+          subject: "Hi",
+          compiledHtml: "<p>{{not_on_whitelist}}</p>",
+        },
+        { first_name: "Alex" },
+      ),
+    ).not.toThrow();
+  });
+});
+
+describe("renderTemplateTrustedForStorage", () => {
+  it("leaves ticket link placeholders literal in frozen snapshot", () => {
+    const frozen = renderTemplateTrustedForStorage(
+      {
+        subject: "Ticket for {{first_name}}",
+        compiledHtml:
+          '<a href="{{ticket_url}}">Open</a><img src="{{qr_image_url}}" alt="QR" />',
+      },
+      {
+        first_name: "Alice",
+        ticket_url: "https://secret.example/t/SHOULD_NOT_PERSIST",
+        qr_image_url: "https://secret.example/q/SHOULD_NOT_PERSIST.png",
+      },
+    );
+    expect(frozen.html).toContain('href="{{ticket_url}}"');
+    expect(frozen.html).toContain('src="{{qr_image_url}}"');
+    expect(frozen.html).not.toContain("SHOULD_NOT_PERSIST");
+    expect(frozen.subject).toBe("Ticket for Alice");
+  });
+
+  it("materializeStoredDeliveryMessage applies links with escaping at send time", () => {
+    const frozen = renderTemplateTrustedForStorage(
+      {
+        subject: "Hi",
+        compiledHtml: '<a href="{{ticket_url}}">x</a>',
+      },
+      { first_name: "Bob" },
+    );
+    const sent = materializeStoredDeliveryMessage(frozen, {
+      ticket_url: "https://example.com/t?a=1&b=2",
+      qr_image_url: "https://example.com/q/x.png",
+    });
+    expect(sent.html).toContain('href="https://example.com/t?a=1&amp;b=2"');
+    expect(sent.html).not.toContain("{{ticket_url}}");
   });
 });

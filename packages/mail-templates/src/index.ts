@@ -25,7 +25,14 @@ export {
   MjmlCompileError,
 } from "./errors.js";
 export { compileTemplate } from "./compile.js";
-export { renderTemplate, stripEmptyUrlAttributes } from "./render.js";
+export {
+  renderTemplate,
+  renderTemplateTrusted,
+  renderTemplateTrustedForStorage,
+  materializeStoredDeliveryMessage,
+  stripEmptyUrlAttributes,
+  STORAGE_DEFERRED_LINK_PLACEHOLDERS,
+} from "./render.js";
 export {
   validateTemplate,
   assertValidTemplate,
@@ -36,8 +43,8 @@ export {
   DEFAULT_BODY_MJML,
   getBuiltinTemplate,
 } from "./defaultTemplate.js";
-export { resolveTemplate, setMailTemplate } from "./mailTemplate.js";
-export { resolveBranding, setBranding } from "./branding.js";
+export { resolveTemplate, resolveTemplateForEvent, setMailTemplate } from "./mailTemplate.js";
+export { resolveBranding, resolveBrandingFromEvent, setBranding } from "./branding.js";
 export {
   previewTemplate,
   DEFAULT_SAMPLE_VARS,

@@ -20,6 +20,9 @@ import {
 } from "./errors.js";
 import type { RenderedTemplate, TemplateVars } from "./types.js";
 
+/** Ticket link placeholders kept literal in DB snapshots — substituted only at send/retry. */
+export const STORAGE_DEFERRED_LINK_PLACEHOLDERS = new Set(["ticket_url", "qr_image_url"]);
+
 function resolveVarValue(name: string, vars: TemplateVars): string {
   const raw = vars[name as keyof TemplateVars];
   if (raw === undefined || raw === null) return "";
@@ -69,10 +72,43 @@ function substituteSubjectPlaceholders(template: string, vars: TemplateVars): st
   });
 }
 
+function substituteSubjectPlaceholdersDeferred(template: string, vars: TemplateVars): string {
+  return template.replace(VALID_PLACEHOLDER_RE, (match, name: string) => {
+    if (STORAGE_DEFERRED_LINK_PLACEHOLDERS.has(name)) return match;
+    const value = resolveVarValue(name, vars);
+    return formatSubjectPlaceholderValue(name, value);
+  });
+}
+
 function substituteHtmlPlaceholders(template: string, vars: TemplateVars): string {
   return template.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
     const inAttribute = isInsideQuotedAttribute(template, offset);
     const value = resolveVarValue(name, vars);
+    return formatPlaceholderValue(name, value, inAttribute);
+  });
+}
+
+function substituteHtmlPlaceholdersDeferred(template: string, vars: TemplateVars): string {
+  return template.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
+    if (STORAGE_DEFERRED_LINK_PLACEHOLDERS.has(name)) return match;
+    const inAttribute = isInsideQuotedAttribute(template, offset);
+    const value = resolveVarValue(name, vars);
+    return formatPlaceholderValue(name, value, inAttribute);
+  });
+}
+
+function applyDeferredLinkPlaceholders(
+  text: string,
+  links: Pick<TemplateVars, "ticket_url" | "qr_image_url">,
+  mode: "html" | "subject",
+): string {
+  return text.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
+    if (!STORAGE_DEFERRED_LINK_PLACEHOLDERS.has(name)) return match;
+    const value = links[name as keyof Pick<TemplateVars, "ticket_url" | "qr_image_url">] ?? "";
+    if (mode === "subject") {
+      return formatSubjectPlaceholderValue(name, value);
+    }
+    const inAttribute = isInsideQuotedAttribute(text, offset);
     return formatPlaceholderValue(name, value, inAttribute);
   });
 }
@@ -107,4 +143,47 @@ export function renderTemplate(
   );
 
   return { subject, html };
+}
+
+/**
+ * Fast render path for batch ticket sends — skips placeholder whitelist re-validation
+ * (template was validated at save time). Still applies context-aware escaping.
+ */
+export function renderTemplateTrusted(
+  input: RenderTemplateInput,
+  vars: TemplateVars,
+): RenderedTemplate {
+  const subject = substituteSubjectPlaceholders(input.subject, vars);
+  const html = stripEmptyUrlAttributes(
+    substituteHtmlPlaceholders(input.compiledHtml, vars),
+  );
+  return { subject, html };
+}
+
+/**
+ * Render for EmailDelivery storage — leaves {{ticket_url}} / {{qr_image_url}} literal so
+ * plaintext tokens are not persisted. Apply links at send/retry via materializeStoredDeliveryMessage.
+ */
+export function renderTemplateTrustedForStorage(
+  input: RenderTemplateInput,
+  vars: TemplateVars,
+): RenderedTemplate {
+  const subject = substituteSubjectPlaceholdersDeferred(input.subject, vars);
+  const html = stripEmptyUrlAttributes(
+    substituteHtmlPlaceholdersDeferred(input.compiledHtml, vars),
+  );
+  return { subject, html };
+}
+
+/** Substitute deferred ticket link placeholders into a frozen delivery snapshot. */
+export function materializeStoredDeliveryMessage(
+  frozen: RenderedTemplate,
+  links: Pick<TemplateVars, "ticket_url" | "qr_image_url">,
+): RenderedTemplate {
+  return {
+    subject: applyDeferredLinkPlaceholders(frozen.subject, links, "subject"),
+    html: stripEmptyUrlAttributes(
+      applyDeferredLinkPlaceholders(frozen.html, links, "html"),
+    ),
+  };
 }

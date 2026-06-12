@@ -25,18 +25,19 @@ model Organization {
 }
 
 model Event {
-  id               String       @id @default(cuid())
+  id               String          @id @default(cuid())
   organization_id  String
-  organization     Organization @relation(fields: [organization_id], references: [id], onDelete: Restrict)
+  organization     Organization    @relation(fields: [organization_id], references: [id], onDelete: Restrict)
   title            String
-  slug             String       @unique
+  slug             String          @unique
   date             DateTime
   location         String?
   logo_url         String?
   header_image_url String?
-  created_at       DateTime     @default(now())
+  created_at       DateTime        @default(now())
   attendees        Attendee[]
   check_ins        CheckIn[]
+  email_deliveries EmailDelivery[]
 
   @@index([organization_id])
 }
@@ -95,18 +96,41 @@ model WalletPass {
 }
 
 model EmailDelivery {
-  id              String       @id @default(cuid())
-  organization_id String
-  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Restrict)
-  attendee_id     String
-  attendee        Attendee     @relation(fields: [attendee_id], references: [id])
-  provider        String
-  message_id      String?
-  status          String       @default("pending")
-  sent_at         DateTime?
-  created_at      DateTime     @default(now())
+  id                   String       @id @default(cuid())
+  organization_id      String
+  organization         Organization @relation(fields: [organization_id], references: [id], onDelete: Restrict)
+  event_id             String
+  event                Event        @relation(fields: [event_id], references: [id], onDelete: Restrict)
+  attendee_id          String
+  attendee             Attendee     @relation(fields: [attendee_id], references: [id])
+  purpose              String       @default("initial") // "initial" | "resend"
+  batch_id             String?
+  template_id          String?
+  provider             String
+  provider_message_id  String?
+  status               String       @default("queued")
+  error_code           String?
+  error                String?
+  retryable            Boolean?
+  attempts             Int          @default(1)
+  recipient_email      String?
+  rendered_subject     String?
+  rendered_html        String?      @db.Text
+  queued_at            DateTime     @default(now())
+  attempted_at         DateTime?
+  accepted_at          DateTime?
+  sent_at              DateTime?
+  delivered_at         DateTime?
+  failed_at            DateTime?
+  viewed_at            DateTime?
+  opened_at            DateTime?
+  clicked_at           DateTime?
+  created_at           DateTime     @default(now())
+  updated_at           DateTime     @updatedAt
 
   @@index([organization_id])
+  @@index([event_id, created_at(sort: Desc)])
+  @@index([attendee_id, event_id, status])
 }
 
 model CheckIn {

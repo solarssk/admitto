@@ -9,8 +9,8 @@
   ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",
-    "build": "npm run build -w @admitto/shared && npm run build --workspaces --if-present",
-    "typecheck": "npm run build -w @admitto/shared && npm run build -w @admitto/db && npm run typecheck --workspaces --if-present",
+    "build": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/tickets && npm run build -w @admitto/mailer && npm run build -w @admitto/import && npm run build -w @admitto/mail-templates && npm run build -w @admitto/mailer-config && npm run build -w @admitto/mail-delivery && npm run build -w @admitto/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint 'packages/*/src/**/*.ts'",
     "db:migrate": "npm run db:migrate -w @admitto/db",
     "db:migrate:status": "npm run db:migrate:status -w @admitto/db",

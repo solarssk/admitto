@@ -8,6 +8,7 @@ if (process.env['NODE_ENV'] !== 'production') globalForPrisma.prisma = prisma;
 
 export {
   type AttendeeStatus,
+  type EmailDeliveryPurpose,
   type EmailDeliveryStatus,
   type WalletPassStatus,
   type CheckInStatus,
@@ -15,7 +16,9 @@ export {
 
 export {
   ATTENDEE_STATUS,
+  EMAIL_DELIVERY_PURPOSE,
   EMAIL_DELIVERY_STATUS,
+  EMAIL_DELIVERY_SUCCESS_STATUSES,
   WALLET_PASS_STATUS,
   CHECKIN_STATUS,
 } from './status.js';
