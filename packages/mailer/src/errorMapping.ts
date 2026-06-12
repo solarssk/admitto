@@ -22,11 +22,40 @@ export function mapNetworkError(): MappedFailure {
 
 const SMTP_CODE_RE = /\b([45]\d{2})\b/;
 
+interface NodemailerSmtpError extends Error {
+  responseCode?: number;
+  response?: string;
+}
+
+function isSmtpReplyCode(value: number): boolean {
+  return Number.isInteger(value) && value >= 400 && value < 600;
+}
+
+/** Prefer nodemailer's structured SMTP fields before regexing Error.message. */
+function extractSmtpCode(err: unknown): number | undefined {
+  if (err && typeof err === "object") {
+    const smtpErr = err as NodemailerSmtpError;
+    if (typeof smtpErr.responseCode === "number" && isSmtpReplyCode(smtpErr.responseCode)) {
+      return smtpErr.responseCode;
+    }
+    if (typeof smtpErr.response === "string") {
+      const responseMatch = /^(\d{3})/.exec(smtpErr.response.trim());
+      if (responseMatch) {
+        const parsed = Number(responseMatch[1]);
+        if (isSmtpReplyCode(parsed)) return parsed;
+      }
+    }
+  }
+
+  const msg = err instanceof Error ? err.message : String(err);
+  const codeMatch = SMTP_CODE_RE.exec(msg);
+  return codeMatch ? Number(codeMatch[1]) : undefined;
+}
+
 /** Map nodemailer / SMTP transport errors to normalized failure semantics. */
 export function mapSmtpError(err: unknown): MappedFailure {
   const msg = err instanceof Error ? err.message : String(err);
-  const codeMatch = SMTP_CODE_RE.exec(msg);
-  const code = codeMatch ? Number(codeMatch[1]) : undefined;
+  const code = extractSmtpCode(err);
 
   if (code !== undefined) {
     // Permanent auth / policy failures

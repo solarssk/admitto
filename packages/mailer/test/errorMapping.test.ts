@@ -28,6 +28,24 @@ describe("mapSmtpError", () => {
     });
   });
 
+  it("reads responseCode when message has no SMTP code", () => {
+    const err = new Error("Message failed") as Error & { responseCode: number };
+    err.responseCode = 421;
+    expect(mapSmtpError(err)).toEqual({ status: "failed", retryable: true });
+  });
+
+  it("reads response string when message has no SMTP code", () => {
+    const err = new Error("Message failed") as Error & { response: string };
+    err.response = "450 Mailbox unavailable";
+    expect(mapSmtpError(err)).toEqual({ status: "failed", retryable: true });
+  });
+
+  it("prefers responseCode over message regex", () => {
+    const err = new Error("535 auth disabled") as Error & { responseCode: number };
+    err.responseCode = 421;
+    expect(mapSmtpError(err)).toEqual({ status: "failed", retryable: true });
+  });
+
   it("maps unlisted transient 4xx (e.g. 454) to failed+retryable", () => {
     expect(mapSmtpError(new Error("454 TLS not available"))).toEqual({
       status: "failed",
