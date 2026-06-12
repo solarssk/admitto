@@ -11,7 +11,8 @@ const EMPTY_CONTEXT: HtmlAttributeContext = {
   unquotedAttributeName: null,
 };
 
-function isInsideHtmlComment(html: string, index: number): boolean {
+/** True inside `<!-- ... -->`, including Outlook `<!--[if mso]>...<![endif]-->` blocks. */
+export function isPlaceholderInHtmlComment(html: string, index: number): boolean {
   const commentStart = html.lastIndexOf("<!--", index);
   if (commentStart === -1) return false;
   const commentEnd = html.indexOf("-->", commentStart);
@@ -44,7 +45,7 @@ function isStillInsideOpeningTag(html: string, tagStart: number, index: number):
  * Ignores `=` sequences inside quoted values (e.g. type="VIP" inside title='...').
  */
 export function getHtmlAttributeContext(html: string, index: number): HtmlAttributeContext {
-  if (isInsideHtmlComment(html, index)) return EMPTY_CONTEXT;
+  if (isPlaceholderInHtmlComment(html, index)) return EMPTY_CONTEXT;
 
   const tagStart = html.lastIndexOf("<", index);
   if (tagStart === -1) return EMPTY_CONTEXT;

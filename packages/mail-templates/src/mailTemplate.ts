@@ -2,7 +2,12 @@ import type { PrismaClient } from "@prisma/client";
 import { compileTemplate } from "./compile.js";
 import { getBuiltinTemplate } from "./defaultTemplate.js";
 import { assertValidTemplate } from "./validate.js";
-import type { ResolvedTemplate, SetMailTemplateInput, TemplateScope } from "./types.js";
+import type {
+  ResolvedTemplate,
+  SetMailTemplateInput,
+  TemplateFormat,
+  TemplateScope,
+} from "./types.js";
 import { MjmlCompileError, UnknownPlaceholdersError } from "./errors.js";
 
 export { UnknownPlaceholdersError, MjmlCompileError };
@@ -38,6 +43,11 @@ export async function resolveTemplate(
   return await getBuiltinTemplate();
 }
 
+function parseTemplateFormat(value: string, source: ResolvedTemplate["source"]): TemplateFormat {
+  if (value === "mjml" || value === "html") return value;
+  throw new Error(`Invalid template_format "${value}" for ${source} MailTemplate`);
+}
+
 function rowToResolved(
   row: {
     subject_template: string;
@@ -49,7 +59,7 @@ function rowToResolved(
   return {
     subjectTemplate: row.subject_template,
     compiledHtmlTemplate: row.compiled_html_template,
-    templateFormat: row.template_format as ResolvedTemplate["templateFormat"],
+    templateFormat: parseTemplateFormat(row.template_format, source),
     source,
   };
 }

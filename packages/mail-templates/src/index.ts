@@ -15,10 +15,12 @@ export {
   extractPlaceholderTokens,
   findUnknownPlaceholders,
   findUnquotedAttributePlaceholders,
+  findPlaceholdersInHtmlComments,
 } from "./placeholders.js";
 export {
   UnknownPlaceholdersError,
   MissingRequiredPlaceholderError,
+  PlaceholderInHtmlCommentError,
   UnquotedAttributePlaceholderError,
   MjmlCompileError,
 } from "./errors.js";

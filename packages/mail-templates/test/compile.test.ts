@@ -4,6 +4,7 @@ import {
   validateTemplate,
   assertValidTemplate,
   MjmlCompileError,
+  PlaceholderInHtmlCommentError,
   UnquotedAttributePlaceholderError,
 } from "../src/index.js";
 
@@ -56,6 +57,10 @@ describe("validateTemplate", () => {
     ).toEqual(["First_Name", "first-name"]);
   });
 
+  it("rejects empty placeholder tokens", () => {
+    expect(validateTemplate({ subject: "{{}}", body: "<p>ok</p>" })).toEqual(["{{}}"]);
+  });
+
   it("rejects whitespace-padded placeholder tokens", () => {
     expect(
       validateTemplate({
@@ -78,6 +83,15 @@ describe("validateTemplate", () => {
         body: '<img alt={{first_name}} width="100" />',
       }),
     ).toThrow(UnquotedAttributePlaceholderError);
+  });
+
+  it("rejects placeholders inside Outlook conditional comments", () => {
+    expect(() =>
+      assertValidTemplate({
+        subject: "Hi",
+        body: '<!--[if mso]><td title="{{first_name}}"><![endif]-->',
+      }),
+    ).toThrow(PlaceholderInHtmlCommentError);
   });
 
   it("rejects unquoted attributes with literal prefixes before placeholder", () => {

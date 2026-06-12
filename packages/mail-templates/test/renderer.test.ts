@@ -7,6 +7,7 @@ import {
   InvalidHttpUrlError,
   MissingRequiredPlaceholderError,
   UnquotedAttributePlaceholderError,
+  PlaceholderInHtmlCommentError,
 } from "../src/index.js";
 
 describe("escape helpers", () => {
@@ -69,6 +70,18 @@ describe("renderTemplate", () => {
         { first_name: "Alex" },
       ),
     ).toThrow(/Unknown template placeholders: first_name/);
+  });
+
+  it("rejects placeholders inside Outlook conditional comments at render time", () => {
+    expect(() =>
+      renderTemplate(
+        {
+          subject: "T",
+          compiledHtml: '<!--[if mso]><td title="{{first_name}}"><![endif]-->',
+        },
+        { first_name: 'x" onmouseover=alert(1)' },
+      ),
+    ).toThrow(PlaceholderInHtmlCommentError);
   });
 
   it("rejects unquoted attribute placeholders at render time", () => {

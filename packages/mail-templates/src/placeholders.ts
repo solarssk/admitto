@@ -1,4 +1,4 @@
-import { getHtmlAttributeContext } from "./htmlContext.js";
+import { getHtmlAttributeContext, isPlaceholderInHtmlComment } from "./htmlContext.js";
 
 /** Closed whitelist of allowed {{snake_case}} placeholders. */
 export const ALLOWED_PLACEHOLDERS = new Set([
@@ -39,14 +39,27 @@ export const WALLET_PLACEHOLDERS = new Set([
   "download_page_url",
 ]);
 
-/** Matches any {{...}} token (including malformed names). */
-const ANY_PLACEHOLDER_RE = /\{\{([^}]+)\}\}/g;
+/** Matches any {{...}} token, including empty {{}} (malformed). */
+const ANY_PLACEHOLDER_RE = /\{\{([^}]*)\}\}/g;
 
 /** Valid placeholder name: lowercase snake_case. */
 const VALID_PLACEHOLDER_NAME_RE = /^[a-z][a-z0-9_]*$/;
 
 /** Matches only well-formed {{snake_case}} placeholders (for substitution). */
 export const VALID_PLACEHOLDER_RE = /\{\{([a-z][a-z0-9_]*)\}\}/g;
+
+/** Placeholder names inside HTML/Outlook conditional comments (unsafe for attribute context). */
+export function findPlaceholdersInHtmlComments(html: string): string[] {
+  const names = new Set<string>();
+  let match: RegExpExecArray | null;
+  const re = new RegExp(VALID_PLACEHOLDER_RE.source, "g");
+  while ((match = re.exec(html)) !== null) {
+    if (isPlaceholderInHtmlComment(html, match.index!)) {
+      names.add(match[1]!);
+    }
+  }
+  return [...names].sort();
+}
 
 /** Attribute names that use unquoted placeholder values (invalid / unsafe markup). */
 export function findUnquotedAttributePlaceholders(html: string): string[] {

@@ -13,4 +13,10 @@ describe("formatEventDate", () => {
   it("returns YYYY-MM-DD for UTC noon events", () => {
     expect(formatEventDate(new Date("2026-09-01T12:00:00.000Z"), "UTC")).toBe("2026-09-01");
   });
+
+  it("uses timezone calendar day for offset boundary timestamps", () => {
+    const instant = new Date("2026-09-01T00:30:00+02:00");
+    expect(formatEventDate(instant, "Europe/Warsaw")).toBe("2026-09-01");
+    expect(formatEventDate(instant, "UTC")).toBe("2026-08-31");
+  });
 });

@@ -1,9 +1,11 @@
 import {
   findUnknownPlaceholders,
+  findPlaceholdersInHtmlComments,
   findUnquotedAttributePlaceholders,
 } from "./placeholders.js";
 import {
   UnknownPlaceholdersError,
+  PlaceholderInHtmlCommentError,
   UnquotedAttributePlaceholderError,
 } from "./errors.js";
 
@@ -18,6 +20,10 @@ export function validateTemplate(input: TemplateSourceInput): string[] {
 }
 
 function assertSafeHtmlMarkup(body: string): void {
+  const inComments = findPlaceholdersInHtmlComments(body);
+  if (inComments.length > 0) {
+    throw new PlaceholderInHtmlCommentError(inComments);
+  }
   const unquoted = findUnquotedAttributePlaceholders(body);
   if (unquoted.length > 0) {
     throw new UnquotedAttributePlaceholderError(unquoted);

@@ -12,6 +12,15 @@ export class MissingRequiredPlaceholderError extends Error {
   }
 }
 
+export class PlaceholderInHtmlCommentError extends Error {
+  constructor(public readonly placeholders: string[]) {
+    super(
+      `Placeholders inside HTML or Outlook conditional comments are not allowed: ${placeholders.join(", ")}`,
+    );
+    this.name = "PlaceholderInHtmlCommentError";
+  }
+}
+
 export class UnquotedAttributePlaceholderError extends Error {
   constructor(public readonly attributes: string[]) {
     super(

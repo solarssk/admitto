@@ -9,11 +9,13 @@ import {
   URL_PLACEHOLDERS,
   VALID_PLACEHOLDER_RE,
   findUnknownPlaceholders,
+  findPlaceholdersInHtmlComments,
   findUnquotedAttributePlaceholders,
 } from "./placeholders.js";
 import {
   MissingRequiredPlaceholderError,
   UnknownPlaceholdersError,
+  PlaceholderInHtmlCommentError,
   UnquotedAttributePlaceholderError,
 } from "./errors.js";
 import type { RenderedTemplate, TemplateVars } from "./types.js";
@@ -87,6 +89,11 @@ export function renderTemplate(
   const unknown = findUnknownPlaceholders(input.subject, input.compiledHtml);
   if (unknown.length > 0) {
     throw new UnknownPlaceholdersError(unknown);
+  }
+
+  const inComments = findPlaceholdersInHtmlComments(input.compiledHtml);
+  if (inComments.length > 0) {
+    throw new PlaceholderInHtmlCommentError(inComments);
   }
 
   const unquotedAttrs = findUnquotedAttributePlaceholders(input.compiledHtml);

@@ -107,6 +107,7 @@ describe("previewTemplate", () => {
     const result = await previewTemplate("evt-br", prisma);
     expect(result.subject).toContain("Brand Event");
     expect(result.html).toContain("Alex");
+    expect(result.html).toMatch(/@example\.com/i);
     expect(result.html.toLowerCase()).toContain("<table");
   });
 });

@@ -25,6 +25,7 @@ URL validation applies to **runtime values**, not to `href="{{ticket_url}}"` in 
 
 Placeholders in HTML attributes must use **quoted** values (`alt="{{first_name}}"`, not `alt={{first_name}}`).
 Unquoted attribute placeholders are rejected at save and render time (spaces in attendee data can break out of the attribute).
+Placeholders inside HTML or Outlook `<!--[if mso]>` conditional comments are also rejected (use live markup outside conditionals).
 
 ## Template formats
 
