@@ -5,6 +5,7 @@ import {
   renderTemplate,
   validateHttpUrl,
   InvalidHttpUrlError,
+  MissingRequiredPlaceholderError,
 } from "../src/index.js";
 
 describe("escape helpers", () => {
@@ -49,6 +50,28 @@ describe("renderTemplate", () => {
         {},
       ),
     ).toThrow(/Unknown template placeholders/);
+  });
+
+  it("throws on malformed placeholder tokens", () => {
+    expect(() =>
+      renderTemplate(
+        { subject: "Hi {{First_Name}}", compiledHtml: "<p>ok</p>" },
+        {},
+      ),
+    ).toThrow(/Unknown template placeholders: First_Name/);
+  });
+
+  it("throws when required URL placeholders are missing", () => {
+    expect(() =>
+      renderTemplate(
+        {
+          subject: "Ticket",
+          compiledHtml:
+            '<a href="{{ticket_url}}">Open</a><img src="{{qr_image_url}}" width="200" height="200" />',
+        },
+        {},
+      ),
+    ).toThrow(MissingRequiredPlaceholderError);
   });
 
   it("renders wallet placeholders as empty string", () => {

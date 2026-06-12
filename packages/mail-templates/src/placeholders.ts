@@ -27,6 +27,9 @@ export const URL_PLACEHOLDERS = new Set([
   "download_page_url",
 ]);
 
+/** Required ticket URLs — empty/missing values fail render (not silently stripped). */
+export const REQUIRED_URL_PLACEHOLDERS = new Set(["ticket_url", "qr_image_url"]);
+
 /** Wallet placeholders render as empty string until v0.5. */
 export const WALLET_PLACEHOLDERS = new Set([
   "apple_wallet_url",
@@ -34,25 +37,45 @@ export const WALLET_PLACEHOLDERS = new Set([
   "download_page_url",
 ]);
 
-const PLACEHOLDER_RE = /\{\{([a-z][a-z0-9_]*)\}\}/g;
+/** Matches any {{...}} token (including malformed names). */
+const ANY_PLACEHOLDER_RE = /\{\{([^}]+)\}\}/g;
 
-export function extractPlaceholderNames(text: string): string[] {
-  const names: string[] = [];
+/** Valid placeholder name: lowercase snake_case. */
+const VALID_PLACEHOLDER_NAME_RE = /^[a-z][a-z0-9_]*$/;
+
+/** Matches only well-formed {{snake_case}} placeholders (for substitution). */
+export const VALID_PLACEHOLDER_RE = /\{\{([a-z][a-z0-9_]*)\}\}/g;
+
+/** Returns inner text of every {{...}} token in the string. */
+export function extractPlaceholderTokens(text: string): string[] {
+  const tokens: string[] = [];
   let match: RegExpExecArray | null;
-  const re = new RegExp(PLACEHOLDER_RE.source, "g");
+  const re = new RegExp(ANY_PLACEHOLDER_RE.source, "g");
   while ((match = re.exec(text)) !== null) {
-    names.push(match[1]!);
+    tokens.push(match[1]!);
   }
-  return names;
+  return tokens;
 }
 
+/** Returns whitelisted placeholder names found in the string. */
+export function extractPlaceholderNames(text: string): string[] {
+  return extractPlaceholderTokens(text)
+    .map((token) => token.trim())
+    .filter((name) => VALID_PLACEHOLDER_NAME_RE.test(name) && ALLOWED_PLACEHOLDERS.has(name));
+}
+
+/**
+ * Returns invalid placeholder names: malformed {{...}} tokens and names outside the whitelist.
+ */
 export function findUnknownPlaceholders(subject: string, body: string): string[] {
-  const unknown = new Set<string>();
-  for (const name of extractPlaceholderNames(subject)) {
-    if (!ALLOWED_PLACEHOLDERS.has(name)) unknown.add(name);
+  const issues = new Set<string>();
+  for (const text of [subject, body]) {
+    for (const token of extractPlaceholderTokens(text)) {
+      const name = token.trim();
+      if (!VALID_PLACEHOLDER_NAME_RE.test(name) || !ALLOWED_PLACEHOLDERS.has(name)) {
+        issues.add(name === "" ? "{{}}" : name);
+      }
+    }
   }
-  for (const name of extractPlaceholderNames(body)) {
-    if (!ALLOWED_PLACEHOLDERS.has(name)) unknown.add(name);
-  }
-  return [...unknown].sort();
+  return [...issues].sort();
 }

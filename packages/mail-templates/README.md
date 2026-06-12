@@ -9,13 +9,15 @@ Outlook-safe mail template renderer for Admitto ticket emails.
 
 ## Placeholders
 
-Closed whitelist — `{{snake_case}}` only. Unknown placeholders fail validation (fail-closed).
+Closed whitelist — `{{snake_case}}` only. Any `{{...}}` token is validated: malformed names
+(e.g. `{{First_Name}}`, `{{first-name}}`) and unknown names fail validation (fail-closed).
 
 | Placeholder | Notes |
 |-------------|-------|
 | `first_name`, `last_name`, `full_name`, `email` | Attendee |
 | `event_name`, `event_date`, `event_location` | Event |
-| `ticket_url`, `qr_image_url`, `logo_url`, `header_image_url` | URLs — validated as `http(s)://` at render time |
+| `ticket_url`, `qr_image_url` | Required URLs — missing/empty values fail render |
+| `logo_url`, `header_image_url` | Optional URLs — empty omits `src`/`href` (no `src=""`) |
 | `apple_wallet_url`, `google_wallet_url`, `download_page_url` | Reserved — empty until v0.5 |
 
 URL validation applies to **runtime values**, not to `href="{{ticket_url}}"` in the template source.

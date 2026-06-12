@@ -7,10 +7,17 @@ export {
 export {
   ALLOWED_PLACEHOLDERS,
   URL_PLACEHOLDERS,
+  REQUIRED_URL_PLACEHOLDERS,
   WALLET_PLACEHOLDERS,
   extractPlaceholderNames,
+  extractPlaceholderTokens,
   findUnknownPlaceholders,
 } from "./placeholders.js";
+export {
+  UnknownPlaceholdersError,
+  MissingRequiredPlaceholderError,
+  MjmlCompileError,
+} from "./errors.js";
 export { compileTemplate } from "./compile.js";
 export { renderTemplate, stripEmptyUrlAttributes } from "./render.js";
 export { validateTemplate, assertValidTemplate } from "./validate.js";
@@ -19,12 +26,7 @@ export {
   DEFAULT_BODY_MJML,
   getBuiltinTemplate,
 } from "./defaultTemplate.js";
-export {
-  resolveTemplate,
-  setMailTemplate,
-  UnknownPlaceholdersError,
-  MjmlCompileError,
-} from "./mailTemplate.js";
+export { resolveTemplate, setMailTemplate } from "./mailTemplate.js";
 export { resolveBranding, setBranding } from "./branding.js";
 export { previewTemplate, DEFAULT_SAMPLE_VARS } from "./preview.js";
 export type {

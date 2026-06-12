@@ -5,6 +5,13 @@ export class UnknownPlaceholdersError extends Error {
   }
 }
 
+export class MissingRequiredPlaceholderError extends Error {
+  constructor(public readonly placeholders: string[]) {
+    super(`Missing required template values: ${placeholders.join(", ")}`);
+    this.name = "MissingRequiredPlaceholderError";
+  }
+}
+
 export class MjmlCompileError extends Error {
   constructor(
     public readonly errors: Array<{ message: string; formattedMessage?: string }>,

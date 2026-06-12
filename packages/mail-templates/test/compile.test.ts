@@ -44,4 +44,13 @@ describe("validateTemplate", () => {
       }),
     ).toEqual([]);
   });
+
+  it("rejects malformed placeholder tokens", () => {
+    expect(
+      validateTemplate({
+        subject: "Hi {{First_Name}}",
+        body: "<p>{{first-name}}</p>",
+      }),
+    ).toEqual(["First_Name", "first-name"]);
+  });
 });
