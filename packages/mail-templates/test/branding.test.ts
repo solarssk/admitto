@@ -11,8 +11,11 @@ import { resetDb } from "./resetDb.js";
 
 const prisma = new PrismaClient();
 
-beforeAll(async () => {
+beforeAll(() => {
   resetDb();
+});
+
+beforeAll(async () => {
   await prisma.organization.create({
     data: {
       id: "org-br",

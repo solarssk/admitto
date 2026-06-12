@@ -64,4 +64,13 @@ describe("validateTemplate", () => {
       }),
     ).toThrow(UnquotedAttributePlaceholderError);
   });
+
+  it("rejects unquoted attributes with literal prefixes before placeholder", () => {
+    expect(() =>
+      assertValidTemplate({
+        subject: "Hi",
+        body: '<img alt=x{{first_name}} width="100" />',
+      }),
+    ).toThrow(UnquotedAttributePlaceholderError);
+  });
 });

@@ -13,8 +13,11 @@ const prisma = new PrismaClient();
 
 const VALID_MJML = `<mjml><mj-body><mj-section><mj-column><mj-text>{{event_name}} — {{first_name}}</mj-text></mj-column></mj-section></mj-body></mjml>`;
 
-beforeAll(async () => {
+beforeAll(() => {
   resetDb();
+});
+
+beforeAll(async () => {
   await prisma.organization.create({
     data: { id: "org-mt", name: "MT Org", slug: "mt-org" },
   });

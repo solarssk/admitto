@@ -3,10 +3,10 @@ import {
   escapeHtmlText,
   validateHttpUrl,
 } from "./escape.js";
+import { isInsideQuotedAttribute } from "./htmlContext.js";
 import {
   REQUIRED_URL_PLACEHOLDERS,
   URL_PLACEHOLDERS,
-  WALLET_PLACEHOLDERS,
   VALID_PLACEHOLDER_RE,
   findUnknownPlaceholders,
   findUnquotedAttributePlaceholders,
@@ -18,40 +18,9 @@ import {
 } from "./errors.js";
 import type { RenderedTemplate, TemplateVars } from "./types.js";
 
-/**
- * True when index points at a placeholder inside a quoted HTML attribute value.
- * Uses the opening quote for each attribute and only treats the matching quote as
- * closing — so apostrophes in double-quoted values (Guest's) stay in attribute context.
- */
-function isInsideAttribute(text: string, index: number): boolean {
-  const before = text.slice(0, index);
-  let insideQuoted = false;
-
-  const attrStartRe = /=\s*("|')/g;
-  let match: RegExpExecArray | null;
-  while ((match = attrStartRe.exec(before)) !== null) {
-    const quote = match[1]!;
-    const valueStart = match.index + match[0].length;
-    const valuePart = before.slice(valueStart);
-    let closed = false;
-    for (let i = 0; i < valuePart.length; i++) {
-      if (valuePart[i] === quote) {
-        closed = true;
-        break;
-      }
-    }
-    insideQuoted = !closed;
-  }
-
-  return insideQuoted;
-}
-
 function resolveVarValue(name: string, vars: TemplateVars): string {
   const raw = vars[name as keyof TemplateVars];
-  if (raw === undefined || raw === null) {
-    if (WALLET_PLACEHOLDERS.has(name)) return "";
-    return "";
-  }
+  if (raw === undefined || raw === null) return "";
   return String(raw);
 }
 
@@ -99,7 +68,7 @@ function substituteSubjectPlaceholders(template: string, vars: TemplateVars): st
 
 function substituteHtmlPlaceholders(template: string, vars: TemplateVars): string {
   return template.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
-    const inAttribute = isInsideAttribute(template, offset);
+    const inAttribute = isInsideQuotedAttribute(template, offset);
     const value = resolveVarValue(name, vars);
     return formatPlaceholderValue(name, value, inAttribute);
   });

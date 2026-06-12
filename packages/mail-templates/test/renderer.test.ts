@@ -111,6 +111,44 @@ describe("renderTemplate", () => {
     );
   });
 
+  it("escapes placeholders when attribute value contains inner =\"...\" segment", () => {
+    const result = renderTemplate(
+      {
+        subject: "T",
+        compiledHtml: "<td title='Badge type=\"VIP\" for {{first_name}}'>Hi</td>",
+      },
+      { first_name: "' onmouseover=alert(1)" },
+    );
+    expect(result.html).toBe(
+      "<td title='Badge type=\"VIP\" for &#39; onmouseover=alert(1)'>Hi</td>",
+    );
+  });
+
+  it("escapes placeholders in later quoted attributes on multi-attribute tags", () => {
+    const result = renderTemplate(
+      {
+        subject: "T",
+        compiledHtml: '<td class="label" title="{{first_name}}">Hi</td>',
+      },
+      { first_name: 'x" onmouseover=alert(1)' },
+    );
+    expect(result.html).toBe(
+      '<td class="label" title="x&quot; onmouseover=alert(1)">Hi</td>',
+    );
+  });
+
+  it("rejects unquoted attributes with literal prefixes at render time", () => {
+    expect(() =>
+      renderTemplate(
+        {
+          subject: "T",
+          compiledHtml: '<img alt=x{{first_name}} width="100" />',
+        },
+        { first_name: " onerror=alert(1)" },
+      ),
+    ).toThrow(UnquotedAttributePlaceholderError);
+  });
+
   it("throws when required URL placeholders are missing", () => {
     expect(() =>
       renderTemplate(

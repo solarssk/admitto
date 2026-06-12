@@ -51,7 +51,10 @@ export async function getBuiltinTemplate(): Promise<ResolvedTemplate> {
         source: "builtin",
       };
       return cachedBuiltin;
-    })();
+    })().catch((err: unknown) => {
+      compilePromise = undefined;
+      throw err;
+    });
   }
   return compilePromise;
 }
