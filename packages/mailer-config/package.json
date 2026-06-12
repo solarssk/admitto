@@ -1,0 +1,32 @@
+{
+  "name": "@admitto/mailer-config",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Admitto mailer config scope resolver — per-field env > event > org > default precedence",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@admitto/crypto": "*",
+    "@admitto/db": "*",
+    "@admitto/mailer": "*"
+  },
+  "devDependencies": {
+    "@prisma/client": "^5.17.0",
+    "@types/node": "^22.19.20",
+    "prisma": "^5.17.0",
+    "typescript": "^6.0.3",
+    "vitest": "4.1.8"
+  }
+}
