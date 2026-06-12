@@ -32,7 +32,12 @@ export {
 } from "./defaultTemplate.js";
 export { resolveTemplate, setMailTemplate } from "./mailTemplate.js";
 export { resolveBranding, setBranding } from "./branding.js";
-export { previewTemplate, DEFAULT_SAMPLE_VARS } from "./preview.js";
+export {
+  previewTemplate,
+  DEFAULT_SAMPLE_VARS,
+} from "./preview.js";
+export type { PreviewTemplateOptions } from "./preview.js";
+export { formatEventDate, resolvePreviewEventTimeZone } from "./formatEventDate.js";
 export type {
   TemplateFormat,
   TemplateScope,

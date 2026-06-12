@@ -40,6 +40,8 @@ Empty optional URL placeholders strip `src`, `href`, `action`, and `background` 
 - Templates: `resolveTemplate(eventId)` → event → organization → built-in default.
 - Branding URLs: `resolveBranding(eventId)` → event → organization → empty (columns on `Organization` / `Event`).
 
+`event_date` in templates is a calendar string (`YYYY-MM-DD`). Use `formatEventDate(date, timeZone)` (exported) so local event midnights do not shift to the previous UTC day. `previewTemplate` accepts optional `{ timeZone }`; default from `ADMITTO_DEFAULT_EVENT_TIMEZONE` env or `UTC`.
+
 ## Outlook Classic rules (advanced HTML mode)
 
 Target **Outlook Classic (Word engine)** on Windows. Outlook New/Mac/web use a web engine and are more forgiving.
