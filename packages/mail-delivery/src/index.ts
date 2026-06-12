@@ -2,7 +2,11 @@ export { sendTicketEmails } from "./send.js";
 export type { SendTicketEmailsOptions, MailDeliveryDeps } from "./send.js";
 export { sendTestEmail } from "./testSend.js";
 export type { SendTestEmailParams } from "./testSend.js";
-export { getMailConfigDescription } from "./configDescribe.js";
+export {
+  getMailConfigDescription,
+  serializeConfigDescriptionForCli,
+} from "./configDescribe.js";
+export type { CliConfigDescriptor, SecretPresenceField } from "./configDescribe.js";
 export { listDeliveries } from "./listDeliveries.js";
 export type { DeliveryLogEntry, ListDeliveriesParams } from "./listDeliveries.js";
 export { resendTicketEmail } from "./resend.js";

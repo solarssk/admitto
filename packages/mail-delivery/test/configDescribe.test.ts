@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setMailSettings } from "@admitto/mailer-config";
 import { resetDb } from "./resetDb.js";
-import { getMailConfigDescription } from "../src/configDescribe.js";
+import { getMailConfigDescription, serializeConfigDescriptionForCli } from "../src/configDescribe.js";
 
 const prisma = new PrismaClient();
 
@@ -58,5 +58,21 @@ describe("getMailConfigDescription", () => {
     expect(desc.host.source).toBe("env");
     expect(desc.host.locked).toBe(true);
     expect(desc.host.value).toBe("smtp.env.example.com");
+  });
+});
+
+describe("serializeConfigDescriptionForCli", () => {
+  it("omits secret values from CLI JSON (presence only)", async () => {
+    const desc = await getMailConfigDescription("evt-cfg-desc", prisma, {});
+    const json = serializeConfigDescriptionForCli(desc);
+    const parsed = JSON.parse(json) as Record<string, { configured?: boolean; value?: string }>;
+
+    expect(json).not.toContain("super-secret-password");
+    expect(parsed.smtpPassword).toEqual({
+      configured: true,
+      source: "organization",
+      locked: false,
+    });
+    expect(parsed.smtpPassword).not.toHaveProperty("value");
   });
 });

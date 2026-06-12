@@ -28,7 +28,7 @@ Orchestrates ticket email delivery: resolve config/template → issue ticket →
 
 ## CLI
 
-Requires `DATABASE_URL` (from `.env` in package or monorepo root).
+Requires `DATABASE_URL` (from `.env` in package or monorepo root). The `cli` script builds workspace dependencies automatically (`precli`), then runs compiled `dist/cli.js`.
 
 ```bash
 npm run cli -w @admitto/mail-delivery -- test-send --to operator@example.com --event <eventId>

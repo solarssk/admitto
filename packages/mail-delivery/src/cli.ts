@@ -11,7 +11,12 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import type { EmailDeliveryPurpose, EmailDeliveryStatus } from "@admitto/db";
 import { isSendSuccess } from "@admitto/mailer";
-import { getMailConfigDescription, listDeliveries, sendTestEmail } from "./index.js";
+import {
+  getMailConfigDescription,
+  serializeConfigDescriptionForCli,
+} from "./configDescribe.js";
+import { listDeliveries } from "./listDeliveries.js";
+import { sendTestEmail } from "./testSend.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -79,7 +84,7 @@ async function cmdTestSend(prisma: PrismaClient): Promise<number> {
 async function cmdConfigDescribe(prisma: PrismaClient): Promise<number> {
   const eventId = requireArg("event");
   const desc = await getMailConfigDescription(eventId, prisma);
-  console.log(JSON.stringify(desc, null, 2));
+  console.log(serializeConfigDescriptionForCli(desc));
   return 0;
 }
 
