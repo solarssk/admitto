@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import * as mailer from "@admitto/mailer";
 import { encryptToString } from "@admitto/crypto";
 import { setMailSettings } from "@admitto/mailer-config";
@@ -69,6 +69,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.$disconnect();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("sendTicketEmails", () => {
@@ -288,17 +292,21 @@ describe("retryDelivery", () => {
       results: [],
     });
 
-    const { ok, reason } = await retryDelivery(delivery.id, prisma, {
-      NODE_ENV: "test",
-      BASE_URL: "https://tickets.example.com",
-    });
-    expect(ok).toBe(false);
-    expect(reason).toBe("no_result");
+    try {
+      const { ok, reason } = await retryDelivery(
+        delivery.id,
+        prisma,
+        { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+        { exportSink: (p) => exported.push(p) },
+      );
+      expect(ok).toBe(false);
+      expect(reason).toBe("no_result");
 
-    const bumped = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
-    expect(bumped.attempts).toBe(2);
-
-    spy.mockRestore();
+      const bumped = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+      expect(bumped.attempts).toBe(2);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("materializes deferred ticket links from token_enc on retry", async () => {

@@ -43,6 +43,21 @@ ALTER TABLE "EmailDelivery" ADD COLUMN "updated_at" TIMESTAMP(3) NOT NULL DEFAUL
 UPDATE "EmailDelivery" SET "status" = 'sent' WHERE "status" = 'pending' AND "sent_at" IS NOT NULL;
 UPDATE "EmailDelivery" SET "status" = 'queued' WHERE "status" = 'pending';
 
+-- 5b. Legacy dedup: keep oldest row as initial; extras become resend before partial unique index
+WITH ranked AS (
+  SELECT
+    id,
+    ROW_NUMBER() OVER (
+      PARTITION BY attendee_id, event_id
+      ORDER BY created_at ASC, id ASC
+    ) AS rn
+  FROM "EmailDelivery"
+)
+UPDATE "EmailDelivery" ed
+SET "purpose" = 'resend'
+FROM ranked r
+WHERE ed.id = r.id AND r.rn > 1;
+
 -- 5. Indexes
 CREATE INDEX "EmailDelivery_event_id_created_at_idx" ON "EmailDelivery"("event_id", "created_at" DESC);
 CREATE INDEX "EmailDelivery_attendee_id_event_id_status_idx" ON "EmailDelivery"("attendee_id", "event_id", "status");

@@ -121,6 +121,26 @@ export async function claimInitialDelivery(
 
   const result = classifyExisting(existing);
   if (result.action === "retry_existing") {
+    const claimed = await prisma.emailDelivery.updateMany({
+      where: {
+        id: existing.id,
+        status: "failed",
+        retryable: true,
+      },
+      data: {
+        status: "queued",
+        queued_at: new Date(),
+      },
+    });
+    if (claimed.count === 0) {
+      const refreshed = await prisma.emailDelivery.findFirst({
+        where: { id: existing.id },
+      });
+      if (!refreshed) {
+        throw new Error("Retry claim lost but initial delivery row not found");
+      }
+      return classifyExisting(refreshed);
+    }
     return {
       action: "retry_existing",
       deliveryId: existing.id,
