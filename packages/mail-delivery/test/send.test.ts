@@ -89,7 +89,15 @@ describe("sendTicketEmails", () => {
     });
     expect(deliveries).toHaveLength(3);
     expect(deliveries.every((d) => d.status === "accepted")).toBe(true);
-    expect(deliveries[0]?.rendered_html).toContain("https://tickets.example.com");
+
+    const modeA = deliveries.find((d) => d.attendee_id === "att-mode-a");
+    expect(modeA?.rendered_html).toContain("{{ticket_url}}");
+    expect(modeA?.rendered_html).toContain("{{qr_image_url}}");
+    expect(modeA?.rendered_html).not.toMatch(/\/t\/[A-Za-z0-9_-]{20,}/);
+
+    const aliceExport = exported.find((p) => p.message.to === "alice@example.com");
+    expect(aliceExport?.message.html).toMatch(/\/t\/[A-Za-z0-9_-]{20,}/);
+    expect(aliceExport?.message.html).toContain("https://tickets.example.com");
   });
 
   it("dedups second initial send", async () => {
@@ -153,6 +161,13 @@ describe("resendTicketEmail", () => {
     });
     expect(after).toBe(before + 1);
     expect(exported[0]?.message.html).toMatch(/\/t\/[A-Za-z0-9_-]{40,}/);
+
+    const resendRow = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: "att-mode-a", purpose: "resend" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(resendRow?.rendered_html).toContain("{{ticket_url}}");
+    expect(resendRow?.rendered_html).not.toMatch(/\/t\/[A-Za-z0-9_-]{20,}/);
   });
 });
 
@@ -201,6 +216,48 @@ describe("retryDelivery", () => {
     const updated = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
     expect(updated.status).toBe("accepted");
     expect(updated.attempts).toBe(2);
+  });
+
+  it("materializes deferred ticket links from token_enc on retry", async () => {
+    const token = "tok_retry_deferred_abcdefghijklmnopqrstuvwxyz";
+    const tokenEnc = encryptToString(token);
+    await prisma.attendee.create({
+      data: {
+        id: "att-retry-deferred",
+        event_id: EVENT_ID,
+        email: "retry-deferred@example.com",
+        name: "Retry Deferred",
+        token_hash: hashToken(token),
+        token_enc: tokenEnc,
+      },
+    });
+
+    const delivery = await prisma.emailDelivery.create({
+      data: {
+        organization_id: "org-mail",
+        event_id: EVENT_ID,
+        attendee_id: "att-retry-deferred",
+        purpose: "initial",
+        provider: "export_only",
+        status: "failed",
+        retryable: true,
+        attempts: 1,
+        recipient_email: "retry-deferred@example.com",
+        rendered_subject: "Retry",
+        rendered_html: '<a href="{{ticket_url}}">ticket</a>',
+      },
+    });
+
+    exported.length = 0;
+    const { ok } = await retryDelivery(
+      delivery.id,
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+    expect(ok).toBe(true);
+    expect(exported[0]?.message.html).toContain(`/t/${token}`);
+    expect(exported[0]?.message.html).not.toContain("{{ticket_url}}");
   });
 
   it("does not retry rejected deliveries", async () => {

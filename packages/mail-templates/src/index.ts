@@ -25,7 +25,14 @@ export {
   MjmlCompileError,
 } from "./errors.js";
 export { compileTemplate } from "./compile.js";
-export { renderTemplate, renderTemplateTrusted, stripEmptyUrlAttributes } from "./render.js";
+export {
+  renderTemplate,
+  renderTemplateTrusted,
+  renderTemplateTrustedForStorage,
+  materializeStoredDeliveryMessage,
+  stripEmptyUrlAttributes,
+  STORAGE_DEFERRED_LINK_PLACEHOLDERS,
+} from "./render.js";
 export {
   validateTemplate,
   assertValidTemplate,

@@ -1,11 +1,14 @@
 import type { PrismaClient } from "@prisma/client";
+import { materializeStoredDeliveryMessage } from "@admitto/mail-templates";
 import { createMailer, sendBatch } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
+import { resolveBaseUrl } from "./baseUrl.js";
+import { resolveAttendeeMailLinks } from "./links.js";
 import { mapSendResultToDelivery } from "./mapSendResult.js";
 import type { MailDeliveryDeps } from "./send.js";
 
 /**
- * Retry a failed transient delivery — re-sends the frozen snapshot, no re-render.
+ * Retry a failed transient delivery — re-sends the frozen snapshot with fresh ticket links.
  */
 export async function retryDelivery(
   deliveryId: string,
@@ -22,13 +25,26 @@ export async function retryDelivery(
     return { ok: false, reason: "missing_snapshot" };
   }
 
+  const baseUrl = resolveBaseUrl(env);
+  let links;
+  try {
+    links = await resolveAttendeeMailLinks(delivery.attendee_id, prisma, baseUrl);
+  } catch {
+    return { ok: false, reason: "links_unavailable" };
+  }
+
+  const materialized = materializeStoredDeliveryMessage(
+    { subject: delivery.rendered_subject, html: delivery.rendered_html },
+    links,
+  );
+
   const mailConfig = await resolveMailConfig(delivery.event_id, prisma, env);
   const mailer = createMailer(mailConfig, { exportSink: deps.exportSink });
 
   const message = {
     to: delivery.recipient_email,
-    subject: delivery.rendered_subject,
-    html: delivery.rendered_html,
+    subject: materialized.subject,
+    html: materialized.html,
     idempotencyKey: `${delivery.attendee_id}:${delivery.purpose}:retry:${delivery.id}`,
   };
 

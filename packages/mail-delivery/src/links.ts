@@ -1,3 +1,5 @@
+import type { PrismaClient } from "@prisma/client";
+import { decryptFromString } from "@admitto/crypto";
 import { validateHttpUrl } from "@admitto/mail-templates";
 
 export interface AttendeeLinkInput {
@@ -54,4 +56,27 @@ export function buildAttendeeMailLinks(
     ticket_url: `${root}/t/${plaintextToken}`,
     qr_image_url: `${root}/q/${plaintextToken}.png`,
   };
+}
+
+/** Resolve mail links at send/retry — decrypts token_enc only in the point of use. */
+export async function resolveAttendeeMailLinks(
+  attendeeId: string,
+  prisma: PrismaClient,
+  baseUrl: string,
+): Promise<AttendeeMailLinks> {
+  const attendee = await prisma.attendee.findUniqueOrThrow({
+    where: { id: attendeeId },
+    include: { event: true },
+  });
+
+  const agency = agencyPayload(attendee);
+  let plaintextToken: string | undefined;
+  if (agency === null) {
+    if (!attendee.token_enc) {
+      throw new Error(`Attendee ${attendee.id} missing token_enc for mail links`);
+    }
+    plaintextToken = decryptFromString(attendee.token_enc);
+  }
+
+  return buildAttendeeMailLinks(attendee, attendee.event, baseUrl, plaintextToken);
 }

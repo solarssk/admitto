@@ -3,7 +3,8 @@ import type { PrismaClient } from "@prisma/client";
 import { decryptFromString } from "@admitto/crypto";
 import {
   formatEventDate,
-  renderTemplateTrusted,
+  materializeStoredDeliveryMessage,
+  renderTemplateTrustedForStorage,
   resolveBrandingFromEvent,
   resolveTemplateForEvent,
 } from "@admitto/mail-templates";
@@ -12,7 +13,7 @@ import { resolveMailConfig } from "@admitto/mailer-config";
 import { issueTicket } from "@admitto/tickets";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { claimInitialDelivery, createResendDelivery } from "./claim.js";
-import { buildAttendeeMailLinks } from "./links.js";
+import { buildAttendeeMailLinks, type AttendeeMailLinks } from "./links.js";
 import { mapSendResultToDelivery } from "./mapSendResult.js";
 import { splitDisplayName } from "./name.js";
 import type { SendTicketEmailsResult } from "./types.js";
@@ -29,7 +30,11 @@ export interface MailDeliveryDeps {
 interface PendingSend {
   deliveryId: string;
   attendeeId: string;
-  message: MailMessage;
+  to: string;
+  frozenSubject: string;
+  frozenHtml: string;
+  links: AttendeeMailLinks;
+  idempotencyKey: string;
   incrementAttempts?: boolean;
 }
 
@@ -46,6 +51,19 @@ async function resolvePlaintextToken(
     return decryptFromString(attendee.token_enc);
   }
   return undefined;
+}
+
+function materializePendingMessage(item: PendingSend): MailMessage {
+  const rendered = materializeStoredDeliveryMessage(
+    { subject: item.frozenSubject, html: item.frozenHtml },
+    item.links,
+  );
+  return {
+    to: item.to,
+    subject: rendered.subject,
+    html: rendered.html,
+    idempotencyKey: item.idempotencyKey,
+  };
 }
 
 export async function sendTicketEmails(
@@ -101,7 +119,7 @@ export async function sendTicketEmails(
     const links = buildAttendeeMailLinks(attendee, event, baseUrl, plaintextToken);
     const { first_name, last_name } = splitDisplayName(attendee.name);
 
-    const rendered = renderTemplateTrusted(
+    const rendered = renderTemplateTrustedForStorage(
       {
         subject: resolvedTemplate.subjectTemplate,
         compiledHtml: resolvedTemplate.compiledHtmlTemplate,
@@ -114,8 +132,6 @@ export async function sendTicketEmails(
         event_name: event.title,
         event_date: formatEventDate(event.date),
         event_location: event.location ?? "",
-        ticket_url: links.ticket_url,
-        qr_image_url: links.qr_image_url,
         logo_url: branding.logo_url,
         header_image_url: branding.header_image_url,
         apple_wallet_url: "",
@@ -145,12 +161,11 @@ export async function sendTicketEmails(
       pending.push({
         deliveryId: claim.deliveryId,
         attendeeId: attendee.id,
-        message: {
-          to: claim.message.to,
-          subject: claim.message.subject,
-          html: claim.message.html,
-          idempotencyKey: `${attendee.id}:initial`,
-        },
+        to: claim.message.to,
+        frozenSubject: claim.message.subject,
+        frozenHtml: claim.message.html,
+        links,
+        idempotencyKey: `${attendee.id}:initial`,
         incrementAttempts: claim.action === "retry_existing",
       });
     } else {
@@ -158,12 +173,11 @@ export async function sendTicketEmails(
       pending.push({
         deliveryId: created.deliveryId,
         attendeeId: attendee.id,
-        message: {
-          to: created.message.to,
-          subject: created.message.subject,
-          html: created.message.html,
-          idempotencyKey: `${attendee.id}:resend:${created.deliveryId}`,
-        },
+        to: created.message.to,
+        frozenSubject: created.message.subject,
+        frozenHtml: created.message.html,
+        links,
+        idempotencyKey: `${attendee.id}:resend:${created.deliveryId}`,
       });
     }
   }
@@ -172,7 +186,7 @@ export async function sendTicketEmails(
     if (pending.length > 0) {
       const batchResult = await sendBatch(
         mailer,
-        pending.map((p) => p.message),
+        pending.map((item) => materializePendingMessage(item)),
       );
 
       await Promise.all(
