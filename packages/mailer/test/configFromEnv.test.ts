@@ -55,6 +55,19 @@ describe("configFromEnv", () => {
     expect(cfg.fromAddress).toBe("display@example.com");
   });
 
+  it("treats blank GRAPH_MAILBOX as missing and falls back to MAIL_FROM_ADDRESS", () => {
+    const cfg = configFromEnv({
+      EMAIL_PROVIDER: "graph",
+      GRAPH_TENANT_ID: "t",
+      GRAPH_CLIENT_ID: "c",
+      GRAPH_CLIENT_SECRET: "s",
+      GRAPH_MAILBOX: "   ",
+      MAIL_FROM_ADDRESS: "events@example.com",
+    } as NodeJS.ProcessEnv);
+    if (cfg.provider !== "graph") throw new Error("unexpected");
+    expect(cfg.mailbox).toBe("events@example.com");
+  });
+
   it("builds export_only config", () => {
     const cfg = configFromEnv({
       EMAIL_PROVIDER: "export_only",
