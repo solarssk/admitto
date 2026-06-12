@@ -139,7 +139,11 @@ export async function claimInitialDelivery(
       if (!refreshed) {
         throw new Error("Retry claim lost but initial delivery row not found");
       }
-      return classifyExisting(refreshed);
+      const lostRace = classifyExisting(refreshed);
+      if (lostRace.action === "retry_existing") {
+        return { action: "skip", reason: "in_flight" };
+      }
+      return lostRace;
     }
     return {
       action: "retry_existing",
