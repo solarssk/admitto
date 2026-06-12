@@ -161,3 +161,23 @@ describe("describeMailConfig — secrets never exposed", () => {
     expect(desc.smtpPassword.source).toBe("default");
   });
 });
+
+describe("describeMailConfig — provider defaults", () => {
+  it("smtp port shows 587 with source=default when provider=smtp from env but port unset", async () => {
+    // evt-d-clean has no MailSettings; provider forced to smtp via env
+    // port is not set anywhere in DB → describer must show the runtime default, not null
+    const desc = await describeMailConfig("evt-d-clean", prisma, { EMAIL_PROVIDER: "smtp" });
+    expect(desc.port.value).toBe(587);
+    expect(desc.port.source).toBe("default");
+    expect(desc.secure.value).toBe(false);
+    expect(desc.secure.source).toBe("default");
+    expect(desc.requireTls.value).toBe(true);
+    expect(desc.requireTls.source).toBe("default");
+  });
+
+  it("unknown provider → port stays null", async () => {
+    const desc = await describeMailConfig("evt-d-clean", prisma, {});
+    expect(desc.port.value).toBeNull();
+    expect(desc.port.source).toBe("default");
+  });
+});
