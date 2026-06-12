@@ -5,6 +5,38 @@ export interface HtmlAttributeContext {
   unquotedAttributeName: string | null;
 }
 
+const EMPTY_CONTEXT: HtmlAttributeContext = {
+  inTag: false,
+  inQuotedAttribute: false,
+  unquotedAttributeName: null,
+};
+
+function isInsideHtmlComment(html: string, index: number): boolean {
+  const commentStart = html.lastIndexOf("<!--", index);
+  if (commentStart === -1) return false;
+  const commentEnd = html.indexOf("-->", commentStart);
+  return commentEnd === -1 || commentEnd + 2 > index;
+}
+
+/** True when `index` is still within the same opening tag (quote-aware `>` handling). */
+function isStillInsideOpeningTag(html: string, tagStart: number, index: number): boolean {
+  let inQuote: '"' | "'" | null = null;
+  for (let i = tagStart + 1; i < index; i++) {
+    const ch = html[i]!;
+    if (inQuote) {
+      if (ch === inQuote) inQuote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inQuote = ch;
+      continue;
+    }
+    if (ch === ">") return false;
+    if (ch === "/" && html[i + 1] === ">") return false;
+  }
+  return true;
+}
+
 /**
  * Parses the opening HTML tag containing `index` and returns whether the position
  * is inside a quoted attribute value or an unquoted one.
@@ -12,17 +44,18 @@ export interface HtmlAttributeContext {
  * Ignores `=` sequences inside quoted values (e.g. type="VIP" inside title='...').
  */
 export function getHtmlAttributeContext(html: string, index: number): HtmlAttributeContext {
-  const empty: HtmlAttributeContext = {
-    inTag: false,
-    inQuotedAttribute: false,
-    unquotedAttributeName: null,
-  };
+  if (isInsideHtmlComment(html, index)) return EMPTY_CONTEXT;
 
   const tagStart = html.lastIndexOf("<", index);
-  if (tagStart === -1) return empty;
+  if (tagStart === -1) return EMPTY_CONTEXT;
 
-  const tagClose = html.indexOf(">", tagStart);
-  if (tagClose !== -1 && tagClose < index) return empty;
+  // Skip closing tags, comments, doctype, and processing instructions.
+  const tagOpen = html.slice(tagStart, tagStart + 4);
+  if (tagOpen.startsWith("</") || tagOpen.startsWith("<!--") || tagOpen.startsWith("<!")) {
+    return EMPTY_CONTEXT;
+  }
+
+  if (!isStillInsideOpeningTag(html, tagStart, index)) return EMPTY_CONTEXT;
 
   let i = tagStart + 1;
   while (i < index && /[A-Za-z0-9-]/.test(html[i]!)) i++;
@@ -47,6 +80,12 @@ export function getHtmlAttributeContext(html: string, index: number): HtmlAttrib
     }
 
     if (inUnquotedValue) {
+      if (/\s/.test(ch)) {
+        inUnquotedValue = false;
+        unquotedAttributeName = null;
+        i++;
+        continue;
+      }
       i++;
       continue;
     }

@@ -44,11 +44,12 @@ function formatPlaceholderValue(
   return inAttribute ? escapeHtmlAttribute(value) : escapeHtmlText(value);
 }
 
-/** Remove empty src/href attributes produced when URL placeholders resolve to "". */
+/** Remove empty URL-bearing attributes produced when optional URL placeholders resolve to "". */
 export function stripEmptyUrlAttributes(html: string): string {
+  const attrs = "src|href|action|background";
   return html
-    .replace(/\s(src|href)=["']\s*["']/gi, "")
-    .replace(/\s(src|href)=(?:""|'')/gi, "");
+    .replace(new RegExp(`\\s(${attrs})=["']\\s*["']`, "gi"), "")
+    .replace(new RegExp(`\\s(${attrs})=(?:""|'')`, "gi"), "");
 }
 
 function formatSubjectPlaceholderValue(name: string, value: string): string {

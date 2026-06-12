@@ -211,6 +211,41 @@ describe("renderTemplate", () => {
     expect(result.html).toContain('alt="logo"');
   });
 
+  it("strips empty action and background URL attributes", () => {
+    const result = renderTemplate(
+      {
+        subject: "T",
+        compiledHtml:
+          '<form action="{{logo_url}}"><td background="{{header_image_url}}">x</td></form>',
+      },
+      { logo_url: "", header_image_url: "" },
+    );
+    expect(result.html).not.toMatch(/\saction\s*=/i);
+    expect(result.html).not.toMatch(/\sbackground\s*=/i);
+  });
+
+  it("escapes placeholder when quoted attribute value contains greater-than", () => {
+    const result = renderTemplate(
+      {
+        subject: "T",
+        compiledHtml: '<td title="2 > {{first_name}}">Hi</td>',
+      },
+      { first_name: 'x" onmouseover=alert(1)' },
+    );
+    expect(result.html).toBe('<td title="2 > x&quot; onmouseover=alert(1)">Hi</td>');
+  });
+
+  it("allows quoted attribute after unquoted numeric attribute", () => {
+    const result = renderTemplate(
+      {
+        subject: "T",
+        compiledHtml: '<img width=100 alt="{{first_name}}" />',
+      },
+      { first_name: "Alex" },
+    );
+    expect(result.html).toBe('<img width=100 alt="Alex" />');
+  });
+
   it("attribute-escapes URL placeholders", () => {
     const result = renderTemplate(
       {

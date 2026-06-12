@@ -58,3 +58,9 @@ export async function getBuiltinTemplate(): Promise<ResolvedTemplate> {
   }
   return compilePromise;
 }
+
+/** Test-only: reset module cache between isolated import tests. */
+export function resetBuiltinTemplateCacheForTests(): void {
+  cachedBuiltin = undefined;
+  compilePromise = undefined;
+}

@@ -32,6 +32,8 @@ Unquoted attribute placeholders are rejected at save and render time (spaces in 
 
 Built-in default is MJML, text-only header (no `{{logo_url}}` section).
 
+Empty optional URL placeholders strip `src`, `href`, `action`, and `background` attributes (never `src=""`).
+
 ## Scope resolution
 
 - Templates: `resolveTemplate(eventId)` → event → organization → built-in default.
