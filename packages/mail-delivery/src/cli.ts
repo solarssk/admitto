@@ -27,9 +27,14 @@ import { sendTestEmail } from "./testSend.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function loadDotEnv() {
+  const monorepoRoot = path.join(__dirname, "..", "..", "..");
+  // Merge all existing files (do not stop at first). Later files override earlier
+  // only for keys not already in process.env. packages/db/.env is the documented
+  // DATABASE_URL location after db setup.
   const candidates = [
+    path.join(monorepoRoot, ".env"),
+    path.join(monorepoRoot, "packages", "db", ".env"),
     path.join(__dirname, "..", ".env"),
-    path.join(__dirname, "..", "..", "..", ".env"),
   ];
   for (const envPath of candidates) {
     if (!fs.existsSync(envPath)) continue;
@@ -45,7 +50,6 @@ function loadDotEnv() {
       }
       if (!(k in process.env)) process.env[k] = v;
     }
-    break;
   }
 }
 
