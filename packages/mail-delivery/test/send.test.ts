@@ -255,17 +255,27 @@ describe("retryDelivery", () => {
   });
 
   it("increments attempts when sendBatch returns no result", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-retry-noresult",
+        event_id: EVENT_ID,
+        email: "noresult@example.com",
+        name: "No Result",
+        qr_payload: "AGENCY-NORESULT",
+      },
+    });
+
     const delivery = await prisma.emailDelivery.create({
       data: {
         organization_id: "org-mail",
         event_id: EVENT_ID,
-        attendee_id: "att-mode-a",
+        attendee_id: "att-retry-noresult",
         purpose: "initial",
         provider: "export_only",
         status: "failed",
         retryable: true,
         attempts: 1,
-        recipient_email: "alice@example.com",
+        recipient_email: "noresult@example.com",
         rendered_subject: "S",
         rendered_html: '<a href="{{ticket_url}}">x</a>',
       },
