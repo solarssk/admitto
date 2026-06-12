@@ -7,6 +7,9 @@ function maybeEncrypt(value: string | undefined): string | undefined {
   return encryptToString(value);
 }
 
+/** Treats blank strings the same as absent — stores null instead. */
+const str = (v: string | undefined): string | null => (v === undefined || v === "" ? null : v);
+
 /**
  * Upserts a MailSettings record for the given scope.
  * Secret fields are encrypted via @admitto/crypto before storage.
@@ -34,15 +37,15 @@ export async function setMailSettings(
     inputKey in input ? { [dbCol]: maybeEncrypt(rawValue) ?? null } : {};
 
   const updateData = {
-    ...supplied("provider", input.provider ?? null),
+    ...supplied("provider", str(input.provider)),
     // smtp non-secret
-    ...supplied("host", input.host ?? null),
+    ...supplied("host", str(input.host)),
     ...supplied("port", input.port ?? null),
     ...supplied("secure", input.secure ?? null),
-    ...supplied("user", input.user ?? null),
+    ...supplied("user", str(input.user)),
     ...(("requireTls" in input) ? { require_tls: input.requireTls ?? null } : {}),
     ...(("tlsRejectUnauthorized" in input) ? { tls_reject_unauthorized: input.tlsRejectUnauthorized ?? null } : {}),
-    ...(("heloName" in input) ? { helo_name: input.heloName ?? null } : {}),
+    ...(("heloName" in input) ? { helo_name: str(input.heloName) } : {}),
     ...supplied("pool", input.pool ?? null),
     ...(("maxConnections" in input) ? { max_connections: input.maxConnections ?? null } : {}),
     ...(("maxMessages" in input) ? { max_messages: input.maxMessages ?? null } : {}),
@@ -51,16 +54,16 @@ export async function setMailSettings(
     ...(("greetingTimeout" in input) ? { greeting_timeout: input.greetingTimeout ?? null } : {}),
     ...(("socketTimeout" in input) ? { socket_timeout: input.socketTimeout ?? null } : {}),
     // graph non-secret
-    ...supplied("mailbox", input.mailbox ?? null),
-    ...(("tenantId" in input) ? { tenant_id: input.tenantId ?? null } : {}),
-    ...(("clientId" in input) ? { client_id: input.clientId ?? null } : {}),
+    ...supplied("mailbox", str(input.mailbox)),
+    ...(("tenantId" in input) ? { tenant_id: str(input.tenantId) } : {}),
+    ...(("clientId" in input) ? { client_id: str(input.clientId) } : {}),
     ...(("saveToSentItems" in input) ? { save_to_sent_items: input.saveToSentItems ?? null } : {}),
     // shared sender
-    ...(("fromAddress" in input) ? { from_address: input.fromAddress ?? null } : {}),
-    ...(("fromName" in input) ? { from_name: input.fromName ?? null } : {}),
-    ...(("replyTo" in input) ? { reply_to: input.replyTo ?? null } : {}),
-    ...(("envelopeFrom" in input) ? { envelope_from: input.envelopeFrom ?? null } : {}),
-    ...(("allowedFromDomain" in input) ? { allowed_from_domain: input.allowedFromDomain ?? null } : {}),
+    ...(("fromAddress" in input) ? { from_address: str(input.fromAddress) } : {}),
+    ...(("fromName" in input) ? { from_name: str(input.fromName) } : {}),
+    ...(("replyTo" in input) ? { reply_to: str(input.replyTo) } : {}),
+    ...(("envelopeFrom" in input) ? { envelope_from: str(input.envelopeFrom) } : {}),
+    ...(("allowedFromDomain" in input) ? { allowed_from_domain: str(input.allowedFromDomain) } : {}),
     // encrypted secrets — only updated when explicitly supplied
     ...secretCol("smtpPassword", "smtp_password_enc", input.smtpPassword),
     ...secretCol("graphClientSecret", "graph_client_secret_enc", input.graphClientSecret),
@@ -72,14 +75,14 @@ export async function setMailSettings(
   const createData = {
     scope_type: scope.scopeType,
     scope_id: scope.scopeId,
-    provider: input.provider ?? null,
-    host: input.host ?? null,
+    provider: str(input.provider),
+    host: str(input.host),
     port: input.port ?? null,
     secure: input.secure ?? null,
-    user: input.user ?? null,
+    user: str(input.user),
     require_tls: input.requireTls ?? null,
     tls_reject_unauthorized: input.tlsRejectUnauthorized ?? null,
-    helo_name: input.heloName ?? null,
+    helo_name: str(input.heloName),
     pool: input.pool ?? null,
     max_connections: input.maxConnections ?? null,
     max_messages: input.maxMessages ?? null,
@@ -87,15 +90,15 @@ export async function setMailSettings(
     connection_timeout: input.connectionTimeout ?? null,
     greeting_timeout: input.greetingTimeout ?? null,
     socket_timeout: input.socketTimeout ?? null,
-    mailbox: input.mailbox ?? null,
-    tenant_id: input.tenantId ?? null,
-    client_id: input.clientId ?? null,
+    mailbox: str(input.mailbox),
+    tenant_id: str(input.tenantId),
+    client_id: str(input.clientId),
     save_to_sent_items: input.saveToSentItems ?? null,
-    from_address: input.fromAddress ?? null,
-    from_name: input.fromName ?? null,
-    reply_to: input.replyTo ?? null,
-    envelope_from: input.envelopeFrom ?? null,
-    allowed_from_domain: input.allowedFromDomain ?? null,
+    from_address: str(input.fromAddress),
+    from_name: str(input.fromName),
+    reply_to: str(input.replyTo),
+    envelope_from: str(input.envelopeFrom),
+    allowed_from_domain: str(input.allowedFromDomain),
     smtp_password_enc: maybeEncrypt(input.smtpPassword) ?? null,
     graph_client_secret_enc: maybeEncrypt(input.graphClientSecret) ?? null,
     power_automate_key_enc: maybeEncrypt(input.powerAutomateKey) ?? null,

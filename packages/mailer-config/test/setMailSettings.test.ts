@@ -163,4 +163,19 @@ describe("setMailSettings", () => {
     expect(row.power_automate_key_enc).toBeTruthy();
     expect(row.power_automate_key_enc).not.toBe("pa-key-abc");
   });
+
+  it("blank string fields are stored as null, not empty string", async () => {
+    await setMailSettings(
+      { scopeType: "organization", scopeId: "org-1" },
+      { host: "", user: "", fromAddress: "" },
+      prisma,
+    );
+
+    const row = await prisma.mailSettings.findUniqueOrThrow({
+      where: { scope_type_scope_id: { scope_type: "organization", scope_id: "org-1" } },
+    });
+    expect(row.host).toBeNull();
+    expect(row.user).toBeNull();
+    expect(row.from_address).toBeNull();
+  });
 });
