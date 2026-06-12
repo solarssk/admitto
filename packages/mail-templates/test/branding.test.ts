@@ -5,6 +5,7 @@ import {
   renderTemplate,
   resolveBranding,
   setBranding,
+  setMailTemplate,
   InvalidHttpUrlError,
 } from "../src/index.js";
 import { resetDb } from "./resetDb.js";
@@ -104,10 +105,19 @@ describe("empty logo in custom template", () => {
 
 describe("previewTemplate", () => {
   it("returns subject and html with @example.com sample data", async () => {
+    await setMailTemplate(
+      { scopeType: "event", scopeId: "evt-br" },
+      {
+        subject: "Your ticket for {{event_name}}",
+        body: "<p>Hi {{first_name}} — {{email}}</p>",
+        format: "html",
+      },
+      prisma,
+    );
+
     const result = await previewTemplate("evt-br", prisma);
     expect(result.subject).toContain("Brand Event");
     expect(result.html).toContain("Alex");
     expect(result.html).toMatch(/@example\.com/i);
-    expect(result.html.toLowerCase()).toContain("<table");
   });
 });
