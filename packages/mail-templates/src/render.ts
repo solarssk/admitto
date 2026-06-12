@@ -108,3 +108,18 @@ export function renderTemplate(
 
   return { subject, html };
 }
+
+/**
+ * Fast render path for batch ticket sends — skips placeholder whitelist re-validation
+ * (template was validated at save time). Still applies context-aware escaping.
+ */
+export function renderTemplateTrusted(
+  input: RenderTemplateInput,
+  vars: TemplateVars,
+): RenderedTemplate {
+  const subject = substituteSubjectPlaceholders(input.subject, vars);
+  const html = stripEmptyUrlAttributes(
+    substituteHtmlPlaceholders(input.compiledHtml, vars),
+  );
+  return { subject, html };
+}

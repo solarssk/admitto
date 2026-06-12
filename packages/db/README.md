@@ -57,7 +57,8 @@ TypeScript unions in `src/status.ts` are the single source of truth for all stat
 | Type | Values |
 |---|---|
 | `AttendeeStatus` | `registered \| confirmed \| cancelled` |
-| `EmailDeliveryStatus` | `pending \| sent \| failed \| bounced` |
+| `EmailDeliveryPurpose` | `initial \| resend` |
+| `EmailDeliveryStatus` | `queued \| accepted \| sent \| delivered \| failed \| bounced \| rejected` |
 | `WalletPassStatus` | `active \| voided \| expired` |
 | `CheckInStatus` | `VALID \| ALREADY_CHECKED_IN \| INVALID \| REVOKED \| UNKNOWN_EVENT \| NETWORK_ERROR` |
 

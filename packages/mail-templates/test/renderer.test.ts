@@ -3,6 +3,7 @@ import {
   escapeHtmlAttribute,
   escapeHtmlText,
   renderTemplate,
+  renderTemplateTrusted,
   validateHttpUrl,
   InvalidHttpUrlError,
   MissingRequiredPlaceholderError,
@@ -289,5 +290,31 @@ describe("renderTemplate", () => {
       { ticket_url: "https://example.com/t?a=1&b=2" },
     );
     expect(result.html).toContain('href="https://example.com/t?a=1&amp;b=2"');
+  });
+});
+
+describe("renderTemplateTrusted", () => {
+  it("escapes HTML without re-validating placeholder whitelist", () => {
+    const result = renderTemplateTrusted(
+      {
+        subject: "Hello {{first_name}}",
+        compiledHtml: "<p>Hi {{first_name}}</p>",
+      },
+      { first_name: `Tom <script>alert(1)</script>` },
+    );
+    expect(result.subject).toBe("Hello Tom <script>alert(1)</script>");
+    expect(result.html).toContain("Hi Tom &lt;script&gt;alert(1)&lt;/script&gt;");
+  });
+
+  it("does not throw on templates that would fail whitelist validation at save time", () => {
+    expect(() =>
+      renderTemplateTrusted(
+        {
+          subject: "Hi",
+          compiledHtml: "<p>{{first_name}}</p>",
+        },
+        { first_name: "Alex" },
+      ),
+    ).not.toThrow();
   });
 });

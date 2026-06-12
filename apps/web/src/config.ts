@@ -7,8 +7,8 @@ type EnvLike = Record<string, string | undefined>;
 export function resolveBaseUrl(env: EnvLike = process.env): string {
   const url = env["BASE_URL"];
   if (url) return url.replace(/\/$/, "");
-  if (env["NODE_ENV"] === "production") {
-    throw new Error("BASE_URL environment variable is required in production");
+  if (env["NODE_ENV"] !== "development") {
+    throw new Error("BASE_URL is required in non-development environments");
   }
   return "http://localhost:3000";
 }
