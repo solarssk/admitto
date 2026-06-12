@@ -3,6 +3,10 @@ import {
   compileTemplate,
   validateTemplate,
   assertValidTemplate,
+  findPlaceholdersInHtmlComments,
+  getBuiltinTemplate,
+  renderTemplate,
+  DEFAULT_SAMPLE_VARS,
   MjmlCompileError,
   PlaceholderInHtmlCommentError,
   UnquotedAttributePlaceholderError,
@@ -27,6 +31,31 @@ describe("compileTemplate", () => {
   it("passes HTML through unchanged", async () => {
     const html = '<p>Hello {{first_name}}</p>';
     expect(await compileTemplate(html, "html")).toBe(html);
+  });
+
+  it("keeps mj-button href placeholders outside HTML comments after MJML compile", async () => {
+    const html = await compileTemplate(
+      `<mjml><mj-body><mj-section><mj-column>
+        <mj-button href="{{ticket_url}}">View your ticket</mj-button>
+      </mj-column></mj-section></mj-body></mjml>`,
+      "mjml",
+    );
+    expect(html).toContain('href="{{ticket_url}}"');
+    expect(findPlaceholdersInHtmlComments(html)).toEqual([]);
+  });
+
+  it("builtin default MJML compiles to renderable HTML", async () => {
+    const builtin = await getBuiltinTemplate();
+    expect(findPlaceholdersInHtmlComments(builtin.compiledHtmlTemplate)).toEqual([]);
+    const rendered = renderTemplate(
+      {
+        subject: builtin.subjectTemplate,
+        compiledHtml: builtin.compiledHtmlTemplate,
+      },
+      DEFAULT_SAMPLE_VARS,
+    );
+    expect(rendered.html).toContain("tickets.example.com");
+    expect(rendered.html).toContain("View your ticket");
   });
 });
 

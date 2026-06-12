@@ -30,6 +30,11 @@ function assertSafeHtmlMarkup(body: string): void {
   }
 }
 
+/** Throws when compiled HTML would fail render-time placeholder safety checks. */
+export function assertRenderableCompiledHtml(html: string): void {
+  assertSafeHtmlMarkup(html);
+}
+
 /** Throws when the source contains unknown placeholders or unsafe HTML markup. */
 export function assertValidTemplate(input: TemplateSourceInput): void {
   const unknown = validateTemplate(input);

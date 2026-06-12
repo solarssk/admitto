@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { compileTemplate } from "./compile.js";
 import { getBuiltinTemplate } from "./defaultTemplate.js";
-import { assertValidTemplate } from "./validate.js";
+import { assertRenderableCompiledHtml, assertValidTemplate } from "./validate.js";
 import type {
   ResolvedTemplate,
   SetMailTemplateInput,
@@ -73,6 +73,9 @@ export async function setMailTemplate(
   assertValidTemplate({ subject: input.subject, body: input.body });
 
   const compiledHtml = await compileTemplate(input.body, input.format);
+  if (input.format === "mjml") {
+    assertRenderableCompiledHtml(compiledHtml);
+  }
 
   await prisma.mailTemplate.upsert({
     where: {

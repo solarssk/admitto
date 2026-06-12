@@ -26,7 +26,11 @@ export {
 } from "./errors.js";
 export { compileTemplate } from "./compile.js";
 export { renderTemplate, stripEmptyUrlAttributes } from "./render.js";
-export { validateTemplate, assertValidTemplate } from "./validate.js";
+export {
+  validateTemplate,
+  assertValidTemplate,
+  assertRenderableCompiledHtml,
+} from "./validate.js";
 export {
   DEFAULT_SUBJECT_TEMPLATE,
   DEFAULT_BODY_MJML,

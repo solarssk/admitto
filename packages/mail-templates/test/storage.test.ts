@@ -106,6 +106,30 @@ describe("setMailTemplate", () => {
     ).rejects.toThrow(MjmlCompileError);
   });
 
+  it("accepts MJML mj-button with ticket_url placeholder after compile", async () => {
+    const body = `<mjml><mj-body><mj-section><mj-column>
+      <mj-button href="{{ticket_url}}">View ticket</mj-button>
+      <mj-image src="{{qr_image_url}}" alt="QR" width="200px" />
+    </mj-column></mj-section></mj-body></mjml>`;
+
+    await setMailTemplate(
+      { scopeType: "organization", scopeId: "org-mt" },
+      {
+        subject: "{{event_name}}",
+        body,
+        format: "mjml",
+      },
+      prisma,
+    );
+
+    const row = await prisma.mailTemplate.findUniqueOrThrow({
+      where: {
+        scope_type_scope_id: { scope_type: "organization", scope_id: "org-mt" },
+      },
+    });
+    expect(row.compiled_html_template).toContain('href="{{ticket_url}}"');
+  });
+
   it("stores compiled_html_template on save", async () => {
     await setMailTemplate(
       { scopeType: "event", scopeId: "evt-mt" },
