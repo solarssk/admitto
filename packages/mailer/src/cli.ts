@@ -64,6 +64,7 @@ async function main() {
   const mailer = createMailer(config);
   console.log(`provider = ${config.provider}`);
 
+  let exitCode = 0;
   try {
     const subject = arg("subject", "Admitto — test (@admitto/mailer)")!;
     const csv = arg("csv");
@@ -84,24 +85,36 @@ async function main() {
           ),
       });
       console.log(`\nSummary: sent=${summary.sent} failed=${summary.failed} total=${summary.total}`);
-      process.exit(summary.failed ? 1 : 0);
+      exitCode = summary.failed ? 1 : 0;
+      return;
     }
 
     const to = arg("to");
     if (!to) {
       console.error("Provide --to <address> or --csv <file>");
-      process.exit(1);
+      exitCode = 1;
+      return;
     }
     const result = await mailer.send({ to, subject, html: renderHtml(arg("name")) });
     if (isSendSuccess(result.status)) {
       console.log(`✅ accepted (id: ${result.providerMessageId ?? "—"})`);
     } else {
       console.error(`❌ error: ${result.error}`);
-      process.exit(1);
+      exitCode = 1;
     }
   } finally {
-    await closeMailer(mailer);
+    try {
+      await closeMailer(mailer);
+    } catch (cleanupErr) {
+      console.error(
+        "⚠️ Error during cleanup:",
+        cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+      );
+      if (exitCode === 0) exitCode = 1;
+    }
   }
+
+  process.exit(exitCode);
 }
 
 main().catch((e) => {
