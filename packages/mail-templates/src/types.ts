@@ -1,0 +1,50 @@
+export type TemplateFormat = "mjml" | "html";
+
+export type TemplateScopeType = "organization" | "event";
+
+export interface TemplateScope {
+  scopeType: TemplateScopeType;
+  scopeId: string;
+}
+
+export type TemplateSource = "event" | "organization" | "builtin";
+
+export interface ResolvedTemplate {
+  subjectTemplate: string;
+  compiledHtmlTemplate: string;
+  templateFormat: TemplateFormat;
+  source: TemplateSource;
+}
+
+export interface TemplateVars {
+  first_name?: string;
+  last_name?: string;
+  full_name?: string;
+  email?: string;
+  event_name?: string;
+  event_date?: string;
+  event_location?: string;
+  ticket_url?: string;
+  qr_image_url?: string;
+  logo_url?: string;
+  header_image_url?: string;
+  apple_wallet_url?: string;
+  google_wallet_url?: string;
+  download_page_url?: string;
+}
+
+export interface RenderedTemplate {
+  subject: string;
+  html: string;
+}
+
+export interface BrandingUrls {
+  logo_url: string;
+  header_image_url: string;
+}
+
+export interface SetMailTemplateInput {
+  subject: string;
+  body: string;
+  format: TemplateFormat;
+}

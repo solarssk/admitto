@@ -46,6 +46,7 @@ jobs:
       - run: npm run build -w @admitto/tickets
       - run: npm run build -w @admitto/mailer
       - run: npm run build -w @admitto/mailer-config
+      - run: npm run build -w @admitto/mail-templates
       - name: Create test databases
         run: bash infra/scripts/create-test-dbs.sh
       - name: Run database migrations
@@ -99,7 +100,8 @@ jobs:
         run: |
           # -z / xargs -0: handle filenames with spaces correctly
           # domain anchor ($): prevent @example.com.evil bypass
-          HITS=$(git ls-files -z '*.csv' '*.json' '*.tsv' \
+          # package-lock.json may contain maintainer emails in npm deprecation metadata — not our data.
+          HITS=$(git ls-files -z -- '*.csv' '*.tsv' '*.json' ':!package-lock.json' \
             | xargs -0 grep -hREo '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- \
             | grep -viE '@(example\.(com|org|net)|test\.(com|org|net))$' || true)
           if [ -n "$HITS" ]; then

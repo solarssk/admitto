@@ -1,0 +1,32 @@
+{
+  "name": "@admitto/mail-templates",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Admitto mail templates — Outlook-safe renderer, MJML compile, per-scope storage",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@admitto/db": "*",
+    "mjml": "^5.3.0"
+  },
+  "devDependencies": {
+    "@prisma/client": "^5.17.0",
+    "@types/mjml": "^5.0.0",
+    "@types/node": "^22.19.20",
+    "prisma": "^5.17.0",
+    "typescript": "^6.0.3",
+    "vitest": "4.1.8"
+  }
+}
