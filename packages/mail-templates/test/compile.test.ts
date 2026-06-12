@@ -56,6 +56,21 @@ describe("validateTemplate", () => {
     ).toEqual(["First_Name", "first-name"]);
   });
 
+  it("rejects whitespace-padded placeholder tokens", () => {
+    expect(
+      validateTemplate({
+        subject: "Hi {{ first_name }}",
+        body: "<p>{{event_name}}</p>",
+      }),
+    ).toEqual(["first_name"]);
+    expect(() =>
+      assertValidTemplate({
+        subject: "Hi",
+        body: "<p>{{ ticket_url }}</p>",
+      }),
+    ).toThrow(/Unknown template placeholders: ticket_url/);
+  });
+
   it("rejects unquoted attribute placeholders", () => {
     expect(() =>
       assertValidTemplate({

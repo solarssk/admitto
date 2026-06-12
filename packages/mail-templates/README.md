@@ -9,8 +9,9 @@ Outlook-safe mail template renderer for Admitto ticket emails.
 
 ## Placeholders
 
-Closed whitelist — `{{snake_case}}` only. Any `{{...}}` token is validated: malformed names
-(e.g. `{{First_Name}}`, `{{first-name}}`) and unknown names fail validation (fail-closed).
+Closed whitelist — `{{snake_case}}` only, no interior whitespace (use `{{first_name}}`, not
+`{{ first_name }}`). Any `{{...}}` token is validated: malformed names (e.g. `{{First_Name}}`,
+`{{first-name}}`, padded spacing) and unknown names fail validation (fail-closed).
 
 | Placeholder | Notes |
 |-------------|-------|

@@ -73,11 +73,14 @@ export function extractPlaceholderTokens(text: string): string[] {
   return tokens;
 }
 
-/** Returns whitelisted placeholder names found in the string. */
+/** Returns whitelisted placeholder names found in the string (exact {{name}} syntax, no padding). */
 export function extractPlaceholderNames(text: string): string[] {
-  return extractPlaceholderTokens(text)
-    .map((token) => token.trim())
-    .filter((name) => VALID_PLACEHOLDER_NAME_RE.test(name) && ALLOWED_PLACEHOLDERS.has(name));
+  return extractPlaceholderTokens(text).filter(
+    (token) =>
+      token === token.trim() &&
+      VALID_PLACEHOLDER_NAME_RE.test(token) &&
+      ALLOWED_PLACEHOLDERS.has(token),
+  );
 }
 
 /**
@@ -87,8 +90,14 @@ export function findUnknownPlaceholders(subject: string, body: string): string[]
   const issues = new Set<string>();
   for (const text of [subject, body]) {
     for (const token of extractPlaceholderTokens(text)) {
-      const name = token.trim();
-      if (!VALID_PLACEHOLDER_NAME_RE.test(name) || !ALLOWED_PLACEHOLDERS.has(name)) {
+      const trimmed = token.trim();
+      const padded = token !== trimmed;
+      const name = trimmed;
+      if (
+        padded ||
+        !VALID_PLACEHOLDER_NAME_RE.test(name) ||
+        !ALLOWED_PLACEHOLDERS.has(name)
+      ) {
         issues.add(name === "" ? "{{}}" : name);
       }
     }

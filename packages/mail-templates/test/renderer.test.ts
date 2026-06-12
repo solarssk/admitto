@@ -62,6 +62,15 @@ describe("renderTemplate", () => {
     ).toThrow(/Unknown template placeholders: First_Name/);
   });
 
+  it("throws on whitespace-padded placeholder tokens", () => {
+    expect(() =>
+      renderTemplate(
+        { subject: "Hi {{ first_name }}", compiledHtml: "<p>ok</p>" },
+        { first_name: "Alex" },
+      ),
+    ).toThrow(/Unknown template placeholders: first_name/);
+  });
+
   it("rejects unquoted attribute placeholders at render time", () => {
     expect(() =>
       renderTemplate(
