@@ -8,8 +8,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PrismaClient } from "@prisma/client";
-import type { EmailDeliveryPurpose, EmailDeliveryStatus } from "@admitto/db";
+import type { PrismaClient } from "@prisma/client";
+import {
+  prisma,
+  EMAIL_DELIVERY_PURPOSE,
+  EMAIL_DELIVERY_STATUS,
+  type EmailDeliveryPurpose,
+  type EmailDeliveryStatus,
+} from "@admitto/db";
 import { isSendSuccess } from "@admitto/mailer";
 import {
   getMailConfigDescription,
@@ -65,6 +71,14 @@ function usage(): never {
   process.exit(1);
 }
 
+function isEmailDeliveryStatus(value: string): value is EmailDeliveryStatus {
+  return (EMAIL_DELIVERY_STATUS as readonly string[]).includes(value);
+}
+
+function isEmailDeliveryPurpose(value: string): value is EmailDeliveryPurpose {
+  return (EMAIL_DELIVERY_PURPOSE as readonly string[]).includes(value);
+}
+
 async function cmdTestSend(prisma: PrismaClient): Promise<number> {
   const to = requireArg("to");
   const eventId = requireArg("event");
@@ -94,14 +108,31 @@ async function cmdDeliveries(prisma: PrismaClient): Promise<number> {
   const purpose = arg("purpose");
   const attendeeId = arg("attendee");
 
+  const filters: NonNullable<Parameters<typeof listDeliveries>[0]["filters"]> = {};
+  if (status) {
+    if (!isEmailDeliveryStatus(status)) {
+      console.error(
+        `Invalid --status: ${status}. Valid: ${EMAIL_DELIVERY_STATUS.join(", ")}`,
+      );
+      return 1;
+    }
+    filters.status = status;
+  }
+  if (purpose) {
+    if (!isEmailDeliveryPurpose(purpose)) {
+      console.error(
+        `Invalid --purpose: ${purpose}. Valid: ${EMAIL_DELIVERY_PURPOSE.join(", ")}`,
+      );
+      return 1;
+    }
+    filters.purpose = purpose;
+  }
+  if (attendeeId) filters.attendeeId = attendeeId;
+
   const rows = await listDeliveries(
     {
       eventId,
-      filters: {
-        ...(status ? { status: status as EmailDeliveryStatus } : {}),
-        ...(purpose ? { purpose: purpose as EmailDeliveryPurpose } : {}),
-        ...(attendeeId ? { attendeeId } : {}),
-      },
+      filters: Object.keys(filters).length > 0 ? filters : undefined,
     },
     prisma,
   );
@@ -120,7 +151,6 @@ async function main() {
   const sub = process.argv[2];
   if (!sub) usage();
 
-  const prisma = new PrismaClient();
   let exitCode = 0;
 
   try {
