@@ -2,6 +2,12 @@ const WINDOW_MS = 60_000;
 const MAX_REQUESTS = 60;
 const MAX_BUCKETS = 10_000;
 
+/**
+ * In-memory per-IP limiter for public /t and /q routes.
+ * Uses the first X-Forwarded-For hop — safe only behind a reverse proxy that
+ * overwrites/forwards a trusted client IP (document in deployment runbook).
+ */
+
 type Bucket = { count: number; resetAt: number };
 
 const buckets = new Map<string, Bucket>();

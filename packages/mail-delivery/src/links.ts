@@ -21,12 +21,13 @@ function agencyPayload(attendee: AttendeeLinkInput): string | null {
   return attendee.qr_payload ?? attendee.external_uuid;
 }
 
-function isAgencyPayloadUrl(payload: string): boolean {
+/** Returns validated http(s) agency ticket URL, or null when payload is not a URL. */
+function validatedAgencyTicketUrl(payload: string): string | null {
   try {
     const validated = validateHttpUrl("ticket_url", payload);
-    return validated !== "";
+    return validated === "" ? null : validated;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -42,9 +43,8 @@ export function buildAttendeeMailLinks(
 
   if (agency !== null) {
     const qr_image_url = `${root}/q/${event.slug}/a/${attendee.id}.png`;
-    const ticket_url = isAgencyPayloadUrl(agency)
-      ? validateHttpUrl("ticket_url", agency)
-      : `${root}/t/${event.slug}/a/${attendee.id}`;
+    const agencyUrl = validatedAgencyTicketUrl(agency);
+    const ticket_url = agencyUrl ?? `${root}/t/${event.slug}/a/${attendee.id}`;
     return { ticket_url, qr_image_url };
   }
 

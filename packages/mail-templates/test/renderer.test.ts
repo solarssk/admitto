@@ -313,7 +313,7 @@ describe("renderTemplateTrusted", () => {
       renderTemplateTrusted(
         {
           subject: "Hi",
-          compiledHtml: "<p>{{first_name}}</p>",
+          compiledHtml: "<p>{{not_on_whitelist}}</p>",
         },
         { first_name: "Alex" },
       ),

@@ -53,6 +53,10 @@ export async function retryDelivery(
     const summary = await sendBatch(mailer, [message]);
     result = summary.results[0];
     if (!result) {
+      await prisma.emailDelivery.update({
+        where: { id: deliveryId },
+        data: { attempts: { increment: 1 } },
+      });
       return { ok: false, reason: "no_result" };
     }
 

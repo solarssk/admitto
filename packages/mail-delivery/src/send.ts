@@ -14,8 +14,9 @@ import { issueTicket } from "@admitto/tickets";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { claimInitialDelivery, createResendDelivery } from "./claim.js";
 import { buildAttendeeMailLinks, type AttendeeMailLinks } from "./links.js";
-import { mapSendResultToDelivery } from "./mapSendResult.js";
+import { mapSendResultToDelivery, type DeliveryStatusUpdate } from "./mapSendResult.js";
 import { splitDisplayName } from "./name.js";
+import { sanitizeDeliveryError } from "./sanitizeError.js";
 import type { SendTicketEmailsResult } from "./types.js";
 
 export interface SendTicketEmailsOptions {
@@ -36,6 +37,18 @@ interface PendingSend {
   links: AttendeeMailLinks;
   idempotencyKey: string;
   incrementAttempts?: boolean;
+}
+
+function deliveryUpdateFromBatchError(err: unknown): DeliveryStatusUpdate {
+  const now = new Date();
+  const message = err instanceof Error ? err.message : String(err);
+  return {
+    status: "failed",
+    retryable: true,
+    error: sanitizeDeliveryError(message),
+    attempted_at: now,
+    failed_at: now,
+  };
 }
 
 async function resolvePlaintextToken(
@@ -83,7 +96,6 @@ export async function sendTicketEmails(
   });
 
   const mailConfig = await resolveMailConfig(eventId, prisma, env);
-  const mailer = createMailer(mailConfig, { exportSink: deps.exportSink });
   const resolvedTemplate = await resolveTemplateForEvent(event, prisma);
   const branding = resolveBrandingFromEvent(event);
 
@@ -94,116 +106,135 @@ export async function sendTicketEmails(
     },
   });
 
+  const mailer = createMailer(mailConfig, { exportSink: deps.exportSink });
   const pending: PendingSend[] = [];
   const skipped: SendTicketEmailsResult["skipped"] = [];
-
-  for (const attendee of attendees) {
-    const issueResult = await issueTicket(attendee.id, prisma, baseUrl);
-
-    if (issueResult.status === "not_issuable") {
-      skipped.push({ attendeeId: attendee.id, reason: issueResult.reason });
-      continue;
-    }
-
-    let plaintextToken: string | undefined;
-    try {
-      plaintextToken = await resolvePlaintextToken(attendee, issueResult);
-    } catch (err) {
-      skipped.push({
-        attendeeId: attendee.id,
-        reason: err instanceof Error ? err.message : "token_unavailable",
-      });
-      continue;
-    }
-
-    const links = buildAttendeeMailLinks(attendee, event, baseUrl, plaintextToken);
-    const { first_name, last_name } = splitDisplayName(attendee.name);
-
-    const rendered = renderTemplateTrustedForStorage(
-      {
-        subject: resolvedTemplate.subjectTemplate,
-        compiledHtml: resolvedTemplate.compiledHtmlTemplate,
-      },
-      {
-        first_name,
-        last_name,
-        full_name: attendee.name,
-        email: attendee.email,
-        event_name: event.title,
-        event_date: formatEventDate(event.date),
-        event_location: event.location ?? "",
-        logo_url: branding.logo_url,
-        header_image_url: branding.header_image_url,
-        apple_wallet_url: "",
-        google_wallet_url: "",
-        download_page_url: "",
-      },
-    );
-
-    const claimInput = {
-      organizationId: event.organization_id,
-      eventId: event.id,
-      attendeeId: attendee.id,
-      batchId,
-      templateId: resolvedTemplate.source === "builtin" ? undefined : `${resolvedTemplate.source}`,
-      provider: mailer.provider,
-      recipientEmail: attendee.email,
-      renderedSubject: rendered.subject,
-      renderedHtml: rendered.html,
-    };
-
-    if (purpose === "initial") {
-      const claim = await claimInitialDelivery(claimInput, prisma);
-      if (claim.action === "skip") {
-        skipped.push({ attendeeId: attendee.id, reason: claim.reason });
-        continue;
-      }
-      pending.push({
-        deliveryId: claim.deliveryId,
-        attendeeId: attendee.id,
-        to: claim.message.to,
-        frozenSubject: claim.message.subject,
-        frozenHtml: claim.message.html,
-        links,
-        idempotencyKey: `${attendee.id}:initial`,
-        incrementAttempts: claim.action === "retry_existing",
-      });
-    } else {
-      const created = await createResendDelivery(claimInput, prisma);
-      pending.push({
-        deliveryId: created.deliveryId,
-        attendeeId: attendee.id,
-        to: created.message.to,
-        frozenSubject: created.message.subject,
-        frozenHtml: created.message.html,
-        links,
-        idempotencyKey: `${attendee.id}:resend:${created.deliveryId}`,
-      });
-    }
-  }
+  let sentCount = 0;
 
   try {
-    if (pending.length > 0) {
-      const batchResult = await sendBatch(
-        mailer,
-        pending.map((item) => materializePendingMessage(item)),
+    for (const attendee of attendees) {
+      const issueResult = await issueTicket(attendee.id, prisma, baseUrl);
+
+      if (issueResult.status === "not_issuable") {
+        skipped.push({ attendeeId: attendee.id, reason: issueResult.reason });
+        continue;
+      }
+
+      let plaintextToken: string | undefined;
+      try {
+        plaintextToken = await resolvePlaintextToken(attendee, issueResult);
+      } catch (err) {
+        skipped.push({
+          attendeeId: attendee.id,
+          reason: err instanceof Error ? err.message : "token_unavailable",
+        });
+        continue;
+      }
+
+      const links = buildAttendeeMailLinks(attendee, event, baseUrl, plaintextToken);
+      const { first_name, last_name } = splitDisplayName(attendee.name);
+
+      const rendered = renderTemplateTrustedForStorage(
+        {
+          subject: resolvedTemplate.subjectTemplate,
+          compiledHtml: resolvedTemplate.compiledHtmlTemplate,
+        },
+        {
+          first_name,
+          last_name,
+          full_name: attendee.name,
+          email: attendee.email,
+          event_name: event.title,
+          event_date: formatEventDate(event.date),
+          event_location: event.location ?? "",
+          logo_url: branding.logo_url,
+          header_image_url: branding.header_image_url,
+          apple_wallet_url: "",
+          google_wallet_url: "",
+          download_page_url: "",
+        },
       );
 
-      await Promise.all(
-        batchResult.results.map((result, index) => {
-          const item = pending[index];
-          if (!item) return Promise.resolve();
-          const update = mapSendResultToDelivery(result);
-          return prisma.emailDelivery.update({
-            where: { id: item.deliveryId },
-            data: {
-              ...update,
-              provider: result.provider,
-              ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}),
-            },
-          });
-        }),
-      );
+      const claimInput = {
+        organizationId: event.organization_id,
+        eventId: event.id,
+        attendeeId: attendee.id,
+        batchId,
+        templateId: resolvedTemplate.source === "builtin" ? undefined : `${resolvedTemplate.source}`,
+        provider: mailer.provider,
+        recipientEmail: attendee.email,
+        renderedSubject: rendered.subject,
+        renderedHtml: rendered.html,
+      };
+
+      if (purpose === "initial") {
+        const claim = await claimInitialDelivery(claimInput, prisma);
+        if (claim.action === "skip") {
+          skipped.push({ attendeeId: attendee.id, reason: claim.reason });
+          continue;
+        }
+        pending.push({
+          deliveryId: claim.deliveryId,
+          attendeeId: attendee.id,
+          to: claim.message.to,
+          frozenSubject: claim.message.subject,
+          frozenHtml: claim.message.html,
+          links,
+          idempotencyKey: `${attendee.id}:initial`,
+          incrementAttempts: claim.action === "retry_existing",
+        });
+      } else {
+        const created = await createResendDelivery(claimInput, prisma);
+        pending.push({
+          deliveryId: created.deliveryId,
+          attendeeId: attendee.id,
+          to: created.message.to,
+          frozenSubject: created.message.subject,
+          frozenHtml: created.message.html,
+          links,
+          idempotencyKey: `${attendee.id}:resend:${created.deliveryId}`,
+        });
+      }
+    }
+
+    if (pending.length > 0) {
+      try {
+        const batchResult = await sendBatch(
+          mailer,
+          pending.map((item) => materializePendingMessage(item)),
+        );
+        sentCount = batchResult.sent;
+
+        await Promise.all(
+          batchResult.results.map((result, index) => {
+            const item = pending[index];
+            if (!item) return Promise.resolve();
+            const update = mapSendResultToDelivery(result);
+            return prisma.emailDelivery.update({
+              where: { id: item.deliveryId },
+              data: {
+                ...update,
+                provider: result.provider,
+                ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}),
+              },
+            });
+          }),
+        );
+      } catch (err) {
+        const failureUpdate = deliveryUpdateFromBatchError(err);
+        await Promise.all(
+          pending.map((item) =>
+            prisma.emailDelivery.update({
+              where: { id: item.deliveryId },
+              data: {
+                ...failureUpdate,
+                ...(item.incrementAttempts ? { attempts: { increment: 1 } } : {}),
+              },
+            }),
+          ),
+        );
+        sentCount = 0;
+      }
     }
   } finally {
     await mailer.close();
@@ -211,7 +242,7 @@ export async function sendTicketEmails(
 
   return {
     batchId,
-    sent: pending.length,
+    sent: sentCount,
     skipped,
   };
 }

@@ -1,12 +1,26 @@
 type EnvLike = Record<string, string | undefined>;
 
+function normalizeBaseUrl(raw: string): string {
+  const trimmed = raw.replace(/\/$/, "");
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error("BASE_URL must use http:// or https://");
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("http")) throw err;
+    throw new Error("BASE_URL must be a valid http:// or https:// URL");
+  }
+  return trimmed;
+}
+
 /**
  * Resolve the absolute base URL used for public ticket links and QR payloads.
  * In production the value must be configured explicitly; localhost fallback is dev-only.
  */
 export function resolveBaseUrl(env: EnvLike = process.env): string {
   const url = env["BASE_URL"];
-  if (url) return url.replace(/\/$/, "");
+  if (url) return normalizeBaseUrl(url);
   if (env["NODE_ENV"] !== "development") {
     throw new Error("BASE_URL is required in non-development environments");
   }

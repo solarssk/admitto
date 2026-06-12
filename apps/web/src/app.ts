@@ -34,7 +34,8 @@ export interface CreateAppOptions {
 export function createApp(options: CreateAppOptions = {}) {
   const db = options.prisma ?? defaultPrisma;
   const baseUrl = options.baseUrl ?? resolveBaseUrl();
-  const checkinToken = options.checkinToken ?? resolveCheckinToken();
+  const checkinToken =
+    options.checkinToken !== undefined ? options.checkinToken : resolveCheckinToken();
 
   const app = new Hono();
   const ticketPageHeaders = getTicketPageSecurityHeaders();

@@ -6,6 +6,12 @@ describe("resolveBaseUrl", () => {
     expect(resolveBaseUrl({ BASE_URL: "https://tickets.example.com/" })).toBe("https://tickets.example.com");
   });
 
+  it("rejects malformed BASE_URL", () => {
+    expect(() => resolveBaseUrl({ BASE_URL: "not-a-url" })).toThrow(
+      "BASE_URL must be a valid http:// or https:// URL",
+    );
+  });
+
   it("falls back to localhost outside production", () => {
     expect(resolveBaseUrl({ NODE_ENV: "development" })).toBe("http://localhost:3000");
   });

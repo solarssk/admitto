@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import * as mailer from "@admitto/mailer";
 import { encryptToString } from "@admitto/crypto";
 import { setMailSettings } from "@admitto/mailer-config";
 import type { ExportPayload } from "@admitto/mailer";
@@ -140,6 +141,41 @@ describe("sendTicketEmails", () => {
     expect(rows).toHaveLength(1);
     expect(exported.length).toBeLessThanOrEqual(1);
   });
+
+  it("marks deliveries failed when sendBatch throws", async () => {
+    await prisma.emailDelivery.deleteMany({ where: { attendee_id: "att-batch-fail" } });
+    await prisma.attendee.create({
+      data: {
+        id: "att-batch-fail",
+        event_id: EVENT_ID,
+        email: "batch-fail@example.com",
+        name: "Batch Fail",
+      },
+    });
+
+    const spy = vi.spyOn(mailer, "sendBatch").mockRejectedValueOnce(new Error("transport down"));
+    exported.length = 0;
+
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { attendeeIds: ["att-batch-fail"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    expect(result.sent).toBe(0);
+    expect(exported).toHaveLength(0);
+
+    const row = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: "att-batch-fail", purpose: "initial" },
+    });
+    expect(row?.status).toBe("failed");
+    expect(row?.retryable).toBe(true);
+    expect(row?.error).toContain("transport down");
+
+    spy.mockRestore();
+  });
 });
 
 describe("resendTicketEmail", () => {
@@ -216,6 +252,43 @@ describe("retryDelivery", () => {
     const updated = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
     expect(updated.status).toBe("accepted");
     expect(updated.attempts).toBe(2);
+  });
+
+  it("increments attempts when sendBatch returns no result", async () => {
+    const delivery = await prisma.emailDelivery.create({
+      data: {
+        organization_id: "org-mail",
+        event_id: EVENT_ID,
+        attendee_id: "att-mode-a",
+        purpose: "initial",
+        provider: "export_only",
+        status: "failed",
+        retryable: true,
+        attempts: 1,
+        recipient_email: "alice@example.com",
+        rendered_subject: "S",
+        rendered_html: '<a href="{{ticket_url}}">x</a>',
+      },
+    });
+
+    const spy = vi.spyOn(mailer, "sendBatch").mockResolvedValueOnce({
+      total: 1,
+      sent: 0,
+      failed: 1,
+      results: [],
+    });
+
+    const { ok, reason } = await retryDelivery(delivery.id, prisma, {
+      NODE_ENV: "test",
+      BASE_URL: "https://tickets.example.com",
+    });
+    expect(ok).toBe(false);
+    expect(reason).toBe("no_result");
+
+    const bumped = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+    expect(bumped.attempts).toBe(2);
+
+    spy.mockRestore();
   });
 
   it("materializes deferred ticket links from token_enc on retry", async () => {
