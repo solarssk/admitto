@@ -7,7 +7,7 @@ import { getMailConfigDescription, serializeConfigDescriptionForCli } from "../s
 const prisma = new PrismaClient();
 
 beforeAll(async () => {
-  resetDb();
+  await resetDb();
 
   await prisma.organization.create({
     data: { id: "org-cfg-desc", name: "Config Org", slug: "cfg-desc-org" },

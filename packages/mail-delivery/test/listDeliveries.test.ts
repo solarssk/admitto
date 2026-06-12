@@ -12,7 +12,7 @@ const EVENT_B = "evt-list-b";
 const exported: ExportPayload[] = [];
 
 beforeAll(async () => {
-  resetDb();
+  await resetDb();
 
   await prisma.organization.create({
     data: { id: "org-list", name: "List Org", slug: "list-org" },

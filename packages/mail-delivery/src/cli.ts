@@ -5,7 +5,6 @@
  *   npm run cli -w @admitto/mail-delivery -- config-describe --event <id>
  *   npm run cli -w @admitto/mail-delivery -- deliveries --event <id> [--status accepted]
  */
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PrismaClient } from "@prisma/client";
@@ -21,6 +20,7 @@ import {
   getMailConfigDescription,
   serializeConfigDescriptionForCli,
 } from "./configDescribe.js";
+import { loadEnvFile } from "./loadDotEnv.js";
 import { listDeliveries } from "./listDeliveries.js";
 import { sendTestEmail } from "./testSend.js";
 
@@ -38,19 +38,7 @@ function loadDotEnv() {
     path.join(__dirname, "..", ".env"),
   ];
   for (const envPath of candidates) {
-    if (!fs.existsSync(envPath)) continue;
-    for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
-      const t = line.trim();
-      if (!t || t.startsWith("#")) continue;
-      const eq = t.indexOf("=");
-      if (eq === -1) continue;
-      const k = t.slice(0, eq).trim();
-      let v = t.slice(eq + 1).trim();
-      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-        v = v.slice(1, -1);
-      }
-      if (!(k in process.env)) process.env[k] = v;
-    }
+    loadEnvFile(envPath);
   }
 }
 

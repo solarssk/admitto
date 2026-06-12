@@ -10,7 +10,7 @@ const EVENT_ID = "evt-test-send";
 const exported: ExportPayload[] = [];
 
 beforeAll(async () => {
-  resetDb();
+  await resetDb();
 
   await prisma.organization.create({
     data: { id: "org-test-send", name: "Test Send Org", slug: "test-send-org" },
