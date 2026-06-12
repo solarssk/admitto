@@ -46,6 +46,7 @@ jobs:
       - run: npm run build -w @admitto/tickets
       - run: npm run build -w @admitto/mailer
       - run: npm run build -w @admitto/mailer-config
+      - run: npm run build -w @admitto/mail-templates
       - name: Create test databases
         run: bash infra/scripts/create-test-dbs.sh
       - name: Run database migrations

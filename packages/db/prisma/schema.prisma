@@ -16,23 +16,27 @@ model Organization {
   id               String          @id @default(cuid())
   name             String
   slug             String          @unique
+  // Branding URLs (ADR 0008) — external hosted images, not uploads.
+  logo_url         String?
+  header_image_url String?
   created_at       DateTime        @default(now())
   events           Event[]
   email_deliveries EmailDelivery[]
-  // branding, allowed_from_domain — reserved for future (ADR 0005, ADR 0008)
 }
 
 model Event {
-  id              String       @id @default(cuid())
-  organization_id String
-  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Restrict)
-  title           String
-  slug            String       @unique
-  date            DateTime
-  location        String?
-  created_at      DateTime     @default(now())
-  attendees       Attendee[]
-  check_ins       CheckIn[]
+  id               String       @id @default(cuid())
+  organization_id  String
+  organization     Organization @relation(fields: [organization_id], references: [id], onDelete: Restrict)
+  title            String
+  slug             String       @unique
+  date             DateTime
+  location         String?
+  logo_url         String?
+  header_image_url String?
+  created_at       DateTime     @default(now())
+  attendees        Attendee[]
+  check_ins        CheckIn[]
 
   @@index([organization_id])
 }
@@ -170,6 +174,21 @@ model MailSettings {
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
+
+  @@unique([scope_type, scope_id])
+}
+
+// Per-scope mail template storage (plain text — not encrypted).
+model MailTemplate {
+  id                     String   @id @default(cuid())
+  scope_type             String   // "organization" | "event"
+  scope_id               String
+  subject_template       String
+  body_template          String   @db.Text
+  template_format        String   // "mjml" | "html"
+  compiled_html_template String   @db.Text
+  created_at             DateTime @default(now())
+  updated_at             DateTime @updatedAt
 
   @@unique([scope_type, scope_id])
 }
