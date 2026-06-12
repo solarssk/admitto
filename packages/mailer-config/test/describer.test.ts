@@ -45,6 +45,20 @@ beforeAll(async () => {
     },
     prisma,
   );
+
+  // Fresh org+event with no MailSettings — used by secrets and provider-defaults tests
+  await prisma.organization.create({
+    data: { id: "org-d-clean", name: "Clean Org", slug: "clean-org" },
+  });
+  await prisma.event.create({
+    data: {
+      id: "evt-d-clean",
+      organization_id: "org-d-clean",
+      title: "Clean Event",
+      slug: "clean-event",
+      date: new Date("2026-09-01"),
+    },
+  });
 });
 
 afterAll(async () => {
@@ -142,20 +156,7 @@ describe("describeMailConfig — secrets never exposed", () => {
   });
 
   it("null when no secret present in any scope", async () => {
-    // Use a fresh org with no MailSettings so org-level secrets cannot leak in.
-    await prisma.organization.create({
-      data: { id: "org-d-clean", name: "Clean Org", slug: "clean-org" },
-    });
-    await prisma.event.create({
-      data: {
-        id: "evt-d-clean",
-        organization_id: "org-d-clean",
-        title: "Clean Event",
-        slug: "clean-event",
-        date: new Date("2026-09-01"),
-      },
-    });
-
+    // evt-d-clean has no MailSettings — created in the top-level beforeAll
     const desc = await describeMailConfig("evt-d-clean", prisma, {});
     expect(desc.smtpPassword.value).toBeNull();
     expect(desc.smtpPassword.source).toBe("default");
