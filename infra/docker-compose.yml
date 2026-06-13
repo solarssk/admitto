@@ -18,6 +18,8 @@ services:
 
   redis:
     image: redis:7-alpine
+    # Bound memory even if a misconfigured proxy lets attackers fan out spoofed client IPs.
+    command: redis-server --maxmemory 256mb --maxmemory-policy volatile-ttl
     ports:
       - "127.0.0.1:6379:6379"
 
