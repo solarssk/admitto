@@ -33,7 +33,7 @@ export async function login(
 
   if (!user.is_active) {
     logLoginFailure(audit ?? { email, ip: input.ip, userAgent: input.userAgent });
-    return INVALID;
+    return { ok: false, reason: "inactive" };
   }
 
   const { session, rawToken } = await createSession(prisma, {

@@ -15,16 +15,19 @@ export async function bootstrapSuperadmin(
   email: string,
   password: string,
 ): Promise<{ userId: string }> {
-  const user = await createUser(prisma, { email, password });
-  await prisma.roleAssignment.create({
-    data: {
-      user_id: user.id,
-      role: "superadmin",
-      scope_type: "instance",
-      scope_id: null,
-    },
+  const { userId } = await prisma.$transaction(async (tx) => {
+    const user = await createUser(tx, { email, password });
+    await tx.roleAssignment.create({
+      data: {
+        user_id: user.id,
+        role: "superadmin",
+        scope_type: "instance",
+        scope_id: null,
+      },
+    });
+    return { userId: user.id };
   });
-  return { userId: user.id };
+  return { userId };
 }
 
 export async function assertCanBootstrap(

@@ -118,13 +118,13 @@ describe("user", () => {
 });
 
 describe("login", () => {
-  it("rejects inactive user with invalid_credentials shape", async () => {
+  it("rejects inactive user with inactive reason", async () => {
     const result = await login(prisma, {
       email: "inactive@example.com",
       password: "test-password-123",
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("invalid_credentials");
+    if (!result.ok) expect(result.reason).toBe("inactive");
   });
 });
 
@@ -150,6 +150,13 @@ describe("session", () => {
     expect(await validateSession(prisma, rawToken)).toBeNull();
   });
 
+  it("rejects session when user is inactive", async () => {
+    const { rawToken } = await createSession(prisma, { userId: USER_OP_A });
+    await prisma.user.update({ where: { id: USER_OP_A }, data: { is_active: false } });
+    expect(await validateSession(prisma, rawToken)).toBeNull();
+    await prisma.user.update({ where: { id: USER_OP_A }, data: { is_active: true } });
+  });
+
   it("revokeAllOperatorSessionsForEvent only affects operators on event", async () => {
     const op = await createSession(prisma, { userId: USER_OP_A });
     const admin = await createSession(prisma, { userId: USER_ADMIN_A });
@@ -157,6 +164,26 @@ describe("session", () => {
     expect(count).toBeGreaterThanOrEqual(1);
     expect(await validateSession(prisma, op.rawToken)).toBeNull();
     expect(await validateSession(prisma, admin.rawToken)).not.toBeNull();
+  });
+
+  it("revokeAllOperatorSessionsForEvent preserves sessions for mixed operator+admin users", async () => {
+    const mixedId = "user-mixed-op-admin-auth";
+    const password_hash = await hashPassword("x");
+    await prisma.user.create({
+      data: { id: mixedId, email: "mixed@example.com", password_hash },
+    });
+    await prisma.roleAssignment.createMany({
+      data: [
+        { user_id: mixedId, role: "operator", scope_type: "event", scope_id: EVENT_A },
+        { user_id: mixedId, role: "admin", scope_type: "organization", scope_id: ORG_A },
+      ],
+    });
+    const mixed = await createSession(prisma, { userId: mixedId });
+    const op = await createSession(prisma, { userId: USER_OP_A });
+    const count = await revokeAllOperatorSessionsForEvent(prisma, EVENT_A);
+    expect(count).toBeGreaterThanOrEqual(1);
+    expect(await validateSession(prisma, op.rawToken)).toBeNull();
+    expect(await validateSession(prisma, mixed.rawToken)).not.toBeNull();
   });
 });
 

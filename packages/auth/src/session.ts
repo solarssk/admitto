@@ -55,11 +55,13 @@ export async function validateSession(
   const token_hash = hashToken(rawToken);
   const session = await prisma.session.findUnique({
     where: { token_hash },
+    include: { user: { select: { is_active: true } } },
   });
 
   if (!session) return null;
   if (session.revoked_at) return null;
   if (session.expires_at.getTime() <= Date.now()) return null;
+  if (!session.user.is_active) return null;
 
   const now = new Date();
   if (now.getTime() - session.last_seen_at.getTime() >= SESSION_LAST_SEEN_THROTTLE_MS) {
@@ -99,7 +101,18 @@ export async function revokeAllOperatorSessionsForEvent(
     select: { user_id: true },
   });
 
-  const userIds = [...new Set(operatorAssignments.map((a) => a.user_id))];
+  const operatorUserIds = [...new Set(operatorAssignments.map((a) => a.user_id))];
+  if (operatorUserIds.length === 0) return 0;
+
+  const elevatedAssignments = await prisma.roleAssignment.findMany({
+    where: {
+      user_id: { in: operatorUserIds },
+      role: { in: ["superadmin", "admin"] },
+    },
+    select: { user_id: true },
+  });
+  const elevatedUserIds = new Set(elevatedAssignments.map((a) => a.user_id));
+  const userIds = operatorUserIds.filter((id) => !elevatedUserIds.has(id));
   if (userIds.length === 0) return 0;
 
   const result = await prisma.session.updateMany({

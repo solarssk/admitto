@@ -112,7 +112,7 @@ export function createApp(options: CreateAppOptions = {}) {
     return htmlWithSecurityHeaders(c, renderTicket(resolved, qrDataUrl), 200);
   }
 
-  app.post("/api/auth/login", loginRateLimit, (c) => handleLogin(c, db));
+  app.post("/api/auth/login", loginRateLimit, (c) => handleLogin(c, db, rateLimitStore));
   app.post("/api/auth/logout", (c) => handleLogout(c, db));
   app.get("/api/auth/me", requireSession, (c) => handleMe(c, db));
 
@@ -243,8 +243,14 @@ export function createApp(options: CreateAppOptions = {}) {
         }
 
         try {
+          const operatorUserId = c.get("operatorUserId") as string | undefined;
           const result = await checkInScan(
-            { scanned, eventId, deviceId: typeof deviceId === "string" ? deviceId : undefined },
+            {
+              scanned,
+              eventId,
+              deviceId: typeof deviceId === "string" ? deviceId : undefined,
+              operator: operatorUserId,
+            },
             db,
           );
           return c.json(result, 200);

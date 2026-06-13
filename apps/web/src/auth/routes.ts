@@ -2,7 +2,9 @@ import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { PrismaClient } from "@prisma/client";
 import { SESSION_COOKIE_NAME, login, logout, validateSession } from "@admitto/auth";
-import { clientIpFromHeaders } from "../rate-limit/client-ip.js";
+import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
+import { resolveClientIp } from "../rate-limit/client-ip.js";
+import type { RateLimitStore } from "../rate-limit/types.js";
 
 const AUTH_ERROR = { error: "unauthorized" } as const;
 
@@ -28,7 +30,11 @@ export function clearSessionCookie(c: Context): void {
   deleteCookie(c, SESSION_COOKIE_NAME, { path: "/" });
 }
 
-export async function handleLogin(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleLogin(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
   let body: unknown;
   try {
     body = await c.req.json();
@@ -45,12 +51,16 @@ export async function handleLogin(c: Context, db: PrismaClient): Promise<Respons
     return c.json(AUTH_ERROR, 401);
   }
 
+  if (!(await checkLoginEmailRateLimit(rateLimitStore, email))) {
+    return c.json({ error: "too many requests" }, 429);
+  }
+
   const result = await login(
     db,
     {
       email,
       password,
-      ip: clientIpFromHeaders(c.req.header("x-forwarded-for")),
+      ip: resolveClientIp(c),
       userAgent: c.req.header("user-agent"),
     },
     { email },
