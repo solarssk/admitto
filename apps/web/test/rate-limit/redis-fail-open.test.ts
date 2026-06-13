@@ -3,6 +3,8 @@ import { RedisRateLimitStore } from "../../src/rate-limit/redis.js";
 import { createRateLimitStore } from "../../src/rate-limit/factory.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
+const unreachableRedis = { connectTimeoutMs: 200 };
+
 describe("RedisRateLimitStore fail-open", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -10,7 +12,7 @@ describe("RedisRateLimitStore fail-open", () => {
 
   it("allows traffic when Redis is unreachable", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const store = new RedisRateLimitStore("redis://127.0.0.1:1", 200);
+    const store = new RedisRateLimitStore("redis://127.0.0.1:1", unreachableRedis);
 
     const result = await store.hit("1.2.3.4", 60_000, 60);
     expect(result.allowed).toBe(true);
@@ -22,7 +24,10 @@ describe("RedisRateLimitStore fail-open", () => {
 
   it("throttles fail-open warnings during repeated failures", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const store = new RedisRateLimitStore("redis://127.0.0.1:1", 200);
+    const store = new RedisRateLimitStore("redis://127.0.0.1:1", {
+      ...unreachableRedis,
+      outageCooldownMs: 0,
+    });
 
     await store.hit("1.2.3.4", 60_000, 60);
     await store.hit("1.2.3.4", 60_000, 60);
@@ -31,9 +36,24 @@ describe("RedisRateLimitStore fail-open", () => {
     await store.disconnect();
   });
 
+  it("skips reconnect during outage cooldown", async () => {
+    const store = new RedisRateLimitStore("redis://127.0.0.1:1", {
+      connectTimeoutMs: 300,
+      outageCooldownMs: 60_000,
+    });
+
+    await store.hit("1.2.3.4", 60_000, 60);
+    const started = performance.now();
+    const result = await store.hit("1.2.3.4", 60_000, 60);
+    expect(result.allowed).toBe(true);
+    expect(performance.now() - started).toBeLessThan(200);
+
+    await store.disconnect();
+  });
+
   it("does not log Redis URL secrets on failure", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const store = new RedisRateLimitStore("redis://:supersecret@127.0.0.1:1", 200);
+    const store = new RedisRateLimitStore("redis://:supersecret@127.0.0.1:1", unreachableRedis);
 
     await store.hit("1.2.3.4", 60_000, 60);
 
