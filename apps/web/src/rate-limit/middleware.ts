@@ -4,8 +4,8 @@ import { MAX_REQUESTS, WINDOW_MS } from "./constants.js";
 import type { RateLimitStore } from "./types.js";
 
 /**
- * Public /t and /q rate limit — X-Forwarded-For is trusted only behind a reverse
- * proxy that overwrites the header with the real client IP.
+ * Hono middleware that rate-limits public `/t` and `/q` routes per client IP.
+ * X-Forwarded-For is trusted only behind a reverse proxy that overwrites the header.
  */
 export function createPublicRateLimitMiddleware(store: RateLimitStore) {
   return async (c: Context, next: Next) => {

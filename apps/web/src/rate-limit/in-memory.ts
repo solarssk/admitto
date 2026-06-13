@@ -3,6 +3,7 @@ import type { RateLimitHitResult, RateLimitStore } from "./types.js";
 
 type Bucket = { count: number; resetAt: number };
 
+/** Drop buckets whose window has already ended. */
 function pruneExpired(buckets: Map<string, Bucket>, now: number): void {
   for (const [key, bucket] of buckets) {
     if (now >= bucket.resetAt) {
@@ -11,6 +12,7 @@ function pruneExpired(buckets: Map<string, Bucket>, now: number): void {
   }
 }
 
+/** Remove the bucket with the earliest reset time to make room for a new key. */
 function evictOldestBucket(buckets: Map<string, Bucket>): void {
   let oldestKey: string | undefined;
   let oldestReset = Infinity;
@@ -25,10 +27,15 @@ function evictOldestBucket(buckets: Map<string, Bucket>): void {
   }
 }
 
+/**
+ * Process-local rate limiter with per-key sliding windows.
+ * Default when `REDIS_URL` is not configured.
+ */
 export class InMemoryRateLimitStore implements RateLimitStore {
   private readonly buckets = new Map<string, Bucket>();
   private readonly maxBuckets: number;
 
+  /** @param maxBuckets Maximum distinct client keys before oldest-bucket eviction. */
   constructor(maxBuckets = MAX_BUCKETS) {
     if (!Number.isInteger(maxBuckets) || maxBuckets < 1) {
       throw new Error("maxBuckets must be a positive integer");
@@ -36,6 +43,7 @@ export class InMemoryRateLimitStore implements RateLimitStore {
     this.maxBuckets = maxBuckets;
   }
 
+  /** Record one request for `key` within a sliding window of `windowMs`. */
   async hit(key: string, windowMs: number, max: number): Promise<RateLimitHitResult> {
     const now = Date.now();
     const bucket = this.buckets.get(key);

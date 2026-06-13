@@ -19,6 +19,7 @@ type RedisClientOptions = {
   connectTimeoutMs?: number;
 };
 
+/** Create a node-redis client with fail-safe error handling for production use. */
 function createRedisClient(options: RedisClientOptions) {
   const client = createClient({
     url: options.url,
@@ -32,15 +33,21 @@ function createRedisClient(options: RedisClientOptions) {
   return client;
 }
 
+/**
+ * Shared Redis-backed rate limiter using fixed windows per client key.
+ * Fails open (allows traffic) when Redis is unreachable.
+ */
 export class RedisRateLimitStore implements RateLimitStore {
   private readonly client: ReturnType<typeof createRedisClient>;
   private connectPromise: Promise<void> | null = null;
   private lastFailOpenWarnAt = 0;
 
+  /** @param url Redis connection URL from `REDIS_URL`. */
   constructor(url: string, connectTimeoutMs?: number) {
     this.client = createRedisClient({ url, connectTimeoutMs });
   }
 
+  /** Lazily open the Redis connection; cleared after each attempt for reconnect. */
   private async ensureConnected(): Promise<void> {
     if (this.client.isOpen) return;
     if (!this.connectPromise) {
@@ -54,6 +61,7 @@ export class RedisRateLimitStore implements RateLimitStore {
     await this.connectPromise;
   }
 
+  /** Record one request for `key` within a fixed Redis window of `windowMs`. */
   async hit(key: string, windowMs: number, max: number): Promise<RateLimitHitResult> {
     const now = Date.now();
     const windowStart = redisWindowStart(now, windowMs);
