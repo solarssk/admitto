@@ -74,6 +74,13 @@ function sessionCookie(res: Response): string | undefined {
   return line.split(";")[0];
 }
 
+function hasHttpOnlySessionCookie(res: Response): boolean {
+  const setCookie = res.headers.getSetCookie?.() ?? [];
+  return setCookie.some(
+    (line) => line.startsWith("admitto_session=") && line.toLowerCase().includes("httponly"),
+  );
+}
+
 describe("POST /api/auth/login", () => {
   it("returns session cookie on success", async () => {
     const res = await app.request("/api/auth/login", {
@@ -84,7 +91,7 @@ describe("POST /api/auth/login", () => {
     expect(res.status).toBe(200);
     const cookie = sessionCookie(res);
     expect(cookie).toMatch(/^admitto_session=/);
-    expect(cookie).toContain("HttpOnly");
+    expect(hasHttpOnlySessionCookie(res)).toBe(true);
   });
 
   it("returns uniform 401 for wrong email and wrong password", async () => {
