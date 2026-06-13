@@ -1,6 +1,9 @@
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
 
 const DB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../db");
 
@@ -8,10 +11,9 @@ const DB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.
  * Apply full migration history (including raw SQL partial indexes not expressible in schema.prisma).
  * db push alone would skip EmailDelivery_initial_unique and break atomic initial-send dedup.
  */
-export function resetDb(): void {
-  execSync("npx prisma migrate reset --force --skip-seed", {
+export async function resetDb(): Promise<void> {
+  await execAsync("npx prisma migrate reset --force --skip-seed", {
     cwd: DB_ROOT,
     env: process.env,
-    stdio: "pipe",
   });
 }

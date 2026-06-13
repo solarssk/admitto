@@ -17,8 +17,7 @@ const EVENT_ID = "evt-mail-send";
 const exported: ExportPayload[] = [];
 
 beforeAll(async () => {
-  resetDb();
-
+  await resetDb();
   await prisma.organization.create({
     data: { id: "org-mail", name: "Mail Org", slug: "mail-org" },
   });
