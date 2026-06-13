@@ -38,11 +38,22 @@ beforeAll(async () => {
     },
   });
 
+  const users = [USER_SUPER, USER_ADMIN, USER_OP, USER_NONE];
+  for (const id of users) {
+    await prisma.user.create({
+      data: {
+        id,
+        email: `${id}@example.com`,
+        password_hash: "unused",
+      },
+    });
+  }
+
   await prisma.roleAssignment.createMany({
     data: [
-      { user_ref: USER_SUPER, role: "superadmin", scope_type: "instance", scope_id: null },
-      { user_ref: USER_ADMIN, role: "admin", scope_type: "organization", scope_id: ORG_ID },
-      { user_ref: USER_OP, role: "operator", scope_type: "event", scope_id: EVENT_ID },
+      { user_id: USER_SUPER, role: "superadmin", scope_type: "instance", scope_id: null },
+      { user_id: USER_ADMIN, role: "admin", scope_type: "organization", scope_id: ORG_ID },
+      { user_id: USER_OP, role: "operator", scope_type: "event", scope_id: EVENT_ID },
     ],
   });
 });

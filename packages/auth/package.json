@@ -1,0 +1,35 @@
+{
+  "name": "@admitto/auth",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Admitto auth — local accounts, sessions, RBAC capability helpers",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "precli": "npm run build -w @admitto/shared -w @admitto/db -w @admitto/tickets -w @admitto/auth",
+    "cli": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@admitto/db": "*",
+    "@admitto/tickets": "*",
+    "argon2": "^0.41.1"
+  },
+  "devDependencies": {
+    "@prisma/client": "^5.17.0",
+    "@types/node": "^22.19.20",
+    "prisma": "^5.17.0",
+    "tsx": "^4.19.2",
+    "typescript": "^6.0.3",
+    "vitest": "4.1.8"
+  }
+}

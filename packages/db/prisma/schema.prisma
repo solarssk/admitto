@@ -217,14 +217,46 @@ model MailTemplate {
   @@unique([scope_type, scope_id])
 }
 
+model User {
+  id               String           @id @default(cuid())
+  email            String           @unique
+  password_hash    String
+  display_name     String?
+  is_active        Boolean          @default(true)
+  created_at       DateTime         @default(now())
+  updated_at       DateTime         @updatedAt
+  sessions         Session[]
+  role_assignments RoleAssignment[]
+}
+
+model Session {
+  id           String    @id @default(cuid())
+  user_id      String
+  user         User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  token_hash   String    @unique
+  // Optional UI context only — not an authorization source (ADR 0011).
+  scope        String?
+  device_label String?
+  ip           String?
+  user_agent   String?
+  created_at   DateTime  @default(now())
+  last_seen_at DateTime  @default(now())
+  expires_at   DateTime
+  revoked_at   DateTime?
+
+  @@index([user_id])
+  @@index([expires_at])
+}
+
 model RoleAssignment {
   id         String   @id @default(cuid())
-  user_ref   String   // placeholder for future IdP mapping (OIDC/SAML — v1.0)
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
   role       String   // "superadmin" | "admin" | "operator"
   scope_type String   // "instance" | "organization" | "event"
   scope_id   String?  // null for instance scope
   created_at DateTime @default(now())
 
-  @@index([user_ref])
+  @@index([user_id])
   @@index([scope_type, scope_id])
 }

@@ -1,0 +1,204 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { execSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { PrismaClient } from "@prisma/client";
+import { hashPassword, verifyPassword } from "../src/password.js";
+import { normalizeEmail, createUser, findUserByEmail } from "../src/user.js";
+import {
+  createSession,
+  validateSession,
+  revokeSession,
+  revokeAllOperatorSessionsForEvent,
+} from "../src/session.js";
+import {
+  canPerformCheckIn,
+  canManageEvent,
+  canManageInstance,
+} from "../src/authorization.js";
+import { login } from "../src/login.js";
+import { bootstrapSuperadmin, superadminInstanceExists } from "../src/bootstrap.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DB_ROOT = path.resolve(__dirname, "..", "..", "db");
+
+const ORG_A = "org-a-auth";
+const ORG_B = "org-b-auth";
+const EVENT_A = "event-a-auth";
+const EVENT_B = "event-b-auth";
+const USER_SUPER = "user-super-auth";
+const USER_ADMIN_A = "user-admin-a-auth";
+const USER_OP_A = "user-op-a-auth";
+const USER_INACTIVE = "user-inactive-auth";
+
+let prisma: PrismaClient;
+
+beforeAll(async () => {
+  execSync("npx prisma db push --force-reset --accept-data-loss", {
+    cwd: DB_ROOT,
+    env: { ...process.env },
+    stdio: "pipe",
+  });
+
+  prisma = new PrismaClient();
+
+  await prisma.organization.createMany({
+    data: [
+      { id: ORG_A, name: "Org A", slug: "org-a-auth" },
+      { id: ORG_B, name: "Org B", slug: "org-b-auth" },
+    ],
+  });
+
+  await prisma.event.createMany({
+    data: [
+      {
+        id: EVENT_A,
+        title: "Event A",
+        slug: "event-a-auth",
+        date: new Date("2026-09-01T09:00:00Z"),
+        organization_id: ORG_A,
+      },
+      {
+        id: EVENT_B,
+        title: "Event B",
+        slug: "event-b-auth",
+        date: new Date("2026-09-01T09:00:00Z"),
+        organization_id: ORG_B,
+      },
+    ],
+  });
+
+  const password_hash = await hashPassword("test-password-123");
+  await prisma.user.createMany({
+    data: [
+      { id: USER_SUPER, email: "super@example.com", password_hash },
+      { id: USER_ADMIN_A, email: "admin-a@example.com", password_hash },
+      { id: USER_OP_A, email: "operator-a@example.com", password_hash },
+      {
+        id: USER_INACTIVE,
+        email: "inactive@example.com",
+        password_hash,
+        is_active: false,
+      },
+    ],
+  });
+
+  await prisma.roleAssignment.createMany({
+    data: [
+      { user_id: USER_SUPER, role: "superadmin", scope_type: "instance", scope_id: null },
+      { user_id: USER_ADMIN_A, role: "admin", scope_type: "organization", scope_id: ORG_A },
+      { user_id: USER_OP_A, role: "operator", scope_type: "event", scope_id: EVENT_A },
+    ],
+  });
+});
+
+afterAll(async () => {
+  await prisma.$disconnect();
+});
+
+describe("password", () => {
+  it("argon2id round-trip", async () => {
+    const hash = await hashPassword("secret-pass");
+    expect(hash).not.toBe("secret-pass");
+    expect(await verifyPassword("secret-pass", hash)).toBe(true);
+    expect(await verifyPassword("wrong", hash)).toBe(false);
+  });
+});
+
+describe("user", () => {
+  it("normalizes email to lowercase", async () => {
+    const user = await createUser(prisma, {
+      email: "Mixed.Case@Example.COM",
+      password: "pw",
+    });
+    expect(user.email).toBe("mixed.case@example.com");
+    const found = await findUserByEmail(prisma, "MIXED.CASE@EXAMPLE.COM");
+    expect(found?.id).toBe(user.id);
+  });
+});
+
+describe("login", () => {
+  it("rejects inactive user with invalid_credentials shape", async () => {
+    const result = await login(prisma, {
+      email: "inactive@example.com",
+      password: "test-password-123",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("invalid_credentials");
+  });
+});
+
+describe("session", () => {
+  it("create and validate", async () => {
+    const { rawToken } = await createSession(prisma, { userId: USER_OP_A });
+    const validated = await validateSession(prisma, rawToken);
+    expect(validated?.userId).toBe(USER_OP_A);
+  });
+
+  it("rejects expired session", async () => {
+    const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A });
+    await prisma.session.update({
+      where: { id: session.id },
+      data: { expires_at: new Date(Date.now() - 1000) },
+    });
+    expect(await validateSession(prisma, rawToken)).toBeNull();
+  });
+
+  it("rejects revoked session", async () => {
+    const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A });
+    await revokeSession(prisma, session.id);
+    expect(await validateSession(prisma, rawToken)).toBeNull();
+  });
+
+  it("revokeAllOperatorSessionsForEvent only affects operators on event", async () => {
+    const op = await createSession(prisma, { userId: USER_OP_A });
+    const admin = await createSession(prisma, { userId: USER_ADMIN_A });
+    const count = await revokeAllOperatorSessionsForEvent(prisma, EVENT_A);
+    expect(count).toBeGreaterThanOrEqual(1);
+    expect(await validateSession(prisma, op.rawToken)).toBeNull();
+    expect(await validateSession(prisma, admin.rawToken)).not.toBeNull();
+  });
+});
+
+describe("authorization", () => {
+  it("canPerformCheckIn — superadmin all events", async () => {
+    expect(await canPerformCheckIn(prisma, USER_SUPER, EVENT_A)).toBe(true);
+    expect(await canPerformCheckIn(prisma, USER_SUPER, EVENT_B)).toBe(true);
+  });
+
+  it("canPerformCheckIn — admin in org only", async () => {
+    expect(await canPerformCheckIn(prisma, USER_ADMIN_A, EVENT_A)).toBe(true);
+    expect(await canPerformCheckIn(prisma, USER_ADMIN_A, EVENT_B)).toBe(false);
+  });
+
+  it("canPerformCheckIn — operator on assigned event only", async () => {
+    expect(await canPerformCheckIn(prisma, USER_OP_A, EVENT_A)).toBe(true);
+    expect(await canPerformCheckIn(prisma, USER_OP_A, EVENT_B)).toBe(false);
+  });
+
+  it("canManageEvent — admin yes, operator no", async () => {
+    expect(await canManageEvent(prisma, USER_ADMIN_A, EVENT_A)).toBe(true);
+    expect(await canManageEvent(prisma, USER_OP_A, EVENT_A)).toBe(false);
+  });
+
+  it("canManageInstance — superadmin only", async () => {
+    expect(await canManageInstance(prisma, USER_SUPER)).toBe(true);
+    expect(await canManageInstance(prisma, USER_ADMIN_A)).toBe(false);
+  });
+});
+
+describe("bootstrap", () => {
+  it("creates superadmin user and assignment", async () => {
+    expect(await superadminInstanceExists(prisma)).toBe(true);
+    const email = "bootstrap-new@example.com";
+    const before = await prisma.user.count({ where: { email } });
+    expect(before).toBe(0);
+    await bootstrapSuperadmin(prisma, email, "bootstrap-pass-xyz");
+    const user = await prisma.user.findUnique({ where: { email } });
+    expect(user).not.toBeNull();
+    const assignment = await prisma.roleAssignment.findFirst({
+      where: { user_id: user!.id, role: "superadmin", scope_type: "instance" },
+    });
+    expect(assignment).not.toBeNull();
+  });
+});
