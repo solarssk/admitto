@@ -18,7 +18,8 @@
     "@admitto/tickets": "*",
     "@prisma/client": "^5.17.0",
     "@hono/node-server": "^1.13.7",
-    "hono": "^4.7.11"
+    "hono": "^4.7.11",
+    "redis": "^4.7.0"
   },
   "devDependencies": {
     "@types/node": "^22.19.20",
