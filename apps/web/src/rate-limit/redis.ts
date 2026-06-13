@@ -8,7 +8,7 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 2_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 2_000;
 const DEFAULT_OUTAGE_COOLDOWN_MS = 5_000;
 
-/** Atomically INCR and PEXPIRE on first creation (windowMs in ARGV[1]). */
+/** Atomically INCR and PEXPIRE on first creation (ttlMs in ARGV[1]). */
 const INCR_PEXPIRE_SCRIPT = `
 local count = redis.call('INCR', KEYS[1])
 if count == 1 then
@@ -27,6 +27,13 @@ type RedisClientOptions = {
   url: string;
   connectTimeoutMs: number;
 };
+
+function positiveMs(value: number, name: string): number {
+  if (!Number.isFinite(value) || value < 1) {
+    throw new Error(`${name} must be a positive number`);
+  }
+  return value;
+}
 
 /** Create a node-redis client with fail-safe error handling for production use. */
 function createRedisClient(options: RedisClientOptions) {
@@ -56,9 +63,18 @@ export class RedisRateLimitStore implements RateLimitStore {
 
   /** @param url Redis connection URL from `REDIS_URL`. */
   constructor(url: string, options: RedisRateLimitStoreOptions = {}) {
-    const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
-    this.commandTimeoutMs = options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
-    this.outageCooldownMs = options.outageCooldownMs ?? DEFAULT_OUTAGE_COOLDOWN_MS;
+    const connectTimeoutMs = positiveMs(
+      options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
+      "connectTimeoutMs",
+    );
+    this.commandTimeoutMs = positiveMs(
+      options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
+      "commandTimeoutMs",
+    );
+    this.outageCooldownMs = positiveMs(
+      options.outageCooldownMs ?? DEFAULT_OUTAGE_COOLDOWN_MS,
+      "outageCooldownMs",
+    );
     this.client = createRedisClient({ url, connectTimeoutMs });
   }
 
@@ -104,6 +120,7 @@ export class RedisRateLimitStore implements RateLimitStore {
     const now = Date.now();
     const windowStart = redisWindowStart(now, windowMs);
     const resetAt = windowStart + windowMs;
+    const ttlMs = Math.max(1, resetAt - now);
 
     if (now < this.redisUnavailableUntil) {
       return this.failOpen(now, max, windowMs);
@@ -120,7 +137,7 @@ export class RedisRateLimitStore implements RateLimitStore {
           INCR_PEXPIRE_SCRIPT,
           {
             keys: [redisKey],
-            arguments: [String(windowMs)],
+            arguments: [String(ttlMs)],
           },
         ),
       );

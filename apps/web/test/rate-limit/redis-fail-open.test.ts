@@ -26,10 +26,11 @@ describe("RedisRateLimitStore fail-open", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const store = new RedisRateLimitStore("redis://127.0.0.1:1", {
       ...unreachableRedis,
-      outageCooldownMs: 0,
+      outageCooldownMs: 1,
     });
 
     await store.hit("1.2.3.4", 60_000, 60);
+    await new Promise((resolve) => setTimeout(resolve, 5));
     await store.hit("1.2.3.4", 60_000, 60);
     expect(warnSpy).toHaveBeenCalledTimes(1);
 
@@ -49,6 +50,15 @@ describe("RedisRateLimitStore fail-open", () => {
     expect(performance.now() - started).toBeLessThan(200);
 
     await store.disconnect();
+  });
+
+  it("rejects invalid timeout options", () => {
+    expect(() => new RedisRateLimitStore("redis://localhost", { connectTimeoutMs: 0 })).toThrow(
+      "connectTimeoutMs must be a positive number",
+    );
+    expect(() => new RedisRateLimitStore("redis://localhost", { commandTimeoutMs: -1 })).toThrow(
+      "commandTimeoutMs must be a positive number",
+    );
   });
 
   it("does not log Redis URL secrets on failure", async () => {
