@@ -23,12 +23,17 @@ import {
 import { resolveBaseUrl, resolveCheckinToken } from "./config.js";
 import { createCheckinGate } from "./checkin-gate.js";
 import { findAttendeeForEventRoute } from "./attendee-lookup.js";
-import { checkRateLimit, clientIpFromHeaders } from "./rate-limit.js";
+import {
+  createRateLimitStore,
+  createPublicRateLimitMiddleware,
+  type RateLimitStore,
+} from "./rate-limit/index.js";
 
 export interface CreateAppOptions {
   prisma?: PrismaClient;
   baseUrl?: string;
   checkinToken?: string | null;
+  rateLimitStore?: RateLimitStore;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -39,11 +44,8 @@ export function createApp(options: CreateAppOptions = {}) {
 
   const app = new Hono();
   const ticketPageHeaders = getTicketPageSecurityHeaders();
-
-  function publicRateLimit(c: Context): boolean {
-    const ip = clientIpFromHeaders(c.req.header("x-forwarded-for"));
-    return checkRateLimit(ip);
-  }
+  const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
+  const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
 
   function htmlWithSecurityHeaders(c: Context, html: string, status: 200 | 404 | 410 | 500) {
     for (const [name, value] of Object.entries(ticketPageHeaders)) {
@@ -101,14 +103,8 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.use("/api/checkin/*", createCheckinGate(checkinToken));
 
-  app.use("/t/*", async (c, next) => {
-    if (!publicRateLimit(c)) return c.text("Too Many Requests", 429);
-    await next();
-  });
-  app.use("/q/*", async (c, next) => {
-    if (!publicRateLimit(c)) return c.text("Too Many Requests", 429);
-    await next();
-  });
+  app.use("/t/*", publicRateLimit);
+  app.use("/q/*", publicRateLimit);
 
   // Mode B ticket page — must be registered before /t/:token
   app.get("/t/:eventSlug/a/:attendeeId", async (c) => {
