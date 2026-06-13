@@ -47,9 +47,13 @@ export class RedisRateLimitStore implements RateLimitStore {
     this.client = createRedisClient({ url, connectTimeoutMs });
   }
 
-  /** Lazily open the Redis connection; cleared after each attempt for reconnect. */
+  /**
+   * Wait until the client can accept commands (`isReady`).
+   * Always joins an in-flight `connect()` so concurrent hits do not race the handshake.
+   */
   private async ensureConnected(): Promise<void> {
-    if (this.client.isOpen) return;
+    if (this.client.isReady) return;
+
     if (!this.connectPromise) {
       this.connectPromise = this.client
         .connect()
@@ -59,6 +63,10 @@ export class RedisRateLimitStore implements RateLimitStore {
         });
     }
     await this.connectPromise;
+
+    if (!this.client.isReady) {
+      throw new Error("Redis client not ready");
+    }
   }
 
   /** Record one request for `key` within a fixed Redis window of `windowMs`. */
