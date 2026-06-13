@@ -24,6 +24,10 @@ describe("InMemoryRateLimitStore", () => {
     expect(result.remaining).toBe(0);
   });
 
+  it("rejects non-positive maxBuckets", () => {
+    expect(() => new InMemoryRateLimitStore(0)).toThrow("maxBuckets must be a positive integer");
+  });
+
   it("prunes expired buckets when a new client arrives", async () => {
     vi.useFakeTimers();
     await store.hit("stale-ip", 60_000, 60);

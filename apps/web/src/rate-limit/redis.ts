@@ -1,27 +1,41 @@
-import { createClient, type RedisClientType } from "redis";
+import { createClient } from "redis";
 import { redisKeyForHit, redisWindowStart } from "./redis-keys.js";
 import type { RateLimitHitResult, RateLimitStore } from "./types.js";
 
 const FAIL_OPEN_WARN = "Rate limit Redis unavailable; failing open";
+const FAIL_OPEN_LOG_INTERVAL_MS = 60_000;
+
+/** Atomically INCR and PEXPIRE on first creation (windowMs in ARGV[1]). */
+const INCR_PEXPIRE_SCRIPT = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`;
 
 type RedisClientOptions = {
   url: string;
   connectTimeoutMs?: number;
 };
 
-function createRedisClient(options: RedisClientOptions): RedisClientType {
-  return createClient({
+function createRedisClient(options: RedisClientOptions) {
+  const client = createClient({
     url: options.url,
     socket: {
       connectTimeout: options.connectTimeoutMs ?? 2_000,
       reconnectStrategy: false,
     },
   });
+  // Required by node-redis — unhandled 'error' events can crash the process.
+  client.on("error", () => {});
+  return client;
 }
 
 export class RedisRateLimitStore implements RateLimitStore {
-  private readonly client: RedisClientType;
+  private readonly client: ReturnType<typeof createRedisClient>;
   private connectPromise: Promise<void> | null = null;
+  private lastFailOpenWarnAt = 0;
 
   constructor(url: string, connectTimeoutMs?: number) {
     this.client = createRedisClient({ url, connectTimeoutMs });
@@ -30,13 +44,12 @@ export class RedisRateLimitStore implements RateLimitStore {
   private async ensureConnected(): Promise<void> {
     if (this.client.isOpen) return;
     if (!this.connectPromise) {
-      this.connectPromise = this.client.connect().then(
-        () => undefined,
-        (err) => {
+      this.connectPromise = this.client
+        .connect()
+        .then(() => undefined)
+        .finally(() => {
           this.connectPromise = null;
-          throw err;
-        },
-      );
+        });
     }
     await this.connectPromise;
   }
@@ -49,10 +62,12 @@ export class RedisRateLimitStore implements RateLimitStore {
     try {
       await this.ensureConnected();
       const redisKey = redisKeyForHit(key, windowMs, now);
-      const count = await this.client.incr(redisKey);
-      if (count === 1) {
-        await this.client.pExpire(redisKey, windowMs);
-      }
+      const count = Number(
+        await this.client.eval(INCR_PEXPIRE_SCRIPT, {
+          keys: [redisKey],
+          arguments: [String(windowMs)],
+        }),
+      );
       const allowed = count <= max;
       return {
         allowed,
@@ -60,7 +75,10 @@ export class RedisRateLimitStore implements RateLimitStore {
         resetAt,
       };
     } catch {
-      console.warn(FAIL_OPEN_WARN);
+      if (now - this.lastFailOpenWarnAt >= FAIL_OPEN_LOG_INTERVAL_MS) {
+        console.warn(FAIL_OPEN_WARN);
+        this.lastFailOpenWarnAt = now;
+      }
       return { allowed: true, remaining: max, resetAt: now + windowMs };
     }
   }

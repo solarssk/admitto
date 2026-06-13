@@ -1,3 +1,4 @@
+import { MAX_BUCKETS } from "./constants.js";
 import type { RateLimitHitResult, RateLimitStore } from "./types.js";
 
 type Bucket = { count: number; resetAt: number };
@@ -28,7 +29,10 @@ export class InMemoryRateLimitStore implements RateLimitStore {
   private readonly buckets = new Map<string, Bucket>();
   private readonly maxBuckets: number;
 
-  constructor(maxBuckets = 10_000) {
+  constructor(maxBuckets = MAX_BUCKETS) {
+    if (!Number.isInteger(maxBuckets) || maxBuckets < 1) {
+      throw new Error("maxBuckets must be a positive integer");
+    }
     this.maxBuckets = maxBuckets;
   }
 

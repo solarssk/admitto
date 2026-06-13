@@ -46,10 +46,10 @@ describe.skipIf(!redisUrl)("RedisRateLimitStore", () => {
   it("expires key after window via PEXPIRE", async () => {
     const key = `test-ttl-${Date.now()}`;
     const windowMs = 500;
-    const redisKey = redisKeyForHit(key, windowMs);
 
     const first = await store.hit(key, windowMs, 1);
     expect(first.allowed).toBe(true);
+    const redisKey = redisKeyForHit(key, windowMs, first.resetAt - 1);
 
     const pttl = await rawClient.pTTL(redisKey);
     expect(pttl).toBeGreaterThan(0);

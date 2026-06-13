@@ -20,6 +20,17 @@ describe("RedisRateLimitStore fail-open", () => {
     await store.disconnect();
   });
 
+  it("throttles fail-open warnings during repeated failures", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store = new RedisRateLimitStore("redis://127.0.0.1:1", 200);
+
+    await store.hit("1.2.3.4", 60_000, 60);
+    await store.hit("1.2.3.4", 60_000, 60);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    await store.disconnect();
+  });
+
   it("does not log Redis URL secrets on failure", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const store = new RedisRateLimitStore("redis://:supersecret@127.0.0.1:1", 200);
