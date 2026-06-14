@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword, createSession } from "@admitto/auth";
+import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import {
   createCheckinPreAuth,
   createCheckinSessionCsrfGuard,
@@ -38,6 +39,7 @@ async function seedDualAuthFixture(client: PrismaClient): Promise<void> {
     },
   });
   await client.session.deleteMany({ where: { user_id: { in: userIds } } });
+  await client.userMfaMethod.deleteMany({ where: { user_id: { in: userIds } } });
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.user.deleteMany({ where: { id: { in: userIds } } });
@@ -84,6 +86,17 @@ async function seedDualAuthFixture(client: PrismaClient): Promise<void> {
       { user_id: USER_OP_A, role: "operator", scope_type: "event", scope_id: EVENT_A },
     ],
   });
+
+  for (const userId of [USER_SUPER, USER_ADMIN_A]) {
+    await client.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
+    });
+  }
 }
 
 function gateDeps(allowBearer: boolean) {

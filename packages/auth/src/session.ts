@@ -5,7 +5,9 @@ import { MFA_PENDING_SESSION_TTL_MS } from "./constants.js";
 import {
   getSessionTtlAdminMs,
   getSessionTtlOperatorMs,
+  getMfaRequiredRoles,
 } from "./settings/resolver.js";
+import { userRequiresMfa, userHasConfirmedTotp } from "./mfa/policy.js";
 
 /** Max length for optional device label on sessions (matches login form). */
 const DEVICE_LABEL_MAX_LEN = 120;
@@ -113,6 +115,7 @@ async function lookupSessionByToken(
 
 /**
  * Lookup session by raw cookie token; only `full` stage (protected routes).
+ * Re-checks MFA policy so elevated roles granted after login cannot reuse stale operator sessions.
  */
 export async function validateSession(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -120,7 +123,31 @@ export async function validateSession(
 ): Promise<ValidatedSession | null> {
   const validated = await lookupSessionByToken(prisma, rawToken);
   if (!validated || validated.stage !== SESSION_STAGE.FULL) return null;
+  if (!(await assertFullSessionMfaPolicy(prisma, validated))) return null;
   return validated;
+}
+
+/** Reject full sessions that predate MFA-required role grants or lack enrolled TOTP. */
+async function assertFullSessionMfaPolicy(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  validated: ValidatedPartialSession,
+): Promise<boolean> {
+  if (!(await userRequiresMfa(prisma, validated.userId))) return true;
+  if (!(await userHasConfirmedTotp(prisma, validated.userId))) return false;
+
+  const requiredRoles = await getMfaRequiredRoles(prisma);
+  const firstElevatedRole = await prisma.roleAssignment.findFirst({
+    where: { user_id: validated.userId, role: { in: requiredRoles } },
+    orderBy: { created_at: "asc" },
+    select: { created_at: true },
+  });
+  if (
+    firstElevatedRole &&
+    validated.session.created_at < firstElevatedRole.created_at
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -139,6 +166,7 @@ export async function promoteSessionToFull(
   sessionId: string,
   userId: string,
 ): Promise<boolean> {
+  // TTL is resolved at promotion time (not cached from login) so SystemSettings changes apply immediately.
   const ttlMs = await resolveFullTtlMs(prisma, userId);
   const now = new Date();
   const result = await prisma.session.updateMany({

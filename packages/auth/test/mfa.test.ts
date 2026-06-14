@@ -206,6 +206,38 @@ describe("login MFA flow", () => {
   });
 });
 
+describe("validateSession MFA policy", () => {
+  it("rejects stale operator full session after admin role is granted", async () => {
+    const userId = "user-elevate-session";
+    await prisma.user.create({
+      data: {
+        id: userId,
+        email: "elevate-session@example.com",
+        password_hash: await hashPassword(PASSWORD),
+      },
+    });
+    await prisma.roleAssignment.create({
+      data: { user_id: userId, role: "operator", scope_type: "instance" },
+    });
+
+    const loginResult = await login(prisma, {
+      email: "elevate-session@example.com",
+      password: PASSWORD,
+    });
+    expect(loginResult.ok).toBe(true);
+    if (!loginResult.ok) return;
+    expect(await validateSession(prisma, loginResult.rawToken)).not.toBeNull();
+
+    await new Promise((r) => setTimeout(r, 5));
+    await prisma.roleAssignment.create({
+      data: { user_id: userId, role: "admin", scope_type: "instance" },
+    });
+
+    expect(await userRequiresMfa(prisma, userId)).toBe(true);
+    expect(await validateSession(prisma, loginResult.rawToken)).toBeNull();
+  });
+});
+
 describe("recovery code format", () => {
   it("uses 64-bit entropy (16 hex chars)", () => {
     const code = generateRecoveryCodePlaintext();

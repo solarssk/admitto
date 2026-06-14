@@ -180,7 +180,7 @@ export async function handleMfaVerify(
   }
 
   const ip = resolveMfaClientIp(c);
-  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip))) {
+  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip, code))) {
     return c.json({ error: "too many requests" }, 429);
   }
 

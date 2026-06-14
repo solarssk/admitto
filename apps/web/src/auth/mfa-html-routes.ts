@@ -13,6 +13,7 @@ import {
   renderMfaEnrollPage,
 } from "../mfa-page.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
+import { resolveSafeRedirectPath } from "./safe-redirect.js";
 import { setTrustedDeviceCookie } from "./routes.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
@@ -36,27 +37,34 @@ async function parseForm(c: Context): Promise<Record<string, string>> {
   return {};
 }
 
+function resolvePostAuthRedirect(c: Context, formNext?: string): string {
+  return resolveSafeRedirectPath(formNext ?? c.req.query("next"));
+}
+
 const MFA_ERROR = "Invalid code. Try again.";
 
 /** Build enrollment HTML from current DB enrollment state (resume or fresh). */
 function renderEnrollFromState(
   enrollment: Awaited<ReturnType<typeof getOrStartTotpEnrollment>>,
   error?: string,
+  next?: string,
 ): string {
   if (!enrollment) {
-    return renderMfaEnrollPage("", [], error);
+    return renderMfaEnrollPage("", [], error, undefined, next);
   }
   return renderMfaEnrollPage(
     enrollment.otpauthUri,
     enrollment.backupCodes,
     error,
     enrollment.backupCodesAlreadyShown,
+    next,
   );
 }
 
 /** GET /mfa/verify */
 export function handleGetMfaVerify(c: Context): Response {
-  return htmlResponse(c, renderMfaVerifyForm());
+  const next = resolveSafeRedirectPath(c.req.query("next"));
+  return htmlResponse(c, renderMfaVerifyForm(undefined, next));
 }
 
 /** POST /mfa/verify */
@@ -73,13 +81,14 @@ export async function handlePostMfaVerify(
   const form = await parseForm(c);
   const code = form["code"]?.trim() ?? "";
   const rememberDevice = form["remember_device"] === "1";
+  const next = resolvePostAuthRedirect(c, form["next"]);
 
   if (!code) {
-    return htmlResponse(c, renderMfaVerifyForm(MFA_ERROR), 401);
+    return htmlResponse(c, renderMfaVerifyForm(MFA_ERROR, next), 401);
   }
 
   const ip = resolveMfaClientIp(c);
-  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip))) {
+  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip, code))) {
     return c.text("Too many requests", 429);
   }
 
@@ -93,14 +102,14 @@ export async function handlePostMfaVerify(
   });
 
   if (!result.ok) {
-    return htmlResponse(c, renderMfaVerifyForm(MFA_ERROR), 401);
+    return htmlResponse(c, renderMfaVerifyForm(MFA_ERROR, next), 401);
   }
 
   if (result.trustedDeviceRawToken) {
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
 
-  return c.redirect("/operator", 302);
+  return c.redirect(next, 302);
 }
 
 /** GET /mfa/enroll — resume or start enrollment; does not rotate pending setup. */
@@ -115,7 +124,8 @@ export async function handleGetMfaEnroll(c: Context, db: PrismaClient): Promise<
     return c.redirect("/login", 302);
   }
 
-  return htmlResponse(c, renderEnrollFromState(enrollment));
+  const next = resolveSafeRedirectPath(c.req.query("next"));
+  return htmlResponse(c, renderEnrollFromState(enrollment, undefined, next));
 }
 
 /** POST /mfa/enroll — confirm TOTP setup. */
@@ -127,22 +137,23 @@ export async function handlePostMfaEnroll(c: Context, db: PrismaClient): Promise
 
   const form = await parseForm(c);
   const code = form["code"]?.trim() ?? "";
+  const next = resolvePostAuthRedirect(c, form["next"]);
   if (!code) {
     const enrollment = await getOrStartTotpEnrollment(db, partial.userId);
-    return htmlResponse(c, renderEnrollFromState(enrollment, MFA_ERROR), 401);
+    return htmlResponse(c, renderEnrollFromState(enrollment, MFA_ERROR, next), 401);
   }
 
   const ok = await confirmTotpEnrollment(db, partial.userId, code);
   if (!ok) {
     const enrollment = await getOrStartTotpEnrollment(db, partial.userId);
-    return htmlResponse(c, renderEnrollFromState(enrollment, MFA_ERROR), 401);
+    return htmlResponse(c, renderEnrollFromState(enrollment, MFA_ERROR, next), 401);
   }
 
   const promoted = await promoteSessionToFull(db, partial.sessionId, partial.userId);
   if (!promoted) {
     const enrollment = await getOrStartTotpEnrollment(db, partial.userId);
-    return htmlResponse(c, renderEnrollFromState(enrollment, MFA_ERROR), 401);
+    return htmlResponse(c, renderEnrollFromState(enrollment, MFA_ERROR, next), 401);
   }
 
-  return c.redirect("/operator", 302);
+  return c.redirect(next, 302);
 }

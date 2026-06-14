@@ -18,6 +18,11 @@ import {
   renderLoginForm,
   renderOperatorLanding,
 } from "../login-page.js";
+import { resolveSafeRedirectPath } from "./safe-redirect.js";
+
+function mfaPathWithNext(path: string, next: string): string {
+  return `${path}?next=${encodeURIComponent(next)}`;
+}
 
 const LOGIN_ERROR = "Invalid email or password.";
 
@@ -30,7 +35,8 @@ function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Respon
 
 /** GET /login — operator sign-in form (HTML). */
 export function handleGetLogin(c: Context): Response {
-  return htmlResponse(c, renderLoginForm());
+  const next = resolveSafeRedirectPath(c.req.query("next"));
+  return htmlResponse(c, renderLoginForm(undefined, next));
 }
 
 async function parseLoginForm(c: Context): Promise<Record<string, string>> {
@@ -56,9 +62,10 @@ export async function handlePostLogin(
   const email = form["email"]?.trim() ?? "";
   const password = form["password"] ?? "";
   const deviceLabel = form["device_label"]?.trim();
+  const next = resolveSafeRedirectPath(form["next"] ?? c.req.query("next"));
 
   if (!email || !password) {
-    return htmlResponse(c, renderLoginForm(LOGIN_ERROR), 401);
+    return htmlResponse(c, renderLoginForm(LOGIN_ERROR, next), 401);
   }
 
   const result = await login(
@@ -78,18 +85,18 @@ export async function handlePostLogin(
     if (!(await checkLoginEmailRateLimit(rateLimitStore, email))) {
       return c.text("Too many requests", 429);
     }
-    return htmlResponse(c, renderLoginForm(LOGIN_ERROR), 401);
+    return htmlResponse(c, renderLoginForm(LOGIN_ERROR, next), 401);
   }
 
   setSessionCookie(c, result.rawToken);
 
   if (result.next === LOGIN_NEXT.MFA_REQUIRED) {
-    return c.redirect("/mfa/verify", 302);
+    return c.redirect(mfaPathWithNext("/mfa/verify", next), 302);
   }
   if (result.next === LOGIN_NEXT.ENROLLMENT_REQUIRED) {
-    return c.redirect("/mfa/enroll", 302);
+    return c.redirect(mfaPathWithNext("/mfa/enroll", next), 302);
   }
-  return c.redirect("/operator", 302);
+  return c.redirect(next, 302);
 }
 
 /** GET /operator — temporary landing after login (requires session). */

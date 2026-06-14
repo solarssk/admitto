@@ -6,8 +6,9 @@ export function getMfaPageSecurityHeaders(): Record<string, string> {
 }
 
 /** Render MFA verification form HTML (`/mfa/verify`). */
-export function renderMfaVerifyForm(error?: string): string {
+export function renderMfaVerifyForm(error?: string, next?: string): string {
   const err = error ? `<p class="err">${escapeHtml(error)}</p>` : "";
+  const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -28,6 +29,7 @@ export function renderMfaVerifyForm(error?: string): string {
   <p>Enter the code from your authenticator app or a backup recovery code.</p>
   ${err}
   <form method="post" action="/mfa/verify">
+    ${nextField}
     <label for="code">Authentication code</label>
     <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
     <label class="check"><input type="checkbox" name="remember_device" value="1"> Remember this device</label>
@@ -46,8 +48,10 @@ export function renderMfaEnrollPage(
   backupCodes: string[],
   error?: string,
   backupCodesAlreadyShown?: boolean,
+  next?: string,
 ): string {
   const err = error ? `<p class="err">${escapeHtml(error)}</p>` : "";
+  const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
   const backupSection = backupCodesAlreadyShown
     ? `<div class="warn"><strong>Backup codes</strong> were already shown — use the codes you saved earlier.</div>`
     : `<div class="warn">
@@ -77,6 +81,7 @@ export function renderMfaEnrollPage(
   ${backupSection}
   ${err}
   <form method="post" action="/mfa/enroll">
+    ${nextField}
     <label for="code">Confirmation code</label>
     <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
     <button type="submit">Confirm and continue</button>

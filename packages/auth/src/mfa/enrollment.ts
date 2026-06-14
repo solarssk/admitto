@@ -82,6 +82,7 @@ export async function getOrStartTotpEnrollment(
     const user = await findUserById(prisma, userId);
     if (!user) return null;
     const secret = decryptTotpSecret(pending.secret_enc);
+    // TODO(v0.4): HTTP route to regenerate backup codes when user lost the one-time list.
     return {
       otpauthUri: buildTotpOtpauthUri(secret, user.email),
       backupCodes: [],

@@ -18,6 +18,7 @@ import {
 } from "../src/authorization.js";
 import { login } from "../src/login.js";
 import { bootstrapSuperadmin, superadminInstanceExists } from "../src/bootstrap.js";
+import { generateTotpSecret, encryptTotpSecret } from "../src/mfa/totp.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..", "..", "db");
@@ -90,6 +91,17 @@ beforeAll(async () => {
       { user_id: USER_OP_A, role: "operator", scope_type: "event", scope_id: EVENT_A },
     ],
   });
+
+  for (const userId of [USER_SUPER, USER_ADMIN_A]) {
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
+    });
+  }
 });
 
 afterAll(async () => {
@@ -180,6 +192,14 @@ describe("session", () => {
         { user_id: mixedId, role: "operator", scope_type: "event", scope_id: EVENT_A },
         { user_id: mixedId, role: "admin", scope_type: "organization", scope_id: ORG_A },
       ],
+    });
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: mixedId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
     });
     const mixed = await createSession(prisma, { userId: mixedId });
     const op = await createSession(prisma, { userId: USER_OP_A });

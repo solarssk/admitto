@@ -14,7 +14,8 @@ export async function consumeRecoveryRow(
 }
 
 /**
- * Find matching recovery row and consume once (scan all candidates to avoid early-exit timing leak).
+ * Find matching recovery row and consume once.
+ * Scans all candidates sequentially (not in parallel) to avoid argon2 timing side-channels.
  */
 export async function verifyAndConsumeRecoveryRow(
   prisma: PrismaClient | Prisma.TransactionClient,

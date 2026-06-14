@@ -83,7 +83,8 @@ SET "stage" = CASE
           AND m."confirmed_at" IS NOT NULL
     ) THEN 'mfa_pending'
     ELSE 'enrollment_required'
-END
+END,
+    "expires_at" = NOW() + INTERVAL '15 minutes'
 WHERE s."revoked_at" IS NULL
   AND s."expires_at" > NOW()
   AND EXISTS (
