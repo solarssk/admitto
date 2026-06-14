@@ -50,6 +50,18 @@ async function resolveFullTtlMs(
   return hasElevated ? getSessionTtlAdminMs(prisma) : getSessionTtlOperatorMs(prisma);
 }
 
+/** Derive session stage when caller omits it (fail closed for MFA-required users). */
+async function resolveInitialSessionStage(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+  explicit?: SessionStage,
+): Promise<SessionStage> {
+  if (explicit !== undefined) return explicit;
+  if (!(await userRequiresMfa(prisma, userId))) return SESSION_STAGE.FULL;
+  if (await userHasConfirmedTotp(prisma, userId)) return SESSION_STAGE.MFA_PENDING;
+  return SESSION_STAGE.ENROLLMENT_REQUIRED;
+}
+
 /** Create a new DB-backed session; returns raw token (give to client once). */
 export async function createSession(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -57,7 +69,7 @@ export async function createSession(
 ): Promise<{ session: import("@prisma/client").Session; rawToken: string }> {
   const rawToken = generateToken();
   const token_hash = hashToken(rawToken);
-  const stage = input.stage ?? SESSION_STAGE.FULL;
+  const stage = await resolveInitialSessionStage(prisma, input.userId, input.stage);
   const now = new Date();
 
   const ttlMs =
@@ -174,6 +186,7 @@ export async function promoteSessionToFull(
       id: sessionId,
       user_id: userId,
       revoked_at: null,
+      expires_at: { gt: now },
       stage: { in: [SESSION_STAGE.MFA_PENDING, SESSION_STAGE.ENROLLMENT_REQUIRED] },
     },
     data: {

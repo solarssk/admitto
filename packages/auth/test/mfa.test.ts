@@ -9,6 +9,7 @@ import { LOGIN_NEXT, SESSION_STAGE } from "../src/constants.js";
 import {
   startTotpEnrollment,
   getOrStartTotpEnrollment,
+  resumePendingTotpEnrollment,
   confirmTotpEnrollment,
   resetUserMfa,
 } from "../src/mfa/enrollment.js";
@@ -31,10 +32,11 @@ import {
 import {
   createTrustedDevice,
   validateTrustedDevice,
+  revokeTrustedDeviceByToken,
   revokeAllTrustedDevicesForUser,
 } from "../src/mfa/trusted-device.js";
 import { userRequiresMfa, userHasConfirmedTotp } from "../src/mfa/policy.js";
-import { validateSession, validatePartialSession } from "../src/session.js";
+import { validateSession, validatePartialSession, promoteSessionToFull } from "../src/session.js";
 import { getSessionTtlAdminMs, getMfaRequiredRoles } from "../src/settings/resolver.js";
 import { SETTING_SESSION_TTL } from "../src/settings/keys.js";
 
@@ -129,6 +131,38 @@ describe("TOTP enrollment", () => {
     });
     expect(rowAfter?.id).toBe(rowBefore?.id);
     expect(rowAfter?.secret_enc).toBe(rowBefore?.secret_enc);
+  });
+
+  it("resumePendingTotpEnrollment is read-only when no pending row", async () => {
+    const userId = "user-totp-resume-none";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "totp-resume-none@example.com", password_hash },
+    });
+
+    expect(await resumePendingTotpEnrollment(prisma, userId)).toBeNull();
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId } })).toBe(0);
+  });
+
+  it("resumePendingTotpEnrollment clears corrupt pending secret", async () => {
+    const userId = "user-totp-corrupt";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "totp-corrupt@example.com", password_hash },
+    });
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: "not-valid-encrypted-payload",
+        confirmed_at: null,
+      },
+    });
+
+    expect(await resumePendingTotpEnrollment(prisma, userId)).toBeNull();
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
+    const fresh = await startTotpEnrollment(prisma, userId);
+    expect(fresh?.otpauthUri).toMatch(/^otpauth:\/\/totp\//);
   });
 
   it("startTotpEnrollment refuses when TOTP already confirmed", async () => {
@@ -240,6 +274,24 @@ describe("login MFA flow", () => {
   });
 });
 
+describe("promoteSessionToFull", () => {
+  it("does not promote expired partial sessions", async () => {
+    const loginResult = await login(prisma, {
+      email: "mfa-admin@example.com",
+      password: PASSWORD,
+    });
+    expect(loginResult.ok).toBe(true);
+    if (!loginResult.ok) return;
+
+    await prisma.session.update({
+      where: { id: loginResult.sessionId },
+      data: { expires_at: new Date(Date.now() - 1000) },
+    });
+
+    expect(await promoteSessionToFull(prisma, loginResult.sessionId, loginResult.userId)).toBe(false);
+  });
+});
+
 describe("validateSession MFA policy", () => {
   it("rejects stale operator full session after admin role is granted", async () => {
     const userId = "user-elevate-session";
@@ -339,6 +391,16 @@ describe("trusted device", () => {
     const { rawToken } = await createTrustedDevice(prisma, { userId: USER_ADMIN });
     await revokeAllTrustedDevicesForUser(prisma, USER_ADMIN);
     expect(await validateTrustedDevice(prisma, USER_ADMIN, rawToken)).toBe(false);
+  });
+
+  it("revokeTrustedDeviceByToken revokes only matching cookie token", async () => {
+    const first = await createTrustedDevice(prisma, { userId: USER_ADMIN });
+    const second = await createTrustedDevice(prisma, { userId: USER_ADMIN });
+
+    await revokeTrustedDeviceByToken(prisma, USER_ADMIN, first.rawToken);
+
+    expect(await validateTrustedDevice(prisma, USER_ADMIN, first.rawToken)).toBe(false);
+    expect(await validateTrustedDevice(prisma, USER_ADMIN, second.rawToken)).toBe(true);
   });
 });
 

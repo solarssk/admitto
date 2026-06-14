@@ -4,6 +4,7 @@ import { getCookie } from "hono/cookie";
 import {
   SESSION_COOKIE_NAME,
   SESSION_STAGE,
+  type SessionStage,
   validateSession,
   validatePartialSession,
 } from "@admitto/auth";
@@ -16,7 +17,7 @@ export interface AuthContext {
 
 /** Partial session (MFA pending or enrollment). */
 export interface PartialAuthContext extends AuthContext {
-  stage: string;
+  stage: SessionStage;
 }
 
 declare module "hono" {
@@ -58,7 +59,7 @@ export function createRequireSession(
 /** Require any active session including mfa_pending / enrollment_required. */
 export function createRequirePartialSession(
   prisma: PrismaClient,
-  options?: { redirectTo?: string; allowedStages?: string[] },
+  options?: { redirectTo?: string; allowedStages?: SessionStage[] },
 ) {
   const allowedStages = options?.allowedStages ?? [
     SESSION_STAGE.MFA_PENDING,

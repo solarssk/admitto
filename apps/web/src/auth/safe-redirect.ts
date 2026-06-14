@@ -4,7 +4,15 @@ const DEFAULT_POST_AUTH_PATH = "/operator";
 export function resolveSafeRedirectPath(next: string | undefined, fallback = DEFAULT_POST_AUTH_PATH): string {
   if (!next) return fallback;
   const trimmed = next.trim();
-  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return fallback;
+  if (
+    !trimmed.startsWith("/") ||
+    trimmed.startsWith("//") ||
+    trimmed.startsWith("/\\") ||
+    trimmed.includes("\\") ||
+    /[\r\n]/.test(trimmed)
+  ) {
+    return fallback;
+  }
   return trimmed;
 }
 

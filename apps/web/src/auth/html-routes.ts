@@ -7,6 +7,7 @@ import {
   login,
   logout,
   validatePartialSession,
+  revokeTrustedDeviceByToken,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
@@ -151,10 +152,14 @@ export async function handleGetOperator(c: Context, db: PrismaClient): Promise<R
   return htmlResponse(c, renderOperatorLanding(user.email, events));
 }
 
-/** POST /logout — revokes session server-side and redirects to `/login`. */
+/** POST /logout — revokes session, trusted device, and redirects to `/login`. */
 export async function handlePostLogout(c: Context, db: PrismaClient): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
+  const trustedRaw = getCookie(c, TRUSTED_DEVICE_COOKIE_NAME);
   const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
+  if (validated) {
+    await revokeTrustedDeviceByToken(db, validated.userId, trustedRaw);
+  }
   await logout(db, validated);
   clearSessionCookie(c);
   clearTrustedDeviceCookie(c);

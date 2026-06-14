@@ -84,7 +84,7 @@ SET "stage" = CASE
     ) THEN 'mfa_pending'
     ELSE 'enrollment_required'
 END,
-    "expires_at" = NOW() + INTERVAL '15 minutes'
+    "expires_at" = LEAST(s."expires_at", NOW() + INTERVAL '15 minutes')
 WHERE s."revoked_at" IS NULL
   AND s."expires_at" > NOW()
   AND EXISTS (

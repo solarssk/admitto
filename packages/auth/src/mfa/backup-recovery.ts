@@ -1,5 +1,6 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { BACKUP_RECOVERY_CODE_COUNT, EMERGENCY_RECOVERY_LABEL } from "../constants.js";
+import { runInTransaction } from "../prisma-tx.js";
 import {
   generateRecoveryCodePlaintext,
   hashRecoveryCode,
@@ -40,14 +41,16 @@ export async function regenerateBackupRecoveryCodes(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
 ): Promise<BackupRecoveryCodesResult> {
-  await prisma.userMfaMethod.deleteMany({
-    where: {
-      user_id: userId,
-      type: "recovery",
-      OR: [{ label: null }, { label: { not: EMERGENCY_RECOVERY_LABEL } }],
-    },
+  return runInTransaction(prisma, async (tx) => {
+    await tx.userMfaMethod.deleteMany({
+      where: {
+        user_id: userId,
+        type: "recovery",
+        OR: [{ label: null }, { label: { not: EMERGENCY_RECOVERY_LABEL } }],
+      },
+    });
+    return generateBackupRecoveryCodes(tx, userId);
   });
-  return generateBackupRecoveryCodes(prisma, userId);
 }
 
 /** Verify and consume a backup recovery code (not emergency). */

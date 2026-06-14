@@ -14,6 +14,7 @@ import {
   confirmTotpEnrollment,
   promoteSessionToFull,
   getTrustedDeviceDays,
+  revokeTrustedDeviceByToken,
   SESSION_STAGE,
 } from "@admitto/auth";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
@@ -112,10 +113,14 @@ export async function handleLogin(
   return c.json({ ok: true, next: result.next }, 200);
 }
 
-/** POST /api/auth/logout — revokes current session and clears cookies. */
+/** POST /api/auth/logout — revokes current session, trusted device, and clears cookies. */
 export async function handleLogout(c: Context, db: PrismaClient): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
+  const trustedRaw = getCookie(c, TRUSTED_DEVICE_COOKIE_NAME);
   const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
+  if (validated) {
+    await revokeTrustedDeviceByToken(db, validated.userId, trustedRaw);
+  }
   await logout(db, validated);
   clearSessionCookie(c);
   clearTrustedDeviceCookie(c);

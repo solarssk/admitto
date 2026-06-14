@@ -31,7 +31,7 @@ export function renderMfaVerifyForm(error?: string, next?: string): string {
   <form method="post" action="/mfa/verify">
     ${nextField}
     <label for="code">Authentication code</label>
-    <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
+    <input id="code" name="code" type="text" inputmode="text" autocomplete="one-time-code" required>
     <label class="check"><input type="checkbox" name="remember_device" value="1"> Remember this device</label>
     <button type="submit">Continue</button>
   </form>
@@ -85,6 +85,31 @@ export function renderMfaEnrollPage(
     <label for="code">Confirmation code</label>
     <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
     <button type="submit">Confirm and continue</button>
+  </form>
+</body>
+</html>`;
+}
+
+/** Render enrollment landing — start setup via CSRF-protected POST only. */
+export function renderMfaEnrollStartPage(next?: string): string {
+  const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Set up two-factor authentication — Admitto</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; }
+    button { margin-top: 1rem; padding: 0.5rem 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Set up two-factor authentication</h1>
+  <p>Two-factor authentication is required for your account. Start setup to generate your authenticator secret and one-time backup codes.</p>
+  <form method="post" action="/mfa/enroll/start">
+    ${nextField}
+    <button type="submit">Begin setup</button>
   </form>
 </body>
 </html>`;

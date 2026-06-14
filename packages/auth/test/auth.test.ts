@@ -10,7 +10,10 @@ import {
   validateSession,
   revokeSession,
   revokeAllOperatorSessionsForEvent,
+  validatePartialSession,
+  promoteSessionToFull,
 } from "../src/session.js";
+import { SESSION_STAGE } from "../src/constants.js";
 import {
   canPerformCheckIn,
   canManageEvent,
@@ -162,6 +165,13 @@ describe("session", () => {
     expect(await validateSession(prisma, rawToken)).toBeNull();
   });
 
+  it("defaults MFA-required users to partial stage when stage omitted", async () => {
+    const { rawToken, session } = await createSession(prisma, { userId: USER_ADMIN_A });
+    expect(session.stage).toBe(SESSION_STAGE.MFA_PENDING);
+    expect(await validateSession(prisma, rawToken)).toBeNull();
+    expect(await validatePartialSession(prisma, rawToken)).not.toBeNull();
+  });
+
   it("rejects session when user is inactive", async () => {
     const { rawToken } = await createSession(prisma, { userId: USER_OP_A });
     await prisma.user.update({ where: { id: USER_OP_A }, data: { is_active: false } });
@@ -174,7 +184,7 @@ describe("session", () => {
 
   it("revokeAllOperatorSessionsForEvent only affects operators on event", async () => {
     const op = await createSession(prisma, { userId: USER_OP_A });
-    const admin = await createSession(prisma, { userId: USER_ADMIN_A });
+    const admin = await createSession(prisma, { userId: USER_ADMIN_A, stage: SESSION_STAGE.FULL });
     const count = await revokeAllOperatorSessionsForEvent(prisma, EVENT_A);
     expect(count).toBeGreaterThanOrEqual(1);
     expect(await validateSession(prisma, op.rawToken)).toBeNull();
@@ -201,7 +211,7 @@ describe("session", () => {
         confirmed_at: new Date(),
       },
     });
-    const mixed = await createSession(prisma, { userId: mixedId });
+    const mixed = await createSession(prisma, { userId: mixedId, stage: SESSION_STAGE.FULL });
     const op = await createSession(prisma, { userId: USER_OP_A });
     const count = await revokeAllOperatorSessionsForEvent(prisma, EVENT_A);
     expect(count).toBeGreaterThanOrEqual(1);

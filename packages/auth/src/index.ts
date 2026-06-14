@@ -58,10 +58,12 @@ export { userRequiresMfa, userHasConfirmedTotp } from "./mfa/policy.js";
 export {
   startTotpEnrollment,
   getOrStartTotpEnrollment,
+  resumePendingTotpEnrollment,
   confirmTotpEnrollment,
   verifyUserTotpCode,
   resetUserMfa,
+  type StartTotpEnrollmentResult,
 } from "./mfa/enrollment.js";
 export { regenerateBackupRecoveryCodes } from "./mfa/backup-recovery.js";
 export { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
-export { validateTrustedDevice, revokeAllTrustedDevicesForUser } from "./mfa/trusted-device.js";
+export { validateTrustedDevice, revokeTrustedDeviceByToken, revokeAllTrustedDevicesForUser } from "./mfa/trusted-device.js";

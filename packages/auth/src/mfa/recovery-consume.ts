@@ -1,7 +1,7 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { verifyRecoveryCode } from "./recovery-hash.js";
 
-/** Atomically mark a recovery row used; returns false if already consumed. */
+/** Atomically mark a recovery row used; returns false if already consumed (safe under concurrency). */
 export async function consumeRecoveryRow(
   prisma: PrismaClient | Prisma.TransactionClient,
   rowId: string,

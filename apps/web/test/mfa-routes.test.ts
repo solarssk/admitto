@@ -7,6 +7,7 @@ import {
   hashPassword,
   LOGIN_NEXT,
   TRUSTED_DEVICE_COOKIE_NAME,
+  validateTrustedDevice,
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret, generateTotpCode } from "@admitto/auth/testing";
 import { createApp } from "../src/app.js";
@@ -280,5 +281,93 @@ describe("MFA rate limit", () => {
       if (lastStatus === 429) break;
     }
     expect(lastStatus).toBe(429);
+  });
+});
+
+describe("HTML MFA enroll", () => {
+  it("GET /mfa/enroll does not create pending enrollment", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+    expect(((await loginRes.json()) as { next: string }).next).toBe(LOGIN_NEXT.ENROLLMENT_REQUIRED);
+
+    const getRes = await app.request("/mfa/enroll", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(getRes.status).toBe(200);
+    const html = await getRes.text();
+    expect(html).toContain("Begin setup");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: admin!.id } })).toBe(0);
+  });
+
+  it("POST /mfa/enroll/start creates pending enrollment", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const startRes = await app.request("/mfa/enroll/start", {
+      method: "POST",
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(startRes.status).toBe(200);
+    const html = await startRes.text();
+    expect(html).toContain("otpauth://totp/");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: admin!.id, type: "totp" } })).toBe(1);
+  });
+});
+
+describe("logout revokes trusted device", () => {
+  it("API logout invalidates remembered device token", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: admin!.id,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const verifyRes = await app.request("/api/auth/mfa/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({ code: generateTotpCode(secret), remember_device: true }),
+    });
+    expect(verifyRes.status).toBe(200);
+
+    const trustedLine = verifyRes.headers.getSetCookie?.().find((c) =>
+      c.startsWith(`${TRUSTED_DEVICE_COOKIE_NAME}=`),
+    );
+    expect(trustedLine).toBeTruthy();
+    const trustedValue = trustedLine!.split(";")[0]!.split("=")[1]!;
+
+    const logoutRes = await app.request("/api/auth/logout", {
+      method: "POST",
+      headers: {
+        ...sameOrigin,
+        Cookie: `${sessionCookie(loginRes)!}; ${TRUSTED_DEVICE_COOKIE_NAME}=${trustedValue}`,
+      },
+    });
+    expect(logoutRes.status).toBe(200);
+
+    expect(await validateTrustedDevice(prisma, admin!.id, trustedValue)).toBe(false);
   });
 });

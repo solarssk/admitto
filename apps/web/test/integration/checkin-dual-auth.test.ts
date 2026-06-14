@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import { PrismaClient } from "@prisma/client";
-import { hashPassword, createSession } from "@admitto/auth";
+import { hashPassword, createSession, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import {
   createCheckinPreAuth,
@@ -158,7 +158,7 @@ afterAll(async () => {
 });
 
 async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId });
+  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
   return `admitto_session=${rawToken}`;
 }
 

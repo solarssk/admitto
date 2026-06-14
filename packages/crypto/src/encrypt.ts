@@ -9,6 +9,25 @@ export type EncryptedData = {
 };
 
 const CURRENT_KEY_VERSION = 1;
+const GCM_IV_BYTES = 12;
+const GCM_AUTH_TAG_BYTES = 16;
+
+function assertEncryptedPayload(payload: EncryptedData): void {
+  if (typeof payload.ciphertext !== "string") {
+    throw new Error("Invalid encrypted payload: missing ciphertext");
+  }
+  if (typeof payload.iv !== "string" || typeof payload.authTag !== "string") {
+    throw new Error("Invalid encrypted payload: missing iv or authTag");
+  }
+  const iv = Buffer.from(payload.iv, "base64");
+  const authTag = Buffer.from(payload.authTag, "base64");
+  if (iv.length !== GCM_IV_BYTES) {
+    throw new Error(`Invalid encrypted payload: iv must be ${GCM_IV_BYTES} bytes`);
+  }
+  if (authTag.length !== GCM_AUTH_TAG_BYTES) {
+    throw new Error(`Invalid encrypted payload: authTag must be ${GCM_AUTH_TAG_BYTES} bytes`);
+  }
+}
 
 export function encrypt(plaintext: string): EncryptedData {
   const key = getEncryptionKey();
@@ -25,6 +44,7 @@ export function encrypt(plaintext: string): EncryptedData {
 }
 
 export function decrypt(payload: EncryptedData): string {
+  assertEncryptedPayload(payload);
   if (payload.keyVersion !== CURRENT_KEY_VERSION) {
     throw new Error(
       `Unsupported key version: ${payload.keyVersion}. Current supported version: ${CURRENT_KEY_VERSION}.`,
@@ -44,5 +64,9 @@ export function encryptToString(plaintext: string): string {
 }
 
 export function decryptFromString(s: string): string {
-  return decrypt(JSON.parse(s) as EncryptedData);
+  const parsed: unknown = JSON.parse(s);
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Invalid encrypted payload: expected JSON object");
+  }
+  return decrypt(parsed as EncryptedData);
 }

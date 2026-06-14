@@ -18,6 +18,7 @@ import { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
 import { userIsInstanceSuperadmin } from "./bootstrap.js";
 import { logMfaBreakGlass } from "./audit.js";
 import { loadEnvFile } from "./loadDotEnv.js";
+import { assertNoPasswordArgv, CliError, readPasswordFromStdin } from "./cli-helpers.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -47,22 +48,7 @@ function usage(): never {
   npm run cli -w @admitto/auth -- bootstrap-superadmin --email <email> [--force]
   npm run cli -w @admitto/auth -- reset-mfa --email <email>
   npm run cli -w @admitto/auth -- generate-emergency-recovery --email <email>`);
-  process.exit(1);
-}
-
-async function readPasswordFromStdin(prompt = "Password: "): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  return new Promise((resolve, reject) => {
-    rl.question(prompt, (answer) => {
-      rl.close();
-      if (!answer) {
-        reject(new Error("Password required"));
-        return;
-      }
-      resolve(answer);
-    });
-    rl.on("close", () => {});
-  });
+  throw new CliError("Invalid usage");
 }
 
 async function confirmForce(): Promise<boolean> {
@@ -79,31 +65,23 @@ async function confirmForce(): Promise<boolean> {
 }
 
 async function verifyTargetUserPassword(email: string): Promise<{ userId: string }> {
+  assertNoPasswordArgv(process.argv);
+
   const normalized = normalizeEmail(email);
   const user = await findUserByEmail(prisma, normalized);
   if (!user) {
-    console.error("User not found.");
-    process.exit(1);
+    throw new CliError("User not found.");
   }
 
   const isSuperadmin = await userIsInstanceSuperadmin(prisma, user.id);
   if (!isSuperadmin) {
-    console.error("Break-glass MFA commands require a superadmin@instance user.");
-    process.exit(1);
+    throw new CliError("Break-glass MFA commands require a superadmin@instance user.");
   }
 
-  let password: string;
-  try {
-    password = await readPasswordFromStdin("Target superadmin password: ");
-  } catch (err) {
-    console.error(err instanceof Error ? err.message : "Password read failed");
-    process.exit(1);
-  }
-
+  const password = await readPasswordFromStdin("Target superadmin password: ");
   const ok = await verifyPassword(password, user.password_hash);
   if (!ok) {
-    console.error("Password verification failed.");
-    process.exit(1);
+    throw new CliError("Password verification failed.");
   }
 
   return { userId: user.id };
@@ -116,27 +94,18 @@ async function runBootstrapSuperadmin(): Promise<void> {
   const force = hasFlag("force");
   const exists = await superadminInstanceExists(prisma);
   if (exists && !force) {
-    console.error(
+    throw new CliError(
       "superadmin@instance already exists. Use --force to create another (with confirmation).",
     );
-    process.exit(1);
   }
   if (exists && force) {
     const ok = await confirmForce();
     if (!ok) {
-      console.error("Aborted.");
-      process.exit(1);
+      throw new CliError("Aborted.");
     }
   }
 
-  let password: string;
-  try {
-    password = await readPasswordFromStdin();
-  } catch (err) {
-    console.error(err instanceof Error ? err.message : "Password read failed");
-    process.exit(1);
-  }
-
+  const password = await readPasswordFromStdin();
   const { userId } = await bootstrapSuperadmin(prisma, email, password);
   console.log(`Superadmin created: ${userId} (${email})`);
 }
@@ -165,27 +134,31 @@ async function main(): Promise<void> {
   loadDotEnv();
 
   if (!process.env["DATABASE_URL"]) {
-    console.error("DATABASE_URL is required");
-    process.exit(1);
+    throw new CliError("DATABASE_URL is required");
   }
 
   const sub = process.argv[2];
-  try {
-    if (sub === "bootstrap-superadmin") {
-      await runBootstrapSuperadmin();
-    } else if (sub === "reset-mfa") {
-      await runResetMfa();
-    } else if (sub === "generate-emergency-recovery") {
-      await runGenerateEmergencyRecovery();
-    } else {
-      usage();
-    }
-  } finally {
-    await prisma.$disconnect();
+  if (sub === "bootstrap-superadmin") {
+    await runBootstrapSuperadmin();
+  } else if (sub === "reset-mfa") {
+    await runResetMfa();
+  } else if (sub === "generate-emergency-recovery") {
+    await runGenerateEmergencyRecovery();
+  } else {
+    usage();
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main()
+  .catch((err) => {
+    if (err instanceof CliError) {
+      console.error(err.message);
+      process.exitCode = err.exitCode;
+      return;
+    }
+    console.error(err);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

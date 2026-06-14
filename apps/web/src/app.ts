@@ -45,6 +45,7 @@ import {
   handleGetMfaEnroll,
   handleGetMfaVerify,
   handlePostMfaEnroll,
+  handlePostMfaEnrollStart,
   handlePostMfaVerify,
 } from "./auth/mfa-html-routes.js";
 import {
@@ -179,6 +180,9 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostMfaVerify(c, db, rateLimitStore),
   );
   app.get("/mfa/enroll", requirePartialSessionHtml, (c) => handleGetMfaEnroll(c, db));
+  app.post("/mfa/enroll/start", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+    handlePostMfaEnrollStart(c, db),
+  );
   app.post("/mfa/enroll", htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnroll(c, db, rateLimitStore),
   );

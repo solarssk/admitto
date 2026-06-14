@@ -58,6 +58,20 @@ export async function validateTrustedDevice(
   return true;
 }
 
+/** Revoke the trusted-device row matching the current cookie token (logout). */
+export async function revokeTrustedDeviceByToken(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+  rawToken: string | undefined,
+): Promise<void> {
+  if (!rawToken) return;
+  const token_hash = hashToken(rawToken);
+  await prisma.trustedDevice.updateMany({
+    where: { token_hash, user_id: userId, revoked_at: null },
+    data: { revoked_at: new Date() },
+  });
+}
+
 /** Revoke all trusted devices for a user. */
 export async function revokeAllTrustedDevicesForUser(
   prisma: PrismaClient | Prisma.TransactionClient,
