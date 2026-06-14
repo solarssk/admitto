@@ -19,11 +19,13 @@ import { splitDisplayName } from "./name.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
 import type { SendTicketEmailsResult } from "./types.js";
 
+/** Options for `sendTicketEmails()` batch send. */
 export interface SendTicketEmailsOptions {
   attendeeIds?: string[];
   purpose?: "initial" | "resend";
 }
 
+/** Optional test hooks for `sendTicketEmails()` (e.g. export_only sink). */
 export interface MailDeliveryDeps {
   exportSink?: ExportSink;
 }

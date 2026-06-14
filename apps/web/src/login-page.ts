@@ -7,6 +7,7 @@ function esc(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/** Security headers for server-rendered operator login and landing pages. */
 export function getLoginPageSecurityHeaders(): Record<string, string> {
   return {
     "Cache-Control": "private, no-store, max-age=0",
@@ -17,6 +18,7 @@ export function getLoginPageSecurityHeaders(): Record<string, string> {
   };
 }
 
+/** Render the operator sign-in form HTML (optional uniform error message). */
 export function renderLoginForm(error?: string): string {
   const errorBlock = error
     ? `<p class="error" role="alert">${esc(error)}</p>`
@@ -53,11 +55,13 @@ export function renderLoginForm(error?: string): string {
 </html>`;
 }
 
+/** Event row shown on the temporary `/operator` landing page. */
 export interface OperatorEventRow {
   title: string;
   slug: string;
 }
 
+/** Render the signed-in operator landing page (event list + sign out). */
 export function renderOperatorLanding(email: string, events: OperatorEventRow[]): string {
   const eventList =
     events.length === 0

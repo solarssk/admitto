@@ -45,6 +45,7 @@ import {
   handlePostLogout,
 } from "./auth/html-routes.js";
 
+/** Injectable dependencies for `createApp()` (tests and custom deploy wiring). */
 export interface CreateAppOptions {
   prisma?: PrismaClient;
   baseUrl?: string;
@@ -54,6 +55,7 @@ export interface CreateAppOptions {
   rateLimitStore?: RateLimitStore;
 }
 
+/** Build the Admitto Hono app (public tickets, auth, check-in API, operator HTML). */
 export function createApp(options: CreateAppOptions = {}) {
   const db = options.prisma ?? defaultPrisma;
   const baseUrl = options.baseUrl ?? resolveBaseUrl();

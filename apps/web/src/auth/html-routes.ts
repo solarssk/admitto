@@ -21,6 +21,7 @@ function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Respon
   return c.html(html, status);
 }
 
+/** GET /login — operator sign-in form (HTML). */
 export function handleGetLogin(c: Context): Response {
   return htmlResponse(c, renderLoginForm());
 }
@@ -38,6 +39,7 @@ async function parseLoginForm(c: Context): Promise<Record<string, string>> {
   return {};
 }
 
+/** POST /login — form login, sets session cookie, redirects to `/operator`. */
 export async function handlePostLogin(
   c: Context,
   db: PrismaClient,
@@ -76,6 +78,7 @@ export async function handlePostLogin(
   return c.redirect("/operator", 302);
 }
 
+/** GET /operator — temporary landing after login (requires session). */
 export async function handleGetOperator(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   const user = await db.user.findUnique({
@@ -127,6 +130,7 @@ export async function handleGetOperator(c: Context, db: PrismaClient): Promise<R
   return htmlResponse(c, renderOperatorLanding(user.email, events));
 }
 
+/** POST /logout — revokes session server-side and redirects to `/login`. */
 export async function handlePostLogout(c: Context, db: PrismaClient): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
   const validated = rawToken ? await validateSession(db, rawToken) : null;

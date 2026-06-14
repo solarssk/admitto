@@ -10,6 +10,7 @@ export interface LoginInput {
   password: string;
   ip?: string;
   userAgent?: string;
+  /** Optional label stored on the session (e.g. entrance tablet name). */
   deviceLabel?: string;
 }
 

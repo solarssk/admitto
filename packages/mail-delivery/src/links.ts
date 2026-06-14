@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { decryptFromString } from "@admitto/crypto";
 import { validateHttpUrl } from "@admitto/mail-templates";
 
+/** Attendee fields required to build mail ticket/QR links. */
 export interface AttendeeLinkInput {
   id: string;
   public_ref: string | null;
@@ -9,10 +10,12 @@ export interface AttendeeLinkInput {
   external_uuid: string | null;
 }
 
+/** Event fields required to build mail ticket/QR links. */
 export interface EventLinkInput {
   slug: string;
 }
 
+/** Resolved absolute ticket and QR image URLs for template materialization. */
 export interface AttendeeMailLinks {
   ticket_url: string;
   qr_image_url: string;
