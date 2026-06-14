@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import { getCookie } from "hono/cookie";
 import { SESSION_COOKIE_NAME, validateSession } from "@admitto/auth";
 
+/** Authenticated principal attached to Hono context after session validation. */
 export interface AuthContext {
   userId: string;
   sessionId: string;
@@ -17,6 +18,7 @@ declare module "hono" {
   }
 }
 
+/** Require valid `admitto_session` cookie; sets `c.var.auth` for downstream handlers. */
 export function createRequireSession(prisma: PrismaClient) {
   return async (c: Context, next: Next): Promise<Response | void> => {
     const rawToken = getCookie(c, SESSION_COOKIE_NAME);

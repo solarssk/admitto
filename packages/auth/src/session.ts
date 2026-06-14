@@ -3,6 +3,7 @@ import { generateToken, hashToken } from "@admitto/tickets";
 import { SESSION_LAST_SEEN_THROTTLE_MS } from "./constants.js";
 import { resolveSessionTtlMs } from "./session-ttl.js";
 
+/** Optional client metadata stored on a new `Session` row. */
 export interface CreateSessionInput {
   userId: string;
   ip?: string;
@@ -10,12 +11,14 @@ export interface CreateSessionInput {
   deviceLabel?: string;
 }
 
+/** Active session after cookie token validation (includes raw token for logout). */
 export interface ValidatedSession {
   session: Session;
   userId: string;
   rawToken: string;
 }
 
+/** Filters for admin session listing (future UI). */
 export interface ListSessionsFilters {
   userId?: string;
   includeRevoked?: boolean;
@@ -47,7 +50,10 @@ export async function createSession(
   return { session, rawToken };
 }
 
-/** Lookup session by raw cookie token; bump last_seen_at (throttled). */
+/**
+ * Lookup session by raw cookie token; reject revoked, expired, or inactive-user sessions.
+ * Updates `last_seen_at` at most once per `SESSION_LAST_SEEN_THROTTLE_MS`.
+ */
 export async function validateSession(
   prisma: PrismaClient | Prisma.TransactionClient,
   rawToken: string,
@@ -74,6 +80,7 @@ export async function validateSession(
   return { session, userId: session.user_id, rawToken };
 }
 
+/** Mark one session revoked by id (no-op if already revoked). */
 export async function revokeSession(
   prisma: PrismaClient | Prisma.TransactionClient,
   sessionId: string,
@@ -126,6 +133,7 @@ export async function revokeAllOperatorSessionsForEvent(
   return result.count;
 }
 
+/** List sessions for admin tooling; excludes revoked rows unless `includeRevoked`. */
 export async function listSessions(
   prisma: PrismaClient | Prisma.TransactionClient,
   filters: ListSessionsFilters = {},

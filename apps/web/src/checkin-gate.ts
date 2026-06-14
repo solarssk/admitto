@@ -29,8 +29,10 @@ export function createCheckinConfiguredGuard(operatorToken: string | null) {
   };
 }
 
+/** Dependencies for session-or-bearer check-in gate (ADR 0003 + ADR 0011). */
 export interface CheckinDualAuthDeps {
   prisma: PrismaClient;
+  /** Shared operator secret (ADR 0003 transitional path). */
   operatorToken: string;
 }
 
@@ -107,6 +109,7 @@ export async function parseScanBodyMiddleware(c: Context, next: Next): Promise<R
   await next();
 }
 
+/** Read `eventId` from `parsedScanBody` set by `parseScanBodyMiddleware`. */
 export function eventIdFromScanBody(c: Context): string | undefined {
   const body = c.get("parsedScanBody") as Record<string, unknown> | undefined;
   if (!body) return undefined;
@@ -114,6 +117,7 @@ export function eventIdFromScanBody(c: Context): string | undefined {
   return typeof eventId === "string" && eventId.length > 0 ? eventId : undefined;
 }
 
+/** Read `eventId` from query string (check-in history). */
 export function eventIdFromHistoryQuery(c: Context): string | undefined {
   const eventId = c.req.query("eventId");
   return eventId && eventId.length > 0 ? eventId : undefined;

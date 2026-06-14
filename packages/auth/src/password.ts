@@ -34,6 +34,9 @@ function getDummyHash(): Promise<string> {
   return dummyHashPromise;
 }
 
+/**
+ * Verify password; when hash is null (unknown user), run dummy argon2 for timing parity.
+ */
 export async function verifyPasswordOrDummy(
   plaintext: string,
   passwordHash: string | null,

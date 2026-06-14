@@ -1,6 +1,7 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { hasScope } from "@admitto/db";
 
+/** High-level permission names used by HTTP middleware and future admin UI. */
 export type AuthCapability = "checkin" | "manageEvent" | "manageInstance";
 
 async function loadEventOrgId(
@@ -60,6 +61,7 @@ export async function canManageInstance(
   return hasScope(prisma, userId, "superadmin", "instance");
 }
 
+/** Dispatch a capability check; `eventId` required for event-scoped capabilities. */
 export async function checkCapability(
   prisma: PrismaClient | Prisma.TransactionClient,
   capability: AuthCapability,

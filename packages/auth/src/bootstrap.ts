@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { hasScope } from "@admitto/db";
 import { createUser } from "./user.js";
 
+/** True when any `superadmin@instance` role assignment exists. */
 export async function superadminInstanceExists(prisma: PrismaClient): Promise<boolean> {
   const row = await prisma.roleAssignment.findFirst({
     where: { role: "superadmin", scope_type: "instance", scope_id: null },
@@ -10,6 +11,10 @@ export async function superadminInstanceExists(prisma: PrismaClient): Promise<bo
   return row !== null;
 }
 
+/**
+ * Break-glass: create local user + `superadmin@instance` in one transaction.
+ * Intended for CLI/first-run only, not runtime HTTP.
+ */
 export async function bootstrapSuperadmin(
   prisma: PrismaClient,
   email: string,
@@ -30,6 +35,7 @@ export async function bootstrapSuperadmin(
   return { userId };
 }
 
+/** Gate CLI bootstrap: allow when no superadmin exists, or when `force` is true. */
 export async function assertCanBootstrap(
   prisma: PrismaClient,
   force: boolean,

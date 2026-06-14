@@ -8,10 +8,12 @@ function parseEnvMs(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+/** Operator session TTL from env or `SESSION_TTL_OPERATOR_MS` default (12h). */
 export function operatorSessionTtlMs(): number {
   return parseEnvMs("SESSION_TTL_OPERATOR_MS", SESSION_TTL_OPERATOR_MS);
 }
 
+/** Admin/superadmin session TTL from env or `SESSION_TTL_ADMIN_MS` default (7d). */
 export function adminSessionTtlMs(): number {
   return parseEnvMs("SESSION_TTL_ADMIN_MS", SESSION_TTL_ADMIN_MS);
 }

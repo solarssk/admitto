@@ -8,6 +8,7 @@ export function parseEnvValue(raw: string): string {
   if (quoted) {
     return v.slice(1, -1);
   }
+  // Only treat ` #` as inline comment start (values may contain `#` without a space).
   const inlineComment = v.indexOf(" #");
   if (inlineComment !== -1) {
     v = v.slice(0, inlineComment).trim();

@@ -6,6 +6,7 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+/** Input for creating a local password-based user. */
 export interface CreateUserInput {
   email: string;
   password: string;
@@ -13,6 +14,7 @@ export interface CreateUserInput {
   isActive?: boolean;
 }
 
+/** Create a user with argon2id-hashed password and normalized email. */
 export async function createUser(
   prisma: PrismaClient | Prisma.TransactionClient,
   input: CreateUserInput,
@@ -29,6 +31,7 @@ export async function createUser(
   });
 }
 
+/** Lookup by normalized email. */
 export async function findUserByEmail(
   prisma: PrismaClient | Prisma.TransactionClient,
   email: string,
@@ -38,6 +41,7 @@ export async function findUserByEmail(
   });
 }
 
+/** Lookup by primary key. */
 export async function findUserById(
   prisma: PrismaClient | Prisma.TransactionClient,
   id: string,

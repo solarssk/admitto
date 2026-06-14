@@ -8,12 +8,14 @@ export function redactEmail(email: string): string {
   return `${visible}***${domain}`;
 }
 
+/** Context for structured login audit events (email is redacted in logs). */
 export interface LoginAuditContext {
   email: string;
   ip?: string;
   userAgent?: string;
 }
 
+/** Emit `auth.login.success` as JSON to stdout (no password/token fields). */
 export function logLoginSuccess(ctx: LoginAuditContext): void {
   console.info(
     JSON.stringify({
@@ -25,6 +27,7 @@ export function logLoginSuccess(ctx: LoginAuditContext): void {
   );
 }
 
+/** Emit `auth.login.fail` as JSON to stdout (uniform shape for enumeration-safe failures). */
 export function logLoginFailure(ctx: LoginAuditContext): void {
   console.info(
     JSON.stringify({

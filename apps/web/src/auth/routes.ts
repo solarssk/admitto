@@ -22,14 +22,17 @@ function sessionCookieOptions(): {
   };
 }
 
+/** Set httpOnly session cookie after successful login. */
 export function setSessionCookie(c: Context, rawToken: string): void {
   setCookie(c, SESSION_COOKIE_NAME, rawToken, sessionCookieOptions());
 }
 
+/** Clear session cookie (call after server-side revoke). */
 export function clearSessionCookie(c: Context): void {
   deleteCookie(c, SESSION_COOKIE_NAME, { path: "/" });
 }
 
+/** POST /api/auth/login — rate-limited, sets session cookie on success. */
 export async function handleLogin(
   c: Context,
   db: PrismaClient,
@@ -74,6 +77,7 @@ export async function handleLogin(
   return c.json({ ok: true }, 200);
 }
 
+/** POST /api/auth/logout — revokes current session and clears cookie. */
 export async function handleLogout(c: Context, db: PrismaClient): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
   const validated = rawToken ? await validateSession(db, rawToken) : null;
@@ -82,6 +86,7 @@ export async function handleLogout(c: Context, db: PrismaClient): Promise<Respon
   return c.json({ ok: true }, 200);
 }
 
+/** GET /api/auth/me — current user profile and role assignments (requires session). */
 export async function handleMe(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   const user = await db.user.findUnique({

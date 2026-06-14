@@ -1,3 +1,7 @@
+/**
+ * @admitto/auth — local accounts, opaque DB sessions, and RBAC capability checks (ADR 0011).
+ * HTTP wiring lives in `apps/web`; this package is domain logic + CLI bootstrap.
+ */
 export { SESSION_COOKIE_NAME, SESSION_TTL_ADMIN_MS, SESSION_TTL_OPERATOR_MS } from "./constants.js";
 
 export { hashPassword, verifyPassword, verifyPasswordOrDummy } from "./password.js";
