@@ -1,17 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { execSync } from "node:child_process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "@admitto/auth";
 import { createApp } from "../src/app.js";
 import { createRateLimitStore } from "../src/rate-limit/index.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_ROOT = path.resolve(__dirname, "..", "..", "..", "packages", "db");
 const CHECKIN_TOKEN = "test-checkin-token-for-vitest-32chars!";
 const EVENT_ID = "event-web-auth";
 const ORG_ID = "org_default";
+const OPERATOR_EMAIL = "auth-routes-operator@example.com";
+const OPERATOR_PASSWORD = "login-pass-123";
 
 /** Hono `app.request()` uses `http://localhost` as the request URL. */
 const sameOrigin = { Origin: "http://localhost" };
@@ -27,23 +24,23 @@ function loginHeaders(extra: Record<string, string> = {}): Record<string, string
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 
-beforeAll(async () => {
-  execSync("npx prisma db push --force-reset --accept-data-loss", {
-    cwd: DB_ROOT,
-    env: { ...process.env },
-    stdio: "pipe",
+/** Seed fixture without `db push --force-reset` (CI already migrates; repeated resets segfault on Linux). */
+async function seedAuthRoutesFixture(client: PrismaClient): Promise<void> {
+  await client.roleAssignment.deleteMany({
+    where: { OR: [{ scope_id: EVENT_ID }, { user: { email: OPERATOR_EMAIL } }] },
+  });
+  await client.session.deleteMany({ where: { user: { email: OPERATOR_EMAIL } } });
+  await client.user.deleteMany({ where: { email: OPERATOR_EMAIL } });
+  await client.event.deleteMany({ where: { id: EVENT_ID } });
+  await client.organization.deleteMany({ where: { id: ORG_ID } });
+
+  const password_hash = await hashPassword(OPERATOR_PASSWORD);
+
+  await client.organization.create({
+    data: { id: ORG_ID, name: "Default", slug: "default" },
   });
 
-  prisma = new PrismaClient();
-  const password_hash = await hashPassword("login-pass-123");
-
-  await prisma.organization.upsert({
-    where: { id: ORG_ID },
-    create: { id: ORG_ID, name: "Default", slug: "default" },
-    update: {},
-  });
-
-  await prisma.event.create({
+  await client.event.create({
     data: {
       id: EVENT_ID,
       title: "Web Auth Event",
@@ -53,11 +50,11 @@ beforeAll(async () => {
     },
   });
 
-  const operator = await prisma.user.create({
-    data: { email: "operator@example.com", password_hash },
+  const operator = await client.user.create({
+    data: { email: OPERATOR_EMAIL, password_hash },
   });
 
-  await prisma.roleAssignment.create({
+  await client.roleAssignment.create({
     data: {
       user_id: operator.id,
       role: "operator",
@@ -65,6 +62,11 @@ beforeAll(async () => {
       scope_id: EVENT_ID,
     },
   });
+}
+
+beforeAll(async () => {
+  prisma = new PrismaClient();
+  await seedAuthRoutesFixture(prisma);
 
   app = createApp({
     prisma,
@@ -77,7 +79,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.$disconnect();
+  await prisma?.$disconnect();
 });
 
 function sessionCookie(res: Response): string | undefined {
@@ -99,7 +101,7 @@ describe("POST /api/auth/login", () => {
     const res = await app.request("/api/auth/login", {
       method: "POST",
       headers: loginHeaders(),
-      body: jsonLoginBody("operator@example.com", "login-pass-123"),
+      body: jsonLoginBody(OPERATOR_EMAIL, OPERATOR_PASSWORD),
     });
     expect(res.status).toBe(200);
     const cookie = sessionCookie(res);
@@ -111,12 +113,12 @@ describe("POST /api/auth/login", () => {
     const wrongEmail = await app.request("/api/auth/login", {
       method: "POST",
       headers: loginHeaders(),
-      body: jsonLoginBody("nobody@example.com", "login-pass-123"),
+      body: jsonLoginBody("nobody@example.com", OPERATOR_PASSWORD),
     });
     const wrongPass = await app.request("/api/auth/login", {
       method: "POST",
       headers: loginHeaders(),
-      body: jsonLoginBody("operator@example.com", "wrong"),
+      body: jsonLoginBody(OPERATOR_EMAIL, "wrong"),
     });
     expect(wrongEmail.status).toBe(401);
     expect(wrongPass.status).toBe(401);
@@ -130,7 +132,7 @@ describe("POST /api/auth/login", () => {
         "Content-Type": "application/json",
         Origin: "https://evil.example",
       },
-      body: jsonLoginBody("operator@example.com", "login-pass-123"),
+      body: jsonLoginBody(OPERATOR_EMAIL, OPERATOR_PASSWORD),
     });
     expect(res.status).toBe(403);
     expect(sessionCookie(res)).toBeUndefined();
@@ -146,7 +148,7 @@ describe("POST /api/auth/login", () => {
       skipCheckinBootValidation: true,
     });
     const evil = { Origin: "https://evil.example" };
-    const body = jsonLoginBody("operator@example.com", "login-pass-123");
+    const body = jsonLoginBody(OPERATOR_EMAIL, OPERATOR_PASSWORD);
 
     for (let i = 0; i < 10; i++) {
       const res = await limitedApp.request("/api/auth/login", {
@@ -171,7 +173,7 @@ describe("GET /api/auth/me", () => {
     const loginRes = await app.request("/api/auth/login", {
       method: "POST",
       headers: loginHeaders(),
-      body: jsonLoginBody("operator@example.com", "login-pass-123"),
+      body: jsonLoginBody(OPERATOR_EMAIL, OPERATOR_PASSWORD),
     });
     const cookie = sessionCookie(loginRes);
     const res = await app.request("/api/auth/me", {
@@ -179,7 +181,7 @@ describe("GET /api/auth/me", () => {
     });
     expect(res.status).toBe(200);
     const json = (await res.json()) as { user: { email: string }; assignments: unknown[] };
-    expect(json.user.email).toBe("operator@example.com");
+    expect(json.user.email).toBe(OPERATOR_EMAIL);
     expect(json.assignments.length).toBeGreaterThan(0);
   });
 
@@ -194,7 +196,7 @@ describe("POST /api/auth/logout", () => {
     const loginRes = await app.request("/api/auth/login", {
       method: "POST",
       headers: loginHeaders(),
-      body: jsonLoginBody("operator@example.com", "login-pass-123"),
+      body: jsonLoginBody(OPERATOR_EMAIL, OPERATOR_PASSWORD),
     });
     const cookie = sessionCookie(loginRes)!;
     const logoutRes = await app.request("/api/auth/logout", {
@@ -212,7 +214,7 @@ describe("check-in session auth E2E", () => {
     const loginRes = await app.request("/api/auth/login", {
       method: "POST",
       headers: loginHeaders(),
-      body: jsonLoginBody("operator@example.com", "login-pass-123"),
+      body: jsonLoginBody(OPERATOR_EMAIL, OPERATOR_PASSWORD),
     });
     expect(loginRes.status).toBe(200);
     const cookie = sessionCookie(loginRes)!;
