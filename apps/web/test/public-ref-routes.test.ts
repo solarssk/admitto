@@ -1,0 +1,127 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { execSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { PrismaClient } from "@prisma/client";
+import { backfillAgencyPublicRefs } from "@admitto/db";
+import { generateToken } from "@admitto/tickets";
+import { createApp } from "../src/app.js";
+import { createRateLimitStore } from "../src/rate-limit/index.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DB_ROOT = path.resolve(__dirname, "..", "..", "..", "packages", "db");
+const ORG_ID = "org-pubref";
+const EVENT_ID = "evt-pubref";
+const EVENT_SLUG = "summer-gala";
+const PUBLIC_REF = generateToken();
+const ATTENDEE_ID = "attendee-cuid-legacy-id";
+
+let prisma: PrismaClient;
+let app: ReturnType<typeof createApp>;
+
+beforeAll(async () => {
+  execSync("npx prisma db push --force-reset --accept-data-loss", {
+    cwd: DB_ROOT,
+    env: { ...process.env },
+    stdio: "pipe",
+  });
+
+  prisma = new PrismaClient();
+  await prisma.organization.create({
+    data: { id: ORG_ID, name: "Org", slug: "pubref-org" },
+  });
+  await prisma.event.create({
+    data: {
+      id: EVENT_ID,
+      title: "Summer Gala",
+      slug: EVENT_SLUG,
+      date: new Date("2026-09-01"),
+      organization_id: ORG_ID,
+    },
+  });
+  await prisma.attendee.create({
+    data: {
+      id: ATTENDEE_ID,
+      event_id: EVENT_ID,
+      email: "guest@example.com",
+      name: "Agency Guest",
+      qr_payload: "AGENCY-QR-PAYLOAD-001",
+      public_ref: PUBLIC_REF,
+    },
+  });
+
+  app = createApp({
+    prisma,
+    baseUrl: "https://tickets.example.com",
+    rateLimitStore: createRateLimitStore(),
+    skipCheckinBootValidation: true,
+  });
+});
+
+afterAll(async () => {
+  await prisma.$disconnect();
+});
+
+describe("Mode B public routes — public_ref", () => {
+  it("GET /t/:slug/a/:public_ref returns ticket page", async () => {
+    const res = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Agency Guest");
+    expect(html).toContain("Summer Gala");
+  });
+
+  it("GET /q/:slug/a/:public_ref.png returns PNG", async () => {
+    const res = await app.request(`/q/${EVENT_SLUG}/a/${PUBLIC_REF}.png`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("image/png");
+  });
+
+  it("legacy Attendee.id in URL returns 404", async () => {
+    const res = await app.request(`/t/${EVENT_SLUG}/a/${ATTENDEE_ID}`);
+    expect(res.status).toBe(404);
+    const html = await res.text();
+    expect(html).toContain("not found");
+  });
+
+  it("unknown public_ref returns 404", async () => {
+    const res = await app.request(`/t/${EVENT_SLUG}/a/${generateToken()}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("agency row without public_ref returns 404 after lookup switch", async () => {
+    const noRef = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "norefb@example.com",
+        name: "No Ref",
+        external_uuid: "agency-uuid-noref",
+      },
+    });
+    expect(noRef.public_ref).toBeNull();
+    const res = await app.request(`/t/${EVENT_SLUG}/a/${noRef.id}`);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("backfill before deploy", () => {
+  it("backfill assigns ref so routes work", async () => {
+    const row = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "backfill@example.com",
+        name: "Backfill Guest",
+        qr_payload: "AGENCY-BACKFILL",
+      },
+    });
+    const before = await app.request(`/t/${EVENT_SLUG}/a/${generateToken()}`);
+    expect(before.status).toBe(404);
+
+    await backfillAgencyPublicRefs(prisma);
+    const updated = await prisma.attendee.findUniqueOrThrow({ where: { id: row.id } });
+    expect(updated.public_ref).toBeTruthy();
+
+    const after = await app.request(`/t/${EVENT_SLUG}/a/${updated.public_ref}`);
+    expect(after.status).toBe(200);
+  });
+});

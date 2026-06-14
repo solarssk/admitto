@@ -20,6 +20,7 @@
     "import": "tsx src/cli.ts"
   },
   "dependencies": {
+    "@admitto/crypto": "*",
     "@admitto/db": "*",
     "@admitto/shared": "*",
     "zod": "^3.23.8"

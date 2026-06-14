@@ -19,11 +19,13 @@ import { splitDisplayName } from "./name.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
 import type { SendTicketEmailsResult } from "./types.js";
 
+/** Options for `sendTicketEmails()` batch send. */
 export interface SendTicketEmailsOptions {
   attendeeIds?: string[];
   purpose?: "initial" | "resend";
 }
 
+/** Optional test hooks for `sendTicketEmails()` (e.g. export_only sink). */
 export interface MailDeliveryDeps {
   exportSink?: ExportSink;
 }
@@ -79,6 +81,10 @@ function materializePendingMessage(item: PendingSend): MailMessage {
   };
 }
 
+/**
+ * Issue ticket emails for an event (initial or resend).
+ * Skips individual attendees on not_issuable, token/link build errors, or dedup — does not abort the batch.
+ */
 export async function sendTicketEmails(
   eventId: string,
   options: SendTicketEmailsOptions,
@@ -131,7 +137,17 @@ export async function sendTicketEmails(
         continue;
       }
 
-      const links = buildAttendeeMailLinks(attendee, event, baseUrl, plaintextToken);
+      let links: AttendeeMailLinks;
+      try {
+        links = buildAttendeeMailLinks(attendee, event, baseUrl, plaintextToken);
+      } catch (err) {
+        skipped.push({
+          attendeeId: attendee.id,
+          reason: err instanceof Error ? err.message : "link_build_failed",
+        });
+        continue;
+      }
+
       const { first_name, last_name } = splitDisplayName(attendee.name);
 
       const rendered = renderTemplateTrustedForStorage(

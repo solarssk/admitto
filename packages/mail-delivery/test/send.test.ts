@@ -4,7 +4,7 @@ import * as mailer from "@admitto/mailer";
 import { encryptToString } from "@admitto/crypto";
 import { setMailSettings } from "@admitto/mailer-config";
 import type { ExportPayload } from "@admitto/mailer";
-import { hashToken } from "@admitto/tickets";
+import { hashToken, generateToken } from "@admitto/tickets";
 import { resetDb } from "./resetDb.js";
 import {
   resendTicketEmail,
@@ -53,6 +53,7 @@ beforeAll(async () => {
       email: "bob@example.com",
       name: "Bob Agency",
       external_uuid: "https://agency.example.com/t/xyz",
+      public_ref: generateToken(),
     },
   });
   await prisma.attendee.create({
@@ -62,6 +63,7 @@ beforeAll(async () => {
       email: "carol@example.com",
       name: "Carol Agency",
       qr_payload: "AGENCY-PAYLOAD-001",
+      public_ref: generateToken(),
     },
   });
 });
@@ -143,6 +145,51 @@ describe("sendTicketEmails", () => {
     });
     expect(rows).toHaveLength(1);
     expect(exported.length).toBeLessThanOrEqual(1);
+  });
+
+  it("skips agency attendee missing public_ref without aborting the batch", async () => {
+    await prisma.emailDelivery.deleteMany({
+      where: { attendee_id: { in: ["att-no-ref", "att-batch-ok"] } },
+    });
+    await prisma.attendee.deleteMany({ where: { id: { in: ["att-no-ref", "att-batch-ok"] } } });
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-no-ref",
+          event_id: EVENT_ID,
+          email: "no-ref@example.com",
+          name: "No Ref Agency",
+          qr_payload: "AGENCY-MISSING-REF",
+        },
+        {
+          id: "att-batch-ok",
+          event_id: EVENT_ID,
+          email: "batch-ok@example.com",
+          name: "Batch OK",
+        },
+      ],
+    });
+
+    exported.length = 0;
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { attendeeIds: ["att-no-ref", "att-batch-ok"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    expect(result.skipped).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          attendeeId: "att-no-ref",
+          reason: expect.stringContaining("missing public_ref"),
+        }),
+      ]),
+    );
+    expect(result.sent).toBe(1);
+    expect(exported).toHaveLength(1);
+    expect(exported[0]?.message.to).toBe("batch-ok@example.com");
   });
 
   it("marks deliveries failed when sendBatch throws", async () => {
@@ -265,6 +312,7 @@ describe("retryDelivery", () => {
         email: "noresult@example.com",
         name: "No Result",
         qr_payload: "AGENCY-NORESULT",
+        public_ref: generateToken(),
       },
     });
 

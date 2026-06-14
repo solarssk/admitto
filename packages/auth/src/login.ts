@@ -10,6 +10,8 @@ export interface LoginInput {
   password: string;
   ip?: string;
   userAgent?: string;
+  /** Optional label stored on the session (e.g. entrance tablet name). */
+  deviceLabel?: string;
 }
 
 /** Discriminated result: raw session token on success; uniform failure reasons for callers. */
@@ -46,6 +48,7 @@ export async function login(
     userId: user.id,
     ip: input.ip,
     userAgent: input.userAgent,
+    deviceLabel: input.deviceLabel,
   });
 
   logLoginSuccess(audit ?? { email, ip: input.ip, userAgent: input.userAgent });

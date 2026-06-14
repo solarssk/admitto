@@ -9,9 +9,20 @@ import { createRateLimitStore } from "../src/rate-limit/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..", "..", "..", "packages", "db");
-const CHECKIN_TOKEN = "test-checkin-token";
+const CHECKIN_TOKEN = "test-checkin-token-for-vitest-32chars!";
 const EVENT_ID = "event-web-auth";
 const ORG_ID = "org_default";
+
+/** Hono `app.request()` uses `http://localhost` as the request URL. */
+const sameOrigin = { Origin: "http://localhost" };
+
+function jsonLoginBody(email: string, password: string): string {
+  return JSON.stringify({ email, password });
+}
+
+function loginHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return { "Content-Type": "application/json", ...sameOrigin, ...extra };
+}
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -58,8 +69,10 @@ beforeAll(async () => {
   app = createApp({
     prisma,
     checkinToken: CHECKIN_TOKEN,
+    allowCheckinBearer: false,
     baseUrl: "https://tickets.example.com",
     rateLimitStore: createRateLimitStore(),
+    skipCheckinBootValidation: true,
   });
 });
 
@@ -85,8 +98,8 @@ describe("POST /api/auth/login", () => {
   it("returns session cookie on success", async () => {
     const res = await app.request("/api/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "operator@example.com", password: "login-pass-123" }),
+      headers: loginHeaders(),
+      body: jsonLoginBody("operator@example.com", "login-pass-123"),
     });
     expect(res.status).toBe(200);
     const cookie = sessionCookie(res);
@@ -97,17 +110,59 @@ describe("POST /api/auth/login", () => {
   it("returns uniform 401 for wrong email and wrong password", async () => {
     const wrongEmail = await app.request("/api/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "nobody@example.com", password: "login-pass-123" }),
+      headers: loginHeaders(),
+      body: jsonLoginBody("nobody@example.com", "login-pass-123"),
     });
     const wrongPass = await app.request("/api/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "operator@example.com", password: "wrong" }),
+      headers: loginHeaders(),
+      body: jsonLoginBody("operator@example.com", "wrong"),
     });
     expect(wrongEmail.status).toBe(401);
     expect(wrongPass.status).toBe(401);
     expect(await wrongEmail.json()).toEqual(await wrongPass.json());
+  });
+
+  it("rejects cross-site POST without same-origin headers", async () => {
+    const res = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "https://evil.example",
+      },
+      body: jsonLoginBody("operator@example.com", "login-pass-123"),
+    });
+    expect(res.status).toBe(403);
+    expect(sessionCookie(res)).toBeUndefined();
+  });
+
+  it("cross-origin POST 403 does not consume IP login rate limit", async () => {
+    const limitedApp = createApp({
+      prisma,
+      checkinToken: CHECKIN_TOKEN,
+      allowCheckinBearer: false,
+      baseUrl: "https://tickets.example.com",
+      rateLimitStore: createRateLimitStore(),
+      skipCheckinBootValidation: true,
+    });
+    const evil = { Origin: "https://evil.example" };
+    const body = jsonLoginBody("operator@example.com", "login-pass-123");
+
+    for (let i = 0; i < 10; i++) {
+      const res = await limitedApp.request("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...evil },
+        body,
+      });
+      expect(res.status).toBe(403);
+    }
+
+    const ok = await limitedApp.request("/api/auth/login", {
+      method: "POST",
+      headers: loginHeaders(),
+      body,
+    });
+    expect(ok.status).toBe(200);
   });
 });
 
@@ -115,8 +170,8 @@ describe("GET /api/auth/me", () => {
   it("returns user and assignments with session", async () => {
     const loginRes = await app.request("/api/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "operator@example.com", password: "login-pass-123" }),
+      headers: loginHeaders(),
+      body: jsonLoginBody("operator@example.com", "login-pass-123"),
     });
     const cookie = sessionCookie(loginRes);
     const res = await app.request("/api/auth/me", {
@@ -138,13 +193,13 @@ describe("POST /api/auth/logout", () => {
   it("revokes session and clears cookie", async () => {
     const loginRes = await app.request("/api/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "operator@example.com", password: "login-pass-123" }),
+      headers: loginHeaders(),
+      body: jsonLoginBody("operator@example.com", "login-pass-123"),
     });
     const cookie = sessionCookie(loginRes)!;
     const logoutRes = await app.request("/api/auth/logout", {
       method: "POST",
-      headers: { Cookie: cookie },
+      headers: { Cookie: cookie, ...sameOrigin },
     });
     expect(logoutRes.status).toBe(200);
     const meRes = await app.request("/api/auth/me", { headers: { Cookie: cookie } });
@@ -156,9 +211,10 @@ describe("check-in session auth E2E", () => {
   it("login → cookie → history without Bearer", async () => {
     const loginRes = await app.request("/api/auth/login", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "operator@example.com", password: "login-pass-123" }),
+      headers: loginHeaders(),
+      body: jsonLoginBody("operator@example.com", "login-pass-123"),
     });
+    expect(loginRes.status).toBe(200);
     const cookie = sessionCookie(loginRes)!;
     const res = await app.request(`/api/checkin/history?eventId=${EVENT_ID}`, {
       headers: { Cookie: cookie },

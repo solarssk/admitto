@@ -3,7 +3,9 @@ import { generateToken, hashToken } from "@admitto/tickets";
 import { SESSION_LAST_SEEN_THROTTLE_MS } from "./constants.js";
 import { resolveSessionTtlMs } from "./session-ttl.js";
 
-/** Optional client metadata stored on a new `Session` row. */
+/** Max length for optional device label on sessions (matches login form). */
+const DEVICE_LABEL_MAX_LEN = 120;
+
 export interface CreateSessionInput {
   userId: string;
   ip?: string;
@@ -41,7 +43,7 @@ export async function createSession(
       token_hash,
       ip: input.ip ?? null,
       user_agent: input.userAgent ?? null,
-      device_label: input.deviceLabel ?? null,
+      device_label: input.deviceLabel ? input.deviceLabel.slice(0, DEVICE_LABEL_MAX_LEN) : null,
       last_seen_at: now,
       expires_at,
     },

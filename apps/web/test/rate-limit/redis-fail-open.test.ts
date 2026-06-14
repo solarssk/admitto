@@ -85,4 +85,12 @@ describe("createRateLimitStore", () => {
     const store = createRateLimitStore({ REDIS_URL: "redis://localhost:6379" });
     expect(store).toBeInstanceOf(RedisRateLimitStore);
   });
+
+  it("uses in-memory in test env even when REDIS_URL is set", () => {
+    const store = createRateLimitStore({
+      REDIS_URL: "redis://localhost:6379",
+      NODE_ENV: "test",
+    });
+    expect(store).toBeInstanceOf(InMemoryRateLimitStore);
+  });
 });

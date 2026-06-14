@@ -3,6 +3,7 @@ import type { Context, Next } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { getCookie } from "hono/cookie";
 import { SESSION_COOKIE_NAME, canPerformCheckIn, validateSession } from "@admitto/auth";
+import { rejectCrossSitePost } from "./auth/same-origin-post.js";
 
 /** Returns true when Authorization Bearer matches operatorToken (constant-time). */
 export function isValidCheckinBearer(c: Context, operatorToken: string): boolean {
@@ -17,42 +18,29 @@ export function isValidCheckinBearer(c: Context, operatorToken: string): boolean
   return timingSafeEqual(tokenBuf, providedBuf);
 }
 
-/**
- * ADR 0003 configured guard: null operatorToken → 503 for entire /api/checkin/* namespace.
- */
-export function createCheckinConfiguredGuard(operatorToken: string | null) {
-  return async (c: Context, next: Next): Promise<Response | void> => {
-    if (!operatorToken) {
-      return c.json({ error: "check-in not configured" }, 503);
-    }
-    await next();
-  };
+/** Check-in gate configuration for session + optional emergency Bearer path. */
+export interface CheckinGateConfig {
+  allowBearer: boolean;
+  operatorToken: string | null;
 }
 
-/** Dependencies for session-or-bearer check-in gate (ADR 0003 + ADR 0011). */
-export interface CheckinDualAuthDeps {
+/** Dependencies for session check-in gate (ADR 0011). */
+export interface CheckinSessionAuthDeps {
   prisma: PrismaClient;
-  /** Shared operator secret (ADR 0003 transitional path). */
-  operatorToken: string;
+  config: CheckinGateConfig;
 }
 
 /**
- * Per-route auth: valid Bearer OR valid session with canPerformCheckIn for eventId.
- * Bearer does not require eventId. Session path requires non-empty eventId string.
+ * Request-time pre-auth: valid emergency Bearer OR valid session cookie.
+ * Does not parse body; does not check event scope.
  */
-export function createCheckinDualAuth(
-  deps: CheckinDualAuthDeps,
-  getEventId: (c: Context) => string | undefined,
-) {
+export function createCheckinPreAuth(deps: CheckinSessionAuthDeps) {
   return async (c: Context, next: Next): Promise<Response | void> => {
-    if (isValidCheckinBearer(c, deps.operatorToken)) {
+    const { allowBearer, operatorToken } = deps.config;
+
+    if (allowBearer && operatorToken && isValidCheckinBearer(c, operatorToken)) {
       c.set("checkinAuth", "bearer");
       return next();
-    }
-
-    const eventId = getEventId(c);
-    if (!eventId) {
-      return c.json({ error: "eventId required" }, 400);
     }
 
     const rawToken = getCookie(c, SESSION_COOKIE_NAME);
@@ -65,31 +53,51 @@ export function createCheckinDualAuth(
       return c.json({ error: "unauthorized" }, 401);
     }
 
-    const allowed = await canPerformCheckIn(deps.prisma, validated.userId, eventId);
-    if (!allowed) {
-      return c.json({ error: "unauthorized" }, 401);
-    }
-
     c.set("checkinAuth", "session");
     c.set("operatorUserId", validated.userId);
     await next();
   };
 }
 
-/**
- * Legacy bearer-only gate (configured guard + bearer). Used when session deps are not wired.
- */
-export function createCheckinGate(operatorToken: string | null) {
+/** CSRF guard for session-authenticated mutating check-in requests (Bearer path skips). */
+export function createCheckinSessionCsrfGuard() {
   return async (c: Context, next: Next): Promise<Response | void> => {
-    if (!operatorToken) {
-      return c.json({ error: "check-in not configured" }, 503);
+    if (c.get("checkinAuth") === "bearer") {
+      return next();
+    }
+    const blocked = rejectCrossSitePost(c, { format: "json" });
+    if (blocked) return blocked;
+    await next();
+  };
+}
+
+/**
+ * Event-scoped RBAC after preAuth. Bearer path skips RBAC; session requires eventId + canPerformCheckIn.
+ */
+export function createCheckinEventScope(
+  deps: CheckinSessionAuthDeps,
+  getEventId: (c: Context) => string | undefined,
+) {
+  return async (c: Context, next: Next): Promise<Response | void> => {
+    if (c.get("checkinAuth") === "bearer") {
+      return next();
     }
 
-    if (!isValidCheckinBearer(c, operatorToken)) {
+    const eventId = getEventId(c);
+    if (!eventId) {
+      return c.json({ error: "eventId required" }, 400);
+    }
+
+    const userId = c.get("operatorUserId") as string | undefined;
+    if (!userId) {
       return c.json({ error: "unauthorized" }, 401);
     }
 
-    c.set("checkinAuth", "bearer");
+    const allowed = await canPerformCheckIn(deps.prisma, userId, eventId);
+    if (!allowed) {
+      return c.json({ error: "unauthorized" }, 401);
+    }
+
     await next();
   };
 }

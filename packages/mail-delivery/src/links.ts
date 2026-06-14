@@ -2,16 +2,20 @@ import type { PrismaClient } from "@prisma/client";
 import { decryptFromString } from "@admitto/crypto";
 import { validateHttpUrl } from "@admitto/mail-templates";
 
+/** Attendee fields required to build mail ticket/QR links. */
 export interface AttendeeLinkInput {
   id: string;
+  public_ref: string | null;
   qr_payload: string | null;
   external_uuid: string | null;
 }
 
+/** Event fields required to build mail ticket/QR links. */
 export interface EventLinkInput {
   slug: string;
 }
 
+/** Resolved absolute ticket and QR image URLs for template materialization. */
 export interface AttendeeMailLinks {
   ticket_url: string;
   qr_image_url: string;
@@ -31,7 +35,10 @@ function validatedAgencyTicketUrl(payload: string): string | null {
   }
 }
 
-/** Build ticket_url and qr_image_url for mail template vars. */
+/**
+ * Build ticket_url and qr_image_url for mail template vars.
+ * @throws when agency attendee has no `public_ref` or internal attendee has no plaintext token
+ */
 export function buildAttendeeMailLinks(
   attendee: AttendeeLinkInput,
   event: EventLinkInput,
@@ -42,9 +49,13 @@ export function buildAttendeeMailLinks(
   const agency = agencyPayload(attendee);
 
   if (agency !== null) {
-    const qr_image_url = `${root}/q/${event.slug}/a/${attendee.id}.png`;
+    if (!attendee.public_ref) {
+      throw new Error(`Agency attendee ${attendee.id} missing public_ref for mail links`);
+    }
+    const ref = attendee.public_ref;
+    const qr_image_url = `${root}/q/${event.slug}/a/${ref}.png`;
     const agencyUrl = validatedAgencyTicketUrl(agency);
-    const ticket_url = agencyUrl ?? `${root}/t/${event.slug}/a/${attendee.id}`;
+    const ticket_url = agencyUrl ?? `${root}/t/${event.slug}/a/${ref}`;
     return { ticket_url, qr_image_url };
   }
 
