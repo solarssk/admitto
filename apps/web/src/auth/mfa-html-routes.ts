@@ -38,6 +38,7 @@ async function parseForm(c: Context): Promise<Record<string, string>> {
 
 const MFA_ERROR = "Invalid code. Try again.";
 
+/** Build enrollment HTML from current DB enrollment state (resume or fresh). */
 function renderEnrollFromState(
   enrollment: Awaited<ReturnType<typeof getOrStartTotpEnrollment>>,
   error?: string,

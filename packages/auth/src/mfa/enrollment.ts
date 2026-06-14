@@ -12,7 +12,9 @@ import {
 import { generateBackupRecoveryCodes } from "./backup-recovery.js";
 
 export interface StartTotpEnrollmentResult {
+  /** otpauth:// URI for authenticator app setup (shown once). */
   otpauthUri: string;
+  /** Plaintext backup codes (shown once at fresh enrollment). */
   backupCodes: string[];
   /** True when resuming in-progress enrollment (backup codes were already shown). */
   backupCodesAlreadyShown?: boolean;

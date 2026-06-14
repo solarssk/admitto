@@ -1,9 +1,11 @@
 import { getLoginPageSecurityHeaders } from "./login-page.js";
 
+/** Security headers for server-rendered MFA pages (same policy as login). */
 export function getMfaPageSecurityHeaders(): Record<string, string> {
   return getLoginPageSecurityHeaders();
 }
 
+/** Render MFA verification form HTML (`/mfa/verify`). */
 export function renderMfaVerifyForm(error?: string): string {
   const err = error ? `<p class="err">${escapeHtml(error)}</p>` : "";
   return `<!DOCTYPE html>
@@ -35,6 +37,10 @@ export function renderMfaVerifyForm(error?: string): string {
 </html>`;
 }
 
+/**
+ * Render TOTP enrollment page (`/mfa/enroll`) with otpauth URI and one-time backup codes.
+ * When `backupCodesAlreadyShown` is true, backup codes are omitted (resume flow).
+ */
 export function renderMfaEnrollPage(
   otpauthUri: string,
   backupCodes: string[],

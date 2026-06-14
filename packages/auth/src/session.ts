@@ -133,7 +133,7 @@ export async function validatePartialSession(
   return lookupSessionByToken(prisma, rawToken);
 }
 
-/** Promote partial session to full after successful MFA. Returns false if session not eligible. */
+/** Promote partial session to full after successful MFA; false if session ineligible or already full. */
 export async function promoteSessionToFull(
   prisma: PrismaClient | Prisma.TransactionClient,
   sessionId: string,

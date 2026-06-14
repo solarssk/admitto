@@ -60,6 +60,7 @@ export function clearSessionCookie(c: Context): void {
   deleteCookie(c, SESSION_COOKIE_NAME, { path: "/" });
 }
 
+/** Clear trusted-device cookie (call on logout). */
 export function clearTrustedDeviceCookie(c: Context): void {
   deleteCookie(c, TRUSTED_DEVICE_COOKIE_NAME, { path: "/" });
 }

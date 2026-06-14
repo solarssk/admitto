@@ -32,6 +32,7 @@ export async function checkMfaVerifyRateLimit(
   return ipResult.allowed;
 }
 
+/** Client IP for MFA rate limiting (honours TRUST_PROXY). */
 export function resolveMfaClientIp(c: Context): string {
   return resolveClientIp(c);
 }

@@ -46,6 +46,7 @@ export async function getSetting<T = unknown>(
   return SETTING_DEFAULTS[key] as T;
 }
 
+/** Admin/superadmin session TTL in ms from SystemSettings (`session_ttl`). */
 export async function getSessionTtlAdminMs(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<number> {
@@ -53,6 +54,7 @@ export async function getSessionTtlAdminMs(
   return typeof v === "number" && v > 0 ? v : (SETTING_DEFAULTS["session_ttl"] as number);
 }
 
+/** Operator session TTL in ms from SystemSettings (`operator_session_ttl`). */
 export async function getSessionTtlOperatorMs(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<number> {
@@ -60,6 +62,7 @@ export async function getSessionTtlOperatorMs(
   return typeof v === "number" && v > 0 ? v : (SETTING_DEFAULTS["operator_session_ttl"] as number);
 }
 
+/** Trusted-device cookie lifetime in days from SystemSettings (`trusted_device_days`). */
 export async function getTrustedDeviceDays(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<number> {
@@ -67,6 +70,7 @@ export async function getTrustedDeviceDays(
   return typeof v === "number" && v > 0 ? v : (SETTING_DEFAULTS["trusted_device_days"] as number);
 }
 
+/** Role names that require MFA (from SystemSettings `mfa_required_roles`, JSON array or CSV). */
 export async function getMfaRequiredRoles(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<string[]> {

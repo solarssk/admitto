@@ -100,6 +100,7 @@ export async function login(
   };
 }
 
+/** Input for `completeMfa()` after password login with partial session. */
 export interface CompleteMfaInput {
   userId: string;
   sessionId: string;
@@ -110,6 +111,7 @@ export interface CompleteMfaInput {
   deviceLabel?: string;
 }
 
+/** Result of MFA verification; includes trusted-device token when remember-device is set. */
 export interface CompleteMfaResult {
   ok: boolean;
   trustedDeviceRawToken?: string;
@@ -117,7 +119,7 @@ export interface CompleteMfaResult {
 
 /**
  * Complete MFA step: TOTP or backup/emergency recovery code.
- * Promotes session to full; optionally creates trusted device.
+ * Promotes session to full when code is valid and session is still eligible.
  */
 export async function completeMfa(
   prisma: PrismaClient | Prisma.TransactionClient,
