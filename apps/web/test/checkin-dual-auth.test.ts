@@ -7,6 +7,7 @@ import { PrismaClient } from "@prisma/client";
 import { hashPassword, createSession } from "@admitto/auth";
 import {
   createCheckinPreAuth,
+  createCheckinSessionCsrfGuard,
   createCheckinEventScope,
   parseScanBodyMiddleware,
   eventIdFromScanBody,
@@ -55,6 +56,7 @@ function buildScanApp(allowBearer = false) {
   app.post(
     "/api/checkin/scan",
     createCheckinPreAuth(deps),
+    createCheckinSessionCsrfGuard(),
     parseScanBodyMiddleware,
     createCheckinEventScope(deps, eventIdFromScanBody),
     (c) => c.json({ ok: true }, 200),
@@ -217,10 +219,21 @@ describe("Bearer emergency path", () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it("Bearer scan without Origin header → 200", async () => {
+    const bearerScanApp = buildScanApp(true);
+    const res = await bearerScanApp.request("/api/checkin/scan", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId: EVENT_A, scanned: "qr" }),
+    });
+    expect(res.status).toBe(200);
+  });
 });
 
 describe("scan middleware order", () => {
   const scanApp = () => buildScanApp(false);
+  const sameOrigin = { Origin: "http://localhost" };
 
   it("unauthenticated invalid JSON → 401 not 400", async () => {
     const res = await scanApp().request("/api/checkin/scan", {
@@ -244,7 +257,7 @@ describe("scan middleware order", () => {
     const cookie = await sessionCookieFor(USER_OP_A);
     const res = await scanApp().request("/api/checkin/scan", {
       method: "POST",
-      headers: { Cookie: cookie, "Content-Type": "application/json" },
+      headers: { Cookie: cookie, "Content-Type": "application/json", ...sameOrigin },
       body: "not-json",
     });
     expect(res.status).toBe(400);
@@ -254,10 +267,25 @@ describe("scan middleware order", () => {
     const cookie = await sessionCookieFor(USER_OP_A);
     const res = await scanApp().request("/api/checkin/scan", {
       method: "POST",
-      headers: { Cookie: cookie, "Content-Type": "application/json" },
+      headers: { Cookie: cookie, "Content-Type": "application/json", ...sameOrigin },
       body: JSON.stringify({ eventId: EVENT_A, scanned: "qr" }),
     });
     expect(res.status).toBe(200);
+  });
+
+  it("rejects cross-origin session scan before body parse", async () => {
+    const cookie = await sessionCookieFor(USER_OP_A);
+    const res = await scanApp().request("/api/checkin/scan", {
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        "Content-Type": "application/json",
+        Origin: "https://evil.example",
+      },
+      body: JSON.stringify({ eventId: EVENT_A, scanned: "qr" }),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "forbidden" });
   });
 });
 

@@ -92,4 +92,30 @@ describe("rejectCrossSitePost", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("returns 403 not 500 when forwarded headers are malformed", async () => {
+    const app = makeApp();
+    const res = await app.request("https://tickets.example.com/login", {
+      method: "POST",
+      headers: {
+        Origin: "https://evil.example",
+        "X-Forwarded-Proto": ":::bad",
+        "X-Forwarded-Host": "%%%",
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("falls back to request origin when forwarded headers are malformed", async () => {
+    const app = makeApp();
+    const res = await app.request("https://tickets.example.com/login", {
+      method: "POST",
+      headers: {
+        Origin: "https://tickets.example.com",
+        "X-Forwarded-Proto": ":::bad",
+        "X-Forwarded-Host": "%%%",
+      },
+    });
+    expect(res.status).toBe(200);
+  });
 });

@@ -17,7 +17,11 @@ export function resolveRequestOrigin(c: Context): string {
     firstForwardedValue(c.req.header("x-forwarded-proto")) ??
     requestUrl.protocol.replace(/:$/, "");
   const host = firstForwardedValue(c.req.header("x-forwarded-host")) ?? requestUrl.host;
-  return new URL(`${proto}://${host}`).origin;
+  try {
+    return new URL(`${proto}://${host}`).origin;
+  } catch {
+    return requestUrl.origin;
+  }
 }
 
 function headerOriginMatches(expectedOrigin: string, headerValue: string): boolean {
@@ -29,18 +33,30 @@ function headerOriginMatches(expectedOrigin: string, headerValue: string): boole
 }
 
 /** Reject cross-site POST when `Origin`/`Referer` do not match the request origin. */
-export function rejectCrossSitePost(c: Context): Response | null {
-  const expectedOrigin = resolveRequestOrigin(c);
+export function rejectCrossSitePost(
+  c: Context,
+  options: { format?: "text" | "json" } = {},
+): Response | null {
+  const format = options.format ?? "text";
+  const forbidden = () =>
+    format === "json" ? c.json({ error: "forbidden" }, 403) : c.text("Forbidden", 403);
+
+  let expectedOrigin: string;
+  try {
+    expectedOrigin = resolveRequestOrigin(c);
+  } catch {
+    return forbidden();
+  }
 
   const origin = c.req.header("origin");
   if (origin) {
-    return headerOriginMatches(expectedOrigin, origin) ? null : c.text("Forbidden", 403);
+    return headerOriginMatches(expectedOrigin, origin) ? null : forbidden();
   }
 
   const referer = c.req.header("referer");
   if (referer) {
-    return headerOriginMatches(expectedOrigin, referer) ? null : c.text("Forbidden", 403);
+    return headerOriginMatches(expectedOrigin, referer) ? null : forbidden();
   }
 
-  return c.text("Forbidden", 403);
+  return forbidden();
 }

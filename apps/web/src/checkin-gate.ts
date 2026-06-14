@@ -3,6 +3,7 @@ import type { Context, Next } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { getCookie } from "hono/cookie";
 import { SESSION_COOKIE_NAME, canPerformCheckIn, validateSession } from "@admitto/auth";
+import { rejectCrossSitePost } from "./auth/same-origin-post.js";
 
 /** Returns true when Authorization Bearer matches operatorToken (constant-time). */
 export function isValidCheckinBearer(c: Context, operatorToken: string): boolean {
@@ -54,6 +55,18 @@ export function createCheckinPreAuth(deps: CheckinSessionAuthDeps) {
 
     c.set("checkinAuth", "session");
     c.set("operatorUserId", validated.userId);
+    await next();
+  };
+}
+
+/** CSRF guard for session-authenticated mutating check-in requests (Bearer path skips). */
+export function createCheckinSessionCsrfGuard() {
+  return async (c: Context, next: Next): Promise<Response | void> => {
+    if (c.get("checkinAuth") === "bearer") {
+      return next();
+    }
+    const blocked = rejectCrossSitePost(c, { format: "json" });
+    if (blocked) return blocked;
     await next();
   };
 }

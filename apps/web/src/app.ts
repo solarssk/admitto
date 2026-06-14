@@ -23,6 +23,7 @@ import {
 import { resolveBaseUrl, resolveCheckinToken, resolveAllowCheckinBearer, validateCheckinBootConfig } from "./config.js";
 import {
   createCheckinPreAuth,
+  createCheckinSessionCsrfGuard,
   createCheckinEventScope,
   parseScanBodyMiddleware,
   eventIdFromScanBody,
@@ -268,6 +269,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post(
     "/api/checkin/scan",
     createCheckinPreAuth(checkinAuthDeps),
+    createCheckinSessionCsrfGuard(),
     parseScanBodyMiddleware,
     createCheckinEventScope(checkinAuthDeps, eventIdFromScanBody),
     async (c) => {
