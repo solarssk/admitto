@@ -161,6 +161,7 @@ describe("check-in session auth E2E", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "operator@example.com", password: "login-pass-123" }),
     });
+    expect(loginRes.status).toBe(200);
     const cookie = sessionCookie(loginRes)!;
     const res = await app.request(`/api/checkin/history?eventId=${EVENT_ID}`, {
       headers: { Cookie: cookie },
