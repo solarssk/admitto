@@ -1,4 +1,4 @@
-import type { Context } from "hono";
+import type { Context, Next } from "hono";
 
 /** First comma-separated hop from a proxy-forwarded header value. */
 function firstForwardedValue(raw: string | undefined): string | undefined {
@@ -59,4 +59,13 @@ export function rejectCrossSitePost(
   }
 
   return forbidden();
+}
+
+/** Hono middleware: reject cross-site POST before rate limits or body parsing. */
+export function createCrossSitePostGuard(options: { format?: "text" | "json" } = {}) {
+  return async (c: Context, next: Next): Promise<Response | void> => {
+    const blocked = rejectCrossSitePost(c, options);
+    if (blocked) return blocked;
+    await next();
+  };
 }

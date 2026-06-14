@@ -183,6 +183,31 @@ describe("POST /login", () => {
     expect(res.status).toBe(403);
     expect(sessionCookie(res)).toBeUndefined();
   });
+
+  it("cross-origin POST 403 does not consume IP login rate limit", async () => {
+    const evil = { Origin: "https://evil.example" };
+    const body = new URLSearchParams({
+      email: "operator@example.com",
+      password: "op-pass-123",
+    }).toString();
+
+    for (let i = 0; i < 10; i++) {
+      const res = await app.request("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", ...evil },
+        body,
+      });
+      expect(res.status).toBe(403);
+    }
+
+    const ok = await app.request("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin },
+      body,
+    });
+    expect(ok.status).toBe(302);
+    expect(ok.headers.get("location")).toBe("/operator");
+  });
 });
 
 describe("GET /operator", () => {

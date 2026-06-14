@@ -38,6 +38,7 @@ import {
 } from "./rate-limit/index.js";
 import { createRequireSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
+import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
 import { handleLogin, handleLogout, handleMe } from "./auth/routes.js";
 import {
@@ -87,6 +88,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimit = createLoginRateLimitMiddleware(rateLimitStore);
+  const htmlPostCsrf = createCrossSitePostGuard({ format: "text" });
   const requireSession = createRequireSession(db);
   const requireSessionHtml = createRequireSession(db, { redirectTo: "/login" });
 
@@ -149,9 +151,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/auth/me", requireSession, (c) => handleMe(c, db));
 
   app.get("/login", (c) => handleGetLogin(c));
-  app.post("/login", loginRateLimit, (c) => handlePostLogin(c, db, rateLimitStore));
+  app.post("/login", htmlPostCsrf, loginRateLimit, (c) => handlePostLogin(c, db, rateLimitStore));
   app.get("/operator", requireSessionHtml, (c) => handleGetOperator(c, db));
-  app.post("/logout", (c) => handlePostLogout(c, db));
+  app.post("/logout", htmlPostCsrf, (c) => handlePostLogout(c, db));
 
   app.use("/t/*", publicRateLimit);
   app.use("/q/*", publicRateLimit);
