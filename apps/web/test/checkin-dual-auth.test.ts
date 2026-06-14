@@ -1,7 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { execSync } from "node:child_process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword, createSession } from "@admitto/auth";
@@ -15,9 +12,8 @@ import {
 } from "../src/checkin-gate.js";
 import { createCheckinAuthenticatedRateLimit } from "../src/checkin-rate-limit.js";
 import { InMemoryRateLimitStore, type RateLimitStore } from "../src/rate-limit/index.js";
+import { ensureTestSchemaOnce } from "./ensureTestSchema.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_ROOT = path.resolve(__dirname, "..", "..", "..", "packages", "db");
 const TOKEN = "test-operator-token-abc123";
 const ORG_A = "org-dual-a";
 const ORG_B = "org-dual-b";
@@ -28,6 +24,68 @@ const USER_ADMIN_A = "user-dual-admin-a";
 const USER_OP_A = "user-dual-op-a";
 
 let prisma: PrismaClient;
+
+async function seedDualAuthFixture(client: PrismaClient): Promise<void> {
+  const userIds = [USER_SUPER, USER_ADMIN_A, USER_OP_A];
+  const eventIds = [EVENT_A, EVENT_B];
+  const orgIds = [ORG_A, ORG_B];
+
+  await client.roleAssignment.deleteMany({
+    where: {
+      OR: [
+        { user_id: { in: userIds } },
+        { scope_id: { in: [...eventIds, ...orgIds] } },
+      ],
+    },
+  });
+  await client.session.deleteMany({ where: { user_id: { in: userIds } } });
+  await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
+  await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
+  await client.user.deleteMany({ where: { id: { in: userIds } } });
+  await client.event.deleteMany({ where: { id: { in: eventIds } } });
+  await client.organization.deleteMany({ where: { id: { in: orgIds } } });
+
+  const password_hash = await hashPassword("x");
+
+  await client.organization.createMany({
+    data: [
+      { id: ORG_A, name: "A", slug: "dual-a" },
+      { id: ORG_B, name: "B", slug: "dual-b" },
+    ],
+  });
+  await client.event.createMany({
+    data: [
+      {
+        id: EVENT_A,
+        title: "A",
+        slug: "ev-dual-a",
+        date: new Date("2026-09-01"),
+        organization_id: ORG_A,
+      },
+      {
+        id: EVENT_B,
+        title: "B",
+        slug: "ev-dual-b",
+        date: new Date("2026-09-01"),
+        organization_id: ORG_B,
+      },
+    ],
+  });
+  await client.user.createMany({
+    data: [
+      { id: USER_SUPER, email: "s@example.com", password_hash },
+      { id: USER_ADMIN_A, email: "a@example.com", password_hash },
+      { id: USER_OP_A, email: "o@example.com", password_hash },
+    ],
+  });
+  await client.roleAssignment.createMany({
+    data: [
+      { user_id: USER_SUPER, role: "superadmin", scope_type: "instance", scope_id: null },
+      { user_id: USER_ADMIN_A, role: "admin", scope_type: "organization", scope_id: ORG_A },
+      { user_id: USER_OP_A, role: "operator", scope_type: "event", scope_id: EVENT_A },
+    ],
+  });
+}
 
 function gateDeps(allowBearer: boolean) {
   return {
@@ -79,53 +137,9 @@ function buildScanApp(allowBearer = false, rateLimitStore?: RateLimitStore) {
 }
 
 beforeAll(async () => {
-  execSync("npx prisma db push --force-reset --accept-data-loss", {
-    cwd: DB_ROOT,
-    env: { ...process.env },
-    stdio: "pipe",
-  });
-
+  await ensureTestSchemaOnce();
   prisma = new PrismaClient();
-  const password_hash = await hashPassword("x");
-
-  await prisma.organization.createMany({
-    data: [
-      { id: ORG_A, name: "A", slug: "dual-a" },
-      { id: ORG_B, name: "B", slug: "dual-b" },
-    ],
-  });
-  await prisma.event.createMany({
-    data: [
-      {
-        id: EVENT_A,
-        title: "A",
-        slug: "ev-dual-a",
-        date: new Date("2026-09-01"),
-        organization_id: ORG_A,
-      },
-      {
-        id: EVENT_B,
-        title: "B",
-        slug: "ev-dual-b",
-        date: new Date("2026-09-01"),
-        organization_id: ORG_B,
-      },
-    ],
-  });
-  await prisma.user.createMany({
-    data: [
-      { id: USER_SUPER, email: "s@example.com", password_hash },
-      { id: USER_ADMIN_A, email: "a@example.com", password_hash },
-      { id: USER_OP_A, email: "o@example.com", password_hash },
-    ],
-  });
-  await prisma.roleAssignment.createMany({
-    data: [
-      { user_id: USER_SUPER, role: "superadmin", scope_type: "instance", scope_id: null },
-      { user_id: USER_ADMIN_A, role: "admin", scope_type: "organization", scope_id: ORG_A },
-      { user_id: USER_OP_A, role: "operator", scope_type: "event", scope_id: EVENT_A },
-    ],
-  });
+  await seedDualAuthFixture(prisma);
 });
 
 afterAll(async () => {
