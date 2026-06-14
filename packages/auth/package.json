@@ -27,8 +27,8 @@
     "@admitto/crypto": "*",
     "@admitto/db": "*",
     "@admitto/tickets": "*",
-    "@otplib/v12-adapter": "^13.4.1",
-    "argon2": "^0.41.1"
+    "argon2": "^0.41.1",
+    "otplib": "^13.4.1"
   },
   "devDependencies": {
     "@prisma/client": "^5.17.0",
