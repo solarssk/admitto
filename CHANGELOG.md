@@ -51,6 +51,16 @@ enrollment and verification complete; break-glass CLI commands cover lost authen
   `SystemSettings` seed; active elevated sessions re-staged to `mfa_pending` / `enrollment_required`
   with `expires_at` clamped (`LEAST`, max 15 minutes).
 
+### Dependencies
+
+Bundled Dependabot updates (closes #40–#45):
+
+- **`@admitto/web`:** `hono` 4.12.25, `@hono/node-server` 2.0.4, `redis` 6.0.0.
+- **`@admitto/mailer` / `@admitto/import`:** `zod` 4.4.3 (no code changes — `z.string().email()` unchanged).
+- **Root:** `@typescript-eslint/parser` 8.61.0.
+- **CI:** `github/codeql-action` → `8aad20d1` in `codeql.yml` and `semgrep.yml`.
+- **Adapter:** `RedisRateLimitStore` uses `withAbortSignal()` + two-arg `eval()` for redis v6.
+
 ### Deploy notes
 
 - Run `npm run db:migrate` on deploy (new migration required).
