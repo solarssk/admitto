@@ -266,8 +266,8 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post(
     "/api/checkin/scan",
     createCheckinPreAuth(checkinAuthDeps),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
     createCheckinSessionCsrfGuard(),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
     parseScanBodyMiddleware,
     createCheckinEventScope(checkinAuthDeps, eventIdFromScanBody),
     async (c) => {

@@ -34,7 +34,7 @@ npm run db:seed
 | Script | Description |
 |---|---|
 | `db:generate` | Generates the Prisma client from `prisma/schema.prisma` |
-| `db:migrate` | Applies pending migrations (`prisma migrate deploy`) then idempotent agency `public_ref` backfill — does NOT create new migrations |
+| `db:migrate` | Applies pending migrations (`prisma migrate deploy`) then idempotent agency `public_ref` backfill (no prebuild required) |
 | `db:migrate:dev` | Creates a new migration from schema changes during development (`prisma migrate dev`) |
 | `db:migrate:status` | Shows which migrations are applied and whether the schema has local drift |
 | `db:backfill-public-ref` | Idempotent TS backfill for agency rows missing `public_ref` (also runs at end of `db:migrate`) |

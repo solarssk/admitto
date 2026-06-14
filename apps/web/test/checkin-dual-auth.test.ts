@@ -14,6 +14,8 @@ import {
   eventIdFromHistoryQuery,
   createCheckinGate,
 } from "../src/checkin-gate.js";
+import { createCheckinAuthenticatedRateLimit } from "../src/checkin-rate-limit.js";
+import { InMemoryRateLimitStore, type RateLimitStore } from "../src/rate-limit/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..", "..", "..", "packages", "db");
@@ -50,17 +52,30 @@ function buildSessionApp(allowBearer = false) {
   return app;
 }
 
-function buildScanApp(allowBearer = false) {
+function buildScanApp(allowBearer = false, rateLimitStore?: RateLimitStore) {
   const deps = gateDeps(allowBearer);
   const app = new Hono();
-  app.post(
-    "/api/checkin/scan",
-    createCheckinPreAuth(deps),
-    createCheckinSessionCsrfGuard(),
-    parseScanBodyMiddleware,
-    createCheckinEventScope(deps, eventIdFromScanBody),
-    (c) => c.json({ ok: true }, 200),
-  );
+  const handler = (c: { json: (body: unknown, status: number) => Response }) => c.json({ ok: true }, 200);
+  if (rateLimitStore) {
+    app.post(
+      "/api/checkin/scan",
+      createCheckinPreAuth(deps),
+      createCheckinSessionCsrfGuard(),
+      createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
+      parseScanBodyMiddleware,
+      createCheckinEventScope(deps, eventIdFromScanBody),
+      handler,
+    );
+  } else {
+    app.post(
+      "/api/checkin/scan",
+      createCheckinPreAuth(deps),
+      createCheckinSessionCsrfGuard(),
+      parseScanBodyMiddleware,
+      createCheckinEventScope(deps, eventIdFromScanBody),
+      handler,
+    );
+  }
   return app;
 }
 
@@ -286,6 +301,29 @@ describe("scan middleware order", () => {
     });
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "forbidden" });
+  });
+
+  it("cross-origin session scan 403 does not consume per-user scan quota", async () => {
+    const store = new InMemoryRateLimitStore();
+    const scanApp = () => buildScanApp(false, store);
+    const cookie = await sessionCookieFor(USER_OP_A);
+    const crossOrigin = {
+      Cookie: cookie,
+      "Content-Type": "application/json",
+      Origin: "https://evil.example",
+    };
+    const body = JSON.stringify({ eventId: EVENT_A, scanned: "x" });
+
+    for (let i = 0; i < 120; i++) {
+      expect((await scanApp().request("/api/checkin/scan", { method: "POST", headers: crossOrigin, body })).status).toBe(403);
+    }
+
+    const ok = await scanApp().request("/api/checkin/scan", {
+      method: "POST",
+      headers: { Cookie: cookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ eventId: EVENT_A, scanned: "qr" }),
+    });
+    expect(ok.status).toBe(200);
   });
 });
 

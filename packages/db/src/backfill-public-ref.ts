@@ -1,5 +1,10 @@
 import type { PrismaClient } from "@prisma/client";
-import { generateToken } from "@admitto/crypto";
+import { randomBytes } from "node:crypto";
+
+/** Same format as `@admitto/crypto` `generateToken` (32 CSPRNG bytes, base64url). */
+function generatePublicRef(): string {
+  return randomBytes(32).toString("base64url");
+}
 
 /** Agency attendee = has qr_payload or external_uuid (Mode B). */
 export function isAgencyAttendee(row: {
@@ -30,7 +35,7 @@ export async function backfillAgencyPublicRefs(
       try {
         const { count } = await prisma.attendee.updateMany({
           where: { id: row.id, public_ref: null },
-          data: { public_ref: generateToken() },
+          data: { public_ref: generatePublicRef() },
         });
         if (count === 1) {
           updated += 1;
