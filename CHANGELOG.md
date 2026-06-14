@@ -50,6 +50,7 @@ enrollment and verification complete; break-glass CLI commands cover lost authen
 - Migration `20260614130000_2fa_totp`: `Session.stage`, `UserMfaMethod`, `TrustedDevice`,
   `SystemSettings` seed; active elevated sessions re-staged to `mfa_pending` / `enrollment_required`
   with `expires_at` clamped (`LEAST`, max 15 minutes).
+- Migration `20260614210000_totp_replay_protection`: `UserMfaMethod.last_totp_time_step` (nullable int).
 
 ### Dependencies
 
@@ -67,10 +68,12 @@ Bundled Dependabot updates (closes #40–#45):
   only when `TRUST_PROXY=true`, matching the existing rate-limit client-IP policy. Defense-in-depth when
   the app is reachable without a sanitizing reverse proxy.
 - **`resolveTrustProxy`:** shared env parser in `apps/web/src/config.ts` (CSRF + rate limits).
+- **TOTP replay protection:** `UserMfaMethod.last_totp_time_step` + otplib `afterTimeStep`; login MFA
+  verify rejects reuse of the same time-step code; conditional DB update guards parallel replay.
 
 ### Deploy notes
 
-- Run `npm run db:migrate` on deploy (new migration required).
+- Run `npm run db:migrate` on deploy (new migration required — includes `last_totp_time_step`).
 - Set `ENCRYPTION_KEY` (32-byte base64) in production — required for TOTP `secret_enc`.
 - Set `TRUST_PROXY=true` behind nginx/traefik (rate limits, audit IP, and CSRF origin); proxy must
   overwrite client-supplied `X-Forwarded-*` headers.
