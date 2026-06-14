@@ -153,8 +153,11 @@ describe("session", () => {
   it("rejects session when user is inactive", async () => {
     const { rawToken } = await createSession(prisma, { userId: USER_OP_A });
     await prisma.user.update({ where: { id: USER_OP_A }, data: { is_active: false } });
-    expect(await validateSession(prisma, rawToken)).toBeNull();
-    await prisma.user.update({ where: { id: USER_OP_A }, data: { is_active: true } });
+    try {
+      expect(await validateSession(prisma, rawToken)).toBeNull();
+    } finally {
+      await prisma.user.update({ where: { id: USER_OP_A }, data: { is_active: true } });
+    }
   });
 
   it("revokeAllOperatorSessionsForEvent only affects operators on event", async () => {

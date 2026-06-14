@@ -15,7 +15,7 @@ export function clientIpFromHeaders(
 }
 
 function trustProxyEnabled(): boolean {
-  const v = process.env["TRUST_PROXY"];
+  const v = process.env["TRUST_PROXY"]?.trim().toLowerCase();
   return v === "1" || v === "true";
 }
 
