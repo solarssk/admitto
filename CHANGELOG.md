@@ -12,7 +12,51 @@ first event-ready MVP.
 
 ## Unreleased
 
-- No unreleased changes recorded yet.
+### v0.3.2 — Operator login, session check-in, Mode B `public_ref` (in progress)
+
+This milestone closes the gap between auth core (`v0.3.1`) and event-day operator work: tablets log in
+with a real session, check-in is session-first with Bearer as break-glass only, and agency ticket URLs
+no longer expose internal attendee IDs.
+
+#### Operator login (HTML)
+
+- Added server-rendered operator auth: `GET/POST /login`, `GET /operator`, `POST /logout`.
+- `/operator` is a temporary post-login landing (events from RBAC, sign-out) — not the v0.4 admin UI.
+- Reused API session cookie (`httpOnly`, `SameSite=Lax`); optional `device_label` on login (capped server-side).
+- CSRF guards on HTML and JSON login/logout and on session-authenticated `POST /api/checkin/scan`.
+- Login rate limits (IP + per-email on failed attempts); HTML 429 returns plain text, API returns JSON.
+
+#### Check-in: session-first, Bearer break-glass
+
+- Default `ALLOW_CHECKIN_BEARER=false`; boot-time validation via `validateCheckinBootConfig()`.
+- Gate pipeline: `preAuth` → optional session CSRF (scan) → rate limit → body parse → `eventScope`.
+- Per-operator scan/history rate limits after authentication (not shared IP quota for authed traffic).
+- Removed legacy bearer-only gate helpers; tests use `preAuth` + `eventScope`.
+
+#### Mode B — `public_ref`
+
+- Added `Attendee.public_ref` (unique, non-guessable); agency import generates refs on create.
+- Public routes `/t/:slug/a/:ref` and `/q/:slug/a/:ref.png` resolve by `public_ref`, not `Attendee.id`.
+- Mail ticket links require `public_ref` for Mode B; per-attendee skip when missing.
+- Backfill on deploy: `npm run db:migrate` runs migrations plus agency `public_ref` backfill.
+
+#### Test infrastructure (ADR 0015)
+
+- Fixed CI failures from shared `admitto_web_test` DB (`P3005`, Prisma segfault on repeated
+  `force-reset`): fixture cleanup instead of per-file DB resets (#36).
+- Stabilized `@admitto/web` tests: Vitest **unit** (no Postgres) vs **integration** (one `globalSetup`
+  with `migrate deploy`), integration files under `test/integration/` (#37).
+- Added `scripts/test-web-like-ci.sh` for local CI parity; contract in `apps/web/test/README.md`.
+
+#### Deploy notes
+
+- Set `ALLOW_CHECKIN_BEARER=false` in production; keep `CHECKIN_OPERATOR_TOKEN` only for break-glass.
+- Run `npm run db:migrate` on deploy (includes `public_ref` backfill).
+- Legacy Mode B URLs using `Attendee.id` in the path no longer work; resend tickets if needed.
+
+#### Still planned in v0.3.2 lane
+
+- Prompt 16a: 2FA / TOTP (after test-infra stabilization merges).
 
 ## v0.3.1 - 2026-06-14
 
