@@ -60,7 +60,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.$disconnect();
+  await prisma?.$disconnect();
 });
 
 describe("Mode B public routes — public_ref", () => {

@@ -56,7 +56,10 @@ jobs:
       - name: Run database migrations and agency public_ref backfill
         run: npm run db:migrate -w @admitto/db
       - name: Migrate web integration test database
-        run: DATABASE_URL=postgresql://admitto:admitto@localhost:5432/admitto_web_test npm run db:migrate -w @admitto/db
+        env:
+          DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto_web_test
+        working-directory: packages/db
+        run: npx prisma migrate deploy
       - run: npm run typecheck --workspaces --if-present
       - run: npm test --workspaces --if-present
 

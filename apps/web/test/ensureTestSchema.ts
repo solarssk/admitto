@@ -6,6 +6,7 @@ import { WEB_TEST_DATABASE_URL } from "./testEnv.js";
 
 const execAsync = promisify(exec);
 const DB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "db");
+const MIGRATE_TIMEOUT_MS = 60_000;
 
 let schemaReady: Promise<void> | undefined;
 
@@ -26,10 +27,14 @@ function isMissingMigrationHistoryError(error: unknown): boolean {
   return migrateErrorText(error).includes("P3005");
 }
 
+async function runPrisma(command: string, env: NodeJS.ProcessEnv): Promise<void> {
+  await execAsync(command, { cwd: DB_ROOT, env, timeout: MIGRATE_TIMEOUT_MS });
+}
+
 async function ensureTestSchema(): Promise<void> {
   const env = testDbEnv();
   try {
-    await execAsync("npx prisma migrate deploy", { cwd: DB_ROOT, env });
+    await runPrisma("npx prisma migrate deploy", env);
   } catch (migrateError) {
     if (process.env["CI"] && !isMissingMigrationHistoryError(migrateError)) {
       throw migrateError;
@@ -38,7 +43,7 @@ async function ensureTestSchema(): Promise<void> {
       "[ensureTestSchema] migrate deploy failed, falling back to db push:",
       migrateError,
     );
-    await execAsync("npx prisma db push --skip-generate", { cwd: DB_ROOT, env });
+    await runPrisma("npx prisma db push --skip-generate", env);
   }
 }
 

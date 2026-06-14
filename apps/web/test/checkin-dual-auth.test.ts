@@ -143,7 +143,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.$disconnect();
+  await prisma?.$disconnect();
 });
 
 async function sessionCookieFor(userId: string): Promise<string> {

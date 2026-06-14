@@ -66,7 +66,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.$disconnect();
+  await prisma?.$disconnect();
 });
 
 function sessionCookie(res: Response): string | undefined {
