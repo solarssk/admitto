@@ -4,7 +4,6 @@ import { WEB_TEST_DATABASE_URL } from "./test/testEnv.ts";
 export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
-    globalSetup: ["./test/globalSetup.ts"],
     environment: "node",
     fileParallelism: false,
     pool: "forks",

@@ -7,15 +7,13 @@ import { WEB_TEST_DATABASE_URL } from "./testEnv.js";
 const execAsync = promisify(exec);
 const DB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "db");
 
+let schemaReady: Promise<void> | undefined;
+
 function testDbEnv(): NodeJS.ProcessEnv {
   return { ...process.env, DATABASE_URL: WEB_TEST_DATABASE_URL };
 }
 
-/**
- * Ensure `admitto_web_test` has the current schema before any web integration test runs.
- * CI creates the database but migrates only the default `admitto` DB in the workflow.
- */
-export async function ensureTestSchema(): Promise<void> {
+async function ensureTestSchema(): Promise<void> {
   const env = testDbEnv();
   try {
     await execAsync("npx prisma migrate deploy", { cwd: DB_ROOT, env });
@@ -30,4 +28,15 @@ export async function ensureTestSchema(): Promise<void> {
     );
     await execAsync("npx prisma db push --skip-generate", { cwd: DB_ROOT, env });
   }
+}
+
+/**
+ * Apply migrations to `admitto_web_test` once per Vitest process.
+ * Call from DB-backed integration suites only — not from vitest globalSetup.
+ */
+export function ensureTestSchemaOnce(): Promise<void> {
+  if (!schemaReady) {
+    schemaReady = ensureTestSchema();
+  }
+  return schemaReady;
 }

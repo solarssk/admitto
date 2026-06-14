@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "@admitto/auth";
 import { createApp } from "../src/app.js";
 import { createRateLimitStore } from "../src/rate-limit/index.js";
+import { ensureTestSchemaOnce } from "./ensureTestSchema.js";
 
 const CHECKIN_TOKEN = "test-checkin-token-for-vitest-32chars!";
 const EVENT_ID = "event-web-auth-routes";
@@ -24,7 +25,7 @@ function loginHeaders(extra: Record<string, string> = {}): Record<string, string
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 
-/** Seed fixture without `db push --force-reset` (schema from vitest globalSetup migrate deploy). */
+/** Seed fixture without `db push --force-reset` (schema from ensureTestSchemaOnce). */
 async function seedAuthRoutesFixture(client: PrismaClient): Promise<void> {
   await client.roleAssignment.deleteMany({
     where: { OR: [{ scope_id: EVENT_ID }, { user: { email: OPERATOR_EMAIL } }] },
@@ -65,6 +66,7 @@ async function seedAuthRoutesFixture(client: PrismaClient): Promise<void> {
 }
 
 beforeAll(async () => {
+  await ensureTestSchemaOnce();
   prisma = new PrismaClient();
   await seedAuthRoutesFixture(prisma);
 
