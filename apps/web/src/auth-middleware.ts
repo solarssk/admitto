@@ -18,16 +18,21 @@ declare module "hono" {
   }
 }
 
-/** Require valid `admitto_session` cookie; sets `c.var.auth` for downstream handlers. */
-export function createRequireSession(prisma: PrismaClient) {
+/** Require valid session cookie; optional HTML redirect instead of 401 JSON. */
+export function createRequireSession(
+  prisma: PrismaClient,
+  options?: { redirectTo?: string },
+) {
   return async (c: Context, next: Next): Promise<Response | void> => {
     const rawToken = getCookie(c, SESSION_COOKIE_NAME);
     if (!rawToken) {
+      if (options?.redirectTo) return c.redirect(options.redirectTo, 302);
       return c.json({ error: "unauthorized" }, 401);
     }
 
     const validated = await validateSession(prisma, rawToken);
     if (!validated) {
+      if (options?.redirectTo) return c.redirect(options.redirectTo, 302);
       return c.json({ error: "unauthorized" }, 401);
     }
 

@@ -20,13 +20,14 @@ import {
   renderRevoked,
   renderServerError,
 } from "./ticket-page.js";
-import { resolveBaseUrl, resolveCheckinToken } from "./config.js";
+import { resolveBaseUrl, resolveCheckinToken, resolveAllowCheckinBearer, validateCheckinBootConfig } from "./config.js";
 import {
-  createCheckinConfiguredGuard,
-  createCheckinDualAuth,
+  createCheckinPreAuth,
+  createCheckinEventScope,
   parseScanBodyMiddleware,
   eventIdFromScanBody,
   eventIdFromHistoryQuery,
+  type CheckinGateConfig,
 } from "./checkin-gate.js";
 import { findAttendeeForEventRoute } from "./attendee-lookup.js";
 import {
@@ -37,19 +38,45 @@ import {
 import { createRequireSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
 import { handleLogin, handleLogout, handleMe } from "./auth/routes.js";
+import {
+  handleGetLogin,
+  handlePostLogin,
+  handleGetOperator,
+  handlePostLogout,
+} from "./auth/html-routes.js";
 
 export interface CreateAppOptions {
   prisma?: PrismaClient;
   baseUrl?: string;
   checkinToken?: string | null;
+  allowCheckinBearer?: boolean;
+  skipCheckinBootValidation?: boolean;
   rateLimitStore?: RateLimitStore;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
   const db = options.prisma ?? defaultPrisma;
   const baseUrl = options.baseUrl ?? resolveBaseUrl();
+  const allowCheckinBearer =
+    options.allowCheckinBearer !== undefined
+      ? options.allowCheckinBearer
+      : resolveAllowCheckinBearer();
   const checkinToken =
     options.checkinToken !== undefined ? options.checkinToken : resolveCheckinToken();
+
+  if (!options.skipCheckinBootValidation) {
+    validateCheckinBootConfig({
+      ...process.env,
+      ALLOW_CHECKIN_BEARER: allowCheckinBearer ? "true" : "",
+      CHECKIN_OPERATOR_TOKEN: checkinToken ?? "",
+    });
+  }
+
+  const checkinGateConfig: CheckinGateConfig = {
+    allowBearer: allowCheckinBearer,
+    operatorToken: checkinToken,
+  };
+  const checkinAuthDeps = { prisma: db, config: checkinGateConfig };
 
   const app = new Hono();
   const ticketPageHeaders = getTicketPageSecurityHeaders();
@@ -57,6 +84,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimit = createLoginRateLimitMiddleware(rateLimitStore);
   const requireSession = createRequireSession(db);
+  const requireSessionHtml = createRequireSession(db, { redirectTo: "/login" });
 
   function htmlWithSecurityHeaders(c: Context, html: string, status: 200 | 404 | 410 | 500) {
     for (const [name, value] of Object.entries(ticketPageHeaders)) {
@@ -116,17 +144,20 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/auth/logout", (c) => handleLogout(c, db));
   app.get("/api/auth/me", requireSession, (c) => handleMe(c, db));
 
-  app.use("/api/checkin/*", createCheckinConfiguredGuard(checkinToken));
+  app.get("/login", (c) => handleGetLogin(c));
+  app.post("/login", loginRateLimit, (c) => handlePostLogin(c, db, rateLimitStore));
+  app.get("/operator", requireSessionHtml, (c) => handleGetOperator(c, db));
+  app.post("/logout", (c) => handlePostLogout(c, db));
 
   app.use("/t/*", publicRateLimit);
   app.use("/q/*", publicRateLimit);
 
   // Mode B ticket page — must be registered before /t/:token
-  app.get("/t/:eventSlug/a/:attendeeId", async (c) => {
-    const { eventSlug, attendeeId } = c.req.param();
+  app.get("/t/:eventSlug/a/:ref", async (c) => {
+    const { eventSlug, ref } = c.req.param();
     let resolved;
     try {
-      resolved = await findAttendeeForEventRoute(eventSlug, attendeeId, db);
+      resolved = await findAttendeeForEventRoute(eventSlug, ref, db);
     } catch (err) {
       console.error("findAttendeeForEventRoute error:", err);
       return htmlWithSecurityHeaders(c, renderServerError(), 500);
@@ -164,16 +195,16 @@ export function createApp(options: CreateAppOptions = {}) {
     return renderTicketPage(c, resolved, token);
   });
 
-  // Mode B hosted QR — filename param is "{attendeeId}.png"
+  // Mode B hosted QR — filename param is "{public_ref}.png"
   app.get("/q/:eventSlug/a/:filename", async (c) => {
     const { eventSlug, filename } = c.req.param();
     if (!filename.endsWith(".png")) {
       return c.body(null, 404);
     }
-    const attendeeId = filename.slice(0, -4);
+    const publicRef = filename.slice(0, -4);
     let resolved;
     try {
-      resolved = await findAttendeeForEventRoute(eventSlug, attendeeId, db);
+      resolved = await findAttendeeForEventRoute(eventSlug, publicRef, db);
     } catch (err) {
       console.error("findAttendeeForEventRoute error:", err);
       return c.body(null, 500);
@@ -228,57 +259,57 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
-  if (checkinToken !== null) {
-    app.post(
-      "/api/checkin/scan",
-      parseScanBodyMiddleware,
-      createCheckinDualAuth({ prisma: db, operatorToken: checkinToken! }, eventIdFromScanBody),
-      async (c) => {
-        const body = c.get("parsedScanBody");
-        const { scanned: rawScanned, eventId, deviceId } = body;
-        const scanned = typeof rawScanned === "string" ? rawScanned.trim() : "";
-        if (!scanned) return c.json({ error: "scanned required" }, 400);
-        if (typeof eventId !== "string" || !eventId) {
-          return c.json({ error: "eventId required" }, 400);
-        }
+  app.post(
+    "/api/checkin/scan",
+    createCheckinPreAuth(checkinAuthDeps),
+    parseScanBodyMiddleware,
+    createCheckinEventScope(checkinAuthDeps, eventIdFromScanBody),
+    async (c) => {
+      const body = c.get("parsedScanBody");
+      const { scanned: rawScanned, eventId, deviceId } = body;
+      const scanned = typeof rawScanned === "string" ? rawScanned.trim() : "";
+      if (!scanned) return c.json({ error: "scanned required" }, 400);
+      if (typeof eventId !== "string" || !eventId) {
+        return c.json({ error: "eventId required" }, 400);
+      }
 
-        try {
-          const operatorUserId = c.get("operatorUserId") as string | undefined;
-          const result = await checkInScan(
-            {
-              scanned,
-              eventId,
-              deviceId: typeof deviceId === "string" ? deviceId : undefined,
-              operator: operatorUserId,
-            },
-            db,
-          );
-          return c.json(result, 200);
-        } catch (err) {
-          console.error("checkInScan failed:", err);
-          return c.json({ error: "server error" }, 500);
-        }
-      },
-    );
+      try {
+        const operatorUserId = c.get("operatorUserId") as string | undefined;
+        const result = await checkInScan(
+          {
+            scanned,
+            eventId,
+            deviceId: typeof deviceId === "string" ? deviceId : undefined,
+            operator: operatorUserId,
+          },
+          db,
+        );
+        return c.json(result, 200);
+      } catch (err) {
+        console.error("checkInScan failed:", err);
+        return c.json({ error: "server error" }, 500);
+      }
+    },
+  );
 
-    app.get(
-      "/api/checkin/history",
-      createCheckinDualAuth({ prisma: db, operatorToken: checkinToken! }, eventIdFromHistoryQuery),
-      async (c) => {
-        const eventId = c.req.query("eventId");
-        if (!eventId) return c.json({ error: "eventId required" }, 400);
-        const limitParam = parseInt(c.req.query("limit") ?? "10", 10);
-        const limit = Number.isFinite(limitParam) ? limitParam : 10;
-        try {
-          const history = await getRecentCheckIns(eventId, db, limit);
-          return c.json(history, 200);
-        } catch (err) {
-          console.error("getRecentCheckIns failed:", err);
-          return c.json({ error: "server error" }, 500);
-        }
-      },
-    );
-  }
+  app.get(
+    "/api/checkin/history",
+    createCheckinPreAuth(checkinAuthDeps),
+    createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
+    async (c) => {
+      const eventId = c.req.query("eventId");
+      if (!eventId) return c.json({ error: "eventId required" }, 400);
+      const limitParam = parseInt(c.req.query("limit") ?? "10", 10);
+      const limit = Number.isFinite(limitParam) ? limitParam : 10;
+      try {
+        const history = await getRecentCheckIns(eventId, db, limit);
+        return c.json(history, 200);
+      } catch (err) {
+        console.error("getRecentCheckIns failed:", err);
+        return c.json({ error: "server error" }, 500);
+      }
+    },
+  );
 
   return app;
 }

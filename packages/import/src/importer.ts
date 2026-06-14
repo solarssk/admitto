@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import type { AttendeeRow, ImportOptions, ImportSummary, SkippedRow } from "./types.js";
+import { generateToken } from "@admitto/tickets";
 
 /** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token_hash. */
 const OVERWRITE_FIELDS = ["name", "ticket_type", "company", "department"] as const;
@@ -12,6 +13,7 @@ type AttendeeCreateData = {
   ticket_type?: string;
   external_uuid?: string;
   qr_payload?: string;
+  public_ref?: string;
   company?: string;
   department?: string;
 };
@@ -128,6 +130,7 @@ export async function commitImport(
         },
       });
     } else {
+      const isAgency = row.external_uuid !== undefined || row.qr_payload !== undefined;
       creates.push({
         event_id: eventId,
         email: row.email,
@@ -135,6 +138,7 @@ export async function commitImport(
         ...(row.ticket_type !== undefined && { ticket_type: row.ticket_type }),
         ...(row.external_uuid !== undefined && { external_uuid: row.external_uuid }),
         ...(row.qr_payload !== undefined && { qr_payload: row.qr_payload }),
+        ...(isAgency && { public_ref: generateToken() }),
         ...(row.company !== undefined && { company: row.company }),
         ...(row.department !== undefined && { department: row.department }),
       });

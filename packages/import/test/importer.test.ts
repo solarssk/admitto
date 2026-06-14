@@ -96,6 +96,20 @@ describe("commitImport — create", () => {
     expect(att?.qr_payload).toBe("AGENCY-QR-001");
     expect(att?.external_uuid).toBe("agency-uuid-001");
   });
+
+  it("assigns public_ref to agency attendees on create", async () => {
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "ana@example.com" } },
+    });
+    expect(att?.public_ref).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  });
+
+  it("does not assign public_ref to internal Mode A attendees", async () => {
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "jan@example.com" } },
+    });
+    expect(att?.public_ref).toBeNull();
+  });
 });
 
 describe("commitImport — overwrite=false (re-import)", () => {

@@ -15,6 +15,7 @@
     "db:migrate": "npm run db:migrate -w @admitto/db",
     "db:migrate:status": "npm run db:migrate:status -w @admitto/db",
     "db:seed": "npm run db:seed -w @admitto/db",
+    "db:backfill-public-ref": "npm run db:backfill-public-ref -w @admitto/db",
     "db:test-setup": "bash infra/scripts/create-test-dbs.sh",
     "mail:test-send": "npm run cli -w @admitto/mail-delivery -- test-send",
     "mail:config": "npm run cli -w @admitto/mail-delivery -- config-describe",

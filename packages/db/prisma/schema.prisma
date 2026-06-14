@@ -57,6 +57,8 @@ model Attendee {
   // Agency-provided QR payload preserved as source of truth for import.
   qr_payload       String?
   external_uuid    String?
+  // Non-guessable public URL key for Mode B ticket/QR pages (/t/:slug/a/:ref) — not Attendee.id.
+  public_ref       String?         @unique
   ticket_type      String?
   company          String?
   department       String?

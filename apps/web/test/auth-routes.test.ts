@@ -58,8 +58,10 @@ beforeAll(async () => {
   app = createApp({
     prisma,
     checkinToken: CHECKIN_TOKEN,
+    allowCheckinBearer: false,
     baseUrl: "https://tickets.example.com",
     rateLimitStore: createRateLimitStore(),
+    skipCheckinBootValidation: true,
   });
 });
 

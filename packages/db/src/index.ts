@@ -30,3 +30,8 @@ export {
   SCOPE_TYPES,
   hasScope,
 } from './roles.js';
+
+export {
+  backfillAgencyPublicRefs,
+  isAgencyAttendee,
+} from './backfill-public-ref.js';

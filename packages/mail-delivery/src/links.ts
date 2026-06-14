@@ -4,6 +4,7 @@ import { validateHttpUrl } from "@admitto/mail-templates";
 
 export interface AttendeeLinkInput {
   id: string;
+  public_ref: string | null;
   qr_payload: string | null;
   external_uuid: string | null;
 }
@@ -42,9 +43,13 @@ export function buildAttendeeMailLinks(
   const agency = agencyPayload(attendee);
 
   if (agency !== null) {
-    const qr_image_url = `${root}/q/${event.slug}/a/${attendee.id}.png`;
+    if (!attendee.public_ref) {
+      throw new Error(`Agency attendee ${attendee.id} missing public_ref for mail links`);
+    }
+    const ref = attendee.public_ref;
+    const qr_image_url = `${root}/q/${event.slug}/a/${ref}.png`;
     const agencyUrl = validatedAgencyTicketUrl(agency);
-    const ticket_url = agencyUrl ?? `${root}/t/${event.slug}/a/${attendee.id}`;
+    const ticket_url = agencyUrl ?? `${root}/t/${event.slug}/a/${ref}`;
     return { ticket_url, qr_image_url };
   }
 

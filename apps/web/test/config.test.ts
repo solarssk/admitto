@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { resolveBaseUrl, resolveCheckinToken } from "../src/config.js";
+import {
+  resolveBaseUrl,
+  resolveCheckinToken,
+  resolveAllowCheckinBearer,
+  validateCheckinBootConfig,
+} from "../src/config.js";
 
 describe("resolveBaseUrl", () => {
   it("uses explicit BASE_URL and trims trailing slash", () => {
@@ -21,38 +26,53 @@ describe("resolveBaseUrl", () => {
       "BASE_URL is required in non-development environments",
     );
   });
+});
 
-  it("fails fast in staging when BASE_URL is missing", () => {
-    expect(() => resolveBaseUrl({ NODE_ENV: "staging" })).toThrow(
-      "BASE_URL is required in non-development environments",
-    );
+describe("resolveAllowCheckinBearer", () => {
+  it("defaults to false when unset", () => {
+    expect(resolveAllowCheckinBearer({})).toBe(false);
+  });
+
+  it("parses true and 1", () => {
+    expect(resolveAllowCheckinBearer({ ALLOW_CHECKIN_BEARER: "true" })).toBe(true);
+    expect(resolveAllowCheckinBearer({ ALLOW_CHECKIN_BEARER: "1" })).toBe(true);
   });
 });
 
 describe("resolveCheckinToken", () => {
-  it("returns token when CHECKIN_OPERATOR_TOKEN is set", () => {
-    expect(resolveCheckinToken({ CHECKIN_OPERATOR_TOKEN: "secret-abc", NODE_ENV: "production" })).toBe("secret-abc");
+  it("returns token when set", () => {
+    expect(resolveCheckinToken({ CHECKIN_OPERATOR_TOKEN: "secret-abc" })).toBe("secret-abc");
   });
 
-  it("returns null in development when token is missing", () => {
-    expect(resolveCheckinToken({ NODE_ENV: "development" })).toBeNull();
+  it("returns null when missing", () => {
+    expect(resolveCheckinToken({})).toBeNull();
+  });
+});
+
+describe("validateCheckinBootConfig", () => {
+  it("allows boot without token when Bearer flag is off", () => {
+    expect(() =>
+      validateCheckinBootConfig({ NODE_ENV: "production", ALLOW_CHECKIN_BEARER: "" }),
+    ).not.toThrow();
   });
 
-  it("fails fast in production when token is missing", () => {
-    expect(() => resolveCheckinToken({ NODE_ENV: "production" })).toThrow(
-      "CHECKIN_OPERATOR_TOKEN is required in non-development environments",
-    );
+  it("throws when Bearer on without token in non-dev", () => {
+    expect(() =>
+      validateCheckinBootConfig({
+        NODE_ENV: "production",
+        ALLOW_CHECKIN_BEARER: "true",
+        CHECKIN_OPERATOR_TOKEN: "",
+      }),
+    ).toThrow("CHECKIN_OPERATOR_TOKEN is required when ALLOW_CHECKIN_BEARER=true");
   });
 
-  it("fails fast in staging (non-development) when token is missing", () => {
-    expect(() => resolveCheckinToken({ NODE_ENV: "staging" })).toThrow(
-      "CHECKIN_OPERATOR_TOKEN is required in non-development environments",
-    );
-  });
-
-  it("fails fast when NODE_ENV is unset (not development)", () => {
-    expect(() => resolveCheckinToken({})).toThrow(
-      "CHECKIN_OPERATOR_TOKEN is required in non-development environments",
-    );
+  it("allows Bearer on with token in non-dev", () => {
+    expect(() =>
+      validateCheckinBootConfig({
+        NODE_ENV: "production",
+        ALLOW_CHECKIN_BEARER: "true",
+        CHECKIN_OPERATOR_TOKEN: "tok",
+      }),
+    ).not.toThrow();
   });
 });

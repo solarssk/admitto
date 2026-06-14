@@ -4,7 +4,7 @@ import * as mailer from "@admitto/mailer";
 import { encryptToString } from "@admitto/crypto";
 import { setMailSettings } from "@admitto/mailer-config";
 import type { ExportPayload } from "@admitto/mailer";
-import { hashToken } from "@admitto/tickets";
+import { hashToken, generateToken } from "@admitto/tickets";
 import { resetDb } from "./resetDb.js";
 import {
   resendTicketEmail,
@@ -53,6 +53,7 @@ beforeAll(async () => {
       email: "bob@example.com",
       name: "Bob Agency",
       external_uuid: "https://agency.example.com/t/xyz",
+      public_ref: generateToken(),
     },
   });
   await prisma.attendee.create({
@@ -62,6 +63,7 @@ beforeAll(async () => {
       email: "carol@example.com",
       name: "Carol Agency",
       qr_payload: "AGENCY-PAYLOAD-001",
+      public_ref: generateToken(),
     },
   });
 });
@@ -265,6 +267,7 @@ describe("retryDelivery", () => {
         email: "noresult@example.com",
         name: "No Result",
         qr_payload: "AGENCY-NORESULT",
+        public_ref: generateToken(),
       },
     });
 

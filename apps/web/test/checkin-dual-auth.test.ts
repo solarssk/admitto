@@ -6,8 +6,8 @@ import { Hono } from "hono";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword, createSession } from "@admitto/auth";
 import {
-  createCheckinConfiguredGuard,
-  createCheckinDualAuth,
+  createCheckinPreAuth,
+  createCheckinEventScope,
   parseScanBodyMiddleware,
   eventIdFromScanBody,
   eventIdFromHistoryQuery,
@@ -26,15 +26,37 @@ const USER_ADMIN_A = "user-dual-admin-a";
 const USER_OP_A = "user-dual-op-a";
 
 let prisma: PrismaClient;
-let dualTestApp: Hono;
-let scanApp: Hono;
 
-function buildDualApp(getEventId: (c: import("hono").Context) => string | undefined): Hono {
+function gateDeps(allowBearer: boolean) {
+  return {
+    prisma,
+    config: {
+      allowBearer,
+      operatorToken: allowBearer ? TOKEN : null,
+    },
+  };
+}
+
+function buildSessionApp(allowBearer = false) {
+  const deps = gateDeps(allowBearer);
   const app = new Hono();
-  app.use("/api/checkin/*", createCheckinConfiguredGuard(TOKEN));
   app.get(
     "/api/checkin/test",
-    createCheckinDualAuth({ prisma, operatorToken: TOKEN }, getEventId),
+    createCheckinPreAuth(deps),
+    createCheckinEventScope(deps, eventIdFromHistoryQuery),
+    (c) => c.json({ ok: true }, 200),
+  );
+  return app;
+}
+
+function buildScanApp(allowBearer = false) {
+  const deps = gateDeps(allowBearer);
+  const app = new Hono();
+  app.post(
+    "/api/checkin/scan",
+    createCheckinPreAuth(deps),
+    parseScanBodyMiddleware,
+    createCheckinEventScope(deps, eventIdFromScanBody),
     (c) => c.json({ ok: true }, 200),
   );
   return app;
@@ -88,16 +110,6 @@ beforeAll(async () => {
       { user_id: USER_OP_A, role: "operator", scope_type: "event", scope_id: EVENT_A },
     ],
   });
-
-  dualTestApp = buildDualApp(eventIdFromHistoryQuery);
-  scanApp = new Hono();
-  scanApp.use("/api/checkin/*", createCheckinConfiguredGuard(TOKEN));
-  scanApp.post(
-    "/api/checkin/scan",
-    parseScanBodyMiddleware,
-    createCheckinDualAuth({ prisma, operatorToken: TOKEN }, eventIdFromScanBody),
-    (c) => c.json({ ok: true }, 200),
-  );
 });
 
 afterAll(async () => {
@@ -127,10 +139,12 @@ describe("createCheckinGate bearer-only (legacy)", () => {
   });
 });
 
-describe("createCheckinDualAuth — session matrix", () => {
+describe("createCheckinPreAuth + eventScope — session matrix", () => {
+  const dualTestApp = () => buildSessionApp(false);
+
   it("operator matching event → 200", async () => {
     const cookie = await sessionCookieFor(USER_OP_A);
-    const res = await dualTestApp.request(`/api/checkin/test?eventId=${EVENT_A}`, {
+    const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_A}`, {
       headers: { Cookie: cookie },
     });
     expect(res.status).toBe(200);
@@ -138,7 +152,7 @@ describe("createCheckinDualAuth — session matrix", () => {
 
   it("operator wrong event → 401", async () => {
     const cookie = await sessionCookieFor(USER_OP_A);
-    const res = await dualTestApp.request(`/api/checkin/test?eventId=${EVENT_B}`, {
+    const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_B}`, {
       headers: { Cookie: cookie },
     });
     expect(res.status).toBe(401);
@@ -146,7 +160,7 @@ describe("createCheckinDualAuth — session matrix", () => {
 
   it("admin matching org → 200", async () => {
     const cookie = await sessionCookieFor(USER_ADMIN_A);
-    const res = await dualTestApp.request(`/api/checkin/test?eventId=${EVENT_A}`, {
+    const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_A}`, {
       headers: { Cookie: cookie },
     });
     expect(res.status).toBe(200);
@@ -154,7 +168,7 @@ describe("createCheckinDualAuth — session matrix", () => {
 
   it("admin wrong org → 401", async () => {
     const cookie = await sessionCookieFor(USER_ADMIN_A);
-    const res = await dualTestApp.request(`/api/checkin/test?eventId=${EVENT_B}`, {
+    const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_B}`, {
       headers: { Cookie: cookie },
     });
     expect(res.status).toBe(401);
@@ -162,7 +176,7 @@ describe("createCheckinDualAuth — session matrix", () => {
 
   it("superadmin → 200", async () => {
     const cookie = await sessionCookieFor(USER_SUPER);
-    const res = await dualTestApp.request(`/api/checkin/test?eventId=${EVENT_B}`, {
+    const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_B}`, {
       headers: { Cookie: cookie },
     });
     expect(res.status).toBe(200);
@@ -170,26 +184,78 @@ describe("createCheckinDualAuth — session matrix", () => {
 
   it("missing eventId → 400", async () => {
     const cookie = await sessionCookieFor(USER_SUPER);
-    const res = await dualTestApp.request("/api/checkin/test", { headers: { Cookie: cookie } });
+    const res = await dualTestApp().request("/api/checkin/test", { headers: { Cookie: cookie } });
     expect(res.status).toBe(400);
   });
 
   it("no session no bearer → 401", async () => {
-    const res = await dualTestApp.request(`/api/checkin/test?eventId=${EVENT_A}`);
+    const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_A}`);
     expect(res.status).toBe(401);
   });
 
-  it("expired session + valid Bearer → 200", async () => {
-    const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A });
-    await prisma.session.update({
-      where: { id: session.id },
-      data: { expires_at: new Date(Date.now() - 1000) },
+  it("Bearer rejected when allowBearer=false", async () => {
+    const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_A}`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
     });
-    const res = await dualTestApp.request(`/api/checkin/test?eventId=${EVENT_A}`, {
-      headers: {
-        Cookie: `admitto_session=${rawToken}`,
-        Authorization: `Bearer ${TOKEN}`,
-      },
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("Bearer emergency path", () => {
+  const bearerApp = () => buildSessionApp(true);
+
+  it("valid Bearer without session → 200", async () => {
+    const res = await bearerApp().request(`/api/checkin/test?eventId=${EVENT_A}`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("wrong Bearer → 401", async () => {
+    const res = await bearerApp().request(`/api/checkin/test?eventId=${EVENT_A}`, {
+      headers: { Authorization: "Bearer wrong" },
+    });
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("scan middleware order", () => {
+  const scanApp = () => buildScanApp(false);
+
+  it("unauthenticated invalid JSON → 401 not 400", async () => {
+    const res = await scanApp().request("/api/checkin/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not-json",
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("unauthenticated valid JSON → 401", async () => {
+    const res = await scanApp().request("/api/checkin/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId: EVENT_A, scanned: "x" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("authenticated invalid JSON → 400", async () => {
+    const cookie = await sessionCookieFor(USER_OP_A);
+    const res = await scanApp().request("/api/checkin/scan", {
+      method: "POST",
+      headers: { Cookie: cookie, "Content-Type": "application/json" },
+      body: "not-json",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("session auth uses body.eventId", async () => {
+    const cookie = await sessionCookieFor(USER_OP_A);
+    const res = await scanApp().request("/api/checkin/scan", {
+      method: "POST",
+      headers: { Cookie: cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId: EVENT_A, scanned: "qr" }),
     });
     expect(res.status).toBe(200);
   });
@@ -215,31 +281,5 @@ describe("parseScanBodyMiddleware — single parse", () => {
     const json = (await res.json()) as { eventId: string; count: number };
     expect(json.eventId).toBe(EVENT_A);
     expect(json.count).toBe(1);
-  });
-});
-
-describe("createCheckinConfiguredGuard — 503 when unconfigured", () => {
-  const app = new Hono();
-  app.use("/api/checkin/*", createCheckinConfiguredGuard(null));
-  app.get("/api/checkin/history", (c) => c.json([], 200));
-
-  it("returns 503 even if session would work", async () => {
-    const cookie = await sessionCookieFor(USER_SUPER);
-    const res = await app.request(`/api/checkin/history?eventId=${EVENT_A}`, {
-      headers: { Cookie: cookie },
-    });
-    expect(res.status).toBe(503);
-  });
-});
-
-describe("scan route eventId from body only", () => {
-  it("session auth uses body.eventId", async () => {
-    const cookie = await sessionCookieFor(USER_OP_A);
-    const res = await scanApp.request("/api/checkin/scan", {
-      method: "POST",
-      headers: { Cookie: cookie, "Content-Type": "application/json" },
-      body: JSON.stringify({ eventId: EVENT_A, scanned: "qr" }),
-    });
-    expect(res.status).toBe(200);
   });
 });

@@ -27,16 +27,45 @@ export function resolveBaseUrl(env: EnvLike = process.env): string {
   return "http://localhost:3000";
 }
 
+function parseEnvFlag(value: string | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "true" || normalized === "1";
+}
+
 /**
- * Resolve the static operator Bearer token for the /api/checkin/* gate (ADR 0003).
- * Returns the token when set, null in development when missing (routes return 503).
- * Throws in every non-development environment when missing — fail-fast at boot.
+ * Emergency break-glass: allow ADR 0003 Bearer on /api/checkin/* (default false).
+ */
+export function resolveAllowCheckinBearer(env: EnvLike = process.env): boolean {
+  return parseEnvFlag(env["ALLOW_CHECKIN_BEARER"]);
+}
+
+/**
+ * Resolve the static operator Bearer token when emergency Bearer path is enabled.
+ * Returns null when unset; required at boot when ALLOW_CHECKIN_BEARER=true in non-dev.
  */
 export function resolveCheckinToken(env: EnvLike = process.env): string | null {
   const token = env["CHECKIN_OPERATOR_TOKEN"];
-  if (token) return token;
-  if (env["NODE_ENV"] !== "development") {
-    throw new Error("CHECKIN_OPERATOR_TOKEN is required in non-development environments");
+  return token && token.length > 0 ? token : null;
+}
+
+/**
+ * Boot-time validation for check-in gate config.
+ * Throws when Bearer emergency mode is enabled without a token in non-development.
+ */
+export function validateCheckinBootConfig(env: EnvLike = process.env): void {
+  const allowBearer = resolveAllowCheckinBearer(env);
+  const token = resolveCheckinToken(env);
+
+  if (allowBearer && env["NODE_ENV"] !== "development" && !token) {
+    throw new Error(
+      "CHECKIN_OPERATOR_TOKEN is required when ALLOW_CHECKIN_BEARER=true in non-development environments",
+    );
   }
-  return null;
+
+  if (allowBearer && env["NODE_ENV"] !== "development") {
+    console.warn(
+      "WARNING: ALLOW_CHECKIN_BEARER is enabled outside development — emergency break-glass only",
+    );
+  }
 }

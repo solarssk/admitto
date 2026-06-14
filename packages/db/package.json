@@ -21,13 +21,15 @@
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:status": "prisma migrate status",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "db:backfill-public-ref": "tsx scripts/backfill-public-ref.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@admitto/crypto": "*",
+    "@admitto/tickets": "*",
     "@prisma/client": "^5.17.0"
   },
   "devDependencies": {
