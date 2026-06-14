@@ -185,6 +185,14 @@ describe("POST /login", () => {
   });
 
   it("cross-origin POST 403 does not consume IP login rate limit", async () => {
+    const limitedApp = createApp({
+      prisma,
+      checkinToken: null,
+      allowCheckinBearer: false,
+      baseUrl: "https://tickets.example.com",
+      rateLimitStore: createRateLimitStore(),
+      skipCheckinBootValidation: true,
+    });
     const evil = { Origin: "https://evil.example" };
     const body = new URLSearchParams({
       email: "operator@example.com",
@@ -192,7 +200,7 @@ describe("POST /login", () => {
     }).toString();
 
     for (let i = 0; i < 10; i++) {
-      const res = await app.request("/login", {
+      const res = await limitedApp.request("/login", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", ...evil },
         body,
@@ -200,13 +208,46 @@ describe("POST /login", () => {
       expect(res.status).toBe(403);
     }
 
-    const ok = await app.request("/login", {
+    const ok = await limitedApp.request("/login", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin },
       body,
     });
     expect(ok.status).toBe(302);
     expect(ok.headers.get("location")).toBe("/operator");
+  });
+
+  it("returns plain text 429 when IP login rate limit exceeded", async () => {
+    const limitedApp = createApp({
+      prisma,
+      checkinToken: null,
+      allowCheckinBearer: false,
+      baseUrl: "https://tickets.example.com",
+      rateLimitStore: createRateLimitStore(),
+      skipCheckinBootValidation: true,
+    });
+    const body = new URLSearchParams({
+      email: "operator@example.com",
+      password: "wrong-password",
+    }).toString();
+
+    for (let i = 0; i < 10; i++) {
+      const res = await limitedApp.request("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin },
+        body,
+      });
+      expect(res.status).toBe(401);
+    }
+
+    const blocked = await limitedApp.request("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin },
+      body,
+    });
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("content-type")).toContain("text/plain");
+    expect(await blocked.text()).toBe("Too many requests");
   });
 });
 

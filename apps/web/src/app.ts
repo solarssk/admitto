@@ -87,8 +87,10 @@ export function createApp(options: CreateAppOptions = {}) {
   const ticketPageHeaders = getTicketPageSecurityHeaders();
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
-  const loginRateLimit = createLoginRateLimitMiddleware(rateLimitStore);
+  const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
+  const loginRateLimitHtml = createLoginRateLimitMiddleware(rateLimitStore, { format: "text" });
   const htmlPostCsrf = createCrossSitePostGuard({ format: "text" });
+  const jsonPostCsrf = createCrossSitePostGuard({ format: "json" });
   const requireSession = createRequireSession(db);
   const requireSessionHtml = createRequireSession(db, { redirectTo: "/login" });
 
@@ -146,12 +148,14 @@ export function createApp(options: CreateAppOptions = {}) {
     return htmlWithSecurityHeaders(c, renderTicket(resolved, qrDataUrl), 200);
   }
 
-  app.post("/api/auth/login", loginRateLimit, (c) => handleLogin(c, db, rateLimitStore));
-  app.post("/api/auth/logout", (c) => handleLogout(c, db));
+  app.post("/api/auth/login", jsonPostCsrf, loginRateLimitJson, (c) =>
+    handleLogin(c, db, rateLimitStore),
+  );
+  app.post("/api/auth/logout", jsonPostCsrf, (c) => handleLogout(c, db));
   app.get("/api/auth/me", requireSession, (c) => handleMe(c, db));
 
   app.get("/login", (c) => handleGetLogin(c));
-  app.post("/login", htmlPostCsrf, loginRateLimit, (c) => handlePostLogin(c, db, rateLimitStore));
+  app.post("/login", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostLogin(c, db, rateLimitStore));
   app.get("/operator", requireSessionHtml, (c) => handleGetOperator(c, db));
   app.post("/logout", htmlPostCsrf, (c) => handlePostLogout(c, db));
 

@@ -54,10 +54,6 @@ export async function handlePostLogin(
     return htmlResponse(c, renderLoginForm(LOGIN_ERROR), 401);
   }
 
-  if (!(await checkLoginEmailRateLimit(rateLimitStore, email))) {
-    return c.text("Too many requests", 429);
-  }
-
   const result = await login(
     db,
     {
@@ -71,6 +67,9 @@ export async function handlePostLogin(
   );
 
   if (!result.ok) {
+    if (!(await checkLoginEmailRateLimit(rateLimitStore, email))) {
+      return c.text("Too many requests", 429);
+    }
     return htmlResponse(c, renderLoginForm(LOGIN_ERROR), 401);
   }
 

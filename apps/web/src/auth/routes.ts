@@ -54,10 +54,6 @@ export async function handleLogin(
     return c.json(AUTH_ERROR, 401);
   }
 
-  if (!(await checkLoginEmailRateLimit(rateLimitStore, email))) {
-    return c.json({ error: "too many requests" }, 429);
-  }
-
   const result = await login(
     db,
     {
@@ -70,6 +66,9 @@ export async function handleLogin(
   );
 
   if (!result.ok) {
+    if (!(await checkLoginEmailRateLimit(rateLimitStore, email))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
     return c.json(AUTH_ERROR, 401);
   }
 

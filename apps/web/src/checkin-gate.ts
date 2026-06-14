@@ -102,62 +102,6 @@ export function createCheckinEventScope(
   };
 }
 
-/**
- * @deprecated Use createCheckinPreAuth + createCheckinEventScope. Kept for test migration.
- */
-export function createCheckinConfiguredGuard(_operatorToken: string | null) {
-  return async (_c: Context, next: Next): Promise<Response | void> => {
-    await next();
-  };
-}
-
-/** @deprecated Use createCheckinPreAuth + createCheckinEventScope. */
-export interface CheckinDualAuthDeps {
-  prisma: PrismaClient;
-  operatorToken: string;
-}
-
-/** @deprecated Use createCheckinPreAuth + createCheckinEventScope. */
-export function createCheckinDualAuth(
-  deps: CheckinDualAuthDeps,
-  getEventId: (c: Context) => string | undefined,
-) {
-  const gateDeps: CheckinSessionAuthDeps = {
-    prisma: deps.prisma,
-    config: { allowBearer: true, operatorToken: deps.operatorToken },
-  };
-  const preAuth = createCheckinPreAuth(gateDeps);
-  const eventScope = createCheckinEventScope(gateDeps, getEventId);
-
-  return async (c: Context, next: Next): Promise<Response | void> => {
-    let prePassed = false;
-    const preResult = await preAuth(c, async () => {
-      prePassed = true;
-    });
-    if (preResult) return preResult;
-    if (!prePassed) return c.json({ error: "unauthorized" }, 401);
-    return eventScope(c, next);
-  };
-}
-
-/**
- * Legacy bearer-only gate (configured guard + bearer).
- */
-export function createCheckinGate(operatorToken: string | null) {
-  return async (c: Context, next: Next): Promise<Response | void> => {
-    if (!operatorToken) {
-      return c.json({ error: "check-in not configured" }, 503);
-    }
-
-    if (!isValidCheckinBearer(c, operatorToken)) {
-      return c.json({ error: "unauthorized" }, 401);
-    }
-
-    c.set("checkinAuth", "bearer");
-    await next();
-  };
-}
-
 /** Parse POST /api/checkin/scan JSON body once; store on context for handler reuse. */
 export async function parseScanBodyMiddleware(c: Context, next: Next): Promise<Response | void> {
   let body: unknown;

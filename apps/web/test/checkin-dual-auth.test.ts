@@ -12,7 +12,6 @@ import {
   parseScanBodyMiddleware,
   eventIdFromScanBody,
   eventIdFromHistoryQuery,
-  createCheckinGate,
 } from "../src/checkin-gate.js";
 import { createCheckinAuthenticatedRateLimit } from "../src/checkin-rate-limit.js";
 import { InMemoryRateLimitStore, type RateLimitStore } from "../src/rate-limit/index.js";
@@ -137,24 +136,6 @@ async function sessionCookieFor(userId: string): Promise<string> {
   const { rawToken } = await createSession(prisma, { userId });
   return `admitto_session=${rawToken}`;
 }
-
-describe("createCheckinGate bearer-only (legacy)", () => {
-  const app = new Hono();
-  app.use("/api/checkin/*", createCheckinGate(TOKEN));
-  app.get("/api/checkin/history", (c) => c.json([], 200));
-
-  it("Bearer passes", async () => {
-    const res = await app.request("/api/checkin/history", {
-      headers: { Authorization: `Bearer ${TOKEN}` },
-    });
-    expect(res.status).toBe(200);
-  });
-
-  it("no auth → 401", async () => {
-    const res = await app.request("/api/checkin/history");
-    expect(res.status).toBe(401);
-  });
-});
 
 describe("createCheckinPreAuth + eventScope — session matrix", () => {
   const dualTestApp = () => buildSessionApp(false);

@@ -6,12 +6,20 @@ import type { RateLimitStore } from "../rate-limit/types.js";
 const LOGIN_WINDOW_MS = 60_000;
 const LOGIN_MAX_REQUESTS = 10;
 
-/** Rate-limit POST /api/auth/login per client IP. */
-export function createLoginRateLimitMiddleware(store: RateLimitStore) {
+/** Rate-limit login POST per client IP (HTML form and JSON API). */
+export function createLoginRateLimitMiddleware(
+  store: RateLimitStore,
+  options: { format?: "json" | "text" } = {},
+) {
+  const format = options.format ?? "json";
   return async (c: Context, next: Next): Promise<Response | void> => {
     const ip = resolveClientIp(c);
     const { allowed } = await store.hit(`auth:login:ip:${ip}`, LOGIN_WINDOW_MS, LOGIN_MAX_REQUESTS);
-    if (!allowed) return c.json({ error: "too many requests" }, 429);
+    if (!allowed) {
+      return format === "text"
+        ? c.text("Too many requests", 429)
+        : c.json({ error: "too many requests" }, 429);
+    }
     await next();
   };
 }

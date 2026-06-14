@@ -12,7 +12,7 @@ export default defineConfig({
       ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       NODE_ENV: "test",
       BASE_URL: "https://tickets.example.com",
-      CHECKIN_OPERATOR_TOKEN: "test-checkin-token",
+      CHECKIN_OPERATOR_TOKEN: "test-checkin-token-for-vitest-32chars!",
     },
   },
 });
