@@ -1,36 +1,31 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { execSync } from "node:child_process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword, createSession } from "@admitto/auth";
-import { generateToken } from "@admitto/tickets";
 import { createApp } from "../src/app.js";
 import { createRateLimitStore } from "../src/rate-limit/index.js";
+import { ensureTestSchemaOnce } from "./ensureTestSchema.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_ROOT = path.resolve(__dirname, "..", "..", "..", "packages", "db");
 const ORG_ID = "org-login-html";
 const EVENT_ID = "evt-login-html";
+const FIXTURE_EMAILS = ["operator@example.com", "device@example.com"] as const;
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let operatorId: string;
 
-beforeAll(async () => {
-  execSync("npx prisma db push --force-reset --accept-data-loss", {
-    cwd: DB_ROOT,
-    env: { ...process.env },
-    stdio: "pipe",
-  });
+async function seedLoginPageFixture(client: PrismaClient): Promise<void> {
+  await client.roleAssignment.deleteMany({ where: { scope_id: EVENT_ID } });
+  await client.session.deleteMany({ where: { user: { email: { in: [...FIXTURE_EMAILS] } } } });
+  await client.user.deleteMany({ where: { email: { in: [...FIXTURE_EMAILS] } } });
+  await client.event.deleteMany({ where: { id: EVENT_ID } });
+  await client.organization.deleteMany({ where: { id: ORG_ID } });
 
-  prisma = new PrismaClient();
   const password_hash = await hashPassword("op-pass-123");
 
-  await prisma.organization.create({
+  await client.organization.create({
     data: { id: ORG_ID, name: "Org", slug: "login-org" },
   });
-  await prisma.event.create({
+  await client.event.create({
     data: {
       id: EVENT_ID,
       title: "Login Test Event",
@@ -40,12 +35,12 @@ beforeAll(async () => {
     },
   });
 
-  const operator = await prisma.user.create({
+  const operator = await client.user.create({
     data: { email: "operator@example.com", password_hash },
   });
   operatorId = operator.id;
 
-  await prisma.roleAssignment.create({
+  await client.roleAssignment.create({
     data: {
       user_id: operatorId,
       role: "operator",
@@ -53,6 +48,12 @@ beforeAll(async () => {
       scope_id: EVENT_ID,
     },
   });
+}
+
+beforeAll(async () => {
+  await ensureTestSchemaOnce();
+  prisma = new PrismaClient();
+  await seedLoginPageFixture(prisma);
 
   app = createApp({
     prisma,
@@ -65,7 +66,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.$disconnect();
+  await prisma?.$disconnect();
 });
 
 function sessionCookie(res: Response): string | undefined {

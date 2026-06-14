@@ -1,15 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { execSync } from "node:child_process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { backfillAgencyPublicRefs } from "@admitto/db";
 import { generateToken } from "@admitto/tickets";
 import { createApp } from "../src/app.js";
 import { createRateLimitStore } from "../src/rate-limit/index.js";
+import { ensureTestSchemaOnce } from "./ensureTestSchema.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_ROOT = path.resolve(__dirname, "..", "..", "..", "packages", "db");
 const ORG_ID = "org-pubref";
 const EVENT_ID = "evt-pubref";
 const EVENT_SLUG = "summer-gala";
@@ -19,18 +15,17 @@ const ATTENDEE_ID = "attendee-cuid-legacy-id";
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 
-beforeAll(async () => {
-  execSync("npx prisma db push --force-reset --accept-data-loss", {
-    cwd: DB_ROOT,
-    env: { ...process.env },
-    stdio: "pipe",
-  });
+async function seedPublicRefFixture(client: PrismaClient): Promise<void> {
+  await client.checkIn.deleteMany({ where: { event_id: EVENT_ID } });
+  await client.attendee.deleteMany({ where: { event_id: EVENT_ID } });
+  await client.roleAssignment.deleteMany({ where: { scope_id: EVENT_ID } });
+  await client.event.deleteMany({ where: { id: EVENT_ID } });
+  await client.organization.deleteMany({ where: { id: ORG_ID } });
 
-  prisma = new PrismaClient();
-  await prisma.organization.create({
+  await client.organization.create({
     data: { id: ORG_ID, name: "Org", slug: "pubref-org" },
   });
-  await prisma.event.create({
+  await client.event.create({
     data: {
       id: EVENT_ID,
       title: "Summer Gala",
@@ -39,7 +34,7 @@ beforeAll(async () => {
       organization_id: ORG_ID,
     },
   });
-  await prisma.attendee.create({
+  await client.attendee.create({
     data: {
       id: ATTENDEE_ID,
       event_id: EVENT_ID,
@@ -49,6 +44,12 @@ beforeAll(async () => {
       public_ref: PUBLIC_REF,
     },
   });
+}
+
+beforeAll(async () => {
+  await ensureTestSchemaOnce();
+  prisma = new PrismaClient();
+  await seedPublicRefFixture(prisma);
 
   app = createApp({
     prisma,
@@ -59,7 +60,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.$disconnect();
+  await prisma?.$disconnect();
 });
 
 describe("Mode B public routes — public_ref", () => {
