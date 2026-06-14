@@ -71,3 +71,23 @@ INSERT INTO "SystemSettings" ("key", "value_json", "updated_at") VALUES
     ('operator_session_ttl', '43200000', NOW()),
     ('trusted_device_days', '30', NOW()),
     ('mfa_required_roles', '["admin","superadmin"]', NOW());
+
+-- Re-stage active elevated sessions so MFA applies immediately on rollout (not after TTL expiry).
+-- Operator-only sessions stay `full`; admin/superadmin get mfa_pending or enrollment_required.
+UPDATE "Session" s
+SET "stage" = CASE
+    WHEN EXISTS (
+        SELECT 1 FROM "UserMfaMethod" m
+        WHERE m."user_id" = s."user_id"
+          AND m."type" = 'totp'
+          AND m."confirmed_at" IS NOT NULL
+    ) THEN 'mfa_pending'
+    ELSE 'enrollment_required'
+END
+WHERE s."revoked_at" IS NULL
+  AND s."expires_at" > NOW()
+  AND EXISTS (
+      SELECT 1 FROM "RoleAssignment" ra
+      WHERE ra."user_id" = s."user_id"
+        AND ra."role" IN ('admin', 'superadmin')
+  );

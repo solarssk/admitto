@@ -25,6 +25,10 @@ import {
 } from "../src/mfa/backup-recovery.js";
 import { generateEmergencyRecoveryCode } from "../src/mfa/emergency-recovery.js";
 import {
+  generateRecoveryCodePlaintext,
+  normalizeRecoveryCode,
+} from "../src/mfa/recovery-hash.js";
+import {
   createTrustedDevice,
   validateTrustedDevice,
   revokeAllTrustedDevicesForUser,
@@ -199,6 +203,14 @@ describe("login MFA flow", () => {
     });
     expect(mfa.ok).toBe(true);
     expect(await validateSession(prisma, loginResult.rawToken)).not.toBeNull();
+  });
+});
+
+describe("recovery code format", () => {
+  it("uses 64-bit entropy (16 hex chars)", () => {
+    const code = generateRecoveryCodePlaintext();
+    expect(code).toMatch(/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/);
+    expect(normalizeRecoveryCode(code)).toHaveLength(16);
   });
 });
 

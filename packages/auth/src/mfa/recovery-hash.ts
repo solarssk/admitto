@@ -1,11 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { hashPassword, verifyPassword } from "../password.js";
 
-/** Generate a human-readable backup code (shown once). */
+/** Generate a human-readable backup code (shown once). 8 random bytes → 64 bits entropy. */
 export function generateRecoveryCodePlaintext(): string {
-  const bytes = randomBytes(5);
-  const hex = bytes.toString("hex").toUpperCase();
-  return `${hex.slice(0, 4)}-${hex.slice(4, 8)}`;
+  const hex = randomBytes(8).toString("hex").toUpperCase();
+  return `${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}`;
 }
 
 /** Hash a recovery code for storage (argon2id). */
