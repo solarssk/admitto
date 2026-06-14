@@ -8,5 +8,20 @@ Milestones follow semver logic:
 * v1.0 — first stable MVP: event-ready, tested, handed to operator
 * v1.x+ — post-event features
 
-Active milestone: v0.1 (Gate 0 + Skeleton)
+Active milestone: v0.3.2 (2FA + OIDC linking, after auth core v0.3.1)
 Repo: https://github.com/solarssk/admitto
+
+## Pull Requests
+
+Every PR description must follow the repository template in `.github/pull_request_template.md`.
+
+Required rules:
+
+* keep the exact section structure:
+  * `Description`
+  * `How to test`
+  * `What stays / known limitations`
+  * `Checklist`
+* do not replace those sections with custom headings
+* if a checklist item does not apply, keep it and explain why instead of deleting it
+* if tests were not run, say so plainly in both `How to test` and the checklist
