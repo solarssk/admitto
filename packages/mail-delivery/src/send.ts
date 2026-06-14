@@ -131,7 +131,17 @@ export async function sendTicketEmails(
         continue;
       }
 
-      const links = buildAttendeeMailLinks(attendee, event, baseUrl, plaintextToken);
+      let links: AttendeeMailLinks;
+      try {
+        links = buildAttendeeMailLinks(attendee, event, baseUrl, plaintextToken);
+      } catch (err) {
+        skipped.push({
+          attendeeId: attendee.id,
+          reason: err instanceof Error ? err.message : "link_build_failed",
+        });
+        continue;
+      }
+
       const { first_name, last_name } = splitDisplayName(attendee.name);
 
       const rendered = renderTemplateTrustedForStorage(

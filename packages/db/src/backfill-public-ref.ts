@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { generateToken } from "@admitto/tickets";
+import { generateToken } from "@admitto/crypto";
 
 /** Agency attendee = has qr_payload or external_uuid (Mode B). */
 export function isAgencyAttendee(row: {

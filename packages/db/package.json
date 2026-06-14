@@ -29,7 +29,6 @@
   },
   "dependencies": {
     "@admitto/crypto": "*",
-    "@admitto/tickets": "*",
     "@prisma/client": "^5.17.0"
   },
   "devDependencies": {

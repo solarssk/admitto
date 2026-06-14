@@ -147,6 +147,51 @@ describe("sendTicketEmails", () => {
     expect(exported.length).toBeLessThanOrEqual(1);
   });
 
+  it("skips agency attendee missing public_ref without aborting the batch", async () => {
+    await prisma.emailDelivery.deleteMany({
+      where: { attendee_id: { in: ["att-no-ref", "att-batch-ok"] } },
+    });
+    await prisma.attendee.deleteMany({ where: { id: { in: ["att-no-ref", "att-batch-ok"] } } });
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-no-ref",
+          event_id: EVENT_ID,
+          email: "no-ref@example.com",
+          name: "No Ref Agency",
+          qr_payload: "AGENCY-MISSING-REF",
+        },
+        {
+          id: "att-batch-ok",
+          event_id: EVENT_ID,
+          email: "batch-ok@example.com",
+          name: "Batch OK",
+        },
+      ],
+    });
+
+    exported.length = 0;
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { attendeeIds: ["att-no-ref", "att-batch-ok"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    expect(result.skipped).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          attendeeId: "att-no-ref",
+          reason: expect.stringContaining("missing public_ref"),
+        }),
+      ]),
+    );
+    expect(result.sent).toBe(1);
+    expect(exported).toHaveLength(1);
+    expect(exported[0]?.message.to).toBe("batch-ok@example.com");
+  });
+
   it("marks deliveries failed when sendBatch throws", async () => {
     await prisma.emailDelivery.deleteMany({ where: { attendee_id: "att-batch-fail" } });
     await prisma.attendee.create({
