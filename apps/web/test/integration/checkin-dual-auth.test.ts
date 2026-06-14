@@ -9,10 +9,9 @@ import {
   parseScanBodyMiddleware,
   eventIdFromScanBody,
   eventIdFromHistoryQuery,
-} from "../src/checkin-gate.js";
-import { createCheckinAuthenticatedRateLimit } from "../src/checkin-rate-limit.js";
-import { InMemoryRateLimitStore, type RateLimitStore } from "../src/rate-limit/index.js";
-import { ensureTestSchemaOnce } from "./ensureTestSchema.js";
+} from "../../src/checkin-gate.js";
+import { createCheckinAuthenticatedRateLimit } from "../../src/checkin-rate-limit.js";
+import { InMemoryRateLimitStore, type RateLimitStore } from "../../src/rate-limit/index.js";
 
 const TOKEN = "test-operator-token-abc123";
 const ORG_A = "org-dual-a";
@@ -137,7 +136,6 @@ function buildScanApp(allowBearer = false, rateLimitStore?: RateLimitStore) {
 }
 
 beforeAll(async () => {
-  await ensureTestSchemaOnce();
   prisma = new PrismaClient();
   await seedDualAuthFixture(prisma);
 });

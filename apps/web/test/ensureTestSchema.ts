@@ -8,8 +8,6 @@ const execAsync = promisify(exec);
 const DB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "db");
 const MIGRATE_TIMEOUT_MS = 60_000;
 
-let schemaReady: Promise<void> | undefined;
-
 function testDbEnv(): NodeJS.ProcessEnv {
   return { ...process.env, DATABASE_URL: WEB_TEST_DATABASE_URL };
 }
@@ -31,7 +29,11 @@ async function runPrisma(command: string, env: NodeJS.ProcessEnv): Promise<void>
   await execAsync(command, { cwd: DB_ROOT, env, timeout: MIGRATE_TIMEOUT_MS });
 }
 
-async function ensureTestSchema(): Promise<void> {
+/**
+ * Run `prisma migrate deploy` once per integration Vitest run (via globalSetup).
+ * See ADR-0015-test-strategy.md — no `db push --force-reset` in test files.
+ */
+export async function ensureIntegrationTestSchema(): Promise<void> {
   const env = testDbEnv();
   try {
     await runPrisma("npx prisma migrate deploy", env);
@@ -45,15 +47,4 @@ async function ensureTestSchema(): Promise<void> {
     );
     await runPrisma("npx prisma db push --skip-generate", env);
   }
-}
-
-/**
- * Apply migrations to `admitto_web_test` once per Vitest process.
- * Call from DB-backed integration suites only — not from vitest globalSetup.
- */
-export function ensureTestSchemaOnce(): Promise<void> {
-  if (!schemaReady) {
-    schemaReady = ensureTestSchema();
-  }
-  return schemaReady;
 }

@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword, createSession } from "@admitto/auth";
-import { createApp } from "../src/app.js";
-import { createRateLimitStore } from "../src/rate-limit/index.js";
-import { ensureTestSchemaOnce } from "./ensureTestSchema.js";
+import { createApp } from "../../src/app.js";
+import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
 const ORG_ID = "org-login-html";
 const EVENT_ID = "evt-login-html";
@@ -51,7 +50,6 @@ async function seedLoginPageFixture(client: PrismaClient): Promise<void> {
 }
 
 beforeAll(async () => {
-  await ensureTestSchemaOnce();
   prisma = new PrismaClient();
   await seedLoginPageFixture(prisma);
 
