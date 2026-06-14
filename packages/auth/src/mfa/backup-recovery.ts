@@ -5,7 +5,7 @@ import {
   hashRecoveryCode,
   normalizeRecoveryCode,
 } from "./recovery-hash.js";
-import { verifyAndConsumeRecoveryRow } from "./recovery-consume.js";
+import { verifyAndConsumeRecoveryRow, findMatchingRecoveryRowId } from "./recovery-consume.js";
 
 export interface BackupRecoveryCodesResult {
   /** Plaintext codes — return to client once only. */
@@ -67,4 +67,22 @@ export async function verifyBackupRecoveryCode(
   });
 
   return verifyAndConsumeRecoveryRow(prisma, candidates, normalized);
+}
+
+/** Locate a matching unused backup recovery row without consuming it. */
+export async function findBackupRecoveryRowId(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+  plaintext: string,
+): Promise<string | null> {
+  const normalized = normalizeRecoveryCode(plaintext);
+  const candidates = await prisma.userMfaMethod.findMany({
+    where: {
+      user_id: userId,
+      type: "recovery",
+      last_used_at: null,
+      OR: [{ label: null }, { label: { not: EMERGENCY_RECOVERY_LABEL } }],
+    },
+  });
+  return findMatchingRecoveryRowId(candidates, normalized);
 }

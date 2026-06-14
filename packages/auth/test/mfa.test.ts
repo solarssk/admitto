@@ -204,6 +204,40 @@ describe("login MFA flow", () => {
     expect(mfa.ok).toBe(true);
     expect(await validateSession(prisma, loginResult.rawToken)).not.toBeNull();
   });
+
+  it("does not consume recovery code when session promotion fails", async () => {
+    await resetUserMfa(prisma, USER_ADMIN);
+    const { codes } = await regenerateBackupRecoveryCodes(prisma, USER_ADMIN);
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: USER_ADMIN,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const loginResult = await login(prisma, {
+      email: "mfa-admin@example.com",
+      password: PASSWORD,
+    });
+    expect(loginResult.ok).toBe(true);
+    if (!loginResult.ok) return;
+
+    await prisma.session.update({
+      where: { id: loginResult.sessionId },
+      data: { stage: SESSION_STAGE.FULL },
+    });
+
+    const mfa = await completeMfa(prisma, {
+      userId: USER_ADMIN,
+      sessionId: loginResult.sessionId,
+      code: codes[0]!,
+    });
+    expect(mfa.ok).toBe(false);
+    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(true);
+  });
 });
 
 describe("validateSession MFA policy", () => {

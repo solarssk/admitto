@@ -15,8 +15,9 @@ import {
 } from "./constants.js";
 import { userRequiresMfa, userHasConfirmedTotp } from "./mfa/policy.js";
 import { validateTrustedDevice } from "./mfa/trusted-device.js";
-import { verifyBackupRecoveryCode } from "./mfa/backup-recovery.js";
-import { verifyEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
+import { findBackupRecoveryRowId } from "./mfa/backup-recovery.js";
+import { findEmergencyRecoveryRowId } from "./mfa/emergency-recovery.js";
+import { consumeRecoveryRow } from "./mfa/recovery-consume.js";
 import { verifyUserTotpCode } from "./mfa/enrollment.js";
 import { createTrustedDevice } from "./mfa/trusted-device.js";
 
@@ -117,30 +118,34 @@ export interface CompleteMfaResult {
   trustedDeviceRawToken?: string;
 }
 
-/**
- * Complete MFA step: TOTP or backup/emergency recovery code.
- * Promotes session to full when code is valid and session is still eligible.
- */
-export async function completeMfa(
-  prisma: PrismaClient | Prisma.TransactionClient,
+async function completeMfaInTransaction(
+  tx: Prisma.TransactionClient,
   input: CompleteMfaInput,
 ): Promise<CompleteMfaResult> {
   const { userId, sessionId, code } = input;
 
-  let verified = await verifyUserTotpCode(prisma, userId, code);
-  if (!verified) {
-    verified = await verifyBackupRecoveryCode(prisma, userId, code);
-  }
-  if (!verified) {
-    verified = await verifyEmergencyRecoveryCode(prisma, userId, code);
-  }
-  if (!verified) return { ok: false };
+  const totpOk = await verifyUserTotpCode(tx, userId, code);
+  let recoveryRowId: string | null = null;
 
-  const promoted = await promoteSessionToFull(prisma, sessionId, userId);
+  if (!totpOk) {
+    recoveryRowId = await findBackupRecoveryRowId(tx, userId, code);
+    if (!recoveryRowId) {
+      recoveryRowId = await findEmergencyRecoveryRowId(tx, userId, code);
+    }
+  }
+
+  if (!totpOk && !recoveryRowId) return { ok: false };
+
+  const promoted = await promoteSessionToFull(tx, sessionId, userId);
   if (!promoted) return { ok: false };
 
+  if (recoveryRowId) {
+    const consumed = await consumeRecoveryRow(tx, recoveryRowId);
+    if (!consumed) return { ok: false };
+  }
+
   if (input.rememberDevice) {
-    const { rawToken } = await createTrustedDevice(prisma, {
+    const { rawToken } = await createTrustedDevice(tx, {
       userId,
       ip: input.ip,
       userAgent: input.userAgent,
@@ -150,6 +155,20 @@ export async function completeMfa(
   }
 
   return { ok: true };
+}
+
+/**
+ * Complete MFA step: TOTP or backup/emergency recovery code.
+ * Promotes session to full when code is valid; recovery codes are consumed only after promotion.
+ */
+export async function completeMfa(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  input: CompleteMfaInput,
+): Promise<CompleteMfaResult> {
+  if ("$transaction" in prisma && typeof prisma.$transaction === "function") {
+    return prisma.$transaction((tx) => completeMfaInTransaction(tx, input));
+  }
+  return completeMfaInTransaction(prisma, input);
 }
 
 /** Revoke the validated session row (idempotent when already revoked). */

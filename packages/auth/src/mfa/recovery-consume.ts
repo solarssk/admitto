@@ -14,6 +14,23 @@ export async function consumeRecoveryRow(
 }
 
 /**
+ * Find matching recovery row without consuming.
+ * Scans all candidates sequentially (not in parallel) to avoid argon2 timing side-channels.
+ */
+export async function findMatchingRecoveryRowId(
+  candidates: { id: string; credential_hash: string | null }[],
+  normalizedCode: string,
+): Promise<string | null> {
+  let matchedId: string | null = null;
+  for (const row of candidates) {
+    if (!row.credential_hash) continue;
+    const ok = await verifyRecoveryCode(normalizedCode, row.credential_hash);
+    if (ok && matchedId === null) matchedId = row.id;
+  }
+  return matchedId;
+}
+
+/**
  * Find matching recovery row and consume once.
  * Scans all candidates sequentially (not in parallel) to avoid argon2 timing side-channels.
  */
@@ -22,12 +39,7 @@ export async function verifyAndConsumeRecoveryRow(
   candidates: { id: string; credential_hash: string | null }[],
   normalizedCode: string,
 ): Promise<boolean> {
-  let matchedId: string | null = null;
-  for (const row of candidates) {
-    if (!row.credential_hash) continue;
-    const ok = await verifyRecoveryCode(normalizedCode, row.credential_hash);
-    if (ok && matchedId === null) matchedId = row.id;
-  }
+  const matchedId = await findMatchingRecoveryRowId(candidates, normalizedCode);
   if (!matchedId) return false;
   return consumeRecoveryRow(prisma, matchedId);
 }

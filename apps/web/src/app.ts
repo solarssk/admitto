@@ -169,7 +169,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handleTotpEnroll(c, db),
   );
   app.post("/api/auth/mfa/totp/confirm", jsonPostCsrf, requirePartialSession, (c) =>
-    handleTotpConfirm(c, db),
+    handleTotpConfirm(c, db, rateLimitStore),
   );
 
   app.get("/login", (c) => handleGetLogin(c));
@@ -180,7 +180,7 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/mfa/enroll", requirePartialSessionHtml, (c) => handleGetMfaEnroll(c, db));
   app.post("/mfa/enroll", htmlPostCsrf, requirePartialSessionHtml, (c) =>
-    handlePostMfaEnroll(c, db),
+    handlePostMfaEnroll(c, db, rateLimitStore),
   );
   app.get("/operator", requireSessionHtml, (c) => handleGetOperator(c, db));
   app.post("/logout", htmlPostCsrf, (c) => handlePostLogout(c, db));

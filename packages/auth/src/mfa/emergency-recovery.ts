@@ -5,7 +5,7 @@ import {
   hashRecoveryCode,
   normalizeRecoveryCode,
 } from "./recovery-hash.js";
-import { verifyAndConsumeRecoveryRow } from "./recovery-consume.js";
+import { verifyAndConsumeRecoveryRow, findMatchingRecoveryRowId } from "./recovery-consume.js";
 
 export interface EmergencyRecoveryResult {
   /** Plaintext code — show once on stdout for break-glass CLI. */
@@ -59,4 +59,22 @@ export async function verifyEmergencyRecoveryCode(
   });
 
   return verifyAndConsumeRecoveryRow(prisma, rows, normalized);
+}
+
+/** Locate a matching unused emergency recovery row without consuming it. */
+export async function findEmergencyRecoveryRowId(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+  plaintext: string,
+): Promise<string | null> {
+  const normalized = normalizeRecoveryCode(plaintext);
+  const rows = await prisma.userMfaMethod.findMany({
+    where: {
+      user_id: userId,
+      type: "recovery",
+      label: EMERGENCY_RECOVERY_LABEL,
+      last_used_at: null,
+    },
+  });
+  return findMatchingRecoveryRowId(rows, normalized);
 }

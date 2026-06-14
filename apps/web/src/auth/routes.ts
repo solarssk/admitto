@@ -228,7 +228,11 @@ export async function handleTotpEnroll(c: Context, db: PrismaClient): Promise<Re
 }
 
 /** POST /api/auth/mfa/totp/confirm — confirm TOTP with code (enrollment_required only). */
-export async function handleTotpConfirm(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleTotpConfirm(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
   const partial = c.get("partialAuth");
   if (partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED) {
     return c.json(AUTH_ERROR, 401);
@@ -248,6 +252,11 @@ export async function handleTotpConfirm(c: Context, db: PrismaClient): Promise<R
   const { code } = body as Record<string, unknown>;
   if (typeof code !== "string" || !code) {
     return c.json(AUTH_ERROR, 401);
+  }
+
+  const ip = resolveMfaClientIp(c);
+  if (!(await checkMfaVerifyRateLimit(rateLimitStore, partial.sessionId, ip, code))) {
+    return c.json({ error: "too many requests" }, 429);
   }
 
   const ok = await confirmTotpEnrollment(db, partial.userId, code);
