@@ -38,7 +38,7 @@ import {
 } from "./rate-limit/index.js";
 import { createRequireSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
-import { createCheckinRateLimitMiddleware } from "./checkin-rate-limit.js";
+import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
 import { handleLogin, handleLogout, handleMe } from "./auth/routes.js";
 import {
   handleGetLogin,
@@ -87,7 +87,6 @@ export function createApp(options: CreateAppOptions = {}) {
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimit = createLoginRateLimitMiddleware(rateLimitStore);
-  const checkinRateLimit = createCheckinRateLimitMiddleware(rateLimitStore);
   const requireSession = createRequireSession(db);
   const requireSessionHtml = createRequireSession(db, { redirectTo: "/login" });
 
@@ -264,11 +263,10 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
-  app.use("/api/checkin/*", checkinRateLimit);
-
   app.post(
     "/api/checkin/scan",
     createCheckinPreAuth(checkinAuthDeps),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
     createCheckinSessionCsrfGuard(),
     parseScanBodyMiddleware,
     createCheckinEventScope(checkinAuthDeps, eventIdFromScanBody),
@@ -303,6 +301,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get(
     "/api/checkin/history",
     createCheckinPreAuth(checkinAuthDeps),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "history"),
     createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
     async (c) => {
       const eventId = c.req.query("eventId");
