@@ -9,6 +9,8 @@ and check-in scanning. See [SECURITY.md](SECURITY.md) before deploying with real
 **This repository contains only generic code and synthetic data (`@example.com`).
 No secrets, no real personal data are ever committed here.**
 
+Current milestone history is tracked in [CHANGELOG.md](CHANGELOG.md).
+
 ## Prerequisites
 
 - Node.js `>=22.13.0 <23` (LTS 22 line)
