@@ -32,7 +32,10 @@ function validatedAgencyTicketUrl(payload: string): string | null {
   }
 }
 
-/** Build ticket_url and qr_image_url for mail template vars. */
+/**
+ * Build ticket_url and qr_image_url for mail template vars.
+ * @throws when agency attendee has no `public_ref` or internal attendee has no plaintext token
+ */
 export function buildAttendeeMailLinks(
   attendee: AttendeeLinkInput,
   event: EventLinkInput,

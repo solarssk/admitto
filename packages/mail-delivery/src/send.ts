@@ -79,6 +79,10 @@ function materializePendingMessage(item: PendingSend): MailMessage {
   };
 }
 
+/**
+ * Issue ticket emails for an event (initial or resend).
+ * Skips individual attendees on not_issuable, token/link build errors, or dedup — does not abort the batch.
+ */
 export async function sendTicketEmails(
   eventId: string,
   options: SendTicketEmailsOptions,
