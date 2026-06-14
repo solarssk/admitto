@@ -20,7 +20,7 @@
     "@admitto/mail-delivery": "*",
     "@admitto/tickets": "*",
     "@prisma/client": "^5.17.0",
-    "@hono/node-server": "^1.13.7",
+    "@hono/node-server": "^2.0.4",
     "hono": "^4.7.11",
     "redis": "^4.7.0"
   },
