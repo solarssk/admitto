@@ -24,7 +24,7 @@ function loginHeaders(extra: Record<string, string> = {}): Record<string, string
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 
-/** Seed fixture without `db push --force-reset` (CI already migrates; repeated resets segfault on Linux). */
+/** Seed fixture without `db push --force-reset` (schema from vitest globalSetup migrate deploy). */
 async function seedAuthRoutesFixture(client: PrismaClient): Promise<void> {
   await client.roleAssignment.deleteMany({
     where: { OR: [{ scope_id: EVENT_ID }, { user: { email: OPERATOR_EMAIL } }] },
