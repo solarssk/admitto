@@ -66,7 +66,7 @@ export function verifyTotpCodeDetailed(
     }
 
     const result = totp.verifySync(verifyOptions);
-    if (result.valid && typeof result.timeStep === "number") {
+    if (result.valid && "timeStep" in result) {
       return { valid: true, timeStep: result.timeStep };
     }
     return { valid: false };
