@@ -1,23 +1,33 @@
-import type { PrismaClient, Prisma, Session } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@prisma/client";
 import { generateToken, hashToken } from "@admitto/tickets";
-import { SESSION_LAST_SEEN_THROTTLE_MS } from "./constants.js";
-import { resolveSessionTtlMs } from "./session-ttl.js";
+import { SESSION_LAST_SEEN_THROTTLE_MS, SESSION_STAGE, type SessionStage } from "./constants.js";
+import { MFA_PENDING_SESSION_TTL_MS } from "./constants.js";
+import {
+  getSessionTtlAdminMs,
+  getSessionTtlOperatorMs,
+} from "./settings/resolver.js";
 
 /** Max length for optional device label on sessions (matches login form). */
 const DEVICE_LABEL_MAX_LEN = 120;
 
 export interface CreateSessionInput {
   userId: string;
+  stage?: SessionStage;
   ip?: string;
   userAgent?: string;
   deviceLabel?: string;
 }
 
-/** Active session after cookie token validation (includes raw token for logout). */
+/** Active full session after cookie token validation. */
 export interface ValidatedSession {
-  session: Session;
+  session: import("@prisma/client").Session;
   userId: string;
   rawToken: string;
+}
+
+/** Any non-revoked session including partial MFA stages. */
+export interface ValidatedPartialSession extends ValidatedSession {
+  stage: SessionStage;
 }
 
 /** Filters for admin session listing (future UI). */
@@ -26,21 +36,39 @@ export interface ListSessionsFilters {
   includeRevoked?: boolean;
 }
 
+async function resolveFullTtlMs(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<number> {
+  const assignments = await prisma.roleAssignment.findMany({
+    where: { user_id: userId },
+    select: { role: true },
+  });
+  const hasElevated = assignments.some((a) => a.role === "superadmin" || a.role === "admin");
+  return hasElevated ? getSessionTtlAdminMs(prisma) : getSessionTtlOperatorMs(prisma);
+}
+
 /** Create a new DB-backed session; returns raw token (give to client once). */
 export async function createSession(
   prisma: PrismaClient | Prisma.TransactionClient,
   input: CreateSessionInput,
-): Promise<{ session: Session; rawToken: string }> {
+): Promise<{ session: import("@prisma/client").Session; rawToken: string }> {
   const rawToken = generateToken();
   const token_hash = hashToken(rawToken);
-  const ttlMs = await resolveSessionTtlMs(prisma, input.userId);
+  const stage = input.stage ?? SESSION_STAGE.FULL;
   const now = new Date();
+
+  const ttlMs =
+    stage === SESSION_STAGE.FULL
+      ? await resolveFullTtlMs(prisma, input.userId)
+      : MFA_PENDING_SESSION_TTL_MS;
   const expires_at = new Date(now.getTime() + ttlMs);
 
   const session = await prisma.session.create({
     data: {
       user_id: input.userId,
       token_hash,
+      stage,
       ip: input.ip ?? null,
       user_agent: input.userAgent ?? null,
       device_label: input.deviceLabel ? input.deviceLabel.slice(0, DEVICE_LABEL_MAX_LEN) : null,
@@ -52,14 +80,10 @@ export async function createSession(
   return { session, rawToken };
 }
 
-/**
- * Lookup session by raw cookie token; reject revoked, expired, or inactive-user sessions.
- * Updates `last_seen_at` at most once per `SESSION_LAST_SEEN_THROTTLE_MS`.
- */
-export async function validateSession(
+async function lookupSessionByToken(
   prisma: PrismaClient | Prisma.TransactionClient,
   rawToken: string,
-): Promise<ValidatedSession | null> {
+): Promise<ValidatedPartialSession | null> {
   const token_hash = hashToken(rawToken);
   const session = await prisma.session.findUnique({
     where: { token_hash },
@@ -79,7 +103,52 @@ export async function validateSession(
     });
   }
 
-  return { session, userId: session.user_id, rawToken };
+  return {
+    session,
+    userId: session.user_id,
+    rawToken,
+    stage: session.stage as SessionStage,
+  };
+}
+
+/**
+ * Lookup session by raw cookie token; only `full` stage (protected routes).
+ */
+export async function validateSession(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  rawToken: string,
+): Promise<ValidatedSession | null> {
+  const validated = await lookupSessionByToken(prisma, rawToken);
+  if (!validated || validated.stage !== SESSION_STAGE.FULL) return null;
+  return validated;
+}
+
+/**
+ * Lookup any active session including mfa_pending / enrollment_required.
+ */
+export async function validatePartialSession(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  rawToken: string,
+): Promise<ValidatedPartialSession | null> {
+  return lookupSessionByToken(prisma, rawToken);
+}
+
+/** Promote partial session to full after successful MFA. */
+export async function promoteSessionToFull(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  sessionId: string,
+  userId: string,
+): Promise<void> {
+  const ttlMs = await resolveFullTtlMs(prisma, userId);
+  const now = new Date();
+  await prisma.session.update({
+    where: { id: sessionId },
+    data: {
+      stage: SESSION_STAGE.FULL,
+      expires_at: new Date(now.getTime() + ttlMs),
+      last_seen_at: now,
+    },
+  });
 }
 
 /** Mark one session revoked by id (no-op if already revoked). */
@@ -139,7 +208,7 @@ export async function revokeAllOperatorSessionsForEvent(
 export async function listSessions(
   prisma: PrismaClient | Prisma.TransactionClient,
   filters: ListSessionsFilters = {},
-): Promise<Session[]> {
+): Promise<import("@prisma/client").Session[]> {
   return prisma.session.findMany({
     where: {
       ...(filters.userId ? { user_id: filters.userId } : {}),

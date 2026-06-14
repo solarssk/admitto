@@ -12,7 +12,23 @@ first event-ready MVP.
 
 ## Unreleased
 
-- Next milestone: **v0.3.3** — 2FA / TOTP (prompt 16a).
+### v0.3.3 — 2FA / TOTP (prompt 16a)
+
+- **MFA model:** `UserMfaMethod` table (`totp` | `webauthn` | `recovery` seam); TOTP + backup recovery
+  codes in this release.
+- **Login flow:** admin/superadmin → `mfa_pending` or `enrollment_required` partial sessions; operators
+  unchanged (full session after password).
+- **TOTP:** enroll + confirm (`secret_enc` via `@admitto/crypto`), verify with ±1 window, MFA verify
+  rate limits.
+- **Backup recovery codes:** hashed (argon2id), one-time use, regenerate invalidates old set.
+- **Trusted device:** optional skip-TOTP cookie (`admitto_trusted_device`); hash-only in DB; revoke on
+  MFA reset / session revoke paths.
+- **Break-glass CLI:** `reset-mfa`, `generate-emergency-recovery` (password from stdin, audit log).
+- **SystemSettings seam:** `session_ttl`, `operator_session_ttl`, `trusted_device_days`,
+  `mfa_required_roles` with env locks; `resolveSessionTtlMs` reads from store.
+- **HTTP:** `POST /api/auth/mfa/verify`, `POST /api/auth/mfa/totp/enroll|confirm`; minimal HTML
+  `/mfa/verify`, `/mfa/enroll`.
+- **Session `stage`:** only `full` grants `/api/auth/me`, check-in, and operator landing.
 
 ## v0.3.2 - 2026-06-14
 

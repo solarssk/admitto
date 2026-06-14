@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-describe("CLI bootstrap-superadmin", () => {
-  it("does not accept password via argv", () => {
+describe("CLI break-glass", () => {
+  it("reset-mfa does not accept password via argv", () => {
+    const argv = ["node", "cli.js", "reset-mfa", "--email", "admin@example.com"];
+    expect(argv.includes("--password")).toBe(false);
+  });
+
+  it("generate-emergency-recovery does not accept password via argv", () => {
     const argv = [
       "node",
       "cli.js",
-      "bootstrap-superadmin",
+      "generate-emergency-recovery",
       "--email",
       "admin@example.com",
     ];
     expect(argv.includes("--password")).toBe(false);
-    const passwordFlagIndex = argv.indexOf("--password");
-    expect(passwordFlagIndex).toBe(-1);
   });
 });

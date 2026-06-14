@@ -1,6 +1,13 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
-import { login, logout, validateSession, SESSION_COOKIE_NAME } from "@admitto/auth";
+import {
+  SESSION_COOKIE_NAME,
+  TRUSTED_DEVICE_COOKIE_NAME,
+  LOGIN_NEXT,
+  login,
+  logout,
+  validatePartialSession,
+} from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
 import { setSessionCookie, clearSessionCookie } from "./routes.js";
@@ -62,6 +69,7 @@ export async function handlePostLogin(
       ip: resolveClientIp(c),
       userAgent: c.req.header("user-agent"),
       deviceLabel: deviceLabel || undefined,
+      trustedDeviceToken: getCookie(c, TRUSTED_DEVICE_COOKIE_NAME),
     },
     { email },
   );
@@ -74,6 +82,13 @@ export async function handlePostLogin(
   }
 
   setSessionCookie(c, result.rawToken);
+
+  if (result.next === LOGIN_NEXT.MFA_REQUIRED) {
+    return c.redirect("/mfa/verify", 302);
+  }
+  if (result.next === LOGIN_NEXT.ENROLLMENT_REQUIRED) {
+    return c.redirect("/mfa/enroll", 302);
+  }
   return c.redirect("/operator", 302);
 }
 
@@ -132,7 +147,7 @@ export async function handleGetOperator(c: Context, db: PrismaClient): Promise<R
 /** POST /logout — revokes session server-side and redirects to `/login`. */
 export async function handlePostLogout(c: Context, db: PrismaClient): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
-  const validated = rawToken ? await validateSession(db, rawToken) : null;
+  const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
   await logout(db, validated);
   clearSessionCookie(c);
   return c.redirect("/login", 302);

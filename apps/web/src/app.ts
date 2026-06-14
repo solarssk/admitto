@@ -36,11 +36,17 @@ import {
   createPublicRateLimitMiddleware,
   type RateLimitStore,
 } from "./rate-limit/index.js";
-import { createRequireSession } from "./auth-middleware.js";
+import { createRequireSession, createRequirePartialSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
-import { handleLogin, handleLogout, handleMe } from "./auth/routes.js";
+import { handleLogin, handleLogout, handleMe, handleMfaVerify, handleTotpEnroll, handleTotpConfirm } from "./auth/routes.js";
+import {
+  handleGetMfaEnroll,
+  handleGetMfaVerify,
+  handlePostMfaEnroll,
+  handlePostMfaVerify,
+} from "./auth/mfa-html-routes.js";
 import {
   handleGetLogin,
   handlePostLogin,
@@ -93,6 +99,8 @@ export function createApp(options: CreateAppOptions = {}) {
   const jsonPostCsrf = createCrossSitePostGuard({ format: "json" });
   const requireSession = createRequireSession(db);
   const requireSessionHtml = createRequireSession(db, { redirectTo: "/login" });
+  const requirePartialSession = createRequirePartialSession(db, { redirectTo: "/login" });
+  const requirePartialSessionHtml = createRequirePartialSession(db, { redirectTo: "/login" });
 
   function htmlWithSecurityHeaders(c: Context, html: string, status: 200 | 404 | 410 | 500) {
     for (const [name, value] of Object.entries(ticketPageHeaders)) {
@@ -154,8 +162,26 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/auth/logout", jsonPostCsrf, (c) => handleLogout(c, db));
   app.get("/api/auth/me", requireSession, (c) => handleMe(c, db));
 
+  app.post("/api/auth/mfa/verify", jsonPostCsrf, requirePartialSession, (c) =>
+    handleMfaVerify(c, db, rateLimitStore),
+  );
+  app.post("/api/auth/mfa/totp/enroll", jsonPostCsrf, requirePartialSession, (c) =>
+    handleTotpEnroll(c, db),
+  );
+  app.post("/api/auth/mfa/totp/confirm", jsonPostCsrf, requirePartialSession, (c) =>
+    handleTotpConfirm(c, db),
+  );
+
   app.get("/login", (c) => handleGetLogin(c));
   app.post("/login", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostLogin(c, db, rateLimitStore));
+  app.get("/mfa/verify", requirePartialSessionHtml, (c) => handleGetMfaVerify(c));
+  app.post("/mfa/verify", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+    handlePostMfaVerify(c, db, rateLimitStore),
+  );
+  app.get("/mfa/enroll", requirePartialSessionHtml, (c) => handleGetMfaEnroll(c, db));
+  app.post("/mfa/enroll", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+    handlePostMfaEnroll(c, db),
+  );
   app.get("/operator", requireSessionHtml, (c) => handleGetOperator(c, db));
   app.post("/logout", htmlPostCsrf, (c) => handlePostLogout(c, db));
 
