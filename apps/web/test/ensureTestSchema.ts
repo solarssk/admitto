@@ -19,8 +19,15 @@ export async function ensureTestSchema(): Promise<void> {
   const env = testDbEnv();
   try {
     await execAsync("npx prisma migrate deploy", { cwd: DB_ROOT, env });
-  } catch {
+  } catch (migrateError) {
+    if (process.env["CI"]) {
+      throw migrateError;
+    }
     // Local DBs may have been created via `db push --force-reset` without migration history.
+    console.warn(
+      "[ensureTestSchema] migrate deploy failed, falling back to db push:",
+      migrateError,
+    );
     await execAsync("npx prisma db push --skip-generate", { cwd: DB_ROOT, env });
   }
 }

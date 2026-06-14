@@ -5,8 +5,8 @@ import { createApp } from "../src/app.js";
 import { createRateLimitStore } from "../src/rate-limit/index.js";
 
 const CHECKIN_TOKEN = "test-checkin-token-for-vitest-32chars!";
-const EVENT_ID = "event-web-auth";
-const ORG_ID = "org_default";
+const EVENT_ID = "event-web-auth-routes";
+const ORG_ID = "org-web-auth-routes";
 const OPERATOR_EMAIL = "auth-routes-operator@example.com";
 const OPERATOR_PASSWORD = "login-pass-123";
 
@@ -37,14 +37,14 @@ async function seedAuthRoutesFixture(client: PrismaClient): Promise<void> {
   const password_hash = await hashPassword(OPERATOR_PASSWORD);
 
   await client.organization.create({
-    data: { id: ORG_ID, name: "Default", slug: "default" },
+    data: { id: ORG_ID, name: "Auth Routes Test Org", slug: "web-auth-routes-org" },
   });
 
   await client.event.create({
     data: {
       id: EVENT_ID,
       title: "Web Auth Event",
-      slug: "web-auth-event",
+      slug: "web-auth-routes-event",
       date: new Date("2026-09-01T09:00:00Z"),
       organization_id: ORG_ID,
     },
