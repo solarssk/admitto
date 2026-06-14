@@ -25,3 +25,12 @@ Required rules:
 * do not replace those sections with custom headings
 * if a checklist item does not apply, keep it and explain why instead of deleting it
 * if tests were not run, say so plainly in both `How to test` and the checklist
+* every PR must have labels before it is handed off for review
+* every PR should be assigned to the intended milestone when that milestone already exists
+
+Minimum PR metadata expectation:
+
+* one `type:*` label
+* at least one relevant `area:*` label
+* a `prio:*` label when priority is clear from roadmap or security scope
+* `security` for auth, secrets, access control, personal-data handling, or other security-sensitive changes
