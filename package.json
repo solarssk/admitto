@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",
-    "build": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/tickets && npm run build -w @admitto/mailer && npm run build -w @admitto/import && npm run build -w @admitto/mail-templates && npm run build -w @admitto/mailer-config && npm run build -w @admitto/mail-delivery && npm run build -w @admitto/web",
+    "build": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/tickets && npm run build -w @admitto/mailer && npm run build -w @admitto/import && npm run build -w @admitto/mail-templates && npm run build -w @admitto/mailer-config && npm run build -w @admitto/mail-delivery && npm run build -w @admitto/auth && npm run build -w @admitto/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint 'packages/*/src/**/*.ts'",
     "db:migrate": "npm run db:migrate -w @admitto/db",
@@ -18,7 +18,8 @@
     "db:test-setup": "bash infra/scripts/create-test-dbs.sh",
     "mail:test-send": "npm run cli -w @admitto/mail-delivery -- test-send",
     "mail:config": "npm run cli -w @admitto/mail-delivery -- config-describe",
-    "mail:deliveries": "npm run cli -w @admitto/mail-delivery -- deliveries"
+    "mail:deliveries": "npm run cli -w @admitto/mail-delivery -- deliveries",
+    "auth:bootstrap": "npm run cli -w @admitto/auth -- bootstrap-superadmin"
   },
   "type": "module",
   "engines": {

@@ -13,6 +13,7 @@
     "start": "node dist/src/index.js"
   },
   "dependencies": {
+    "@admitto/auth": "*",
     "@admitto/db": "*",
     "@admitto/mail-delivery": "*",
     "@admitto/tickets": "*",

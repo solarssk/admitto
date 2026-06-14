@@ -13,18 +13,19 @@ export const SCOPE_TYPES = ["instance", "organization", "event"] as const satisf
  * superadmin@instance does NOT implicitly grant admin@organization.
  * Hierarchy-aware checking is deferred to v1.0 (full RBAC enforcement).
  *
+ * @param userId - User.id
  * @param scopeId - null/undefined for instance scope; org or event id otherwise.
  */
 export async function hasScope(
   prisma: PrismaClient | Prisma.TransactionClient,
-  userRef: string,
+  userId: string,
   role: Role,
   scopeType: ScopeType,
   scopeId?: string,
 ): Promise<boolean> {
   const count = await prisma.roleAssignment.count({
     where: {
-      user_ref: userRef,
+      user_id: userId,
       role,
       scope_type: scopeType,
       scope_id: scopeId ?? null,
