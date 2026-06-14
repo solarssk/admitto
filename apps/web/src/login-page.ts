@@ -19,10 +19,11 @@ export function getLoginPageSecurityHeaders(): Record<string, string> {
 }
 
 /** Render the operator sign-in form HTML (optional uniform error message). */
-export function renderLoginForm(error?: string): string {
+export function renderLoginForm(error?: string, next?: string): string {
   const errorBlock = error
     ? `<p class="error" role="alert">${esc(error)}</p>`
     : "";
+  const nextField = next ? `<input type="hidden" name="next" value="${esc(next)}">` : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -43,6 +44,7 @@ export function renderLoginForm(error?: string): string {
   <h1>Operator sign in</h1>
   ${errorBlock}
   <form method="post" action="/login">
+    ${nextField}
     <label>Email <input type="email" name="email" required autocomplete="username"></label>
     <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
     <label>Device label <span style="color:#666">(optional)</span>

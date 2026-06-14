@@ -38,3 +38,15 @@ export function logLoginFailure(ctx: LoginAuditContext): void {
     }),
   );
 }
+
+/** Emit `auth.mfa.break_glass` audit (no codes/secrets). */
+export function logMfaBreakGlass(ctx: { action: string; email: string; ip?: string }): void {
+  console.info(
+    JSON.stringify({
+      event: "auth.mfa.break_glass",
+      action: ctx.action,
+      email: redactEmail(ctx.email),
+      ip: ctx.ip ?? null,
+    }),
+  );
+}

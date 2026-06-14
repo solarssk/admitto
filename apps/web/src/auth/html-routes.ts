@@ -1,9 +1,17 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
-import { login, logout, validateSession, SESSION_COOKIE_NAME } from "@admitto/auth";
+import {
+  SESSION_COOKIE_NAME,
+  TRUSTED_DEVICE_COOKIE_NAME,
+  LOGIN_NEXT,
+  login,
+  logout,
+  validatePartialSession,
+  revokeTrustedDeviceByToken,
+} from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
-import { setSessionCookie, clearSessionCookie } from "./routes.js";
+import { setSessionCookie, clearSessionCookie, clearTrustedDeviceCookie } from "./routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import {
@@ -11,6 +19,11 @@ import {
   renderLoginForm,
   renderOperatorLanding,
 } from "../login-page.js";
+import { resolveSafeRedirectPath } from "./safe-redirect.js";
+
+function mfaPathWithNext(path: string, next: string): string {
+  return `${path}?next=${encodeURIComponent(next)}`;
+}
 
 const LOGIN_ERROR = "Invalid email or password.";
 
@@ -23,7 +36,8 @@ function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Respon
 
 /** GET /login — operator sign-in form (HTML). */
 export function handleGetLogin(c: Context): Response {
-  return htmlResponse(c, renderLoginForm());
+  const next = resolveSafeRedirectPath(c.req.query("next"));
+  return htmlResponse(c, renderLoginForm(undefined, next));
 }
 
 async function parseLoginForm(c: Context): Promise<Record<string, string>> {
@@ -49,9 +63,10 @@ export async function handlePostLogin(
   const email = form["email"]?.trim() ?? "";
   const password = form["password"] ?? "";
   const deviceLabel = form["device_label"]?.trim();
+  const next = resolveSafeRedirectPath(form["next"] ?? c.req.query("next"));
 
   if (!email || !password) {
-    return htmlResponse(c, renderLoginForm(LOGIN_ERROR), 401);
+    return htmlResponse(c, renderLoginForm(LOGIN_ERROR, next), 401);
   }
 
   const result = await login(
@@ -62,6 +77,7 @@ export async function handlePostLogin(
       ip: resolveClientIp(c),
       userAgent: c.req.header("user-agent"),
       deviceLabel: deviceLabel || undefined,
+      trustedDeviceToken: getCookie(c, TRUSTED_DEVICE_COOKIE_NAME),
     },
     { email },
   );
@@ -70,11 +86,18 @@ export async function handlePostLogin(
     if (!(await checkLoginEmailRateLimit(rateLimitStore, email))) {
       return c.text("Too many requests", 429);
     }
-    return htmlResponse(c, renderLoginForm(LOGIN_ERROR), 401);
+    return htmlResponse(c, renderLoginForm(LOGIN_ERROR, next), 401);
   }
 
   setSessionCookie(c, result.rawToken);
-  return c.redirect("/operator", 302);
+
+  if (result.next === LOGIN_NEXT.MFA_REQUIRED) {
+    return c.redirect(mfaPathWithNext("/mfa/verify", next), 302);
+  }
+  if (result.next === LOGIN_NEXT.ENROLLMENT_REQUIRED) {
+    return c.redirect(mfaPathWithNext("/mfa/enroll", next), 302);
+  }
+  return c.redirect(next, 302);
 }
 
 /** GET /operator — temporary landing after login (requires session). */
@@ -129,11 +152,16 @@ export async function handleGetOperator(c: Context, db: PrismaClient): Promise<R
   return htmlResponse(c, renderOperatorLanding(user.email, events));
 }
 
-/** POST /logout — revokes session server-side and redirects to `/login`. */
+/** POST /logout — revokes session, trusted device, and redirects to `/login`. */
 export async function handlePostLogout(c: Context, db: PrismaClient): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
-  const validated = rawToken ? await validateSession(db, rawToken) : null;
+  const trustedRaw = getCookie(c, TRUSTED_DEVICE_COOKIE_NAME);
+  const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
+  if (validated) {
+    await revokeTrustedDeviceByToken(db, validated.userId, trustedRaw);
+  }
   await logout(db, validated);
   clearSessionCookie(c);
+  clearTrustedDeviceCookie(c);
   return c.redirect("/login", 302);
 }

@@ -57,6 +57,18 @@ describe("encrypt / decrypt — tamper detection", () => {
     const tampered = { ...payload, ciphertext: raw.toString("base64") };
     expect(() => decrypt(tampered)).toThrow();
   });
+
+  it("throws on invalid iv length before decipher", () => {
+    const payload = encrypt("secret");
+    const tampered = { ...payload, iv: Buffer.alloc(8).toString("base64") };
+    expect(() => decrypt(tampered)).toThrow("iv must be 12 bytes");
+  });
+
+  it("throws on invalid authTag length before decipher", () => {
+    const payload = encrypt("secret");
+    const tampered = { ...payload, authTag: Buffer.alloc(8).toString("base64") };
+    expect(() => decrypt(tampered)).toThrow("authTag must be 16 bytes");
+  });
 });
 
 describe("encryptToString / decryptFromString", () => {

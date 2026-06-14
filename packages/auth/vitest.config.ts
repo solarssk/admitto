@@ -10,6 +10,7 @@ export default defineConfig({
     env: {
       DATABASE_URL: "postgresql://admitto:admitto@localhost:5432/admitto_auth_test",
       NODE_ENV: "test",
+      ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     },
   },
 });

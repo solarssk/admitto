@@ -10,19 +10,25 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "precli": "npm run build -w @admitto/shared -w @admitto/db -w @admitto/tickets -w @admitto/auth",
+    "precli": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/tickets -w @admitto/auth",
     "cli": "node dist/cli.js"
   },
   "dependencies": {
+    "@admitto/crypto": "*",
     "@admitto/db": "*",
     "@admitto/tickets": "*",
-    "argon2": "^0.41.1"
+    "argon2": "^0.41.1",
+    "otplib": "^13.4.1"
   },
   "devDependencies": {
     "@prisma/client": "^5.17.0",

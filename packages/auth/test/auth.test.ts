@@ -10,7 +10,10 @@ import {
   validateSession,
   revokeSession,
   revokeAllOperatorSessionsForEvent,
+  validatePartialSession,
+  promoteSessionToFull,
 } from "../src/session.js";
+import { SESSION_STAGE } from "../src/constants.js";
 import {
   canPerformCheckIn,
   canManageEvent,
@@ -18,6 +21,7 @@ import {
 } from "../src/authorization.js";
 import { login } from "../src/login.js";
 import { bootstrapSuperadmin, superadminInstanceExists } from "../src/bootstrap.js";
+import { generateTotpSecret, encryptTotpSecret } from "../src/mfa/totp.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..", "..", "db");
@@ -90,6 +94,17 @@ beforeAll(async () => {
       { user_id: USER_OP_A, role: "operator", scope_type: "event", scope_id: EVENT_A },
     ],
   });
+
+  for (const userId of [USER_SUPER, USER_ADMIN_A]) {
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
+    });
+  }
 });
 
 afterAll(async () => {
@@ -150,6 +165,13 @@ describe("session", () => {
     expect(await validateSession(prisma, rawToken)).toBeNull();
   });
 
+  it("defaults MFA-required users to partial stage when stage omitted", async () => {
+    const { rawToken, session } = await createSession(prisma, { userId: USER_ADMIN_A });
+    expect(session.stage).toBe(SESSION_STAGE.MFA_PENDING);
+    expect(await validateSession(prisma, rawToken)).toBeNull();
+    expect(await validatePartialSession(prisma, rawToken)).not.toBeNull();
+  });
+
   it("rejects session when user is inactive", async () => {
     const { rawToken } = await createSession(prisma, { userId: USER_OP_A });
     await prisma.user.update({ where: { id: USER_OP_A }, data: { is_active: false } });
@@ -162,7 +184,7 @@ describe("session", () => {
 
   it("revokeAllOperatorSessionsForEvent only affects operators on event", async () => {
     const op = await createSession(prisma, { userId: USER_OP_A });
-    const admin = await createSession(prisma, { userId: USER_ADMIN_A });
+    const admin = await createSession(prisma, { userId: USER_ADMIN_A, stage: SESSION_STAGE.FULL });
     const count = await revokeAllOperatorSessionsForEvent(prisma, EVENT_A);
     expect(count).toBeGreaterThanOrEqual(1);
     expect(await validateSession(prisma, op.rawToken)).toBeNull();
@@ -181,7 +203,15 @@ describe("session", () => {
         { user_id: mixedId, role: "admin", scope_type: "organization", scope_id: ORG_A },
       ],
     });
-    const mixed = await createSession(prisma, { userId: mixedId });
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: mixedId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
+    });
+    const mixed = await createSession(prisma, { userId: mixedId, stage: SESSION_STAGE.FULL });
     const op = await createSession(prisma, { userId: USER_OP_A });
     const count = await revokeAllOperatorSessionsForEvent(prisma, EVENT_A);
     expect(count).toBeGreaterThanOrEqual(1);
