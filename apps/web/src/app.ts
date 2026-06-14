@@ -54,6 +54,18 @@ import {
   handleGetOperator,
   handlePostLogout,
 } from "./auth/html-routes.js";
+import { handleOidcStart, handleOidcCallback } from "./auth/oidc-routes.js";
+import { createRequireSuperadmin } from "./auth/superadmin-middleware.js";
+import { sweepExpiredOidcAuthStates } from "@admitto/auth";
+import {
+  handleListProviders,
+  handleGetNewProvider,
+  handlePostNewProvider,
+  handleGetEditProvider,
+  handlePostEditProvider,
+  handlePostDiscover,
+  handlePostTestConnection,
+} from "./admin/auth-providers-routes.js";
 
 /** Injectable dependencies for `createApp()` (tests and custom deploy wiring). */
 export interface CreateAppOptions {
@@ -102,6 +114,11 @@ export function createApp(options: CreateAppOptions = {}) {
   const requireSessionHtml = createRequireSession(db, { redirectTo: "/login" });
   const requirePartialSession = createRequirePartialSession(db);
   const requirePartialSessionHtml = createRequirePartialSession(db, { redirectTo: "/login" });
+  const requireSuperadmin = createRequireSuperadmin(db);
+
+  void sweepExpiredOidcAuthStates(db).catch((err) => {
+    console.error("OidcAuthState sweep failed:", err);
+  });
 
   function htmlWithSecurityHeaders(c: Context, html: string, status: 200 | 404 | 410 | 500) {
     for (const [name, value] of Object.entries(ticketPageHeaders)) {
@@ -173,7 +190,26 @@ export function createApp(options: CreateAppOptions = {}) {
     handleTotpConfirm(c, db, rateLimitStore),
   );
 
-  app.get("/login", (c) => handleGetLogin(c));
+  app.get("/api/auth/oidc/:providerId/start", (c) => handleOidcStart(c, db, baseUrl));
+  app.get("/api/auth/oidc/:providerId/callback", (c) => handleOidcCallback(c, db, baseUrl));
+
+  app.get("/admin/auth/providers", requireSuperadmin, (c) => handleListProviders(c, db));
+  app.get("/admin/auth/providers/new", requireSuperadmin, (c) => handleGetNewProvider(c));
+  app.post("/admin/auth/providers/new", htmlPostCsrf, requireSuperadmin, (c) =>
+    handlePostNewProvider(c, db),
+  );
+  app.get("/admin/auth/providers/:id", requireSuperadmin, (c) => handleGetEditProvider(c, db));
+  app.post("/admin/auth/providers/:id", htmlPostCsrf, requireSuperadmin, (c) =>
+    handlePostEditProvider(c, db),
+  );
+  app.post("/admin/auth/providers/:id/discover", htmlPostCsrf, requireSuperadmin, (c) =>
+    handlePostDiscover(c, db),
+  );
+  app.post("/admin/auth/providers/:id/test", htmlPostCsrf, requireSuperadmin, (c) =>
+    handlePostTestConnection(c, db),
+  );
+
+  app.get("/login", (c) => handleGetLogin(c, db));
   app.post("/login", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostLogin(c, db, rateLimitStore));
   app.get("/mfa/verify", requirePartialSessionHtml, (c) => handleGetMfaVerify(c));
   app.post("/mfa/verify", htmlPostCsrf, requirePartialSessionHtml, (c) =>

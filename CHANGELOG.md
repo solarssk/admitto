@@ -12,6 +12,15 @@ first event-ready MVP.
 
 ## Unreleased
 
+### v0.3.4 — OIDC linking (prompt 16b)
+
+Additive OIDC login (Authentik-first) linked to local `User` via `ExternalIdentity`. Authorization
+Code + PKCE with server-side `state`/`nonce`; full ID token validation (JWKS, iss, aud, exp, nonce).
+JIT users get zero roles unless a configured group→role rule matches. OIDC logins receive `full`
+sessions (MFA is the IdP’s responsibility per ADR 0011). Superadmin server-rendered UI at
+`/admin/auth/providers` for IdP config (write-only `client_secret`, Test connection). Seam
+`resolveOrCreateUserFromExternalIdentity` shared with future Cloudflare Access (16c).
+
 ## v0.3.3 - 2026-06-14
 
 2FA / TOTP for admin and superadmin (prompt 16a).

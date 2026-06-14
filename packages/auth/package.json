@@ -20,6 +20,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "precli": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/tickets -w @admitto/auth",
     "cli": "node dist/cli.js"
   },
@@ -28,6 +30,7 @@
     "@admitto/db": "*",
     "@admitto/tickets": "*",
     "argon2": "^0.41.1",
+    "jose": "^6.0.11",
     "otplib": "^13.4.1"
   },
   "devDependencies": {

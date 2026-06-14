@@ -8,6 +8,7 @@ import {
   logout,
   validatePartialSession,
   revokeTrustedDeviceByToken,
+  findEnabledOidcProviders,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
@@ -35,9 +36,12 @@ function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Respon
 }
 
 /** GET /login — operator sign-in form (HTML). */
-export function handleGetLogin(c: Context): Response {
+export async function handleGetLogin(c: Context, db: PrismaClient): Promise<Response> {
   const next = resolveSafeRedirectPath(c.req.query("next"));
-  return htmlResponse(c, renderLoginForm(undefined, next));
+  const errorParam = c.req.query("error") ?? undefined;
+  const providers = await findEnabledOidcProviders(db);
+  const sso = providers.map((p) => ({ id: p.id, display_name: p.display_name }));
+  return htmlResponse(c, renderLoginForm(errorParam, next, sso));
 }
 
 async function parseLoginForm(c: Context): Promise<Record<string, string>> {

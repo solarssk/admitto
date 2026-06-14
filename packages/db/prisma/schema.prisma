@@ -220,17 +220,18 @@ model MailTemplate {
 }
 
 model User {
-  id               String           @id @default(cuid())
-  email            String           @unique
-  password_hash    String
-  display_name     String?
-  is_active        Boolean          @default(true)
-  created_at       DateTime         @default(now())
-  updated_at       DateTime         @updatedAt
-  sessions         Session[]
-  role_assignments RoleAssignment[]
-  mfa_methods      UserMfaMethod[]
-  trusted_devices  TrustedDevice[]
+  id                  String              @id @default(cuid())
+  email               String              @unique
+  password_hash       String
+  display_name        String?
+  is_active           Boolean             @default(true)
+  created_at          DateTime            @default(now())
+  updated_at          DateTime            @updatedAt
+  sessions            Session[]
+  role_assignments    RoleAssignment[]
+  mfa_methods         UserMfaMethod[]
+  trusted_devices     TrustedDevice[]
+  external_identities ExternalIdentity[]
 }
 
 model Session {
@@ -308,4 +309,78 @@ model RoleAssignment {
 
   @@index([user_id])
   @@index([scope_type, scope_id])
+}
+
+// OIDC / external identity providers (prompt 16b; cloudflare_access reserved for 16c).
+model IdentityProvider {
+  id                    String   @id @default(cuid())
+  provider_type         String   @default("oidc") // "oidc" | "cloudflare_access"
+  issuer                String   @unique
+  client_id             String
+  client_secret_enc     String?
+  authorization_endpoint String
+  token_endpoint        String
+  jwks_uri              String
+  userinfo_endpoint     String?
+  claim_email           String   @default("email")
+  claim_name            String   @default("name")
+  claim_groups          String   @default("groups")
+  enabled               Boolean  @default(false)
+  display_name          String
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  external_identities ExternalIdentity[]
+  group_role_mappings OidcGroupRoleMapping[]
+  oidc_auth_states    OidcAuthState[]
+}
+
+// Linked external subject → local User (JIT or explicit link).
+model ExternalIdentity {
+  id            String   @id @default(cuid())
+  provider_id   String
+  provider      IdentityProvider @relation(fields: [provider_id], references: [id], onDelete: Cascade)
+  subject       String
+  user_id       String
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  email         String?
+  name          String?
+  groups        String[] @default([])
+  linked_at     DateTime @default(now())
+  last_login_at DateTime?
+
+  @@unique([provider_id, subject])
+  @@index([user_id])
+}
+
+// Grafana-style group → role rules (default empty; superadmin-configured).
+model OidcGroupRoleMapping {
+  id          String   @id @default(cuid())
+  provider_id String
+  provider    IdentityProvider @relation(fields: [provider_id], references: [id], onDelete: Cascade)
+  group       String
+  role        String
+  scope_type  String
+  scope_id    String?
+  created_at  DateTime @default(now())
+
+  @@unique([provider_id, group, role, scope_type, scope_id])
+  @@index([provider_id])
+}
+
+// Short-lived OAuth state (PKCE, CSRF, nonce) — single-use.
+model OidcAuthState {
+  id             String    @id @default(cuid())
+  provider_id    String
+  provider       IdentityProvider @relation(fields: [provider_id], references: [id], onDelete: Cascade)
+  state          String    @unique
+  nonce          String
+  code_verifier  String
+  redirect_next  String?
+  expires_at     DateTime
+  consumed_at    DateTime?
+  created_at     DateTime  @default(now())
+
+  @@index([expires_at])
+  @@index([provider_id])
 }
