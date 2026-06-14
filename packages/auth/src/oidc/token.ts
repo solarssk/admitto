@@ -40,19 +40,17 @@ export async function exchangeAuthorizationCode(
   codeVerifier: string,
   redirectUri: string,
 ): Promise<{ id_token: string; access_token?: string }> {
-  if (!provider.client_secret_enc) {
-    throw new Error("OIDC provider missing client secret");
-  }
-  const clientSecret = decryptClientSecret(provider.client_secret_enc);
   assertSafeOidcFetchUrl(provider.token_endpoint);
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
     redirect_uri: redirectUri,
     client_id: provider.client_id,
-    client_secret: clientSecret,
     code_verifier: codeVerifier,
   });
+  if (provider.client_secret_enc) {
+    body.set("client_secret", decryptClientSecret(provider.client_secret_enc));
+  }
 
   const res = await fetch(provider.token_endpoint, {
     method: "POST",

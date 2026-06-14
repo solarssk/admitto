@@ -19,7 +19,7 @@ Code + PKCE with server-side `state`/`nonce`; full ID token validation (JWKS, is
 JIT users get zero roles unless a configured group→role rule matches. OIDC logins receive `full`
 sessions with `auth_method=oidc` (local TOTP policy skipped; MFA is the IdP’s responsibility per
 ADR 0011). Explicit account linking via `?link=1` → `/account/oidc/:id/link` step-up page (password
-+ TOTP when required); `link_step_up_at` on OAuth state; OIDC flow cookie binds callback to the
++ TOTP when required); `link_step_up_at` on OAuth state (5 min TTL at callback); OIDC flow cookie binds callback to the
 initiating browser. Superadmin server-rendered UI at `/admin/auth/providers` for IdP config
 (write-only `client_secret`, Test connection, transactional save). SSRF guards on outbound OIDC fetches.
 Seam `resolveOrCreateUserFromExternalIdentity` shared with future Cloudflare Access (16c).

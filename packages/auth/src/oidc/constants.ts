@@ -13,3 +13,6 @@ export const DEFAULT_CLAIM_GROUPS = "groups";
 
 /** Binds OIDC callback to the browser that started the flow (CSRF / session fixation). */
 export const OIDC_FLOW_COOKIE_NAME = "admitto_oidc_flow";
+
+/** Max age between password/TOTP step-up and OIDC link callback. */
+export const OIDC_LINK_STEP_UP_MAX_AGE_MS = 5 * 60 * 1000;

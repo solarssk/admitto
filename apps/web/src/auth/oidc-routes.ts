@@ -13,6 +13,7 @@ import {
   ExternalIdentityLinkError,
   applyOidcGroupRoleMappings,
   validatePartialSession,
+  OIDC_LINK_STEP_UP_MAX_AGE_MS,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { SESSION_COOKIE_NAME } from "@admitto/auth";
@@ -85,6 +86,10 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
   if (consumed.link_user_id) {
     if (!consumed.link_step_up_at) {
       logOidcError("callback", "link flow missing step-up");
+      return oidcFailedRedirect(c);
+    }
+    if (Date.now() - consumed.link_step_up_at.getTime() > OIDC_LINK_STEP_UP_MAX_AGE_MS) {
+      logOidcError("callback", "link step-up expired");
       return oidcFailedRedirect(c);
     }
 

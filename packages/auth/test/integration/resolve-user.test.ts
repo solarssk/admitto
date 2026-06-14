@@ -60,6 +60,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Provider-scoped teardown — never delete by email domain (parallel tests / shared DB).
   const linked = await prisma.externalIdentity.findMany({
     where: { provider_id: PROVIDER_ID },
     select: { user_id: true },

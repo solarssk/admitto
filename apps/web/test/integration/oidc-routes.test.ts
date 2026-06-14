@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
-import { hashPassword, SESSION_COOKIE_NAME, OIDC_FLOW_COOKIE_NAME } from "@admitto/auth";
+import { hashPassword, SESSION_COOKIE_NAME, OIDC_FLOW_COOKIE_NAME, createSession, SESSION_STAGE } from "@admitto/auth";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { startMockOidcIdp, stopMockOidcIdp, type MockOidcIdp } from "../helpers/mock-oidc-idp.js";
@@ -124,6 +124,49 @@ describe("oidc routes", () => {
     expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
 
     await prisma.oidcAuthState.deleteMany({ where: { state } });
+    await prisma.user.delete({ where: { id: linkUser.id } });
+  });
+
+  it("callback rejects link flow when step-up timestamp expired", async () => {
+    const linkUser = await prisma.user.create({
+      data: {
+        email: "oidc-link-expired@example.com",
+        password_hash: await hashPassword("pw"),
+      },
+    });
+    const state = "link-flow-expired-state";
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await prisma.oidcAuthState.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        state,
+        nonce: "nonce",
+        code_verifier: "verifier",
+        link_user_id: linkUser.id,
+        link_step_up_at: new Date(Date.now() - 10 * 60 * 1000),
+        expires_at: expiresAt,
+      },
+    });
+
+    const session = await createSession(prisma, {
+      userId: linkUser.id,
+      stage: SESSION_STAGE.FULL,
+    });
+
+    const res = await app.request(
+      `/api/auth/oidc/${PROVIDER_ID}/callback?code=fake&state=${encodeURIComponent(state)}`,
+      {
+        redirect: "manual",
+        headers: {
+          Cookie: `${OIDC_FLOW_COOKIE_NAME}=${state}; ${SESSION_COOKIE_NAME}=${session.rawToken}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login?error=oidc_failed");
+
+    await prisma.oidcAuthState.deleteMany({ where: { state } });
+    await prisma.session.deleteMany({ where: { user_id: linkUser.id } });
     await prisma.user.delete({ where: { id: linkUser.id } });
   });
 

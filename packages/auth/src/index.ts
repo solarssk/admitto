@@ -83,6 +83,7 @@ export {
   PROVIDER_TYPE_CLOUDFLARE_ACCESS,
   OIDC_AUTH_STATE_TTL_MS,
   OIDC_FLOW_COOKIE_NAME,
+  OIDC_LINK_STEP_UP_MAX_AGE_MS,
 } from "./oidc/constants.js";
 export { generateCodeVerifier, codeChallengeS256, generateOauthSecret } from "./oidc/pkce.js";
 export { assertSafeOidcFetchUrl } from "./oidc/safe-url.js";

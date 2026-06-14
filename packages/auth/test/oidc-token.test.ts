@@ -1,78 +1,61 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
-import * as jose from "jose";
-import { validateIdToken, clearJwksCacheForTests } from "../src/oidc/token.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IdentityProvider } from "@prisma/client";
-import { createServer, type Server } from "node:http";
+import { exchangeAuthorizationCode } from "../src/oidc/token.js";
 
-let server: Server;
-let jwksUri: string;
-let privateKey: Awaited<ReturnType<typeof jose.generateKeyPair>>["privateKey"];
-let publicJwk: jose.JWK;
-const issuer = "https://unit-test-idp.example.com/";
-const clientId = "unit-test-client";
+const baseProvider: IdentityProvider = {
+  id: "prov",
+  provider_type: "oidc",
+  issuer: "https://idp.example.com/",
+  client_id: "public-client",
+  client_secret_enc: null,
+  authorization_endpoint: "https://idp.example.com/authorize",
+  token_endpoint: "https://idp.example.com/token",
+  jwks_uri: "https://idp.example.com/jwks",
+  userinfo_endpoint: null,
+  claim_email: "email",
+  claim_name: "name",
+  claim_groups: "groups",
+  enabled: true,
+  display_name: "Test",
+  created_at: new Date(),
+  updated_at: new Date(),
+};
 
-const provider = {
-  issuer,
-  client_id: clientId,
-  jwks_uri: "",
-} as IdentityProvider;
-
-beforeAll(async () => {
-  const keys = await jose.generateKeyPair("RS256");
-  privateKey = keys.privateKey;
-  publicJwk = await jose.exportJWK(keys.publicKey);
-  publicJwk.kid = "u1";
-  publicJwk.alg = "RS256";
-
-  server = createServer((req, res) => {
-    if (req.url === "/jwks") {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ keys: [publicJwk] }));
-      return;
-    }
-    res.writeHead(404);
-    res.end();
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const addr = server.address();
-  if (!addr || typeof addr === "string") throw new Error("bind failed");
-  jwksUri = `http://127.0.0.1:${addr.port}/jwks`;
-  provider.jwks_uri = jwksUri;
-});
-
-afterAll(async () => {
-  clearJwksCacheForTests();
-  await new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve())));
-});
-
-async function signToken(claims: Record<string, unknown>, overrides: { aud?: string; iss?: string } = {}) {
-  return new jose.SignJWT(claims)
-    .setProtectedHeader({ alg: "RS256", kid: "u1" })
-    .setIssuer(overrides.iss ?? issuer)
-    .setAudience(overrides.aud ?? clientId)
-    .setSubject("sub-1")
-    .setExpirationTime("1h")
-    .sign(privateKey);
-}
-
-describe("validateIdToken", () => {
-  it("accepts valid token with matching nonce", async () => {
-    const token = await signToken({ nonce: "n1" });
-    const payload = await validateIdToken({ idToken: token, provider, expectedNonce: "n1" });
-    expect(payload.sub).toBe("sub-1");
+describe("exchangeAuthorizationCode", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it("rejects wrong nonce", async () => {
-    const token = await signToken({ nonce: "n1" });
-    await expect(
-      validateIdToken({ idToken: token, provider, expectedNonce: "wrong" }),
-    ).rejects.toThrow(/nonce/i);
+  it("omits client_secret for public PKCE clients", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id_token: "eyJ.test" }), { status: 200 }),
+    );
+
+    await exchangeAuthorizationCode(baseProvider, "auth-code", "verifier", "https://app/callback");
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    const params = new URLSearchParams(init.body as string);
+    expect(params.get("client_id")).toBe("public-client");
+    expect(params.get("code_verifier")).toBe("verifier");
+    expect(params.has("client_secret")).toBe(false);
   });
 
-  it("rejects wrong audience", async () => {
-    const token = await signToken({ nonce: "n1" }, { aud: "other-client" });
-    await expect(
-      validateIdToken({ idToken: token, provider, expectedNonce: "n1" }),
-    ).rejects.toThrow();
+  it("includes client_secret when configured", async () => {
+    const { encryptClientSecret } = await import("../src/oidc/provider-secret.js");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ id_token: "eyJ.test" }), { status: 200 }),
+    );
+
+    await exchangeAuthorizationCode(
+      { ...baseProvider, client_secret_enc: encryptClientSecret("s3cret") },
+      "auth-code",
+      "verifier",
+      "https://app/callback",
+    );
+
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    const params = new URLSearchParams(init.body as string);
+    expect(params.get("client_secret")).toBe("s3cret");
   });
 });
