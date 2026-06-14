@@ -1,12 +1,16 @@
 import { OTP, generateSecret, generateURI } from "otplib";
 import { encryptToString, decryptFromString } from "@admitto/crypto";
 
-const TOTP_PERIOD_SEC = 30;
+export const TOTP_PERIOD_SEC = 30;
 /** v12 `window: 1` = ±1 time step = ±30 seconds. */
-const TOTP_EPOCH_TOLERANCE_SEC = 30;
+export const TOTP_EPOCH_TOLERANCE_SEC = 30;
 
 /** Isolated TOTP instance — no global singleton. */
 const totp = new OTP({ strategy: "totp" });
+
+export type TotpVerifyResult =
+  | { valid: true; timeStep: number }
+  | { valid: false };
 
 /** Generate a new TOTP secret (base32). */
 export function generateTotpSecret(): string {
@@ -32,19 +36,52 @@ function normalizeToken(code: string): string {
   return code.replace(/\s/g, "");
 }
 
-/** Verify a 6-digit TOTP code against encrypted secret. */
-export function verifyTotpCode(secretEnc: string, code: string): boolean {
+export interface VerifyTotpCodeOptions {
+  /** Reject matches at or before this time step (otplib replay protection). */
+  afterTimeStep?: number | null;
+}
+
+/** Verify a 6-digit TOTP code; returns matched time step when valid. */
+export function verifyTotpCodeDetailed(
+  secretEnc: string,
+  code: string,
+  options: VerifyTotpCodeOptions = {},
+): TotpVerifyResult {
   try {
     const secret = decryptTotpSecret(secretEnc);
-    return totp.verifySync({
+    const verifyOptions: {
+      token: string;
+      secret: string;
+      period: number;
+      epochTolerance: number;
+      afterTimeStep?: number;
+    } = {
       token: normalizeToken(code),
       secret,
       period: TOTP_PERIOD_SEC,
       epochTolerance: TOTP_EPOCH_TOLERANCE_SEC,
-    }).valid;
+    };
+    if (options.afterTimeStep != null) {
+      verifyOptions.afterTimeStep = options.afterTimeStep;
+    }
+
+    const result = totp.verifySync(verifyOptions);
+    if (result.valid && "timeStep" in result) {
+      return { valid: true, timeStep: result.timeStep };
+    }
+    return { valid: false };
   } catch {
-    return false;
+    return { valid: false };
   }
+}
+
+/** Verify a 6-digit TOTP code against encrypted secret. */
+export function verifyTotpCode(
+  secretEnc: string,
+  code: string,
+  options: VerifyTotpCodeOptions = {},
+): boolean {
+  return verifyTotpCodeDetailed(secretEnc, code, options).valid;
 }
 
 /** @internal Used by @admitto/auth/testing — not part of the public auth API. */

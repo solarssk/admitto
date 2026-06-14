@@ -12,12 +12,14 @@ import {
   resumePendingTotpEnrollment,
   confirmTotpEnrollment,
   resetUserMfa,
+  verifyUserTotpCode,
 } from "../src/mfa/enrollment.js";
 import {
   generateTotpSecret,
   encryptTotpSecret,
   generateTotpCode,
   verifyTotpCode,
+  verifyTotpCodeDetailed,
   decryptTotpSecret,
 } from "../src/mfa/totp.js";
 import {
@@ -447,6 +449,40 @@ describe("TOTP verify", () => {
     const code = generateTotpCode(secret);
     expect(verifyTotpCode(enc, code)).toBe(true);
     expect(verifyTotpCode(enc, "000000")).toBe(false);
+  });
+
+  it("rejects replay of the same time step via afterTimeStep", () => {
+    const secret = generateTotpSecret();
+    const enc = encryptTotpSecret(secret);
+    const code = generateTotpCode(secret);
+    const first = verifyTotpCodeDetailed(enc, code);
+    expect(first.valid).toBe(true);
+    if (!first.valid) return;
+
+    const replay = verifyTotpCodeDetailed(enc, code, { afterTimeStep: first.timeStep });
+    expect(replay.valid).toBe(false);
+  });
+
+  it("verifyUserTotpCode rejects immediate replay of the same code", async () => {
+    const userId = "user-totp-replay";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "totp-replay@example.com", password_hash },
+    });
+
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const code = generateTotpCode(secret);
+    expect(await verifyUserTotpCode(prisma, userId, code)).toBe(true);
+    expect(await verifyUserTotpCode(prisma, userId, code)).toBe(false);
   });
 });
 

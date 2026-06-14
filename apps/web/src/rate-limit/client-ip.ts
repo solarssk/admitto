@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
+import { resolveTrustProxy } from "../config.js";
 
 /**
  * First X-Forwarded-For hop — safe only behind a reverse proxy that
@@ -14,14 +15,9 @@ export function clientIpFromHeaders(
   return first || fallback;
 }
 
-function trustProxyEnabled(): boolean {
-  const v = process.env["TRUST_PROXY"]?.trim().toLowerCase();
-  return v === "1" || v === "true";
-}
-
 /** Client IP for rate limiting and audit: direct socket unless TRUST_PROXY is set. */
 export function resolveClientIp(c: Context): string {
-  if (trustProxyEnabled()) {
+  if (resolveTrustProxy()) {
     const forwarded = c.req.header("x-forwarded-for");
     if (forwarded) return clientIpFromHeaders(forwarded);
   }

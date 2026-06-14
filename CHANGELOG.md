@@ -12,23 +12,81 @@ first event-ready MVP.
 
 ## Unreleased
 
-### v0.3.3 — 2FA / TOTP (prompt 16a)
+## v0.3.3 - 2026-06-14
 
-- **MFA model:** `UserMfaMethod` table (`totp` | `webauthn` | `recovery` seam); TOTP + backup recovery
-  codes in this release.
-- **Login flow:** admin/superadmin → `mfa_pending` or `enrollment_required` partial sessions; operators
-  unchanged (full session after password).
-- **TOTP:** enroll + confirm (`secret_enc` via `@admitto/crypto`), verify with ±1 window, MFA verify
-  rate limits.
-- **Backup recovery codes:** hashed (argon2id), one-time use, regenerate invalidates old set.
-- **Trusted device:** optional skip-TOTP cookie (`admitto_trusted_device`); hash-only in DB; revoke on
-  MFA reset / session revoke paths.
-- **Break-glass CLI:** `reset-mfa`, `generate-emergency-recovery` (password from stdin, audit log).
-- **SystemSettings seam:** `session_ttl`, `operator_session_ttl`, `trusted_device_days`,
-  `mfa_required_roles` with env locks; `resolveSessionTtlMs` reads from store.
-- **HTTP:** `POST /api/auth/mfa/verify`, `POST /api/auth/mfa/totp/enroll|confirm`; minimal HTML
-  `/mfa/verify`, `/mfa/enroll`.
-- **Session `stage`:** only `full` grants `/api/auth/me`, check-in, and operator landing.
+2FA / TOTP for admin and superadmin (prompt 16a).
+
+This milestone adds a second authentication factor for elevated roles while keeping operator login
+unchanged. Partial sessions (`mfa_pending`, `enrollment_required`) gate admin actions until TOTP
+enrollment and verification complete; break-glass CLI commands cover lost authenticator scenarios.
+
+### MFA domain (`@admitto/auth`)
+
+- **`UserMfaMethod`:** `totp` and `recovery` rows (seam for future `webauthn`); TOTP `secret_enc` via
+  `@admitto/crypto`; backup recovery codes hashed (argon2id), one-time use.
+- **Login stages:** admin/superadmin → `mfa_pending` or `enrollment_required`; operators → full session
+  after password (no 2FA friction on event day).
+- **TOTP:** enroll + confirm, verify with otplib v13 (`epochTolerance: 30` = ±30 s); MFA verify rate
+  limits (separate buckets for TOTP vs recovery codes).
+- **Trusted device:** optional `admitto_trusted_device` cookie (hash-only in DB); skip TOTP on
+  remember; revoked on logout, MFA reset, and session revoke paths.
+- **Break-glass CLI:** `reset-mfa`, `generate-emergency-recovery` (password from stdin, no echo,
+  superadmin@instance only, audit log).
+- **`SystemSettings`:** `session_ttl`, `operator_session_ttl`, `trusted_device_days`,
+  `mfa_required_roles` (env lock → DB → default).
+- **Session hardening:** `createSession` derives partial stage when omitted (fail-closed for MFA users);
+  `validateSession` re-checks MFA policy; `promoteSessionToFull` requires non-expired partial session.
+
+### HTTP (API + minimal HTML)
+
+- **API:** `POST /api/auth/mfa/verify`, `POST /api/auth/mfa/totp/enroll`, `POST /api/auth/mfa/totp/confirm`.
+- **HTML:** `GET/POST /mfa/verify`; `GET /mfa/enroll` (read-only), `POST /mfa/enroll/start`,
+  `POST /mfa/enroll` (CSRF-protected); safe `?next=` via `resolveSafeRedirectPath`.
+- **Gates:** only `full` session grants `/api/auth/me`, check-in, and `/operator`; partial sessions
+  blocked from privileged routes.
+
+### Database
+
+- Migration `20260614130000_2fa_totp`: `Session.stage`, `UserMfaMethod`, `TrustedDevice`,
+  `SystemSettings` seed; active elevated sessions re-staged to `mfa_pending` / `enrollment_required`
+  with `expires_at` clamped (`LEAST`, max 15 minutes).
+- Migration `20260614210000_totp_replay_protection`: `UserMfaMethod.last_totp_time_step` (nullable int).
+
+### Dependencies
+
+Bundled Dependabot updates (closes #40–#45):
+
+- **`@admitto/web`:** `hono` 4.12.25, `@hono/node-server` 2.0.4, `redis` 6.0.0.
+- **`@admitto/mailer` / `@admitto/import`:** `zod` 4.4.3 (no code changes — `z.string().email()` unchanged).
+- **Root:** `@typescript-eslint/parser` 8.61.0.
+- **CI:** `github/codeql-action` → `8aad20d1` in `codeql.yml` and `semgrep.yml`.
+- **Adapter:** `RedisRateLimitStore` uses `withAbortSignal()` + two-arg `eval()` for redis v6.
+
+### Security
+
+- **CSRF / `TRUST_PROXY`:** `resolveRequestOrigin` honours `X-Forwarded-Proto` and `X-Forwarded-Host`
+  only when `TRUST_PROXY=true`, matching the existing rate-limit client-IP policy. Defense-in-depth when
+  the app is reachable without a sanitizing reverse proxy.
+- **`resolveTrustProxy`:** shared env parser in `apps/web/src/config.ts` (CSRF + rate limits).
+- **TOTP replay protection:** `UserMfaMethod.last_totp_time_step` + otplib `afterTimeStep`; login MFA
+  verify rejects reuse of the same time-step code; conditional DB update guards parallel replay.
+
+### Deploy notes
+
+- Run `npm run db:migrate` on deploy (new migration required — includes `last_totp_time_step`).
+- Set `ENCRYPTION_KEY` (32-byte base64) in production — required for TOTP `secret_enc`.
+- Set `TRUST_PROXY=true` behind nginx/traefik (rate limits, audit IP, and CSRF origin); proxy must
+  overwrite client-supplied `X-Forwarded-*` headers.
+- After rollout, existing admin/superadmin sessions are re-staged — users must complete enrollment or
+  MFA verify before admin/check-in access; plan communication before an event.
+- Break-glass: `npm run cli -w @admitto/auth -- reset-mfa --email <superadmin>` (server-side only).
+
+### Not in this release
+
+- OIDC linking (`v0.3.4` / prompt 16b)
+- WebAuthn / passkeys (schema seam only)
+- Admin UI for MFA (Tabler / v0.4)
+- Encryption key rotation and expired trusted-device cleanup jobs
 
 ## v0.3.2 - 2026-06-14
 

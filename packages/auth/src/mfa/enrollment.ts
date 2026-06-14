@@ -7,7 +7,7 @@ import {
   decryptTotpSecret,
   encryptTotpSecret,
   generateTotpSecret,
-  verifyTotpCode,
+  verifyTotpCodeDetailed,
 } from "./totp.js";
 import { generateBackupRecoveryCodes } from "./backup-recovery.js";
 import { runInTransaction } from "../prisma-tx.js";
@@ -128,11 +128,16 @@ export async function confirmTotpEnrollment(
     where: { user_id: userId, type: "totp", confirmed_at: null },
   });
   if (!row?.secret_enc) return false;
-  if (!verifyTotpCode(row.secret_enc, code)) return false;
+  const verified = verifyTotpCodeDetailed(row.secret_enc, code);
+  if (!verified.valid) return false;
 
   await prisma.userMfaMethod.update({
     where: { id: row.id },
-    data: { confirmed_at: new Date() },
+    data: {
+      confirmed_at: new Date(),
+      last_totp_time_step: verified.timeStep,
+      last_used_at: new Date(),
+    },
   });
   return true;
 }
@@ -151,14 +156,23 @@ export async function verifyUserTotpCode(
     },
   });
   if (!row?.secret_enc) return false;
-  const ok = verifyTotpCode(row.secret_enc, code);
-  if (ok) {
-    await prisma.userMfaMethod.update({
-      where: { id: row.id },
-      data: { last_used_at: new Date() },
-    });
-  }
-  return ok;
+
+  const verified = verifyTotpCodeDetailed(row.secret_enc, code, {
+    afterTimeStep: row.last_totp_time_step,
+  });
+  if (!verified.valid) return false;
+
+  const updated = await prisma.userMfaMethod.updateMany({
+    where: {
+      id: row.id,
+      OR: [{ last_totp_time_step: null }, { last_totp_time_step: { lt: verified.timeStep } }],
+    },
+    data: {
+      last_used_at: new Date(),
+      last_totp_time_step: verified.timeStep,
+    },
+  });
+  return updated.count === 1;
 }
 
 /** Remove all MFA methods, revoke sessions and trusted devices (break-glass). */

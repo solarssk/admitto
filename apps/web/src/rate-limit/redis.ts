@@ -1,4 +1,4 @@
-import { commandOptions, createClient } from "redis";
+import { createClient } from "redis";
 import { redisKeyForHit, redisWindowStart } from "./redis-keys.js";
 import type { RateLimitHitResult, RateLimitStore } from "./types.js";
 
@@ -130,16 +130,12 @@ export class RedisRateLimitStore implements RateLimitStore {
       await this.ensureConnected();
       const redisKey = redisKeyForHit(key, windowMs, now);
       const count = Number(
-        await this.client.eval(
-          commandOptions({
-            signal: AbortSignal.timeout(this.commandTimeoutMs),
-          }),
-          INCR_PEXPIRE_SCRIPT,
-          {
+        await this.client
+          .withAbortSignal(AbortSignal.timeout(this.commandTimeoutMs))
+          .eval(INCR_PEXPIRE_SCRIPT, {
             keys: [redisKey],
             arguments: [String(ttlMs)],
-          },
-        ),
+          }),
       );
       const allowed = count <= max;
       return {
