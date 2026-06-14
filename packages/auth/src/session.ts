@@ -133,22 +133,28 @@ export async function validatePartialSession(
   return lookupSessionByToken(prisma, rawToken);
 }
 
-/** Promote partial session to full after successful MFA. */
+/** Promote partial session to full after successful MFA. Returns false if session not eligible. */
 export async function promoteSessionToFull(
   prisma: PrismaClient | Prisma.TransactionClient,
   sessionId: string,
   userId: string,
-): Promise<void> {
+): Promise<boolean> {
   const ttlMs = await resolveFullTtlMs(prisma, userId);
   const now = new Date();
-  await prisma.session.update({
-    where: { id: sessionId },
+  const result = await prisma.session.updateMany({
+    where: {
+      id: sessionId,
+      user_id: userId,
+      revoked_at: null,
+      stage: { in: [SESSION_STAGE.MFA_PENDING, SESSION_STAGE.ENROLLMENT_REQUIRED] },
+    },
     data: {
       stage: SESSION_STAGE.FULL,
       expires_at: new Date(now.getTime() + ttlMs),
       last_seen_at: now,
     },
   });
+  return result.count === 1;
 }
 
 /** Mark one session revoked by id (no-op if already revoked). */

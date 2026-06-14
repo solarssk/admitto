@@ -4,8 +4,8 @@ import {
   generateRecoveryCodePlaintext,
   hashRecoveryCode,
   normalizeRecoveryCode,
-  verifyRecoveryCode,
 } from "./recovery-hash.js";
+import { verifyAndConsumeRecoveryRow } from "./recovery-consume.js";
 
 export interface BackupRecoveryCodesResult {
   /** Plaintext codes — return to client once only. */
@@ -66,15 +66,5 @@ export async function verifyBackupRecoveryCode(
     },
   });
 
-  for (const row of candidates) {
-    if (!row.credential_hash) continue;
-    if (await verifyRecoveryCode(normalized, row.credential_hash)) {
-      await prisma.userMfaMethod.update({
-        where: { id: row.id },
-        data: { last_used_at: new Date() },
-      });
-      return true;
-    }
-  }
-  return false;
+  return verifyAndConsumeRecoveryRow(prisma, candidates, normalized);
 }

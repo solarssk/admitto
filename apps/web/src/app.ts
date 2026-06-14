@@ -99,7 +99,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const jsonPostCsrf = createCrossSitePostGuard({ format: "json" });
   const requireSession = createRequireSession(db);
   const requireSessionHtml = createRequireSession(db, { redirectTo: "/login" });
-  const requirePartialSession = createRequirePartialSession(db, { redirectTo: "/login" });
+  const requirePartialSession = createRequirePartialSession(db);
   const requirePartialSessionHtml = createRequirePartialSession(db, { redirectTo: "/login" });
 
   function htmlWithSecurityHeaders(c: Context, html: string, status: 200 | 404 | 410 | 500) {

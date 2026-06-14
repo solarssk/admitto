@@ -134,7 +134,8 @@ export async function completeMfa(
   }
   if (!verified) return { ok: false };
 
-  await promoteSessionToFull(prisma, sessionId, userId);
+  const promoted = await promoteSessionToFull(prisma, sessionId, userId);
+  if (!promoted) return { ok: false };
 
   if (input.rememberDevice) {
     const { rawToken } = await createTrustedDevice(prisma, {

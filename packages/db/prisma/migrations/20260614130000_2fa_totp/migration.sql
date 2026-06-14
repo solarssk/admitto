@@ -70,4 +70,4 @@ INSERT INTO "SystemSettings" ("key", "value_json", "updated_at") VALUES
     ('session_ttl', '604800000', NOW()),
     ('operator_session_ttl', '43200000', NOW()),
     ('trusted_device_days', '30', NOW()),
-    ('mfa_required_roles', '"admin,superadmin"', NOW());
+    ('mfa_required_roles', '["admin","superadmin"]', NOW());

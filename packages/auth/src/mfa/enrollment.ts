@@ -1,7 +1,10 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
+import { EMERGENCY_RECOVERY_LABEL } from "../constants.js";
 import { findUserById } from "../user.js";
+import { userHasConfirmedTotp } from "./policy.js";
 import {
   buildTotpOtpauthUri,
+  decryptTotpSecret,
   encryptTotpSecret,
   generateTotpSecret,
   verifyTotpCode,
@@ -11,46 +14,80 @@ import { generateBackupRecoveryCodes } from "./backup-recovery.js";
 export interface StartTotpEnrollmentResult {
   otpauthUri: string;
   backupCodes: string[];
+  /** True when resuming in-progress enrollment (backup codes were already shown). */
+  backupCodesAlreadyShown?: boolean;
 }
 
+const BACKUP_RECOVERY_DELETE_FILTER = {
+  type: "recovery" as const,
+  OR: [{ label: null }, { label: { not: EMERGENCY_RECOVERY_LABEL } }],
+};
+
 /**
- * Start TOTP enrollment: create unconfirmed totp row + backup codes.
- * Returns otpauth URI and backup codes once — never log or persist plaintext secret.
+ * Start TOTP enrollment: create unconfirmed totp row + backup codes (transactional).
+ * Refuses when user already has confirmed TOTP.
  */
 export async function startTotpEnrollment(
-  prisma: PrismaClient | Prisma.TransactionClient,
+  prisma: PrismaClient,
   userId: string,
 ): Promise<StartTotpEnrollmentResult | null> {
   const user = await findUserById(prisma, userId);
   if (!user) return null;
+  if (await userHasConfirmedTotp(prisma, userId)) return null;
 
   const secret = generateTotpSecret();
   const secret_enc = encryptTotpSecret(secret);
-
-  await prisma.userMfaMethod.deleteMany({
-    where: { user_id: userId, type: "totp" },
-  });
-  await prisma.userMfaMethod.deleteMany({
-    where: {
-      user_id: userId,
-      type: "recovery",
-      label: null,
-    },
-  });
-
-  await prisma.userMfaMethod.create({
-    data: {
-      user_id: userId,
-      type: "totp",
-      secret_enc,
-      confirmed_at: null,
-    },
-  });
-
-  const { codes: backupCodes } = await generateBackupRecoveryCodes(prisma, userId);
   const otpauthUri = buildTotpOtpauthUri(secret, user.email);
 
-  return { otpauthUri, backupCodes };
+  return prisma.$transaction(async (tx) => {
+    if (await userHasConfirmedTotp(tx, userId)) return null;
+
+    await tx.userMfaMethod.deleteMany({
+      where: { user_id: userId, type: "totp" },
+    });
+    await tx.userMfaMethod.deleteMany({
+      where: { user_id: userId, ...BACKUP_RECOVERY_DELETE_FILTER },
+    });
+
+    await tx.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc,
+        confirmed_at: null,
+      },
+    });
+
+    const { codes: backupCodes } = await generateBackupRecoveryCodes(tx, userId);
+    return { otpauthUri, backupCodes };
+  });
+}
+
+/**
+ * Resume pending enrollment without rotating secret/codes, or start fresh if none pending.
+ */
+export async function getOrStartTotpEnrollment(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<StartTotpEnrollmentResult | null> {
+  if (await userHasConfirmedTotp(prisma, userId)) return null;
+
+  const pending = await prisma.userMfaMethod.findFirst({
+    where: { user_id: userId, type: "totp", confirmed_at: null },
+  });
+
+  if (pending?.secret_enc) {
+    const user = await findUserById(prisma, userId);
+    if (!user) return null;
+    const secret = decryptTotpSecret(pending.secret_enc);
+    return {
+      otpauthUri: buildTotpOtpauthUri(secret, user.email),
+      backupCodes: [],
+      backupCodesAlreadyShown: true,
+    };
+  }
+
+  return startTotpEnrollment(prisma, userId);
 }
 
 /** Confirm TOTP enrollment with a valid code. */

@@ -10,7 +10,7 @@ import {
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
-import { setSessionCookie, clearSessionCookie } from "./routes.js";
+import { setSessionCookie, clearSessionCookie, clearTrustedDeviceCookie } from "./routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import {
@@ -150,5 +150,6 @@ export async function handlePostLogout(c: Context, db: PrismaClient): Promise<Re
   const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
   await logout(db, validated);
   clearSessionCookie(c);
+  clearTrustedDeviceCookie(c);
   return c.redirect("/login", 302);
 }

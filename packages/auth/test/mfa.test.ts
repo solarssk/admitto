@@ -8,6 +8,7 @@ import { login, completeMfa } from "../src/login.js";
 import { LOGIN_NEXT, SESSION_STAGE } from "../src/constants.js";
 import {
   startTotpEnrollment,
+  getOrStartTotpEnrollment,
   confirmTotpEnrollment,
   resetUserMfa,
 } from "../src/mfa/enrollment.js";
@@ -99,6 +100,49 @@ describe("TOTP enrollment", () => {
     expect(await confirmTotpEnrollment(prisma, userId, code)).toBe(true);
     expect(await userHasConfirmedTotp(prisma, userId)).toBe(true);
     expect(await confirmTotpEnrollment(prisma, userId, "000000")).toBe(false);
+  });
+
+  it("getOrStartTotpEnrollment resumes pending setup without rotating secret", async () => {
+    const userId = "user-totp-resume";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "totp-resume@example.com", password_hash },
+    });
+
+    const first = await startTotpEnrollment(prisma, userId);
+    expect(first?.backupCodes.length).toBeGreaterThan(0);
+
+    const rowBefore = await prisma.userMfaMethod.findFirst({
+      where: { user_id: userId, type: "totp" },
+    });
+
+    const resumed = await getOrStartTotpEnrollment(prisma, userId);
+    expect(resumed?.backupCodesAlreadyShown).toBe(true);
+    expect(resumed?.backupCodes).toEqual([]);
+
+    const rowAfter = await prisma.userMfaMethod.findFirst({
+      where: { user_id: userId, type: "totp" },
+    });
+    expect(rowAfter?.id).toBe(rowBefore?.id);
+    expect(rowAfter?.secret_enc).toBe(rowBefore?.secret_enc);
+  });
+
+  it("startTotpEnrollment refuses when TOTP already confirmed", async () => {
+    const userId = "user-totp-confirmed";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "totp-confirmed@example.com", password_hash },
+    });
+
+    const enrollment = await startTotpEnrollment(prisma, userId);
+    const secret = decryptTotpSecret(
+      (await prisma.userMfaMethod.findFirst({ where: { user_id: userId, type: "totp" } }))!
+        .secret_enc!,
+    );
+    await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret));
+
+    expect(await startTotpEnrollment(prisma, userId)).toBeNull();
+    expect(enrollment?.otpauthUri).toBeTruthy();
   });
 });
 

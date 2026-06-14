@@ -10,9 +10,10 @@ import {
   validateSession,
   validatePartialSession,
   completeMfa,
-  startTotpEnrollment,
+  getOrStartTotpEnrollment,
   confirmTotpEnrollment,
   promoteSessionToFull,
+  getTrustedDeviceDays,
   SESSION_STAGE,
 } from "@admitto/auth";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
@@ -41,9 +42,17 @@ export function setSessionCookie(c: Context, rawToken: string): void {
   setCookie(c, SESSION_COOKIE_NAME, rawToken, sessionCookieOptions());
 }
 
-/** Set httpOnly trusted-device cookie. */
-export function setTrustedDeviceCookie(c: Context, rawToken: string): void {
-  setCookie(c, TRUSTED_DEVICE_COOKIE_NAME, rawToken, sessionCookieOptions());
+/** Set httpOnly trusted-device cookie with TTL from system settings. */
+export async function setTrustedDeviceCookie(
+  c: Context,
+  db: PrismaClient,
+  rawToken: string,
+): Promise<void> {
+  const days = await getTrustedDeviceDays(db);
+  setCookie(c, TRUSTED_DEVICE_COOKIE_NAME, rawToken, {
+    ...sessionCookieOptions(),
+    maxAge: days * 24 * 60 * 60,
+  });
 }
 
 /** Clear session cookie (call after server-side revoke). */
@@ -188,17 +197,20 @@ export async function handleMfaVerify(
   }
 
   if (result.trustedDeviceRawToken) {
-    setTrustedDeviceCookie(c, result.trustedDeviceRawToken);
+    await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
 
   return c.json({ ok: true, next: LOGIN_NEXT.COMPLETE }, 200);
 }
 
-/** POST /api/auth/mfa/totp/enroll — start enrollment (partial session). */
+/** POST /api/auth/mfa/totp/enroll — start enrollment (enrollment_required only). */
 export async function handleTotpEnroll(c: Context, db: PrismaClient): Promise<Response> {
   const partial = c.get("partialAuth");
+  if (partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED) {
+    return c.json(AUTH_ERROR, 401);
+  }
 
-  const enrollment = await startTotpEnrollment(db, partial.userId);
+  const enrollment = await getOrStartTotpEnrollment(db, partial.userId);
   if (!enrollment) {
     return c.json(AUTH_ERROR, 401);
   }
@@ -208,14 +220,18 @@ export async function handleTotpEnroll(c: Context, db: PrismaClient): Promise<Re
       ok: true,
       otpauth_uri: enrollment.otpauthUri,
       backup_codes: enrollment.backupCodes,
+      backup_codes_already_shown: enrollment.backupCodesAlreadyShown === true,
     },
     200,
   );
 }
 
-/** POST /api/auth/mfa/totp/confirm — confirm TOTP with code. */
+/** POST /api/auth/mfa/totp/confirm — confirm TOTP with code (enrollment_required only). */
 export async function handleTotpConfirm(c: Context, db: PrismaClient): Promise<Response> {
   const partial = c.get("partialAuth");
+  if (partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED) {
+    return c.json(AUTH_ERROR, 401);
+  }
 
   let body: unknown;
   try {
@@ -239,7 +255,10 @@ export async function handleTotpConfirm(c: Context, db: PrismaClient): Promise<R
   }
 
   if (partial.stage === SESSION_STAGE.ENROLLMENT_REQUIRED) {
-    await promoteSessionToFull(db, partial.sessionId, partial.userId);
+    const promoted = await promoteSessionToFull(db, partial.sessionId, partial.userId);
+    if (!promoted) {
+      return c.json(AUTH_ERROR, 401);
+    }
   }
 
   return c.json({ ok: true, next: LOGIN_NEXT.COMPLETE }, 200);

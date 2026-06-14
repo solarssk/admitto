@@ -5,12 +5,10 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import {
   hashPassword,
-  encryptTotpSecret,
-  generateTotpSecret,
-  generateTotpCode,
   LOGIN_NEXT,
   TRUSTED_DEVICE_COOKIE_NAME,
 } from "@admitto/auth";
+import { encryptTotpSecret, generateTotpSecret, generateTotpCode } from "@admitto/auth/testing";
 import { createApp } from "../src/app.js";
 import { InMemoryRateLimitStore } from "../src/rate-limit/index.js";
 
@@ -166,11 +164,45 @@ describe("POST /api/auth/login MFA", () => {
       c.startsWith(`${TRUSTED_DEVICE_COOKIE_NAME}=`),
     );
     expect(trustedCookie).toBeTruthy();
+    expect(trustedCookie).toMatch(/Max-Age=\d+/i);
 
     const me = await app.request("/api/auth/me", {
       headers: { ...sameOrigin, ...cookieHeader(loginRes) },
     });
     expect(me.status).toBe(200);
+  });
+
+  it("mfa_pending cannot call totp enroll or confirm APIs", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: admin!.id,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const enroll = await app.request("/api/auth/mfa/totp/enroll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(enroll.status).toBe(401);
+
+    const confirm = await app.request("/api/auth/mfa/totp/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({ code: generateTotpCode(secret) }),
+    });
+    expect(confirm.status).toBe(401);
   });
 });
 

@@ -35,9 +35,19 @@ export function renderMfaVerifyForm(error?: string): string {
 </html>`;
 }
 
-export function renderMfaEnrollPage(otpauthUri: string, backupCodes: string[], error?: string): string {
+export function renderMfaEnrollPage(
+  otpauthUri: string,
+  backupCodes: string[],
+  error?: string,
+  backupCodesAlreadyShown?: boolean,
+): string {
   const err = error ? `<p class="err">${escapeHtml(error)}</p>` : "";
-  const codes = backupCodes.map((c) => `<li><code>${escapeHtml(c)}</code></li>`).join("");
+  const backupSection = backupCodesAlreadyShown
+    ? `<div class="warn"><strong>Backup codes</strong> were already shown — use the codes you saved earlier.</div>`
+    : `<div class="warn">
+    <strong>Backup codes</strong> — save these now; they will not be shown again:
+    <ul>${backupCodes.map((c) => `<li><code>${escapeHtml(c)}</code></li>`).join("")}</ul>
+  </div>`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -58,10 +68,7 @@ export function renderMfaEnrollPage(otpauthUri: string, backupCodes: string[], e
   <h1>Set up two-factor authentication</h1>
   <p>Scan this URI in your authenticator app (or enter the secret manually), then confirm with a code.</p>
   <p><code class="uri">${escapeHtml(otpauthUri)}</code></p>
-  <div class="warn">
-    <strong>Backup codes</strong> — save these now; they will not be shown again:
-    <ul>${codes}</ul>
-  </div>
+  ${backupSection}
   ${err}
   <form method="post" action="/mfa/enroll">
     <label for="code">Confirmation code</label>

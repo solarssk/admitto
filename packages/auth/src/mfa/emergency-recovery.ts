@@ -1,6 +1,11 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { EMERGENCY_RECOVERY_LABEL } from "../constants.js";
-import { generateRecoveryCodePlaintext, hashRecoveryCode, verifyRecoveryCode } from "./recovery-hash.js";
+import {
+  generateRecoveryCodePlaintext,
+  hashRecoveryCode,
+  normalizeRecoveryCode,
+} from "./recovery-hash.js";
+import { verifyAndConsumeRecoveryRow } from "./recovery-consume.js";
 
 export interface EmergencyRecoveryResult {
   /** Plaintext code — show once on stdout for break-glass CLI. */
@@ -43,6 +48,7 @@ export async function verifyEmergencyRecoveryCode(
   userId: string,
   plaintext: string,
 ): Promise<boolean> {
+  const normalized = normalizeRecoveryCode(plaintext);
   const rows = await prisma.userMfaMethod.findMany({
     where: {
       user_id: userId,
@@ -52,15 +58,5 @@ export async function verifyEmergencyRecoveryCode(
     },
   });
 
-  for (const row of rows) {
-    if (!row.credential_hash) continue;
-    if (await verifyRecoveryCode(plaintext, row.credential_hash)) {
-      await prisma.userMfaMethod.update({
-        where: { id: row.id },
-        data: { last_used_at: new Date() },
-      });
-      return true;
-    }
-  }
-  return false;
+  return verifyAndConsumeRecoveryRow(prisma, rows, normalized);
 }

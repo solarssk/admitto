@@ -57,6 +57,7 @@ export { revokeUserAuthState } from "./revocation.js";
 export { userRequiresMfa, userHasConfirmedTotp } from "./mfa/policy.js";
 export {
   startTotpEnrollment,
+  getOrStartTotpEnrollment,
   confirmTotpEnrollment,
   verifyUserTotpCode,
   resetUserMfa,
@@ -64,4 +65,3 @@ export {
 export { regenerateBackupRecoveryCodes } from "./mfa/backup-recovery.js";
 export { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
 export { validateTrustedDevice, revokeAllTrustedDevicesForUser } from "./mfa/trusted-device.js";
-export { generateTotpSecret, encryptTotpSecret, generateTotpCode } from "./mfa/totp.js";

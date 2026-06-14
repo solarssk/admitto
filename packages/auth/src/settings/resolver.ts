@@ -70,8 +70,12 @@ export async function getTrustedDeviceDays(
 export async function getMfaRequiredRoles(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<string[]> {
-  const v = await getSetting<string>(prisma, "mfa_required_roles");
-  const csv = typeof v === "string" ? v : (SETTING_DEFAULTS["mfa_required_roles"] as string);
+  const v = await getSetting<string | string[]>(prisma, "mfa_required_roles");
+  if (Array.isArray(v)) {
+    return v.map((r) => String(r).trim()).filter(Boolean);
+  }
+  const csv =
+    typeof v === "string" ? v : (SETTING_DEFAULTS["mfa_required_roles"] as string);
   return csv
     .split(",")
     .map((r) => r.trim())

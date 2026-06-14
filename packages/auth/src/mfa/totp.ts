@@ -22,6 +22,7 @@ export function encryptTotpSecret(secret: string): string {
 }
 
 /** Decrypt TOTP secret from DB. */
+/** Decrypt TOTP secret from DB (enrollment resume / tests only). */
 export function decryptTotpSecret(secretEnc: string): string {
   return decryptFromString(secretEnc);
 }
