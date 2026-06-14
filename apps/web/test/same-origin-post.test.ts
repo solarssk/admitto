@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { rejectCrossSitePost } from "../src/auth/same-origin-post.js";
 
@@ -13,6 +13,14 @@ function makeApp() {
 }
 
 describe("rejectCrossSitePost", () => {
+  beforeEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("allows matching Origin scheme and host", async () => {
     const app = makeApp();
     const res = await app.request("https://tickets.example.com/login", {
@@ -67,7 +75,14 @@ describe("rejectCrossSitePost", () => {
     expect(res.status).toBe(403);
   });
 
-  it("uses X-Forwarded-Proto/Host behind a reverse proxy", async () => {
+  it("rejects POST when both Origin and Referer are absent", async () => {
+    const app = makeApp();
+    const res = await app.request("https://tickets.example.com/login", { method: "POST" });
+    expect(res.status).toBe(403);
+  });
+
+  it("uses X-Forwarded-Proto/Host when TRUST_PROXY=true", async () => {
+    vi.stubEnv("TRUST_PROXY", "true");
     const app = makeApp();
     const res = await app.request("http://127.0.0.1/login", {
       method: "POST",
@@ -80,7 +95,8 @@ describe("rejectCrossSitePost", () => {
     expect(res.status).toBe(200);
   });
 
-  it("rejects HTTP Origin when proxy terminates TLS", async () => {
+  it("rejects HTTP Origin when proxy terminates TLS and TRUST_PROXY=true", async () => {
+    vi.stubEnv("TRUST_PROXY", "true");
     const app = makeApp();
     const res = await app.request("http://127.0.0.1/login", {
       method: "POST",
@@ -93,7 +109,34 @@ describe("rejectCrossSitePost", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 403 not 500 when forwarded headers are malformed", async () => {
+  it("ignores spoofed X-Forwarded-* when TRUST_PROXY is unset", async () => {
+    const app = makeApp();
+    const res = await app.request("http://127.0.0.1/login", {
+      method: "POST",
+      headers: {
+        Origin: "https://evil.example",
+        "X-Forwarded-Proto": "https",
+        "X-Forwarded-Host": "evil.example",
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects public Origin on loopback when TRUST_PROXY is unset", async () => {
+    const app = makeApp();
+    const res = await app.request("http://127.0.0.1/login", {
+      method: "POST",
+      headers: {
+        Origin: "https://tickets.example.com",
+        "X-Forwarded-Proto": "https",
+        "X-Forwarded-Host": "tickets.example.com",
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 not 500 when forwarded headers are malformed and TRUST_PROXY=true", async () => {
+    vi.stubEnv("TRUST_PROXY", "true");
     const app = makeApp();
     const res = await app.request("https://tickets.example.com/login", {
       method: "POST",
@@ -106,7 +149,8 @@ describe("rejectCrossSitePost", () => {
     expect(res.status).toBe(403);
   });
 
-  it("falls back to request origin when forwarded headers are malformed", async () => {
+  it("falls back to request origin when forwarded headers are malformed and TRUST_PROXY=true", async () => {
+    vi.stubEnv("TRUST_PROXY", "true");
     const app = makeApp();
     const res = await app.request("https://tickets.example.com/login", {
       method: "POST",

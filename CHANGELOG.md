@@ -61,10 +61,19 @@ Bundled Dependabot updates (closes #40–#45):
 - **CI:** `github/codeql-action` → `8aad20d1` in `codeql.yml` and `semgrep.yml`.
 - **Adapter:** `RedisRateLimitStore` uses `withAbortSignal()` + two-arg `eval()` for redis v6.
 
+### Security
+
+- **CSRF / `TRUST_PROXY`:** `resolveRequestOrigin` honours `X-Forwarded-Proto` and `X-Forwarded-Host`
+  only when `TRUST_PROXY=true`, matching the existing rate-limit client-IP policy. Defense-in-depth when
+  the app is reachable without a sanitizing reverse proxy.
+- **`resolveTrustProxy`:** shared env parser in `apps/web/src/config.ts` (CSRF + rate limits).
+
 ### Deploy notes
 
 - Run `npm run db:migrate` on deploy (new migration required).
 - Set `ENCRYPTION_KEY` (32-byte base64) in production — required for TOTP `secret_enc`.
+- Set `TRUST_PROXY=true` behind nginx/traefik (rate limits, audit IP, and CSRF origin); proxy must
+  overwrite client-supplied `X-Forwarded-*` headers.
 - After rollout, existing admin/superadmin sessions are re-staged — users must complete enrollment or
   MFA verify before admin/check-in access; plan communication before an event.
 - Break-glass: `npm run cli -w @admitto/auth -- reset-mfa --email <superadmin>` (server-side only).

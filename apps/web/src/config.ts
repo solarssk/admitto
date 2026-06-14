@@ -44,6 +44,14 @@ function parseEnvFlag(value: string | undefined): boolean {
 }
 
 /**
+ * Trust reverse-proxy forwarded headers (`X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`).
+ * Required in production behind nginx/traefik that overwrites client-supplied values.
+ */
+export function resolveTrustProxy(env: EnvLike = process.env): boolean {
+  return parseEnvFlag(env["TRUST_PROXY"]);
+}
+
+/**
  * Emergency break-glass: allow ADR 0003 Bearer on /api/checkin/* (default false).
  */
 export function resolveAllowCheckinBearer(env: EnvLike = process.env): boolean {

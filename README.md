@@ -51,8 +51,8 @@ This tool processes personal data (name, email, attendance status).
 - See [SECURITY.md](SECURITY.md) for how to report vulnerabilities.
 - GDPR/data-minimisation guidance will be published in the project wiki.
 - Never commit `.env` files, real attendee lists, or any credentials.
-- Public `/t/*` and `/q/*` rate limiting trusts client IPs only behind a reverse proxy that
-  overwrites or sanitizes `X-Forwarded-For`.
+- Public `/t/*` and `/q/*` rate limiting and CSRF on mutating POSTs trust forwarded headers only when
+  `TRUST_PROXY=true` behind a reverse proxy that overwrites or sanitizes `X-Forwarded-*` from clients.
 - When Redis is enabled for shared rate limiting, keep a memory cap and TTL-based eviction policy
   in deployment config so spoofed-IP floods cannot grow Redis without bound.
 

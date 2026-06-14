@@ -3,6 +3,7 @@ import {
   resolveBaseUrl,
   resolveCheckinToken,
   resolveAllowCheckinBearer,
+  resolveTrustProxy,
   validateCheckinBootConfig,
 } from "../src/config.js";
 
@@ -36,6 +37,17 @@ describe("resolveAllowCheckinBearer", () => {
   it("parses true and 1", () => {
     expect(resolveAllowCheckinBearer({ ALLOW_CHECKIN_BEARER: "true" })).toBe(true);
     expect(resolveAllowCheckinBearer({ ALLOW_CHECKIN_BEARER: "1" })).toBe(true);
+  });
+});
+
+describe("resolveTrustProxy", () => {
+  it("defaults to false when unset", () => {
+    expect(resolveTrustProxy({})).toBe(false);
+  });
+
+  it("parses true and 1", () => {
+    expect(resolveTrustProxy({ TRUST_PROXY: "true" })).toBe(true);
+    expect(resolveTrustProxy({ TRUST_PROXY: "1" })).toBe(true);
   });
 });
 
