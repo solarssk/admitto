@@ -37,6 +37,7 @@ import {
 } from "./rate-limit/index.js";
 import { createRequireSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
+import { createCheckinRateLimitMiddleware } from "./checkin-rate-limit.js";
 import { handleLogin, handleLogout, handleMe } from "./auth/routes.js";
 import {
   handleGetLogin,
@@ -85,6 +86,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimit = createLoginRateLimitMiddleware(rateLimitStore);
+  const checkinRateLimit = createCheckinRateLimitMiddleware(rateLimitStore);
   const requireSession = createRequireSession(db);
   const requireSessionHtml = createRequireSession(db, { redirectTo: "/login" });
 
@@ -260,6 +262,8 @@ export function createApp(options: CreateAppOptions = {}) {
       return c.body(null, 500);
     }
   });
+
+  app.use("/api/checkin/*", checkinRateLimit);
 
   app.post(
     "/api/checkin/scan",
