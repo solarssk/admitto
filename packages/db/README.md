@@ -15,8 +15,8 @@ docker compose -f infra/docker-compose.yml up -d db   # from repo root
 # 2. Configure connection
 cp packages/db/.env.example packages/db/.env          # already set for docker-compose defaults
 
-# 3. Generate Prisma client and migrate
-npm run db:migrate -w @admitto/db   # prisma migrate deploy
+# 3. Generate Prisma client and migrate (includes agency public_ref backfill)
+npm run db:migrate -w @admitto/db
 npm run db:seed -w @admitto/db      # idempotent — safe to run multiple times
 npm run db:test-setup               # from repo root — creates admitto_*_test DBs for package tests
 ```
@@ -34,9 +34,10 @@ npm run db:seed
 | Script | Description |
 |---|---|
 | `db:generate` | Generates the Prisma client from `prisma/schema.prisma` |
-| `db:migrate` | Applies pending migrations (`prisma migrate deploy`) — does NOT create new ones |
+| `db:migrate` | Applies pending migrations (`prisma migrate deploy`) then idempotent agency `public_ref` backfill — does NOT create new migrations |
 | `db:migrate:dev` | Creates a new migration from schema changes during development (`prisma migrate dev`) |
 | `db:migrate:status` | Shows which migrations are applied and whether the schema has local drift |
+| `db:backfill-public-ref` | Idempotent TS backfill for agency rows missing `public_ref` (also runs at end of `db:migrate`) |
 | `db:seed` | Inserts 1 event + 4 attendees (upsert by `(event_id, email)` — mirrors real import logic) |
 
 From repo root, `npm run db:test-setup` creates `admitto_tickets_test` and `admitto_import_test`

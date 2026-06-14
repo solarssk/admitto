@@ -11,7 +11,7 @@ export function isAgencyAttendee(row: {
 
 /**
  * Idempotent backfill: assign unique public_ref to agency attendees missing one.
- * Run after migrate, before deploying app that looks up by public_ref only.
+ * Runs automatically after `npm run db:migrate`; safe to re-run manually.
  */
 export async function backfillAgencyPublicRefs(
   prisma: PrismaClient,

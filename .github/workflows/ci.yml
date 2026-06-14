@@ -53,9 +53,8 @@ jobs:
       - run: npm run build
       - name: Create test databases
         run: bash infra/scripts/create-test-dbs.sh
-      - name: Run database migrations
-        run: npx prisma migrate deploy
-        working-directory: packages/db
+      - name: Run database migrations and agency public_ref backfill
+        run: npm run db:migrate -w @admitto/db
       - run: npm run typecheck --workspaces --if-present
       - run: npm test --workspaces --if-present
 
