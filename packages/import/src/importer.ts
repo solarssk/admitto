@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import type { AttendeeRow, ImportOptions, ImportSummary, SkippedRow } from "./types.js";
-import { generateToken } from "@admitto/tickets";
+import { generateToken } from "@admitto/crypto";
 
 /** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token_hash. */
 const OVERWRITE_FIELDS = ["name", "ticket_type", "company", "department"] as const;

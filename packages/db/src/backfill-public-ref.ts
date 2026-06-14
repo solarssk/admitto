@@ -28,11 +28,14 @@ export async function backfillAgencyPublicRefs(
   for (const row of rows) {
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        await prisma.attendee.update({
-          where: { id: row.id },
+        const { count } = await prisma.attendee.updateMany({
+          where: { id: row.id, public_ref: null },
           data: { public_ref: generateToken() },
         });
-        updated += 1;
+        if (count === 1) {
+          updated += 1;
+          break;
+        }
         break;
       } catch (err: unknown) {
         const code =

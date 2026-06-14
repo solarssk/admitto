@@ -40,16 +40,23 @@ describe("resolveAllowCheckinBearer", () => {
 });
 
 describe("resolveCheckinToken", () => {
-  it("returns token when set", () => {
-    expect(resolveCheckinToken({ CHECKIN_OPERATOR_TOKEN: "secret-abc" })).toBe("secret-abc");
+  const validToken = "a".repeat(32);
+
+  it("returns trimmed token when long enough", () => {
+    expect(resolveCheckinToken({ CHECKIN_OPERATOR_TOKEN: validToken })).toBe(validToken);
+    expect(resolveCheckinToken({ CHECKIN_OPERATOR_TOKEN: `  ${validToken}  ` })).toBe(validToken);
   });
 
-  it("returns null when missing", () => {
+  it("returns null when missing, whitespace-only, or too short", () => {
     expect(resolveCheckinToken({})).toBeNull();
+    expect(resolveCheckinToken({ CHECKIN_OPERATOR_TOKEN: "   " })).toBeNull();
+    expect(resolveCheckinToken({ CHECKIN_OPERATOR_TOKEN: "short" })).toBeNull();
   });
 });
 
 describe("validateCheckinBootConfig", () => {
+  const validToken = "b".repeat(32);
+
   it("allows boot without token when Bearer flag is off", () => {
     expect(() =>
       validateCheckinBootConfig({ NODE_ENV: "production", ALLOW_CHECKIN_BEARER: "" }),
@@ -66,12 +73,22 @@ describe("validateCheckinBootConfig", () => {
     ).toThrow("CHECKIN_OPERATOR_TOKEN is required when ALLOW_CHECKIN_BEARER=true");
   });
 
-  it("allows Bearer on with token in non-dev", () => {
+  it("throws when Bearer on with short token in non-dev", () => {
     expect(() =>
       validateCheckinBootConfig({
         NODE_ENV: "production",
         ALLOW_CHECKIN_BEARER: "true",
         CHECKIN_OPERATOR_TOKEN: "tok",
+      }),
+    ).toThrow("CHECKIN_OPERATOR_TOKEN is required when ALLOW_CHECKIN_BEARER=true");
+  });
+
+  it("allows Bearer on with token in non-dev", () => {
+    expect(() =>
+      validateCheckinBootConfig({
+        NODE_ENV: "production",
+        ALLOW_CHECKIN_BEARER: "true",
+        CHECKIN_OPERATOR_TOKEN: validToken,
       }),
     ).not.toThrow();
   });

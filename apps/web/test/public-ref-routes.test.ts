@@ -99,7 +99,7 @@ describe("Mode B public routes — public_ref", () => {
       },
     });
     expect(noRef.public_ref).toBeNull();
-    const res = await app.request(`/t/${EVENT_SLUG}/a/some-random-ref`);
+    const res = await app.request(`/t/${EVENT_SLUG}/a/${noRef.id}`);
     expect(res.status).toBe(404);
   });
 });

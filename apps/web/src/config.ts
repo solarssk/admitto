@@ -1,5 +1,15 @@
 type EnvLike = Record<string, string | undefined>;
 
+/** Minimum length for break-glass operator Bearer token (high entropy). */
+export const MIN_CHECKIN_OPERATOR_TOKEN_LENGTH = 32;
+
+function normalizeCheckinOperatorToken(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (trimmed.length < MIN_CHECKIN_OPERATOR_TOKEN_LENGTH) return null;
+  return trimmed;
+}
+
 function normalizeBaseUrl(raw: string): string {
   const trimmed = raw.replace(/\/$/, "");
   try {
@@ -45,8 +55,7 @@ export function resolveAllowCheckinBearer(env: EnvLike = process.env): boolean {
  * Returns null when unset; required at boot when ALLOW_CHECKIN_BEARER=true in non-dev.
  */
 export function resolveCheckinToken(env: EnvLike = process.env): string | null {
-  const token = env["CHECKIN_OPERATOR_TOKEN"];
-  return token && token.length > 0 ? token : null;
+  return normalizeCheckinOperatorToken(env["CHECKIN_OPERATOR_TOKEN"]);
 }
 
 /**
@@ -59,7 +68,7 @@ export function validateCheckinBootConfig(env: EnvLike = process.env): void {
 
   if (allowBearer && env["NODE_ENV"] !== "development" && !token) {
     throw new Error(
-      "CHECKIN_OPERATOR_TOKEN is required when ALLOW_CHECKIN_BEARER=true in non-development environments",
+      `CHECKIN_OPERATOR_TOKEN is required when ALLOW_CHECKIN_BEARER=true in non-development environments (minimum ${MIN_CHECKIN_OPERATOR_TOKEN_LENGTH} characters)`,
     );
   }
 

@@ -74,6 +74,9 @@ function sessionCookie(res: Response): string | undefined {
   return line?.split(";")[0];
 }
 
+/** Hono `app.request()` uses `http://localhost` as the request URL. */
+const sameOrigin = { Origin: "http://localhost" };
+
 describe("GET /login", () => {
   it("renders login form", async () => {
     const res = await app.request("/login");
@@ -90,7 +93,7 @@ describe("POST /login", () => {
   it("success sets cookie and redirects to /operator", async () => {
     const res = await app.request("/login", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin },
       body: new URLSearchParams({
         email: "operator@example.com",
         password: "op-pass-123",
@@ -105,7 +108,7 @@ describe("POST /login", () => {
   it("wrong password shows uniform error", async () => {
     const res = await app.request("/login", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin },
       body: new URLSearchParams({
         email: "operator@example.com",
         password: "wrong",
@@ -129,7 +132,7 @@ describe("POST /login", () => {
 
     const res = await app.request("/login", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin },
       body: new URLSearchParams({
         email,
         password: "x",
@@ -147,6 +150,22 @@ describe("POST /login", () => {
       take: 1,
     });
     expect(sessions[0]?.device_label).toBe("Tablet 2 — side entrance");
+  });
+
+  it("rejects cross-site POST without same-origin headers", async () => {
+    const res = await app.request("/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Origin: "https://evil.example",
+      },
+      body: new URLSearchParams({
+        email: "operator@example.com",
+        password: "op-pass-123",
+      }).toString(),
+    });
+    expect(res.status).toBe(403);
+    expect(sessionCookie(res)).toBeUndefined();
   });
 });
 
@@ -176,11 +195,23 @@ describe("POST /logout", () => {
     const cookie = `admitto_session=${rawToken}`;
     const res = await app.request("/logout", {
       method: "POST",
-      headers: { Cookie: cookie },
+      headers: { Cookie: cookie, ...sameOrigin },
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login");
     const meRes = await app.request("/api/auth/me", { headers: { Cookie: cookie } });
     expect(meRes.status).toBe(401);
+  });
+
+  it("rejects cross-site POST", async () => {
+    const { rawToken } = await createSession(prisma, { userId: operatorId });
+    const res = await app.request("/logout", {
+      method: "POST",
+      headers: {
+        Cookie: `admitto_session=${rawToken}`,
+        Origin: "https://evil.example",
+      },
+    });
+    expect(res.status).toBe(403);
   });
 });

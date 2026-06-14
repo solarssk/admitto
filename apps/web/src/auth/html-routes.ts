@@ -11,6 +11,7 @@ import {
   renderLoginForm,
   renderOperatorLanding,
 } from "../login-page.js";
+import { rejectCrossSitePost } from "./same-origin-post.js";
 
 const LOGIN_ERROR = "Invalid email or password.";
 
@@ -45,6 +46,9 @@ export async function handlePostLogin(
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
 ): Promise<Response> {
+  const crossSite = rejectCrossSitePost(c);
+  if (crossSite) return crossSite;
+
   const form = await parseLoginForm(c);
   const email = form["email"]?.trim() ?? "";
   const password = form["password"] ?? "";
@@ -132,6 +136,9 @@ export async function handleGetOperator(c: Context, db: PrismaClient): Promise<R
 
 /** POST /logout — revokes session server-side and redirects to `/login`. */
 export async function handlePostLogout(c: Context, db: PrismaClient): Promise<Response> {
+  const crossSite = rejectCrossSitePost(c);
+  if (crossSite) return crossSite;
+
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
   const validated = rawToken ? await validateSession(db, rawToken) : null;
   await logout(db, validated);
