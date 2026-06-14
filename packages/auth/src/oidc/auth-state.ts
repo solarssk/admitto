@@ -24,6 +24,10 @@ export interface CreateOidcAuthStateInput {
   nonce: string;
   codeVerifier: string;
   redirectNext?: string;
+  /** Set only for explicit account-link flows after step-up verification. */
+  linkUserId?: string;
+  /** Password/TOTP re-verification timestamp for link flows. */
+  linkStepUpAt?: Date;
 }
 
 /** Persist short-lived OAuth state; sweeps stale rows first. */
@@ -40,6 +44,8 @@ export async function createOidcAuthState(
       nonce: input.nonce,
       code_verifier: input.codeVerifier,
       redirect_next: input.redirectNext ?? null,
+      link_user_id: input.linkUserId ?? null,
+      link_step_up_at: input.linkStepUpAt ?? null,
       expires_at,
     },
   });
@@ -51,6 +57,18 @@ export interface ConsumedOidcAuthState {
   nonce: string;
   code_verifier: string;
   redirect_next: string | null;
+  link_user_id: string | null;
+  link_step_up_at: Date | null;
+}
+
+interface ConsumedOidcAuthStateRow {
+  id: string;
+  provider_id: string;
+  nonce: string;
+  code_verifier: string;
+  redirect_next: string | null;
+  link_user_id: string | null;
+  link_step_up_at: Date | null;
 }
 
 /**
@@ -60,23 +78,13 @@ export async function consumeOidcAuthState(
   prisma: PrismaClient | Prisma.TransactionClient,
   state: string,
 ): Promise<ConsumedOidcAuthState | null> {
-  const now = new Date();
-  const row = await prisma.oidcAuthState.findUnique({ where: { state } });
-  if (!row) return null;
-  if (row.consumed_at) return null;
-  if (row.expires_at.getTime() <= now.getTime()) return null;
-
-  const updated = await prisma.oidcAuthState.updateMany({
-    where: { id: row.id, consumed_at: null },
-    data: { consumed_at: now },
-  });
-  if (updated.count !== 1) return null;
-
-  return {
-    id: row.id,
-    provider_id: row.provider_id,
-    nonce: row.nonce,
-    code_verifier: row.code_verifier,
-    redirect_next: row.redirect_next,
-  };
+  const rows = await prisma.$queryRaw<ConsumedOidcAuthStateRow[]>`
+    UPDATE "OidcAuthState"
+    SET "consumed_at" = NOW()
+    WHERE "state" = ${state}
+      AND "consumed_at" IS NULL
+      AND "expires_at" > NOW()
+    RETURNING "id", "provider_id", "nonce", "code_verifier", "redirect_next", "link_user_id", "link_step_up_at"
+  `;
+  return rows[0] ?? null;
 }

@@ -10,3 +10,6 @@ export const PROVIDER_TYPE_CLOUDFLARE_ACCESS = "cloudflare_access";
 export const DEFAULT_CLAIM_EMAIL = "email";
 export const DEFAULT_CLAIM_NAME = "name";
 export const DEFAULT_CLAIM_GROUPS = "groups";
+
+/** Binds OIDC callback to the browser that started the flow (CSRF / session fixation). */
+export const OIDC_FLOW_COOKIE_NAME = "admitto_oidc_flow";

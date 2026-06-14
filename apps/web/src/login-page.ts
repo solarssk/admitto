@@ -24,12 +24,18 @@ export interface LoginSsoProvider {
   display_name: string;
 }
 
+/** Uniform login failure copy (POST /login). */
+export const LOGIN_ERROR_CODE = "invalid_credentials";
+
 function loginErrorMessage(error?: string): string | undefined {
   if (!error) return undefined;
   if (error === "oidc_failed") {
     return "Corporate sign-in failed. Try again or use your local password.";
   }
-  return error;
+  if (error === LOGIN_ERROR_CODE) {
+    return "Invalid email or password.";
+  }
+  return undefined;
 }
 
 /** Render the operator sign-in form HTML (optional uniform error message). */
@@ -38,9 +44,8 @@ export function renderLoginForm(
   next?: string,
   ssoProviders: LoginSsoProvider[] = [],
 ): string {
-  const errorBlock = error
-    ? `<p class="error" role="alert">${esc(loginErrorMessage(error) ?? error)}</p>`
-    : "";
+  const message = loginErrorMessage(error);
+  const errorBlock = message ? `<p class="error" role="alert">${esc(message)}</p>` : "";
   const nextField = next ? `<input type="hidden" name="next" value="${esc(next)}">` : "";
   const ssoBlock =
     ssoProviders.length > 0

@@ -1,12 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/password.js";
-import { applyOidcGroupRoleMappings } from "../../src/oidc/group-role-mapping.js";
+import {
+  applyOidcGroupRoleMappings,
+  roleAssignmentScopeId,
+} from "../../src/oidc/group-role-mapping.js";
 import { encryptClientSecret } from "../../src/oidc/provider-secret.js";
 import { bootstrapSuperadmin } from "../../src/bootstrap.js";
 
 const PROVIDER_ID = "oidc-prov-mapping-test";
 const USER_ID = "oidc-user-mapping-test";
+const EVENT_ID = "oidc-event-mapping-test";
 
 let prisma: PrismaClient;
 
@@ -17,6 +21,7 @@ beforeAll(async () => {
   await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
   await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
   await prisma.user.deleteMany({ where: { id: USER_ID } });
+  await prisma.event.deleteMany({ where: { id: EVENT_ID } });
 
   await prisma.identityProvider.create({
     data: {
@@ -39,40 +44,86 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+  await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
   await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
   await prisma.user.deleteMany({ where: { id: USER_ID } });
+  await prisma.event.deleteMany({ where: { id: EVENT_ID } });
   await prisma.$disconnect();
+});
+
+describe("roleAssignmentScopeId", () => {
+  it("maps instance scope to null", () => {
+    expect(roleAssignmentScopeId("instance", "")).toBeNull();
+    expect(roleAssignmentScopeId("instance", "x")).toBeNull();
+  });
+
+  it("trims org/event scope ids", () => {
+    expect(roleAssignmentScopeId("event", "  evt  ")).toBe("evt");
+    expect(roleAssignmentScopeId("event", "")).toBeNull();
+  });
 });
 
 describe("applyOidcGroupRoleMappings", () => {
   it("adds no roles when mapping empty", async () => {
-    const added = await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, ["admins"]);
-    expect(added).toBe(0);
+    const changed = await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, ["admins"]);
+    expect(changed).toBe(0);
     const roles = await prisma.roleAssignment.findMany({ where: { user_id: USER_ID } });
     expect(roles).toHaveLength(0);
   });
 
-  it("adds role from matching group rule", async () => {
+  it("adds role from matching group rule with null instance scope_id", async () => {
     await prisma.oidcGroupRoleMapping.create({
       data: {
         provider_id: PROVIDER_ID,
         group: "admin-group",
         role: "superadmin",
         scope_type: "instance",
-        scope_id: null,
+        scope_id: "",
       },
     });
-    const added = await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, ["admin-group"]);
-    expect(added).toBe(1);
+    const changed = await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, ["admin-group"]);
+    expect(changed).toBe(1);
     const roles = await prisma.roleAssignment.findMany({ where: { user_id: USER_ID } });
-    expect(roles.some((r) => r.role === "superadmin")).toBe(true);
+    expect(roles.some((r) => r.role === "superadmin" && r.scope_id === null)).toBe(true);
+  });
+
+  it("removes OIDC-granted role when group no longer matches", async () => {
+    await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
+    await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
+
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        group: "operators",
+        role: "operator",
+        scope_type: "event",
+        scope_id: EVENT_ID,
+      },
+    });
+    await prisma.externalIdentity.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        subject: "sub-op",
+        user_id: USER_ID,
+        linked_at: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+
+    await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, ["operators"]);
+    let roles = await prisma.roleAssignment.findMany({ where: { user_id: USER_ID } });
+    expect(roles).toHaveLength(1);
+
+    await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, []);
+    roles = await prisma.roleAssignment.findMany({ where: { user_id: USER_ID } });
+    expect(roles).toHaveLength(0);
   });
 
   it("does not remove superadmin when groups empty on re-apply", async () => {
     const { userId } = await bootstrapSuperadmin(prisma, "super-invariant@example.com", "pw");
-    const added = await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, userId, []);
-    expect(added).toBe(0);
+    const changed = await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, userId, []);
+    expect(changed).toBe(0);
     const roles = await prisma.roleAssignment.findMany({ where: { user_id: userId } });
     expect(roles.some((r) => r.role === "superadmin")).toBe(true);
     await prisma.roleAssignment.deleteMany({ where: { user_id: userId } });

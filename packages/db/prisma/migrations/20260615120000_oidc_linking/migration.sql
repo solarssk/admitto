@@ -21,7 +21,7 @@ CREATE TABLE "IdentityProvider" (
     CONSTRAINT "IdentityProvider_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "IdentityProvider_issuer_key" ON "IdentityProvider"("issuer");
+CREATE UNIQUE INDEX "IdentityProvider_issuer_client_id_key" ON "IdentityProvider"("issuer", "client_id");
 
 CREATE TABLE "ExternalIdentity" (
     "id" TEXT NOT NULL,
@@ -30,7 +30,7 @@ CREATE TABLE "ExternalIdentity" (
     "user_id" TEXT NOT NULL,
     "email" TEXT,
     "name" TEXT,
-    "groups" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "groups" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
     "linked_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "last_login_at" TIMESTAMP(3),
 
@@ -46,7 +46,7 @@ CREATE TABLE "OidcGroupRoleMapping" (
     "group" TEXT NOT NULL,
     "role" TEXT NOT NULL,
     "scope_type" TEXT NOT NULL,
-    "scope_id" TEXT,
+    "scope_id" TEXT NOT NULL DEFAULT '',
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "OidcGroupRoleMapping_pkey" PRIMARY KEY ("id")
@@ -63,6 +63,7 @@ CREATE TABLE "OidcAuthState" (
     "nonce" TEXT NOT NULL,
     "code_verifier" TEXT NOT NULL,
     "redirect_next" TEXT,
+    "link_user_id" TEXT,
     "expires_at" TIMESTAMP(3) NOT NULL,
     "consumed_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

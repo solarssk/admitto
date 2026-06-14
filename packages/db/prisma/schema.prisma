@@ -241,6 +241,8 @@ model Session {
   token_hash   String    @unique
   // full | mfa_pending | enrollment_required — only full grants protected routes (ADR 0011).
   stage        String    @default("full")
+  // local | oidc — IdP-authenticated sessions skip local TOTP policy (prompt 16b).
+  auth_method  String    @default("local")
   // Optional UI context only — not an authorization source (ADR 0011).
   scope        String?
   device_label String?
@@ -315,7 +317,7 @@ model RoleAssignment {
 model IdentityProvider {
   id                    String   @id @default(cuid())
   provider_type         String   @default("oidc") // "oidc" | "cloudflare_access"
-  issuer                String   @unique
+  issuer                String
   client_id             String
   client_secret_enc     String?
   authorization_endpoint String
@@ -333,6 +335,8 @@ model IdentityProvider {
   external_identities ExternalIdentity[]
   group_role_mappings OidcGroupRoleMapping[]
   oidc_auth_states    OidcAuthState[]
+
+  @@unique([issuer, client_id])
 }
 
 // Linked external subject → local User (JIT or explicit link).
@@ -361,7 +365,7 @@ model OidcGroupRoleMapping {
   group       String
   role        String
   scope_type  String
-  scope_id    String?
+  scope_id    String   @default("")
   created_at  DateTime @default(now())
 
   @@unique([provider_id, group, role, scope_type, scope_id])
@@ -376,8 +380,10 @@ model OidcAuthState {
   state          String    @unique
   nonce          String
   code_verifier  String
-  redirect_next  String?
-  expires_at     DateTime
+  redirect_next    String?
+  link_user_id     String?
+  link_step_up_at  DateTime?
+  expires_at       DateTime
   consumed_at    DateTime?
   created_at     DateTime  @default(now())
 

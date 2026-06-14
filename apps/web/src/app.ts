@@ -55,6 +55,7 @@ import {
   handlePostLogout,
 } from "./auth/html-routes.js";
 import { handleOidcStart, handleOidcCallback } from "./auth/oidc-routes.js";
+import { handleGetOidcLink, handlePostOidcLink } from "./auth/oidc-link-routes.js";
 import { createRequireSuperadmin } from "./auth/superadmin-middleware.js";
 import { sweepExpiredOidcAuthStates } from "@admitto/auth";
 import {
@@ -192,6 +193,11 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get("/api/auth/oidc/:providerId/start", (c) => handleOidcStart(c, db, baseUrl));
   app.get("/api/auth/oidc/:providerId/callback", (c) => handleOidcCallback(c, db, baseUrl));
+
+  app.get("/account/oidc/:providerId/link", requireSessionHtml, (c) => handleGetOidcLink(c, db));
+  app.post("/account/oidc/:providerId/link", htmlPostCsrf, loginRateLimitHtml, requireSessionHtml, (c) =>
+    handlePostOidcLink(c, db, baseUrl, rateLimitStore),
+  );
 
   app.get("/admin/auth/providers", requireSuperadmin, (c) => handleListProviders(c, db));
   app.get("/admin/auth/providers/new", requireSuperadmin, (c) => handleGetNewProvider(c));

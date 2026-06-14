@@ -83,14 +83,14 @@ export function renderProviderForm(options: {
   const flashBlock = options.flash ? `<p class="flash">${esc(options.flash)}</p>` : "";
   const errorBlock = options.error ? `<p class="error" role="alert">${esc(options.error)}</p>` : "";
 
-  const discoverForm =
+  const discoverAction =
     !options.isNew && p
-      ? `<form method="post" action="/admin/auth/providers/${esc(p.id)}/discover" style="display:inline"><button type="submit">Discover endpoints</button></form>`
+      ? `<button type="submit" formaction="/admin/auth/providers/${esc(p.id)}/discover" formmethod="post" formnovalidate>Discover endpoints</button>`
       : "";
 
-  const testForm =
+  const testAction =
     !options.isNew && p
-      ? `<form method="post" action="/admin/auth/providers/${esc(p.id)}/test" style="display:inline;margin-left:0.5rem"><button type="submit">Test connection</button></form>`
+      ? `<button type="submit" formaction="/admin/auth/providers/${esc(p.id)}/test" formmethod="post" formnovalidate style="margin-left:0.5rem">Test connection</button>`
       : "";
 
   return pageShell(
@@ -99,7 +99,7 @@ export function renderProviderForm(options: {
     <form method="post" action="${action}">
       <label>Display name <input name="display_name" required value="${esc(p?.display_name ?? "")}"></label>
       <label>Issuer URL <input name="issuer" required value="${esc(p?.issuer ?? "")}"></label>
-      ${discoverForm}${testForm}
+      ${discoverAction}${testAction}
       <label>Client ID <input name="client_id" required value="${esc(p?.client_id ?? "")}"></label>
       <label>Client secret <input type="password" name="client_secret" autocomplete="new-password" placeholder="Write-only"></label>
       ${secretHint}

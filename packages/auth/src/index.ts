@@ -9,10 +9,12 @@ export {
   MFA_PENDING_SESSION_TTL_MS,
   SESSION_STAGE,
   LOGIN_NEXT,
+  AUTH_METHOD,
   BACKUP_RECOVERY_CODE_COUNT,
   EMERGENCY_RECOVERY_LABEL,
   type SessionStage,
   type LoginNext,
+  type AuthMethod,
 } from "./constants.js";
 
 export { hashPassword, verifyPassword, verifyPasswordOrDummy } from "./password.js";
@@ -80,8 +82,10 @@ export {
   PROVIDER_TYPE_OIDC,
   PROVIDER_TYPE_CLOUDFLARE_ACCESS,
   OIDC_AUTH_STATE_TTL_MS,
+  OIDC_FLOW_COOKIE_NAME,
 } from "./oidc/constants.js";
 export { generateCodeVerifier, codeChallengeS256, generateOauthSecret } from "./oidc/pkce.js";
+export { assertSafeOidcFetchUrl } from "./oidc/safe-url.js";
 export { fetchOidcDiscovery, testOidcConnection } from "./oidc/discovery.js";
 export {
   createOidcAuthState,
@@ -89,6 +93,12 @@ export {
   sweepExpiredOidcAuthStates,
   type ConsumedOidcAuthState,
 } from "./oidc/auth-state.js";
+export {
+  verifyOidcLinkStepUp,
+  type VerifyOidcLinkStepUpInput,
+  type VerifyOidcLinkStepUpResult,
+  type OidcLinkStepUpFailureReason,
+} from "./oidc/link-step-up.js";
 export { extractClaims } from "./oidc/claims.js";
 export {
   exchangeAuthorizationCode,
@@ -107,6 +117,8 @@ export {
   listOidcProviders,
   createIdentityProvider,
   updateIdentityProvider,
+  createIdentityProviderWithMappings,
+  updateIdentityProviderWithMappings,
   toProviderFormView,
   buildOidcRedirectUri,
   buildOidcAuthorizeUrl,

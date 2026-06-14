@@ -1,3 +1,5 @@
+import { assertSafeOidcFetchUrl } from "./safe-url.js";
+
 export interface OidcDiscoveryDocument {
   issuer: string;
   authorization_endpoint: string;
@@ -13,7 +15,9 @@ function normalizeIssuer(issuer: string): string {
 /** Fetch and parse OIDC discovery document. */
 export async function fetchOidcDiscovery(issuer: string): Promise<OidcDiscoveryDocument> {
   const base = normalizeIssuer(issuer);
+  assertSafeOidcFetchUrl(base);
   const url = new URL(".well-known/openid-configuration", base).toString();
+  assertSafeOidcFetchUrl(url);
   const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
   if (!res.ok) {
     throw new Error(`OIDC discovery failed: HTTP ${res.status}`);
@@ -32,6 +36,12 @@ export async function fetchOidcDiscovery(issuer: string): Promise<OidcDiscoveryD
     throw new Error("OIDC discovery document missing required fields");
   }
   const userinfo = doc["userinfo_endpoint"];
+  assertSafeOidcFetchUrl(authorization_endpoint);
+  assertSafeOidcFetchUrl(token_endpoint);
+  assertSafeOidcFetchUrl(jwks_uri);
+  if (typeof userinfo === "string") {
+    assertSafeOidcFetchUrl(userinfo);
+  }
   return {
     issuer: docIssuer,
     authorization_endpoint,
@@ -49,8 +59,19 @@ export async function testOidcConnection(input: {
   jwks_uri?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const discovery = await fetchOidcDiscovery(input.issuer);
-    const jwksUri = input.jwks_uri ?? discovery.jwks_uri;
+    let jwksUri = input.jwks_uri;
+    if (input.authorization_endpoint && input.token_endpoint && input.jwks_uri) {
+      assertSafeOidcFetchUrl(input.authorization_endpoint);
+      assertSafeOidcFetchUrl(input.token_endpoint);
+      assertSafeOidcFetchUrl(input.jwks_uri);
+    } else {
+      const discovery = await fetchOidcDiscovery(input.issuer);
+      jwksUri = input.jwks_uri ?? discovery.jwks_uri;
+    }
+    if (!jwksUri) {
+      return { ok: false, error: "JWKS URI is required" };
+    }
+    assertSafeOidcFetchUrl(jwksUri);
     const res = await fetch(jwksUri, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
       return { ok: false, error: `JWKS endpoint returned HTTP ${res.status}` };

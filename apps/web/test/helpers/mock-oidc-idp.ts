@@ -1,4 +1,5 @@
 import { createServer, type Server } from "node:http";
+import { randomUUID } from "node:crypto";
 import * as jose from "jose";
 
 export interface MockOidcIdp {
@@ -21,7 +22,7 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
   let jwksUri = "";
   let tokenEndpoint = "";
   let authorizeEndpoint = "";
-  const nonceByState = new Map<string, string>();
+  const nonceByCode = new Map<string, string>();
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", issuer || "http://127.0.0.1");
@@ -46,8 +47,14 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(chunk as Buffer);
       const body = new URLSearchParams(Buffer.concat(chunks).toString());
-      const code = body.get("code") ?? "mock-auth-code";
-      const nonce = nonceByState.get(code) ?? "missing-nonce";
+      const code = body.get("code");
+      if (!code || !nonceByCode.has(code)) {
+        res.writeHead(400);
+        res.end("invalid code");
+        return;
+      }
+      const nonce = nonceByCode.get(code)!;
+      nonceByCode.delete(code);
       const idToken = await new jose.SignJWT({ nonce, email: "oidc-flow@example.com", groups: [] })
         .setProtectedHeader({ alg: "RS256", kid: "test-key" })
         .setIssuer(issuer)
@@ -63,8 +70,8 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
       const redirectUri = url.searchParams.get("redirect_uri")!;
       const state = url.searchParams.get("state")!;
       const nonce = url.searchParams.get("nonce") ?? "";
-      const code = "mock-auth-code";
-      nonceByState.set(code, nonce);
+      const code = randomUUID();
+      nonceByCode.set(code, nonce);
       const target = new URL(redirectUri);
       target.searchParams.set("code", code);
       target.searchParams.set("state", state);

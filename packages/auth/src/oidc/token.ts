@@ -2,6 +2,7 @@ import * as jose from "jose";
 import type { IdentityProvider } from "@prisma/client";
 import type { JWTPayload } from "jose";
 import { decryptClientSecret } from "./provider-secret.js";
+import { assertSafeOidcFetchUrl } from "./safe-url.js";
 
 export interface TokenExchangeResult {
   idToken: string;
@@ -23,7 +24,7 @@ function getJwksVerifier(jwksUri: string): jose.JWTVerifyGetKey {
     return cached.keys;
   }
   const keys = jose.createRemoteJWKSet(new URL(jwksUri));
-  jwksCache = new Map([[jwksUri, { keys, fetchedAt: Date.now() }]]);
+  jwksCache.set(jwksUri, { keys, fetchedAt: Date.now() });
   return keys;
 }
 
@@ -43,6 +44,7 @@ export async function exchangeAuthorizationCode(
     throw new Error("OIDC provider missing client secret");
   }
   const clientSecret = decryptClientSecret(provider.client_secret_enc);
+  assertSafeOidcFetchUrl(provider.token_endpoint);
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
@@ -78,6 +80,7 @@ export async function exchangeAuthorizationCode(
 /** Validate ID token signature and standard claims including nonce. */
 export async function validateIdToken(input: ValidateIdTokenInput): Promise<JWTPayload> {
   const verifier = getJwksVerifier(input.provider.jwks_uri);
+  assertSafeOidcFetchUrl(input.provider.jwks_uri);
   const { payload } = await jose.jwtVerify(input.idToken, verifier, {
     issuer: input.provider.issuer,
     audience: input.provider.client_id,

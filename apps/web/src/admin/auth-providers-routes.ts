@@ -3,11 +3,11 @@ import type { PrismaClient } from "@prisma/client";
 import {
   listOidcProviders,
   findOidcProviderById,
-  createIdentityProvider,
+  createIdentityProviderWithMappings,
   updateIdentityProvider,
+  updateIdentityProviderWithMappings,
   toProviderFormView,
   listProviderGroupMappings,
-  replaceProviderGroupMappings,
   fetchOidcDiscovery,
   testOidcConnection,
 } from "@admitto/auth";
@@ -37,8 +37,7 @@ async function parseForm(c: Context): Promise<Record<string, string>> {
 }
 
 function flashFromQuery(c: Context): string | undefined {
-  const flash = c.req.query("flash");
-  return flash ? decodeURIComponent(flash) : undefined;
+  return c.req.query("flash") ?? undefined;
 }
 
 async function mappingsForProvider(db: PrismaClient, providerId: string): Promise<MappingRow[]> {
@@ -91,9 +90,8 @@ export async function handlePostNewProvider(c: Context, db: PrismaClient): Promi
     );
   }
   try {
-    const provider = await createIdentityProvider(db, input);
     const mappings = parseMappingsFromForm(form);
-    await replaceProviderGroupMappings(db, provider.id, mappings);
+    const provider = await createIdentityProviderWithMappings(db, input, mappings);
     return c.redirect(`/admin/auth/providers/${provider.id}?flash=${encodeURIComponent("Provider created.")}`, 302);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to create provider";
@@ -140,9 +138,8 @@ export async function handlePostEditProvider(c: Context, db: PrismaClient): Prom
   }
 
   try {
-    await updateIdentityProvider(db, id, input);
     const mappings = parseMappingsFromForm(form);
-    await replaceProviderGroupMappings(db, id, mappings);
+    await updateIdentityProviderWithMappings(db, id, input, mappings);
     return c.redirect(`/admin/auth/providers/${id}?flash=${encodeURIComponent("Provider saved.")}`, 302);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to save provider";
@@ -198,6 +195,8 @@ export async function handlePostTestConnection(c: Context, db: PrismaClient): Pr
 
   const result = await testOidcConnection({
     issuer: provider.issuer,
+    authorization_endpoint: provider.authorization_endpoint,
+    token_endpoint: provider.token_endpoint,
     jwks_uri: provider.jwks_uri,
   });
   const flash = result.ok ? "Connection test OK." : `Connection test failed: ${result.error}`;

@@ -1,32 +1,31 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
-import { getCookie } from "hono/cookie";
 import {
-  SESSION_COOKIE_NAME,
   SESSION_STAGE,
+  AUTH_METHOD,
   createSession,
   findOidcProviderById,
   buildOidcRedirectUri,
-  buildOidcAuthorizeUrl,
-  createOidcAuthState,
   consumeOidcAuthState,
   exchangeAndValidateIdToken,
   extractClaims,
   resolveOrCreateUserFromExternalIdentity,
   ExternalIdentityLinkError,
   applyOidcGroupRoleMappings,
-  generateCodeVerifier,
-  codeChallengeS256,
-  generateOauthSecret,
   validatePartialSession,
 } from "@admitto/auth";
+import { getCookie } from "hono/cookie";
+import { SESSION_COOKIE_NAME } from "@admitto/auth";
 import { resolveSafeRedirectPath } from "./safe-redirect.js";
 import { setSessionCookie } from "./routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
+import { clearOidcFlowCookie, oidcFlowCookieMatches } from "./oidc-flow-cookie.js";
+import { beginOidcAuthorizationRedirect } from "./oidc-flow.js";
 
 const OIDC_LOGIN_ERROR_PATH = "/login?error=oidc_failed";
 
 function oidcFailedRedirect(c: Context): Response {
+  clearOidcFlowCookie(c);
   return c.redirect(OIDC_LOGIN_ERROR_PATH, 302);
 }
 
@@ -38,38 +37,21 @@ function logOidcError(context: string, err: unknown): void {
 /** GET /api/auth/oidc/:providerId/start */
 export async function handleOidcStart(c: Context, db: PrismaClient, baseUrl: string): Promise<Response> {
   const providerId = c.req.param("providerId") ?? "";
+
+  if (c.req.query("link") === "1") {
+    const rawNext = c.req.query("next");
+    const next = rawNext ? resolveSafeRedirectPath(rawNext) : undefined;
+    const suffix = next ? `?next=${encodeURIComponent(next)}` : "";
+    return c.redirect(`/account/oidc/${providerId}/link${suffix}`, 302);
+  }
+
   const provider = await findOidcProviderById(db, providerId);
   if (!provider || !provider.enabled) {
     return oidcFailedRedirect(c);
   }
 
   const next = resolveSafeRedirectPath(c.req.query("next"));
-  const state = generateOauthSecret();
-  const nonce = generateOauthSecret();
-  const codeVerifier = generateCodeVerifier();
-  const codeChallenge = codeChallengeS256(codeVerifier);
-
-  try {
-    await createOidcAuthState(db, {
-      providerId: provider.id,
-      state,
-      nonce,
-      codeVerifier,
-      redirectNext: next,
-    });
-  } catch (err) {
-    logOidcError("create auth state", err);
-    return oidcFailedRedirect(c);
-  }
-
-  const redirectUri = buildOidcRedirectUri(baseUrl, provider.id);
-  const authorizeUrl = buildOidcAuthorizeUrl(provider, {
-    redirectUri,
-    state,
-    nonce,
-    codeChallenge,
-  });
-  return c.redirect(authorizeUrl, 302);
+  return beginOidcAuthorizationRedirect(c, db, baseUrl, providerId, { redirectNext: next });
 }
 
 /** GET /api/auth/oidc/:providerId/callback */
@@ -80,6 +62,11 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
 
   if (!code || !state) {
     logOidcError("callback", "missing code or state");
+    return oidcFailedRedirect(c);
+  }
+
+  if (!oidcFlowCookieMatches(c, state)) {
+    logOidcError("callback", "oidc flow cookie mismatch");
     return oidcFailedRedirect(c);
   }
 
@@ -94,6 +81,30 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
     logOidcError("callback", "invalid or replayed state");
     return oidcFailedRedirect(c);
   }
+
+  if (consumed.link_user_id) {
+    if (!consumed.link_step_up_at) {
+      logOidcError("callback", "link flow missing step-up");
+      return oidcFailedRedirect(c);
+    }
+
+    const sessionToken = getCookie(c, SESSION_COOKIE_NAME);
+    if (!sessionToken) {
+      logOidcError("callback", "link flow missing session");
+      return oidcFailedRedirect(c);
+    }
+    const partial = await validatePartialSession(db, sessionToken);
+    if (
+      !partial ||
+      partial.stage !== SESSION_STAGE.FULL ||
+      partial.userId !== consumed.link_user_id
+    ) {
+      logOidcError("callback", "link flow session mismatch");
+      return oidcFailedRedirect(c);
+    }
+  }
+
+  clearOidcFlowCookie(c);
 
   const redirectUri = buildOidcRedirectUri(baseUrl, provider.id);
   let payload;
@@ -119,15 +130,6 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
 
   const claims = extractClaims(payload, provider);
 
-  let currentUserId: string | undefined;
-  const sessionToken = getCookie(c, SESSION_COOKIE_NAME);
-  if (sessionToken) {
-    const partial = await validatePartialSession(db, sessionToken);
-    if (partial && partial.stage === SESSION_STAGE.FULL) {
-      currentUserId = partial.userId;
-    }
-  }
-
   let userId: string;
   try {
     const resolved = await resolveOrCreateUserFromExternalIdentity(
@@ -135,7 +137,7 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
       provider,
       subject,
       claims,
-      currentUserId ? { currentUserId } : undefined,
+      consumed.link_user_id ? { currentUserId: consumed.link_user_id } : undefined,
     );
     userId = resolved.user.id;
   } catch (err) {
@@ -158,6 +160,7 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
     const { rawToken } = await createSession(db, {
       userId,
       stage: SESSION_STAGE.FULL,
+      authMethod: AUTH_METHOD.OIDC,
       ip: resolveClientIp(c),
       userAgent: c.req.header("user-agent"),
     });

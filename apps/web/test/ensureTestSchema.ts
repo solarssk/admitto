@@ -4,6 +4,16 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { WEB_TEST_DATABASE_URL } from "./testEnv.js";
 
+function assertTestDatabaseUrl(databaseUrl: string): void {
+  const lower = databaseUrl.toLowerCase();
+  if (lower.includes("_test") || lower.includes("localhost") || lower.includes("127.0.0.1")) {
+    return;
+  }
+  throw new Error(
+    `Refusing Prisma setup: DATABASE_URL does not look like a test database (${databaseUrl})`,
+  );
+}
+
 const execAsync = promisify(exec);
 const DB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "db");
 const MIGRATE_TIMEOUT_MS = 60_000;
@@ -35,6 +45,7 @@ async function runPrisma(command: string, env: NodeJS.ProcessEnv): Promise<void>
  */
 export async function ensureIntegrationTestSchema(): Promise<void> {
   const env = testDbEnv();
+  assertTestDatabaseUrl(env.DATABASE_URL!);
   try {
     await runPrisma("npx prisma migrate deploy", env);
   } catch (migrateError) {
@@ -45,6 +56,6 @@ export async function ensureIntegrationTestSchema(): Promise<void> {
       "[ensureTestSchema] migrate deploy failed, falling back to db push:",
       migrateError,
     );
-    await runPrisma("npx prisma db push --skip-generate", env);
+    await runPrisma("npx prisma db push --skip-generate --accept-data-loss", env);
   }
 }

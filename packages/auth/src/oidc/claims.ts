@@ -18,10 +18,14 @@ function asString(value: unknown): string | undefined {
 
 function asStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value.filter((v): v is string => typeof v === "string" && v.length > 0);
+    return value
+      .filter((v): v is string => typeof v === "string")
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0);
   }
-  if (typeof value === "string" && value.length > 0) {
-    return [value];
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? [trimmed] : [];
   }
   return [];
 }

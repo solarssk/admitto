@@ -60,17 +60,16 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  const linked = await prisma.externalIdentity.findMany({
+    where: { provider_id: PROVIDER_ID },
+    select: { user_id: true },
+  });
+  const userIds = [...new Set([USER_EXISTING, USER_LINK, ...linked.map((x) => x.user_id)])];
+
   await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
-  await prisma.roleAssignment.deleteMany({
-    where: { user_id: { in: [USER_EXISTING, USER_LINK] } },
-  });
-  await prisma.user.deleteMany({
-    where: { email: { endsWith: "@example.com" } },
-  });
-  await prisma.user.deleteMany({
-    where: { email: { endsWith: "@oidc.local" } },
-  });
+  await prisma.roleAssignment.deleteMany({ where: { user_id: { in: userIds } } });
+  await prisma.user.deleteMany({ where: { id: { in: userIds } } });
   await prisma.$disconnect();
 });
 

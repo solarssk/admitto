@@ -38,12 +38,16 @@ async function createJitUser(
 ): Promise<User> {
   let email = claims.email ? normalizeEmail(claims.email) : jitPlaceholderEmail(providerId, subject);
 
-  const existing = await tx.user.findUnique({ where: { email } });
-  if (existing) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const existing = await tx.user.findUnique({ where: { email } });
+    if (!existing) break;
     if (claims.email) {
       throw new ExternalIdentityLinkError("email_already_exists");
     }
     email = jitPlaceholderEmail(`${providerId}-${randomBytes(4).toString("hex")}`, subject);
+    if (attempt === 4) {
+      throw new ExternalIdentityLinkError("jit_email_collision");
+    }
   }
 
   const password_hash = await hashPassword(randomBytes(32).toString("hex"));

@@ -17,9 +17,12 @@ first event-ready MVP.
 Additive OIDC login (Authentik-first) linked to local `User` via `ExternalIdentity`. Authorization
 Code + PKCE with server-side `state`/`nonce`; full ID token validation (JWKS, iss, aud, exp, nonce).
 JIT users get zero roles unless a configured group→role rule matches. OIDC logins receive `full`
-sessions (MFA is the IdP’s responsibility per ADR 0011). Superadmin server-rendered UI at
-`/admin/auth/providers` for IdP config (write-only `client_secret`, Test connection). Seam
-`resolveOrCreateUserFromExternalIdentity` shared with future Cloudflare Access (16c).
+sessions with `auth_method=oidc` (local TOTP policy skipped; MFA is the IdP’s responsibility per
+ADR 0011). Explicit account linking via `?link=1` → `/account/oidc/:id/link` step-up page (password
++ TOTP when required); `link_step_up_at` on OAuth state; OIDC flow cookie binds callback to the
+initiating browser. Superadmin server-rendered UI at `/admin/auth/providers` for IdP config
+(write-only `client_secret`, Test connection, transactional save). SSRF guards on outbound OIDC fetches.
+Seam `resolveOrCreateUserFromExternalIdentity` shared with future Cloudflare Access (16c).
 
 ## v0.3.3 - 2026-06-14
 
