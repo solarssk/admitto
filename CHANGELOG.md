@@ -25,10 +25,10 @@ auth contract to build on.
 
 ### Identity and account model
 
-- Added first-class local `User` accounts as the baseline identity model.
-- Added `argon2id` password hashing for local credentials.
+- Introduced first-class local `User` accounts as the baseline identity model.
+- Used `argon2id` password hashing for local credentials.
 - Added `is_active` account state so a user can be disabled without deleting history.
-- Added CLI bootstrap for a local break-glass superadmin:
+- Included CLI bootstrap for a local break-glass superadmin:
   - `npm run auth:bootstrap -- --email admin@example.com`
   - password is read from stdin / prompt, not argv
   - creates a first-run local `superadmin@instance`
