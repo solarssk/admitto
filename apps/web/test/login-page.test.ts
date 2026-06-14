@@ -167,6 +167,22 @@ describe("POST /login", () => {
     expect(res.status).toBe(403);
     expect(sessionCookie(res)).toBeUndefined();
   });
+
+  it("rejects HTTP Origin when request is HTTPS (cross-scheme CSRF)", async () => {
+    const res = await app.request("https://localhost/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Origin: "http://localhost",
+      },
+      body: new URLSearchParams({
+        email: "operator@example.com",
+        password: "op-pass-123",
+      }).toString(),
+    });
+    expect(res.status).toBe(403);
+    expect(sessionCookie(res)).toBeUndefined();
+  });
 });
 
 describe("GET /operator", () => {
