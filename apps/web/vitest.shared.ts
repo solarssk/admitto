@@ -1,6 +1,9 @@
 import { WEB_TEST_DATABASE_URL } from "./test/testEnv.ts";
 
-/** Env vars shared by unit and integration Vitest projects. */
+/**
+ * Env vars shared by unit and integration Vitest projects.
+ * Fixed test-only secrets (not production); mirrors `.github/workflows/ci.yml` test env.
+ */
 export const sharedTestEnv: Record<string, string> = {
   DATABASE_URL: WEB_TEST_DATABASE_URL,
   ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
