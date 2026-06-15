@@ -56,7 +56,8 @@ function makeApp() {
     const eventId = c.req.query("eventId");
     if (!eventId) return c.json({ error: "eventId required" }, 400);
     const limitParam = parseInt(c.req.query("limit") ?? "10", 10);
-    const limit = Math.min(Number.isFinite(limitParam) ? limitParam : 10, 100);
+    const parsed = Number.isFinite(limitParam) ? limitParam : 10;
+    const limit = Math.max(1, Math.min(parsed, 100));
     try {
       const history = await getRecentCheckIns(eventId, {} as PrismaClient, limit);
       return c.json(history, 200);
@@ -181,11 +182,11 @@ describe("GET /api/checkin/history — input validation", () => {
     expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 10);
   });
 
-  it("passes negative limit through to domain (clamped in getRecentCheckIns)", async () => {
+  it("clamps negative limit to 1 at API layer", async () => {
     vi.mocked(getRecentCheckIns).mockResolvedValueOnce([]);
     const res = await app.request("/api/checkin/history?eventId=evt-1&limit=-5");
     expect(res.status).toBe(200);
-    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), -5);
+    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 1);
   });
 
   it("passes large limit through to domain capped at 100", async () => {

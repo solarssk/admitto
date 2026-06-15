@@ -387,7 +387,8 @@ export function createApp(options: CreateAppOptions = {}) {
       const eventId = c.req.query("eventId");
       if (!eventId) return c.json({ error: "eventId required" }, 400);
       const limitParam = parseInt(c.req.query("limit") ?? "10", 10);
-      const limit = Math.min(Number.isFinite(limitParam) ? limitParam : 10, 100);
+      const parsed = Number.isFinite(limitParam) ? limitParam : 10;
+      const limit = Math.max(1, Math.min(parsed, 100));
       try {
         const history = await getRecentCheckIns(eventId, db, limit);
         return c.json(history, 200);

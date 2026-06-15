@@ -1,5 +1,8 @@
 -- RBAC-2: dedup RoleAssignment rows, then partial UNIQUE indexes (instance NULL handled separately).
 -- SEC-2: orphan OidcRoleGrant cleanup + FK to RoleAssignment with ON DELETE CASCADE.
+--
+-- Atomicity: Prisma Migrate applies each PostgreSQL migration inside a single DB transaction.
+-- Explicit BEGIN/COMMIT is omitted here to avoid nested-transaction errors with Prisma's wrapper.
 
 -- 1. Dedup: keep oldest row per (user_id, role, scope_type, scope_id).
 DELETE FROM "RoleAssignment" ra
