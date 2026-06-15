@@ -132,6 +132,7 @@ async function ensureOidcGrantForRule(
       });
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
+      // Concurrent winner committed the assignment first; it will also create the grant.
       return false;
     }
 
