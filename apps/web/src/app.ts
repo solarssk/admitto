@@ -69,6 +69,13 @@ import {
   handlePostTestConnection,
 } from "./admin/auth-providers-routes.js";
 
+/** Parse check-in history `limit` query param: default 10, clamped to 1–100. */
+function parseCheckinHistoryLimit(raw: string | undefined): number {
+  const limitParam = parseInt(raw ?? "10", 10);
+  const parsed = Number.isFinite(limitParam) ? limitParam : 10;
+  return Math.max(1, Math.min(parsed, 100));
+}
+
 /** Injectable dependencies for `createApp()` (tests and custom deploy wiring). */
 export interface CreateAppOptions {
   prisma?: PrismaClient;
@@ -386,9 +393,7 @@ export function createApp(options: CreateAppOptions = {}) {
     async (c) => {
       const eventId = c.req.query("eventId");
       if (!eventId) return c.json({ error: "eventId required" }, 400);
-      const limitParam = parseInt(c.req.query("limit") ?? "10", 10);
-      const parsed = Number.isFinite(limitParam) ? limitParam : 10;
-      const limit = Math.max(1, Math.min(parsed, 100));
+      const limit = parseCheckinHistoryLimit(c.req.query("limit"));
       try {
         const history = await getRecentCheckIns(eventId, db, limit);
         return c.json(history, 200);

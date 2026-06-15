@@ -4,6 +4,7 @@ import { PROVIDER_TYPE_OIDC } from "./constants.js";
 import { fetchOidcDiscovery, testOidcConnection } from "./discovery.js";
 import { assertSafeOidcFetchUrl } from "./safe-url.js";
 
+/** Admin form / API payload for creating or updating an OIDC identity provider. */
 export interface IdentityProviderInput {
   display_name: string;
   issuer: string;
@@ -20,6 +21,7 @@ export interface IdentityProviderInput {
   provider_type?: string;
 }
 
+/** Serializable provider fields for admin HTML forms (secrets as boolean flags only). */
 export interface IdentityProviderFormView {
   id: string;
   provider_type: string;
@@ -37,6 +39,7 @@ export interface IdentityProviderFormView {
   enabled: boolean;
 }
 
+/** Map a DB provider row to admin form view (no decrypted secrets). */
 export function toProviderFormView(provider: IdentityProvider): IdentityProviderFormView {
   return {
     id: provider.id,
@@ -56,6 +59,7 @@ export function toProviderFormView(provider: IdentityProvider): IdentityProvider
   };
 }
 
+/** List enabled OIDC providers for the login SSO picker. */
 export async function findEnabledOidcProviders(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<IdentityProvider[]> {
@@ -65,6 +69,7 @@ export async function findEnabledOidcProviders(
   });
 }
 
+/** Load one OIDC provider by id, or null when missing or not OIDC type. */
 export async function findOidcProviderById(
   prisma: PrismaClient | Prisma.TransactionClient,
   id: string,
@@ -74,6 +79,7 @@ export async function findOidcProviderById(
   });
 }
 
+/** List all OIDC providers for superadmin configuration UI. */
 export async function listOidcProviders(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<IdentityProvider[]> {
@@ -214,11 +220,13 @@ export async function updateIdentityProvider(
 
 export { testOidcConnection };
 
+/** Build the registered OAuth redirect URI for a provider on this Admitto base URL. */
 export function buildOidcRedirectUri(baseUrl: string, providerId: string): string {
   const base = baseUrl.replace(/\/$/, "");
   return `${base}/api/auth/oidc/${providerId}/callback`;
 }
 
+/** Build the IdP authorization URL with PKCE S256 and OpenID scopes. */
 export function buildOidcAuthorizeUrl(
   provider: IdentityProvider,
   params: {
@@ -240,6 +248,7 @@ export function buildOidcAuthorizeUrl(
   return url.toString();
 }
 
+/** One group→role rule row from the admin provider mappings form. */
 export interface GroupRoleMappingInput {
   group: string;
   role: string;
@@ -338,6 +347,7 @@ export async function updateIdentityProviderWithMappings(
   });
 }
 
+/** List group→role mapping rows configured for one OIDC provider. */
 export async function listProviderGroupMappings(
   prisma: PrismaClient | Prisma.TransactionClient,
   providerId: string,

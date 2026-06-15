@@ -18,6 +18,7 @@ export class SmtpAdapter implements MailerAdapter {
   readonly capabilities = SMTP_CAPABILITIES;
   private readonly transporter: Transporter;
 
+  /** Create adapter; uses `createTransporter` unless a transporter is injected for tests. */
   constructor(
     private readonly config: SmtpConfig,
     /** Optional transporter (DI for tests). If omitted, created from config. */
@@ -54,10 +55,12 @@ export class SmtpAdapter implements MailerAdapter {
     } as nodemailer.TransportOptions);
   }
 
+  /** Close the underlying nodemailer connection pool. */
   async close(): Promise<void> {
     this.transporter.close();
   }
 
+  /** Validate and send one HTML message via SMTP; never throws (returns rejected result on failure). */
   async send(message: MailMessage): Promise<SendResult> {
     const validationError = validateMailMessage(message);
     if (validationError) {

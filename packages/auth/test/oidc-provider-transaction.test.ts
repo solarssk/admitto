@@ -28,6 +28,7 @@ const baseInput = {
   client_secret: "secret",
 };
 
+/** Minimal in-memory Prisma stub for OIDC provider transaction ordering tests. */
 function mockPrismaForTxn(): PrismaClient {
   const tx = {
     identityProvider: {
