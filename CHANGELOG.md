@@ -12,17 +12,83 @@ first event-ready MVP.
 
 ## Unreleased
 
-### v0.3.4 — OIDC linking (prompt 16b)
+## v0.3.4 - 2026-06-15
 
-Additive OIDC login (Authentik-first) linked to local `User` via `ExternalIdentity`. Authorization
-Code + PKCE with server-side `state`/`nonce`; full ID token validation (JWKS, iss, aud, exp, nonce).
-JIT users get zero roles unless a configured group→role rule matches. OIDC-owned grants
-(`OidcRoleGrant`) are revoked on demotion without touching manual assignments. OIDC logins receive `full`
-sessions with `auth_method=oidc` (local TOTP skipped; MFA is IdP's responsibility per ADR 0011). Explicit account linking via `?link=1` → `/account/oidc/:id/link` step-up page (password
-+ TOTP when required); `link_step_up_at` on OAuth state (5 min TTL at callback); OIDC flow cookie binds callback to the
-initiating browser. Superadmin server-rendered UI at `/admin/auth/providers` for IdP config
-(write-only `client_secret`, Test connection, transactional save). SSRF guards on outbound OIDC fetches.
-Seam `resolveOrCreateUserFromExternalIdentity` shared with future Cloudflare Access (16c).
+OIDC linking (prompt 16b) and security hygiene (prompt 18 / ADR 0016 DO-NOW).
+
+This milestone adds corporate SSO via OIDC (Authentik-first) as an additive login path, then hardens
+RBAC/OIDC data integrity, outbound OIDC admin saves, check-in API limits, and SMTP TLS before the
+next auth work (Cloudflare Access / 16c).
+
+### OIDC linking (`@admitto/auth`, PR #47)
+
+- **Additive login:** Authorization Code + PKCE; server-side `state` / `nonce`; full ID token validation
+  (JWKS, `iss`, `aud`, `exp`, `nonce`). Local `User` linked through `ExternalIdentity`.
+- **JIT provisioning:** new OIDC users get **zero roles** unless a configured group→role rule matches
+  (fail-closed; not read-only by default).
+- **Grant ownership:** `OidcRoleGrant` rows track OIDC-provisioned roles; demotion revokes grants without
+  touching manual `RoleAssignment` rows.
+- **Sessions:** OIDC logins receive `full` sessions with `auth_method=oidc` (local TOTP skipped — MFA is
+  the IdP's responsibility per ADR 0011).
+- **Account linking:** explicit `?link=1` → `/account/oidc/:id/link` step-up (password + TOTP when required);
+  `link_step_up_at` on OAuth state (5 min TTL at callback); OIDC flow cookie binds callback to the
+  initiating browser.
+- **Superadmin UI:** server-rendered `/admin/auth/providers` — IdP config, write-only `client_secret`, Test
+  connection, transactional save.
+- **SSRF guards:** `assertSafeOidcFetchUrl` blocks private/link-local targets (RFC 1918, IMDS, IPv6 ULA)
+  on outbound OIDC discovery/token fetches.
+- **Seam:** `resolveOrCreateUserFromExternalIdentity` shared with future Cloudflare Access (16c).
+
+### Security hygiene (PR #48)
+
+- **RBAC-2:** deduplicate `RoleAssignment` rows, then partial UNIQUE indexes (scoped rows + instance rows
+  where `scope_id IS NULL`). Migration repoints `OidcRoleGrant` to the survivor assignment before dedup.
+- **SEC-2:** orphan `OidcRoleGrant` cleanup; FK `OidcRoleGrant.role_assignment_id → RoleAssignment` with
+  `ON DELETE CASCADE`; Prisma relation on both sides.
+- **SEC-3:** OIDC discovery/endpoints resolved **before** `$transaction` in provider save paths (no
+  network I/O inside DB transactions).
+- **OIDC grant races:** idempotent grant creation under concurrent logins (`P2002` → safe no-op; winner
+  creates assignment + grant in one transaction).
+- **API-001:** check-in history `limit` clamped to **1–100** at HTTP and domain layers.
+- **TLS P1:** SMTP adapter `minVersion: "TLSv1.2"`.
+- **CI:** `prisma migrate deploy` on `admitto_auth_test` before auth integration tests.
+
+### Database
+
+Migrations (run in order on deploy):
+
+- `20260615120000_oidc_linking` — `IdentityProvider`, `ExternalIdentity`, OIDC OAuth state tables.
+- `20260615140000_oidc_hardening` — OIDC schema/index hardening from review.
+- `20260615160000_oidc_scope_normalization` — scope normalization for group→role mappings.
+- `20260615170000_oidc_link_step_up` — `link_step_up_at` on OAuth state.
+- `20260615180000_oidc_role_grants` — `OidcRoleGrant` + group mapping tables.
+- `20260615190000_role_assignment_unique` — dedup, partial UNIQUE indexes, grant repoint, FK cascade.
+
+### Deploy notes
+
+```bash
+npm run db:migrate
+```
+
+- Set `ENCRYPTION_KEY` (32-byte base64) — required for encrypted IdP `client_secret` and existing TOTP
+  secrets.
+- Configure at least one OIDC provider in `/admin/auth/providers` before expecting SSO logins.
+- After migrate `20260615190000`, duplicate `RoleAssignment` rows are removed automatically; surviving
+  OIDC grants are repointed to the oldest row per `(user, role, scope)`.
+- Set `TRUST_PROXY=true` behind nginx/traefik when the app is not directly exposed.
+- SMTP paths now require TLS 1.2+ from the server — verify legacy mail relays before go-live.
+
+### Not in this release
+
+- Cloudflare Access / header identity (prompt 16c)
+- DNS rebinding hardening for OIDC SSRF (SEC-1 — deferred per ADR 0016)
+- Tabler admin UI (`v0.4`)
+- `viewer` read-only RBAC role (RBAC-1 — deferred)
+
+### Next
+
+- Prompt 16c — Cloudflare Access seam on top of `ExternalIdentity`
+- `v0.4` — Tabler admin UI foundation
 
 ## v0.3.3 - 2026-06-14
 
