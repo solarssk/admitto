@@ -264,9 +264,9 @@ describe("getRecentCheckIns", () => {
     expect(history.length).toBeLessThanOrEqual(2);
   });
 
-  it("clamps limit to max 50", async () => {
+  it("clamps limit to max 100", async () => {
     const history = await getRecentCheckIns(EVENT_ID, prisma, 999);
-    expect(history.length).toBeLessThanOrEqual(50);
+    expect(history.length).toBeLessThanOrEqual(100);
   });
 
   it("clamps invalid limit to minimum 1", async () => {

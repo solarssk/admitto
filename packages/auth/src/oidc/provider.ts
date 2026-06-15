@@ -83,13 +83,7 @@ export async function listOidcProviders(
   });
 }
 
-async function resolveEndpoints(input: IdentityProviderInput): Promise<{
-  issuer: string;
-  authorization_endpoint: string;
-  token_endpoint: string;
-  jwks_uri: string;
-  userinfo_endpoint: string | null;
-}> {
+async function resolveEndpoints(input: IdentityProviderInput): Promise<ResolvedEndpoints> {
   assertSafeOidcFetchUrl(normalizeIssuerForValidation(input.issuer));
   if (input.authorization_endpoint && input.token_endpoint && input.jwks_uri) {
     assertSafeOidcFetchUrl(input.authorization_endpoint);
@@ -123,12 +117,20 @@ function normalizeIssuerForValidation(issuer: string): string {
   return issuer.endsWith("/") ? issuer : `${issuer}/`;
 }
 
-/** Create provider; encrypts client_secret when supplied. */
-export async function createIdentityProvider(
+export interface ResolvedEndpoints {
+  issuer: string;
+  authorization_endpoint: string;
+  token_endpoint: string;
+  jwks_uri: string;
+  userinfo_endpoint: string | null;
+}
+
+/** Create provider record from pre-resolved endpoints (no outbound HTTP). */
+export async function createIdentityProviderWithEndpoints(
   prisma: PrismaClient | Prisma.TransactionClient,
   input: IdentityProviderInput,
+  endpoints: ResolvedEndpoints,
 ): Promise<IdentityProvider> {
-  const endpoints = await resolveEndpoints(input);
   return prisma.identityProvider.create({
     data: {
       provider_type: input.provider_type ?? PROVIDER_TYPE_OIDC,
@@ -144,6 +146,44 @@ export async function createIdentityProvider(
       claim_name: input.claim_name ?? "name",
       claim_groups: input.claim_groups ?? "groups",
       enabled: input.enabled ?? false,
+    },
+  });
+}
+
+/** Create provider; encrypts client_secret when supplied. */
+export async function createIdentityProvider(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  input: IdentityProviderInput,
+): Promise<IdentityProvider> {
+  const endpoints = await resolveEndpoints(input);
+  return createIdentityProviderWithEndpoints(prisma, input, endpoints);
+}
+
+/** Update provider record from pre-resolved endpoints (no outbound HTTP). */
+export async function updateIdentityProviderWithEndpoints(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  id: string,
+  input: IdentityProviderInput,
+  endpoints: ResolvedEndpoints,
+  existing: IdentityProvider,
+): Promise<IdentityProvider> {
+  return prisma.identityProvider.update({
+    where: { id },
+    data: {
+      display_name: input.display_name,
+      issuer: endpoints.issuer,
+      client_id: input.client_id,
+      ...(input.client_secret !== undefined && input.client_secret !== ""
+        ? { client_secret_enc: encryptClientSecret(input.client_secret) }
+        : {}),
+      authorization_endpoint: endpoints.authorization_endpoint,
+      token_endpoint: endpoints.token_endpoint,
+      jwks_uri: endpoints.jwks_uri,
+      userinfo_endpoint: endpoints.userinfo_endpoint,
+      claim_email: input.claim_email ?? existing.claim_email,
+      claim_name: input.claim_name ?? existing.claim_name,
+      claim_groups: input.claim_groups ?? existing.claim_groups,
+      enabled: input.enabled ?? existing.enabled,
     },
   });
 }
@@ -166,25 +206,7 @@ export async function updateIdentityProvider(
     userinfo_endpoint: input.userinfo_endpoint ?? existing.userinfo_endpoint ?? undefined,
   });
 
-  return prisma.identityProvider.update({
-    where: { id },
-    data: {
-      display_name: input.display_name,
-      issuer: endpoints.issuer,
-      client_id: input.client_id,
-      ...(input.client_secret !== undefined && input.client_secret !== ""
-        ? { client_secret_enc: encryptClientSecret(input.client_secret) }
-        : {}),
-      authorization_endpoint: endpoints.authorization_endpoint,
-      token_endpoint: endpoints.token_endpoint,
-      jwks_uri: endpoints.jwks_uri,
-      userinfo_endpoint: endpoints.userinfo_endpoint,
-      claim_email: input.claim_email ?? existing.claim_email,
-      claim_name: input.claim_name ?? existing.claim_name,
-      claim_groups: input.claim_groups ?? existing.claim_groups,
-      enabled: input.enabled ?? existing.enabled,
-    },
-  });
+  return updateIdentityProviderWithEndpoints(prisma, id, input, endpoints, existing);
 }
 
 export { testOidcConnection };
@@ -279,8 +301,9 @@ export async function createIdentityProviderWithMappings(
   input: IdentityProviderInput,
   mappings: GroupRoleMappingInput[],
 ): Promise<IdentityProvider> {
+  const endpoints = await resolveEndpoints(input);
   return prisma.$transaction(async (tx) => {
-    const provider = await createIdentityProvider(tx, input);
+    const provider = await createIdentityProviderWithEndpoints(tx, input, endpoints);
     await replaceProviderGroupMappings(tx, provider.id, mappings);
     return provider;
   });
@@ -292,8 +315,17 @@ export async function updateIdentityProviderWithMappings(
   input: IdentityProviderInput,
   mappings: GroupRoleMappingInput[],
 ): Promise<IdentityProvider> {
+  const existing = await prisma.identityProvider.findUniqueOrThrow({ where: { id } });
+  const endpoints = await resolveEndpoints({
+    ...input,
+    issuer: input.issuer || existing.issuer,
+    authorization_endpoint: input.authorization_endpoint ?? existing.authorization_endpoint,
+    token_endpoint: input.token_endpoint ?? existing.token_endpoint,
+    jwks_uri: input.jwks_uri ?? existing.jwks_uri,
+    userinfo_endpoint: input.userinfo_endpoint ?? existing.userinfo_endpoint ?? undefined,
+  });
   return prisma.$transaction(async (tx) => {
-    const provider = await updateIdentityProvider(tx, id, input);
+    const provider = await updateIdentityProviderWithEndpoints(tx, id, input, endpoints, existing);
     await replaceProviderGroupMappings(tx, provider.id, mappings);
     return provider;
   });

@@ -64,7 +64,7 @@ async function revokeOidcRoleGrant(
     await tx.roleAssignment.deleteMany({
       where: { id: grant.role_assignment_id, user_id: userId },
     });
-    await tx.oidcRoleGrant.delete({ where: { id: grant.id } });
+    // OidcRoleGrant is removed via ON DELETE CASCADE on role_assignment_id FK.
   });
 }
 

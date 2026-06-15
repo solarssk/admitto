@@ -44,6 +44,7 @@ export class SmtpAdapter implements MailerAdapter {
       tls: {
         rejectUnauthorized: config.tlsRejectUnauthorized,
         servername: config.host,
+        minVersion: "TLSv1.2",
       },
       auth: { user: config.user, pass: config.password },
     } as nodemailer.TransportOptions);

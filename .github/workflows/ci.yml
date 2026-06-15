@@ -60,6 +60,11 @@ jobs:
           DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto_web_test
         working-directory: packages/db
         run: npx prisma migrate deploy
+      - name: Migrate auth integration test database
+        env:
+          DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto_auth_test
+        working-directory: packages/db
+        run: npx prisma migrate deploy
       - run: npm run typecheck --workspaces --if-present
       - run: npm test --workspaces --if-present
 
