@@ -38,6 +38,7 @@ import {
 } from "./rate-limit/index.js";
 import { createRequireSession, createRequirePartialSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
+import { createOidcAuthRateLimitMiddleware } from "./auth/oidc-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
 import { handleLogin, handleLogout, handleMe, handleMfaVerify, handleTotpEnroll, handleTotpConfirm } from "./auth/routes.js";
@@ -54,6 +55,19 @@ import {
   handleGetOperator,
   handlePostLogout,
 } from "./auth/html-routes.js";
+import { handleOidcStart, handleOidcCallback } from "./auth/oidc-routes.js";
+import { handleGetOidcLink, handlePostOidcLink } from "./auth/oidc-link-routes.js";
+import { createRequireSuperadmin } from "./auth/superadmin-middleware.js";
+import { sweepExpiredOidcAuthStates } from "@admitto/auth";
+import {
+  handleListProviders,
+  handleGetNewProvider,
+  handlePostNewProvider,
+  handleGetEditProvider,
+  handlePostEditProvider,
+  handlePostDiscover,
+  handlePostTestConnection,
+} from "./admin/auth-providers-routes.js";
 
 /** Injectable dependencies for `createApp()` (tests and custom deploy wiring). */
 export interface CreateAppOptions {
@@ -96,12 +110,18 @@ export function createApp(options: CreateAppOptions = {}) {
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
   const loginRateLimitHtml = createLoginRateLimitMiddleware(rateLimitStore, { format: "text" });
+  const oidcAuthRateLimit = createOidcAuthRateLimitMiddleware(rateLimitStore);
   const htmlPostCsrf = createCrossSitePostGuard({ format: "text" });
   const jsonPostCsrf = createCrossSitePostGuard({ format: "json" });
   const requireSession = createRequireSession(db);
   const requireSessionHtml = createRequireSession(db, { redirectTo: "/login" });
   const requirePartialSession = createRequirePartialSession(db);
   const requirePartialSessionHtml = createRequirePartialSession(db, { redirectTo: "/login" });
+  const requireSuperadmin = createRequireSuperadmin(db);
+
+  void sweepExpiredOidcAuthStates(db).catch((err) => {
+    console.error("OidcAuthState sweep failed:", err);
+  });
 
   function htmlWithSecurityHeaders(c: Context, html: string, status: 200 | 404 | 410 | 500) {
     for (const [name, value] of Object.entries(ticketPageHeaders)) {
@@ -173,7 +193,31 @@ export function createApp(options: CreateAppOptions = {}) {
     handleTotpConfirm(c, db, rateLimitStore),
   );
 
-  app.get("/login", (c) => handleGetLogin(c));
+  app.get("/api/auth/oidc/:providerId/start", oidcAuthRateLimit, (c) => handleOidcStart(c, db, baseUrl));
+  app.get("/api/auth/oidc/:providerId/callback", oidcAuthRateLimit, (c) => handleOidcCallback(c, db, baseUrl));
+
+  app.get("/account/oidc/:providerId/link", requireSessionHtml, (c) => handleGetOidcLink(c, db));
+  app.post("/account/oidc/:providerId/link", htmlPostCsrf, loginRateLimitHtml, requireSessionHtml, (c) =>
+    handlePostOidcLink(c, db, baseUrl, rateLimitStore),
+  );
+
+  app.get("/admin/auth/providers", requireSuperadmin, (c) => handleListProviders(c, db));
+  app.get("/admin/auth/providers/new", requireSuperadmin, (c) => handleGetNewProvider(c));
+  app.post("/admin/auth/providers/new", htmlPostCsrf, requireSuperadmin, (c) =>
+    handlePostNewProvider(c, db),
+  );
+  app.get("/admin/auth/providers/:id", requireSuperadmin, (c) => handleGetEditProvider(c, db));
+  app.post("/admin/auth/providers/:id", htmlPostCsrf, requireSuperadmin, (c) =>
+    handlePostEditProvider(c, db),
+  );
+  app.post("/admin/auth/providers/:id/discover", htmlPostCsrf, requireSuperadmin, (c) =>
+    handlePostDiscover(c, db),
+  );
+  app.post("/admin/auth/providers/:id/test", htmlPostCsrf, requireSuperadmin, (c) =>
+    handlePostTestConnection(c, db),
+  );
+
+  app.get("/login", (c) => handleGetLogin(c, db));
   app.post("/login", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostLogin(c, db, rateLimitStore));
   app.get("/mfa/verify", requirePartialSessionHtml, (c) => handleGetMfaVerify(c));
   app.post("/mfa/verify", htmlPostCsrf, requirePartialSessionHtml, (c) =>

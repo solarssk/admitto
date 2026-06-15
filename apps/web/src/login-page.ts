@@ -18,12 +18,44 @@ export function getLoginPageSecurityHeaders(): Record<string, string> {
   };
 }
 
+/** SSO provider link for login footer. */
+export interface LoginSsoProvider {
+  id: string;
+  display_name: string;
+}
+
+/** Uniform login failure copy (POST /login). */
+export const LOGIN_ERROR_CODE = "invalid_credentials";
+
+function loginErrorMessage(error?: string): string | undefined {
+  if (!error) return undefined;
+  if (error === "oidc_failed") {
+    return "Corporate sign-in failed. Try again or use your local password.";
+  }
+  if (error === LOGIN_ERROR_CODE) {
+    return "Invalid email or password.";
+  }
+  return undefined;
+}
+
 /** Render the operator sign-in form HTML (optional uniform error message). */
-export function renderLoginForm(error?: string, next?: string): string {
-  const errorBlock = error
-    ? `<p class="error" role="alert">${esc(error)}</p>`
-    : "";
+export function renderLoginForm(
+  error?: string,
+  next?: string,
+  ssoProviders: LoginSsoProvider[] = [],
+): string {
+  const message = loginErrorMessage(error);
+  const errorBlock = message ? `<p class="error" role="alert">${esc(message)}</p>` : "";
   const nextField = next ? `<input type="hidden" name="next" value="${esc(next)}">` : "";
+  const ssoBlock =
+    ssoProviders.length > 0
+      ? `<div class="sso">${ssoProviders
+          .map((p) => {
+            const startUrl = `/api/auth/oidc/${encodeURIComponent(p.id)}/start${next ? `?next=${encodeURIComponent(next)}` : ""}`;
+            return `<p><a href="${esc(startUrl)}">Sign in with ${esc(p.display_name)}</a></p>`;
+          })
+          .join("")}</div>`
+      : `<footer>SSO / corporate login — coming soon</footer>`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -37,7 +69,7 @@ export function renderLoginForm(error?: string, next?: string): string {
     input { width: 100%; box-sizing: border-box; margin-top: 0.25rem; padding: 0.5rem; }
     button { margin-top: 1.25rem; padding: 0.5rem 1rem; }
     .error { color: #991b1b; background: #fee2e2; padding: 0.5rem; border-radius: 4px; }
-    footer { margin-top: 2rem; font-size: 0.85rem; color: #666; }
+    footer, .sso { margin-top: 2rem; font-size: 0.85rem; color: #666; }
   </style>
 </head>
 <body>
@@ -52,7 +84,7 @@ export function renderLoginForm(error?: string, next?: string): string {
     </label>
     <button type="submit">Sign in</button>
   </form>
-  <footer>SSO / corporate login — coming soon</footer>
+  ${ssoBlock}
 </body>
 </html>`;
 }

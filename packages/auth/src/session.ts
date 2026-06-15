@@ -1,6 +1,6 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { generateToken, hashToken } from "@admitto/tickets";
-import { SESSION_LAST_SEEN_THROTTLE_MS, SESSION_STAGE, type SessionStage } from "./constants.js";
+import { SESSION_LAST_SEEN_THROTTLE_MS, SESSION_STAGE, AUTH_METHOD, type SessionStage, type AuthMethod } from "./constants.js";
 import { MFA_PENDING_SESSION_TTL_MS } from "./constants.js";
 import {
   getSessionTtlAdminMs,
@@ -15,6 +15,7 @@ const DEVICE_LABEL_MAX_LEN = 120;
 export interface CreateSessionInput {
   userId: string;
   stage?: SessionStage;
+  authMethod?: AuthMethod;
   ip?: string;
   userAgent?: string;
   deviceLabel?: string;
@@ -69,7 +70,11 @@ export async function createSession(
 ): Promise<{ session: import("@prisma/client").Session; rawToken: string }> {
   const rawToken = generateToken();
   const token_hash = hashToken(rawToken);
-  const stage = await resolveInitialSessionStage(prisma, input.userId, input.stage);
+  const authMethod = input.authMethod ?? AUTH_METHOD.LOCAL;
+  const stage =
+    input.stage === SESSION_STAGE.FULL && authMethod === AUTH_METHOD.OIDC
+      ? SESSION_STAGE.FULL
+      : await resolveInitialSessionStage(prisma, input.userId, input.stage);
   const now = new Date();
 
   const ttlMs =
@@ -83,6 +88,7 @@ export async function createSession(
       user_id: input.userId,
       token_hash,
       stage,
+      auth_method: authMethod,
       ip: input.ip ?? null,
       user_agent: input.userAgent ?? null,
       device_label: input.deviceLabel ? input.deviceLabel.slice(0, DEVICE_LABEL_MAX_LEN) : null,
@@ -144,6 +150,7 @@ async function assertFullSessionMfaPolicy(
   prisma: PrismaClient | Prisma.TransactionClient,
   validated: ValidatedPartialSession,
 ): Promise<boolean> {
+  if (validated.session.auth_method === AUTH_METHOD.OIDC) return true;
   if (!(await userRequiresMfa(prisma, validated.userId))) return true;
   if (!(await userHasConfirmedTotp(prisma, validated.userId))) return false;
 

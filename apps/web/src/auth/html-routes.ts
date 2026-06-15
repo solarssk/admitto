@@ -8,6 +8,7 @@ import {
   logout,
   validatePartialSession,
   revokeTrustedDeviceByToken,
+  canManageInstance,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
@@ -18,14 +19,16 @@ import {
   getLoginPageSecurityHeaders,
   renderLoginForm,
   renderOperatorLanding,
+  LOGIN_ERROR_CODE,
 } from "../login-page.js";
 import { resolveSafeRedirectPath } from "./safe-redirect.js";
+import { loadLoginSsoProviders } from "./login-sso.js";
 
 function mfaPathWithNext(path: string, next: string): string {
   return `${path}?next=${encodeURIComponent(next)}`;
 }
 
-const LOGIN_ERROR = "Invalid email or password.";
+const LOGIN_ERROR = LOGIN_ERROR_CODE;
 
 function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Response {
   for (const [name, value] of Object.entries(getLoginPageSecurityHeaders())) {
@@ -35,9 +38,11 @@ function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Respon
 }
 
 /** GET /login — operator sign-in form (HTML). */
-export function handleGetLogin(c: Context): Response {
+export async function handleGetLogin(c: Context, db: PrismaClient): Promise<Response> {
   const next = resolveSafeRedirectPath(c.req.query("next"));
-  return htmlResponse(c, renderLoginForm(undefined, next));
+  const errorParam = c.req.query("error") ?? undefined;
+  const sso = await loadLoginSsoProviders(db);
+  return htmlResponse(c, renderLoginForm(errorParam, next, sso));
 }
 
 async function parseLoginForm(c: Context): Promise<Record<string, string>> {
@@ -64,9 +69,10 @@ export async function handlePostLogin(
   const password = form["password"] ?? "";
   const deviceLabel = form["device_label"]?.trim();
   const next = resolveSafeRedirectPath(form["next"] ?? c.req.query("next"));
+  const sso = await loadLoginSsoProviders(db);
 
   if (!email || !password) {
-    return htmlResponse(c, renderLoginForm(LOGIN_ERROR, next), 401);
+    return htmlResponse(c, renderLoginForm(LOGIN_ERROR, next, sso), 401);
   }
 
   const result = await login(
@@ -86,7 +92,7 @@ export async function handlePostLogin(
     if (!(await checkLoginEmailRateLimit(rateLimitStore, email))) {
       return c.text("Too many requests", 429);
     }
-    return htmlResponse(c, renderLoginForm(LOGIN_ERROR, next), 401);
+    return htmlResponse(c, renderLoginForm(LOGIN_ERROR, next, sso), 401);
   }
 
   setSessionCookie(c, result.rawToken);
@@ -117,13 +123,10 @@ export async function handleGetOperator(c: Context, db: PrismaClient): Promise<R
   });
 
   const eventIds = new Set<string>();
-  let allEvents = false;
+  const allEvents = await canManageInstance(db, auth.userId);
 
   for (const a of assignments) {
-    if (a.role === "superadmin" && a.scope_type === "instance") {
-      allEvents = true;
-      break;
-    }
+    if (allEvents) break;
     if (a.role === "admin" && a.scope_type === "organization" && a.scope_id) {
       const orgEvents = await db.event.findMany({
         where: { organization_id: a.scope_id },

@@ -86,6 +86,22 @@ describe("GET /login", () => {
     expect(html).toContain("device_label");
     expect(html).toContain("coming soon");
   });
+
+  it("renders friendly message for error=oidc_failed", async () => {
+    const res = await app.request("/login?error=oidc_failed");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Corporate sign-in failed. Try again or use your local password.");
+    expect(html).not.toContain("oidc_failed");
+  });
+
+  it("ignores unknown error query values", async () => {
+    const res = await app.request("/login?error=phishing-message");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("phishing-message");
+    expect(html).not.toContain('role="alert"');
+  });
 });
 
 describe("POST /login", () => {

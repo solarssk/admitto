@@ -45,3 +45,11 @@ export const LOGIN_NEXT = {
 } as const;
 
 export type LoginNext = (typeof LOGIN_NEXT)[keyof typeof LOGIN_NEXT];
+
+/** How the session was authenticated — OIDC sessions skip local TOTP revalidation (16b). */
+export const AUTH_METHOD = {
+  LOCAL: "local",
+  OIDC: "oidc",
+} as const;
+
+export type AuthMethod = (typeof AUTH_METHOD)[keyof typeof AUTH_METHOD];
