@@ -100,7 +100,10 @@ describe("SmtpAdapter", () => {
         rateLimit: 30,
         rateDelta: 60_000,
         requireTLS: true,
-        tls: expect.objectContaining({ servername: "smtp.example.com" }),
+        tls: expect.objectContaining({
+          servername: "smtp.example.com",
+          minVersion: "TLSv1.2",
+        }),
       }),
     );
     createSpy.mockRestore();

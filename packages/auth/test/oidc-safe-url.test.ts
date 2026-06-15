@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { assertSafeOidcFetchUrl } from "../src/oidc/safe-url.js";
 import { fetchOidcDiscovery } from "../src/oidc/discovery.js";
 
-afterEach(() => {
+beforeEach(() => {
   process.env["NODE_ENV"] = "test";
 });
 

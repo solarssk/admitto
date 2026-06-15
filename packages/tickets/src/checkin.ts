@@ -87,7 +87,7 @@ export async function checkInScan(
 
 /**
  * Recent scan history for a given event, ordered newest first.
- * Default limit 10, hard cap 50, minimum 1.
+ * Default limit 10, hard cap 100, minimum 1.
  * Secondary sort by id for deterministic order when timestamps tie.
  */
 export async function getRecentCheckIns(
@@ -95,7 +95,7 @@ export async function getRecentCheckIns(
   prisma: PrismaClient,
   limit = 10,
 ): Promise<CheckInHistoryEntry[]> {
-  const safeLimit = Math.max(1, Math.min(Number.isFinite(limit) ? limit : 10, 50));
+  const safeLimit = Math.max(1, Math.min(Number.isFinite(limit) ? limit : 10, 100));
   return prisma.checkIn.findMany({
     where: { event_id: eventId },
     orderBy: [{ checked_in_at: "desc" }, { id: "desc" }],

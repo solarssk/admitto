@@ -18,6 +18,7 @@ export class SmtpAdapter implements MailerAdapter {
   readonly capabilities = SMTP_CAPABILITIES;
   private readonly transporter: Transporter;
 
+  /** Create adapter; uses `createTransporter` unless a transporter is injected for tests. */
   constructor(
     private readonly config: SmtpConfig,
     /** Optional transporter (DI for tests). If omitted, created from config. */
@@ -26,6 +27,10 @@ export class SmtpAdapter implements MailerAdapter {
     this.transporter = transporter ?? SmtpAdapter.createTransporter(config);
   }
 
+  /**
+   * Build a nodemailer transporter from SMTP config.
+   * Enforces TLS 1.2 minimum via `tls.minVersion`.
+   */
   static createTransporter(config: SmtpConfig): Transporter {
     return nodemailer.createTransport({
       host: config.host,
@@ -44,15 +49,18 @@ export class SmtpAdapter implements MailerAdapter {
       tls: {
         rejectUnauthorized: config.tlsRejectUnauthorized,
         servername: config.host,
+        minVersion: "TLSv1.2",
       },
       auth: { user: config.user, pass: config.password },
     } as nodemailer.TransportOptions);
   }
 
+  /** Close the underlying nodemailer connection pool. */
   async close(): Promise<void> {
     this.transporter.close();
   }
 
+  /** Validate and send one HTML message via SMTP; never throws (returns rejected result on failure). */
   async send(message: MailMessage): Promise<SendResult> {
     const validationError = validateMailMessage(message);
     if (validationError) {

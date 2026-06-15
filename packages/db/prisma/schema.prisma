@@ -310,8 +310,11 @@ model RoleAssignment {
   scope_id   String?  // null for instance scope
   created_at DateTime @default(now())
 
+  oidc_role_grants OidcRoleGrant[]
+
   @@index([user_id])
   @@index([scope_type, scope_id])
+  // Partial UNIQUE indexes (scoped + instance NULL) live in migration SQL — not expressible via @@unique.
 }
 
 // OIDC / external identity providers (prompt 16b; cloudflare_access reserved for 16c).
@@ -385,6 +388,7 @@ model OidcRoleGrant {
   scope_type         String
   scope_id           String?
   role_assignment_id String
+  role_assignment    RoleAssignment   @relation(fields: [role_assignment_id], references: [id], onDelete: Cascade)
   created_at         DateTime         @default(now())
 
   @@unique([user_id, provider_id, role, scope_type, scope_id])

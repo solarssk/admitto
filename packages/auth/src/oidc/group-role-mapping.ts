@@ -8,12 +8,14 @@ export function roleAssignmentScopeId(scopeType: string, scopeId: string | null)
   return trimmed || null;
 }
 
+/** True when `prisma` is a root client (can open nested transactions). */
 function isPrismaClient(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): prisma is PrismaClient {
   return "$transaction" in prisma;
 }
 
+/** Run `fn` in a nested transaction when the caller did not already pass a transaction client. */
 async function runInOwnTransaction<T>(
   prisma: PrismaClient | Prisma.TransactionClient,
   fn: (tx: Prisma.TransactionClient) => Promise<T>,
@@ -24,6 +26,17 @@ async function runInOwnTransaction<T>(
   return fn(prisma);
 }
 
+/** Prisma unique-constraint violation (concurrent RoleAssignment / OidcRoleGrant insert). */
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: string }).code === "P2002"
+  );
+}
+
+/** Natural key for an OIDC-owned grant row. */
 function grantWhere(
   userId: string,
   providerId: string,
@@ -39,6 +52,21 @@ function grantWhere(
   };
 }
 
+/** Lookup key for a RoleAssignment row (matches partial UNIQUE indexes). */
+function assignmentWhere(
+  userId: string,
+  rule: { role: string; scope_type: string },
+  scopeId: string | null,
+) {
+  return {
+    user_id: userId,
+    role: rule.role,
+    scope_type: rule.scope_type,
+    scope_id: scopeId,
+  };
+}
+
+/** True when a current mapping rule + group membership still authorizes an existing grant. */
 function ruleStillAuthorizesGrant(
   grant: { role: string; scope_type: string; scope_id: string | null },
   rules: Array<{ group: string; role: string; scope_type: string; scope_id: string }>,
@@ -55,6 +83,7 @@ function ruleStillAuthorizesGrant(
   });
 }
 
+/** Remove one provider-owned grant and its linked assignment (grant cascades via FK). */
 async function revokeOidcRoleGrant(
   prisma: PrismaClient | Prisma.TransactionClient,
   grant: { id: string; role_assignment_id: string },
@@ -64,7 +93,63 @@ async function revokeOidcRoleGrant(
     await tx.roleAssignment.deleteMany({
       where: { id: grant.role_assignment_id, user_id: userId },
     });
-    await tx.oidcRoleGrant.delete({ where: { id: grant.id } });
+    // OidcRoleGrant is removed via ON DELETE CASCADE on role_assignment_id FK.
+  });
+}
+
+/**
+ * Create assignment + grant for one rule when missing.
+ * All existence checks run inside one transaction; idempotent under P2002 races.
+ * Returns true when this call created a new grant.
+ */
+async function ensureOidcGrantForRule(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+  providerId: string,
+  rule: { role: string; scope_type: string },
+  scopeId: string | null,
+  grantKey: ReturnType<typeof grantWhere>,
+): Promise<boolean> {
+  return runInOwnTransaction(prisma, async (tx) => {
+    if (await tx.oidcRoleGrant.findFirst({ where: grantKey })) {
+      return false;
+    }
+
+    if (await tx.roleAssignment.findFirst({ where: assignmentWhere(userId, rule, scopeId) })) {
+      // Manual assignment or concurrent winner — never attach an OIDC grant here.
+      return false;
+    }
+
+    let assignment;
+    try {
+      assignment = await tx.roleAssignment.create({
+        data: {
+          user_id: userId,
+          role: rule.role,
+          scope_type: rule.scope_type,
+          scope_id: scopeId,
+        },
+      });
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      // Concurrent winner committed the assignment first; it will also create the grant.
+      return false;
+    }
+
+    try {
+      await tx.oidcRoleGrant.create({
+        data: {
+          ...grantKey,
+          role_assignment_id: assignment.id,
+        },
+      });
+      return true;
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        return false;
+      }
+      throw err;
+    }
   });
 }
 
@@ -100,37 +185,10 @@ export async function applyOidcGroupRoleMappings(
 
     const scopeId = roleAssignmentScopeId(rule.scope_type, rule.scope_id);
     const grantKey = grantWhere(userId, providerId, rule, scopeId);
-    const grant = await prisma.oidcRoleGrant.findFirst({ where: grantKey });
 
-    if (grant) continue;
-
-    const existing = await prisma.roleAssignment.findFirst({
-      where: {
-        user_id: userId,
-        role: rule.role,
-        scope_type: rule.scope_type,
-        scope_id: scopeId,
-      },
-    });
-    if (existing) continue;
-
-    await runInOwnTransaction(prisma, async (tx) => {
-      const assignment = await tx.roleAssignment.create({
-        data: {
-          user_id: userId,
-          role: rule.role,
-          scope_type: rule.scope_type,
-          scope_id: scopeId,
-        },
-      });
-      await tx.oidcRoleGrant.create({
-        data: {
-          ...grantKey,
-          role_assignment_id: assignment.id,
-        },
-      });
-    });
-    changed++;
+    if (await ensureOidcGrantForRule(prisma, userId, providerId, rule, scopeId, grantKey)) {
+      changed++;
+    }
   }
 
   return changed;

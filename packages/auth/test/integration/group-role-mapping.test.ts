@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/password.js";
 import {
@@ -185,5 +185,95 @@ describe("applyOidcGroupRoleMappings", () => {
     expect(roles.some((r) => r.role === "superadmin")).toBe(true);
     await prisma.roleAssignment.deleteMany({ where: { user_id: userId } });
     await prisma.user.delete({ where: { id: userId } });
+  });
+});
+
+describe("RoleAssignment integrity", () => {
+  afterEach(async () => {
+    await prisma.oidcRoleGrant.deleteMany({ where: { user_id: USER_ID } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
+  });
+
+  it("rejects duplicate scoped RoleAssignment", async () => {
+    await prisma.roleAssignment.create({
+      data: { user_id: USER_ID, role: "operator", scope_type: "event", scope_id: EVENT_ID },
+    });
+    await expect(
+      prisma.roleAssignment.create({
+        data: { user_id: USER_ID, role: "operator", scope_type: "event", scope_id: EVENT_ID },
+      }),
+    ).rejects.toMatchObject({ code: "P2002" });
+  });
+
+  it("rejects duplicate instance RoleAssignment (scope_id IS NULL)", async () => {
+    await prisma.roleAssignment.create({
+      data: { user_id: USER_ID, role: "superadmin", scope_type: "instance", scope_id: null },
+    });
+    await expect(
+      prisma.roleAssignment.create({
+        data: { user_id: USER_ID, role: "superadmin", scope_type: "instance", scope_id: null },
+      }),
+    ).rejects.toMatchObject({ code: "P2002" });
+  });
+
+  it("rejects OidcRoleGrant with nonexistent role_assignment_id", async () => {
+    await expect(
+      prisma.oidcRoleGrant.create({
+        data: {
+          user_id: USER_ID,
+          provider_id: PROVIDER_ID,
+          role: "operator",
+          scope_type: "event",
+          scope_id: EVENT_ID,
+          role_assignment_id: "nonexistent-assignment-id",
+        },
+      }),
+    ).rejects.toMatchObject({ code: "P2003" });
+  });
+
+  it("cascades OidcRoleGrant delete when RoleAssignment is removed", async () => {
+    const assignment = await prisma.roleAssignment.create({
+      data: { user_id: USER_ID, role: "operator", scope_type: "event", scope_id: EVENT_ID },
+    });
+    await prisma.oidcRoleGrant.create({
+      data: {
+        user_id: USER_ID,
+        provider_id: PROVIDER_ID,
+        role: "operator",
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        role_assignment_id: assignment.id,
+      },
+    });
+    await prisma.roleAssignment.delete({ where: { id: assignment.id } });
+    expect(await prisma.oidcRoleGrant.count({ where: { user_id: USER_ID } })).toBe(0);
+  });
+});
+
+describe("applyOidcGroupRoleMappings idempotency", () => {
+  afterEach(async () => {
+    await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.oidcRoleGrant.deleteMany({ where: { user_id: USER_ID } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
+  });
+
+  it("re-applying the same group mappings does not throw and adds no duplicate rows", async () => {
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        group: "operators",
+        role: "operator",
+        scope_type: "event",
+        scope_id: EVENT_ID,
+      },
+    });
+
+    const first = await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, ["operators"]);
+    expect(first).toBe(1);
+
+    const second = await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, ["operators"]);
+    expect(second).toBe(0);
+    expect(await prisma.roleAssignment.count({ where: { user_id: USER_ID } })).toBe(1);
+    expect(await prisma.oidcRoleGrant.count({ where: { user_id: USER_ID } })).toBe(1);
   });
 });

@@ -26,6 +26,14 @@ vi.mock("@admitto/tickets", () => ({
 
 import { checkInScan, getRecentCheckIns } from "@admitto/tickets";
 
+/** Parse check-in history `limit` query param: default 10, clamped to 1–100. */
+function parseCheckinHistoryLimit(raw: string | undefined): number {
+  const limitParam = parseInt(raw ?? "10", 10);
+  const parsed = Number.isFinite(limitParam) ? limitParam : 10;
+  return Math.max(1, Math.min(parsed, 100));
+}
+
+/** Build a minimal Hono app with check-in routes and mocked `@admitto/tickets`. */
 function makeApp() {
   const app = new Hono();
 
@@ -55,8 +63,7 @@ function makeApp() {
   app.get("/api/checkin/history", async (c) => {
     const eventId = c.req.query("eventId");
     if (!eventId) return c.json({ error: "eventId required" }, 400);
-    const limitParam = parseInt(c.req.query("limit") ?? "10", 10);
-    const limit = Number.isFinite(limitParam) ? limitParam : 10;
+    const limit = parseCheckinHistoryLimit(c.req.query("limit"));
     try {
       const history = await getRecentCheckIns(eventId, {} as PrismaClient, limit);
       return c.json(history, 200);
@@ -181,17 +188,24 @@ describe("GET /api/checkin/history — input validation", () => {
     expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 10);
   });
 
-  it("passes negative limit through to domain (clamped in getRecentCheckIns)", async () => {
+  it("clamps negative limit to 1 at API layer", async () => {
     vi.mocked(getRecentCheckIns).mockResolvedValueOnce([]);
     const res = await app.request("/api/checkin/history?eventId=evt-1&limit=-5");
     expect(res.status).toBe(200);
-    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), -5);
+    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 1);
   });
 
-  it("passes large limit through to domain (clamped in getRecentCheckIns)", async () => {
+  it("passes large limit through to domain capped at 100", async () => {
     vi.mocked(getRecentCheckIns).mockResolvedValueOnce([]);
     const res = await app.request("/api/checkin/history?eventId=evt-1&limit=999");
     expect(res.status).toBe(200);
-    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 999);
+    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 100);
+  });
+
+  it("caps limit=100000 at 100", async () => {
+    vi.mocked(getRecentCheckIns).mockResolvedValueOnce([]);
+    const res = await app.request("/api/checkin/history?eventId=evt-1&limit=100000");
+    expect(res.status).toBe(200);
+    expect(vi.mocked(getRecentCheckIns)).toHaveBeenCalledWith("evt-1", expect.anything(), 100);
   });
 });
