@@ -135,10 +135,6 @@ async function ensureOidcGrantForRule(
       return false;
     }
 
-    if (await tx.oidcRoleGrant.findFirst({ where: grantKey })) {
-      return false;
-    }
-
     try {
       await tx.oidcRoleGrant.create({
         data: {
