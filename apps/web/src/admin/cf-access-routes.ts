@@ -4,7 +4,9 @@ import {
   getCfAccessConfig,
   isSettingEnvLocked,
   setSetting,
-  normalizeCfAccessTeamDomain,
+  buildCfAccessConfigFromFields,
+  validateCfAccessBootConfigFromResolved,
+  clearCfAccessRuntimeConfigCache,
   resolveCfAccessTeamDomainForConnection,
   testCfAccessConnection,
   ensureCloudflareAccessProvider,
@@ -56,6 +58,28 @@ async function buildFormView(prisma: PrismaClient): Promise<CfAccessFormView> {
   };
 }
 
+async function resolveDraftFromForm(
+  db: PrismaClient,
+  parsed: ReturnType<typeof parseCfAccessForm>,
+): Promise<{
+  enabled: boolean;
+  teamDomainRaw: string;
+  audience: string[];
+  protectedPrefixes: string[];
+}> {
+  const current = await getCfAccessConfig(db);
+  return {
+    enabled: isSettingEnvLocked(SETTING_CF_ACCESS_ENABLED) ? current.enabled : parsed.enabled,
+    teamDomainRaw: isSettingEnvLocked(SETTING_CF_ACCESS_TEAM_DOMAIN)
+      ? current.teamDomain
+      : parsed.teamDomain,
+    audience: isSettingEnvLocked(SETTING_CF_ACCESS_AUD) ? current.audience : parsed.audience,
+    protectedPrefixes: isSettingEnvLocked(SETTING_CF_ACCESS_PROTECTED_PREFIXES)
+      ? current.protectedPrefixes
+      : parsed.protectedPrefixes,
+  };
+}
+
 /** GET /admin/auth/cf-access */
 export async function handleGetCfAccess(c: Context, db: PrismaClient): Promise<Response> {
   const form = await buildFormView(db);
@@ -64,32 +88,52 @@ export async function handleGetCfAccess(c: Context, db: PrismaClient): Promise<R
 
 /** POST /admin/auth/cf-access */
 export async function handlePostCfAccess(c: Context, db: PrismaClient): Promise<Response> {
-  const parsed = parseCfAccessForm(await parseForm(c));
+  let parsed: ReturnType<typeof parseCfAccessForm>;
+  try {
+    parsed = parseCfAccessForm(await parseForm(c));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Invalid form";
+    const form = await buildFormView(db);
+    return htmlResponse(c, renderCfAccessForm({ form, error: message }));
+  }
+
+  const draft = await resolveDraftFromForm(db, parsed);
+
+  let resolved;
+  try {
+    resolved = buildCfAccessConfigFromFields(draft);
+    if (resolved.enabled) {
+      validateCfAccessBootConfigFromResolved(resolved);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Invalid configuration";
+    const form = await buildFormView(db);
+    return htmlResponse(c, renderCfAccessForm({ form, error: message }));
+  }
 
   try {
-    if (!isSettingEnvLocked(SETTING_CF_ACCESS_ENABLED)) {
-      await setSetting(db, SETTING_CF_ACCESS_ENABLED, parsed.enabled);
-    }
-    if (!isSettingEnvLocked(SETTING_CF_ACCESS_TEAM_DOMAIN)) {
-      const teamDomain = parsed.teamDomain
-        ? normalizeCfAccessTeamDomain(parsed.teamDomain)
-        : "";
-      await setSetting(db, SETTING_CF_ACCESS_TEAM_DOMAIN, teamDomain);
-    }
-    if (!isSettingEnvLocked(SETTING_CF_ACCESS_AUD)) {
-      await setSetting(db, SETTING_CF_ACCESS_AUD, parsed.audience);
-    }
-    if (!isSettingEnvLocked(SETTING_CF_ACCESS_PROTECTED_PREFIXES)) {
-      await setSetting(db, SETTING_CF_ACCESS_PROTECTED_PREFIXES, parsed.protectedPrefixes);
-    }
+    await db.$transaction(async (tx) => {
+      if (!isSettingEnvLocked(SETTING_CF_ACCESS_ENABLED)) {
+        await setSetting(tx, SETTING_CF_ACCESS_ENABLED, resolved.enabled);
+      }
+      if (!isSettingEnvLocked(SETTING_CF_ACCESS_TEAM_DOMAIN)) {
+        await setSetting(tx, SETTING_CF_ACCESS_TEAM_DOMAIN, resolved.teamDomain);
+      }
+      if (!isSettingEnvLocked(SETTING_CF_ACCESS_AUD)) {
+        await setSetting(tx, SETTING_CF_ACCESS_AUD, resolved.audience);
+      }
+      if (!isSettingEnvLocked(SETTING_CF_ACCESS_PROTECTED_PREFIXES)) {
+        await setSetting(tx, SETTING_CF_ACCESS_PROTECTED_PREFIXES, resolved.protectedPrefixes);
+      }
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Save failed";
     const form = await buildFormView(db);
     return htmlResponse(c, renderCfAccessForm({ form, error: message }));
   }
 
-  const config = await getCfAccessConfig(db);
-  await ensureCloudflareAccessProvider(db, config);
+  clearCfAccessRuntimeConfigCache();
+  await ensureCloudflareAccessProvider(db, resolved);
 
   return c.redirect("/admin/auth/cf-access?flash=Settings+saved", 302);
 }

@@ -81,6 +81,55 @@ function parsePrefixes(value: unknown): string[] {
   return ["/admin", "/api/admin"];
 }
 
+let runtimeConfigCache: CfAccessConfig | null = null;
+
+function isLoopbackTeamDomain(raw: string): boolean {
+  return raw.includes("127.0.0.1") || raw.includes("localhost");
+}
+
+/** Resolve team domain; loopback allowed only in test (mock JWKS). */
+export function resolveTeamDomainFromRaw(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (isLoopbackTeamDomain(trimmed) && process.env.NODE_ENV === "test") {
+    return trimmed.replace(/\/$/, "");
+  }
+  return normalizeCfAccessTeamDomain(trimmed);
+}
+
+/** Build a resolved CF Access config from explicit field values (form save / validation). */
+export function buildCfAccessConfigFromFields(input: {
+  enabled: boolean;
+  teamDomainRaw: string;
+  audience: string[];
+  protectedPrefixes: string[];
+}): CfAccessConfig {
+  const prefixes =
+    input.protectedPrefixes.length > 0 ? input.protectedPrefixes : ["/admin", "/api/admin"];
+  const teamDomain = input.teamDomainRaw ? resolveTeamDomainFromRaw(input.teamDomainRaw) : "";
+  return {
+    enabled: input.enabled,
+    teamDomain,
+    audience: input.audience,
+    protectedPrefixes: prefixes,
+    jwksUri: teamDomain ? `${teamDomain}/cdn-cgi/access/certs` : "",
+  };
+}
+
+/** Invalidate process-lifetime CF config cache (after admin save). */
+export function clearCfAccessRuntimeConfigCache(): void {
+  runtimeConfigCache = null;
+}
+
+/** Resolved CF Access config with process-lifetime cache (restart-bound trust). */
+export async function getCfAccessConfigCached(
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<CfAccessConfig> {
+  if (runtimeConfigCache) return runtimeConfigCache;
+  runtimeConfigCache = await getCfAccessConfig(prisma);
+  return runtimeConfigCache;
+}
+
 /** Resolved Cloudflare Access config (env lock → DB → default). */
 export async function getCfAccessConfig(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -94,17 +143,7 @@ export async function getCfAccessConfig(
 
   let teamDomain = "";
   if (teamRaw.trim()) {
-    const trimmed = teamRaw.trim();
-    const isLoopbackTeam =
-      trimmed.includes("127.0.0.1") || trimmed.includes("localhost");
-    if (
-      isLoopbackTeam &&
-      (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development")
-    ) {
-      teamDomain = trimmed.replace(/\/$/, "");
-    } else {
-      teamDomain = normalizeCfAccessTeamDomain(trimmed);
-    }
+    teamDomain = resolveTeamDomainFromRaw(teamRaw);
   }
 
   return {
@@ -127,20 +166,21 @@ export function validateCfAccessBootConfigFromResolved(config: CfAccessConfig): 
   if (config.audience.length === 0) {
     throw new Error("CF_ACCESS_AUD is required when CF_ACCESS_ENABLED=true (at least one audience tag)");
   }
+  if (config.protectedPrefixes.length === 0) {
+    throw new Error(
+      "CF_ACCESS_PROTECTED_PREFIXES must not be empty when CF_ACCESS_ENABLED=true",
+    );
+  }
   console.warn(
     "WARNING: CF_ACCESS_ENABLED=true — ensure origin is reachable only via Cloudflare Tunnel/firewall (see deployment-cloudflare-access.md)",
   );
 }
 
-/** Resolve team domain for JWKS test — allow loopback mocks in dev/test. */
+/** Resolve team domain for JWKS test — allow loopback mocks in test only. */
 export function resolveCfAccessTeamDomainForConnection(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
-  const isLoopback = trimmed.includes("127.0.0.1") || trimmed.includes("localhost");
-  if (isLoopback && (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development")) {
-    return trimmed.replace(/\/$/, "");
-  }
-  return normalizeCfAccessTeamDomain(trimmed);
+  return resolveTeamDomainFromRaw(trimmed);
 }
 
 export function pathMatchesCfProtectedPrefix(path: string, prefixes: string[]): boolean {

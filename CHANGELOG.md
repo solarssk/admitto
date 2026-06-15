@@ -21,6 +21,9 @@ first event-ready MVP.
 - **Config:** `SystemSettings` keys with `env > DB > default` locks; superadmin UI at
   `/admin/auth/cf-access` with JWKS Test; boot fail-fast when enabled without team domain/AUD.
 - **Staff entrypoint:** `GET /` redirects to `/login` (shared login boundary).
+- **Review hardening:** header-only JWT at collision point (CF docs); group-role sync only on JIT/link;
+  validate-before-save + transactional settings write; restart-bound config cache; loopback team domain
+  only in `NODE_ENV=test`; API `/api/admin*` returns JSON auth errors.
 
 ## v0.3.4 — 2026-06-15
 

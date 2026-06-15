@@ -109,6 +109,14 @@ beforeAll(async () => {
       email: SUPER_EMAIL,
     },
   });
+  await prisma.externalIdentity.create({
+    data: {
+      provider_id: provider.id,
+      subject: "cf-norole-sub",
+      user_id: NO_ROLE_ID,
+      email: NO_ROLE_EMAIL,
+    },
+  });
 
   app = createApp({
     prisma,
@@ -143,6 +151,15 @@ describe("CF Access admin collision point", () => {
     expect(res.status).toBe(200);
   });
 
+  it("ignores stale CF_Authorization cookie and allows break-glass session", async () => {
+    const res = await app.request("/admin/auth/providers", {
+      headers: {
+        Cookie: `${superCookie}; CF_Authorization=invalid.stale.jwt`,
+      },
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("valid CF JWT + superadmin renders panel without login redirect", async () => {
     const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
     const res = await app.request("/admin/auth/providers", {
@@ -156,7 +173,7 @@ describe("CF Access admin collision point", () => {
   it("valid CF JWT + no role returns 403 message", async () => {
     const token = await signCfAccessJwt(mock, {
       sub: "cf-norole-sub",
-      email: "cf-only-norole@example.com",
+      email: NO_ROLE_EMAIL,
     });
     const res = await app.request("/admin/auth/providers", {
       headers: { [CF_ACCESS_HEADER]: token },
@@ -206,5 +223,29 @@ describe("CF Access config UI", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("JWKS connection OK");
+  });
+
+  it("rejects enabling CF Access without team domain and AUD", async () => {
+    const res = await app.request("/admin/auth/cf-access", {
+      method: "POST",
+      headers: {
+        Cookie: superCookie,
+        ...sameOrigin,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        enabled: "1",
+        team_domain: "",
+        audience: "",
+        protected_prefixes: '["/admin","/api/admin"]',
+      }).toString(),
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("CF_ACCESS_TEAM_DOMAIN");
+    const config = await prisma.systemSettings.findUnique({
+      where: { key: SETTING_CF_ACCESS_TEAM_DOMAIN },
+    });
+    expect(config?.value_json).toContain(mock.teamDomain);
   });
 });

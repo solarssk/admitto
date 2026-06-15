@@ -5,12 +5,11 @@ import {
   SESSION_COOKIE_NAME,
   canManageInstance,
   validateSession,
-  getCfAccessConfig,
+  getCfAccessConfigCached,
   extractAccessTokenFromHeaders,
-  CF_ACCESS_COOKIE,
   validateAccessJwt,
   CfAccessJwtError,
-  ensureCloudflareAccessProvider,
+  findCloudflareAccessProvider,
   resolveOrCreateUserFromExternalIdentity,
   ExternalIdentityLinkError,
   extractClaims,
@@ -26,6 +25,9 @@ function isApiAdminPath(path: string): boolean {
 }
 
 function loginBoundaryResponse(c: Context): Response {
+  if (isApiAdminPath(c.req.path)) {
+    return c.json({ error: "authentication_required" }, 401);
+  }
   return c.redirect("/login", 302);
 }
 
@@ -40,7 +42,7 @@ function rejectInvalidJwt(c: Context, reason: string): Response {
 /** Collision-point middleware: CF JWT trójstan + session break-glass (ADR 0017). */
 export function createAdminAccessMiddleware(prisma: PrismaClient) {
   return async (c: Context, next: Next): Promise<Response | void> => {
-    const config = await getCfAccessConfig(prisma);
+    const config = await getCfAccessConfigCached(prisma);
     const path = c.req.path;
 
     if (!config.enabled) {
@@ -49,13 +51,15 @@ export function createAdminAccessMiddleware(prisma: PrismaClient) {
 
     const token = extractAccessTokenFromHeaders(
       Object.fromEntries(c.req.raw.headers.entries()),
-      getCookie(c, CF_ACCESS_COOKIE),
     );
 
     if (token) {
       try {
         const payload = await validateAccessJwt(token, config);
-        const provider = await ensureCloudflareAccessProvider(prisma, config);
+        const provider = await findCloudflareAccessProvider(prisma);
+        if (!provider || !provider.enabled) {
+          return rejectInvalidJwt(c, "provider_not_configured");
+        }
         const subject = payload.sub;
         if (typeof subject !== "string" || !subject) {
           return rejectInvalidJwt(c, "missing_sub");
@@ -63,6 +67,7 @@ export function createAdminAccessMiddleware(prisma: PrismaClient) {
 
         const claims = extractClaims(payload, provider);
         let userId: string;
+        let syncGroupRoles = false;
         try {
           const resolved = await resolveOrCreateUserFromExternalIdentity(
             prisma,
@@ -71,6 +76,7 @@ export function createAdminAccessMiddleware(prisma: PrismaClient) {
             claims,
           );
           userId = resolved.user.id;
+          syncGroupRoles = resolved.isNew || resolved.linked;
         } catch (err) {
           const reason =
             err instanceof ExternalIdentityLinkError ? err.message : "identity_resolution_failed";
@@ -84,7 +90,9 @@ export function createAdminAccessMiddleware(prisma: PrismaClient) {
           return rejectInvalidJwt(c, reason);
         }
 
-        await applyOidcGroupRoleMappings(prisma, provider.id, userId, claims.groups ?? []);
+        if (syncGroupRoles) {
+          await applyOidcGroupRoleMappings(prisma, provider.id, userId, claims.groups ?? []);
+        }
 
         if (!(await canManageInstance(prisma, userId))) {
           logCfAccessAuth({
@@ -130,6 +138,9 @@ async function sessionSuperadminGate(
     return loginBoundaryResponse(c);
   }
   if (!(await canManageInstance(prisma, validated.userId))) {
+    if (isApiAdminPath(c.req.path)) {
+      return c.json({ error: "forbidden" }, 403);
+    }
     return c.text("Forbidden", 403);
   }
   c.set("auth", {

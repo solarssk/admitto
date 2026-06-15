@@ -3,22 +3,20 @@ import type { JWTPayload } from "jose";
 import { assertSafeOidcFetchUrl } from "../oidc/safe-url.js";
 import type { CfAccessConfig } from "./config.js";
 
-let jwksCache = new Map<string, { keys: jose.JWTVerifyGetKey; fetchedAt: number }>();
-const JWKS_CACHE_MS = 5 * 60 * 1000;
+const jwksVerifiers = new Map<string, jose.JWTVerifyGetKey>();
 
 function getJwksVerifier(jwksUri: string): jose.JWTVerifyGetKey {
-  const cached = jwksCache.get(jwksUri);
-  if (cached && Date.now() - cached.fetchedAt < JWKS_CACHE_MS) {
-    return cached.keys;
+  let verifier = jwksVerifiers.get(jwksUri);
+  if (!verifier) {
+    verifier = jose.createRemoteJWKSet(new URL(jwksUri));
+    jwksVerifiers.set(jwksUri, verifier);
   }
-  const keys = jose.createRemoteJWKSet(new URL(jwksUri));
-  jwksCache.set(jwksUri, { keys, fetchedAt: Date.now() });
-  return keys;
+  return verifier;
 }
 
-/** For tests — reset JWKS cache between cases. */
+/** For tests — reset JWKS verifiers between cases. */
 export function clearCfAccessJwksCacheForTests(): void {
-  jwksCache = new Map();
+  jwksVerifiers.clear();
 }
 
 function asNonEmptyString(value: unknown): string | undefined {

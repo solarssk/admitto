@@ -5,18 +5,12 @@ import type { CfAccessConfig } from "./config.js";
 export const CF_ACCESS_CLIENT_ID_SENTINEL = "__cloudflare_access__";
 export const CF_ACCESS_DISPLAY_NAME = "Cloudflare Access";
 
-/** Upsert reserved IdentityProvider row for Cloudflare Access external identities. */
-export async function ensureCloudflareAccessProvider(
-  prisma: PrismaClient | Prisma.TransactionClient,
+function providerDataFromConfig(
   config: Pick<CfAccessConfig, "teamDomain" | "jwksUri" | "enabled">,
-): Promise<IdentityProvider> {
+) {
   const issuer = config.teamDomain;
-  const existing = await prisma.identityProvider.findFirst({
-    where: { provider_type: PROVIDER_TYPE_CLOUDFLARE_ACCESS },
-  });
-
   const placeholderAuth = issuer ? `${issuer}/cdn-cgi/access/login` : "https://cloudflareaccess.com/";
-  const data = {
+  return {
     provider_type: PROVIDER_TYPE_CLOUDFLARE_ACCESS,
     issuer: issuer || "https://cloudflareaccess.com",
     client_id: CF_ACCESS_CLIENT_ID_SENTINEL,
@@ -29,8 +23,30 @@ export async function ensureCloudflareAccessProvider(
     claim_name: "name",
     claim_groups: "groups",
   };
+}
+
+function providerNeedsUpdate(existing: IdentityProvider, data: ReturnType<typeof providerDataFromConfig>): boolean {
+  return (
+    existing.issuer !== data.issuer ||
+    existing.jwks_uri !== data.jwks_uri ||
+    existing.enabled !== data.enabled ||
+    existing.authorization_endpoint !== data.authorization_endpoint ||
+    existing.token_endpoint !== data.token_endpoint
+  );
+}
+
+/** Upsert reserved IdentityProvider row for Cloudflare Access external identities. */
+export async function ensureCloudflareAccessProvider(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  config: Pick<CfAccessConfig, "teamDomain" | "jwksUri" | "enabled">,
+): Promise<IdentityProvider> {
+  const data = providerDataFromConfig(config);
+  const existing = await prisma.identityProvider.findFirst({
+    where: { provider_type: PROVIDER_TYPE_CLOUDFLARE_ACCESS },
+  });
 
   if (existing) {
+    if (!providerNeedsUpdate(existing, data)) return existing;
     return prisma.identityProvider.update({
       where: { id: existing.id },
       data,

@@ -50,6 +50,10 @@ export {
 } from "./settings/keys.js";
 export {
   getCfAccessConfig,
+  getCfAccessConfigCached,
+  buildCfAccessConfigFromFields,
+  resolveTeamDomainFromRaw,
+  clearCfAccessRuntimeConfigCache,
   normalizeCfAccessTeamDomain,
   resolveCfAccessTeamDomainForConnection,
   validateCfAccessBootConfigFromResolved,

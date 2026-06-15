@@ -134,6 +134,9 @@ export function parseCfAccessForm(form: Record<string, string>): {
       protectedPrefixes = prefixesRaw.split(",").map((s) => s.trim()).filter(Boolean);
     }
   }
+  if (protectedPrefixes.length === 0) {
+    throw new Error("Protected path prefixes cannot be empty");
+  }
 
   return {
     enabled: form["enabled"] === "1",

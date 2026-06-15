@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import {
   getCfAccessConfig,
   normalizeCfAccessTeamDomain,
+  resolveTeamDomainFromRaw,
   pathMatchesCfProtectedPrefix,
   validateCfAccessBootConfigFromResolved,
 } from "../../src/cloudflare-access/config.js";
@@ -66,5 +67,24 @@ describe("getCfAccessConfig env lock", () => {
     process.env.CF_ACCESS_ENABLED = "false";
     const config = await getCfAccessConfig(mockPrisma);
     expect(config.enabled).toBe(false);
+  });
+});
+
+describe("resolveTeamDomainFromRaw", () => {
+  const prevNodeEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = prevNodeEnv;
+  });
+
+  it("allows loopback only in test NODE_ENV", () => {
+    process.env.NODE_ENV = "test";
+    expect(resolveTeamDomainFromRaw("http://127.0.0.1:9999")).toBe("http://127.0.0.1:9999");
+  });
+
+  it("rejects loopback in development NODE_ENV", () => {
+    process.env.NODE_ENV = "development";
+    expect(() => resolveTeamDomainFromRaw("http://127.0.0.1:9999")).toThrow();
   });
 });
