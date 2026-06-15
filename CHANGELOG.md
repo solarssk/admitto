@@ -12,7 +12,15 @@ first event-ready MVP.
 
 ## Unreleased
 
-### Cloudflare Access pass-through (prompt 16c / v0.3.5)
+## v0.3.5 — 2026-06-15
+
+Cloudflare Access pass-through (prompt 16c) — closes the auth foundation lane for v0.3.
+
+Off-site admins authenticate at the **collision point** (`/admin*`, `/api/admin*`) via Cloudflare Access
+JWT; on-site break-glass remains password + TOTP at `/login`. Per-request identity resolution reuses the
+OIDC `ExternalIdentity` seam without creating long-lived Admitto sessions.
+
+### Cloudflare Access (`@admitto/auth`, `@admitto/web`, PR #50)
 
 - **Conditional edge gate (ADR 0017):** validates `Cf-Access-Jwt-Assertion` on `/admin*` and `/api/admin*`
   only; absent JWT → `/login` boundary (not 401); invalid JWT → reject without session fallback.
@@ -24,9 +32,30 @@ first event-ready MVP.
 - **Review hardening:** header-only JWT at collision point (CF docs); group-role sync on each valid CF
   JWT (mapping rule revocation); validate-before-save + transactional settings write;
   restart-bound config cache; loopback team domain only in `NODE_ENV=test`; API `/api/admin*` JSON auth
-  errors; boot-time `ensureCloudflareAccessProvider` for env-only deploy; case-insensitive env booleans.
+  errors; boot-time `ensureCloudflareAccessProvider` (atomic upsert) for env-only deploy;
+  case-insensitive env booleans; numeric env locks not coerced as booleans.
 - **Rollout:** no email auto-link — pre-link `ExternalIdentity` for existing admins before CF go-live
-  (see deployment note).
+  (see `_ops/design/deployment-cloudflare-access.md` in project docs).
+
+### Database
+
+- `20260615200000_cf_access_settings` — seeds `SystemSettings` defaults for CF Access keys.
+
+### Deploy notes
+
+```bash
+npm run db:migrate
+```
+
+- Optional env locks: `CF_ACCESS_ENABLED`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`,
+  `CF_ACCESS_PROTECTED_PREFIXES` (see `apps/web/.env.example`).
+- Before enabling CF off-site: pre-link each admin `ExternalIdentity` for provider `cloudflare_access`;
+  configure group→role mappings; protect origin (Tunnel/firewall).
+- `CF_ACCESS_ENABLED=false` in env overrides DB — use as kill switch.
+
+### Next
+
+- `v0.4` — Tabler admin UI foundation and operator/event-day lane (per roadmap).
 
 ## v0.3.4 — 2026-06-15
 
