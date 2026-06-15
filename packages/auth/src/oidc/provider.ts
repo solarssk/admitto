@@ -224,7 +224,11 @@ export interface GroupRoleMappingInput {
 
 function mappingStorageScopeId(scopeType: string, scopeId?: string | null): string {
   if (scopeType === "instance") return "";
-  return scopeId?.trim() || "";
+  const trimmed = scopeId?.trim();
+  if (!trimmed) {
+    throw new Error(`scope_id is required for scope_type ${scopeType}`);
+  }
+  return trimmed;
 }
 
 export async function replaceProviderGroupMappings(

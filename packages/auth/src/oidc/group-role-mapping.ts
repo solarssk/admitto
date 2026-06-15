@@ -8,6 +8,22 @@ export function roleAssignmentScopeId(scopeType: string, scopeId: string | null)
   return trimmed || null;
 }
 
+function isPrismaClient(
+  prisma: PrismaClient | Prisma.TransactionClient,
+): prisma is PrismaClient {
+  return "$transaction" in prisma;
+}
+
+async function runInOwnTransaction<T>(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  if (isPrismaClient(prisma)) {
+    return prisma.$transaction(fn);
+  }
+  return fn(prisma);
+}
+
 function grantWhere(
   userId: string,
   providerId: string,
@@ -44,10 +60,12 @@ async function revokeOidcRoleGrant(
   grant: { id: string; role_assignment_id: string },
   userId: string,
 ): Promise<void> {
-  await prisma.roleAssignment.deleteMany({
-    where: { id: grant.role_assignment_id, user_id: userId },
+  await runInOwnTransaction(prisma, async (tx) => {
+    await tx.roleAssignment.deleteMany({
+      where: { id: grant.role_assignment_id, user_id: userId },
+    });
+    await tx.oidcRoleGrant.delete({ where: { id: grant.id } });
   });
-  await prisma.oidcRoleGrant.delete({ where: { id: grant.id } });
 }
 
 /**
@@ -96,19 +114,21 @@ export async function applyOidcGroupRoleMappings(
     });
     if (existing) continue;
 
-    const assignment = await prisma.roleAssignment.create({
-      data: {
-        user_id: userId,
-        role: rule.role,
-        scope_type: rule.scope_type,
-        scope_id: scopeId,
-      },
-    });
-    await prisma.oidcRoleGrant.create({
-      data: {
-        ...grantKey,
-        role_assignment_id: assignment.id,
-      },
+    await runInOwnTransaction(prisma, async (tx) => {
+      const assignment = await tx.roleAssignment.create({
+        data: {
+          user_id: userId,
+          role: rule.role,
+          scope_type: rule.scope_type,
+          scope_id: scopeId,
+        },
+      });
+      await tx.oidcRoleGrant.create({
+        data: {
+          ...grantKey,
+          role_assignment_id: assignment.id,
+        },
+      });
     });
     changed++;
   }

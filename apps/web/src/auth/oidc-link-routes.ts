@@ -10,6 +10,7 @@ import { resolveSafeRedirectPath } from "./safe-redirect.js";
 import { beginOidcAuthorizationRedirect } from "./oidc-flow.js";
 import { getOidcLinkPageSecurityHeaders, renderOidcLinkForm } from "./oidc-link-page.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
+import { checkOidcLinkStepUpRateLimit } from "./oidc-rate-limit.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
 const LINK_ERROR = "Invalid password or code. Try again.";
@@ -101,8 +102,12 @@ export async function handlePostOidcLink(
     );
   }
 
+  const ip = resolveMfaClientIp(c);
+  if (!(await checkOidcLinkStepUpRateLimit(rateLimitStore, auth.userId, ip))) {
+    return c.text("Too many requests", 429);
+  }
+
   if (code) {
-    const ip = resolveMfaClientIp(c);
     if (!(await checkMfaVerifyRateLimit(rateLimitStore, auth.sessionId, ip, code))) {
       return c.text("Too many requests", 429);
     }

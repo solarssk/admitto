@@ -77,8 +77,8 @@ export async function exchangeAuthorizationCode(
 
 /** Validate ID token signature and standard claims including nonce. */
 export async function validateIdToken(input: ValidateIdTokenInput): Promise<JWTPayload> {
-  const verifier = getJwksVerifier(input.provider.jwks_uri);
   assertSafeOidcFetchUrl(input.provider.jwks_uri);
+  const verifier = getJwksVerifier(input.provider.jwks_uri);
   const { payload } = await jose.jwtVerify(input.idToken, verifier, {
     issuer: input.provider.issuer,
     audience: input.provider.client_id,

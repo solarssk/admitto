@@ -38,6 +38,7 @@ import {
 } from "./rate-limit/index.js";
 import { createRequireSession, createRequirePartialSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
+import { createOidcAuthRateLimitMiddleware } from "./auth/oidc-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
 import { handleLogin, handleLogout, handleMe, handleMfaVerify, handleTotpEnroll, handleTotpConfirm } from "./auth/routes.js";
@@ -109,6 +110,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
   const loginRateLimitHtml = createLoginRateLimitMiddleware(rateLimitStore, { format: "text" });
+  const oidcAuthRateLimit = createOidcAuthRateLimitMiddleware(rateLimitStore);
   const htmlPostCsrf = createCrossSitePostGuard({ format: "text" });
   const jsonPostCsrf = createCrossSitePostGuard({ format: "json" });
   const requireSession = createRequireSession(db);
@@ -191,8 +193,8 @@ export function createApp(options: CreateAppOptions = {}) {
     handleTotpConfirm(c, db, rateLimitStore),
   );
 
-  app.get("/api/auth/oidc/:providerId/start", (c) => handleOidcStart(c, db, baseUrl));
-  app.get("/api/auth/oidc/:providerId/callback", (c) => handleOidcCallback(c, db, baseUrl));
+  app.get("/api/auth/oidc/:providerId/start", oidcAuthRateLimit, (c) => handleOidcStart(c, db, baseUrl));
+  app.get("/api/auth/oidc/:providerId/callback", oidcAuthRateLimit, (c) => handleOidcCallback(c, db, baseUrl));
 
   app.get("/account/oidc/:providerId/link", requireSessionHtml, (c) => handleGetOidcLink(c, db));
   app.post("/account/oidc/:providerId/link", htmlPostCsrf, loginRateLimitHtml, requireSessionHtml, (c) =>

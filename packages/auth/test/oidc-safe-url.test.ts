@@ -39,6 +39,12 @@ describe("assertSafeOidcFetchUrl", () => {
     process.env["NODE_ENV"] = "production";
     expect(() => assertSafeOidcFetchUrl("http://127.0.0.1:9999/")).toThrow(/HTTPS/);
   });
+
+  it("rejects https loopback in production", () => {
+    process.env["NODE_ENV"] = "production";
+    expect(() => assertSafeOidcFetchUrl("https://127.0.0.1/")).toThrow(/private or link-local/);
+    expect(() => assertSafeOidcFetchUrl("https://[::1]/")).toThrow(/private or link-local/);
+  });
 });
 
 describe("fetchOidcDiscovery SSRF guard", () => {

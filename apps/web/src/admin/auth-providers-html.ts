@@ -63,7 +63,7 @@ export function renderProviderForm(options: {
   isNew: boolean;
 }): string {
   const p = options.provider;
-  const title = options.isNew ? "Add identity provider" : `Edit: ${esc(p?.display_name ?? "")}`;
+  const title = options.isNew ? "Add identity provider" : `Edit: ${p?.display_name ?? ""}`;
   const action = options.isNew ? "/admin/auth/providers/new" : `/admin/auth/providers/${esc(p!.id)}`;
   const secretHint = p?.has_client_secret
     ? '<p class="muted">Client secret is stored (••••). Leave blank to keep existing.</p>'

@@ -69,9 +69,10 @@ export function assertSafeOidcFetchUrl(urlString: string): void {
     throw new Error("OIDC URL must use HTTPS");
   }
 
-  if (loopback) return;
+  // Dev-only: http://127.0.0.1 mock IdPs. HTTPS loopback still blocked in production.
+  if (loopback && allowHttpLoopback && url.protocol === "http:") return;
 
-  if (isBlockedPrivateOrMetadataHost(url.hostname)) {
+  if (loopback || isBlockedPrivateOrMetadataHost(url.hostname)) {
     throw new Error("OIDC URL must not target private or link-local addresses");
   }
 }
