@@ -45,6 +45,17 @@ describe("assertSafeOidcFetchUrl", () => {
     expect(() => assertSafeOidcFetchUrl("https://127.0.0.1/")).toThrow(/private or link-local/);
     expect(() => assertSafeOidcFetchUrl("https://[::1]/")).toThrow(/private or link-local/);
   });
+
+  it("rejects IPv4-mapped private IPv6 literals", () => {
+    process.env["NODE_ENV"] = "production";
+    expect(() => assertSafeOidcFetchUrl("https://[::ffff:127.0.0.1]/")).toThrow(
+      /private or link-local/,
+    );
+    expect(() => assertSafeOidcFetchUrl("https://[::ffff:169.254.169.254]/")).toThrow(
+      /private or link-local/,
+    );
+    expect(() => assertSafeOidcFetchUrl("https://[::ffff:7f00:1]/")).toThrow(/private or link-local/);
+  });
 });
 
 describe("fetchOidcDiscovery SSRF guard", () => {

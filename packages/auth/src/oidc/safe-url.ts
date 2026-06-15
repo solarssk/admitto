@@ -16,7 +16,9 @@ function unbracketHostname(hostname: string): string {
 
 function isLoopbackHost(hostname: string): boolean {
   const host = unbracketHostname(hostname).toLowerCase();
-  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
+  const mapped = extractIpv4FromMappedIpv6(host);
+  return mapped === "127.0.0.1";
 }
 
 function parseIpv4(host: string): [number, number, number, number] | null {
@@ -25,6 +27,34 @@ function parseIpv4(host: string): [number, number, number, number] | null {
   const nums = parts.map((part) => Number(part));
   if (nums.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
   return nums as [number, number, number, number];
+}
+
+/** IPv4-mapped IPv6 (::ffff:127.0.0.1 or ::ffff:7f00:1) — normalize to dotted IPv4 for SSRF checks. */
+function extractIpv4FromMappedIpv6(host: string): string | null {
+  const lower = host.toLowerCase();
+  if (!isIPv6(lower)) return null;
+
+  const dotted = lower.match(/(?:^|:)ffff:((?:\d{1,3}\.){3}\d{1,3})$/);
+  if (dotted) return dotted[1] ?? null;
+
+  const hex = lower.match(/(?:^|:)ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (!hex) return null;
+  const hi = parseInt(hex[1]!, 16);
+  const lo = parseInt(hex[2]!, 16);
+  if (!Number.isFinite(hi) || !Number.isFinite(lo)) return null;
+  return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+}
+
+function isBlockedPrivateIpv4Dotted(host: string): boolean {
+  const ip = parseIpv4(host);
+  if (!ip) return false;
+  const [a, b] = ip;
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 127) return true;
+  return false;
 }
 
 function isBlockedPrivateIpv6(hostname: string): boolean {
@@ -39,15 +69,10 @@ function isBlockedPrivateOrMetadataHost(hostname: string): boolean {
   if (host === "metadata.google.internal") return true;
   if (isBlockedPrivateIpv6(hostname)) return true;
 
-  const ip = parseIpv4(host);
-  if (!ip) return false;
-  const [a, b] = ip;
-  if (a === 10) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 127) return true;
-  return false;
+  const mappedIpv4 = extractIpv4FromMappedIpv6(host);
+  if (mappedIpv4 && isBlockedPrivateIpv4Dotted(mappedIpv4)) return true;
+
+  return isBlockedPrivateIpv4Dotted(host);
 }
 
 /**

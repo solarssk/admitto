@@ -222,6 +222,28 @@ export interface GroupRoleMappingInput {
   scope_id?: string | null;
 }
 
+const ALLOWED_MAPPING_ROLES = new Set(["superadmin", "admin", "operator"]);
+const ALLOWED_MAPPING_SCOPE_TYPES = new Set(["instance", "organization", "event"]);
+
+/** Reject mapping rows that would fail RoleAssignment CHECK constraints at login time. */
+export function validateGroupRoleMappingInput(mapping: GroupRoleMappingInput): void {
+  const group = mapping.group.trim();
+  if (!group) {
+    throw new Error("group is required for each mapping row");
+  }
+  if (!ALLOWED_MAPPING_ROLES.has(mapping.role)) {
+    throw new Error(
+      `Invalid role "${mapping.role}" — must be one of: superadmin, admin, operator`,
+    );
+  }
+  if (!ALLOWED_MAPPING_SCOPE_TYPES.has(mapping.scope_type)) {
+    throw new Error(
+      `Invalid scope_type "${mapping.scope_type}" — must be one of: instance, organization, event`,
+    );
+  }
+  mappingStorageScopeId(mapping.scope_type, mapping.scope_id);
+}
+
 function mappingStorageScopeId(scopeType: string, scopeId?: string | null): string {
   if (scopeType === "instance") return "";
   const trimmed = scopeId?.trim();
@@ -238,6 +260,9 @@ export async function replaceProviderGroupMappings(
 ): Promise<void> {
   await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: providerId } });
   if (mappings.length === 0) return;
+  for (const mapping of mappings) {
+    validateGroupRoleMappingInput(mapping);
+  }
   await prisma.oidcGroupRoleMapping.createMany({
     data: mappings.map((m) => ({
       provider_id: providerId,
