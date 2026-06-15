@@ -4,7 +4,29 @@
 -- Atomicity: Prisma Migrate applies each PostgreSQL migration inside a single DB transaction.
 -- Explicit BEGIN/COMMIT is omitted here to avoid nested-transaction errors with Prisma's wrapper.
 
--- 1. Dedup: keep oldest row per (user_id, role, scope_type, scope_id).
+-- 0. Before deleting duplicate assignments, repoint OidcRoleGrant rows to the survivor
+-- (oldest row per user/role/scope). Otherwise orphan cleanup would drop the grant and the
+-- surviving assignment would look manual — OIDC demotion would no longer revoke the role.
+WITH ranked AS (
+  SELECT
+    "id",
+    ROW_NUMBER() OVER (
+      PARTITION BY "user_id", "role", "scope_type", "scope_id"
+      ORDER BY "created_at" ASC, "id" ASC
+    ) AS rn,
+    FIRST_VALUE("id") OVER (
+      PARTITION BY "user_id", "role", "scope_type", "scope_id"
+      ORDER BY "created_at" ASC, "id" ASC
+    ) AS survivor_id
+  FROM "RoleAssignment"
+)
+UPDATE "OidcRoleGrant" g
+SET "role_assignment_id" = ranked.survivor_id
+FROM ranked
+WHERE g."role_assignment_id" = ranked."id"
+  AND ranked.rn > 1;
+
+-- 1. Dedup: delete duplicate assignments (grants already repointed above).
 -- ROW_NUMBER handles NULL scope_id in PARTITION BY (NULLs group together); avoids NOT IN edge cases.
 DELETE FROM "RoleAssignment" ra
 USING (
