@@ -125,6 +125,7 @@ export async function handlePostCfAccess(c: Context, db: PrismaClient): Promise<
       if (!isSettingEnvLocked(SETTING_CF_ACCESS_PROTECTED_PREFIXES)) {
         await setSetting(tx, SETTING_CF_ACCESS_PROTECTED_PREFIXES, resolved.protectedPrefixes);
       }
+      await ensureCloudflareAccessProvider(tx, resolved);
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Save failed";
@@ -133,7 +134,6 @@ export async function handlePostCfAccess(c: Context, db: PrismaClient): Promise<
   }
 
   clearCfAccessRuntimeConfigCache();
-  await ensureCloudflareAccessProvider(db, resolved);
 
   return c.redirect("/admin/auth/cf-access?flash=Settings+saved", 302);
 }

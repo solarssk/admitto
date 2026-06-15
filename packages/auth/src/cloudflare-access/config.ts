@@ -83,8 +83,17 @@ function parsePrefixes(value: unknown): string[] {
 
 let runtimeConfigCache: CfAccessConfig | null = null;
 
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+}
+
 function isLoopbackTeamDomain(raw: string): boolean {
-  return raw.includes("127.0.0.1") || raw.includes("localhost");
+  try {
+    const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    return isLoopbackHostname(url.hostname);
+  } catch {
+    return false;
+  }
 }
 
 /** Resolve team domain; loopback allowed only in test (mock JWKS). */

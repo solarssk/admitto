@@ -87,4 +87,11 @@ describe("resolveTeamDomainFromRaw", () => {
     process.env.NODE_ENV = "development";
     expect(() => resolveTeamDomainFromRaw("http://127.0.0.1:9999")).toThrow();
   });
+
+  it("does not treat localhost substring in cloudflareaccess host as loopback", () => {
+    process.env.NODE_ENV = "test";
+    expect(resolveTeamDomainFromRaw("https://my-localhost-team.cloudflareaccess.com")).toBe(
+      "https://my-localhost-team.cloudflareaccess.com",
+    );
+  });
 });

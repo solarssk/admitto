@@ -32,6 +32,7 @@ export async function startMockCfAccess(options?: {
   publicJwk.alg = "RS256";
 
   const audience = options?.audience ?? "test-cf-aud-tag";
+  const requestedTeam = options?.teamDomain?.trim().replace(/\/$/, "");
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -44,10 +45,29 @@ export async function startMockCfAccess(options?: {
     res.end();
   });
 
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  let listenHostname = "127.0.0.1";
+  let listenPort = 0;
+  if (requestedTeam) {
+    const requestedUrl = new URL(requestedTeam);
+    listenHostname = requestedUrl.hostname;
+    if (requestedUrl.port) listenPort = Number(requestedUrl.port);
+  }
+
+  await new Promise<void>((resolve) => server.listen(listenPort, listenHostname, resolve));
   const addr = server.address();
   if (!addr || typeof addr === "string") throw new Error("mock cf access bind failed");
-  const teamDomain = `http://127.0.0.1:${addr.port}`;
+
+  let teamDomain: string;
+  if (requestedTeam) {
+    const requestedUrl = new URL(requestedTeam);
+    if (requestedUrl.port) {
+      teamDomain = requestedTeam;
+    } else {
+      teamDomain = `${requestedUrl.protocol}//${requestedUrl.hostname}:${addr.port}`;
+    }
+  } else {
+    teamDomain = `http://127.0.0.1:${addr.port}`;
+  }
   const jwksUri = `${teamDomain}/cdn-cgi/access/certs`;
 
   return {
