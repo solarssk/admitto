@@ -53,7 +53,17 @@ export async function ensureCloudflareAccessProvider(
     });
   }
 
-  return prisma.identityProvider.create({ data });
+  // Atomic create — concurrent boot (env-only rollout) races on @@unique([issuer, client_id]).
+  return prisma.identityProvider.upsert({
+    where: {
+      issuer_client_id: {
+        issuer: data.issuer,
+        client_id: data.client_id,
+      },
+    },
+    create: data,
+    update: data,
+  });
 }
 
 export async function findCloudflareAccessProvider(
