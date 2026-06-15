@@ -7,8 +7,8 @@ describe("setSetting", () => {
     const upsert = vi.fn();
     const prisma = { systemSettings: { upsert } } as unknown as PrismaClient;
 
-    await expect(setSetting(prisma, "cf_access_enabled", undefined)).rejects.toThrow(
-      "setting_not_json_serializable:cf_access_enabled",
+    await expect(setSetting(prisma, "test_setting_serialization", undefined)).rejects.toThrow(
+      "setting_not_json_serializable:test_setting_serialization",
     );
     expect(upsert).not.toHaveBeenCalled();
   });
@@ -17,15 +17,15 @@ describe("setSetting", () => {
     const upsert = vi.fn().mockResolvedValue({});
     const prisma = { systemSettings: { upsert } } as unknown as PrismaClient;
 
-    await setSetting(prisma, "cf_access_enabled", true);
+    await setSetting(prisma, "test_setting_serialization", true);
     expect(upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: { key: "cf_access_enabled", value_json: "true" },
+        create: { key: "test_setting_serialization", value_json: "true" },
         update: { value_json: "true" },
       }),
     );
 
-    await setSetting(prisma, "cf_access_aud", ["/admin"]);
+    await setSetting(prisma, "test_setting_serialization", ["/admin"]);
     expect(upsert).toHaveBeenLastCalledWith(
       expect.objectContaining({
         update: { value_json: '["/admin"]' },

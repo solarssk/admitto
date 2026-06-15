@@ -196,25 +196,29 @@ describe("CF Access admin collision point", () => {
   it("rejects CF JWT when email matches existing user without ExternalIdentity (no auto-link)", async () => {
     const orphanId = "cf-orphan-admin";
     const orphanEmail = "cf-orphan-admin@example.com";
-    await prisma.user.create({
-      data: {
-        id: orphanId,
-        email: orphanEmail,
-        password_hash: await hashPassword("orphan-pass"),
-      },
-    });
-    await prisma.roleAssignment.create({
-      data: { user_id: orphanId, role: "superadmin", scope_type: "instance", scope_id: null },
-    });
-
-    const token = await signCfAccessJwt(mock, { sub: "cf-orphan-sub", email: orphanEmail });
-    const res = await app.request("/admin/auth/providers", {
-      headers: { [CF_ACCESS_HEADER]: token },
-    });
-    expect(res.status).toBe(403);
-
     await prisma.roleAssignment.deleteMany({ where: { user_id: orphanId } });
-    await prisma.user.delete({ where: { id: orphanId } });
+    await prisma.user.deleteMany({ where: { id: orphanId } });
+    try {
+      await prisma.user.create({
+        data: {
+          id: orphanId,
+          email: orphanEmail,
+          password_hash: await hashPassword("orphan-pass"),
+        },
+      });
+      await prisma.roleAssignment.create({
+        data: { user_id: orphanId, role: "superadmin", scope_type: "instance", scope_id: null },
+      });
+
+      const token = await signCfAccessJwt(mock, { sub: "cf-orphan-sub", email: orphanEmail });
+      const res = await app.request("/admin/auth/providers", {
+        headers: { [CF_ACCESS_HEADER]: token },
+      });
+      expect(res.status).toBe(403);
+    } finally {
+      await prisma.roleAssignment.deleteMany({ where: { user_id: orphanId } });
+      await prisma.user.deleteMany({ where: { id: orphanId } });
+    }
   });
 
   it("public /login does not require CF JWT", async () => {
