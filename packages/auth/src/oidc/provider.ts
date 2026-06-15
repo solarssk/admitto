@@ -83,6 +83,7 @@ export async function listOidcProviders(
   });
 }
 
+/** Fetch or validate OIDC endpoints from input; may call discovery HTTP when endpoints are omitted. */
 async function resolveEndpoints(input: IdentityProviderInput): Promise<ResolvedEndpoints> {
   assertSafeOidcFetchUrl(normalizeIssuerForValidation(input.issuer));
   if (input.authorization_endpoint && input.token_endpoint && input.jwks_uri) {
@@ -113,10 +114,12 @@ async function resolveEndpoints(input: IdentityProviderInput): Promise<ResolvedE
   return endpoints;
 }
 
+/** Ensure issuer URL ends with `/` before SSRF validation. */
 function normalizeIssuerForValidation(issuer: string): string {
   return issuer.endsWith("/") ? issuer : `${issuer}/`;
 }
 
+/** OIDC endpoints resolved from discovery or explicit admin input. */
 export interface ResolvedEndpoints {
   issuer: string;
   authorization_endpoint: string;
@@ -266,6 +269,7 @@ export function validateGroupRoleMappingInput(mapping: GroupRoleMappingInput): v
   mappingStorageScopeId(mapping.scope_type, mapping.scope_id);
 }
 
+/** Map instance scope to empty storage key; require non-empty scope_id for org/event. */
 function mappingStorageScopeId(scopeType: string, scopeId?: string | null): string {
   if (scopeType === "instance") return "";
   const trimmed = scopeId?.trim();
@@ -275,6 +279,7 @@ function mappingStorageScopeId(scopeType: string, scopeId?: string | null): stri
   return trimmed;
 }
 
+/** Replace all group→role mapping rows for one provider (validated, atomic at caller). */
 export async function replaceProviderGroupMappings(
   prisma: PrismaClient | Prisma.TransactionClient,
   providerId: string,
@@ -296,6 +301,7 @@ export async function replaceProviderGroupMappings(
   });
 }
 
+/** Create provider and group mappings; discovery HTTP runs before the DB transaction. */
 export async function createIdentityProviderWithMappings(
   prisma: PrismaClient,
   input: IdentityProviderInput,
@@ -309,6 +315,7 @@ export async function createIdentityProviderWithMappings(
   });
 }
 
+/** Update provider and group mappings; discovery HTTP runs before the DB transaction. */
 export async function updateIdentityProviderWithMappings(
   prisma: PrismaClient,
   id: string,

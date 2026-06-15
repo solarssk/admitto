@@ -26,6 +26,10 @@ export class SmtpAdapter implements MailerAdapter {
     this.transporter = transporter ?? SmtpAdapter.createTransporter(config);
   }
 
+  /**
+   * Build a nodemailer transporter from SMTP config.
+   * Enforces TLS 1.2 minimum via `tls.minVersion`.
+   */
   static createTransporter(config: SmtpConfig): Transporter {
     return nodemailer.createTransport({
       host: config.host,
