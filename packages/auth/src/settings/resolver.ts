@@ -30,6 +30,15 @@ export function isSettingEnvLocked(key: string): boolean {
   return envOverride(key) !== undefined;
 }
 
+/** Serialize a setting value for `SystemSettings.value_json`. */
+function serializeSettingValue(key: string, value: unknown): string {
+  const value_json = JSON.stringify(value);
+  if (value_json === undefined) {
+    throw new Error(`setting_not_json_serializable:${key}`);
+  }
+  return value_json;
+}
+
 /** Persist a system setting when not env-locked. */
 export async function setSetting(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -39,7 +48,7 @@ export async function setSetting(
   if (isSettingEnvLocked(key)) {
     throw new Error(`setting_locked_by_env:${key}`);
   }
-  const value_json = JSON.stringify(value);
+  const value_json = serializeSettingValue(key, value);
   await prisma.systemSettings.upsert({
     where: { key },
     create: { key, value_json },
