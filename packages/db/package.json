@@ -18,12 +18,12 @@
     "test": "vitest run",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate deploy && tsx scripts/backfill-public-ref.ts",
+    "db:migrate": "prisma migrate deploy && tsx src/scripts/backfill-public-ref.ts",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:status": "prisma migrate status",
     "predb:seed": "npm run build --workspace=@admitto/crypto",
     "db:seed": "prisma db seed",
-    "db:backfill-public-ref": "tsx scripts/backfill-public-ref.ts"
+    "db:backfill-public-ref": "tsx src/scripts/backfill-public-ref.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

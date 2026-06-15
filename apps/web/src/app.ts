@@ -189,6 +189,15 @@ export function createApp(options: CreateAppOptions = {}) {
     return htmlWithSecurityHeaders(c, renderTicket(resolved, qrDataUrl), 200);
   }
 
+  app.get("/healthz", async (c) => {
+    try {
+      await db.$queryRaw(Prisma.sql`SELECT 1`);
+      return c.json({ status: "ok" }, 200);
+    } catch {
+      return c.json({ status: "unavailable" }, 503);
+    }
+  });
+
   app.post("/api/auth/login", jsonPostCsrf, loginRateLimitJson, (c) =>
     handleLogin(c, db, rateLimitStore),
   );

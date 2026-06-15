@@ -122,3 +122,12 @@ jobs:
             exit 1
           fi
           echo "OK: no real email addresses in data files"
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Build production image
+        run: docker build -f Dockerfile -t admitto-app .
