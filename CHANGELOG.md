@@ -12,7 +12,7 @@ first event-ready MVP.
 
 ## Unreleased
 
-## v0.3.4 - 2026-06-15
+## v0.3.4 — 2026-06-15
 
 OIDC linking (prompt 16b) and security hygiene (prompt 18 / ADR 0016 DO-NOW).
 
@@ -55,7 +55,7 @@ next auth work (Cloudflare Access / 16c).
 
 ### Database
 
-Migrations (run in order on deploy):
+Migrations (run in order on deploy; folder names as merged on `main`):
 
 - `20260615120000_oidc_linking` — `IdentityProvider`, `ExternalIdentity`, OIDC OAuth state tables.
 - `20260615140000_oidc_hardening` — OIDC schema/index hardening from review.
@@ -89,6 +89,7 @@ npm run db:migrate
 
 - Prompt 16c — Cloudflare Access seam on top of `ExternalIdentity`
 - `v0.4` — Tabler admin UI foundation
+
 
 ## v0.3.3 - 2026-06-14
 
