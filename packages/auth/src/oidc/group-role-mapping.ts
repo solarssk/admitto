@@ -99,7 +99,7 @@ async function revokeOidcRoleGrant(
 
 /**
  * Create assignment + grant for one rule when missing.
- * Idempotent under concurrent OIDC logins (handles P2002 from partial UNIQUE indexes).
+ * All existence checks run inside one transaction; idempotent under P2002 races.
  * Returns true when this call created a new grant.
  */
 async function ensureOidcGrantForRule(
@@ -110,43 +110,29 @@ async function ensureOidcGrantForRule(
   scopeId: string | null,
   grantKey: ReturnType<typeof grantWhere>,
 ): Promise<boolean> {
-  if (await prisma.oidcRoleGrant.findFirst({ where: grantKey })) {
-    return false;
-  }
-
-  const manualAssignment = await prisma.roleAssignment.findFirst({
-    where: assignmentWhere(userId, rule, scopeId),
-  });
-  if (manualAssignment) {
-    return false;
-  }
-
   return runInOwnTransaction(prisma, async (tx) => {
     if (await tx.oidcRoleGrant.findFirst({ where: grantKey })) {
       return false;
     }
 
-    let assignment = await tx.roleAssignment.findFirst({
-      where: assignmentWhere(userId, rule, scopeId),
-    });
+    if (await tx.roleAssignment.findFirst({ where: assignmentWhere(userId, rule, scopeId) })) {
+      // Manual assignment or concurrent winner — never attach an OIDC grant here.
+      return false;
+    }
 
-    if (!assignment) {
-      try {
-        assignment = await tx.roleAssignment.create({
-          data: {
-            user_id: userId,
-            role: rule.role,
-            scope_type: rule.scope_type,
-            scope_id: scopeId,
-          },
-        });
-      } catch (err) {
-        if (!isUniqueViolation(err)) throw err;
-        assignment = await tx.roleAssignment.findFirst({
-          where: assignmentWhere(userId, rule, scopeId),
-        });
-        if (!assignment) throw err;
-      }
+    let assignment;
+    try {
+      assignment = await tx.roleAssignment.create({
+        data: {
+          user_id: userId,
+          role: rule.role,
+          scope_type: rule.scope_type,
+          scope_id: scopeId,
+        },
+      });
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      return false;
     }
 
     if (await tx.oidcRoleGrant.findFirst({ where: grantKey })) {

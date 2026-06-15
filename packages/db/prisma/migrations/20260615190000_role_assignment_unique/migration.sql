@@ -5,12 +5,19 @@
 -- Explicit BEGIN/COMMIT is omitted here to avoid nested-transaction errors with Prisma's wrapper.
 
 -- 1. Dedup: keep oldest row per (user_id, role, scope_type, scope_id).
+-- ROW_NUMBER handles NULL scope_id in PARTITION BY (NULLs group together); avoids NOT IN edge cases.
 DELETE FROM "RoleAssignment" ra
-WHERE ra."id" NOT IN (
-  SELECT DISTINCT ON ("user_id", "role", "scope_type", "scope_id") "id"
+USING (
+  SELECT
+    "id",
+    ROW_NUMBER() OVER (
+      PARTITION BY "user_id", "role", "scope_type", "scope_id"
+      ORDER BY "created_at" ASC, "id" ASC
+    ) AS rn
   FROM "RoleAssignment"
-  ORDER BY "user_id", "role", "scope_type", "scope_id", "created_at" ASC, "id" ASC
-);
+) dups
+WHERE ra."id" = dups."id"
+  AND dups.rn > 1;
 
 -- 2. Partial UNIQUE indexes (Postgres treats NULL scope_id as distinct in standard UNIQUE).
 CREATE UNIQUE INDEX "RoleAssignment_user_role_scope_scoped_key"
