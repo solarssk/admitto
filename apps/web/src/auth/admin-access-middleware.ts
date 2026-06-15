@@ -76,7 +76,7 @@ export function createAdminAccessMiddleware(prisma: PrismaClient) {
             claims,
           );
           userId = resolved.user.id;
-          syncGroupRoles = resolved.isNew || resolved.linked;
+          syncGroupRoles = resolved.isNew || resolved.linked || resolved.groupsChanged;
         } catch (err) {
           const reason =
             err instanceof ExternalIdentityLinkError ? err.message : "identity_resolution_failed";

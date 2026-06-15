@@ -16,6 +16,8 @@ export interface ResolveExternalIdentityResult {
   user: User;
   isNew: boolean;
   linked: boolean;
+  /** True when incoming groups differ from stored ExternalIdentity.groups (existing subject only). */
+  groupsChanged: boolean;
 }
 
 export class ExternalIdentityLinkError extends Error {
@@ -61,6 +63,13 @@ async function createJitUser(
   });
 }
 
+function groupsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  return sortedA.every((value, index) => value === sortedB[index]);
+}
+
 /**
  * Resolve or create a local User from an external OIDC subject (shared seam for 16b/16c).
  */
@@ -84,16 +93,18 @@ export async function resolveOrCreateUserFromExternalIdentity(
       if (!existing.user.is_active) {
         throw new ExternalIdentityLinkError("user_inactive");
       }
+      const nextGroups = claims.groups ?? [];
+      const groupsChanged = !groupsEqual(existing.groups ?? [], nextGroups);
       await tx.externalIdentity.update({
         where: { id: existing.id },
         data: {
           email: claims.email ?? existing.email,
           name: claims.name ?? existing.name,
-          groups: claims.groups ?? [],
+          groups: nextGroups,
           last_login_at: new Date(),
         },
       });
-      return { user: existing.user, isNew: false, linked: false };
+      return { user: existing.user, isNew: false, linked: false, groupsChanged };
     }
 
     if (context?.currentUserId) {
@@ -112,7 +123,7 @@ export async function resolveOrCreateUserFromExternalIdentity(
           last_login_at: new Date(),
         },
       });
-      return { user, isNew: false, linked: true };
+      return { user, isNew: false, linked: true, groupsChanged: true };
     }
 
     if (claims.email) {
@@ -136,6 +147,6 @@ export async function resolveOrCreateUserFromExternalIdentity(
         last_login_at: new Date(),
       },
     });
-    return { user, isNew: true, linked: false };
+    return { user, isNew: true, linked: false, groupsChanged: true };
   });
 }

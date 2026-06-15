@@ -68,6 +68,12 @@ describe("getCfAccessConfig env lock", () => {
     const config = await getCfAccessConfig(mockPrisma);
     expect(config.enabled).toBe(false);
   });
+
+  it("treats CF_ACCESS_ENABLED=FALSE as disabled", async () => {
+    process.env.CF_ACCESS_ENABLED = "FALSE";
+    const config = await getCfAccessConfig(mockPrisma);
+    expect(config.enabled).toBe(false);
+  });
 });
 
 describe("resolveTeamDomainFromRaw", () => {

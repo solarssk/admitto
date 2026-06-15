@@ -1,5 +1,9 @@
 import type { PrismaClient } from "@prisma/client";
-import { getCfAccessConfig, validateCfAccessBootConfigFromResolved } from "@admitto/auth";
+import {
+  getCfAccessConfig,
+  validateCfAccessBootConfigFromResolved,
+  ensureCloudflareAccessProvider,
+} from "@admitto/auth";
 
 type EnvLike = Record<string, string | undefined>;
 
@@ -94,4 +98,7 @@ export function validateCheckinBootConfig(env: EnvLike = process.env): void {
 export async function validateCfAccessBootConfig(prisma: PrismaClient): Promise<void> {
   const config = await getCfAccessConfig(prisma);
   validateCfAccessBootConfigFromResolved(config);
+  if (config.enabled) {
+    await ensureCloudflareAccessProvider(prisma, config);
+  }
 }

@@ -3,8 +3,9 @@ import { SETTING_DEFAULTS, SETTING_ENV_LOCKS } from "./defaults.js";
 
 function parseEnvValue(raw: string, fallback: unknown): unknown {
   const trimmed = raw.trim();
-  if (trimmed === "true") return true;
-  if (trimmed === "false") return false;
+  const lower = trimmed.toLowerCase();
+  if (lower === "true" || lower === "1") return true;
+  if (lower === "false" || lower === "0") return false;
   if (trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith('"')) {
     try {
       return JSON.parse(trimmed) as unknown;
