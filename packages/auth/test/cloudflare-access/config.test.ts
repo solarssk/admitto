@@ -1,9 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
+import type { PrismaClient } from "@prisma/client";
 import {
+  getCfAccessConfig,
   normalizeCfAccessTeamDomain,
   pathMatchesCfProtectedPrefix,
   validateCfAccessBootConfigFromResolved,
 } from "../../src/cloudflare-access/config.js";
+
+const mockPrisma = {
+  systemSettings: { findUnique: async () => null },
+} as unknown as PrismaClient;
 
 describe("normalizeCfAccessTeamDomain", () => {
   it("accepts full https issuer URL", () => {
@@ -45,5 +51,20 @@ describe("validateCfAccessBootConfigFromResolved", () => {
         jwksUri: "",
       }),
     ).toThrow("CF_ACCESS_TEAM_DOMAIN");
+  });
+});
+
+describe("getCfAccessConfig env lock", () => {
+  const prev = process.env.CF_ACCESS_ENABLED;
+
+  afterEach(() => {
+    if (prev === undefined) delete process.env.CF_ACCESS_ENABLED;
+    else process.env.CF_ACCESS_ENABLED = prev;
+  });
+
+  it("treats CF_ACCESS_ENABLED=false as disabled", async () => {
+    process.env.CF_ACCESS_ENABLED = "false";
+    const config = await getCfAccessConfig(mockPrisma);
+    expect(config.enabled).toBe(false);
   });
 });
