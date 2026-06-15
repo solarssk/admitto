@@ -30,6 +30,11 @@ describe("assertSafeOidcFetchUrl", () => {
     expect(() => assertSafeOidcFetchUrl("https://192.168.1.1/")).toThrow(/private or link-local/);
   });
 
+  it("rejects private IPv6 literals", () => {
+    expect(() => assertSafeOidcFetchUrl("https://[fd00::1]/")).toThrow(/private or link-local/);
+    expect(() => assertSafeOidcFetchUrl("https://[fe80::1]/")).toThrow(/private or link-local/);
+  });
+
   it("rejects http in production", () => {
     process.env["NODE_ENV"] = "production";
     expect(() => assertSafeOidcFetchUrl("http://127.0.0.1:9999/")).toThrow(/HTTPS/);

@@ -1,7 +1,21 @@
+import { BlockList, isIPv6 } from "node:net";
+
 /** Block server-side fetches to private/link-local targets (SSRF mitigation). */
 
+const privateIpv6 = new BlockList();
+privateIpv6.addSubnet("fe80::", 10, "ipv6");
+privateIpv6.addSubnet("fc00::", 7, "ipv6");
+
+/** URL.hostname keeps brackets around IPv6 literals — strip before parsing. */
+function unbracketHostname(hostname: string): string {
+  if (hostname.startsWith("[") && hostname.endsWith("]")) {
+    return hostname.slice(1, -1);
+  }
+  return hostname;
+}
+
 function isLoopbackHost(hostname: string): boolean {
-  const host = hostname.toLowerCase();
+  const host = unbracketHostname(hostname).toLowerCase();
   return host === "localhost" || host === "127.0.0.1" || host === "::1";
 }
 
@@ -13,9 +27,17 @@ function parseIpv4(host: string): [number, number, number, number] | null {
   return nums as [number, number, number, number];
 }
 
+function isBlockedPrivateIpv6(hostname: string): boolean {
+  const host = unbracketHostname(hostname);
+  if (!isIPv6(host)) return false;
+  if (host.toLowerCase() === "::1") return true;
+  return privateIpv6.check(host, "ipv6");
+}
+
 function isBlockedPrivateOrMetadataHost(hostname: string): boolean {
-  const host = hostname.toLowerCase();
+  const host = unbracketHostname(hostname).toLowerCase();
   if (host === "metadata.google.internal") return true;
+  if (isBlockedPrivateIpv6(hostname)) return true;
 
   const ip = parseIpv4(host);
   if (!ip) return false;

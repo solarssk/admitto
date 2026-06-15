@@ -154,6 +154,29 @@ describe("applyOidcGroupRoleMappings", () => {
     expect(await prisma.oidcRoleGrant.count({ where: { user_id: USER_ID } })).toBe(0);
   });
 
+  it("revokes grant when mapping rule is removed", async () => {
+    await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
+
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        group: "admins",
+        role: "operator",
+        scope_type: "event",
+        scope_id: EVENT_ID,
+      },
+    });
+    await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, ["admins"]);
+    expect(await prisma.roleAssignment.count({ where: { user_id: USER_ID } })).toBe(1);
+
+    await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, ["admins"]);
+    expect(await prisma.roleAssignment.count({ where: { user_id: USER_ID } })).toBe(0);
+    expect(await prisma.oidcRoleGrant.count({ where: { user_id: USER_ID } })).toBe(0);
+  });
+
   it("does not remove superadmin when groups empty on re-apply", async () => {
     const { userId } = await bootstrapSuperadmin(prisma, "super-invariant@example.com", "pw");
     const changed = await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, userId, []);

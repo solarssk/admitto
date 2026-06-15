@@ -23,9 +23,36 @@ function grantWhere(
   };
 }
 
+function ruleStillAuthorizesGrant(
+  grant: { role: string; scope_type: string; scope_id: string | null },
+  rules: Array<{ group: string; role: string; scope_type: string; scope_id: string }>,
+  groupSet: Set<string>,
+): boolean {
+  return rules.some((rule) => {
+    const scopeId = roleAssignmentScopeId(rule.scope_type, rule.scope_id);
+    return (
+      groupSet.has(rule.group) &&
+      rule.role === grant.role &&
+      rule.scope_type === grant.scope_type &&
+      scopeId === grant.scope_id
+    );
+  });
+}
+
+async function revokeOidcRoleGrant(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  grant: { id: string; role_assignment_id: string },
+  userId: string,
+): Promise<void> {
+  await prisma.roleAssignment.deleteMany({
+    where: { id: grant.role_assignment_id, user_id: userId },
+  });
+  await prisma.oidcRoleGrant.delete({ where: { id: grant.id } });
+}
+
 /**
  * Sync RoleAssignments from OIDC group rules for one provider login.
- * Adds matching roles and removes only grants previously issued by this provider.
+ * Adds matching roles and removes provider grants that no longer match any current rule + group.
  * Pre-existing manual (or other-source) assignments are never deleted.
  */
 export async function applyOidcGroupRoleMappings(
@@ -37,53 +64,52 @@ export async function applyOidcGroupRoleMappings(
   const rules = await prisma.oidcGroupRoleMapping.findMany({
     where: { provider_id: providerId },
   });
-  if (rules.length === 0) return 0;
-
   const groupSet = new Set(groups);
   let changed = 0;
 
-  for (const rule of rules) {
-    const scopeId = roleAssignmentScopeId(rule.scope_type, rule.scope_id);
-    const matches = groupSet.has(rule.group);
-    const grantKey = grantWhere(userId, providerId, rule, scopeId);
+  const grants = await prisma.oidcRoleGrant.findMany({
+    where: { user_id: userId, provider_id: providerId },
+  });
 
+  for (const grant of grants) {
+    if (ruleStillAuthorizesGrant(grant, rules, groupSet)) continue;
+    await revokeOidcRoleGrant(prisma, grant, userId);
+    changed++;
+  }
+
+  for (const rule of rules) {
+    if (!groupSet.has(rule.group)) continue;
+
+    const scopeId = roleAssignmentScopeId(rule.scope_type, rule.scope_id);
+    const grantKey = grantWhere(userId, providerId, rule, scopeId);
     const grant = await prisma.oidcRoleGrant.findFirst({ where: grantKey });
 
-    if (matches) {
-      const existing = await prisma.roleAssignment.findFirst({
-        where: {
-          user_id: userId,
-          role: rule.role,
-          scope_type: rule.scope_type,
-          scope_id: scopeId,
-        },
-      });
-      if (!existing) {
-        const assignment = await prisma.roleAssignment.create({
-          data: {
-            user_id: userId,
-            role: rule.role,
-            scope_type: rule.scope_type,
-            scope_id: scopeId,
-          },
-        });
-        await prisma.oidcRoleGrant.create({
-          data: {
-            ...grantKey,
-            role_assignment_id: assignment.id,
-          },
-        });
-        changed++;
-      }
-      continue;
-    }
+    if (grant) continue;
 
-    if (!grant) continue;
-
-    await prisma.roleAssignment.deleteMany({
-      where: { id: grant.role_assignment_id, user_id: userId },
+    const existing = await prisma.roleAssignment.findFirst({
+      where: {
+        user_id: userId,
+        role: rule.role,
+        scope_type: rule.scope_type,
+        scope_id: scopeId,
+      },
     });
-    await prisma.oidcRoleGrant.delete({ where: { id: grant.id } });
+    if (existing) continue;
+
+    const assignment = await prisma.roleAssignment.create({
+      data: {
+        user_id: userId,
+        role: rule.role,
+        scope_type: rule.scope_type,
+        scope_id: scopeId,
+      },
+    });
+    await prisma.oidcRoleGrant.create({
+      data: {
+        ...grantKey,
+        role_assignment_id: assignment.id,
+      },
+    });
     changed++;
   }
 
