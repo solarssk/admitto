@@ -82,6 +82,9 @@ export async function handlePostOidcLink(
 ): Promise<Response> {
   const providerId = c.req.param("providerId") ?? "";
   const auth = c.get("auth");
+  if (!auth.sessionId) {
+    return c.text("Forbidden", 403);
+  }
   const form = await parseForm(c);
   const password = form["password"] ?? "";
   const code = form["code"]?.trim();

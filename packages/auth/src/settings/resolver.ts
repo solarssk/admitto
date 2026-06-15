@@ -3,6 +3,11 @@ import { SETTING_DEFAULTS, SETTING_ENV_LOCKS } from "./defaults.js";
 
 function parseEnvValue(raw: string, fallback: unknown): unknown {
   const trimmed = raw.trim();
+  const lower = trimmed.toLowerCase();
+  if (typeof fallback === "boolean") {
+    if (lower === "true" || lower === "1") return true;
+    if (lower === "false" || lower === "0") return false;
+  }
   if (trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith('"')) {
     try {
       return JSON.parse(trimmed) as unknown;
@@ -21,6 +26,37 @@ function envOverride(key: string): unknown | undefined {
   const raw = process.env[envName];
   if (raw === undefined || raw === "") return undefined;
   return parseEnvValue(raw, SETTING_DEFAULTS[key]);
+}
+
+/** True when an env lock is set for this setting (UI field should be read-only). */
+export function isSettingEnvLocked(key: string): boolean {
+  return envOverride(key) !== undefined;
+}
+
+/** Serialize a setting value for `SystemSettings.value_json`. */
+function serializeSettingValue(key: string, value: unknown): string {
+  const value_json = JSON.stringify(value);
+  if (value_json === undefined) {
+    throw new Error(`setting_not_json_serializable:${key}`);
+  }
+  return value_json;
+}
+
+/** Persist a system setting when not env-locked. */
+export async function setSetting(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  key: string,
+  value: unknown,
+): Promise<void> {
+  if (isSettingEnvLocked(key)) {
+    throw new Error(`setting_locked_by_env:${key}`);
+  }
+  const value_json = serializeSettingValue(key, value);
+  await prisma.systemSettings.upsert({
+    where: { key },
+    create: { key, value_json },
+    update: { value_json },
+  });
 }
 
 /**

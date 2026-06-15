@@ -20,7 +20,7 @@ import {
   renderRevoked,
   renderServerError,
 } from "./ticket-page.js";
-import { resolveBaseUrl, resolveCheckinToken, resolveAllowCheckinBearer, validateCheckinBootConfig } from "./config.js";
+import { resolveBaseUrl, resolveCheckinToken, resolveAllowCheckinBearer, validateCheckinBootConfig, validateCfAccessBootConfig } from "./config.js";
 import {
   createCheckinPreAuth,
   createCheckinSessionCsrfGuard,
@@ -57,7 +57,7 @@ import {
 } from "./auth/html-routes.js";
 import { handleOidcStart, handleOidcCallback } from "./auth/oidc-routes.js";
 import { handleGetOidcLink, handlePostOidcLink } from "./auth/oidc-link-routes.js";
-import { createRequireSuperadmin } from "./auth/superadmin-middleware.js";
+import { createAdminAccessMiddleware } from "./auth/admin-access-middleware.js";
 import { sweepExpiredOidcAuthStates } from "@admitto/auth";
 import {
   handleListProviders,
@@ -68,6 +68,11 @@ import {
   handlePostDiscover,
   handlePostTestConnection,
 } from "./admin/auth-providers-routes.js";
+import {
+  handleGetCfAccess,
+  handlePostCfAccess,
+  handlePostCfAccessTest,
+} from "./admin/cf-access-routes.js";
 
 /** Parse check-in history `limit` query param: default 10, clamped to 1–100. */
 function parseCheckinHistoryLimit(raw: string | undefined): number {
@@ -124,7 +129,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const requireSessionHtml = createRequireSession(db, { redirectTo: "/login" });
   const requirePartialSession = createRequirePartialSession(db);
   const requirePartialSessionHtml = createRequirePartialSession(db, { redirectTo: "/login" });
-  const requireSuperadmin = createRequireSuperadmin(db);
+  const requireAdminAccess = createAdminAccessMiddleware(db);
 
   void sweepExpiredOidcAuthStates(db).catch((err) => {
     console.error("OidcAuthState sweep failed:", err);
@@ -208,20 +213,30 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostOidcLink(c, db, baseUrl, rateLimitStore),
   );
 
-  app.get("/admin/auth/providers", requireSuperadmin, (c) => handleListProviders(c, db));
-  app.get("/admin/auth/providers/new", requireSuperadmin, (c) => handleGetNewProvider(c));
-  app.post("/admin/auth/providers/new", htmlPostCsrf, requireSuperadmin, (c) =>
+  app.get("/", (c) => c.redirect("/login", 302));
+
+  app.get("/admin/auth/providers", requireAdminAccess, (c) => handleListProviders(c, db));
+  app.get("/admin/auth/providers/new", requireAdminAccess, (c) => handleGetNewProvider(c));
+  app.post("/admin/auth/providers/new", htmlPostCsrf, requireAdminAccess, (c) =>
     handlePostNewProvider(c, db),
   );
-  app.get("/admin/auth/providers/:id", requireSuperadmin, (c) => handleGetEditProvider(c, db));
-  app.post("/admin/auth/providers/:id", htmlPostCsrf, requireSuperadmin, (c) =>
+  app.get("/admin/auth/providers/:id", requireAdminAccess, (c) => handleGetEditProvider(c, db));
+  app.post("/admin/auth/providers/:id", htmlPostCsrf, requireAdminAccess, (c) =>
     handlePostEditProvider(c, db),
   );
-  app.post("/admin/auth/providers/:id/discover", htmlPostCsrf, requireSuperadmin, (c) =>
+  app.post("/admin/auth/providers/:id/discover", htmlPostCsrf, requireAdminAccess, (c) =>
     handlePostDiscover(c, db),
   );
-  app.post("/admin/auth/providers/:id/test", htmlPostCsrf, requireSuperadmin, (c) =>
+  app.post("/admin/auth/providers/:id/test", htmlPostCsrf, requireAdminAccess, (c) =>
     handlePostTestConnection(c, db),
+  );
+
+  app.get("/admin/auth/cf-access", requireAdminAccess, (c) => handleGetCfAccess(c, db));
+  app.post("/admin/auth/cf-access", htmlPostCsrf, requireAdminAccess, (c) =>
+    handlePostCfAccess(c, db),
+  );
+  app.post("/admin/auth/cf-access/test", htmlPostCsrf, requireAdminAccess, (c) =>
+    handlePostCfAccessTest(c, db),
   );
 
   app.get("/login", (c) => handleGetLogin(c, db));

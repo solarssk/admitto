@@ -140,6 +140,13 @@ describe("resolveOrCreateUserFromExternalIdentity", () => {
       groups: ["a"],
     });
     expect(second.isNew).toBe(false);
+    expect(second.groupsChanged).toBe(true);
     expect(second.user.id).toBe(first.user.id);
+
+    const third = await resolveOrCreateUserFromExternalIdentity(prisma, provider, subject, {
+      email: "known@example.com",
+      groups: ["a"],
+    });
+    expect(third.groupsChanged).toBe(false);
   });
 });
