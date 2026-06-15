@@ -42,7 +42,7 @@ export function renderProviderList(providers: ProviderListItem[], flash?: string
   return pageShell(
     "Identity providers",
     `${flashBlock}
-    <p><a href="/admin/auth/providers/new">Add provider</a></p>
+    <p><a href="/admin/auth/providers/new">Add provider</a> · <a href="/admin/auth/cf-access">Cloudflare Access</a></p>
     ${rows}
     <p class="muted">Entra / SAML — coming soon</p>`,
   );

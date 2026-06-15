@@ -12,11 +12,14 @@ import {
 /** Authenticated principal attached to Hono context after full session validation. */
 export interface AuthContext {
   userId: string;
-  sessionId: string;
+  sessionId?: string;
+  authSource?: "session" | "cloudflare-access";
 }
 
 /** Partial session (MFA pending or enrollment). */
-export interface PartialAuthContext extends AuthContext {
+export interface PartialAuthContext {
+  userId: string;
+  sessionId: string;
   stage: SessionStage;
 }
 

@@ -1,3 +1,6 @@
+import type { PrismaClient } from "@prisma/client";
+import { getCfAccessConfig, validateCfAccessBootConfigFromResolved } from "@admitto/auth";
+
 type EnvLike = Record<string, string | undefined>;
 
 /** Minimum length for break-glass operator Bearer token (high entropy). */
@@ -85,4 +88,10 @@ export function validateCheckinBootConfig(env: EnvLike = process.env): void {
       "WARNING: ALLOW_CHECKIN_BEARER is enabled outside development — emergency break-glass only",
     );
   }
+}
+
+/** Boot-time validation for Cloudflare Access config (resolved env → DB → defaults). */
+export async function validateCfAccessBootConfig(prisma: PrismaClient): Promise<void> {
+  const config = await getCfAccessConfig(prisma);
+  validateCfAccessBootConfigFromResolved(config);
 }

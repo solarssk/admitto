@@ -12,6 +12,16 @@ first event-ready MVP.
 
 ## Unreleased
 
+### Cloudflare Access pass-through (prompt 16c / v0.3.5)
+
+- **Conditional edge gate (ADR 0017):** validates `Cf-Access-Jwt-Assertion` on `/admin*` and `/api/admin*`
+  only; absent JWT → `/login` boundary (not 401); invalid JWT → reject without session fallback.
+- **Per-request auth:** CF JWT resolves to `User` via `ExternalIdentity` without creating a long-lived
+  Admitto session (revocation invariant).
+- **Config:** `SystemSettings` keys with `env > DB > default` locks; superadmin UI at
+  `/admin/auth/cf-access` with JWKS Test; boot fail-fast when enabled without team domain/AUD.
+- **Staff entrypoint:** `GET /` redirects to `/login` (shared login boundary).
+
 ## v0.3.4 — 2026-06-15
 
 OIDC linking (prompt 16b) and security hygiene (prompt 18 / ADR 0016 DO-NOW).

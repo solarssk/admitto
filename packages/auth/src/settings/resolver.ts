@@ -23,6 +23,28 @@ function envOverride(key: string): unknown | undefined {
   return parseEnvValue(raw, SETTING_DEFAULTS[key]);
 }
 
+/** True when an env lock is set for this setting (UI field should be read-only). */
+export function isSettingEnvLocked(key: string): boolean {
+  return envOverride(key) !== undefined;
+}
+
+/** Persist a system setting when not env-locked. */
+export async function setSetting(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  key: string,
+  value: unknown,
+): Promise<void> {
+  if (isSettingEnvLocked(key)) {
+    throw new Error(`setting_locked_by_env:${key}`);
+  }
+  const value_json = JSON.stringify(value);
+  await prisma.systemSettings.upsert({
+    where: { key },
+    create: { key, value_json },
+    update: { value_json },
+  });
+}
+
 /**
  * Resolve a system setting: env lock → DB → built-in default.
  * `value_json` in DB is stored as JSON text (number or string).

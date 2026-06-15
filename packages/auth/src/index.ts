@@ -35,11 +35,46 @@ export {
 export { operatorSessionTtlMs, adminSessionTtlMs, resolveSessionTtlMs } from "./session-ttl.js";
 export {
   getSetting,
+  setSetting,
+  isSettingEnvLocked,
   getSessionTtlAdminMs,
   getSessionTtlOperatorMs,
   getTrustedDeviceDays,
   getMfaRequiredRoles,
 } from "./settings/resolver.js";
+export {
+  SETTING_CF_ACCESS_ENABLED,
+  SETTING_CF_ACCESS_TEAM_DOMAIN,
+  SETTING_CF_ACCESS_AUD,
+  SETTING_CF_ACCESS_PROTECTED_PREFIXES,
+} from "./settings/keys.js";
+export {
+  getCfAccessConfig,
+  normalizeCfAccessTeamDomain,
+  resolveCfAccessTeamDomainForConnection,
+  validateCfAccessBootConfigFromResolved,
+  pathMatchesCfProtectedPrefix,
+  type CfAccessConfig,
+} from "./cloudflare-access/config.js";
+export {
+  extractAccessTokenFromHeaders,
+  CF_ACCESS_HEADER,
+  CF_ACCESS_COOKIE,
+} from "./cloudflare-access/extract-token.js";
+export {
+  validateAccessJwt,
+  CfAccessJwtError,
+  isServiceTokenShape,
+  clearCfAccessJwksCacheForTests,
+} from "./cloudflare-access/validate.js";
+export { logCfAccessAuth } from "./cloudflare-access/log.js";
+export { testCfAccessConnection } from "./cloudflare-access/test-connection.js";
+export {
+  ensureCloudflareAccessProvider,
+  findCloudflareAccessProvider,
+  CF_ACCESS_CLIENT_ID_SENTINEL,
+  CF_ACCESS_DISPLAY_NAME,
+} from "./cloudflare-access/provider.js";
 export {
   canAccessEvent,
   canPerformCheckIn,
