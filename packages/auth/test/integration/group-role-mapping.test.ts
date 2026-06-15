@@ -17,6 +17,7 @@ let prisma: PrismaClient;
 beforeAll(async () => {
   prisma = new PrismaClient();
   await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+  await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
   await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
@@ -44,6 +45,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+  await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
   await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
@@ -90,6 +92,7 @@ describe("applyOidcGroupRoleMappings", () => {
 
   it("removes OIDC-granted role when group no longer matches", async () => {
     await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
     await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
     await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
 
@@ -118,6 +121,37 @@ describe("applyOidcGroupRoleMappings", () => {
     await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, []);
     roles = await prisma.roleAssignment.findMany({ where: { user_id: USER_ID } });
     expect(roles).toHaveLength(0);
+    const grants = await prisma.oidcRoleGrant.findMany({ where: { user_id: USER_ID } });
+    expect(grants).toHaveLength(0);
+  });
+
+  it("does not remove manual role when OIDC group no longer matches", async () => {
+    await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
+
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        group: "operators",
+        role: "operator",
+        scope_type: "event",
+        scope_id: EVENT_ID,
+      },
+    });
+    await prisma.roleAssignment.create({
+      data: {
+        user_id: USER_ID,
+        role: "operator",
+        scope_type: "event",
+        scope_id: EVENT_ID,
+      },
+    });
+
+    await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, []);
+    const roles = await prisma.roleAssignment.findMany({ where: { user_id: USER_ID } });
+    expect(roles).toHaveLength(1);
+    expect(await prisma.oidcRoleGrant.count({ where: { user_id: USER_ID } })).toBe(0);
   });
 
   it("does not remove superadmin when groups empty on re-apply", async () => {

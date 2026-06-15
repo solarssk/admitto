@@ -16,8 +16,8 @@ first event-ready MVP.
 
 Additive OIDC login (Authentik-first) linked to local `User` via `ExternalIdentity`. Authorization
 Code + PKCE with server-side `state`/`nonce`; full ID token validation (JWKS, iss, aud, exp, nonce).
-JIT users get zero roles unless a configured group→role rule matches. OIDC logins receive `full`
-sessions with `auth_method=oidc` (local TOTP policy skipped; MFA is the IdP’s responsibility per
+JIT users get zero roles unless a configured group→role rule matches. OIDC-owned grants
+(`OidcRoleGrant`) are revoked on demotion without touching manual assignments. OIDC logins receive `full`
 ADR 0011). Explicit account linking via `?link=1` → `/account/oidc/:id/link` step-up page (password
 + TOTP when required); `link_step_up_at` on OAuth state (5 min TTL at callback); OIDC flow cookie binds callback to the
 initiating browser. Superadmin server-rendered UI at `/admin/auth/providers` for IdP config

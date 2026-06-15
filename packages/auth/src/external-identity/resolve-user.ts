@@ -78,6 +78,9 @@ export async function resolveOrCreateUserFromExternalIdentity(
     });
 
     if (existing) {
+      if (context?.currentUserId && existing.user_id !== context.currentUserId) {
+        throw new ExternalIdentityLinkError("subject_already_linked");
+      }
       if (!existing.user.is_active) {
         throw new ExternalIdentityLinkError("user_inactive");
       }

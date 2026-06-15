@@ -18,6 +18,7 @@ let provider: Awaited<ReturnType<typeof prisma.identityProvider.create>>;
 beforeAll(async () => {
   prisma = new PrismaClient();
 
+  await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
   await prisma.roleAssignment.deleteMany({
@@ -67,6 +68,7 @@ afterAll(async () => {
   });
   const userIds = [...new Set([USER_EXISTING, USER_LINK, ...linked.map((x) => x.user_id)])];
 
+  await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
   await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
   await prisma.roleAssignment.deleteMany({ where: { user_id: { in: userIds } } });
@@ -109,6 +111,23 @@ describe("resolveOrCreateUserFromExternalIdentity", () => {
     );
     expect(result.linked).toBe(true);
     expect(result.user.id).toBe(USER_LINK);
+  });
+
+  it("rejects explicit link when subject belongs to another user", async () => {
+    const subject = "taken-subject";
+    await resolveOrCreateUserFromExternalIdentity(prisma, provider, subject, {
+      email: "owner@example.com",
+    });
+
+    await expect(
+      resolveOrCreateUserFromExternalIdentity(
+        prisma,
+        provider,
+        subject,
+        { email: "linked@example.com" },
+        { currentUserId: USER_LINK },
+      ),
+    ).rejects.toMatchObject({ name: "ExternalIdentityLinkError", message: "subject_already_linked" });
   });
 
   it("known subject returns linked user", async () => {

@@ -229,6 +229,7 @@ model User {
   updated_at          DateTime            @updatedAt
   sessions            Session[]
   role_assignments    RoleAssignment[]
+  oidc_role_grants    OidcRoleGrant[]
   mfa_methods         UserMfaMethod[]
   trusted_devices     TrustedDevice[]
   external_identities ExternalIdentity[]
@@ -334,6 +335,7 @@ model IdentityProvider {
 
   external_identities ExternalIdentity[]
   group_role_mappings OidcGroupRoleMapping[]
+  oidc_role_grants    OidcRoleGrant[]
   oidc_auth_states    OidcAuthState[]
 
   @@unique([issuer, client_id])
@@ -370,6 +372,24 @@ model OidcGroupRoleMapping {
 
   @@unique([provider_id, group, role, scope_type, scope_id])
   @@index([provider_id])
+}
+
+// Roles granted by a specific OIDC provider login — demotion only revokes tracked grants.
+model OidcRoleGrant {
+  id                 String           @id @default(cuid())
+  user_id            String
+  user               User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  provider_id        String
+  provider           IdentityProvider @relation(fields: [provider_id], references: [id], onDelete: Cascade)
+  role               String
+  scope_type         String
+  scope_id           String?
+  role_assignment_id String
+  created_at         DateTime         @default(now())
+
+  @@unique([user_id, provider_id, role, scope_type, scope_id])
+  @@index([provider_id, user_id])
+  @@index([role_assignment_id])
 }
 
 // Short-lived OAuth state (PKCE, CSRF, nonce) — single-use.
