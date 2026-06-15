@@ -21,8 +21,8 @@ first event-ready MVP.
 - **Config:** `SystemSettings` keys with `env > DB > default` locks; superadmin UI at
   `/admin/auth/cf-access` with JWKS Test; boot fail-fast when enabled without team domain/AUD.
 - **Staff entrypoint:** `GET /` redirects to `/login` (shared login boundary).
-- **Review hardening:** header-only JWT at collision point (CF docs); group-role sync only on JIT/link or
-  when `ExternalIdentity.groups` changed; validate-before-save + transactional settings write;
+- **Review hardening:** header-only JWT at collision point (CF docs); group-role sync on each valid CF
+  JWT (mapping rule revocation); validate-before-save + transactional settings write;
   restart-bound config cache; loopback team domain only in `NODE_ENV=test`; API `/api/admin*` JSON auth
   errors; boot-time `ensureCloudflareAccessProvider` for env-only deploy; case-insensitive env booleans.
 - **Rollout:** no email auto-link — pre-link `ExternalIdentity` for existing admins before CF go-live

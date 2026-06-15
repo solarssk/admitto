@@ -152,7 +152,8 @@ export async function getCfAccessConfig(
 
   let teamDomain = "";
   if (teamRaw.trim()) {
-    teamDomain = resolveTeamDomainFromRaw(teamRaw);
+    const trimmed = teamRaw.trim().replace(/\/$/, "");
+    teamDomain = enabled ? resolveTeamDomainFromRaw(trimmed) : trimmed;
   }
 
   return {

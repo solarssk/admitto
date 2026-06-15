@@ -67,7 +67,6 @@ export function createAdminAccessMiddleware(prisma: PrismaClient) {
 
         const claims = extractClaims(payload, provider);
         let userId: string;
-        let syncGroupRoles = false;
         try {
           const resolved = await resolveOrCreateUserFromExternalIdentity(
             prisma,
@@ -76,7 +75,6 @@ export function createAdminAccessMiddleware(prisma: PrismaClient) {
             claims,
           );
           userId = resolved.user.id;
-          syncGroupRoles = resolved.isNew || resolved.linked || resolved.groupsChanged;
         } catch (err) {
           const reason =
             err instanceof ExternalIdentityLinkError ? err.message : "identity_resolution_failed";
@@ -90,9 +88,8 @@ export function createAdminAccessMiddleware(prisma: PrismaClient) {
           return rejectInvalidJwt(c, reason);
         }
 
-        if (syncGroupRoles) {
-          await applyOidcGroupRoleMappings(prisma, provider.id, userId, claims.groups ?? []);
-        }
+        // Reconcile grants against current mapping rules (revocation when rules or groups change).
+        await applyOidcGroupRoleMappings(prisma, provider.id, userId, claims.groups ?? []);
 
         if (!(await canManageInstance(prisma, userId))) {
           logCfAccessAuth({
