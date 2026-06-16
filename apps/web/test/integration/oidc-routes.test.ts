@@ -66,6 +66,70 @@ function extractSessionCookie(res: Response): string | undefined {
   return match?.split(";")[0];
 }
 
+async function runOidcCallback(startQuery = ""): Promise<Response> {
+  const start = await app.request(`/api/auth/oidc/${PROVIDER_ID}/start${startQuery}`, {
+    redirect: "manual",
+  });
+  const authorizeUrl = new URL(start.headers.get("location")!);
+  const state = authorizeUrl.searchParams.get("state")!;
+
+  const callbackFromIdp = await fetch(authorizeUrl.toString(), { redirect: "manual" });
+  const callbackLocation = new URL(callbackFromIdp.headers.get("location")!);
+  const code = callbackLocation.searchParams.get("code")!;
+
+  return app.request(
+    `/api/auth/oidc/${PROVIDER_ID}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
+    {
+      redirect: "manual",
+      headers: { Cookie: `${OIDC_FLOW_COOKIE_NAME}=${state}` },
+    },
+  );
+}
+
+async function withOidcLinkedUser(
+  email: string,
+  assignment: { role: string; scope_type: string; scope_id: string | null },
+  run: () => Promise<void>,
+): Promise<void> {
+  await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
+  await prisma.roleAssignment.deleteMany({ where: { user: { email } } });
+  await prisma.session.deleteMany({ where: { user: { email } } });
+  await prisma.user.deleteMany({ where: { email } });
+
+  const user = await prisma.user.create({
+    data: {
+      email,
+      password_hash: await hashPassword("unused"),
+      is_active: true,
+    },
+  });
+  await prisma.roleAssignment.create({
+    data: {
+      user_id: user.id,
+      role: assignment.role,
+      scope_type: assignment.scope_type,
+      scope_id: assignment.scope_id,
+    },
+  });
+  await prisma.externalIdentity.create({
+    data: {
+      provider_id: PROVIDER_ID,
+      subject: "mock-subject-oidc",
+      user_id: user.id,
+      email,
+    },
+  });
+
+  try {
+    await run();
+  } finally {
+    await prisma.externalIdentity.deleteMany({ where: { user_id: user.id } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: user.id } });
+    await prisma.session.deleteMany({ where: { user_id: user.id } });
+    await prisma.user.delete({ where: { id: user.id } });
+  }
+}
+
 describe("oidc routes", () => {
   it("start redirects to authorize with state", async () => {
     const res = await app.request(`/api/auth/oidc/${PROVIDER_ID}/start`, { redirect: "manual" });
@@ -85,60 +149,49 @@ describe("oidc routes", () => {
   });
 
   it("callback without next redirects superadmin to /admin", async () => {
-    const adminEmail = "oidc-superadmin@example.com";
-    await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
-    await prisma.roleAssignment.deleteMany({
-      where: { user: { email: adminEmail } },
-    });
-    await prisma.session.deleteMany({ where: { user: { email: adminEmail } } });
-    await prisma.user.deleteMany({ where: { email: adminEmail } });
-
-    const adminUser = await prisma.user.create({
-      data: {
-        email: adminEmail,
-        password_hash: await hashPassword("unused"),
-        is_active: true,
-      },
-    });
-    await prisma.roleAssignment.create({
-      data: {
-        user_id: adminUser.id,
-        role: "superadmin",
-        scope_type: "instance",
-        scope_id: null,
-      },
-    });
-    await prisma.externalIdentity.create({
-      data: {
-        provider_id: PROVIDER_ID,
-        subject: "mock-subject-oidc",
-        user_id: adminUser.id,
-        email: adminEmail,
-      },
-    });
-
-    const start = await app.request(`/api/auth/oidc/${PROVIDER_ID}/start`, { redirect: "manual" });
-    const authorizeUrl = new URL(start.headers.get("location")!);
-    const state = authorizeUrl.searchParams.get("state")!;
-
-    const callbackFromIdp = await fetch(authorizeUrl.toString(), { redirect: "manual" });
-    const callbackLocation = new URL(callbackFromIdp.headers.get("location")!);
-    const code = callbackLocation.searchParams.get("code")!;
-
-    const res = await app.request(
-      `/api/auth/oidc/${PROVIDER_ID}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
-      {
-        redirect: "manual",
-        headers: { Cookie: `${OIDC_FLOW_COOKIE_NAME}=${state}` },
+    await withOidcLinkedUser(
+      "oidc-superadmin@example.com",
+      { role: "superadmin", scope_type: "instance", scope_id: null },
+      async () => {
+        const res = await runOidcCallback();
+        expect(res.status).toBe(302);
+        expect(res.headers.get("location")).toBe("/admin");
       },
     );
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/admin");
+  });
 
-    await prisma.externalIdentity.deleteMany({ where: { user_id: adminUser.id } });
-    await prisma.roleAssignment.deleteMany({ where: { user_id: adminUser.id } });
-    await prisma.session.deleteMany({ where: { user_id: adminUser.id } });
-    await prisma.user.delete({ where: { id: adminUser.id } });
+  it("callback without next redirects operator to /operator", async () => {
+    await withOidcLinkedUser(
+      "oidc-operator@example.com",
+      { role: "operator", scope_type: "event", scope_id: "ev-1" },
+      async () => {
+        const res = await runOidcCallback();
+        expect(res.status).toBe(302);
+        expect(res.headers.get("location")).toBe("/operator");
+      },
+    );
+  });
+
+  it("callback honors explicit allowed next for operator", async () => {
+    const explicitNext = "/operator/events/ev-1/checkin";
+    await withOidcLinkedUser(
+      "oidc-operator-next@example.com",
+      { role: "operator", scope_type: "event", scope_id: "ev-1" },
+      async () => {
+        const start = await app.request(
+          `/api/auth/oidc/${PROVIDER_ID}/start?next=${encodeURIComponent(explicitNext)}`,
+          { redirect: "manual" },
+        );
+        const authorizeUrl = new URL(start.headers.get("location")!);
+        const state = authorizeUrl.searchParams.get("state")!;
+        const row = await prisma.oidcAuthState.findFirst({ where: { state } });
+        expect(row?.redirect_next).toBe(explicitNext);
+
+        const res = await runOidcCallback(`?next=${encodeURIComponent(explicitNext)}`);
+        expect(res.status).toBe(302);
+        expect(res.headers.get("location")).toBe(explicitNext);
+      },
+    );
   });
 
   it("start?link=1 redirects to step-up page", async () => {

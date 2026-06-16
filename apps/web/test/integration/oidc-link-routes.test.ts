@@ -139,6 +139,25 @@ describe("oidc link step-up", () => {
     expect(location).toContain("state=");
   });
 
+  it("POST link without next stores null redirect_next", async () => {
+    const cookie = await fullSessionCookie();
+    const res = await app.request(`/account/oidc/${PROVIDER_ID}/link`, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        Cookie: cookie,
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...sameOrigin,
+      },
+      body: new URLSearchParams({ password: LINK_PASSWORD }).toString(),
+    });
+    expect(res.status).toBe(302);
+    const authorizeUrl = new URL(res.headers.get("location")!);
+    const state = authorizeUrl.searchParams.get("state")!;
+    const row = await prisma.oidcAuthState.findFirst({ where: { state } });
+    expect(row?.redirect_next).toBeNull();
+  });
+
   it("GET link without next omits hidden next field", async () => {
     const cookie = await fullSessionCookie();
     const res = await app.request(`/account/oidc/${PROVIDER_ID}/link`, {
