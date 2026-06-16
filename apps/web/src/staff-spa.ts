@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context } from "hono";
@@ -18,10 +18,13 @@ const MIME: Record<string, string> = {
 
 function defaultAdminDistRoot(): string {
   const fromCwd = normalize(join(process.cwd(), "apps/admin/dist"));
-  if (existsSync(join(fromCwd, "index.html"))) return fromCwd;
-
-  const here = dirname(fileURLToPath(import.meta.url));
-  return normalize(join(here, "../../../../admin/dist"));
+  try {
+    readFileSync(join(fromCwd, "index.html"));
+    return fromCwd;
+  } catch {
+    const here = dirname(fileURLToPath(import.meta.url));
+    return normalize(join(here, "../../../../admin/dist"));
+  }
 }
 
 function safeJoin(root: string, relative: string): string | null {
@@ -32,7 +35,7 @@ function safeJoin(root: string, relative: string): string | null {
 
 function readDistFile(root: string, relative: string): { body: Buffer; contentType: string } | null {
   const filePath = safeJoin(root, relative);
-  if (!filePath || !existsSync(filePath) || !statSync(filePath).isFile()) return null;
+  if (!filePath) return null;
   const ext = filePath.slice(filePath.lastIndexOf("."));
   const contentType = MIME[ext] ?? "application/octet-stream";
   try {
