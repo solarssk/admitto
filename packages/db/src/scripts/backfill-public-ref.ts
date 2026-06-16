@@ -1,6 +1,14 @@
 import { prisma } from "../index.js";
 import { backfillAgencyPublicRefs } from "../backfill-public-ref.js";
 
-const result = await backfillAgencyPublicRefs(prisma);
-console.log(`backfill-public-ref: updated ${result.updated} agency attendee(s)`);
-await prisma.$disconnect();
+/** Deploy/CLI entrypoint: idempotent agency `public_ref` backfill after migrations. */
+async function main(): Promise<void> {
+  const result = await backfillAgencyPublicRefs(prisma);
+  console.log(`backfill-public-ref: updated ${result.updated} agency attendee(s)`);
+  await prisma.$disconnect();
+}
+
+main().catch((err: unknown) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { createApp } from "../src/app.js";
 
+/** Prisma stub with only `$queryRaw` — enough for `/healthz` route tests. */
 function createMockPrisma(queryRaw: () => Promise<unknown>): PrismaClient {
   return {
     $queryRaw: vi.fn(queryRaw),
