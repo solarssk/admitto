@@ -22,6 +22,16 @@ describe("resolveThemeVars", () => {
     expect(vars.fontFaceCss).toBeUndefined();
   });
 
+  it("accepts valid HTTPS branding font URL", () => {
+    const vars = resolveThemeVars({
+      font_family_url: "https://cdn.example.com/fonts/brand.woff2",
+      font_family_name: "Brand Sans",
+    });
+    expect(vars["--font-sans"]).toContain("Brand Sans");
+    expect(vars["--font-sans"]).toContain("Inter");
+    expect(vars.fontFaceCss).toContain("https://cdn.example.com/fonts/brand.woff2");
+  });
+
   it("emits style block with root vars", () => {
     const css = themeVarsToStyleBlock(resolveThemeVars());
     expect(css).toContain(":root");

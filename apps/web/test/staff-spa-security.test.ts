@@ -10,6 +10,10 @@ import {
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../../admin/dist");
 
+function stripCssComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
 function collectHttpsOrigins(text: string): Set<string> {
   const origins = new Set<string>();
   for (const match of text.matchAll(/https:\/\/[^/ "';)]+/g)) {
@@ -51,7 +55,7 @@ describe("getStaffSpaSecurityHeaders", () => {
     }
   });
 
-  it("allows external stylesheet and font origins used by the production admin build", () => {
+  it("self-hosted admin build has no external CDN references in runtime HTML/CSS", () => {
     let indexHtml: string;
     let bundledCss = "";
     try {
@@ -63,20 +67,28 @@ describe("getStaffSpaSecurityHeaders", () => {
         }
       }
     } catch {
-      // dist may be absent in CI before admin build; skip origin cross-check
+      // dist may be absent in CI before admin build; skip cross-check
       return;
     }
 
+    const combined = `${indexHtml}\n${stripCssComments(bundledCss)}`;
+    expect(combined).not.toMatch(/jsdelivr/i);
+    expect(combined).not.toMatch(/fonts\.googleapis/i);
+    expect(combined).not.toMatch(/fonts\.gstatic/i);
+
     const csp = getStaffSpaSecurityHeaders()["Content-Security-Policy"]!;
-    const styleOrigins = collectHttpsOrigins(`${indexHtml}\n${bundledCss}`);
+    const styleOrigins = collectHttpsOrigins(combined);
     for (const origin of styleOrigins) {
       expect(cspAllowsOrigin(csp, "style-src", origin), `missing style-src for ${origin}`).toBe(
         true,
       );
     }
+  });
 
-    // Tabler icon webfont files resolve under jsDelivr when the stylesheet is CDN-hosted.
-    expect(cspAllowsOrigin(csp, "font-src", "https://cdn.jsdelivr.net")).toBe(true);
-    expect(cspAllowsOrigin(csp, "font-src", "https://fonts.gstatic.com")).toBe(true);
+  it("keeps font-src https: for optional superadmin branding fonts (regression guard)", () => {
+    const csp = getStaffSpaSecurityHeaders()["Content-Security-Policy"]!;
+    expect(csp).toContain("font-src 'self' https:");
+    // Regression: wildcard must allow a configured branding host (not branding logic itself).
+    expect(cspAllowsOrigin(csp, "font-src", "https://cdn.example.com")).toBe(true);
   });
 });
