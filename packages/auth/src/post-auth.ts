@@ -16,6 +16,7 @@ export function isAdminRoleAssignment(a: RoleAssignmentLike): boolean {
   );
 }
 
+/** True when user has operator role(s) but no admin-panel assignment. */
 function isOperatorOnly(assignments: RoleAssignmentLike[]): boolean {
   if (assignments.length === 0) return false;
   const hasAdmin = assignments.some(isAdminRoleAssignment);
@@ -26,14 +27,7 @@ function isOperatorOnly(assignments: RoleAssignmentLike[]): boolean {
 /** Default post-login landing path from role assignments. */
 export function resolvePostAuthPath(assignments: RoleAssignmentLike[]): string {
   if (assignments.length === 0) return NO_ACCESS_PATH;
-  if (assignments.some((a) => a.role === "superadmin" && a.scope_type === "instance")) {
-    return DEFAULT_ADMIN_PATH;
-  }
-  if (
-    assignments.some(
-      (a) => a.role === "admin" && a.scope_type === "organization" && a.scope_id != null,
-    )
-  ) {
+  if (assignments.some(isAdminRoleAssignment)) {
     return DEFAULT_ADMIN_PATH;
   }
   if (isOperatorOnly(assignments)) {

@@ -14,6 +14,7 @@ import {
   applyOidcGroupRoleMappings,
   validatePartialSession,
   OIDC_LINK_STEP_UP_MAX_AGE_MS,
+  revokeSession,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { SESSION_COOKIE_NAME } from "@admitto/auth";
@@ -163,25 +164,27 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
   }
 
   try {
-    const { rawToken } = await createSession(db, {
+    const { session, rawToken } = await createSession(db, {
       userId,
       stage: SESSION_STAGE.FULL,
       authMethod: AUTH_METHOD.OIDC,
       ip: resolveClientIp(c),
       userAgent: c.req.header("user-agent"),
     });
+
+    let next: string;
+    try {
+      next = await resolvePostLoginRedirectForUser(db, userId, consumed.redirect_next ?? undefined);
+    } catch (err) {
+      await revokeSession(db, session.id);
+      logOidcError("post-login redirect", err);
+      return oidcFailedRedirect(c);
+    }
+
     setSessionCookie(c, rawToken);
+    return c.redirect(next, 302);
   } catch (err) {
     logOidcError("session create", err);
     return oidcFailedRedirect(c);
   }
-
-  let next: string;
-  try {
-    next = await resolvePostLoginRedirectForUser(db, userId, consumed.redirect_next ?? undefined);
-  } catch (err) {
-    logOidcError("post-login redirect", err);
-    return oidcFailedRedirect(c);
-  }
-  return c.redirect(next, 302);
 }

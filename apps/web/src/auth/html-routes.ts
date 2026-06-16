@@ -6,6 +6,7 @@ import {
   LOGIN_NEXT,
   login,
   logout,
+  revokeSession,
   validatePartialSession,
   revokeTrustedDeviceByToken,
 } from "@admitto/auth";
@@ -104,10 +105,13 @@ export async function handlePostLogin(
   if (result.next === LOGIN_NEXT.ENROLLMENT_REQUIRED) {
     return c.redirect(mfaPathWithNext("/mfa/enroll", next), 302);
   }
+
   let landing: string;
   try {
     landing = await resolvePostLoginRedirectForUser(db, result.userId, form["next"] ?? c.req.query("next"));
   } catch (err) {
+    await revokeSession(db, result.sessionId);
+    clearSessionCookie(c);
     console.error("post-login redirect:", err instanceof Error ? err.message : "unknown");
     return c.redirect("/login", 302);
   }
