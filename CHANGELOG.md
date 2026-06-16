@@ -12,6 +12,19 @@ first event-ready MVP.
 
 ## Unreleased
 
+## v0.3.6 — (pending tag)
+
+Production Docker deployment (ADR 0018) — self-hosted compose stack for the first on-infra runs.
+
+### Deployment (`deploy/`, `Dockerfile`, CI)
+
+- Multi-stage production image for `apps/web`; `prisma migrate deploy` + idempotent backfill on container start
+- `deploy/docker-compose.yml`: app + Postgres + Redis + nginx (loopback `:8080` only; app `:3000` internal)
+- `GET /healthz` with DB ping for Docker healthcheck
+- CI `docker-build` job (after test + lint); `publish-container` pushes `ghcr.io/solarssk/admitto` on each `v*` tag
+- Optional `deploy-smoke` workflow_dispatch
+- Docs: deployment model, platform/arch notes, package READMEs, [VERSIONING.md](VERSIONING.md)
+
 ## v0.3.5 — 2026-06-15
 
 Cloudflare Access pass-through (prompt 16c) — closes the auth foundation lane for v0.3.

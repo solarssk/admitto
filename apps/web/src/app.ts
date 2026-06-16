@@ -91,6 +91,19 @@ export interface CreateAppOptions {
   rateLimitStore?: RateLimitStore;
 }
 
+/**
+ * Liveness/readiness probe for Docker and reverse proxies.
+ * Runs `SELECT 1` against Postgres; no auth; does not expose app version or secrets.
+ */
+async function handleHealthz(c: Context, db: PrismaClient) {
+  try {
+    await db.$queryRaw(Prisma.sql`SELECT 1`);
+    return c.json({ status: "ok" }, 200);
+  } catch {
+    return c.json({ status: "unavailable" }, 503);
+  }
+}
+
 /** Build the Admitto Hono app (public tickets, auth, check-in API, operator HTML). */
 export function createApp(options: CreateAppOptions = {}) {
   const db = options.prisma ?? defaultPrisma;
@@ -188,6 +201,8 @@ export function createApp(options: CreateAppOptions = {}) {
 
     return htmlWithSecurityHeaders(c, renderTicket(resolved, qrDataUrl), 200);
   }
+
+  app.get("/healthz", (c) => handleHealthz(c, db));
 
   app.post("/api/auth/login", jsonPostCsrf, loginRateLimitJson, (c) =>
     handleLogin(c, db, rateLimitStore),
