@@ -19,6 +19,18 @@ curl -sf http://127.0.0.1:8080/healthz
 
 The app listens on port 3000 **inside** the compose network only. Use the proxy on `127.0.0.1:8080`.
 
+## Container startup (entrypoint)
+
+On every `app` start, `deploy/docker-entrypoint.sh` runs **fail-fast** (any step fails → container exits, no web server):
+
+1. `prisma migrate deploy` — idempotent schema migrations
+2. `backfill-public-ref.js` — idempotent agency `public_ref` backfill (safe to re-run; throws if DB/schema incompatible)
+3. `node apps/web/dist/src/index.js` — HTTP server
+
+This is intentional: a broken migration or backfill must not serve traffic on a half-upgraded database.
+
+For one-off CLI (bootstrap, MFA reset), the entrypoint passes through `node …` / `npm …` without starting the web server — see below.
+
 ## First superadmin
 
 After the stack is healthy:
