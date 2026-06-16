@@ -37,3 +37,11 @@ export interface BrandingThemeDto {
 export interface ThemeResponse {
   theme: BrandingThemeDto;
 }
+
+export type CheckInStatus = "VALID" | "ALREADY_CHECKED_IN" | "REVOKED" | "INVALID";
+
+export interface CheckInScanResponse {
+  status: CheckInStatus;
+  attendee?: { name: string; ticket_type: string | null };
+  admittedAt?: string;
+}

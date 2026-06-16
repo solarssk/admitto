@@ -1,4 +1,4 @@
-import type { EventDto, MeResponse, ThemeResponse } from "./types.js";
+import type { CheckInScanResponse, EventDto, MeResponse, ThemeResponse } from "./types.js";
 
 export class ApiError extends Error {
   constructor(
@@ -46,4 +46,26 @@ export async function fetchStaffTheme(signal?: AbortSignal): Promise<ThemeRespon
   const url = isAdminAppPath() ? "/api/admin/theme" : "/api/staff/theme";
   const res = await fetch(url, { credentials: "same-origin", signal });
   return parseJson<ThemeResponse>(res);
+}
+
+/** POST /api/checkin/scan — session-authenticated check-in (scanner wedge / manual submit). */
+export async function submitCheckInScan(
+  eventId: string,
+  scanned: string,
+  deviceId?: string,
+): Promise<CheckInScanResponse> {
+  const res = await fetch("/api/checkin/scan", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: window.location.origin,
+    },
+    body: JSON.stringify({
+      eventId,
+      scanned,
+      ...(deviceId ? { deviceId } : {}),
+    }),
+  });
+  return parseJson<CheckInScanResponse>(res);
 }

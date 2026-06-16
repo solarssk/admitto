@@ -7,8 +7,8 @@ import { AdminShell } from "./layouts/AdminShell.js";
 import { OperatorShell } from "./layouts/OperatorShell.js";
 import { EventsPickerPage } from "./pages/EventsPickerPage.js";
 import { CheckInEntryPage } from "./pages/CheckInEntryPage.js";
+import { CheckInPage } from "./pages/CheckInPage.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
-import { CheckInPlaceholderPage } from "./pages/CheckInPlaceholderPage.js";
 import { ApiError, fetchAdminEvents } from "./api/client.js";
 import type { EventDto } from "./api/types.js";
 
@@ -78,7 +78,7 @@ export default function App() {
                   path={r.path}
                   element={
                     r.path === "checkin" ? (
-                      <CheckInPlaceholderPage />
+                      <CheckInPage />
                     ) : (
                       <PlaceholderPage title={r.title} />
                     )
@@ -91,7 +91,7 @@ export default function App() {
           <Route path="/operator" element={<OperatorGuard />}>
             <Route element={<OperatorShell />}>
               <Route index element={<CheckInEntryPage />} />
-              <Route path="events/:eventId/checkin" element={<CheckInPlaceholderPage />} />
+              <Route path="events/:eventId/checkin" element={<CheckInPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/admin" replace />} />
