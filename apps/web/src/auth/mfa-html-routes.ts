@@ -110,7 +110,13 @@ export async function handlePostMfaVerify(
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
 
-  const landing = await resolvePostLoginRedirectForUser(db, partial.userId, form["next"]);
+  let landing: string;
+  try {
+    landing = await resolvePostLoginRedirectForUser(db, partial.userId, form["next"]);
+  } catch (err) {
+    console.error("post-login redirect:", err instanceof Error ? err.message : "unknown");
+    return c.redirect("/login", 302);
+  }
   return c.redirect(landing, 302);
 }
 
@@ -198,6 +204,12 @@ export async function handlePostMfaEnroll(
     return htmlResponse(c, renderEnrollFromState(pending, MFA_ERROR, next), 401);
   }
 
-  const landing = await resolvePostLoginRedirectForUser(db, partial.userId, form["next"]);
+  let landing: string;
+  try {
+    landing = await resolvePostLoginRedirectForUser(db, partial.userId, form["next"]);
+  } catch (err) {
+    console.error("post-login redirect:", err instanceof Error ? err.message : "unknown");
+    return c.redirect("/login", 302);
+  }
   return c.redirect(landing, 302);
 }

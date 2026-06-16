@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { resolvePostAuthPath } from "../src/post-auth.js";
+import { isAdminRoleAssignment, resolvePostAuthPath } from "../src/post-auth.js";
 import { sanitizeBrandingThemeForTests } from "../src/settings/branding.js";
+
+describe("isAdminRoleAssignment", () => {
+  it("accepts instance superadmin and scoped org admin", () => {
+    expect(
+      isAdminRoleAssignment({ role: "superadmin", scope_type: "instance", scope_id: null }),
+    ).toBe(true);
+    expect(
+      isAdminRoleAssignment({ role: "admin", scope_type: "organization", scope_id: "org-1" }),
+    ).toBe(true);
+  });
+
+  it("rejects mis-scoped superadmin and org admin without scope_id", () => {
+    expect(
+      isAdminRoleAssignment({ role: "superadmin", scope_type: "event", scope_id: "ev-1" }),
+    ).toBe(false);
+    expect(
+      isAdminRoleAssignment({ role: "admin", scope_type: "organization", scope_id: null }),
+    ).toBe(false);
+  });
+});
 
 describe("resolvePostAuthPath", () => {
   it("sends superadmin to /admin", () => {
@@ -37,6 +57,12 @@ describe("resolvePostAuthPath", () => {
   it("ignores org admin without scope_id", () => {
     expect(
       resolvePostAuthPath([{ role: "admin", scope_type: "organization", scope_id: null }]),
+    ).toBe("/login");
+  });
+
+  it("ignores mis-scoped superadmin without instance scope", () => {
+    expect(
+      resolvePostAuthPath([{ role: "superadmin", scope_type: "event", scope_id: "ev-1" }]),
     ).toBe("/login");
   });
 });

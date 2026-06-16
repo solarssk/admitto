@@ -176,6 +176,12 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
     return oidcFailedRedirect(c);
   }
 
-  const next = await resolvePostLoginRedirectForUser(db, userId, consumed.redirect_next ?? undefined);
+  let next: string;
+  try {
+    next = await resolvePostLoginRedirectForUser(db, userId, consumed.redirect_next ?? undefined);
+  } catch (err) {
+    logOidcError("post-login redirect", err);
+    return oidcFailedRedirect(c);
+  }
   return c.redirect(next, 302);
 }

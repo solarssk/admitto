@@ -92,7 +92,11 @@ export {
   type AuthCapability,
   type EventSummary,
 } from "./authorization.js";
-export { resolvePostAuthPath, type RoleAssignmentLike } from "./post-auth.js";
+export {
+  resolvePostAuthPath,
+  isAdminRoleAssignment,
+  type RoleAssignmentLike,
+} from "./post-auth.js";
 export {
   getBrandingTheme,
   setBrandingTheme,

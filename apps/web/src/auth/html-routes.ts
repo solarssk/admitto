@@ -104,7 +104,13 @@ export async function handlePostLogin(
   if (result.next === LOGIN_NEXT.ENROLLMENT_REQUIRED) {
     return c.redirect(mfaPathWithNext("/mfa/enroll", next), 302);
   }
-  const landing = await resolvePostLoginRedirectForUser(db, result.userId, form["next"] ?? c.req.query("next"));
+  let landing: string;
+  try {
+    landing = await resolvePostLoginRedirectForUser(db, result.userId, form["next"] ?? c.req.query("next"));
+  } catch (err) {
+    console.error("post-login redirect:", err instanceof Error ? err.message : "unknown");
+    return c.redirect("/login", 302);
+  }
   return c.redirect(landing, 302);
 }
 

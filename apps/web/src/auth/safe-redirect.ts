@@ -1,16 +1,9 @@
-import { resolvePostAuthPath, type RoleAssignmentLike } from "@admitto/auth";
+import { isAdminRoleAssignment, resolvePostAuthPath, type RoleAssignmentLike } from "@admitto/auth";
 
 const LEGACY_DEFAULT = "/operator";
 
-function isAdminRole(a: RoleAssignmentLike): boolean {
-  return (
-    (a.role === "superadmin" && a.scope_type === "instance") ||
-    (a.role === "admin" && a.scope_type === "organization" && a.scope_id != null)
-  );
-}
-
 function hasCheckInLandingAccess(assignments: RoleAssignmentLike[]): boolean {
-  if (assignments.some(isAdminRole)) return true;
+  if (assignments.some(isAdminRoleAssignment)) return true;
   return assignments.some(
     (a) => a.role === "operator" && a.scope_type === "event" && a.scope_id != null,
   );
@@ -30,7 +23,7 @@ export function isNextAllowedForAssignments(
   assignments: RoleAssignmentLike[],
 ): boolean {
   if (isAdminStaffPath(next)) {
-    return assignments.some(isAdminRole);
+    return assignments.some(isAdminRoleAssignment);
   }
   if (isOperatorStaffPath(next)) {
     return hasCheckInLandingAccess(assignments);
