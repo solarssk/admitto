@@ -40,6 +40,8 @@ npm run start -w @admitto/web
 
 Path classification for Cloudflare Access: [`_ops/design/deployment-cloudflare-access.md`](../../_ops/design/deployment-cloudflare-access.md).
 
+Staff entry smoke matrix (manual QA): [`deploy/staff-entry-smoke-matrix.md`](../../deploy/staff-entry-smoke-matrix.md).
+
 ## Tests
 
 See [`test/README.md`](test/README.md) and ADR 0015 (`test/ADR-0015-test-strategy.md`).
