@@ -1,31 +1,33 @@
 FROM node:22-bookworm-slim AS builder
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-COPY packages/shared/package.json packages/shared/
-COPY packages/crypto/package.json packages/crypto/
-COPY packages/db/package.json packages/db/
-COPY packages/tickets/package.json packages/tickets/
-COPY packages/auth/package.json packages/auth/
-COPY packages/mailer/package.json packages/mailer/
-COPY packages/mailer-config/package.json packages/mailer-config/
-COPY packages/mail-templates/package.json packages/mail-templates/
-COPY packages/mail-delivery/package.json packages/mail-delivery/
-COPY packages/import/package.json packages/import/
-COPY apps/web/package.json apps/web/
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY packages ./packages
+COPY apps ./apps
 
+ENV npm_config_ignore_scripts=true
 RUN npm ci
-
-COPY . .
 
 RUN npx prisma generate --schema packages/db/prisma/schema.prisma
 RUN npm run build
 
+# Prisma migrate CLI is a devDependency — stash before prune.
+RUN mkdir -p /opt/prisma-runtime \
+  && cp -r node_modules/prisma /opt/prisma-runtime/prisma \
+  && cp -r node_modules/@prisma /opt/prisma-runtime/@prisma \
+  && cp -r node_modules/.prisma /opt/prisma-runtime/dot-prisma
+
+RUN npm prune --omit=dev
+
 FROM node:22-bookworm-slim AS production
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends wget \
+  && apt-get install -y --no-install-recommends wget openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -42,7 +44,7 @@ COPY packages/mail-templates/package.json packages/mail-templates/
 COPY packages/mail-delivery/package.json packages/mail-delivery/
 COPY apps/web/package.json apps/web/
 
-RUN npm ci --omit=dev
+COPY --from=builder /app/node_modules ./node_modules
 
 COPY --from=builder /app/apps/web/dist ./apps/web/dist
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
@@ -56,10 +58,9 @@ COPY --from=builder /app/packages/mailer-config/dist ./packages/mailer-config/di
 COPY --from=builder /app/packages/mail-templates/dist ./packages/mail-templates/dist
 COPY --from=builder /app/packages/mail-delivery/dist ./packages/mail-delivery/dist
 
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
-COPY --from=builder /app/node_modules/@prisma/engines ./node_modules/@prisma/engines
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /opt/prisma-runtime/dot-prisma ./node_modules/.prisma
+COPY --from=builder /opt/prisma-runtime/@prisma ./node_modules/@prisma
+COPY --from=builder /opt/prisma-runtime/prisma ./node_modules/prisma
 
 COPY deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
 
