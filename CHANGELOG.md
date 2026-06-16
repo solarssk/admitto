@@ -12,16 +12,16 @@ first event-ready MVP.
 
 ## Unreleased
 
-## v0.3.6 — (pending tag)
+## v0.3.6 — 2026-06-16
 
-Production Docker deployment (ADR 0018) — self-hosted compose stack for the first on-infra runs.
+Production Docker deployment (ADR 0018) — self-hosted compose stack for the first on-infra runs. Git tag `v0.3.6` released.
 
 ### Deployment (`deploy/`, `Dockerfile`, CI)
 
 - Multi-stage production image for `apps/web`; `prisma migrate deploy` + idempotent backfill on container start
 - `deploy/docker-compose.yml`: app + Postgres + Redis + nginx (loopback `:8080` only; app `:3000` internal)
 - `GET /healthz` with DB ping for Docker healthcheck
-- CI `docker-build` job (after test + lint); `publish-container` pushes `ghcr.io/solarssk/admitto` on each `v*` tag
+- CI `docker-build` job (after test + lint); `publish-container` pushes `ghcr.io/solarssk/admitto:0.x.y` (+ rolling `:0.x`) on each `vX.Y.Z` tag
 - Optional `deploy-smoke` workflow_dispatch
 - Docs: deployment model, platform/arch notes, package READMEs, [VERSIONING.md](VERSIONING.md)
 
