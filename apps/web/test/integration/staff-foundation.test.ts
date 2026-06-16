@@ -125,9 +125,14 @@ describe("GET /api/admin/me", () => {
       headers: { Cookie: await sessionCookieFor(adminId) },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { user: { email: string }; assignments: unknown[] };
+    const body = (await res.json()) as {
+      user: { email: string };
+      assignments: unknown[];
+      session_active: boolean;
+    };
     expect(body.user.email).toBe(EMAIL_ADMIN);
     expect(body.assignments.length).toBeGreaterThan(0);
+    expect(body.session_active).toBe(true);
   });
 
   it("rejects operator session", async () => {

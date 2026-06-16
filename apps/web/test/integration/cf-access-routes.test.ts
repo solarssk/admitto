@@ -184,8 +184,9 @@ describe("CF Access admin collision point", () => {
 
     const me = await app.request("/api/admin/me", { headers });
     expect(me.status).toBe(200);
-    const meBody = (await me.json()) as { user: { email: string } };
+    const meBody = (await me.json()) as { user: { email: string }; session_active: boolean };
     expect(meBody.user.email).toBe(SUPER_EMAIL);
+    expect(meBody.session_active).toBe(false);
 
     const theme = await app.request("/api/admin/theme", { headers });
     expect(theme.status).toBe(200);

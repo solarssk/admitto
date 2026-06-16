@@ -15,6 +15,7 @@ export interface AuthContextValue {
   user: AuthUser;
   assignments: RoleAssignment[];
   deviceLabel: string | null;
+  hasAdmittoSession: boolean;
   loading: boolean;
   authError: string | null;
   refresh: () => Promise<void>;
@@ -26,6 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [assignments, setAssignments] = useState<RoleAssignment[]>([]);
   const [deviceLabel, setDeviceLabel] = useState<string | null>(null);
+  const [hasAdmittoSession, setHasAdmittoSession] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -37,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(me.user);
       setAssignments(me.assignments);
       setDeviceLabel(me.device_label ?? null);
+      setHasAdmittoSession(me.session_active);
       try {
         const theme = await fetchStaffTheme();
         applyThemeVars(theme.theme);
@@ -53,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setAssignments([]);
       setDeviceLabel(null);
+      setHasAdmittoSession(false);
     } finally {
       setLoading(false);
     }
@@ -64,8 +68,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => {
     if (!user) return null;
-    return { user, assignments, deviceLabel, loading, authError, refresh };
-  }, [user, assignments, deviceLabel, loading, authError, refresh]);
+    return { user, assignments, deviceLabel, hasAdmittoSession, loading, authError, refresh };
+  }, [user, assignments, deviceLabel, hasAdmittoSession, loading, authError, refresh]);
 
   if (loading) {
     return (

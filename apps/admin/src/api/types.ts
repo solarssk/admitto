@@ -16,6 +16,8 @@ export interface MeResponse {
   user: AuthUser;
   assignments: RoleAssignment[];
   device_label?: string | null;
+  /** True when the request carries a valid Admitto session cookie (required for check-in scan API). */
+  session_active: boolean;
 }
 
 export interface EventDto {
@@ -36,4 +38,12 @@ export interface BrandingThemeDto {
 
 export interface ThemeResponse {
   theme: BrandingThemeDto;
+}
+
+export type CheckInStatus = "VALID" | "ALREADY_CHECKED_IN" | "REVOKED" | "INVALID";
+
+export interface CheckInScanResponse {
+  status: CheckInStatus;
+  attendee?: { name: string; ticket_type: string | null };
+  admittedAt?: string;
 }
