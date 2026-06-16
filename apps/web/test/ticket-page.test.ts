@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildTicketFontSrc,
   getTicketPageSecurityHeaders,
   renderRevoked,
   renderServerError,
@@ -68,7 +69,52 @@ describe("getTicketPageSecurityHeaders", () => {
     const headers = getTicketPageSecurityHeaders();
     expect(headers["Content-Security-Policy"]).toContain("default-src 'none'");
     expect(headers["Content-Security-Policy"]).toContain("img-src 'self' data:");
+    expect(headers["Content-Security-Policy"]).toContain("font-src 'self'");
     expect(headers["Referrer-Policy"]).toBe("no-referrer");
     expect(headers["X-Content-Type-Options"]).toBe("nosniff");
+  });
+
+  it("allows custom font origin in CSP when theme provides HTTPS font URL", () => {
+    const fontUrl = "https://cdn.example.com/fonts/brand.woff2";
+    const headers = getTicketPageSecurityHeaders({
+      font_family_url: fontUrl,
+      font_family_name: "Brand Sans",
+    });
+    const csp = headers["Content-Security-Policy"] ?? "";
+    expect(csp).toContain("font-src 'self' https://cdn.example.com");
+    expect(csp).not.toContain("font-src 'none'");
+
+    const html = renderTicket(
+      {
+        mode: "internal",
+        attendee: {
+          id: "a1",
+          event_id: "e1",
+          email: "x@example.com",
+          name: "Guest",
+          status: "confirmed",
+          token_hash: null,
+          qr_payload: null,
+          external_uuid: null,
+          ticket_type: null,
+        },
+        event: {
+          id: "e1",
+          title: "Launch",
+          date: new Date("2026-09-01T09:00:00Z"),
+          location: null,
+        },
+      },
+      "data:image/png;base64,abc",
+      { font_family_url: fontUrl, font_family_name: "Brand Sans" },
+    );
+    expect(html).toContain("@font-face");
+    expect(html).toContain(fontUrl);
+  });
+});
+
+describe("buildTicketFontSrc", () => {
+  it("rejects non-https font origins", () => {
+    expect(buildTicketFontSrc({ font_family_url: "http://evil.example/x.woff2" })).toBe("'self'");
   });
 });

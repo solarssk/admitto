@@ -15,6 +15,7 @@ export interface RoleAssignment {
 export interface MeResponse {
   user: AuthUser;
   assignments: RoleAssignment[];
+  device_label?: string | null;
 }
 
 export interface EventDto {

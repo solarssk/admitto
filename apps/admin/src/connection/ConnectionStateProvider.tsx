@@ -121,8 +121,13 @@ export function ConnectionBanner() {
     session_ended: "Your session has ended. Redirecting to sign in…",
   };
 
+  const modifier =
+    state === "offline"
+      ? "connection-banner--offline"
+      : "connection-banner--error";
+
   return (
-    <div className="connection-banner" role="status" data-state={state}>
+    <div className={`connection-banner ${modifier}`} role="status" data-state={state}>
       {messages[state]}
     </div>
   );

@@ -154,7 +154,16 @@ export async function handleMe(c: Context, db: PrismaClient): Promise<Response> 
     },
   });
 
-  return c.json({ user, assignments }, 200);
+  let device_label: string | null = null;
+  if (auth.sessionId) {
+    const session = await db.session.findUnique({
+      where: { id: auth.sessionId },
+      select: { device_label: true },
+    });
+    device_label = session?.device_label ?? null;
+  }
+
+  return c.json({ user, assignments, device_label }, 200);
 }
 
 /** POST /api/auth/mfa/verify — complete MFA step (partial session). */

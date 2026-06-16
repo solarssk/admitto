@@ -17,8 +17,15 @@ async function parseJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
+function isAdminAppPath(): boolean {
+  const path = window.location.pathname;
+  return path === "/admin" || path.startsWith("/admin/");
+}
+
+/** Session bootstrap on `/operator`; CF/session admin bootstrap on `/admin` (ADR 0017). */
 export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {
-  const res = await fetch("/api/auth/me", { credentials: "same-origin", signal });
+  const url = isAdminAppPath() ? "/api/admin/me" : "/api/auth/me";
+  const res = await fetch(url, { credentials: "same-origin", signal });
   return parseJson<MeResponse>(res);
 }
 
@@ -34,7 +41,9 @@ export async function fetchCheckInEvents(signal?: AbortSignal): Promise<EventDto
   return data.events;
 }
 
+/** Theme read — admin path behind CF; operator path session-only. */
 export async function fetchStaffTheme(signal?: AbortSignal): Promise<ThemeResponse> {
-  const res = await fetch("/api/staff/theme", { credentials: "same-origin", signal });
+  const url = isAdminAppPath() ? "/api/admin/theme" : "/api/staff/theme";
+  const res = await fetch(url, { credentials: "same-origin", signal });
   return parseJson<ThemeResponse>(res);
 }

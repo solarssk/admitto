@@ -11,11 +11,29 @@ function formatDate(d: Date): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
-export function getTicketPageSecurityHeaders(): Record<string, string> {
+/** Build CSP font-src allowlist for ticket page custom branding fonts. */
+export function buildTicketFontSrc(theme?: BrandingTheme | null): string {
+  const parts = ["'self'"];
+  const fontUrl = theme?.font_family_url?.trim();
+  if (fontUrl) {
+    try {
+      const parsed = new URL(fontUrl);
+      if (parsed.protocol === "https:" && !parsed.username && !parsed.password) {
+        parts.push(parsed.origin);
+      }
+    } catch {
+      // ignore invalid URLs
+    }
+  }
+  return parts.join(" ");
+}
+
+export function getTicketPageSecurityHeaders(theme?: BrandingTheme | null): Record<string, string> {
+  const fontSrc = buildTicketFontSrc(theme);
   return {
     "Cache-Control": "private, no-store, max-age=0",
     "Content-Security-Policy":
-      "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'none'; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'none'; connect-src 'none'; font-src ${fontSrc}; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
   };

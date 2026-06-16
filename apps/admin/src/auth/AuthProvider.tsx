@@ -14,6 +14,7 @@ import { applyThemeVars } from "@admitto/ui";
 export interface AuthContextValue {
   user: AuthUser;
   assignments: RoleAssignment[];
+  deviceLabel: string | null;
   loading: boolean;
   authError: string | null;
   refresh: () => Promise<void>;
@@ -24,6 +25,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [assignments, setAssignments] = useState<RoleAssignment[]>([]);
+  const [deviceLabel, setDeviceLabel] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -34,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const me = await fetchMe();
       setUser(me.user);
       setAssignments(me.assignments);
+      setDeviceLabel(me.device_label ?? null);
       try {
         const theme = await fetchStaffTheme();
         applyThemeVars(theme.theme);
@@ -49,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthError(err instanceof Error ? err.message : "Failed to load session");
       setUser(null);
       setAssignments([]);
+      setDeviceLabel(null);
     } finally {
       setLoading(false);
     }
@@ -60,8 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => {
     if (!user) return null;
-    return { user, assignments, loading, authError, refresh };
-  }, [user, assignments, loading, authError, refresh]);
+    return { user, assignments, deviceLabel, loading, authError, refresh };
+  }, [user, assignments, deviceLabel, loading, authError, refresh]);
 
   if (loading) {
     return (

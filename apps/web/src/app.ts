@@ -59,7 +59,6 @@ import { handleOidcStart, handleOidcCallback } from "./auth/oidc-routes.js";
 import { handleGetOidcLink, handlePostOidcLink } from "./auth/oidc-link-routes.js";
 import { createAdminAccessMiddleware } from "./auth/admin-access-middleware.js";
 import { createStaffAdminGate } from "./auth/staff-admin-gate.js";
-import { createStaffAuthGate } from "./auth/staff-auth-gate.js";
 import { createCheckInPanelCapabilityGuard } from "./auth/checkin-panel-gate.js";
 import { handleGetAdminEvents } from "./admin/admin-api-routes.js";
 import { handleGetCheckinEvents } from "./admin/checkin-api-routes.js";
@@ -138,7 +137,6 @@ export function createApp(options: CreateAppOptions = {}) {
   const checkinAuthDeps = { prisma: db, config: checkinGateConfig };
 
   const app = new Hono();
-  const ticketPageHeaders = getTicketPageSecurityHeaders();
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
@@ -152,7 +150,6 @@ export function createApp(options: CreateAppOptions = {}) {
   const requirePartialSessionHtml = createRequirePartialSession(db, { redirectTo: "/login" });
   const requireAdminAccess = createAdminAccessMiddleware(db);
   const staffAdminGate = createStaffAdminGate(db);
-  const staffAuthGate = createStaffAuthGate(db);
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
   const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot });
 
@@ -160,8 +157,13 @@ export function createApp(options: CreateAppOptions = {}) {
     console.error("OidcAuthState sweep failed:", err);
   });
 
-  function htmlWithSecurityHeaders(c: Context, html: string, status: 200 | 404 | 410 | 500) {
-    for (const [name, value] of Object.entries(ticketPageHeaders)) {
+  function htmlWithSecurityHeaders(
+    c: Context,
+    html: string,
+    status: 200 | 404 | 410 | 500,
+    theme?: Awaited<ReturnType<typeof getBrandingTheme>> | null,
+  ) {
+    for (const [name, value] of Object.entries(getTicketPageSecurityHeaders(theme))) {
       c.header(name, value);
     }
     return c.html(html, status);
@@ -218,7 +220,7 @@ export function createApp(options: CreateAppOptions = {}) {
       theme = null;
     }
 
-    return htmlWithSecurityHeaders(c, renderTicket(resolved, qrDataUrl, theme), 200);
+    return htmlWithSecurityHeaders(c, renderTicket(resolved, qrDataUrl, theme), 200, theme);
   }
 
   app.get("/healthz", (c) => handleHealthz(c, db));
@@ -227,12 +229,16 @@ export function createApp(options: CreateAppOptions = {}) {
     handleLogin(c, db, rateLimitStore),
   );
   app.post("/api/auth/logout", jsonPostCsrf, (c) => handleLogout(c, db));
-  app.get("/api/auth/me", staffAuthGate, (c) => handleMe(c, db));
+  app.get("/api/auth/me", requireSession, (c) => handleMe(c, db));
 
+  app.get("/api/admin/me", staffAdminGate, (c) => handleMe(c, db));
   app.get("/api/admin/events", staffAdminGate, (c) => handleGetAdminEvents(c, db));
+  app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
+  app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));
+
   app.get("/api/checkin/events", requireSession, (c) => handleGetCheckinEvents(c, db));
-  app.get("/api/staff/theme", staffAuthGate, (c) => handleGetStaffTheme(c, db));
-  app.put("/api/staff/theme", jsonPostCsrf, staffAuthGate, (c) => handlePutStaffTheme(c, db));
+  app.get("/api/staff/theme", requireSession, (c) => handleGetStaffTheme(c, db));
+  app.put("/api/staff/theme", jsonPostCsrf, requireSession, (c) => handlePutStaffTheme(c, db));
 
   app.post("/api/auth/mfa/verify", jsonPostCsrf, requirePartialSession, (c) =>
     handleMfaVerify(c, db, rateLimitStore),

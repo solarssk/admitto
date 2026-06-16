@@ -119,6 +119,25 @@ async function sessionCookieFor(userId: string): Promise<string> {
   return `admitto_session=${rawToken}`;
 }
 
+describe("GET /api/admin/me", () => {
+  it("returns profile for org admin session", async () => {
+    const res = await app.request("/api/admin/me", {
+      headers: { Cookie: await sessionCookieFor(adminId) },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { user: { email: string }; assignments: unknown[] };
+    expect(body.user.email).toBe(EMAIL_ADMIN);
+    expect(body.assignments.length).toBeGreaterThan(0);
+  });
+
+  it("rejects operator session", async () => {
+    const res = await app.request("/api/admin/me", {
+      headers: { Cookie: await sessionCookieFor(opId) },
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("GET /api/admin/events", () => {
   it("returns 401 without session", async () => {
     const res = await app.request("/api/admin/events");
@@ -181,7 +200,7 @@ describe("GET /api/checkin/events", () => {
 });
 
 describe("GET /api/staff/theme", () => {
-  it("allows operator to read theme", async () => {
+  it("allows operator to read theme via session path", async () => {
     const res = await app.request("/api/staff/theme", {
       headers: { Cookie: await sessionCookieFor(opId) },
     });
@@ -201,6 +220,15 @@ describe("GET /api/staff/theme", () => {
       body: JSON.stringify({ primary: "#112233" }),
     });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("GET /api/admin/theme", () => {
+  it("allows org admin via admin API path", async () => {
+    const res = await app.request("/api/admin/theme", {
+      headers: { Cookie: await sessionCookieFor(adminId) },
+    });
+    expect(res.status).toBe(200);
   });
 });
 

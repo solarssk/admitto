@@ -2,6 +2,45 @@ import { resolvePostAuthPath, type RoleAssignmentLike } from "@admitto/auth";
 
 const LEGACY_DEFAULT = "/operator";
 
+function isAdminRole(a: RoleAssignmentLike): boolean {
+  return (
+    (a.role === "superadmin" && a.scope_type === "instance") ||
+    (a.role === "admin" && a.scope_type === "organization" && a.scope_id != null)
+  );
+}
+
+function hasCheckInLandingAccess(assignments: RoleAssignmentLike[]): boolean {
+  if (assignments.some(isAdminRole)) return true;
+  return assignments.some(
+    (a) => a.role === "operator" && a.scope_type === "event" && a.scope_id != null,
+  );
+}
+
+function isAdminStaffPath(path: string): boolean {
+  return path === "/admin" || path.startsWith("/admin/");
+}
+
+function isOperatorStaffPath(path: string): boolean {
+  return path === "/operator" || path.startsWith("/operator/");
+}
+
+/** Whether `next` is allowed for the user's role assignments (v0.4 post-login contract). */
+export function isNextAllowedForAssignments(
+  next: string,
+  assignments: RoleAssignmentLike[],
+): boolean {
+  if (isAdminStaffPath(next)) {
+    return assignments.some(isAdminRole);
+  }
+  if (isOperatorStaffPath(next)) {
+    return hasCheckInLandingAccess(assignments);
+  }
+  if (next === "/login" || next.startsWith("/login?")) {
+    return true;
+  }
+  return false;
+}
+
 /** Allow only same-origin relative paths (blocks open redirects). */
 export function resolveOptionalSafeRedirectPath(next: string | undefined): string | undefined {
   if (!next?.trim()) return undefined;
@@ -23,13 +62,16 @@ export function resolveSafeRedirectPath(next: string | undefined, fallback = LEG
   return resolveOptionalSafeRedirectPath(next) ?? fallback;
 }
 
-/** Role-aware post-login landing when `?next=` is absent. */
+/** Role-aware post-login landing; honors `?next=` only when path matches role. */
 export function resolvePostLoginRedirect(
   next: string | undefined,
   assignments: RoleAssignmentLike[],
 ): string {
   const fallback = resolvePostAuthPath(assignments);
-  return resolveSafeRedirectPath(next, fallback);
+  const candidate = resolveOptionalSafeRedirectPath(next);
+  if (!candidate) return fallback;
+  if (isNextAllowedForAssignments(candidate, assignments)) return candidate;
+  return fallback;
 }
 
 /** @deprecated Use resolvePostAuthPath from @admitto/auth */
