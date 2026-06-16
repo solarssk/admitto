@@ -8,6 +8,7 @@ import {
   confirmTotpEnrollment,
   promoteSessionToFull,
   completeMfa,
+  revokeSession,
 } from "@admitto/auth";
 import {
   getMfaPageSecurityHeaders,
@@ -18,7 +19,7 @@ import {
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
-import { setTrustedDeviceCookie } from "./routes.js";
+import { setTrustedDeviceCookie, clearSessionCookie } from "./routes.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
 function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Response {
@@ -110,7 +111,15 @@ export async function handlePostMfaVerify(
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
 
-  const landing = await resolvePostLoginRedirectForUser(db, partial.userId, form["next"]);
+  let landing: string;
+  try {
+    landing = await resolvePostLoginRedirectForUser(db, partial.userId, form["next"]);
+  } catch (err) {
+    await revokeSession(db, partial.sessionId);
+    clearSessionCookie(c);
+    console.error("post-login redirect:", err instanceof Error ? err.message : "unknown");
+    return c.redirect("/login", 302);
+  }
   return c.redirect(landing, 302);
 }
 
@@ -198,6 +207,14 @@ export async function handlePostMfaEnroll(
     return htmlResponse(c, renderEnrollFromState(pending, MFA_ERROR, next), 401);
   }
 
-  const landing = await resolvePostLoginRedirectForUser(db, partial.userId, form["next"]);
+  let landing: string;
+  try {
+    landing = await resolvePostLoginRedirectForUser(db, partial.userId, form["next"]);
+  } catch (err) {
+    await revokeSession(db, partial.sessionId);
+    clearSessionCookie(c);
+    console.error("post-login redirect:", err instanceof Error ? err.message : "unknown");
+    return c.redirect("/login", 302);
+  }
   return c.redirect(landing, 302);
 }
