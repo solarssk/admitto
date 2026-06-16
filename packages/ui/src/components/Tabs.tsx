@@ -1,4 +1,4 @@
-import { useCallback, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 
 export interface TabItem {
   id: string;
@@ -16,7 +16,20 @@ export interface TabsProps {
 
 export function Tabs({ tabs = [], value, defaultValue, onChange }: TabsProps) {
   const [internal, setInternal] = useState(defaultValue ?? tabs[0]?.id);
-  const active = value !== undefined ? value : internal;
+
+  useEffect(() => {
+    if (value !== undefined || tabs.length === 0) return;
+    if (!tabs.some((tab) => tab.id === internal)) {
+      setInternal(tabs[0]!.id);
+    }
+  }, [tabs, value, internal]);
+
+  const active =
+    value !== undefined
+      ? value
+      : tabs.some((tab) => tab.id === internal)
+        ? internal
+        : (tabs[0]?.id ?? internal);
 
   const select = useCallback(
     (id: string) => {
