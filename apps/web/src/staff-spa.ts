@@ -16,6 +16,50 @@ const MIME: Record<string, string> = {
   ".json": "application/json",
 };
 
+/** Stylesheet origins referenced by `apps/admin/index.html` and bundled UI CSS. */
+export const STAFF_SPA_STYLE_SRC = [
+  "'self'",
+  "'unsafe-inline'",
+  "https://cdn.jsdelivr.net",
+  "https://fonts.googleapis.com",
+] as const;
+
+/**
+ * Font origins for Tabler icons (jsDelivr), Inter (Google Fonts), and org theme `@font-face` URLs.
+ * `https:` remains for arbitrary HTTPS branding font hosts validated in `@admitto/ui`.
+ */
+export const STAFF_SPA_FONT_SRC = [
+  "'self'",
+  "https://cdn.jsdelivr.net",
+  "https://fonts.gstatic.com",
+  "https:",
+] as const;
+
+function buildStaffSpaContentSecurityPolicy(): string {
+  return [
+    "default-src 'self'",
+    "script-src 'self'",
+    `style-src ${STAFF_SPA_STYLE_SRC.join(" ")}`,
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    `font-src ${STAFF_SPA_FONT_SRC.join(" ")}`,
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
+
+/** Security headers for `/admin` and `/operator` SPA shell (Vite bundle). */
+export function getStaffSpaSecurityHeaders(): Record<string, string> {
+  return {
+    "Cache-Control": "no-store",
+    "Content-Security-Policy": buildStaffSpaContentSecurityPolicy(),
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+  };
+}
+
 function defaultAdminDistRoot(): string {
   const fromCwd = normalize(join(process.cwd(), "apps/admin/dist"));
   try {
@@ -70,7 +114,9 @@ export function createStaffSpaHandlers(options: StaffSpaOptions = {}) {
       return c.text("Staff UI not built. Run npm run build -w @admitto/admin.", 503);
     }
     c.header("Content-Type", file.contentType);
-    c.header("Cache-Control", "no-store");
+    for (const [name, value] of Object.entries(getStaffSpaSecurityHeaders())) {
+      c.header(name, value);
+    }
     return c.body(new Uint8Array(file.body));
   };
 

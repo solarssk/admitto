@@ -243,6 +243,9 @@ describe("staff SPA routes", () => {
       headers: { Cookie: await sessionCookieFor(adminId) },
     });
     expect(res.status).toBe(200);
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(res.headers.get("content-security-policy")).toContain("https://fonts.googleapis.com");
     expect(await res.text()).toContain("staff-spa-fixture");
   });
 
@@ -259,6 +262,8 @@ describe("staff SPA routes", () => {
       headers: { Cookie: await sessionCookieFor(opId) },
     });
     expect(res.status).toBe(200);
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toContain("https://cdn.jsdelivr.net");
     expect(await res.text()).toContain("staff-spa-fixture");
   });
 });
