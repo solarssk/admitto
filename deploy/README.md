@@ -4,6 +4,42 @@ Production-oriented compose: **app + PostgreSQL + Redis + nginx reverse proxy**.
 
 Dev/CI database stack remains in [`../infra/docker-compose.yml`](../infra/docker-compose.yml) — do not use dev creds here.
 
+## Deployment model
+
+Admitto is **self-hosted**: you run it on infrastructure you control (VPS, on-prem server, NAS with Docker, etc.). We do **not** ship a managed cloud service.
+
+The **only supported production path** in this repo is a **Docker Compose stack** — not bare-metal installs (Node/Postgres directly on the host), not Kubernetes/Helm. You need **Docker Engine** (or Docker Desktop for local smoke tests) on the host; everything else runs inside containers.
+
+What you get in `deploy/`:
+
+| Piece | Role |
+|-------|------|
+| `Dockerfile` | Builds the `app` image (Node monorepo → production runtime) |
+| `docker-compose.yml` | Orchestrates `app`, Postgres, Redis, and an internal nginx proxy |
+| `.env` (from `.env.example`) | Secrets and config — never committed |
+
+TLS termination and public DNS usually sit **in front** of this stack (e.g. Nginx Proxy Manager, Cloudflare) forwarding to `http://<docker-host>:8080` — see below.
+
+## Platform and image architecture
+
+**Target runtime:** Linux containers. Official base images (`node:22-bookworm-slim`, `postgres:16`, `redis:7`, `nginx`) are multi-arch, but the **`app` image must match the CPU of the machine that runs it**.
+
+| Build where | Image CPU | Typical use |
+|-------------|-----------|---------------|
+| GitHub Actions CI (`docker-build` job) | `linux/amd64` | Validates the Dockerfile on every PR |
+| Your production server (`docker compose build` on the host) | Same as the host | **Recommended** for first real deploy |
+| Apple Silicon Mac (`docker compose build` locally) | `linux/arm64` | Dev/smoke only — **do not** push that image to an amd64 VPS |
+
+**Why it matters:** `prisma generate` runs at image build time and embeds a native query-engine binary for the build platform. An `arm64` image on an `amd64` server (or the reverse) will fail at startup.
+
+**Practical rule:** build on the server you deploy to, or cross-build explicitly:
+
+```bash
+docker build --platform linux/amd64 -f Dockerfile -t admitto-app ..
+```
+
+We have not tested or documented Synology ARM vs Intel paths separately — pick the platform flag that matches your NAS/CPU.
+
 ## Quick start
 
 ```bash
