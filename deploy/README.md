@@ -129,15 +129,17 @@ http://<docker-host>:8080
 
 Do **not** forward NPM directly to `app:3000` or host port 3000.
 
-NPM is the **trust boundary** for client IP and TLS — it must sanitize `X-Forwarded-For` from browsers. Compose nginx (loopback `:8080` only) passes NPM headers through to the app.
+NPM is the **trust boundary** for client IP and TLS. It must **overwrite** `X-Forwarded-For` with the real client IP — never append to a value the browser sent (`$proxy_add_x_forwarded_for` allows spoofing). Compose nginx (`deploy/nginx/default.conf`) uses `real_ip` from loopback/docker peers, then forwards a **single** `$remote_addr` to the app.
 
-In NPM **Advanced** (or custom snippet), ensure forwarded headers are set for HTTPS visitors:
+In NPM **Advanced** (or custom snippet), use:
 
 ```nginx
 proxy_set_header Host $host;
-proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-For $remote_addr;
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
+
+Do **not** use `$proxy_add_x_forwarded_for` on the NPM vhost that faces the public internet. With `TRUST_PROXY=true`, Admitto reads the **first** `X-Forwarded-For` hop ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)); an appended chain would let clients pick the rate-limit bucket and pollute audit logs.
 
 (`$scheme` is `https` on the public NPM vhost; compose nginx forwards that value so `TRUST_PROXY` CSRF checks see HTTPS.)
 
