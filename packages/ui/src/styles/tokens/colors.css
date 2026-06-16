@@ -33,8 +33,10 @@
   /* ---- Accent / status hues (Tabler theme colors) ---- */
   --at-green:   #2fb344;   /* success / checked-in / VALID */
   --at-green-050:#e9f7ec;
+  --at-green-600:#279a39;
   --at-red:     #d63939;   /* danger / failed / INVALID / REVOKED */
   --at-red-050: #fbeaea;
+  --at-red-600: #c02d2d;
   --at-yellow:  #f59f00;   /* warning / ALREADY_CHECKED_IN / pending */
   --at-yellow-050:#fdf3e1;
   --at-teal:    #0ca678;   /* confirmed */
@@ -77,15 +79,24 @@
   /* Status — attendee / delivery / pass / check-in */
   --status-ok:         var(--at-green);
   --status-ok-tint:    var(--at-green-050);
+  --status-ok-fg:      #1f7a2e;
+  --status-ok-hover:   var(--at-green-600);
   --status-warn:       var(--at-yellow);
   --status-warn-tint:  var(--at-yellow-050);
+  --status-warn-fg:    #9a6400;
   --status-error:      var(--at-red);
   --status-error-tint: var(--at-red-050);
+  --status-error-fg:   #b32525;
+  --status-error-hover:var(--at-red-600);
   --status-info:       var(--at-azure);
   --status-info-tint:  var(--at-azure-050);
+  --status-info-fg:    #2b6cb0;
   --status-confirmed:  var(--at-teal);
+  --status-confirmed-tint:#e6f6f1;
+  --status-confirmed-fg:#097a59;
   --status-vip:        var(--at-purple);
   --status-vip-tint:   var(--at-purple-050);
+  --status-vip-fg:     #8a31a0;
 
   /* Focus ring */
   --focus-ring:        rgba(var(--at-blue-rgb), 0.25);
