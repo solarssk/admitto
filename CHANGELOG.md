@@ -21,7 +21,8 @@ Production Docker deployment (ADR 0018) — self-hosted compose stack for the fi
 - Multi-stage production image for `apps/web`; `prisma migrate deploy` + idempotent backfill on container start
 - `deploy/docker-compose.yml`: app + Postgres + Redis + nginx (loopback `:8080` only; app `:3000` internal)
 - `GET /healthz` with DB ping for Docker healthcheck
-- CI `docker-build` job (after test + lint); optional `deploy-smoke` workflow_dispatch
+- CI `docker-build` job (after test + lint); `publish-container` pushes `ghcr.io/solarssk/admitto` on each `v*` tag
+- Optional `deploy-smoke` workflow_dispatch
 - Docs: deployment model, platform/arch notes, package READMEs, [VERSIONING.md](VERSIONING.md)
 
 ## v0.3.5 — 2026-06-15

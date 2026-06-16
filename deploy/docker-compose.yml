@@ -1,5 +1,6 @@
 services:
   app:
+    image: ${ADMITTO_IMAGE:-ghcr.io/solarssk/admitto:local}
     build:
       context: ..
       dockerfile: Dockerfile

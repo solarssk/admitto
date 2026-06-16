@@ -29,4 +29,6 @@ Do not bump per-package versions unless we start publishing libraries separately
 3. Commit, tag `v0.x.y`, push tag
 4. Close the matching GitHub milestone
 
+**Container image:** pushing git tag `v0.x.y` also publishes `ghcr.io/solarssk/admitto:0.x.y` (see `deploy/README.md`).
+
 Runtime (`/healthz`, Docker labels) does not expose version yet — by design until we need operator-facing build info.

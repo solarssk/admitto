@@ -17,8 +17,49 @@ What you get in `deploy/`:
 | `Dockerfile` | Builds the `app` image (Node monorepo → production runtime) |
 | `docker-compose.yml` | Orchestrates `app`, Postgres, Redis, and an internal nginx proxy |
 | `.env` (from `.env.example`) | Secrets and config — never committed |
+| **ghcr.io image** | `ghcr.io/solarssk/admitto:X.Y.Z` — published automatically on each git tag `vX.Y.Z` |
 
 TLS termination and public DNS usually sit **in front** of this stack (e.g. Nginx Proxy Manager, Cloudflare) forwarding to `http://<docker-host>:8080` — see below.
+
+## GitHub Container Registry (ghcr.io)
+
+Each release tag `vX.Y.Z` triggers [`.github/workflows/publish-container.yml`](../.github/workflows/publish-container.yml) and pushes:
+
+```text
+ghcr.io/solarssk/admitto:X.Y.Z
+ghcr.io/solarssk/admitto:X.Y      # minor line (e.g. 0.3)
+```
+
+Images are built on `linux/amd64` (GitHub Actions) — suitable for typical VPS hosts.
+
+### Pull on the server (recommended for production)
+
+```bash
+cd deploy
+cp .env.example .env
+# Set secrets, then pin the release image (version without leading v):
+# ADMITTO_IMAGE=ghcr.io/solarssk/admitto:0.3.6
+
+docker compose pull app
+docker compose up -d --no-build
+```
+
+If the package is **private**, log in once on the host:
+
+```bash
+echo "$GITHUB_PAT" | docker login ghcr.io -u YOUR_GITHUB_USER --password-stdin
+# PAT needs read:packages
+```
+
+Public repo → package is usually public; private repo → configure package visibility under GitHub **Packages**.
+
+### Build on the server (alternative)
+
+Omit `ADMITTO_IMAGE` or leave the default `ghcr.io/solarssk/admitto:local` — compose builds and tags locally:
+
+```bash
+docker compose up -d --build
+```
 
 ## Platform and image architecture
 
@@ -26,8 +67,8 @@ TLS termination and public DNS usually sit **in front** of this stack (e.g. Ngin
 
 | Build where | Image CPU | Typical use |
 |-------------|-----------|---------------|
-| GitHub Actions CI (`docker-build` job) | `linux/amd64` | Validates the Dockerfile on every PR |
-| Your production server (`docker compose build` on the host) | Same as the host | **Recommended** for first real deploy |
+| GitHub Actions (`docker-build` / `publish-container` on `v*` tag) | `linux/amd64` | CI validation; **published ghcr releases** |
+| Your production server (`docker compose build` on the host) | Same as the host | First deploy or air-gapped |
 | Apple Silicon Mac (`docker compose build` locally) | `linux/arm64` | Dev/smoke only — **do not** push that image to an amd64 VPS |
 
 **Why it matters:** `prisma generate` runs at image build time and embeds a native query-engine binary for the build platform. An `arm64` image on an `amd64` server (or the reverse) will fail at startup.
