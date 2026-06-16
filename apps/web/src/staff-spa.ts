@@ -16,6 +16,17 @@ const MIME: Record<string, string> = {
   ".json": "application/json",
 };
 
+/** Security headers for `/admin` and `/operator` SPA shell (Vite bundle). */
+export function getStaffSpaSecurityHeaders(): Record<string, string> {
+  return {
+    "Cache-Control": "no-store",
+    "Content-Security-Policy":
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+  };
+}
+
 function defaultAdminDistRoot(): string {
   const fromCwd = normalize(join(process.cwd(), "apps/admin/dist"));
   try {
@@ -70,7 +81,9 @@ export function createStaffSpaHandlers(options: StaffSpaOptions = {}) {
       return c.text("Staff UI not built. Run npm run build -w @admitto/admin.", 503);
     }
     c.header("Content-Type", file.contentType);
-    c.header("Cache-Control", "no-store");
+    for (const [name, value] of Object.entries(getStaffSpaSecurityHeaders())) {
+      c.header(name, value);
+    }
     return c.body(new Uint8Array(file.body));
   };
 

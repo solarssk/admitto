@@ -243,6 +243,8 @@ describe("staff SPA routes", () => {
       headers: { Cookie: await sessionCookieFor(adminId) },
     });
     expect(res.status).toBe(200);
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
     expect(await res.text()).toContain("staff-spa-fixture");
   });
 
