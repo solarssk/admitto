@@ -84,9 +84,21 @@ export {
   canPerformCheckIn,
   canManageEvent,
   canManageInstance,
+  canAccessAdminPanel,
+  canAccessCheckInPanel,
+  listCheckInEvents,
+  listAdminEvents,
   checkCapability,
   type AuthCapability,
+  type EventSummary,
 } from "./authorization.js";
+export { resolvePostAuthPath, type RoleAssignmentLike } from "./post-auth.js";
+export {
+  getBrandingTheme,
+  setBrandingTheme,
+  type BrandingTheme,
+} from "./settings/branding.js";
+export { SETTING_BRANDING_THEME } from "./settings/keys.js";
 export { redactEmail, logLoginSuccess, logLoginFailure, logMfaBreakGlass } from "./audit.js";
 export { login, logout, completeMfa, type LoginInput, type LoginResult, type CompleteMfaInput } from "./login.js";
 export {

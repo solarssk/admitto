@@ -1,4 +1,7 @@
 import type { ResolvedTicket } from "@admitto/tickets";
+import { statusBadgeClass, statusLabel } from "@admitto/ui";
+import type { BrandingTheme } from "@admitto/auth";
+import { buildTicketPageStyles } from "./ticket-inline-styles.js";
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -6,23 +9,6 @@ function esc(s: string): string {
 
 function formatDate(d: Date): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-}
-
-function badgeClass(status: string): string {
-  switch (status) {
-    case "registered":
-      return "badge-registered";
-    case "confirmed":
-      return "badge-confirmed";
-    case "checked_in":
-      return "badge-checked_in";
-    case "revoked":
-      return "badge-revoked";
-    case "cancelled":
-      return "badge-cancelled";
-    default:
-      return "badge-unknown";
-  }
 }
 
 export function getTicketPageSecurityHeaders(): Record<string, string> {
@@ -35,37 +21,50 @@ export function getTicketPageSecurityHeaders(): Record<string, string> {
   };
 }
 
-export function renderTicket(resolved: ResolvedTicket, qrDataUrl: string): string {
+export function renderTicket(
+  resolved: ResolvedTicket,
+  qrDataUrl: string,
+  theme?: BrandingTheme | null,
+): string {
   const { attendee, event } = resolved;
+  const badgeClass = statusBadgeClass(attendee.status);
+  const badgeText = statusLabel(attendee.status);
+  const styles = buildTicketPageStyles(theme);
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Ticket — ${esc(event.title)}</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1rem; color: #111; }
-    h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
-    .meta { color: #555; font-size: 0.9rem; margin-bottom: 1.5rem; }
-    .name { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.25rem; }
-    .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-    .badge-registered { background: #e0f2fe; color: #0369a1; }
-    .badge-confirmed  { background: #dcfce7; color: #166534; }
-    .badge-checked_in { background: #f0fdf4; color: #15803d; }
-    .badge-revoked    { background: #fee2e2; color: #991b1b; }
-    .badge-cancelled  { background: #fff7ed; color: #c2410c; }
-    .badge-unknown    { background: #f3f4f6; color: #374151; }
-    .qr { margin-top: 1.5rem; text-align: center; }
-    .qr img { width: 220px; height: 220px; }
-  </style>
+  <style>${styles}</style>
 </head>
-<body>
-  <h1>${esc(event.title)}</h1>
-  <p class="meta">${esc(formatDate(event.date))}${event.location ? ` · ${esc(event.location)}` : ""}</p>
-  <p class="name">${esc(attendee.name)}</p>
-  ${attendee.ticket_type ? `<p>${esc(attendee.ticket_type)}</p>` : ""}
-  <span class="badge ${badgeClass(attendee.status)}">${esc(attendee.status)}</span>
-  <div class="qr"><img src="${qrDataUrl}" alt="QR code for ticket entry"></div>
+<body class="ticket-page">
+  <article class="ticket">
+    <header class="ticket__top">
+      <div class="ticket__brand">
+        <span class="ticket__brand-mark" aria-hidden="true"></span>
+        <span>Admitto</span>
+      </div>
+      <small>Event ticket</small>
+    </header>
+    <div class="ticket__body">
+      <h1 class="ticket__event-name">${esc(event.title)}</h1>
+      <p class="ticket__meta">${esc(formatDate(event.date))}${event.location ? ` · ${esc(event.location)}` : ""}</p>
+      <div class="ticket__attendee">
+        <p class="ticket__attendee-name">${esc(attendee.name)}</p>
+        ${attendee.ticket_type ? `<p class="ticket__meta">${esc(attendee.ticket_type)}</p>` : ""}
+        <span class="${badgeClass}">${esc(badgeText)}</span>
+      </div>
+      <div class="ticket__qr"><img src="${qrDataUrl}" alt="QR code for ticket entry"></div>
+    </div>
+    <div class="ticket__perf" role="presentation"></div>
+    <div class="ticket__wallets">
+      <span class="wallet-cta" aria-disabled="true">Apple Wallet — coming soon</span>
+      <span class="wallet-cta" aria-disabled="true">Google Wallet — coming soon</span>
+    </div>
+    <footer class="ticket__foot">Present this QR code at the entrance.</footer>
+  </article>
 </body>
 </html>`;
 }

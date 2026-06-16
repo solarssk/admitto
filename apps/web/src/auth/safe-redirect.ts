@@ -1,7 +1,9 @@
-const DEFAULT_POST_AUTH_PATH = "/operator";
+import { resolvePostAuthPath, type RoleAssignmentLike } from "@admitto/auth";
+
+const LEGACY_DEFAULT = "/operator";
 
 /** Allow only same-origin relative paths (blocks open redirects). */
-export function resolveSafeRedirectPath(next: string | undefined, fallback = DEFAULT_POST_AUTH_PATH): string {
+export function resolveSafeRedirectPath(next: string | undefined, fallback = LEGACY_DEFAULT): string {
   if (!next) return fallback;
   const trimmed = next.trim();
   if (
@@ -16,7 +18,16 @@ export function resolveSafeRedirectPath(next: string | undefined, fallback = DEF
   return trimmed;
 }
 
-/** Default HTML landing path after successful MFA (v0.4 admin UI may override via `?next=`). */
+/** Role-aware post-login landing when `?next=` is absent. */
+export function resolvePostLoginRedirect(
+  next: string | undefined,
+  assignments: RoleAssignmentLike[],
+): string {
+  const fallback = resolvePostAuthPath(assignments);
+  return resolveSafeRedirectPath(next, fallback);
+}
+
+/** @deprecated Use resolvePostAuthPath from @admitto/auth */
 export function defaultPostAuthPath(): string {
-  return DEFAULT_POST_AUTH_PATH;
+  return LEGACY_DEFAULT;
 }

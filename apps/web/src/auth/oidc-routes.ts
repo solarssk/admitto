@@ -18,6 +18,7 @@ import {
 import { getCookie } from "hono/cookie";
 import { SESSION_COOKIE_NAME } from "@admitto/auth";
 import { resolveSafeRedirectPath } from "./safe-redirect.js";
+import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { setSessionCookie } from "./routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { clearOidcFlowCookie, oidcFlowCookieMatches } from "./oidc-flow-cookie.js";
@@ -175,6 +176,6 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
     return oidcFailedRedirect(c);
   }
 
-  const next = resolveSafeRedirectPath(consumed.redirect_next ?? "/operator");
+  const next = await resolvePostLoginRedirectForUser(db, userId, consumed.redirect_next ?? undefined);
   return c.redirect(next, 302);
 }

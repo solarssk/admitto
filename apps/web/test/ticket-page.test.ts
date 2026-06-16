@@ -55,7 +55,10 @@ describe("renderTicket", () => {
       "data:image/png;base64,abc",
     );
 
-    expect(html).toContain('class="badge badge-unknown"');
+    expect(html).toContain('class="at-badge at-badge--neutral at-badge--dot"');
+    expect(html).toContain("--primary");
+    expect(html).toContain("ticket-page");
+    expect(html).toContain("Apple Wallet");
     expect(html).not.toContain("badge-\"><style>boom</style>");
   });
 });

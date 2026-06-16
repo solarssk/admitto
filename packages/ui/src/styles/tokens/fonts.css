@@ -1,0 +1,12 @@
+/* ============================================================
+   Admitto — Webfonts
+   Foundation is Tabler (Bootstrap 5 admin template), whose
+   default UI typeface is Inter. Loaded here from Google Fonts.
+   NOTE: served from the Google Fonts CDN rather than self-hosted
+   binaries — swap in @font-face with local woff2 for offline use.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* Monospace (tokens, IDs, QR payloads, serial numbers) uses a
+   system mono stack — no webfont needed. See typography.css. */

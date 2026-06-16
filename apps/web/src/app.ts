@@ -4,6 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "@admitto/db";
 import type { AttendeeStatus } from "@admitto/db";
 import { recordTicketViewed } from "@admitto/mail-delivery";
+import { getBrandingTheme } from "@admitto/auth";
 import {
   resolveTicket,
   generateQrPng,
@@ -52,12 +53,17 @@ import {
 import {
   handleGetLogin,
   handlePostLogin,
-  handleGetOperator,
   handlePostLogout,
 } from "./auth/html-routes.js";
 import { handleOidcStart, handleOidcCallback } from "./auth/oidc-routes.js";
 import { handleGetOidcLink, handlePostOidcLink } from "./auth/oidc-link-routes.js";
 import { createAdminAccessMiddleware } from "./auth/admin-access-middleware.js";
+import { createStaffAdminGate } from "./auth/staff-admin-gate.js";
+import { createCheckInPanelCapabilityGuard } from "./auth/checkin-panel-gate.js";
+import { handleGetAdminEvents } from "./admin/admin-api-routes.js";
+import { handleGetCheckinEvents } from "./admin/checkin-api-routes.js";
+import { handleGetStaffTheme, handlePutStaffTheme } from "./admin/staff-api-routes.js";
+import { createStaffSpaHandlers } from "./staff-spa.js";
 import { sweepExpiredOidcAuthStates } from "@admitto/auth";
 import {
   handleListProviders,
@@ -89,6 +95,7 @@ export interface CreateAppOptions {
   allowCheckinBearer?: boolean;
   skipCheckinBootValidation?: boolean;
   rateLimitStore?: RateLimitStore;
+  adminDistRoot?: string;
 }
 
 /**
@@ -143,6 +150,9 @@ export function createApp(options: CreateAppOptions = {}) {
   const requirePartialSession = createRequirePartialSession(db);
   const requirePartialSessionHtml = createRequirePartialSession(db, { redirectTo: "/login" });
   const requireAdminAccess = createAdminAccessMiddleware(db);
+  const staffAdminGate = createStaffAdminGate(db);
+  const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
+  const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot });
 
   void sweepExpiredOidcAuthStates(db).catch((err) => {
     console.error("OidcAuthState sweep failed:", err);
@@ -199,7 +209,14 @@ export function createApp(options: CreateAppOptions = {}) {
       console.error("recordTicketViewed failed:", err);
     }
 
-    return htmlWithSecurityHeaders(c, renderTicket(resolved, qrDataUrl), 200);
+    let theme;
+    try {
+      theme = await getBrandingTheme(db);
+    } catch {
+      theme = null;
+    }
+
+    return htmlWithSecurityHeaders(c, renderTicket(resolved, qrDataUrl, theme), 200);
   }
 
   app.get("/healthz", (c) => handleHealthz(c, db));
@@ -209,6 +226,11 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/api/auth/logout", jsonPostCsrf, (c) => handleLogout(c, db));
   app.get("/api/auth/me", requireSession, (c) => handleMe(c, db));
+
+  app.get("/api/admin/events", staffAdminGate, (c) => handleGetAdminEvents(c, db));
+  app.get("/api/checkin/events", requireSession, (c) => handleGetCheckinEvents(c, db));
+  app.get("/api/staff/theme", requireSession, (c) => handleGetStaffTheme(c, db));
+  app.put("/api/staff/theme", jsonPostCsrf, requireSession, (c) => handlePutStaffTheme(c, db));
 
   app.post("/api/auth/mfa/verify", jsonPostCsrf, requirePartialSession, (c) =>
     handleMfaVerify(c, db, rateLimitStore),
@@ -267,8 +289,13 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/mfa/enroll", htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnroll(c, db, rateLimitStore),
   );
-  app.get("/operator", requireSessionHtml, (c) => handleGetOperator(c, db));
   app.post("/logout", htmlPostCsrf, (c) => handlePostLogout(c, db));
+
+  app.get("/assets/*", staffSpa.serveAsset);
+  app.get("/admin", staffAdminGate, staffSpa.serveSpaIndex);
+  app.get("/admin/*", staffAdminGate, staffSpa.serveSpaIndex);
+  app.get("/operator", requireSessionHtml, checkInPanelGuard, staffSpa.serveSpaIndex);
+  app.get("/operator/*", requireSessionHtml, checkInPanelGuard, staffSpa.serveSpaIndex);
 
   app.use("/t/*", publicRateLimit);
   app.use("/q/*", publicRateLimit);

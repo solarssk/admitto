@@ -1,0 +1,57 @@
+/* ============================================================
+   Admitto — base element styles
+   Light reset + default typography so any card/component picks
+   up the Tabler-grounded look without per-file boilerplate.
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-normal);
+  color: var(--text-primary);
+  background: var(--surface-page);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+}
+h1 { font-size: var(--fs-h1); letter-spacing: var(--ls-tight); }
+h2 { font-size: var(--fs-h2); }
+h3 { font-size: var(--fs-h3); }
+
+p { margin: 0 0 var(--space-3); }
+
+a { color: var(--text-link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code, kbd, samp, .mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+}
+
+small { font-size: var(--fs-xs); color: var(--text-muted); }
+
+/* Uppercase overline label, used on form labels & section eyebrows */
+.overline {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+::selection { background: var(--primary-tint); }
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: var(--radius-sm);
+}

@@ -17,6 +17,7 @@ import {
 } from "../mfa-page.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
 import { resolveSafeRedirectPath } from "./safe-redirect.js";
+import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { setTrustedDeviceCookie } from "./routes.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
@@ -40,9 +41,6 @@ async function parseForm(c: Context): Promise<Record<string, string>> {
   return {};
 }
 
-function resolvePostAuthRedirect(c: Context, formNext?: string): string {
-  return resolveSafeRedirectPath(formNext ?? c.req.query("next"));
-}
 
 const MFA_ERROR = "Invalid code. Try again.";
 
@@ -84,7 +82,7 @@ export async function handlePostMfaVerify(
   const form = await parseForm(c);
   const code = form["code"]?.trim() ?? "";
   const rememberDevice = form["remember_device"] === "1";
-  const next = resolvePostAuthRedirect(c, form["next"]);
+  const next = resolveSafeRedirectPath(form["next"] ?? c.req.query("next"));
 
   if (!code) {
     return htmlResponse(c, renderMfaVerifyForm(MFA_ERROR, next), 401);
@@ -112,7 +110,8 @@ export async function handlePostMfaVerify(
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
 
-  return c.redirect(next, 302);
+  const landing = await resolvePostLoginRedirectForUser(db, partial.userId, form["next"]);
+  return c.redirect(landing, 302);
 }
 
 /** GET /mfa/enroll — read-only; does not create enrollment (CSRF-safe). */
@@ -139,7 +138,7 @@ export async function handlePostMfaEnrollStart(c: Context, db: PrismaClient): Pr
   }
 
   const form = await parseForm(c);
-  const next = resolvePostAuthRedirect(c, form["next"]);
+  const next = resolveSafeRedirectPath(form["next"] ?? c.req.query("next"));
 
   const existing = await resumePendingTotpEnrollment(db, partial.userId);
   if (existing) {
@@ -167,7 +166,7 @@ export async function handlePostMfaEnroll(
 
   const form = await parseForm(c);
   const code = form["code"]?.trim() ?? "";
-  const next = resolvePostAuthRedirect(c, form["next"]);
+  const next = resolveSafeRedirectPath(form["next"] ?? c.req.query("next"));
   if (!code) {
     const pending = await resumePendingTotpEnrollment(db, partial.userId);
     if (!pending) {
@@ -199,5 +198,6 @@ export async function handlePostMfaEnroll(
     return htmlResponse(c, renderEnrollFromState(pending, MFA_ERROR, next), 401);
   }
 
-  return c.redirect(next, 302);
+  const landing = await resolvePostLoginRedirectForUser(db, partial.userId, form["next"]);
+  return c.redirect(landing, 302);
 }

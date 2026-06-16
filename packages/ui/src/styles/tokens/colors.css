@@ -1,0 +1,92 @@
+/* ============================================================
+   Admitto — Color tokens
+   Grounded in Tabler's default palette (the admin UI foundation).
+   Two layers: raw scales (--at-*) and semantic aliases (--text-*,
+   --surface-*, --border-*, --status-*).
+   ============================================================ */
+
+:root {
+  /* ---- Brand / primary (Tabler blue) ---- */
+  --at-blue:        #066fd1;
+  --at-blue-rgb:    6, 111, 209;   /* @kind other */
+  --at-blue-600:    #0560b8;   /* hover  */
+  --at-blue-700:    #04519c;   /* active */
+  --at-blue-050:    #e9f2fc;   /* tint surface */
+  --at-blue-100:    #cfe2f7;
+
+  /* ---- Neutral gray scale (cool slate) ---- */
+  --at-gray-50:   #f8fafc;
+  --at-gray-100:  #f1f5f9;
+  --at-gray-200:  #e2e8f0;
+  --at-gray-300:  #cbd5e1;
+  --at-gray-400:  #94a3b8;
+  --at-gray-500:  #64748b;
+  --at-gray-600:  #475569;
+  --at-gray-700:  #334155;
+  --at-gray-800:  #1e293b;
+  --at-gray-900:  #0f172a;
+
+  /* Tabler's signature ink + border (slightly warmer than slate) */
+  --at-ink:        #1d273b;   /* --tblr-body-color / dark */
+  --at-border-raw: #e6e7e9;   /* --tblr-border-color */
+
+  /* ---- Accent / status hues (Tabler theme colors) ---- */
+  --at-green:   #2fb344;   /* success / checked-in / VALID */
+  --at-green-050:#e9f7ec;
+  --at-red:     #d63939;   /* danger / failed / INVALID / REVOKED */
+  --at-red-050: #fbeaea;
+  --at-yellow:  #f59f00;   /* warning / ALREADY_CHECKED_IN / pending */
+  --at-yellow-050:#fdf3e1;
+  --at-teal:    #0ca678;   /* confirmed */
+  --at-azure:   #4299e1;   /* info / wallet links */
+  --at-azure-050:#e9f3fb;
+  --at-purple:  #ae3ec9;   /* VIP ticket tag */
+  --at-purple-050:#f6e9fa;
+
+  /* ============================================================
+     SEMANTIC ALIASES — author UIs against these
+     ============================================================ */
+
+  /* Brand */
+  --primary:           var(--at-blue);
+  --primary-rgb:       var(--at-blue-rgb);
+  --primary-hover:     var(--at-blue-600);
+  --primary-active:    var(--at-blue-700);
+  --primary-tint:      var(--at-blue-050);
+
+  /* Surfaces */
+  --surface-page:      var(--at-gray-100);   /* app background */
+  --surface-card:      #ffffff;              /* cards, panels, table rows */
+  --surface-sunken:    var(--at-gray-50);    /* table headers, wells */
+  --surface-inverse:   var(--at-ink);        /* dark scan view, tooltips */
+  --surface-hover:     var(--at-gray-50);    /* row / item hover */
+
+  /* Text */
+  --text-primary:      var(--at-ink);        /* headings, key data */
+  --text-secondary:    var(--at-gray-600);   /* body, labels */
+  --text-muted:        var(--at-gray-500);   /* meta, captions, placeholders */
+  --text-disabled:     var(--at-gray-400);
+  --text-on-primary:   #ffffff;
+  --text-link:         var(--at-blue);
+
+  /* Borders */
+  --border:            var(--at-border-raw);
+  --border-strong:     var(--at-gray-300);
+  --border-focus:      var(--at-blue);
+
+  /* Status — attendee / delivery / pass / check-in */
+  --status-ok:         var(--at-green);
+  --status-ok-tint:    var(--at-green-050);
+  --status-warn:       var(--at-yellow);
+  --status-warn-tint:  var(--at-yellow-050);
+  --status-error:      var(--at-red);
+  --status-error-tint: var(--at-red-050);
+  --status-info:       var(--at-azure);
+  --status-info-tint:  var(--at-azure-050);
+  --status-confirmed:  var(--at-teal);
+  --status-vip:        var(--at-purple);
+  --status-vip-tint:   var(--at-purple-050);
+
+  /* Focus ring */
+  --focus-ring:        rgba(var(--at-blue-rgb), 0.25);
+}

@@ -18,6 +18,10 @@ import {
   canPerformCheckIn,
   canManageEvent,
   canManageInstance,
+  canAccessAdminPanel,
+  canAccessCheckInPanel,
+  listCheckInEvents,
+  listAdminEvents,
 } from "../src/authorization.js";
 import { login } from "../src/login.js";
 import { bootstrapSuperadmin, superadminInstanceExists } from "../src/bootstrap.js";
@@ -244,6 +248,26 @@ describe("authorization", () => {
   it("canManageInstance — superadmin only", async () => {
     expect(await canManageInstance(prisma, USER_SUPER)).toBe(true);
     expect(await canManageInstance(prisma, USER_ADMIN_A)).toBe(false);
+  });
+
+  it("canAccessAdminPanel — superadmin and org admin", async () => {
+    expect(await canAccessAdminPanel(prisma, USER_SUPER)).toBe(true);
+    expect(await canAccessAdminPanel(prisma, USER_ADMIN_A)).toBe(true);
+    expect(await canAccessAdminPanel(prisma, USER_OP_A)).toBe(false);
+  });
+
+  it("canAccessCheckInPanel and listCheckInEvents", async () => {
+    expect(await canAccessCheckInPanel(prisma, USER_OP_A)).toBe(true);
+    expect(await canAccessCheckInPanel(prisma, USER_ADMIN_A)).toBe(true);
+    const opEvents = await listCheckInEvents(prisma, USER_OP_A);
+    expect(opEvents.some((e) => e.id === EVENT_A)).toBe(true);
+    expect(opEvents.some((e) => e.id === EVENT_B)).toBe(false);
+  });
+
+  it("listAdminEvents — scoped by org", async () => {
+    const adminEvents = await listAdminEvents(prisma, USER_ADMIN_A);
+    expect(adminEvents.every((e) => e.id === EVENT_A)).toBe(true);
+    expect(await listAdminEvents(prisma, USER_OP_A)).toEqual([]);
   });
 });
 

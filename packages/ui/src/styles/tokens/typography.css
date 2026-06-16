@@ -1,0 +1,44 @@
+/* ============================================================
+   Admitto — Typography tokens
+   Tabler is a dense admin UI: 14px base, Inter, restrained weights.
+   ============================================================ */
+
+:root {
+  /* Families */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+
+  /* Weights */
+  --fw-regular:  400;  /* @kind other */
+  --fw-medium:   500;  /* @kind other */
+  --fw-semibold: 600;  /* @kind other */
+  --fw-bold:     700;  /* @kind other */
+
+  /* Type scale (rem against 16px root; admin base is 0.875rem = 14px) */
+  --fs-display: 1.75rem;   /* 28px — scan result, page hero numbers */
+  --fs-h1:      1.5rem;    /* 24px — page title */
+  --fs-h2:      1.25rem;   /* 20px — section / card title */
+  --fs-h3:      1rem;      /* 16px — subsection */
+  --fs-body:    0.875rem;  /* 14px — default body / table / form */
+  --fs-sm:      0.8125rem; /* 13px — secondary */
+  --fs-xs:      0.75rem;   /* 12px — meta, badges, table caption */
+  --fs-mono:    0.8125rem; /* 13px — tokens, serials */
+
+  /* Line heights */
+  --lh-tight:   1.25;  /* @kind other */
+  --lh-snug:    1.4;   /* @kind other */
+  --lh-normal:  1.5;   /* @kind other */
+
+  /* Letter-spacing */
+  --ls-tight:   -0.01em;   /* @kind other */
+  --ls-normal:  0;         /* @kind other */
+  --ls-caps:    0.04em;    /* @kind other */
+
+  /* Semantic roles */
+  --text-page-title-size:   var(--fs-h1);
+  --text-page-title-weight: var(--fw-semibold);
+  --text-card-title-size:   var(--fs-h2);
+  --text-card-title-weight: var(--fw-semibold);
+  --text-label-size:        var(--fs-xs);
+  --text-label-weight:      var(--fw-semibold);
+}
