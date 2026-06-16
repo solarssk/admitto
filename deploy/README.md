@@ -24,10 +24,11 @@ The app listens on port 3000 **inside** the compose network only. Use the proxy 
 After the stack is healthy:
 
 ```bash
-docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin
+docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin \
+  --email admin@example.com
 ```
 
-Follow the CLI prompts. Run on the server directly (break-glass), not through Cloudflare Access.
+Replace the email with your break-glass superadmin address. The CLI prompts for a password on stdin (not echoed). Run on the server directly, not through Cloudflare Access.
 
 ## Nginx Proxy Manager (production edge)
 
