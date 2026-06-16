@@ -21,8 +21,9 @@ jobs:
           cp .env.example .env
           sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=smoke-test-secret/' .env
           sed -i 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://admitto_app:smoke-test-secret@db:5432/admitto|' .env
-          # Fixed 32-byte test key (44-char base64) — same placeholder as CI build-test, not a production secret.
-          sed -i 's/^ENCRYPTION_KEY=.*/ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=/' .env
+          ENCRYPTION_KEY=$(openssl rand -base64 32)
+          node -e "if (Buffer.from(process.argv[1], 'base64').length !== 32) { console.error('ENCRYPTION_KEY must decode to 32 bytes'); process.exit(1); }" "$ENCRYPTION_KEY"
+          sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" .env
           sed -i 's|^BASE_URL=.*|BASE_URL=http://127.0.0.1:8080|' .env
           sed -i 's|^CF_ACCESS_TEAM_DOMAIN=.*|CF_ACCESS_TEAM_DOMAIN=https://example.cloudflareaccess.com|' .env
           sed -i 's/^CF_ACCESS_AUD=.*/CF_ACCESS_AUD=smoke-test-aud/' .env
