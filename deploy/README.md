@@ -9,7 +9,9 @@ Dev/CI database stack remains in [`../infra/docker-compose.yml`](../infra/docker
 ```bash
 cd deploy
 cp .env.example .env
-# Edit .env: POSTGRES_PASSWORD, ENCRYPTION_KEY (openssl rand -base64 32), BASE_URL, mail provider
+# Edit .env: POSTGRES_PASSWORD, ENCRYPTION_KEY (openssl rand -base64 32), BASE_URL
+# Set EMAIL_PROVIDER to one of: export_only, powerautomate, smtp, graph
+# Populate only the mail section for that provider
 
 docker compose up -d --build
 curl -sf http://127.0.0.1:8080/healthz
@@ -37,13 +39,17 @@ http://<docker-host>:8080
 
 Do **not** forward NPM directly to `app:3000` or host port 3000.
 
-In NPM **Advanced** (or custom snippet), match the compose nginx behaviour:
+NPM is the **trust boundary** for client IP and TLS — it must sanitize `X-Forwarded-For` from browsers. Compose nginx (loopback `:8080` only) passes NPM headers through to the app.
+
+In NPM **Advanced** (or custom snippet), ensure forwarded headers are set for HTTPS visitors:
 
 ```nginx
 proxy_set_header Host $host;
-proxy_set_header X-Forwarded-For $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
+
+(`$scheme` is `https` on the public NPM vhost; compose nginx forwards that value so `TRUST_PROXY` CSRF checks see HTTPS.)
 
 For the future admin SSE metrics path, add a custom location matching `*/api/admin/events/*/metrics/stream` with `proxy_buffering off` and a long read timeout.
 
