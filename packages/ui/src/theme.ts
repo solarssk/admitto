@@ -69,8 +69,9 @@ export function resolveThemeVars(input?: BrandingThemeInput | null): ResolvedThe
   const fontName = input?.font_family_name?.trim();
   if (fontUrl && fontName && isSafeFontUrl(fontUrl)) {
     const safeName = fontName.replace(/["\\]/g, "");
+    const canonicalUrl = new URL(fontUrl).href;
     vars["--font-sans"] = `"${safeName}", Inter, system-ui, sans-serif`;
-    vars.fontFaceCss = `@font-face{font-family:"${safeName}";src:url("${fontUrl}") format("woff2"),url("${fontUrl}") format("woff");font-display:swap;}`;
+    vars.fontFaceCss = `@font-face{font-family:"${safeName}";src:url("${canonicalUrl}") format("woff2"),url("${canonicalUrl}") format("woff");font-display:swap;}`;
   }
 
   return vars;

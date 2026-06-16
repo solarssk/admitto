@@ -1,4 +1,4 @@
-import type { ReactNode, SelectHTMLAttributes } from "react";
+import { useId, type ReactNode, type SelectHTMLAttributes } from "react";
 
 export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
@@ -7,7 +7,9 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 }
 
 export function Select({ label, hint, id, children, className, ...rest }: SelectProps) {
-  const autoId = id || (label ? `f-${label.replace(/\s+/g, "-").toLowerCase()}` : undefined);
+  const uid = useId();
+  const autoId = id ?? (label ? `f-${uid}` : undefined);
+  const hintId = hint ? `${uid}-hint` : undefined;
   return (
     <div className="at-field">
       {label && (
@@ -15,10 +17,19 @@ export function Select({ label, hint, id, children, className, ...rest }: Select
           {label}
         </label>
       )}
-      <select id={autoId} className={["at-select", className].filter(Boolean).join(" ")} {...rest}>
+      <select
+        id={autoId}
+        className={["at-select", className].filter(Boolean).join(" ")}
+        aria-describedby={hintId}
+        {...rest}
+      >
         {children}
       </select>
-      {hint && <span className="at-hint">{hint}</span>}
+      {hint && (
+        <span id={hintId} className="at-hint">
+          {hint}
+        </span>
+      )}
     </div>
   );
 }

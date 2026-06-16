@@ -6,9 +6,13 @@ export interface RoleAssignmentLike {
 
 const DEFAULT_OPERATOR_PATH = "/operator";
 const DEFAULT_ADMIN_PATH = "/admin";
+const NO_ACCESS_PATH = "/login";
 
 function isAdminRole(a: RoleAssignmentLike): boolean {
-  return a.role === "superadmin" || (a.role === "admin" && a.scope_type === "organization");
+  return (
+    a.role === "superadmin" ||
+    (a.role === "admin" && a.scope_type === "organization" && a.scope_id != null)
+  );
 }
 
 function isOperatorOnly(assignments: RoleAssignmentLike[]): boolean {
@@ -20,10 +24,15 @@ function isOperatorOnly(assignments: RoleAssignmentLike[]): boolean {
 
 /** Default post-login landing path from role assignments. */
 export function resolvePostAuthPath(assignments: RoleAssignmentLike[]): string {
+  if (assignments.length === 0) return NO_ACCESS_PATH;
   if (assignments.some((a) => a.role === "superadmin" && a.scope_type === "instance")) {
     return DEFAULT_ADMIN_PATH;
   }
-  if (assignments.some((a) => a.role === "admin" && a.scope_type === "organization")) {
+  if (
+    assignments.some(
+      (a) => a.role === "admin" && a.scope_type === "organization" && a.scope_id != null,
+    )
+  ) {
     return DEFAULT_ADMIN_PATH;
   }
   if (isOperatorOnly(assignments)) {
@@ -32,5 +41,5 @@ export function resolvePostAuthPath(assignments: RoleAssignmentLike[]): string {
   if (assignments.some((a) => a.role === "operator")) {
     return DEFAULT_OPERATOR_PATH;
   }
-  return DEFAULT_OPERATOR_PATH;
+  return NO_ACCESS_PATH;
 }

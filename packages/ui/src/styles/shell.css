@@ -1,4 +1,4 @@
-@import url('./styles.css');
+@import './styles.css';
 
 html, body, #root {
   height: 100%;

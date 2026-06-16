@@ -1,6 +1,6 @@
 import type { Context, Next } from "hono";
 import type { PrismaClient } from "@prisma/client";
-import { canAccessCheckInPanel } from "@admitto/auth";
+import { canAccessAdminPanel, canAccessCheckInPanel } from "@admitto/auth";
 
 /** Requires `auth` on context (apply `requireSession` first). */
 export function createCheckInPanelCapabilityGuard(prisma: PrismaClient) {
@@ -14,10 +14,16 @@ export function createCheckInPanelCapabilityGuard(prisma: PrismaClient) {
     }
 
     if (!(await canAccessCheckInPanel(prisma, auth.userId))) {
+      if (await canAccessAdminPanel(prisma, auth.userId)) {
+        if (c.req.path.startsWith("/api/")) {
+          return c.json({ error: "forbidden" }, 403);
+        }
+        return c.redirect("/admin", 302);
+      }
       if (c.req.path.startsWith("/api/")) {
         return c.json({ error: "forbidden" }, 403);
       }
-      return c.redirect("/admin", 302);
+      return c.text("Forbidden", 403);
     }
 
     await next();

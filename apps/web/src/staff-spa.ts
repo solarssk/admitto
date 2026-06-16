@@ -1,5 +1,5 @@
 import { readFileSync, existsSync, statSync } from "node:fs";
-import { join, normalize, sep } from "node:path";
+import { dirname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context } from "hono";
 import type { MiddlewareHandler } from "hono";
@@ -17,8 +17,11 @@ const MIME: Record<string, string> = {
 };
 
 function defaultAdminDistRoot(): string {
-  const here = fileURLToPath(import.meta.url);
-  return normalize(join(here, "../../../admin/dist"));
+  const fromCwd = normalize(join(process.cwd(), "apps/admin/dist"));
+  if (existsSync(join(fromCwd, "index.html"))) return fromCwd;
+
+  const here = dirname(fileURLToPath(import.meta.url));
+  return normalize(join(here, "../../../../admin/dist"));
 }
 
 function safeJoin(root: string, relative: string): string | null {
@@ -32,7 +35,11 @@ function readDistFile(root: string, relative: string): { body: Buffer; contentTy
   if (!filePath || !existsSync(filePath) || !statSync(filePath).isFile()) return null;
   const ext = filePath.slice(filePath.lastIndexOf("."));
   const contentType = MIME[ext] ?? "application/octet-stream";
-  return { body: readFileSync(filePath), contentType };
+  try {
+    return { body: readFileSync(filePath), contentType };
+  } catch {
+    return null;
+  }
 }
 
 export interface StaffSpaOptions {

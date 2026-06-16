@@ -12,6 +12,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": "http://localhost:3000",
+      "/admin/auth": "http://localhost:3000",
       "/login": "http://localhost:3000",
       "/logout": "http://localhost:3000",
       "/healthz": "http://localhost:3000",

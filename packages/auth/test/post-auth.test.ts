@@ -29,6 +29,16 @@ describe("resolvePostAuthPath", () => {
       ]),
     ).toBe("/admin");
   });
+
+  it("sends users without roles to login", () => {
+    expect(resolvePostAuthPath([])).toBe("/login");
+  });
+
+  it("ignores org admin without scope_id", () => {
+    expect(
+      resolvePostAuthPath([{ role: "admin", scope_type: "organization", scope_id: null }]),
+    ).toBe("/login");
+  });
 });
 
 describe("sanitizeBrandingTheme", () => {
@@ -38,5 +48,23 @@ describe("sanitizeBrandingTheme", () => {
 
   it("accepts valid primary", () => {
     expect(sanitizeBrandingThemeForTests({ primary: "#066fd1" }).primary).toBe("#066fd1");
+  });
+
+  it("rejects non-https font URL", () => {
+    expect(
+      sanitizeBrandingThemeForTests({ font_family_url: "http://evil.example/font.woff2" })
+        .font_family_url,
+    ).toBeUndefined();
+  });
+
+  it("truncates long font URL", () => {
+    const longUrl = `https://fonts.example/${"a".repeat(2100)}.woff2`;
+    const result = sanitizeBrandingThemeForTests({ font_family_url: longUrl });
+    expect(result.font_family_url?.length).toBe(2048);
+  });
+
+  it("truncates long font name", () => {
+    const result = sanitizeBrandingThemeForTests({ font_family_name: "X".repeat(200) });
+    expect(result.font_family_name?.length).toBe(128);
   });
 });

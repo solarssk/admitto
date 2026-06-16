@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode } from "react";
+import { useId, type InputHTMLAttributes, type ReactNode } from "react";
 
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
   label?: string;
@@ -18,13 +18,18 @@ export function Input({
   className,
   ...rest
 }: InputProps) {
-  const autoId = id || (label ? `f-${label.replace(/\s+/g, "-").toLowerCase()}` : undefined);
+  const uid = useId();
+  const autoId = id ?? (label ? `f-${uid}` : undefined);
   const isInvalid = invalid || !!error;
+  const hintId = hint && !error ? `${uid}-hint` : undefined;
+  const errorId = error ? `${uid}-error` : undefined;
+  const describedBy = [errorId, hintId].filter(Boolean).join(" ") || undefined;
   const field = (
     <input
       id={autoId}
       className={["at-input", isInvalid && "at-input--invalid", className].filter(Boolean).join(" ")}
       aria-invalid={isInvalid || undefined}
+      aria-describedby={describedBy}
       {...rest}
     />
   );
@@ -46,9 +51,13 @@ export function Input({
         field
       )}
       {error ? (
-        <span className="at-hint at-hint--error">{error}</span>
+        <span id={errorId} className="at-hint at-hint--error">
+          {error}
+        </span>
       ) : hint ? (
-        <span className="at-hint">{hint}</span>
+        <span id={hintId} className="at-hint">
+          {hint}
+        </span>
       ) : null}
     </div>
   );

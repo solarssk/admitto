@@ -19,11 +19,12 @@ import {
   renderLoginForm,
   LOGIN_ERROR_CODE,
 } from "../login-page.js";
-import { resolveSafeRedirectPath } from "./safe-redirect.js";
+import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { loadLoginSsoProviders } from "./login-sso.js";
 
-function mfaPathWithNext(path: string, next: string): string {
+function mfaPathWithNext(path: string, next?: string): string {
+  if (!next) return path;
   return `${path}?next=${encodeURIComponent(next)}`;
 }
 
@@ -38,7 +39,7 @@ function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Respon
 
 /** GET /login — operator sign-in form (HTML). */
 export async function handleGetLogin(c: Context, db: PrismaClient): Promise<Response> {
-  const next = resolveSafeRedirectPath(c.req.query("next"));
+  const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
   const errorParam = c.req.query("error") ?? undefined;
   const sso = await loadLoginSsoProviders(db);
   return htmlResponse(c, renderLoginForm(errorParam, next, sso));
@@ -67,7 +68,8 @@ export async function handlePostLogin(
   const email = form["email"]?.trim() ?? "";
   const password = form["password"] ?? "";
   const deviceLabel = form["device_label"]?.trim();
-  const next = resolveSafeRedirectPath(form["next"] ?? c.req.query("next"));
+  const rawNext = form["next"] ?? c.req.query("next");
+  const next = resolveOptionalSafeRedirectPath(rawNext);
   const sso = await loadLoginSsoProviders(db);
 
   if (!email || !password) {

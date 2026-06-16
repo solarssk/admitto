@@ -15,6 +15,7 @@ export interface AuthContextValue {
   user: AuthUser;
   assignments: RoleAssignment[];
   loading: boolean;
+  authError: string | null;
   refresh: () => Promise<void>;
 }
 
@@ -24,8 +25,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [assignments, setAssignments] = useState<RoleAssignment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
+    setAuthError(null);
     try {
       const me = await fetchMe();
       setUser(me.user);
@@ -42,7 +46,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.location.assign(`/login?next=${next}`);
         return;
       }
-      throw err;
+      setAuthError(err instanceof Error ? err.message : "Failed to load session");
+      setUser(null);
+      setAssignments([]);
     } finally {
       setLoading(false);
     }
@@ -54,10 +60,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => {
     if (!user) return null;
-    return { user, assignments, loading, refresh };
-  }, [user, assignments, loading, refresh]);
+    return { user, assignments, loading, authError, refresh };
+  }, [user, assignments, loading, authError, refresh]);
 
-  if (loading || !value) {
+  if (loading) {
+    return (
+      <div className="shell-loading" style={{ padding: "2rem", textAlign: "center" }}>
+        Loading…
+      </div>
+    );
+  }
+
+  if (authError) {
+    return (
+      <div className="shell-loading" style={{ padding: "2rem", textAlign: "center" }}>
+        <p role="alert">{authError}</p>
+        <button type="button" onClick={() => void refresh()}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!value) {
     return (
       <div className="shell-loading" style={{ padding: "2rem", textAlign: "center" }}>
         Loading…

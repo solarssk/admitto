@@ -31,6 +31,8 @@ function EventLayout() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
+    setEvent(null);
+    setError(false);
     let cancelled = false;
     (async () => {
       try {

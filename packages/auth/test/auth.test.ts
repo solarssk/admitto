@@ -266,6 +266,7 @@ describe("authorization", () => {
 
   it("listAdminEvents — scoped by org", async () => {
     const adminEvents = await listAdminEvents(prisma, USER_ADMIN_A);
+    expect(adminEvents.length).toBeGreaterThan(0);
     expect(adminEvents.every((e) => e.id === EVENT_A)).toBe(true);
     expect(await listAdminEvents(prisma, USER_OP_A)).toEqual([]);
   });

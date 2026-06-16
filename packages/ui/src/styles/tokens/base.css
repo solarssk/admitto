@@ -14,7 +14,7 @@ body {
   color: var(--text-primary);
   background: var(--surface-page);
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  text-rendering: optimizelegibility;
 }
 
 h1, h2, h3, h4 {
