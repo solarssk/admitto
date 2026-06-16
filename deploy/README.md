@@ -159,20 +159,20 @@ Public attendee paths (`/t/*`, `/q/*`) must stay bypassed at Cloudflare.
 
 ## PostgreSQL backups (ADR 0012)
 
-Manual `pg_dump` before/after key operations. Examples from the `deploy/` directory:
+Manual `pg_dump` before/after key operations. Run from the `deploy/` directory. Postgres credentials come from the **db container env** (compose `.env`), not your host shell — use `sh -c` so `$POSTGRES_USER` / `$POSTGRES_DB` expand inside the container:
 
 ```bash
 # Pre-import
-docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup-pre-import.sql
+docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup-pre-import.sql
 
 # Post-import
-docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup-post-import.sql
+docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup-post-import.sql
 
 # Post-send (after mail batch)
-docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup-post-send.sql
+docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup-post-send.sql
 
 # Post-event
-docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup-post-event.sql
+docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup-post-event.sql
 ```
 
 Test a restore on a non-production database before the first large event.
