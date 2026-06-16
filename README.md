@@ -9,7 +9,8 @@ and check-in scanning. See [SECURITY.md](SECURITY.md) before deploying with real
 **This repository contains only generic code and synthetic data (`@example.com`).
 No secrets, no real personal data are ever committed here.**
 
-Current milestone history is tracked in [CHANGELOG.md](CHANGELOG.md).
+**Release version:** git tags + [CHANGELOG.md](CHANGELOG.md) + root `package.json` (see [VERSIONING.md](VERSIONING.md)).
+Workspace packages stay at `0.0.1` — only the product version is bumped per release.
 
 ## Prerequisites
 
@@ -37,12 +38,27 @@ npm run db:test-setup
 npm test
 ```
 
+## Production deployment
+
+Self-hosted **Docker Compose** only (not bare metal, not Kubernetes). See [deploy/README.md](deploy/README.md).
+
+Local dev database stack: [infra/README.md](infra/README.md).
+
 ## Packages
 
 | Package | Description |
-|---|---|
-| [`packages/mailer`](packages/mailer/README.md) | Email sending — one interface, three transports (Graph, SMTP, Power Automate) |
-| [`packages/db`](packages/db/README.md) | Database layer — Prisma schema + client (PostgreSQL) |
+|---------|-------------|
+| [`apps/web`](apps/web/README.md) | HTTP server — Hono routes, HTML, rate limits |
+| [`packages/auth`](packages/auth/README.md) | Sessions, MFA, OIDC, Cloudflare Access, RBAC |
+| [`packages/crypto`](packages/crypto/README.md) | AES-256-GCM at-rest encryption (`ENCRYPTION_KEY`) |
+| [`packages/db`](packages/db/README.md) | Prisma schema + client (PostgreSQL) |
+| [`packages/import`](packages/import/README.md) | CSV attendee import (Mode A/B) |
+| [`packages/mail-delivery`](packages/mail-delivery/README.md) | Ticket email orchestration + `EmailDelivery` |
+| [`packages/mail-templates`](packages/mail-templates/README.md) | MJML/HTML templates + placeholder whitelist |
+| [`packages/mailer`](packages/mailer/README.md) | Mail transports (Graph, SMTP, Power Automate) |
+| [`packages/mailer-config`](packages/mailer-config/README.md) | Per-scope mail config resolver |
+| [`packages/shared`](packages/shared/README.md) | Tiny shared helpers (CSV parsing) |
+| [`packages/tickets`](packages/tickets/README.md) | Tokens, QR, issuance, check-in domain |
 
 ## Security & data
 

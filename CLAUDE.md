@@ -8,7 +8,10 @@ Milestones follow semver logic:
 * v1.0 — first stable MVP: event-ready, tested, handed to operator
 * v1.x+ — post-event features
 
-Active milestone: v0.3.2 (2FA + OIDC linking, after auth core v0.3.1)
+**Product version** (what we tag and ship): `CHANGELOG.md` + git tag `v0.x.y` + root `package.json` `"version"`. Workspace packages stay at `0.0.1` — see [VERSIONING.md](VERSIONING.md).
+
+**Active milestone:** v0.3.6 — production Docker deployment (Dockerfile, `deploy/` compose, reverse proxy; ADR 0018).
+
 Repo: https://github.com/solarssk/admitto
 
 ## Pull Requests
