@@ -8,7 +8,6 @@ import {
   logout,
   validatePartialSession,
   revokeTrustedDeviceByToken,
-  canManageInstance,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
@@ -18,13 +17,14 @@ import type { RateLimitStore } from "../rate-limit/types.js";
 import {
   getLoginPageSecurityHeaders,
   renderLoginForm,
-  renderOperatorLanding,
   LOGIN_ERROR_CODE,
 } from "../login-page.js";
-import { resolveSafeRedirectPath } from "./safe-redirect.js";
+import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
+import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { loadLoginSsoProviders } from "./login-sso.js";
 
-function mfaPathWithNext(path: string, next: string): string {
+function mfaPathWithNext(path: string, next?: string): string {
+  if (!next) return path;
   return `${path}?next=${encodeURIComponent(next)}`;
 }
 
@@ -39,7 +39,7 @@ function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Respon
 
 /** GET /login — operator sign-in form (HTML). */
 export async function handleGetLogin(c: Context, db: PrismaClient): Promise<Response> {
-  const next = resolveSafeRedirectPath(c.req.query("next"));
+  const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
   const errorParam = c.req.query("error") ?? undefined;
   const sso = await loadLoginSsoProviders(db);
   return htmlResponse(c, renderLoginForm(errorParam, next, sso));
@@ -68,7 +68,8 @@ export async function handlePostLogin(
   const email = form["email"]?.trim() ?? "";
   const password = form["password"] ?? "";
   const deviceLabel = form["device_label"]?.trim();
-  const next = resolveSafeRedirectPath(form["next"] ?? c.req.query("next"));
+  const rawNext = form["next"] ?? c.req.query("next");
+  const next = resolveOptionalSafeRedirectPath(rawNext);
   const sso = await loadLoginSsoProviders(db);
 
   if (!email || !password) {
@@ -103,56 +104,8 @@ export async function handlePostLogin(
   if (result.next === LOGIN_NEXT.ENROLLMENT_REQUIRED) {
     return c.redirect(mfaPathWithNext("/mfa/enroll", next), 302);
   }
-  return c.redirect(next, 302);
-}
-
-/** GET /operator — temporary landing after login (requires session). */
-export async function handleGetOperator(c: Context, db: PrismaClient): Promise<Response> {
-  const auth = c.get("auth");
-  const user = await db.user.findUnique({
-    where: { id: auth.userId },
-    select: { email: true },
-  });
-  if (!user) {
-    return c.redirect("/login", 302);
-  }
-
-  const assignments = await db.roleAssignment.findMany({
-    where: { user_id: auth.userId },
-    select: { role: true, scope_type: true, scope_id: true },
-  });
-
-  const eventIds = new Set<string>();
-  const allEvents = await canManageInstance(db, auth.userId);
-
-  for (const a of assignments) {
-    if (allEvents) break;
-    if (a.role === "admin" && a.scope_type === "organization" && a.scope_id) {
-      const orgEvents = await db.event.findMany({
-        where: { organization_id: a.scope_id },
-        select: { id: true },
-      });
-      for (const e of orgEvents) eventIds.add(e.id);
-    }
-    if (a.scope_type === "event" && a.scope_id) {
-      eventIds.add(a.scope_id);
-    }
-  }
-
-  const events = allEvents
-    ? await db.event.findMany({
-        select: { title: true, slug: true },
-        orderBy: { date: "asc" },
-      })
-    : eventIds.size > 0
-      ? await db.event.findMany({
-          where: { id: { in: [...eventIds] } },
-          select: { title: true, slug: true },
-          orderBy: { date: "asc" },
-        })
-      : [];
-
-  return htmlResponse(c, renderOperatorLanding(user.email, events));
+  const landing = await resolvePostLoginRedirectForUser(db, result.userId, form["next"] ?? c.req.query("next"));
+  return c.redirect(landing, 302);
 }
 
 /** POST /logout — revokes session, trusted device, and redirects to `/login`. */

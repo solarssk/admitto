@@ -1,0 +1,143 @@
+/* ============================================================
+   Admitto — component styles
+   Class-based styling for the React primitives so hover / focus /
+   active / disabled states work. Classes are prefixed `at-` to
+   avoid collisions with Tabler's own classes when co-loaded.
+   ============================================================ */
+
+/* ---------------- Button ---------------- */
+.at-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  font-family: var(--font-sans); font-size: var(--fs-body); font-weight: var(--fw-medium);
+  line-height: 1; white-space: nowrap; cursor: pointer; user-select: none;
+  height: var(--control-h); padding: 0 var(--pad-control-x);
+  border-radius: var(--radius); border: var(--border-width) solid transparent;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.at-btn:focus-visible { outline: none; box-shadow: var(--ring); }
+.at-btn:disabled, .at-btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+.at-btn .at-btn__icon { font-size: 1.05em; line-height: 0; }
+
+.at-btn--sm { height: var(--control-h-sm); font-size: var(--fs-sm); padding: 0 var(--space-2); }
+.at-btn--lg { height: var(--control-h-lg); font-size: var(--fs-h3); padding: 0 var(--space-5); }
+.at-btn--block { display: flex; width: 100%; }
+
+.at-btn--primary { background: var(--primary); color: var(--text-on-primary); }
+.at-btn--primary:hover:not(:disabled) { background: var(--primary-hover); }
+.at-btn--primary:active:not(:disabled) { background: var(--primary-active); }
+
+.at-btn--secondary { background: var(--surface-card); color: var(--text-secondary); border-color: var(--border-strong); }
+.at-btn--secondary:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
+.at-btn--secondary:active:not(:disabled) { background: var(--at-gray-100); }
+
+.at-btn--ghost { background: transparent; color: var(--text-secondary); }
+.at-btn--ghost:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
+
+.at-btn--danger { background: var(--status-error); color: #fff; }
+.at-btn--danger:hover:not(:disabled) { background: #c02d2d; }
+
+.at-btn--success { background: var(--status-ok); color: #fff; }
+.at-btn--success:hover:not(:disabled) { background: #279a39; }
+
+/* ---------------- Icon button ---------------- */
+.at-iconbtn {
+  display: inline-grid; place-items: center; cursor: pointer;
+  width: var(--control-h); height: var(--control-h);
+  border-radius: var(--radius); border: var(--border-width) solid transparent;
+  background: transparent; color: var(--text-muted); font-size: 1.1rem;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.at-iconbtn:hover { background: var(--surface-hover); color: var(--text-primary); }
+.at-iconbtn:focus-visible { outline: none; box-shadow: var(--ring); }
+.at-iconbtn--sm { width: var(--control-h-sm); height: var(--control-h-sm); font-size: 1rem; }
+
+/* ---------------- Input / Select / Textarea ---------------- */
+.at-field { display: flex; flex-direction: column; gap: var(--space-1); }
+.at-label { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-secondary); }
+.at-hint { font-size: var(--fs-xs); color: var(--text-muted); }
+.at-hint--error { color: var(--status-error); }
+
+.at-input, .at-select, .at-textarea {
+  font-family: var(--font-sans); font-size: var(--fs-body); color: var(--text-primary);
+  height: var(--control-h); padding: 0 var(--pad-control-x);
+  background: var(--surface-card); border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius); width: 100%;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.at-textarea { height: auto; padding: var(--space-2) var(--pad-control-x); line-height: var(--lh-normal); resize: vertical; font-family: var(--font-mono); font-size: var(--fs-mono); }
+.at-input::placeholder, .at-textarea::placeholder { color: var(--text-disabled); }
+.at-input:hover, .at-select:hover, .at-textarea:hover { border-color: var(--at-gray-400); }
+.at-input:focus, .at-select:focus, .at-textarea:focus { outline: none; border-color: var(--border-focus); box-shadow: var(--ring); }
+.at-input:disabled, .at-select:disabled, .at-textarea:disabled { background: var(--at-gray-100); color: var(--text-disabled); cursor: not-allowed; }
+.at-input--invalid, .at-textarea--invalid { border-color: var(--status-error); }
+.at-input--invalid:focus { box-shadow: 0 0 0 var(--ring-width) var(--status-error-tint); }
+.at-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.6rem center; padding-right: 2rem; }
+
+.at-inputgroup { display: flex; align-items: center; position: relative; }
+.at-inputgroup .at-inputgroup__icon { position: absolute; left: 0.65rem; color: var(--text-muted); font-size: 1.05rem; pointer-events: none; }
+.at-inputgroup .at-input { padding-left: 2.1rem; }
+
+/* ---------------- Checkbox & Switch ---------------- */
+.at-check { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; font-size: var(--fs-body); color: var(--text-secondary); }
+.at-check input { position: absolute; opacity: 0; width: 0; height: 0; }
+.at-check__box { width: 1rem; height: 1rem; border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-card); display: grid; place-items: center; transition: background var(--dur-fast), border-color var(--dur-fast); flex: none; }
+.at-check__box svg { width: 12px; height: 12px; stroke: #fff; stroke-width: 3.5; opacity: 0; }
+.at-check input:checked + .at-check__box { background: var(--primary); border-color: var(--primary); }
+.at-check input:checked + .at-check__box svg { opacity: 1; }
+.at-check input:focus-visible + .at-check__box { box-shadow: var(--ring); }
+
+.at-switch { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; }
+.at-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.at-switch__track { width: 2.25rem; height: 1.25rem; border-radius: var(--radius-pill); background: var(--at-gray-300); position: relative; transition: background var(--dur) var(--ease-out); flex: none; }
+.at-switch__thumb { position: absolute; top: 2px; left: 2px; width: calc(1.25rem - 4px); height: calc(1.25rem - 4px); border-radius: 50%; background: #fff; box-shadow: var(--shadow-sm); transition: transform var(--dur) var(--ease-out); }
+.at-switch input:checked + .at-switch__track { background: var(--primary); }
+.at-switch input:checked + .at-switch__track .at-switch__thumb { transform: translateX(1rem); }
+.at-switch input:focus-visible + .at-switch__track { box-shadow: var(--ring); }
+
+/* ---------------- Badge / Tag ---------------- */
+.at-badge {
+  display: inline-flex; align-items: center; gap: 0.35em;
+  font-size: var(--fs-xs); font-weight: var(--fw-medium); line-height: 1;
+  padding: 0.3em 0.6em; border-radius: var(--radius-pill); white-space: nowrap;
+}
+.at-badge__dot { width: 0.45em; height: 0.45em; border-radius: 50%; background: currentColor; }
+.at-badge--neutral { background: var(--at-gray-100); color: var(--text-secondary); }
+.at-badge--primary { background: var(--primary-tint); color: var(--primary-active); }
+.at-badge--ok { background: var(--status-ok-tint); color: #1f7a2e; }
+.at-badge--warn { background: var(--status-warn-tint); color: #9a6400; }
+.at-badge--error { background: var(--status-error-tint); color: #b32525; }
+.at-badge--info { background: var(--status-info-tint); color: #2b6cb0; }
+.at-badge--confirmed { background: #e6f6f1; color: #097a59; }
+.at-badge--vip { background: var(--status-vip-tint); color: #8a31a0; }
+.at-badge--outline { background: transparent; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text-secondary); }
+
+/* ---------------- Avatar ---------------- */
+.at-avatar {
+  display: inline-grid; place-items: center; flex: none;
+  width: 2.25rem; height: 2.25rem; border-radius: var(--radius-pill);
+  background: var(--primary-tint); color: var(--primary-active);
+  font-size: var(--fs-sm); font-weight: var(--fw-semibold); letter-spacing: 0.02em;
+  overflow: hidden;
+}
+.at-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.at-avatar--sm { width: 1.75rem; height: 1.75rem; font-size: var(--fs-xs); }
+.at-avatar--lg { width: 3rem; height: 3rem; font-size: var(--fs-h3); }
+
+/* ---------------- Card ---------------- */
+.at-card { background: var(--surface-card); border: var(--border-width) solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); }
+.at-card__header { padding: var(--space-4) var(--pad-card); border-bottom: var(--border-width) solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.at-card__title { font-size: var(--fs-h3); font-weight: var(--fw-semibold); color: var(--text-primary); }
+.at-card__body { padding: var(--pad-card); }
+.at-card__footer { padding: var(--space-3) var(--pad-card); border-top: var(--border-width) solid var(--border); background: var(--surface-sunken); border-radius: 0 0 var(--radius) var(--radius); }
+
+/* ---------------- Stat ---------------- */
+.at-stat { display: flex; flex-direction: column; gap: var(--space-1); }
+.at-stat__label { font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--text-muted); }
+.at-stat__value { font-size: var(--fs-display); font-weight: var(--fw-bold); color: var(--text-primary); line-height: 1; letter-spacing: var(--ls-tight); }
+.at-stat__sub { font-size: var(--fs-sm); color: var(--text-muted); }
+
+/* ---------------- Tabs ---------------- */
+.at-tabs { display: flex; gap: var(--space-1); border-bottom: var(--border-width) solid var(--border); }
+.at-tab { appearance: none; background: none; border: 0; cursor: pointer; font-family: var(--font-sans); font-size: var(--fs-body); font-weight: var(--fw-medium); color: var(--text-muted); padding: var(--space-3) var(--space-3); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color var(--dur-fast), border-color var(--dur-fast); }
+.at-tab:hover { color: var(--text-primary); }
+.at-tab--active { color: var(--primary); border-bottom-color: var(--primary); }

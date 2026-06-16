@@ -1,0 +1,43 @@
+/* ============================================================
+   Admitto — Spacing, radius, sizing tokens
+   Bootstrap/Tabler-derived 4px base grid. Dense admin spacing.
+   ============================================================ */
+
+:root {
+  /* Spacing scale (4px base) */
+  --space-0:   0;
+  --space-1:   0.25rem;  /* 4  */
+  --space-2:   0.5rem;   /* 8  */
+  --space-3:   0.75rem;  /* 12 */
+  --space-4:   1rem;     /* 16 */
+  --space-5:   1.5rem;   /* 24 */
+  --space-6:   2rem;     /* 32 */
+  --space-7:   3rem;     /* 48 */
+  --space-8:   4rem;     /* 64 */
+
+  /* Component padding defaults */
+  --pad-card:      var(--space-5);   /* 24 — Tabler .card-body */
+  --pad-cell:      var(--space-3);   /* 12 — table cell */
+  --pad-control-x: 0.75rem;          /* inputs / buttons horizontal */
+  --pad-control-y: 0.4375rem;        /* ~7px — control vertical */
+
+  /* Radius (Tabler default 4px, dense) */
+  --radius-sm:   3px;
+  --radius:      4px;    /* default — buttons, inputs, cards */
+  --radius-md:   6px;
+  --radius-lg:   8px;    /* large surfaces, modals */
+  --radius-pill: 999px;  /* badges, avatars, status chips */
+
+  /* Control heights */
+  --control-h-sm: 1.75rem;   /* 28 */
+  --control-h:    2.25rem;   /* 36 — default input/button */
+  --control-h-lg: 2.75rem;   /* 44 — touch target (check-in) */
+
+  /* Layout */
+  --sidebar-w:    15rem;     /* 240 */
+  --topbar-h:     3.5rem;    /* 56  */
+  --container-max: 1320px;
+
+  /* Borders */
+  --border-width: 1px;
+}

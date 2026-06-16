@@ -1,3 +1,5 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import {
@@ -25,6 +27,7 @@ const NO_ROLE_ID = "cf-norole";
 const SUPER_EMAIL = "cf-super@example.com";
 const NO_ROLE_EMAIL = "cf-norole@example.com";
 const sameOrigin = { Origin: "http://localhost" };
+const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -122,6 +125,7 @@ beforeAll(async () => {
     prisma,
     skipCheckinBootValidation: true,
     rateLimitStore: createRateLimitStore(),
+    adminDistRoot,
   });
 });
 
@@ -168,6 +172,26 @@ describe("CF Access admin collision point", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Identity providers");
+  });
+
+  it("CF JWT without session bootstraps admin SPA and /api/admin/* APIs", async () => {
+    const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
+    const headers = { [CF_ACCESS_HEADER]: token };
+
+    const spa = await app.request("/admin", { headers });
+    expect(spa.status).toBe(200);
+    expect(await spa.text()).toContain("staff-spa-fixture");
+
+    const me = await app.request("/api/admin/me", { headers });
+    expect(me.status).toBe(200);
+    const meBody = (await me.json()) as { user: { email: string } };
+    expect(meBody.user.email).toBe(SUPER_EMAIL);
+
+    const theme = await app.request("/api/admin/theme", { headers });
+    expect(theme.status).toBe(200);
+
+    const legacyMe = await app.request("/api/auth/me", { headers });
+    expect(legacyMe.status).toBe(401);
   });
 
   it("valid CF JWT + no role returns 403 message", async () => {

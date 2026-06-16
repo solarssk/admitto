@@ -61,6 +61,154 @@ export async function canManageInstance(
   return hasScope(prisma, userId, "superadmin", "instance");
 }
 
+/** Admin panel entry (/admin picker) — no eventId required. */
+export async function canAccessAdminPanel(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<boolean> {
+  if (await hasScope(prisma, userId, "superadmin", "instance")) return true;
+  const adminOrg = await prisma.roleAssignment.findFirst({
+    where: {
+      user_id: userId,
+      role: "admin",
+      scope_type: "organization",
+      scope_id: { not: null },
+    },
+    select: { id: true },
+  });
+  return adminOrg != null;
+}
+
+/** Check-in surface entry (/operator) — user can check in on at least one event. */
+export async function canAccessCheckInPanel(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<boolean> {
+  if (await hasScope(prisma, userId, "superadmin", "instance")) {
+    const event = await prisma.event.findFirst({ select: { id: true } });
+    return event != null;
+  }
+
+  const assignments = await prisma.roleAssignment.findMany({
+    where: { user_id: userId },
+    select: { role: true, scope_type: true, scope_id: true },
+  });
+
+  const orgIds = new Set<string>();
+  const eventIds = new Set<string>();
+
+  for (const a of assignments) {
+    if (a.role === "admin" && a.scope_type === "organization" && a.scope_id) {
+      orgIds.add(a.scope_id);
+    }
+    if (a.scope_type === "event" && a.scope_id && a.role === "operator") {
+      eventIds.add(a.scope_id);
+    }
+  }
+
+  if (orgIds.size === 0 && eventIds.size === 0) return false;
+
+  const or: Prisma.EventWhereInput[] = [];
+  if (orgIds.size > 0) {
+    or.push({ organization_id: { in: [...orgIds] } });
+  }
+  if (eventIds.size > 0) {
+    or.push({ id: { in: [...eventIds] } });
+  }
+
+  const event = await prisma.event.findFirst({
+    where: { OR: or },
+    select: { id: true },
+  });
+  return event != null;
+}
+
+export interface EventSummary {
+  id: string;
+  title: string;
+  slug: string;
+  date: Date;
+  location: string | null;
+  organization_id: string;
+}
+
+const eventSelect = {
+  id: true,
+  title: true,
+  slug: true,
+  date: true,
+  location: true,
+  organization_id: true,
+} as const;
+
+/** Events where user has check-in capability (matches canPerformCheckIn). */
+export async function listCheckInEvents(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<EventSummary[]> {
+  if (await hasScope(prisma, userId, "superadmin", "instance")) {
+    return prisma.event.findMany({ select: eventSelect, orderBy: { date: "asc" } });
+  }
+
+  const assignments = await prisma.roleAssignment.findMany({
+    where: { user_id: userId },
+    select: { role: true, scope_type: true, scope_id: true },
+  });
+
+  const orgIds = new Set<string>();
+  const eventIds = new Set<string>();
+
+  for (const a of assignments) {
+    if (a.role === "admin" && a.scope_type === "organization" && a.scope_id) {
+      orgIds.add(a.scope_id);
+    }
+    if (a.scope_type === "event" && a.scope_id) {
+      if (a.role === "operator") eventIds.add(a.scope_id);
+    }
+  }
+
+  if (orgIds.size === 0 && eventIds.size === 0) return [];
+
+  const or: Prisma.EventWhereInput[] = [];
+  if (orgIds.size > 0) {
+    or.push({ organization_id: { in: [...orgIds] } });
+  }
+  if (eventIds.size > 0) {
+    or.push({ id: { in: [...eventIds] } });
+  }
+
+  return prisma.event.findMany({
+    where: { OR: or },
+    select: eventSelect,
+    orderBy: { date: "asc" },
+  });
+}
+
+/** Events visible on admin picker (superadmin: all; org admin: org events). */
+export async function listAdminEvents(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<EventSummary[]> {
+  if (!(await canAccessAdminPanel(prisma, userId))) return [];
+
+  if (await hasScope(prisma, userId, "superadmin", "instance")) {
+    return prisma.event.findMany({ select: eventSelect, orderBy: { date: "asc" } });
+  }
+
+  const orgAssignments = await prisma.roleAssignment.findMany({
+    where: { user_id: userId, role: "admin", scope_type: "organization" },
+    select: { scope_id: true },
+  });
+  const orgIds = orgAssignments.map((a) => a.scope_id).filter((id): id is string => !!id);
+  if (orgIds.length === 0) return [];
+
+  return prisma.event.findMany({
+    where: { organization_id: { in: orgIds } },
+    select: eventSelect,
+    orderBy: { date: "asc" },
+  });
+}
+
 /** Dispatch a capability check; `eventId` required for event-scoped capabilities. */
 export async function checkCapability(
   prisma: PrismaClient | Prisma.TransactionClient,

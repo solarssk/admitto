@@ -1,3 +1,5 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword, createSession } from "@admitto/auth";
@@ -6,6 +8,7 @@ import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
 const ORG_ID = "org-login-html";
 const EVENT_ID = "evt-login-html";
+const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const FIXTURE_EMAILS = ["operator@example.com", "device@example.com"] as const;
 
 let prisma: PrismaClient;
@@ -60,6 +63,7 @@ beforeAll(async () => {
     baseUrl: "https://tickets.example.com",
     rateLimitStore: createRateLimitStore(),
     skipCheckinBootValidation: true,
+    adminDistRoot,
   });
 });
 
@@ -273,16 +277,15 @@ describe("GET /operator", () => {
     expect(res.headers.get("location")).toBe("/login");
   });
 
-  it("shows signed-in landing with events", async () => {
+  it("serves operator SPA shell with session", async () => {
     const { rawToken } = await createSession(prisma, { userId: operatorId });
     const res = await app.request("/operator", {
       headers: { Cookie: `admitto_session=${rawToken}` },
     });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("Signed in");
-    expect(html).toContain("operator@example.com");
-    expect(html).toContain("Login Test Event");
+    expect(html).toContain("staff-spa-fixture");
+    expect(html).toContain('id="root"');
   });
 });
 

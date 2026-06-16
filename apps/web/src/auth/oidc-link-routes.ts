@@ -6,7 +6,7 @@ import {
   userHasConfirmedTotp,
   verifyOidcLinkStepUp,
 } from "@admitto/auth";
-import { resolveSafeRedirectPath } from "./safe-redirect.js";
+import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { beginOidcAuthorizationRedirect } from "./oidc-flow.js";
 import { getOidcLinkPageSecurityHeaders, renderOidcLinkForm } from "./oidc-link-page.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
@@ -59,7 +59,7 @@ function renderLinkForm(
 export async function handleGetOidcLink(c: Context, db: PrismaClient): Promise<Response> {
   const providerId = c.req.param("providerId") ?? "";
   const auth = c.get("auth");
-  const next = resolveSafeRedirectPath(c.req.query("next"));
+  const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
 
   const provider = await findOidcProviderById(db, providerId);
   if (!provider || !provider.enabled) {
@@ -88,7 +88,7 @@ export async function handlePostOidcLink(
   const form = await parseForm(c);
   const password = form["password"] ?? "";
   const code = form["code"]?.trim();
-  const next = resolveSafeRedirectPath(form["next"] ?? c.req.query("next"));
+  const next = resolveOptionalSafeRedirectPath(form["next"] ?? c.req.query("next"));
 
   const provider = await findOidcProviderById(db, providerId);
   if (!provider || !provider.enabled) {

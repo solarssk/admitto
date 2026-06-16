@@ -19,6 +19,7 @@
     "@admitto/db": "*",
     "@admitto/mail-delivery": "*",
     "@admitto/tickets": "*",
+    "@admitto/ui": "*",
     "@hono/node-server": "^2.0.4",
     "@prisma/client": "^5.17.0",
     "hono": "^4.12.25",

@@ -42,11 +42,15 @@ COPY packages/mailer/package.json packages/mailer/
 COPY packages/mailer-config/package.json packages/mailer-config/
 COPY packages/mail-templates/package.json packages/mail-templates/
 COPY packages/mail-delivery/package.json packages/mail-delivery/
+COPY packages/ui/package.json packages/ui/
+COPY apps/admin/package.json apps/admin/
 COPY apps/web/package.json apps/web/
 
 COPY --from=builder /app/node_modules ./node_modules
 
 COPY --from=builder /app/apps/web/dist ./apps/web/dist
+COPY --from=builder /app/apps/admin/dist ./apps/admin/dist
+COPY --from=builder /app/packages/ui/dist ./packages/ui/dist
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/crypto/dist ./packages/crypto/dist
 COPY --from=builder /app/packages/db/dist ./packages/db/dist
