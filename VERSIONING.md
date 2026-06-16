@@ -26,8 +26,36 @@ Do not bump per-package versions unless we start publishing libraries separately
 
 1. Move `CHANGELOG.md` items from `Unreleased` → `## v0.x.y — date`
 2. Set root `package.json` `"version"` to `0.x.y` (no `v` prefix)
-3. Commit, tag `v0.x.y`, push tag
-4. Close the matching GitHub milestone
+3. Commit on `main`, then create a **signed** annotated tag and push it:
+   ```bash
+   ./scripts/release-tag.sh 0.x.y -m "v0.x.y — one-line summary" --push
+   ```
+   (`git tag -s` — never lightweight or unsigned `git tag -a`.)
+4. Create the GitHub Release: `gh release create v0.x.y --title "…" --notes-file …`
+5. Close the matching GitHub milestone
+
+### Tag signing (one-time maintainer setup)
+
+Tags must be signed so GitHub shows **Verified** on the tag (same trust model as signed commits).
+
+**SSH signing** (if commits already use `gpg.format ssh`):
+
+```bash
+git config gpg.format ssh
+git config user.signingkey ~/.ssh/id_ed25519.pub   # path to your *public* key
+```
+
+Upload that public key on GitHub → **Settings → SSH and GPG keys → New SSH key → Signing Key**.
+
+**GPG** alternative: `git config gpg.format openpgp`, set `user.signingkey` to your key id, upload the public GPG key to GitHub.
+
+Smoke test (optional):
+
+```bash
+git tag -s v0.0.0-signing-smoke -m test HEAD~1
+git cat-file tag v0.0.0-signing-smoke | grep -E -q 'BEGIN (SSH|PGP) SIGNATURE'
+git tag -d v0.0.0-signing-smoke
+```
 
 **Container image:** pushing git tag `v0.x.y` publishes `ghcr.io/solarssk/admitto:0.x.y` and the rolling minor tag `ghcr.io/solarssk/admitto:0.x` (see `deploy/README.md`).
 

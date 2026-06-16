@@ -12,6 +12,16 @@ first event-ready MVP.
 
 ## Unreleased
 
+## v0.3.7 — 2026-06-16
+
+Release hygiene — signed git tags and documented cut process.
+
+### Release tooling
+
+- `scripts/release-tag.sh` — signed annotated tags (`git tag -s`) with pre-push checks
+- `VERSIONING.md` — one-time SSH/GPG signing setup; release steps include GitHub Release
+- Re-signed tags `v0.3.3`–`v0.3.6` on GitHub (`verified: true`); future tags use the script
+
 ## v0.3.6 — 2026-06-16
 
 Production Docker deployment (ADR 0018) — self-hosted compose stack for the first on-infra runs. Git tag `v0.3.6` released.
