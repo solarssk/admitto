@@ -17,7 +17,7 @@ import {
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { SESSION_COOKIE_NAME } from "@admitto/auth";
-import { resolveSafeRedirectPath } from "./safe-redirect.js";
+import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { setSessionCookie } from "./routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
@@ -42,7 +42,7 @@ export async function handleOidcStart(c: Context, db: PrismaClient, baseUrl: str
 
   if (c.req.query("link") === "1") {
     const rawNext = c.req.query("next");
-    const next = rawNext ? resolveSafeRedirectPath(rawNext) : undefined;
+    const next = resolveOptionalSafeRedirectPath(rawNext);
     const suffix = next ? `?next=${encodeURIComponent(next)}` : "";
     return c.redirect(`/account/oidc/${providerId}/link${suffix}`, 302);
   }
@@ -52,7 +52,7 @@ export async function handleOidcStart(c: Context, db: PrismaClient, baseUrl: str
     return oidcFailedRedirect(c);
   }
 
-  const next = resolveSafeRedirectPath(c.req.query("next"));
+  const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
   return beginOidcAuthorizationRedirect(c, db, baseUrl, providerId, { redirectNext: next });
 }
 

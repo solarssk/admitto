@@ -9,7 +9,6 @@ import {
   codeChallengeS256,
   generateOauthSecret,
 } from "@admitto/auth";
-import { resolveSafeRedirectPath } from "./safe-redirect.js";
 import { setOidcFlowCookie } from "./oidc-flow-cookie.js";
 
 export interface BeginOidcFlowOptions {

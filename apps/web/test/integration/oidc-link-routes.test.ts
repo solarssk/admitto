@@ -138,4 +138,14 @@ describe("oidc link step-up", () => {
     expect(location).toContain("/authorize");
     expect(location).toContain("state=");
   });
+
+  it("GET link without next omits hidden next field", async () => {
+    const cookie = await fullSessionCookie();
+    const res = await app.request(`/account/oidc/${PROVIDER_ID}/link`, {
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain('name="next"');
+  });
 });
