@@ -16,6 +16,8 @@ export interface MeResponse {
   user: AuthUser;
   assignments: RoleAssignment[];
   device_label?: string | null;
+  /** True when the request carries a valid Admitto session cookie (required for check-in scan API). */
+  session_active: boolean;
 }
 
 export interface EventDto {

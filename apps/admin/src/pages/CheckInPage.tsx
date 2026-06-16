@@ -43,6 +43,8 @@ export function CheckInPage() {
       const now = Date.now();
       const last = lastScanRef.current;
       if (last && last.value === scanned && now - last.at < CHECKIN_DUPLICATE_DEBOUNCE_MS) {
+        setBuffer("");
+        focusScan();
         return;
       }
       lastScanRef.current = { value: scanned, at: now };

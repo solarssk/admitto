@@ -163,7 +163,7 @@ export async function handleMe(c: Context, db: PrismaClient): Promise<Response> 
     device_label = session?.device_label ?? null;
   }
 
-  return c.json({ user, assignments, device_label }, 200);
+  return c.json({ user, assignments, device_label, session_active: !!auth.sessionId }, 200);
 }
 
 /** POST /api/auth/mfa/verify — complete MFA step (partial session). */

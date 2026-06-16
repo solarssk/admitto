@@ -8,6 +8,7 @@ import { OperatorShell } from "./layouts/OperatorShell.js";
 import { EventsPickerPage } from "./pages/EventsPickerPage.js";
 import { CheckInEntryPage } from "./pages/CheckInEntryPage.js";
 import { CheckInPage } from "./pages/CheckInPage.js";
+import { AdminCheckInRoute } from "./pages/AdminCheckInRoute.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
 import { ApiError, fetchAdminEvents } from "./api/client.js";
 import type { EventDto } from "./api/types.js";
@@ -78,7 +79,7 @@ export default function App() {
                   path={r.path}
                   element={
                     r.path === "checkin" ? (
-                      <CheckInPage />
+                      <AdminCheckInRoute />
                     ) : (
                       <PlaceholderPage title={r.title} />
                     )
