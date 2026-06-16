@@ -9,7 +9,7 @@ and check-in scanning. See [SECURITY.md](SECURITY.md) before deploying with real
 **This repository contains only generic code and synthetic data (`@example.com`).
 No secrets, no real personal data are ever committed here.**
 
-**Release version:** git tags + [CHANGELOG.md](CHANGELOG.md) + root `package.json` (see [VERSIONING.md](VERSIONING.md)).
+**Release version:** git tags and root `package.json` are the source of truth (see [VERSIONING.md](VERSIONING.md)). [CHANGELOG.md](CHANGELOG.md) is the human-readable release history, not the version number itself.
 Workspace packages stay at `0.0.1` — only the product version is bumped per release.
 
 ## Prerequisites

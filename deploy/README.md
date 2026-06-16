@@ -141,9 +141,19 @@ proxy_set_header X-Forwarded-Proto $scheme;
 
 Do **not** use `$proxy_add_x_forwarded_for` on the NPM vhost that faces the public internet. With `TRUST_PROXY=true`, Admitto reads the **first** `X-Forwarded-For` hop ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)); an appended chain would let clients pick the rate-limit bucket and pollute audit logs.
 
+Compose nginx trusts **only `127.0.0.1`** as the RealIP peer (NPM on the host → `127.0.0.1:8080`). If NPM runs in Docker and hits the host via the bridge gateway (often `172.17.0.1`), add that single address to `deploy/nginx/default.conf` — do not widen to whole RFC1918 ranges.
+
 (`$scheme` is `https` on the public NPM vhost; compose nginx forwards that value so `TRUST_PROXY` CSRF checks see HTTPS.)
 
-For the future admin SSE metrics path, add a custom location matching `*/api/admin/events/*/metrics/stream` with `proxy_buffering off` and a long read timeout.
+For the future admin SSE metrics path, add a custom location in NPM (or here in `default.conf`):
+
+```nginx
+location ~ ^/api/admin/events/[^/]+/metrics/stream$ {
+  proxy_buffering off;
+  proxy_read_timeout 3600s;
+  proxy_pass http://admitto_app;
+}
+```
 
 Set `TRUST_PROXY=true` in `deploy/.env` (already in `.env.example`).
 
