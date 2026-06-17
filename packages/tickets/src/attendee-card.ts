@@ -29,28 +29,56 @@ export async function lookupAttendees(
   const q = query.trim();
   if (!q) return [];
 
-  const rows = await prisma.attendee.findMany({
-    where: {
-      event_id: eventId,
-      OR: [
-        { name: { contains: q, mode: "insensitive" } },
-        { email: { contains: q, mode: "insensitive" } },
-        { company: { contains: q, mode: "insensitive" } },
-        { department: { contains: q, mode: "insensitive" } },
-      ],
-    },
-    take: LOOKUP_LIMIT,
-    orderBy: { name: "asc" },
-    select: {
-      id: true,
-      name: true,
-      ticket_type: true,
-      custom_data: true,
-      company: true,
-      department: true,
-      admitted_at: true,
-    },
-  });
+  const select = {
+    id: true,
+    name: true,
+    ticket_type: true,
+    custom_data: true,
+    company: true,
+    department: true,
+    admitted_at: true,
+  } as const;
+
+  const [columnRows, jsonMatches] = await Promise.all([
+    prisma.attendee.findMany({
+      where: {
+        event_id: eventId,
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { email: { contains: q, mode: "insensitive" } },
+          { company: { contains: q, mode: "insensitive" } },
+          { department: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      take: LOOKUP_LIMIT,
+      orderBy: { name: "asc" },
+      select,
+    }),
+    prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "Attendee"
+      WHERE event_id = ${eventId}
+        AND (
+          (custom_data->>'company') ILIKE ${`%${q}%`}
+          OR (custom_data->>'department') ILIKE ${`%${q}%`}
+        )
+      ORDER BY name ASC
+      LIMIT ${LOOKUP_LIMIT}
+    `,
+  ]);
+
+  const seen = new Set(columnRows.map((r) => r.id));
+  const extraIds = jsonMatches.map((r) => r.id).filter((id) => !seen.has(id));
+  const extraRows =
+    extraIds.length > 0
+      ? await prisma.attendee.findMany({
+          where: { id: { in: extraIds }, event_id: eventId },
+          select,
+        })
+      : [];
+
+  const rows = [...columnRows, ...extraRows]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, LOOKUP_LIMIT);
 
   return rows.map((row) => {
     const { company, department } = companyFromAttendee(row);

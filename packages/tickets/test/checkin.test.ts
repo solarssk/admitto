@@ -14,6 +14,7 @@ const DB_ROOT = path.resolve(__dirname, "../../db");
 let prisma: PrismaClient;
 const EVENT_ID = "test-event-checkin-001";
 const OTHER_EVENT_ID = "test-event-checkin-other";
+const PREVIEW_EVENT_ID = "test-event-preview-audit";
 
 let tokenA: string;
 let attendeeAId: string;
@@ -88,15 +89,16 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.attendeeActionLog.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
-  await prisma.attendeeNote.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
+  const eventIds = [EVENT_ID, OTHER_EVENT_ID, PREVIEW_EVENT_ID];
+  await prisma.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
+  await prisma.attendeeNote.deleteMany({ where: { event_id: { in: eventIds } } });
   await prisma.attendeeItemState.deleteMany({
-    where: { event_item: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } },
+    where: { event_item: { event_id: { in: eventIds } } },
   });
-  await prisma.checkIn.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
-  await prisma.eventItem.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
-  await prisma.attendee.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
-  await prisma.event.deleteMany({ where: { id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
+  await prisma.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
+  await prisma.eventItem.deleteMany({ where: { event_id: { in: eventIds } } });
+  await prisma.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
+  await prisma.event.deleteMany({ where: { id: { in: eventIds } } });
   await prisma.$disconnect();
 });
 
@@ -200,7 +202,7 @@ describe("checkInScan — concurrency (race condition)", () => {
 
 describe("checkInScan — PREVIEW audit", () => {
   it("writes scan_preview action log when require_confirm_on_scan", async () => {
-    const previewEventId = "test-event-preview-audit";
+    const previewEventId = PREVIEW_EVENT_ID;
     await prisma.event.create({
       data: {
         id: previewEventId,
