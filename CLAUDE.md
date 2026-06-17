@@ -10,7 +10,7 @@ Milestones follow semver logic:
 
 **Product version** (what we tag and ship): `CHANGELOG.md` + git tag `v0.x.y` + root `package.json` `"version"`. Workspace packages stay at `0.0.1` — see [VERSIONING.md](VERSIONING.md).
 
-**Active milestone:** v0.4.0 — operator UI / check-in (post v0.3.7 release hygiene).
+**Active milestone:** v0.4.1 — operator scanner phase 2 (camera + scan history).
 
 Repo: https://github.com/solarssk/admitto
 

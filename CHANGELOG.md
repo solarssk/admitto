@@ -12,7 +12,81 @@ first event-ready MVP.
 
 ## Unreleased
 
-## v0.3.7 — 2026-06-16
+## v0.4.0 — 2026-06-17
+
+Staff SPA foundation and operator check-in phase 1 (ADR 0012 event-day readiness). Git tag `v0.4.0`.
+
+First Tabler-flavoured admin/operator UI on origin: design system, lifecycle shell placeholders,
+scanner-first check-in wedge, ticket page reskin, and self-hosted fonts/icons so event-network
+deployments do not depend on jsDelivr or Google Fonts egress.
+
+### Frontend foundation (`@admitto/ui`, `@admitto/admin`, PR #56)
+
+- **`packages/ui`:** Tabler-flavoured tokens + 13 React primitives; `StatusBadge` DB mapping;
+  `resolveThemeVars` with anti-lockout branding fallback.
+- **`apps/admin`:** Vite + React Router staff SPA — `AdminShell` lifecycle nav placeholders,
+  `OperatorShell`, event picker, check-in entry (single event → redirect),
+  `ConnectionStateProvider` (auth-aware heartbeat via `/api/auth/me`).
+- **Backend APIs:** `GET /api/admin/events`, `GET /api/checkin/events` (session-only, P4),
+  `GET/PUT /api/staff/theme`; gates `canAccessAdminPanel` / `canAccessCheckInPanel`.
+- **Hono integration:** staff SPA static serving + fallback, `createStaffAdminGate` (ADR 0017),
+  role-based post-login redirect (`resolvePostAuthPath`).
+- **`@admitto/auth`:** `BrandingTheme`, panel helpers, `listAdminEvents` / `listCheckInEvents`.
+- **`/t` reskin:** ticket kit layout, CSS vars from theme, `StatusBadge` semantics (SSR, no JS).
+
+### Operator check-in phase 1 (PR #59)
+
+- Scanner-first scan buffer (autofocus, Enter submit, refocus after each scan).
+- `POST /api/checkin/scan` integration with attendee result card + `StatusBadge`.
+- Shared route for `/operator/events/:id/checkin` and `/admin/events/:id/checkin`.
+- Duplicate wedge debounce (~300 ms).
+
+### Event-day asset hardening (PR #62)
+
+- Self-host Tabler Icons (`@tabler/icons-webfont@3.31.0`) and Inter (`@fontsource/inter`) in
+  `apps/admin/dist` — zero runtime `jsdelivr` / `fonts.googleapis` / `fonts.gstatic` in default UI.
+- Staff SPA CSP tightened: `style-src 'self' 'unsafe-inline'`; `font-src 'self' https:` for opt-in
+  branding fonts only.
+
+### Security and auth follow-ups (PR #57, #61)
+
+- Unify `isAdminRoleAssignment` export; controlled redirects when post-login path resolution fails
+  (OIDC, password, MFA) instead of HTTP 500.
+- Defense-in-depth headers on `/admin` and `/operator` SPA shell (`getStaffSpaSecurityHeaders`):
+  CSP, `nosniff`, `no-referrer`, `frame-ancestors 'none'`.
+
+### UI polish (PR #60)
+
+- Semantic theme tokens replace hardcoded hex in `components.css` / `ticket.css`.
+- `Tabs` reconciles `active` when the `tabs` prop changes after mount.
+
+### Docs (PR #58)
+
+- `deploy/staff-entry-smoke-matrix.md` — city CF ZTNA vs event WireGuard vs session login smoke paths.
+
+### Deploy notes
+
+```bash
+npm run build
+```
+
+- Staff UI is served from `apps/admin/dist` at `/admin`, `/operator`, and `/assets/*` (immutable cache).
+- Event-day venue networks may block outbound CDN egress — default UI no longer requires it.
+- Rebuild Docker image after tag push (`ghcr.io/solarssk/admitto:0.4.0`).
+
+### Not in this release
+
+- Camera QR decode (deferred to `v0.4.1`).
+- Check-in scan history panel (deferred to `v0.4.1`).
+- Manual guest lookup on operator surface.
+- Full lifecycle feature screens (attendees, mail, wallet, etc.) — shell placeholders only.
+- `POST` create event from admin UI.
+
+### Next
+
+- `v0.4.1` — camera scanner + scan history view.
+- Operator attendee card and fulfilment lanes per roadmap prompts 22+.
+
 
 Release hygiene — signed git tags and documented cut process.
 
