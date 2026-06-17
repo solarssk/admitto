@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -10,10 +10,12 @@ import {
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../../admin/dist");
 
+/** Remove CSS block comments so license URLs in bundled vendor CSS are not treated as runtime origins. */
 function stripCssComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
+/** Collect unique HTTPS origins referenced in HTML/CSS fixture text. */
 function collectHttpsOrigins(text: string): Set<string> {
   const origins = new Set<string>();
   for (const match of text.matchAll(/https:\/\/[^/ "';)]+/g)) {
@@ -26,6 +28,7 @@ function collectHttpsOrigins(text: string): Set<string> {
   return origins;
 }
 
+/** Return whether `csp` allows loading resources from `origin` for the given directive. */
 function cspAllowsOrigin(csp: string, directive: "style-src" | "font-src", origin: string): boolean {
   const match = csp.match(new RegExp(`${directive}\\s+([^;]+)`));
   if (!match) return false;
@@ -56,7 +59,13 @@ describe("getStaffSpaSecurityHeaders", () => {
   });
 
   it("self-hosted admin build has no external CDN references in runtime HTML/CSS", () => {
-    const indexHtml = readFileSync(join(adminDistRoot, "index.html"), "utf8");
+    const indexPath = join(adminDistRoot, "index.html");
+    expect(
+      existsSync(indexPath),
+      "admin dist missing — run npm run build -w @admitto/admin (pretest should do this)",
+    ).toBe(true);
+
+    const indexHtml = readFileSync(indexPath, "utf8");
     let bundledCss = "";
     const assetsDir = join(adminDistRoot, "assets");
     for (const file of readdirSync(assetsDir)) {
