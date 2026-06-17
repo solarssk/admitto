@@ -87,6 +87,7 @@ npm run build
 - `v0.4.1` — camera scanner + scan history view.
 - Operator attendee card and fulfilment lanes per roadmap prompts 22+.
 
+## v0.3.7 — 2026-06-16
 
 Release hygiene — signed git tags and documented cut process.
 
