@@ -61,6 +61,7 @@ export async function lookupAttendees(
           (custom_data->>'company') ILIKE ${`%${q}%`}
           OR (custom_data->>'department') ILIKE ${`%${q}%`}
         )
+      ORDER BY name ASC
       LIMIT ${LOOKUP_LIMIT}
     `,
   ]);

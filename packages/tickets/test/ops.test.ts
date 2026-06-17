@@ -121,6 +121,27 @@ describe("lookupAttendees — custom_data fields", () => {
     const byDept = await lookupAttendees(EVENT_ID, "IT Department", prisma);
     expect(byDept.some((r) => r.id === att.id)).toBe(true);
   });
+
+  it("returns JSON-only matches ordered by name before the limit", async () => {
+    const company = "Shared JSON Corp";
+    const names = ["Zulu Guest", "Alpha Guest", "Mike Guest"];
+    for (const name of names) {
+      const token = generateToken();
+      await prisma.attendee.create({
+        data: {
+          event_id: EVENT_ID,
+          email: `${name.replace(/\s+/g, ".").toLowerCase()}@example.com`,
+          name,
+          token_hash: hashToken(token),
+          custom_data: { company },
+        },
+      });
+    }
+
+    const results = await lookupAttendees(EVENT_ID, company, prisma);
+    const jsonOnly = results.filter((r) => names.includes(r.name));
+    expect(jsonOnly.map((r) => r.name)).toEqual(["Alpha Guest", "Mike Guest", "Zulu Guest"]);
+  });
 });
 
 describe("getAttendeeCard — giftbag shirt hint", () => {
