@@ -36,6 +36,8 @@ export const STATUS_MAP: Record<string, StatusMeta> = {
   REVOKED: { variant: "error", label: "Revoked" },
   UNKNOWN_EVENT: { variant: "neutral", label: "Unknown event" },
   NETWORK_ERROR: { variant: "neutral", label: "Network error" },
+  admitted: { variant: "ok", label: "Checked in", dot: true },
+  not_admitted: { variant: "neutral", label: "Not checked in", dot: true },
 };
 
 export function resolveStatusMeta(status: string): StatusMeta {

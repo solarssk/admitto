@@ -55,18 +55,19 @@ export function AdminShell({ event }: AdminShellProps) {
           {LIFECYCLE_NAV.map((item) => {
             const to = `/admin/events/${eventId}/${item.segment}`;
             const isOverview = item.segment === "overview";
+            const isLive = item.segment === "overview" || item.segment === "attendees" || item.segment === "checkin";
             return (
               <NavLink
                 key={item.segment}
                 to={to}
                 className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}${!isOverview ? " nav-item--soon" : ""}`
+                  `nav-item${isActive ? " nav-item--active" : ""}${!isLive ? " nav-item--soon" : ""}`
                 }
                 end={item.segment === "overview"}
               >
                 <i className={`ti ti-${item.icon}`} aria-hidden="true" />
                 <span>{item.label}</span>
-                {!isOverview && <span className="nav-item__badge">Soon</span>}
+                {!isLive && <span className="nav-item__badge">Soon</span>}
               </NavLink>
             );
           })}

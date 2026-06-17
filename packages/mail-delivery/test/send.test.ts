@@ -226,6 +226,17 @@ describe("sendTicketEmails", () => {
 
     spy.mockRestore();
   });
+
+  it("rejects recipientEmail override unless exactly one attendee is targeted", async () => {
+    await expect(
+      sendTicketEmails(
+        EVENT_ID,
+        { purpose: "resend", attendeeIds: ["att-mode-a", "att-mode-b"], recipientEmail: "x@example.com" },
+        prisma,
+        { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      ),
+    ).rejects.toThrow("recipientEmail requires exactly one attendeeId");
+  });
 });
 
 describe("resendTicketEmail", () => {
@@ -254,6 +265,29 @@ describe("resendTicketEmail", () => {
     });
     expect(resendRow?.rendered_html).toContain("{{ticket_url}}");
     expect(resendRow?.rendered_html).not.toMatch(/\/t\/[A-Za-z0-9_-]{20,}/);
+  });
+
+  it("uses alternate to without changing Attendee.email", async () => {
+    exported.length = 0;
+    const before = await prisma.attendee.findUniqueOrThrow({ where: { id: "att-mode-a" } });
+
+    await resendTicketEmail(
+      "att-mode-a",
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+      { to: "alt@example.com" },
+    );
+
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id: "att-mode-a" } });
+    expect(after.email).toBe(before.email);
+
+    const resendRow = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: "att-mode-a", purpose: "resend", recipient_email: "alt@example.com" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(resendRow?.recipient_email).toBe("alt@example.com");
+    expect(exported[0]?.message.to).toBe("alt@example.com");
   });
 });
 

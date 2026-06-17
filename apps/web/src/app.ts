@@ -4,6 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "@admitto/db";
 import type { AttendeeStatus } from "@admitto/db";
 import { recordTicketViewed } from "@admitto/mail-delivery";
+import type { MailDeliveryDeps } from "@admitto/mail-delivery";
 import { getBrandingTheme } from "@admitto/auth";
 import {
   resolveTicket,
@@ -40,6 +41,7 @@ import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
 import { createOidcAuthRateLimitMiddleware } from "./auth/oidc-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
+import { createAdminResendRateLimit } from "./admin-resend-rate-limit.js";
 import { handleLogin, handleLogout, handleMe, handleMfaVerify, handleTotpEnroll, handleTotpConfirm } from "./auth/routes.js";
 import {
   handleGetMfaEnroll,
@@ -59,6 +61,12 @@ import { createAdminAccessMiddleware } from "./auth/admin-access-middleware.js";
 import { createStaffAdminGate } from "./auth/staff-admin-gate.js";
 import { createCheckInPanelCapabilityGuard } from "./auth/checkin-panel-gate.js";
 import { handleGetAdminEvents } from "./admin/admin-api-routes.js";
+import {
+  handleListEventAttendees,
+  handleGetEventAttendee,
+  handlePatchEventAttendee,
+  handleResendEventAttendeeTicket,
+} from "./admin/attendees-api-routes.js";
 import {
   handleGetCheckinEvents,
   handleCheckinScan,
@@ -106,6 +114,7 @@ export interface CreateAppOptions {
   skipCheckinBootValidation?: boolean;
   rateLimitStore?: RateLimitStore;
   adminDistRoot?: string;
+  mailDeliveryDeps?: MailDeliveryDeps;
 }
 
 /**
@@ -145,6 +154,7 @@ export function createApp(options: CreateAppOptions = {}) {
     operatorToken: checkinToken,
   };
   const checkinAuthDeps = { prisma: db, config: checkinGateConfig };
+  const mailDeliveryDeps = options.mailDeliveryDeps ?? {};
 
   const app = new Hono();
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
@@ -160,6 +170,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const requirePartialSessionHtml = createRequirePartialSession(db, { redirectTo: "/login" });
   const requireAdminAccess = createAdminAccessMiddleware(db);
   const staffAdminGate = createStaffAdminGate(db);
+  const adminResendRateLimit = createAdminResendRateLimit(rateLimitStore);
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
   const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot });
 
@@ -243,6 +254,22 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get("/api/admin/me", staffAdminGate, (c) => handleMe(c, db));
   app.get("/api/admin/events", staffAdminGate, (c) => handleGetAdminEvents(c, db));
+  app.get("/api/admin/events/:eventId/attendees", staffAdminGate, (c) =>
+    handleListEventAttendees(c, db),
+  );
+  app.get("/api/admin/events/:eventId/attendees/:id", staffAdminGate, (c) =>
+    handleGetEventAttendee(c, db),
+  );
+  app.patch("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePatchEventAttendee(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/resend",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminResendRateLimit,
+    (c) => handleResendEventAttendeeTicket(c, db, mailDeliveryDeps),
+  );
   app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
   app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));
 

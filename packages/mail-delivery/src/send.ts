@@ -23,6 +23,8 @@ import type { SendTicketEmailsResult } from "./types.js";
 export interface SendTicketEmailsOptions {
   attendeeIds?: string[];
   purpose?: "initial" | "resend";
+  /** Override delivery recipient for a single-attendee resend (does not mutate Attendee.email). */
+  recipientEmail?: string;
 }
 
 /** Optional test hooks for `sendTicketEmails()` (e.g. export_only sink). */
@@ -95,6 +97,13 @@ export async function sendTicketEmails(
   const purpose = options.purpose ?? "initial";
   const baseUrl = resolveBaseUrl(env);
   const batchId = randomUUID();
+
+  if (
+    options.recipientEmail &&
+    (!options.attendeeIds || options.attendeeIds.length !== 1)
+  ) {
+    throw new Error("recipientEmail requires exactly one attendeeId");
+  }
 
   const event = await prisma.event.findUniqueOrThrow({
     where: { id: eventId },
@@ -178,7 +187,8 @@ export async function sendTicketEmails(
         batchId,
         templateId: resolvedTemplate.source === "builtin" ? undefined : `${resolvedTemplate.source}`,
         provider: mailer.provider,
-        recipientEmail: attendee.email,
+        recipientEmail:
+          purpose === "resend" && options.recipientEmail ? options.recipientEmail : attendee.email,
         renderedSubject: rendered.subject,
         renderedHtml: rendered.html,
       };
@@ -260,5 +270,9 @@ export async function sendTicketEmails(
     batchId,
     sent: sentCount,
     skipped,
+    deliveries: pending.map((item) => ({
+      attendeeId: item.attendeeId,
+      deliveryId: item.deliveryId,
+    })),
   };
 }
