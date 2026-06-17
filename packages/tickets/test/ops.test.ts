@@ -111,14 +111,14 @@ describe("lookupAttendees — custom_data fields", () => {
         email: "json-only@example.com",
         name: "JSON Only Guest",
         token_hash: hashToken(token),
-        custom_data: { company: "Firma Z JSON", department: "Dział IT" },
+        custom_data: { company: "Acme From JSON", department: "IT Department" },
       },
     });
 
-    const byCompany = await lookupAttendees(EVENT_ID, "Firma Z JSON", prisma);
+    const byCompany = await lookupAttendees(EVENT_ID, "Acme From JSON", prisma);
     expect(byCompany.some((r) => r.id === att.id)).toBe(true);
 
-    const byDept = await lookupAttendees(EVENT_ID, "Dział IT", prisma);
+    const byDept = await lookupAttendees(EVENT_ID, "IT Department", prisma);
     expect(byDept.some((r) => r.id === att.id)).toBe(true);
   });
 });
