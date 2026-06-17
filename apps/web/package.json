@@ -24,12 +24,13 @@
     "@admitto/ui": "*",
     "@hono/node-server": "^2.0.4",
     "@prisma/client": "^5.17.0",
+    "exceljs": "^4.4.0",
     "hono": "^4.12.25",
     "redis": "^6.0.0",
-    "exceljs": "^4.4.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@testcontainers/redis": "^12.0.3",
     "@types/node": "^22.19.20",
     "jose": "^6.0.11",
     "tsx": "^4.19.2",
