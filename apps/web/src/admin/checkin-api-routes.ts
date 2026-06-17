@@ -13,6 +13,7 @@ import {
   undoLastCheckIn,
   IllegalItemTransitionError,
   NoteTooLongError,
+  OperatorRequiredError,
   UndoNotAllowedError,
   parseCustomData,
   type CheckInScanResult,
@@ -236,6 +237,9 @@ export async function handleCheckinNote(c: Context, db: PrismaClient): Promise<R
   } catch (err) {
     if (err instanceof NoteTooLongError) {
       return c.json({ error: "Note too long" }, 400);
+    }
+    if (err instanceof OperatorRequiredError) {
+      return c.json({ error: "unauthorized" }, 401);
     }
     console.error("addAttendeeNote failed:", err);
     return c.json({ error: "server error" }, 500);

@@ -12,7 +12,7 @@ export {
   transitionItemState,
   IllegalItemTransitionError,
 } from "./item-states.js";
-export { addAttendeeNote, NoteTooLongError, MAX_ATTENDEE_NOTE_LENGTH } from "./notes.js";
+export { addAttendeeNote, NoteTooLongError, OperatorRequiredError, MAX_ATTENDEE_NOTE_LENGTH } from "./notes.js";
 export { undoLastCheckIn, UndoNotAllowedError } from "./undo.js";
 export { parseCustomData, shirtSizeFromCustomData } from "./custom-data.js";
 export type { OpsAuditContext } from "./ops-audit.js";

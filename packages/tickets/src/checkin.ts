@@ -1,9 +1,9 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { resolveTicket } from "./resolve.js";
 import { admitAttendee, shouldRequireConfirmOnScan } from "./admit.js";
 import { getAttendeeCard } from "./attendee-card.js";
 import { isAdmittable } from "./admittable.js";
-import type { OpsAuditContext } from "./ops-audit.js";
+import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 import type { CheckInScanParams, CheckInScanResult, CheckInHistoryEntry } from "./types.js";
 
 type AttendeeStatus = "registered" | "confirmed" | "cancelled";
@@ -34,6 +34,9 @@ export async function checkInScan(
 
   const { attendee } = resolved;
   if (!isAdmittable(attendee.status as AttendeeStatus)) {
+    const card = await getAttendeeCard(eventId, attendee.id, prisma);
+    if (!card) return { status: "INVALID", confirmed: false };
+
     await prisma.checkIn.create({
       data: {
         attendee_id: attendee.id,
@@ -44,8 +47,6 @@ export async function checkInScan(
         status: "REVOKED",
       },
     });
-    const card = await getAttendeeCard(eventId, attendee.id, prisma);
-    if (!card) return { status: "INVALID", confirmed: false };
     return { status: "REVOKED", confirmed: false, card };
   }
 
@@ -57,6 +58,14 @@ export async function checkInScan(
     });
     if (!row?.admitted_at) {
       const card = await getAttendeeCard(eventId, attendee.id, prisma);
+      await prisma.$transaction(async (tx) => {
+        await writeActionLog(tx, {
+          event_id: eventId,
+          attendee_id: attendee.id,
+          action_type: "scan_preview",
+          audit,
+        });
+      });
       return {
         status: "PREVIEW",
         confirmed: false,

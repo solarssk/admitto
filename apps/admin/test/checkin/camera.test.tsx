@@ -3,9 +3,10 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, waitFor } from "@testing-library/react";
 import { CameraScanner } from "../../src/checkin/CameraScanner.js";
 
-const { decodeFromVideoDevice } = vi.hoisted(() => {
-  const decodeFromVideoDevice = vi.fn().mockResolvedValue({ stop: vi.fn() });
-  return { decodeFromVideoDevice };
+const { decodeFromVideoDevice, stop } = vi.hoisted(() => {
+  const stop = vi.fn();
+  const decodeFromVideoDevice = vi.fn().mockResolvedValue({ stop });
+  return { decodeFromVideoDevice, stop };
 });
 
 vi.mock("@zxing/browser", () => ({
@@ -17,6 +18,7 @@ vi.mock("@zxing/browser", () => ({
 describe("CameraScanner", () => {
   beforeEach(() => {
     decodeFromVideoDevice.mockClear();
+    stop.mockClear();
   });
 
   afterEach(() => {
@@ -43,5 +45,6 @@ describe("CameraScanner", () => {
 
     rerender(<CameraScanner enabled={true} wedgeActive={true} onScan={() => {}} />);
     await waitFor(() => expect(decodeFromVideoDevice).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
   });
 });

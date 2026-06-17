@@ -7,7 +7,7 @@ import { admitAttendee } from "../src/admit.js";
 import { undoLastCheckIn as undoFn } from "../src/undo.js";
 import { transitionItemState, ensureAttendeeItemStates } from "../src/item-states.js";
 import { ensureDefaultEventItems } from "../src/event-items.js";
-import { addAttendeeNote, NoteTooLongError } from "../src/notes.js";
+import { addAttendeeNote, NoteTooLongError, OperatorRequiredError } from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -161,6 +161,20 @@ describe("addAttendeeNote (Lock #8)", () => {
         prisma,
       ),
     ).rejects.toBeInstanceOf(NoteTooLongError);
+  });
+
+  it("rejects missing operator in domain layer", async () => {
+    await expect(
+      addAttendeeNote(
+        {
+          attendeeId,
+          eventId: EVENT_ID,
+          body: "hello",
+          audit: { sessionId: "sess-1" },
+        },
+        prisma,
+      ),
+    ).rejects.toBeInstanceOf(OperatorRequiredError);
   });
 });
 

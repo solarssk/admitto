@@ -199,6 +199,52 @@ describe("checkInScan — concurrency (race condition)", () => {
   });
 });
 
+describe("checkInScan — PREVIEW audit", () => {
+  it("writes scan_preview action log when require_confirm_on_scan", async () => {
+    const previewEventId = "test-event-preview-audit";
+    await prisma.event.create({
+      data: {
+        id: previewEventId,
+        title: "Preview Audit Event",
+        slug: "preview-audit-event",
+        date: new Date("2026-09-15T09:00:00Z"),
+        organization_id: "org_default",
+        ops_config: { require_confirm_on_scan: true, badge_at_entry: true },
+      },
+    });
+
+    const previewToken = generateToken();
+    const previewAtt = await prisma.attendee.create({
+      data: {
+        event_id: previewEventId,
+        email: "preview-audit@example.com",
+        name: "Preview Audit Guest",
+        token_hash: hashToken(previewToken),
+      },
+    });
+
+    const result = await checkInScan(
+      {
+        scanned: previewToken,
+        eventId: previewEventId,
+        operator: "op-preview",
+        deviceId: "tablet-preview",
+        sessionId: "sess-preview",
+      },
+      prisma,
+    );
+    expect(result.status).toBe("PREVIEW");
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: previewAtt.id, action_type: "scan_preview" },
+    });
+    expect(log).not.toBeNull();
+    expect(log?.actor_user_id).toBe("op-preview");
+    expect(log?.device_id).toBe("tablet-preview");
+    expect(log?.session_id).toBe("sess-preview");
+  });
+});
+
 describe("checkInScan — cancelled → REVOKED", () => {
   it("returns REVOKED for cancelled attendee and does not set admitted_at", async () => {
     // Need a fresh token for the cancelled attendee lookup
