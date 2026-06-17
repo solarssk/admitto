@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
-import * as XLSX from "xlsx";
+import { buildXlsxBuffer } from "../../src/admin/xlsx-to-csv.js";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -47,13 +47,10 @@ function csvFormData(content: string, filename = "import.csv", overwrite = false
   return fd;
 }
 
-function xlsxFormData(rows: string[][]): FormData {
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-  const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+async function xlsxFormData(rows: string[][]): Promise<FormData> {
+  const buf = await buildXlsxBuffer(rows);
   const fd = new FormData();
-  fd.append("file", new Blob([new Uint8Array(buf)]), "import.xlsx");
+  fd.append("file", new Blob([buf]), "import.xlsx");
   return fd;
 }
 
@@ -266,7 +263,7 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
   });
 
   it("parses XLSX uploaded as multipart", async () => {
-    const fd = xlsxFormData([
+    const fd = await xlsxFormData([
       ["first_name", "last_name", "email"],
       ["Xls", "User", "xls@example.com"],
     ]);

@@ -3,7 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import { canManageEvent } from "@admitto/auth";
 import { parseAttendees, commitImport } from "@admitto/import";
 import { writeActionLog } from "@admitto/tickets";
-import * as XLSX from "xlsx";
+import { xlsxBufferToCsv } from "./xlsx-to-csv.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -75,16 +75,11 @@ function fileExtension(name: string): string {
   return name.slice(dot).toLowerCase();
 }
 
-function bufferToCsvString(buf: ArrayBuffer, ext: string): string {
+async function bufferToCsvString(buf: ArrayBuffer, ext: string): Promise<string> {
   if (ext === ".csv") {
     return new TextDecoder("utf-8").decode(buf);
   }
-  const workbook = XLSX.read(buf, { type: "array" });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return "";
-  const sheet = workbook.Sheets[sheetName];
-  if (!sheet) return "";
-  return XLSX.utils.sheet_to_csv(sheet);
+  return xlsxBufferToCsv(buf);
 }
 
 async function parseImportUpload(c: Context): Promise<ParsedUpload | Response> {
@@ -113,7 +108,7 @@ async function parseImportUpload(c: Context): Promise<ParsedUpload | Response> {
   const overwrite = overwriteRaw === "true" || overwriteRaw === "on";
 
   const buf = await fileField.arrayBuffer();
-  const csv = bufferToCsvString(buf, ext);
+  const csv = await bufferToCsvString(buf, ext);
 
   return { csv, filename: fileField.name, overwrite };
 }
