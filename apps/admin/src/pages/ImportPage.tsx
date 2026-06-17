@@ -31,11 +31,16 @@ export function ImportPage() {
         window.location.assign(`/login?next=${next}`);
         return;
       }
-      setError(
-        err.status === 403
-          ? "You do not have access to this event."
-          : err.message || "Request failed.",
-      );
+      const msg = (() => {
+        if (err.status === 403) return "You do not have access to this event.";
+        if (err.message === "file too large") return "File exceeds the 5 MB limit. Split the file and import in parts.";
+        if (err.message === "too many rows") return "File exceeds the 50 000 row limit. Split the file and import in parts.";
+        if (err.message === "unsupported file type") return "Unsupported file type. Upload a .csv or .xlsx file.";
+        if (err.message === "empty file") return "The file is empty.";
+        if (err.message === "invalid file content") return "The file could not be read. Check that it is a valid CSV or XLSX.";
+        return err.message || "Request failed.";
+      })();
+      setError(msg);
     } else {
       setError("Request failed.");
     }
@@ -98,6 +103,9 @@ export function ImportPage() {
             <p className="import-hint">
               <strong>Required columns:</strong> first_name, last_name, email.{" "}
               <strong>Optional:</strong> ticket_type, company, department, external_uuid, qr_payload.
+            </p>
+            <p className="import-hint import-hint--limits">
+              <strong>Limits:</strong> max 5 MB · max 50 000 data rows · .csv or .xlsx only.
             </p>
 
             <div className="import-field">
