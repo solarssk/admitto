@@ -31,7 +31,9 @@ Do not bump per-package versions unless we start publishing libraries separately
    ./scripts/release-tag.sh 0.x.y -m "v0.x.y — one-line summary" --push
    ```
    (`git tag -s` — never lightweight or unsigned `git tag -a`.)
-4. Create the GitHub Release: `gh release create v0.x.y --title "…" --notes-file …`
+4. Create the GitHub Release: `gh release create v0.x.y --title "…" --notes-file …`  
+   Use the **v0.3.x release notes template** (see e.g. GitHub Release `v0.3.7`): milestone + merged PR links, summary blockquote, `### ✨ Included`, deploy/docker section, `### 🗄️ Database`, checklist, `### ⏳ Not in this release`, `### ➡️ Next`, `### 📦 Release scope`.  
+   Do **not** paste raw `CHANGELOG.md` into the GitHub Release body — CHANGELOG is the engineering log; the Release is the operator/maintainer-facing summary.
 5. Close the matching GitHub milestone
 
 ### Tag signing (one-time maintainer setup)
