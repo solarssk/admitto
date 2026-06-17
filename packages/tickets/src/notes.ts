@@ -29,7 +29,8 @@ export async function addAttendeeNote(
 ): Promise<{ id: string; created_at: Date }> {
   const body = params.body.trim();
   if (!body) throw new Error("Note body required");
-  if (!params.audit.operator) throw new OperatorRequiredError();
+  const operator = params.audit.operator;
+  if (!operator) throw new OperatorRequiredError();
   if (body.length > MAX_ATTENDEE_NOTE_LENGTH) throw new NoteTooLongError();
 
   return prisma.$transaction(async (tx) => {
@@ -43,7 +44,7 @@ export async function addAttendeeNote(
       data: {
         attendee_id: params.attendeeId,
         event_id: params.eventId,
-        author_user_id: params.audit.operator,
+        author_user_id: operator,
         body,
       },
     });
