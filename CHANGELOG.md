@@ -12,6 +12,69 @@ first event-ready MVP.
 
 ## Unreleased
 
+## v0.4.1 — 2026-06-17
+
+Operator check-in phase 2 (ADR 0010 event-day ops). Git tag `v0.4.1`.
+
+Full operator lane on top of v0.4.0 foundation: one attendee card after scan or manual
+lookup, item fulfilment (gift bag, badge, headset), scan history, device-scoped undo with
+badge rollback, operator notes, and opt-in camera QR decode.
+
+### Event-day domain and database (PR #67)
+
+- **Migration `20260617120000_event_day_ops`:** `custom_data`, `ops_config`, `EventItem`,
+  `AttendeeItemState`, `AttendeeNote`, `AttendeeActionLog` (`session_id`); default items
+  per event (`giftbag`, `badge`, `headset` — shirt size shown on gift bag row, not a
+  separate item).
+- **`packages/tickets`:** `admitAttendee` (single CAS path for scan + manual),
+  `undoLastCheckIn` (device-scoped, badge rollback via `check_in_id` metadata),
+  `transitionItemState`, `getAttendeeCard`, `lookupAttendees`, `addAttendeeNote`,
+  lazy `ensureDefaultEventItems` for events created after migration.
+- **Status types:** `UNDO` check-in rows; `scan_preview` action log; note max 2000 chars.
+
+### Operator API (`apps/web`, PR #67)
+
+- `POST /api/checkin/lookup` (PII in body, not URL), admit, items, notes, undo, stats,
+  history; session auth binds `deviceId` to `Session.device_label`.
+- RBAC event-scoped (403); CSRF on mutating routes; `resolveClientIp` for audit.
+
+### Operator UI (`apps/admin`, PR #67)
+
+- **`AttendeeCard`:** check-in status, items, notes, warnings; split layout (stack &lt;1024px).
+- **`ManualLookupPanel`**, **`ScanHistoryList`**, **`CameraScanner`** (opt-in, dynamic
+  `@zxing/browser`).
+- **`CheckInPage`:** connection gate, `admitOrigin` (manual ≠ scan), scan buffer refocus,
+  duplicate debounce.
+
+### Follow-ups (PR #68)
+
+- Hide **Undo** when session has no device label (matches server 409).
+- Lookup also searches `custom_data.company` / `custom_data.department` (ordered, limit 20).
+- **Migration `20260617130000_attendee_note_body_check`:** DB CHECK on note body length.
+
+### Deploy notes
+
+```bash
+npm run build
+npx prisma migrate deploy   # packages/db — two new migrations since v0.4.0
+```
+
+- Rebuild Docker image after tag push (`ghcr.io/solarssk/admitto:0.4.1`).
+- Operators should set a **device label** at login (e.g. `Tablet 1 — main entrance`) if
+  they need per-tablet undo.
+
+### Not in this release
+
+- Admin event screens (import, attendee table, mail) — prompt #3.
+- Settings / branding panel, exports, wallet passes (v0.5).
+- Zebra/DataWedge runbook; offline check-in queue.
+- Admin revert/reissue of check-ins.
+
+### Next
+
+- Admin event screens and CSV import (roadmap prompt #3).
+- `v0.5.0` — wallet passes (PassCreator).
+
 ## v0.4.0 — 2026-06-17
 
 Staff SPA foundation and operator check-in phase 1 (ADR 0012 event-day readiness). Git tag `v0.4.0`.
