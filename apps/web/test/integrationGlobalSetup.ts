@@ -10,7 +10,7 @@ export default async function integrationGlobalSetup(): Promise<() => Promise<vo
   if (!process.env.REDIS_URL) {
     const container = await new RedisContainer("redis:7-alpine").start();
     process.env.REDIS_URL = container.getConnectionUrl();
-    redisStop = () => container.stop();
+    redisStop = async () => { await container.stop(); };
   }
 
   return async () => {
