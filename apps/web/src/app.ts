@@ -67,6 +67,7 @@ import {
   handlePatchEventAttendee,
   handleResendEventAttendeeTicket,
 } from "./admin/attendees-api-routes.js";
+import { handleImportPreview, handleImportCommit } from "./admin/import-api-routes.js";
 import {
   handleGetCheckinEvents,
   handleCheckinScan,
@@ -269,6 +270,12 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminResendRateLimit,
     (c) => handleResendEventAttendeeTicket(c, db, mailDeliveryDeps),
+  );
+  app.post("/api/admin/events/:eventId/import/preview", jsonPostCsrf, staffAdminGate, (c) =>
+    handleImportPreview(c, db),
+  );
+  app.post("/api/admin/events/:eventId/import/commit", jsonPostCsrf, staffAdminGate, (c) =>
+    handleImportCommit(c, db),
   );
   app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
   app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));

@@ -78,7 +78,8 @@ export type AttendeeActionType =
   | 'item_returned'
   | 'note_added'
   | 'attendee_edited'
-  | 'ticket_resent';
+  | 'ticket_resent'
+  | 'attendees_imported';
 
 export const ATTENDEE_ACTION_TYPE = [
   'check_in',
@@ -89,6 +90,7 @@ export const ATTENDEE_ACTION_TYPE = [
   'note_added',
   'attendee_edited',
   'ticket_resent',
+  'attendees_imported',
 ] as const satisfies AttendeeActionType[];
 
 /** Maximum note body length (API validation — Lock #8). */

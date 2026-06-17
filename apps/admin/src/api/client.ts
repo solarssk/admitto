@@ -13,6 +13,8 @@ import type {
   ResendTicketBody,
   ThemeResponse,
   UpdateAttendeePatch,
+  ImportPreviewResponse,
+  ImportCommitResponse,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -66,6 +68,48 @@ function jsonPatchInit(body: unknown): RequestInit {
 function isAdminAppPath(): boolean {
   const path = window.location.pathname;
   return path === "/admin" || path.startsWith("/admin/");
+}
+
+function multipartPostInit(formData: FormData): RequestInit {
+  return {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      Origin: window.location.origin,
+    },
+    body: formData,
+  };
+}
+
+function importFormData(file: File, overwrite: boolean): FormData {
+  const fd = new FormData();
+  fd.append("file", file);
+  if (overwrite) fd.append("overwrite", "true");
+  return fd;
+}
+
+export async function previewImport(
+  eventId: string,
+  file: File,
+  overwrite: boolean,
+): Promise<ImportPreviewResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/import/preview`,
+    multipartPostInit(importFormData(file, overwrite)),
+  );
+  return parseJson<ImportPreviewResponse>(res);
+}
+
+export async function commitImport(
+  eventId: string,
+  file: File,
+  overwrite: boolean,
+): Promise<ImportCommitResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/import/commit`,
+    multipartPostInit(importFormData(file, overwrite)),
+  );
+  return parseJson<ImportCommitResponse>(res);
 }
 
 export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {

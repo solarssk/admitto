@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { AttendeeRow, ImportOptions, ImportSummary, SkippedRow } from "./types.js";
 import { generateToken } from "@admitto/crypto";
 
@@ -28,6 +28,8 @@ type AttendeeUpdateArgs = {
   };
 };
 
+type ImportDb = PrismaClient | Prisma.TransactionClient;
+
 /**
  * Commit validated attendee rows to the database.
  *
@@ -40,9 +42,9 @@ export async function commitImport(
   eventId: string,
   rows: AttendeeRow[],
   options: ImportOptions = {},
-  db?: PrismaClient,
+  db?: ImportDb,
 ): Promise<ImportSummary> {
-  const { overwrite = false, dryRun = false } = options;
+  const { overwrite = false, dryRun = false, ownedTransaction = false } = options;
 
   // Lazy-load to keep the package usable without @admitto/db when dry-running with mocks.
   const prisma = db ?? (await import("@admitto/db")).prisma;
@@ -155,10 +157,16 @@ export async function commitImport(
   };
 
   if (!dryRun && (creates.length > 0 || updates.length > 0)) {
-    await prisma.$transaction([
-      ...creates.map((data) => prisma.attendee.create({ data })),
-      ...updates.map(({ id, data }) => prisma.attendee.update({ where: { id }, data })),
-    ]);
+    const writeAll = async (client: ImportDb) => {
+      for (const data of creates) await client.attendee.create({ data });
+      for (const { id, data } of updates) await client.attendee.update({ where: { id }, data });
+    };
+
+    if (ownedTransaction) {
+      await writeAll(prisma);
+    } else {
+      await (prisma as PrismaClient).$transaction(async (tx) => writeAll(tx));
+    }
     summary.created = creates.length;
     summary.updated = updates.length;
   }

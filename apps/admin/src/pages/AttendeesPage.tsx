@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
-import { PageHeader } from "@admitto/ui";
+import { Link, useParams } from "react-router-dom";
+import { Button, PageHeader } from "@admitto/ui";
 import { ApiError, fetchEventAttendees } from "../api/client.js";
 import type { AttendeeRowDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
@@ -86,14 +86,19 @@ export function AttendeesPage() {
 
   const emptyMessage =
     total === 0 && !searchQuery && statusFilter === "all"
-      ? "No attendees yet. Import will be available in a future release."
+      ? "No attendees yet. Import a CSV or XLSX file to get started."
       : "No matches";
 
   if (!eventId) return <p>Missing event.</p>;
 
   return (
     <>
-      <PageHeader title="Attendees" subtitle="Manage attendee records and resend tickets." />
+      <div className="attendees-page-header">
+        <PageHeader title="Attendees" subtitle="Manage attendee records and resend tickets." />
+        <Link to={`/admin/events/${eventId}/attendees/import`}>
+          <Button variant="primary">Import attendees</Button>
+        </Link>
+      </div>
       {error && <p className="text-error">{error}</p>}
 
       <AttendeesTable

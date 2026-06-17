@@ -10,6 +10,7 @@ import { CheckInEntryPage } from "./pages/CheckInEntryPage.js";
 import { CheckInPage } from "./pages/CheckInPage.js";
 import { AdminCheckInRoute } from "./pages/AdminCheckInRoute.js";
 import { AttendeesPage } from "./pages/AttendeesPage.js";
+import { ImportPage } from "./pages/ImportPage.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
 import { ApiError, fetchAdminEvents } from "./api/client.js";
 import type { EventDto } from "./api/types.js";
@@ -89,6 +90,7 @@ export default function App() {
                   }
                 />
               ))}
+              <Route path="attendees/import" element={<ImportPage />} />
               <Route path="*" element={<Navigate to="overview" replace />} />
             </Route>
           </Route>

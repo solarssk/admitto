@@ -214,11 +214,11 @@ model AttendeeNote {
 
 // Append-only audit log for event-day ops — ADR 0010.
 model AttendeeActionLog {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   event_id      String
-  attendee_id   String
-  event         Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
-  attendee      Attendee @relation(fields: [attendee_id], references: [id], onDelete: Cascade)
+  attendee_id   String?
+  event         Event     @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  attendee      Attendee? @relation(fields: [attendee_id], references: [id], onDelete: Cascade)
   action_type   String
   actor_user_id String?
   session_id    String?
