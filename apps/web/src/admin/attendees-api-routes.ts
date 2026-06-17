@@ -11,7 +11,6 @@ import {
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
 import {
-  parseCustomData,
   shirtSizeFromCustomData,
   writeActionLog,
   type OpsAuditContext,
@@ -41,12 +40,12 @@ const ATTENDEE_DETAIL_SELECT = {
 
 const patchAttendeeSchema = z
   .object({
-    name: z.string().trim().min(1).optional(),
-    email: z.string().trim().email().optional(),
-    company: z.string().trim().optional().nullable(),
-    department: z.string().trim().optional().nullable(),
-    ticket_type: z.string().trim().optional().nullable(),
-    shirt_size: z.string().trim().optional().nullable(),
+    name: z.string().trim().min(1).max(100).optional(),
+    email: z.string().trim().email().max(254).optional(),
+    company: z.string().trim().max(200).optional().nullable(),
+    department: z.string().trim().max(200).optional().nullable(),
+    ticket_type: z.string().trim().max(100).optional().nullable(),
+    shirt_size: z.string().trim().max(20).optional().nullable(),
   })
   .strict();
 
@@ -77,14 +76,16 @@ export type AttendeeDetailDto = {
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
   shirt_size: string | null;
-  custom_data_safe: unknown;
+  custom_data: unknown;
   deliveries: DeliveryDto[];
 };
 
+/** Map admitted_at to API check-in status for list/detail DTOs. */
 function checkInStatus(admittedAt: Date | null): "admitted" | "not_admitted" {
   return admittedAt ? "admitted" : "not_admitted";
 }
 
+/** Return 403 when the session user cannot manage the event; otherwise null. */
 async function assertEventManageAccess(
   c: Context,
   db: PrismaClient,
@@ -97,6 +98,7 @@ async function assertEventManageAccess(
   return null;
 }
 
+/** Build ops audit context from the authenticated admin request. */
 function adminAuditFromContext(c: Context): OpsAuditContext {
   const auth = c.get("auth");
   return {
@@ -106,18 +108,21 @@ function adminAuditFromContext(c: Context): OpsAuditContext {
   };
 }
 
+/** Require `:eventId` route param or return 400. */
 function requireEventId(c: Context): string | Response {
   const eventId = c.req.param("eventId");
   if (!eventId) return c.json({ error: "eventId required" }, 400);
   return eventId;
 }
 
+/** Require `:id` attendee route param or return 400. */
 function requireAttendeeId(c: Context): string | Response {
   const id = c.req.param("id");
   if (!id) return c.json({ error: "id required" }, 400);
   return id;
 }
 
+/** Load attendee scoped to event; null when missing or cross-event (caller returns 403). */
 async function loadAttendeeInEvent(
   db: PrismaClient,
   eventId: string,
@@ -131,6 +136,7 @@ async function loadAttendeeInEvent(
   return row;
 }
 
+/** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`). */
 function parseListQuery(c: Context): {
   page: number;
   pageSize: number;
@@ -151,6 +157,7 @@ function parseListQuery(c: Context): {
   return { page, pageSize, q, status, ticket_type };
 }
 
+/** Latest email delivery status per attendee id (one entry per id). */
 async function lastMailStatusByAttendee(
   db: PrismaClient,
   attendeeIds: string[],
@@ -172,6 +179,7 @@ async function lastMailStatusByAttendee(
   return map;
 }
 
+/** Serialize a list row with derived check-in and last-mail status. */
 function serializeAttendeeRow(
   row: {
     id: string;
@@ -194,6 +202,7 @@ function serializeAttendeeRow(
   };
 }
 
+/** Build attendee detail DTO including delivery log (no token fields). */
 async function buildAttendeeDetailDto(
   db: PrismaClient,
   eventId: string,
@@ -225,7 +234,7 @@ async function buildAttendeeDetailDto(
     check_in_status: checkInStatus(row.admitted_at),
     admitted_at: row.admitted_at ? row.admitted_at.toISOString() : null,
     shirt_size: shirtSizeFromCustomData(row.custom_data),
-    custom_data_safe: row.custom_data ?? null,
+    custom_data: row.custom_data ?? null,
     deliveries: deliveries.map(toDeliveryDto),
   };
 }
@@ -301,6 +310,7 @@ export async function handleGetEventAttendee(c: Context, db: PrismaClient): Prom
 
 type PatchInput = z.infer<typeof patchAttendeeSchema>;
 
+/** Compute Prisma update payload and changed field names from a PATCH body. */
 function computePatchChanges(
   existing: {
     name: string;
@@ -339,13 +349,19 @@ function computePatchChanges(
     const current = shirtSizeFromCustomData(existing.custom_data);
     const next = patch.shirt_size;
     if (next !== current) {
-      const cd = parseCustomData(existing.custom_data);
-      if (next === null || next === "") {
-        delete cd.shirt_size;
+      const raw: Record<string, unknown> =
+        existing.custom_data &&
+        typeof existing.custom_data === "object" &&
+        !Array.isArray(existing.custom_data)
+          ? { ...(existing.custom_data as Record<string, unknown>) }
+          : {};
+
+      if (next === null || next === undefined || next === "") {
+        delete raw.shirt_size;
       } else {
-        cd.shirt_size = next;
+        raw.shirt_size = next;
       }
-      data.custom_data = cd as Prisma.InputJsonValue;
+      data.custom_data = raw as Prisma.InputJsonValue;
       fields.push("shirt_size");
     }
   }
@@ -453,6 +469,11 @@ export async function handleResendEventAttendeeTicket(
   const targetEmail = to ?? existing.email;
   const alternate = Boolean(to && to !== existing.email);
 
+  // SECURITY NOTE (ADR 0021): `to` is validated as email format only — no domain allowlist.
+  // Per-attendee and global-per-user rate limits apply. All resends are audit-logged.
+  // A domain allowlist per org/event is planned for v0.5 (see follow-up task).
+  // Rationale: admins legitimately resend to corporate relay addresses outside the registrant's
+  // personal domain; a hardcoded allowlist would break that use-case without org configuration.
   await resendTicketEmail(attendeeId, db, process.env, mailDeps, { to });
 
   const deliveryRow = await db.emailDelivery.findFirst({
@@ -479,7 +500,7 @@ export async function handleResendEventAttendeeTicket(
       attendee_id: attendeeId,
       action_type: "ticket_resent",
       audit: adminAuditFromContext(c),
-      metadata: { to: targetEmail, alternate },
+      metadata: alternate ? { to: targetEmail, alternate: true } : { alternate: false },
     });
   });
 

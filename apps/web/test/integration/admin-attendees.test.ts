@@ -307,6 +307,29 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("email_conflict");
   });
+
+  it("preserves extra custom_data keys when shirt_size is edited", async () => {
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: {
+        custom_data: { agency_ref: "REF-001", shirt_size: "M" },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ shirt_size: "L" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { shirt_size: string | null };
+    expect(body.shirt_size).toBe("L");
+
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
+    const cd = row.custom_data as { agency_ref?: string; shirt_size?: string };
+    expect(cd.agency_ref).toBe("REF-001");
+    expect(cd.shirt_size).toBe("L");
+  });
 });
 
 describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {

@@ -13,10 +13,12 @@ export interface DeliveryDto {
   error_code: string | null;
 }
 
+/** Format a Date as ISO string or null for delivery DTOs. */
 function isoOrNull(d: Date | null): string | null {
   return d ? d.toISOString() : null;
 }
 
+/** Map a delivery log row to the admin API DTO (no rendered HTML). */
 export function toDeliveryDto(entry: DeliveryLogEntry): DeliveryDto {
   return {
     id: entry.id,

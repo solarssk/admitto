@@ -139,7 +139,7 @@ export interface AttendeeDetailDto {
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
   shirt_size: string | null;
-  custom_data_safe: unknown;
+  custom_data: unknown;
   deliveries: DeliveryDto[];
 }
 

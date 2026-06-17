@@ -8,9 +8,16 @@ const RESEND_WINDOW_MS = 60_000;
 /** Max resends per admin user per attendee per minute. */
 const RESEND_MAX_REQUESTS = 5;
 
+/** Sliding window for global admin resend cap (ms). */
+const GLOBAL_RESEND_WINDOW_MS = 3_600_000;
+
+/** Max resends per admin user per hour across all attendees (bulk exfiltration bound). */
+const GLOBAL_RESEND_PER_USER_HOUR = 30;
+
 /**
  * Rate-limit admin ticket resend after `staffAdminGate`.
- * Key: per user + attendee so unauthenticated clients cannot consume the bucket.
+ * Per-attendee key: user + attendee so unauthenticated clients cannot consume the bucket.
+ * Global key: caps total resends per authenticated admin per hour.
  */
 export function createAdminResendRateLimit(store: RateLimitStore) {
   return async (c: Context, next: Next): Promise<Response | void> => {
@@ -25,6 +32,17 @@ export function createAdminResendRateLimit(store: RateLimitStore) {
 
     const { allowed } = await store.hit(key, RESEND_WINDOW_MS, RESEND_MAX_REQUESTS);
     if (!allowed) return c.json({ error: "too many requests" }, 429);
+
+    if (userId) {
+      const globalKey = `admin:resend:global:user:${userId}`;
+      const global = await store.hit(
+        globalKey,
+        GLOBAL_RESEND_WINDOW_MS,
+        GLOBAL_RESEND_PER_USER_HOUR,
+      );
+      if (!global.allowed) return c.json({ error: "resend_global_limit" }, 429);
+    }
+
     await next();
   };
 }
