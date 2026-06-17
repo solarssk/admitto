@@ -121,6 +121,8 @@ export async function getAttendeeCard(
     warnings.push("Ticket is not admittable (cancelled or revoked).");
   }
 
+  const shirtSize = shirtSizeFromCustomData(attendee.custom_data);
+
   return {
     id: attendee.id,
     name: attendee.name,
@@ -129,7 +131,7 @@ export async function getAttendeeCard(
     ticket_type: attendee.ticket_type,
     check_in_status: attendee.admitted_at ? "admitted" : "not_admitted",
     admitted_at: attendee.admitted_at?.toISOString() ?? null,
-    shirt_size: shirtSizeFromCustomData(attendee.custom_data),
+    shirt_size: shirtSize,
     items: eventItems.map((item) => {
       const state = stateByItem.get(item.id) ?? "pending";
       return {
@@ -137,6 +139,8 @@ export async function getAttendeeCard(
         label: item.label,
         state,
         actions: operatorItemActions(state),
+        detail:
+          item.key === "giftbag" && shirtSize ? `Shirt size: ${shirtSize}` : undefined,
       };
     }),
     notes: notes.map((n) => ({

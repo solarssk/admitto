@@ -19,7 +19,6 @@ function itemActionLabel(key: string, action: string): string {
     if (key === "headset") return "Issue headset";
     if (key === "giftbag") return "Give gift bag";
     if (key === "badge") return "Issue badge";
-    if (key === "tshirt") return "Give T-shirt";
     return `Mark ${key} issued`;
   }
   if (action === "returned" && key === "headset") return "Return headset";
@@ -61,8 +60,6 @@ export function AttendeeCard({
         </p>
       )}
 
-      {card.shirt_size && <p className="checkin-card__meta">Shirt: {card.shirt_size}</p>}
-
       {card.warnings.map((w) => (
         <p key={w} className="checkin-card__warning" role="alert">
           {w}
@@ -74,6 +71,9 @@ export function AttendeeCard({
           <div key={item.key} className="checkin-card__item-row">
             <span className="checkin-card__item-label">
               {item.label}: <strong>{item.state}</strong>
+              {item.detail && (
+                <span className="checkin-card__item-detail"> ({item.detail})</span>
+              )}
             </span>
             <div className="checkin-card__item-actions">
               {item.actions.map((action) => (

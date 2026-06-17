@@ -9,6 +9,7 @@ import { transitionItemState, ensureAttendeeItemStates } from "../src/item-state
 import { ensureDefaultEventItems } from "../src/event-items.js";
 import { addAttendeeNote, NoteTooLongError, OperatorRequiredError } from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
+import { getAttendeeCard } from "../src/attendee-card.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -100,6 +101,16 @@ describe("admitAttendee + undo badge rollback (Lock #1)", () => {
   });
 });
 
+describe("getAttendeeCard — giftbag shirt hint", () => {
+  it("shows shirt size on giftbag item, not as separate EventItem", async () => {
+    const card = await getAttendeeCard(EVENT_ID, attendeeId, prisma);
+    expect(card).not.toBeNull();
+    const giftbag = card!.items.find((i) => i.key === "giftbag");
+    expect(giftbag?.detail).toBe("Shirt size: L");
+    expect(card!.items.some((i) => i.key === "tshirt")).toBe(false);
+  });
+});
+
 describe("ensureDefaultEventItems (Lock #7 lazy seed)", () => {
   it("creates default items for events created after migration", async () => {
     const eventId = "test-event-no-items";
@@ -120,7 +131,7 @@ describe("ensureDefaultEventItems (Lock #7 lazy seed)", () => {
       where: { event_id: eventId },
       orderBy: { key: "asc" },
     });
-    expect(items.map((i) => i.key)).toEqual(["badge", "giftbag", "headset", "tshirt"]);
+    expect(items.map((i) => i.key)).toEqual(["badge", "giftbag", "headset"]);
     expect(items.find((i) => i.key === "badge")?.config).toEqual({ issue_on_checkin: true });
   });
 });
@@ -143,7 +154,7 @@ describe("ensureAttendeeItemStates (Lock #2)", () => {
     const rows = await prisma.attendeeItemState.findMany({
       where: { attendee_id: att.id },
     });
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(3);
     expect(rows.every((r) => r.state === "pending")).toBe(true);
   });
 });

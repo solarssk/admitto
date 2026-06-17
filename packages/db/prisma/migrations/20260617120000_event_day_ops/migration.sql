@@ -134,7 +134,7 @@ SELECT
   'Gift bag',
   'item',
   true,
-  '{}'::jsonb,
+  '{"size_field":"shirt_size"}'::jsonb,
   CURRENT_TIMESTAMP,
   CURRENT_TIMESTAMP
 FROM "Event" e
@@ -163,20 +163,6 @@ SELECT
   'item',
   true,
   '{"requires_return":true}'::jsonb,
-  CURRENT_TIMESTAMP,
-  CURRENT_TIMESTAMP
-FROM "Event" e
-ON CONFLICT ("event_id", "key") DO NOTHING;
-
-INSERT INTO "EventItem" ("id", "event_id", "key", "label", "type", "enabled", "config", "created_at", "updated_at")
-SELECT
-  'ei_' || substr(md5(e."id" || ':tshirt'), 1, 24),
-  e."id",
-  'tshirt',
-  'T-shirt',
-  'item',
-  true,
-  '{"size_field":"shirt_size"}'::jsonb,
   CURRENT_TIMESTAMP,
   CURRENT_TIMESTAMP
 FROM "Event" e

@@ -4,10 +4,9 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
 const DEFAULT_EVENT_ITEMS = [
-  { key: "giftbag", label: "Gift bag", config: {} },
+  { key: "giftbag", label: "Gift bag", config: { size_field: "shirt_size" } },
   { key: "badge", label: "Badge", config: { issue_on_checkin: true } },
   { key: "headset", label: "Headset", config: { requires_return: true } },
-  { key: "tshirt", label: "T-shirt", config: { size_field: "shirt_size" } },
 ] as const;
 
 /** Matches migration SQL id: `ei_` + first 24 hex chars of md5(eventId:key). */
@@ -17,7 +16,7 @@ function defaultEventItemId(eventId: string, key: string): string {
 }
 
 /**
- * Lazy-init default EventItem rows (giftbag, badge, headset, tshirt) — idempotent (Lock #7).
+ * Lazy-init default EventItem rows (giftbag, badge, headset) — idempotent (Lock #7).
  * Covers events created after the one-time migration backfill.
  */
 export async function ensureDefaultEventItems(eventId: string, db: DbClient): Promise<void> {

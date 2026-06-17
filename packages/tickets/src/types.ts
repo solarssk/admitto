@@ -61,6 +61,8 @@ export type AttendeeCardItemDto = {
   label: string;
   state: string;
   actions: string[];
+  /** Optional operator hint (e.g. shirt size for giftbag contents). */
+  detail?: string | null;
 };
 
 export type AttendeeCardDto = {

@@ -43,10 +43,9 @@ beforeAll(async () => {
   for (const eventId of [EVENT_ID, OTHER_EVENT_ID]) {
     await prisma.eventItem.createMany({
       data: [
-        { event_id: eventId, key: "giftbag", label: "Gift bag", config: {} },
+        { event_id: eventId, key: "giftbag", label: "Gift bag", config: { size_field: "shirt_size" } },
         { event_id: eventId, key: "badge", label: "Badge", config: { issue_on_checkin: true } },
         { event_id: eventId, key: "headset", label: "Headset", config: { requires_return: true } },
-        { event_id: eventId, key: "tshirt", label: "T-shirt", config: { size_field: "shirt_size" } },
       ],
     });
   }

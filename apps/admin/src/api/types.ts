@@ -51,6 +51,7 @@ export interface AttendeeCardItemDto {
   label: string;
   state: string;
   actions: string[];
+  detail?: string | null;
 }
 
 export interface AttendeeCardDto {
