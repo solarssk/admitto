@@ -12,6 +12,8 @@ export {
   type EmailDeliveryStatus,
   type WalletPassStatus,
   type CheckInStatus,
+  type AttendeeItemStateValue,
+  type AttendeeActionType,
 } from './status.js';
 
 export {
@@ -21,6 +23,9 @@ export {
   EMAIL_DELIVERY_SUCCESS_STATUSES,
   WALLET_PASS_STATUS,
   CHECKIN_STATUS,
+  ATTENDEE_ITEM_STATE,
+  ATTENDEE_ACTION_TYPE,
+  MAX_ATTENDEE_NOTE_LENGTH,
 } from './status.js';
 
 export {

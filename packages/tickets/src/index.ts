@@ -5,6 +5,17 @@ export { generateQrPng, buildQrPayload } from "./qr.js";
 export { resolveTicket } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
 export { checkInScan, getRecentCheckIns, isAdmittable } from "./checkin.js";
+export { admitAttendee, shouldRequireConfirmOnScan } from "./admit.js";
+export { lookupAttendees, getAttendeeCard, getCheckInStats } from "./attendee-card.js";
+export {
+  ensureAttendeeItemStates,
+  transitionItemState,
+  IllegalItemTransitionError,
+} from "./item-states.js";
+export { addAttendeeNote, NoteTooLongError, MAX_ATTENDEE_NOTE_LENGTH } from "./notes.js";
+export { undoLastCheckIn, UndoNotAllowedError } from "./undo.js";
+export { parseCustomData, shirtSizeFromCustomData } from "./custom-data.js";
+export type { OpsAuditContext } from "./ops-audit.js";
 export type {
   TicketMode,
   ResolvedTicket,
@@ -13,6 +24,12 @@ export type {
   IssueEventSummary,
   CheckInScanParams,
   CheckInResult,
+  CheckInScanResult,
+  AdmitResult,
+  UndoCheckInResult,
   CheckInAttendeeInfo,
   CheckInHistoryEntry,
+  AttendeeCardDto,
+  AttendeeCardItemDto,
+  LookupAttendeeResult,
 } from "./types.js";

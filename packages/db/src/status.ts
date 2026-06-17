@@ -49,5 +49,42 @@ export const CHECKIN_STATUS = [
   'NETWORK_ERROR',
 ] as const satisfies CheckInStatus[];
 
+/** Operational item states for event-day ops (ADR 0010). */
+export type AttendeeItemStateValue =
+  | 'pending'
+  | 'issued'
+  | 'returned'
+  | 'lost'
+  | 'problem'
+  | 'not_applicable';
+
+export const ATTENDEE_ITEM_STATE = [
+  'pending',
+  'issued',
+  'returned',
+  'lost',
+  'problem',
+  'not_applicable',
+] as const satisfies AttendeeItemStateValue[];
+
+/** AttendeeActionLog.action_type values written by operator event-day flows. */
+export type AttendeeActionType =
+  | 'check_in'
+  | 'check_in_undo'
+  | 'item_issued'
+  | 'item_returned'
+  | 'note_added';
+
+export const ATTENDEE_ACTION_TYPE = [
+  'check_in',
+  'check_in_undo',
+  'item_issued',
+  'item_returned',
+  'note_added',
+] as const satisfies AttendeeActionType[];
+
+/** Maximum note body length (API validation — Lock #8). */
+export const MAX_ATTENDEE_NOTE_LENGTH = 2000;
+
 /** Terminal success statuses — initial dedup skips when an existing row has one of these. */
 export const EMAIL_DELIVERY_SUCCESS_STATUSES: readonly EmailDeliveryStatus[] = ['accepted', 'sent', 'delivered'];

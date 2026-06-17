@@ -35,10 +35,21 @@ beforeAll(async () => {
 
   await prisma.event.createMany({
     data: [
-      { id: EVENT_ID, title: "Check-In Test Event", slug: "checkin-test-event", date: new Date("2026-09-01T09:00:00Z"), organization_id: "org_default" },
-      { id: OTHER_EVENT_ID, title: "Other Event", slug: "other-event-checkin", date: new Date("2026-09-02T09:00:00Z"), organization_id: "org_default" },
+      { id: EVENT_ID, title: "Check-In Test Event", slug: "checkin-test-event", date: new Date("2026-09-01T09:00:00Z"), organization_id: "org_default", ops_config: { require_confirm_on_scan: false, badge_at_entry: true } },
+      { id: OTHER_EVENT_ID, title: "Other Event", slug: "other-event-checkin", date: new Date("2026-09-02T09:00:00Z"), organization_id: "org_default", ops_config: { require_confirm_on_scan: false, badge_at_entry: true } },
     ],
   });
+
+  for (const eventId of [EVENT_ID, OTHER_EVENT_ID]) {
+    await prisma.eventItem.createMany({
+      data: [
+        { event_id: eventId, key: "giftbag", label: "Gift bag", config: {} },
+        { event_id: eventId, key: "badge", label: "Badge", config: { issue_on_checkin: true } },
+        { event_id: eventId, key: "headset", label: "Headset", config: { requires_return: true } },
+        { event_id: eventId, key: "tshirt", label: "T-shirt", config: { size_field: "shirt_size" } },
+      ],
+    });
+  }
 
   // Mode A — internal token
   tokenA = generateToken();
@@ -78,7 +89,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await prisma.attendeeActionLog.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
+  await prisma.attendeeNote.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
+  await prisma.attendeeItemState.deleteMany({});
   await prisma.checkIn.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
+  await prisma.eventItem.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
   await prisma.attendee.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
   await prisma.event.deleteMany({ where: { id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
   await prisma.$disconnect();
@@ -95,7 +110,8 @@ describe("checkInScan — Mode A (raw token)", () => {
     const result = await checkInScan({ scanned: tokenA, eventId: EVENT_ID }, prisma);
     expect(result.status).toBe("VALID");
     if (result.status !== "VALID") return;
-    expect(result.attendee.name).toBe("Mode A Checkin");
+    expect(result.confirmed).toBe(true);
+    expect(result.card.name).toBe("Mode A Checkin");
     expect(result.admittedAt).toBeInstanceOf(Date);
   });
 
@@ -127,7 +143,7 @@ describe("checkInScan — Mode B (agency payload)", () => {
     const result = await checkInScan({ scanned: "AGENCY-QR-CHECKIN-001", eventId: EVENT_ID }, prisma);
     expect(result.status).toBe("VALID");
     if (result.status !== "VALID") return;
-    expect(result.attendee.name).toBe("Mode B Checkin");
+    expect(result.card.name).toBe("Mode B Checkin");
   });
 
   it("creates CheckIn log for Mode B", async () => {
@@ -145,7 +161,7 @@ describe("checkInScan — ALREADY_CHECKED_IN", () => {
     expect(result.status).toBe("ALREADY_CHECKED_IN");
     if (result.status !== "ALREADY_CHECKED_IN") return;
     expect(result.admittedAt).toBeInstanceOf(Date);
-    expect(result.attendee.name).toBe("Mode A Checkin");
+    expect(result.card.name).toBe("Mode A Checkin");
   });
 
   it("logs ALREADY_CHECKED_IN to CheckIn table", async () => {
@@ -193,7 +209,7 @@ describe("checkInScan — cancelled → REVOKED", () => {
     const result = await checkInScan({ scanned: cancelledToken, eventId: EVENT_ID }, prisma);
     expect(result.status).toBe("REVOKED");
     if (result.status !== "REVOKED") return;
-    expect(result.attendee.name).toBe("Cancelled Checkin");
+    expect(result.card.name).toBe("Cancelled Checkin");
 
     const att = await prisma.attendee.findUnique({ where: { id: attendeeCancelledId } });
     expect(att?.admitted_at).toBeNull();

@@ -52,13 +52,59 @@ export type CheckInScanParams = {
   eventId: string;
   operator?: string;
   deviceId?: string;
+  sessionId?: string;
+  ip?: string;
 };
+
+export type AttendeeCardItemDto = {
+  key: string;
+  label: string;
+  state: string;
+  actions: string[];
+};
+
+export type AttendeeCardDto = {
+  id: string;
+  name: string;
+  company: string | null;
+  department: string | null;
+  ticket_type: string | null;
+  check_in_status: "not_admitted" | "admitted";
+  admitted_at: string | null;
+  shirt_size: string | null;
+  items: AttendeeCardItemDto[];
+  notes: { body: string; author_display: string; created_at: string }[];
+  warnings: string[];
+};
+
+export type LookupAttendeeResult = {
+  id: string;
+  name: string;
+  ticket_type: string | null;
+  company: string | null;
+  department: string | null;
+  check_in_status: "not_admitted" | "admitted";
+};
+
+export type AdmitResult =
+  | { status: "VALID"; confirmed: true; card: AttendeeCardDto; admittedAt: Date }
+  | { status: "ALREADY_CHECKED_IN"; confirmed: true; card: AttendeeCardDto; admittedAt: Date }
+  | { status: "REVOKED"; confirmed: false; card: AttendeeCardDto }
+  | { status: "INVALID"; confirmed: false };
+
+export type CheckInScanResult =
+  | AdmitResult
+  | { status: "INVALID"; confirmed: false }
+  | { status: "PREVIEW"; confirmed: false; card?: AttendeeCardDto; attendeeId: string };
+
+export type UndoCheckInResult = { card: AttendeeCardDto };
 
 export type CheckInAttendeeInfo = {
   name: string;
   ticket_type: string | null;
 };
 
+/** @deprecated Legacy scan result — prefer CheckInScanResult */
 export type CheckInResult =
   | { status: "VALID";              attendee: CheckInAttendeeInfo; admittedAt: Date }
   | { status: "ALREADY_CHECKED_IN"; attendee: CheckInAttendeeInfo; admittedAt: Date }
@@ -76,7 +122,12 @@ export type CheckInHistoryEntry = {
   source: string | null;
   notes: string | null;
   created_at: Date;
-  attendee: { name: string; ticket_type: string | null };
+  attendee: {
+    name: string;
+    ticket_type: string | null;
+    company?: string | null;
+    department?: string | null;
+  };
 };
 
 export type ResolvedTicket = {

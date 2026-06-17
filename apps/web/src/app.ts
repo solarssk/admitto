@@ -9,8 +9,6 @@ import {
   resolveTicket,
   generateQrPng,
   buildQrPayload,
-  checkInScan,
-  getRecentCheckIns,
   isAdmittable,
   hashToken,
 } from "@admitto/tickets";
@@ -61,7 +59,19 @@ import { createAdminAccessMiddleware } from "./auth/admin-access-middleware.js";
 import { createStaffAdminGate } from "./auth/staff-admin-gate.js";
 import { createCheckInPanelCapabilityGuard } from "./auth/checkin-panel-gate.js";
 import { handleGetAdminEvents } from "./admin/admin-api-routes.js";
-import { handleGetCheckinEvents } from "./admin/checkin-api-routes.js";
+import {
+  handleGetCheckinEvents,
+  handleCheckinScan,
+  handleCheckinLookup,
+  handleGetAttendeeCard,
+  handleCheckinAdmit,
+  handleCheckinItemAction,
+  handleCheckinNote,
+  handleCheckinUndo,
+  handleCheckinStats,
+  handleCheckinHistory,
+  eventIdFromCheckinBody,
+} from "./admin/checkin-api-routes.js";
 import { handleGetStaffTheme, handlePutStaffTheme } from "./admin/staff-api-routes.js";
 import { createStaffSpaHandlers } from "./staff-spa.js";
 import { sweepExpiredOidcAuthStates } from "@admitto/auth";
@@ -422,32 +432,73 @@ export function createApp(options: CreateAppOptions = {}) {
     createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
     parseScanBodyMiddleware,
     createCheckinEventScope(checkinAuthDeps, eventIdFromScanBody),
-    async (c) => {
-      const body = c.get("parsedScanBody");
-      const { scanned: rawScanned, eventId, deviceId } = body;
-      const scanned = typeof rawScanned === "string" ? rawScanned.trim() : "";
-      if (!scanned) return c.json({ error: "scanned required" }, 400);
-      if (typeof eventId !== "string" || !eventId) {
-        return c.json({ error: "eventId required" }, 400);
-      }
+    (c) => handleCheckinScan(c, db),
+  );
 
-      try {
-        const operatorUserId = c.get("operatorUserId") as string | undefined;
-        const result = await checkInScan(
-          {
-            scanned,
-            eventId,
-            deviceId: typeof deviceId === "string" ? deviceId : undefined,
-            operator: operatorUserId,
-          },
-          db,
-        );
-        return c.json(result, 200);
-      } catch (err) {
-        console.error("checkInScan failed:", err);
-        return c.json({ error: "server error" }, 500);
-      }
-    },
+  app.post(
+    "/api/checkin/lookup",
+    createCheckinPreAuth(checkinAuthDeps),
+    createCheckinSessionCsrfGuard(),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "history"),
+    parseScanBodyMiddleware,
+    createCheckinEventScope(checkinAuthDeps, eventIdFromCheckinBody),
+    (c) => handleCheckinLookup(c, db),
+  );
+
+  app.get(
+    "/api/checkin/attendees/:attendeeId",
+    createCheckinPreAuth(checkinAuthDeps),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "history"),
+    createCheckinEventScope(checkinAuthDeps, (c) => c.req.query("eventId") || undefined),
+    (c) => handleGetAttendeeCard(c, db),
+  );
+
+  app.post(
+    "/api/checkin/admit",
+    createCheckinPreAuth(checkinAuthDeps),
+    createCheckinSessionCsrfGuard(),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
+    parseScanBodyMiddleware,
+    createCheckinEventScope(checkinAuthDeps, eventIdFromCheckinBody),
+    (c) => handleCheckinAdmit(c, db),
+  );
+
+  app.post(
+    "/api/checkin/items/:itemKey",
+    createCheckinPreAuth(checkinAuthDeps),
+    createCheckinSessionCsrfGuard(),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
+    parseScanBodyMiddleware,
+    createCheckinEventScope(checkinAuthDeps, eventIdFromCheckinBody),
+    (c) => handleCheckinItemAction(c, db),
+  );
+
+  app.post(
+    "/api/checkin/notes",
+    createCheckinPreAuth(checkinAuthDeps),
+    createCheckinSessionCsrfGuard(),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
+    parseScanBodyMiddleware,
+    createCheckinEventScope(checkinAuthDeps, eventIdFromCheckinBody),
+    (c) => handleCheckinNote(c, db),
+  );
+
+  app.post(
+    "/api/checkin/undo",
+    createCheckinPreAuth(checkinAuthDeps),
+    createCheckinSessionCsrfGuard(),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
+    parseScanBodyMiddleware,
+    createCheckinEventScope(checkinAuthDeps, eventIdFromCheckinBody),
+    (c) => handleCheckinUndo(c, db),
+  );
+
+  app.get(
+    "/api/checkin/stats",
+    createCheckinPreAuth(checkinAuthDeps),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "history"),
+    createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
+    (c) => handleCheckinStats(c, db),
   );
 
   app.get(
@@ -455,18 +506,7 @@ export function createApp(options: CreateAppOptions = {}) {
     createCheckinPreAuth(checkinAuthDeps),
     createCheckinAuthenticatedRateLimit(rateLimitStore, "history"),
     createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
-    async (c) => {
-      const eventId = c.req.query("eventId");
-      if (!eventId) return c.json({ error: "eventId required" }, 400);
-      const limit = parseCheckinHistoryLimit(c.req.query("limit"));
-      try {
-        const history = await getRecentCheckIns(eventId, db, limit);
-        return c.json(history, 200);
-      } catch (err) {
-        console.error("getRecentCheckIns failed:", err);
-        return c.json({ error: "server error" }, 500);
-      }
-    },
+    (c) => handleCheckinHistory(c, db),
   );
 
   return app;

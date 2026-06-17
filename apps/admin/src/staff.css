@@ -132,6 +132,181 @@
   max-width: 720px;
 }
 
+.checkin-surface--split {
+  max-width: none;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.checkin-surface__main {
+  flex: 1 1 520px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.checkin-surface__aside {
+  flex: 0 0 320px;
+  min-width: 280px;
+}
+
+.checkin-aside__count {
+  margin: 0 0 12px;
+  font-size: var(--fs-h3);
+}
+
+.checkin-aside__title {
+  margin: 16px 0 8px;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.checkin-action-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-card);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.checkin-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.checkin-action-btn--block {
+  width: 100%;
+}
+
+.checkin-action-btn--primary {
+  background: var(--primary);
+  color: var(--text-on-primary);
+  border-color: transparent;
+}
+
+.checkin-card__name {
+  margin: 0 0 8px;
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.checkin-card__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.checkin-card__ticket,
+.checkin-card__meta {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.checkin-card__warning {
+  color: var(--status-error-fg, #b42318);
+  margin: 8px 0;
+}
+
+.checkin-card__item-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.checkin-card__item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.checkin-card__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.checkin-card__notes ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.checkin-lookup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.checkin-lookup__results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.checkin-lookup__hit {
+  width: 100%;
+  text-align: left;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-card);
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.checkin-lookup__hit strong {
+  display: block;
+}
+
+.checkin-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.checkin-history__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-sm);
+}
+
+.checkin-surface__camera-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.checkin-camera {
+  margin-top: 0.75rem;
+}
+
+.checkin-camera__video {
+  width: 100%;
+  max-height: 240px;
+  border-radius: var(--radius-md, 6px);
+  background: #111;
+  object-fit: cover;
+}
+
 .checkin-surface__form {
   display: flex;
   flex-direction: column;
@@ -195,8 +370,9 @@
   font-size: var(--fs-sm);
 }
 
+
 @media (min-width: 900px) {
-  .checkin-surface {
+  .checkin-surface:not(.checkin-surface--split) {
     max-width: 960px;
   }
 
@@ -207,6 +383,18 @@
 
   .checkin-surface__form .at-field {
     flex: 1;
+  }
+}
+
+@media (max-width: 1023px) {
+  .checkin-surface--split {
+    flex-direction: column;
+    max-width: 720px;
+  }
+
+  .checkin-surface__aside {
+    flex: 1 1 auto;
+    width: 100%;
   }
 }
 

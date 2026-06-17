@@ -1,0 +1,18 @@
+export type EventOpsConfig = {
+  require_confirm_on_scan: boolean;
+  badge_at_entry: boolean;
+};
+
+const DEFAULT_OPS_CONFIG: EventOpsConfig = {
+  require_confirm_on_scan: false,
+  badge_at_entry: true,
+};
+
+export function parseEventOpsConfig(raw: unknown): EventOpsConfig {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...DEFAULT_OPS_CONFIG };
+  const o = raw as Record<string, unknown>;
+  return {
+    require_confirm_on_scan: o.require_confirm_on_scan === true,
+    badge_at_entry: o.badge_at_entry !== false,
+  };
+}
