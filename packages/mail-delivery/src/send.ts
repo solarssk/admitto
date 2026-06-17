@@ -23,6 +23,8 @@ import type { SendTicketEmailsResult } from "./types.js";
 export interface SendTicketEmailsOptions {
   attendeeIds?: string[];
   purpose?: "initial" | "resend";
+  /** Override delivery recipient for a single-attendee resend (does not mutate Attendee.email). */
+  recipientEmail?: string;
 }
 
 /** Optional test hooks for `sendTicketEmails()` (e.g. export_only sink). */
@@ -178,7 +180,8 @@ export async function sendTicketEmails(
         batchId,
         templateId: resolvedTemplate.source === "builtin" ? undefined : `${resolvedTemplate.source}`,
         provider: mailer.provider,
-        recipientEmail: attendee.email,
+        recipientEmail:
+          purpose === "resend" && options.recipientEmail ? options.recipientEmail : attendee.email,
         renderedSubject: rendered.subject,
         renderedHtml: rendered.html,
       };

@@ -11,6 +11,8 @@ export interface DeliveryLogEntry {
   attempts: number;
   purpose: string;
   recipient_email: string | null;
+  rendered_subject: string | null;
+  error_code: string | null;
   error: string | null;
   queued_at: Date;
   attempted_at: Date | null;
@@ -39,6 +41,8 @@ const DELIVERY_LOG_SELECT = {
   attempts: true,
   purpose: true,
   recipient_email: true,
+  rendered_subject: true,
+  error_code: true,
   error: true,
   queued_at: true,
   attempted_at: true,

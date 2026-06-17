@@ -15,6 +15,7 @@ export {
 export { addAttendeeNote, NoteTooLongError, OperatorRequiredError, MAX_ATTENDEE_NOTE_LENGTH } from "./notes.js";
 export { undoLastCheckIn, UndoNotAllowedError } from "./undo.js";
 export { parseCustomData, shirtSizeFromCustomData } from "./custom-data.js";
+export { writeActionLog } from "./ops-audit.js";
 export type { OpsAuditContext } from "./ops-audit.js";
 export type {
   TicketMode,

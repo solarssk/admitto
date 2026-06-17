@@ -69,14 +69,16 @@ export const ATTENDEE_ITEM_STATE = [
   'not_applicable',
 ] as const satisfies AttendeeItemStateValue[];
 
-/** AttendeeActionLog.action_type values written by operator event-day flows. */
+/** AttendeeActionLog.action_type values (operator event-day + admin attendee management). */
 export type AttendeeActionType =
   | 'check_in'
   | 'check_in_undo'
   | 'scan_preview'
   | 'item_issued'
   | 'item_returned'
-  | 'note_added';
+  | 'note_added'
+  | 'attendee_edited'
+  | 'ticket_resent';
 
 export const ATTENDEE_ACTION_TYPE = [
   'check_in',
@@ -85,6 +87,8 @@ export const ATTENDEE_ACTION_TYPE = [
   'item_issued',
   'item_returned',
   'note_added',
+  'attendee_edited',
+  'ticket_resent',
 ] as const satisfies AttendeeActionType[];
 
 /** Maximum note body length (API validation — Lock #8). */

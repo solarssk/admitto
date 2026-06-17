@@ -105,3 +105,68 @@ export interface CheckInHistoryEntry {
 export interface CheckInStatsResponse {
   admitted_count: number;
 }
+
+export interface AttendeeRowDto {
+  id: string;
+  name: string;
+  email: string;
+  company: string | null;
+  ticket_type: string | null;
+  check_in_status: "admitted" | "not_admitted";
+  last_mail_status: string | null;
+}
+
+export interface DeliveryDto {
+  id: string;
+  purpose: string;
+  status: string;
+  recipient_email: string | null;
+  rendered_subject: string | null;
+  queued_at: string;
+  sent_at: string | null;
+  failed_at: string | null;
+  error_code: string | null;
+}
+
+export interface AttendeeDetailDto {
+  id: string;
+  name: string;
+  email: string;
+  company: string | null;
+  department: string | null;
+  ticket_type: string | null;
+  status: string;
+  check_in_status: "admitted" | "not_admitted";
+  admitted_at: string | null;
+  shirt_size: string | null;
+  custom_data_safe: unknown;
+  deliveries: DeliveryDto[];
+}
+
+export interface AttendeesListResponse {
+  items: AttendeeRowDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AttendeesListParams {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  status?: "all" | "admitted" | "not_admitted";
+  ticket_type?: string;
+}
+
+export interface UpdateAttendeePatch {
+  name?: string;
+  email?: string;
+  company?: string | null;
+  department?: string | null;
+  ticket_type?: string | null;
+  shirt_size?: string | null;
+}
+
+export interface ResendTicketBody {
+  to?: string;
+}

@@ -89,8 +89,9 @@ describe("listDeliveries", () => {
       expect(row).toHaveProperty("status");
       expect(row).toHaveProperty("provider");
       expect(row).toHaveProperty("recipient_email");
+      expect(row).toHaveProperty("rendered_subject");
+      expect(row).toHaveProperty("error_code");
       expect(row).not.toHaveProperty("rendered_html");
-      expect(row).not.toHaveProperty("rendered_subject");
     }
   });
 

@@ -1,12 +1,18 @@
 import type {
   AttendeeCardDto,
+  AttendeeDetailDto,
+  AttendeesListParams,
+  AttendeesListResponse,
   CheckInHistoryEntry,
   CheckInScanResponse,
   CheckInStatsResponse,
+  DeliveryDto,
   EventDto,
   LookupAttendeeResult,
   MeResponse,
+  ResendTicketBody,
   ThemeResponse,
+  UpdateAttendeePatch,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -36,6 +42,18 @@ async function parseJson<T>(res: Response): Promise<T> {
 function jsonPostInit(body: unknown): RequestInit {
   return {
     method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: window.location.origin,
+    },
+    body: JSON.stringify(body),
+  };
+}
+
+function jsonPatchInit(body: unknown): RequestInit {
+  return {
+    method: "PATCH",
     credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
@@ -165,4 +183,63 @@ export async function fetchCheckInStats(eventId: string): Promise<CheckInStatsRe
     credentials: "same-origin",
   });
   return parseJson<CheckInStatsResponse>(res);
+}
+
+function attendeesListQuery(eventId: string, params: AttendeesListParams = {}): string {
+  const q = new URLSearchParams();
+  if (params.page != null) q.set("page", String(params.page));
+  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
+  if (params.q) q.set("q", params.q);
+  if (params.status && params.status !== "all") q.set("status", params.status);
+  if (params.ticket_type) q.set("ticket_type", params.ticket_type);
+  const qs = q.toString();
+  return `/api/admin/events/${encodeURIComponent(eventId)}/attendees${qs ? `?${qs}` : ""}`;
+}
+
+export async function fetchEventAttendees(
+  eventId: string,
+  params: AttendeesListParams = {},
+  signal?: AbortSignal,
+): Promise<AttendeesListResponse> {
+  const res = await fetch(attendeesListQuery(eventId, params), {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<AttendeesListResponse>(res);
+}
+
+export async function fetchAttendeeDetail(
+  eventId: string,
+  attendeeId: string,
+  signal?: AbortSignal,
+): Promise<AttendeeDetailDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<AttendeeDetailDto>(res);
+}
+
+export async function updateAttendee(
+  eventId: string,
+  attendeeId: string,
+  patch: UpdateAttendeePatch,
+): Promise<AttendeeDetailDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}`,
+    jsonPatchInit(patch),
+  );
+  return parseJson<AttendeeDetailDto>(res);
+}
+
+export async function resendTicket(
+  eventId: string,
+  attendeeId: string,
+  body: ResendTicketBody = {},
+): Promise<DeliveryDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/resend`,
+    jsonPostInit(body),
+  );
+  return parseJson<DeliveryDto>(res);
 }

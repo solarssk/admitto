@@ -255,6 +255,29 @@ describe("resendTicketEmail", () => {
     expect(resendRow?.rendered_html).toContain("{{ticket_url}}");
     expect(resendRow?.rendered_html).not.toMatch(/\/t\/[A-Za-z0-9_-]{20,}/);
   });
+
+  it("uses alternate to without changing Attendee.email", async () => {
+    exported.length = 0;
+    const before = await prisma.attendee.findUniqueOrThrow({ where: { id: "att-mode-a" } });
+
+    await resendTicketEmail(
+      "att-mode-a",
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+      { to: "alt@example.com" },
+    );
+
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id: "att-mode-a" } });
+    expect(after.email).toBe(before.email);
+
+    const resendRow = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: "att-mode-a", purpose: "resend", recipient_email: "alt@example.com" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(resendRow?.recipient_email).toBe("alt@example.com");
+    expect(exported[0]?.message.to).toBe("alt@example.com");
+  });
 });
 
 describe("retryDelivery", () => {
