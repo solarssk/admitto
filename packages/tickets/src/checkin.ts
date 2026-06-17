@@ -1,94 +1,85 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { resolveTicket } from "./resolve.js";
-import type { CheckInScanParams, CheckInResult, CheckInHistoryEntry } from "./types.js";
+import { admitAttendee, shouldRequireConfirmOnScan } from "./admit.js";
+import { getAttendeeCard } from "./attendee-card.js";
+import { isAdmittable } from "./admittable.js";
+import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
+import type { CheckInScanParams, CheckInScanResult, CheckInHistoryEntry } from "./types.js";
 
-// Local alias — avoids cross-package build-order dependency.
-// Proper fix: TypeScript project references, or move to @admitto/shared once CI build-order is solved.
 type AttendeeStatus = "registered" | "confirmed" | "cancelled";
 
-// Admittable statuses — single source of truth for both isAdmittable() and the CAS predicate.
-const ADMITTABLE_STATUSES: AttendeeStatus[] = ["registered", "confirmed"];
+export { isAdmittable } from "./admittable.js";
 
-export function isAdmittable(status: AttendeeStatus): boolean {
-  return ADMITTABLE_STATUSES.includes(status);
+function auditFromParams(params: CheckInScanParams): OpsAuditContext {
+  return {
+    operator: params.operator,
+    sessionId: params.sessionId,
+    deviceId: params.deviceId,
+    ip: params.ip,
+  };
 }
 
 /**
- * Validate a scanned QR/token and atomically record check-in.
- *
- * All DB work runs in a single transaction:
- *   1. resolveTicket — INVALID returned immediately, not persisted (no attendee_id for FK).
- *   2. isAdmittable  — cancelled → REVOKED, logged.
- *   3. Atomic CAS    — WHERE admitted_at IS NULL AND status IN admittable;
- *                      count=1 → VALID, count=0 → re-read to distinguish REVOKED vs ALREADY_CHECKED_IN.
- *   4. CheckIn log   — written for every resolved scan (VALID / ALREADY_CHECKED_IN / REVOKED).
+ * Validate a scanned QR/token and record check-in (or preview when require_confirm).
  */
 export async function checkInScan(
   params: CheckInScanParams,
   prisma: PrismaClient,
-): Promise<CheckInResult> {
-  const { scanned, eventId, operator, deviceId } = params;
+): Promise<CheckInScanResult> {
+  const { scanned, eventId } = params;
+  const audit = auditFromParams(params);
 
-  return prisma.$transaction(async (tx: Prisma.TransactionClient): Promise<CheckInResult> => {
-    const resolved = await resolveTicket(scanned, tx, { eventId });
-    if (!resolved) return { status: "INVALID" };
+  const resolved = await resolveTicket(scanned, prisma, { eventId });
+  if (!resolved) return { status: "INVALID", confirmed: false };
 
-    const { attendee } = resolved;
-    const attendeePublic = { name: attendee.name, ticket_type: attendee.ticket_type };
-    const logBase = {
-      attendee_id: attendee.id,
-      event_id: eventId,
-      checked_in_by: operator ?? null,
-      device_id: deviceId ?? null,
-      source: "scan",
-    };
+  const { attendee } = resolved;
+  if (!isAdmittable(attendee.status as AttendeeStatus)) {
+    const card = await getAttendeeCard(eventId, attendee.id, prisma);
+    if (!card) return { status: "INVALID", confirmed: false };
 
-    if (!isAdmittable(attendee.status as AttendeeStatus)) {
-      await tx.checkIn.create({ data: { ...logBase, status: "REVOKED" } });
-      return { status: "REVOKED", attendee: attendeePublic };
-    }
-
-    const now = new Date();
-    // CAS: include status condition to guard against status change between resolveTicket and this write.
-    const updated = await tx.attendee.updateMany({
-      where: {
-        id: attendee.id,
+    await prisma.checkIn.create({
+      data: {
+        attendee_id: attendee.id,
         event_id: eventId,
-        admitted_at: null,
-        status: { in: ADMITTABLE_STATUSES },
+        checked_in_by: params.operator ?? null,
+        device_id: params.deviceId ?? null,
+        source: "scan",
+        status: "REVOKED",
       },
-      data: { admitted_at: now, admitted_by: operator ?? null },
     });
+    return { status: "REVOKED", confirmed: false, card };
+  }
 
-    if (updated.count === 0) {
-      // Either already admitted (race) or status changed to non-admittable (TOCTOU).
-      const current = await tx.attendee.findUnique({
-        where: { id: attendee.id },
-        select: { admitted_at: true, status: true },
+  const requireConfirm = await shouldRequireConfirmOnScan(eventId, prisma);
+  if (requireConfirm) {
+    const row = await prisma.attendee.findUnique({
+      where: { id: attendee.id },
+      select: { admitted_at: true },
+    });
+    if (!row?.admitted_at) {
+      const card = await getAttendeeCard(eventId, attendee.id, prisma);
+      await prisma.$transaction(async (tx) => {
+        await writeActionLog(tx, {
+          event_id: eventId,
+          attendee_id: attendee.id,
+          action_type: "scan_preview",
+          audit,
+        });
       });
-      if (!current) {
-        throw new Error(`Consistency error: attendee ${attendee.id} disappeared mid-transaction`);
-      }
-      if (!isAdmittable(current.status as AttendeeStatus)) {
-        await tx.checkIn.create({ data: { ...logBase, status: "REVOKED" } });
-        return { status: "REVOKED", attendee: attendeePublic };
-      }
-      if (!current.admitted_at) {
-        throw new Error(`Consistency error: attendee ${attendee.id} CAS count=0 but admitted_at is null`);
-      }
-      await tx.checkIn.create({ data: { ...logBase, status: "ALREADY_CHECKED_IN" } });
-      return { status: "ALREADY_CHECKED_IN", attendee: attendeePublic, admittedAt: current.admitted_at };
+      return {
+        status: "PREVIEW",
+        confirmed: false,
+        card: card ?? undefined,
+        attendeeId: attendee.id,
+      };
     }
+  }
 
-    await tx.checkIn.create({ data: { ...logBase, status: "VALID" } });
-    return { status: "VALID", attendee: attendeePublic, admittedAt: now };
-  });
+  return admitAttendee({ attendeeId: attendee.id, eventId, method: "scan", audit }, prisma);
 }
 
 /**
  * Recent scan history for a given event, ordered newest first.
- * Default limit 10, hard cap 100, minimum 1.
- * Secondary sort by id for deterministic order when timestamps tie.
  */
 export async function getRecentCheckIns(
   eventId: string,
@@ -97,11 +88,22 @@ export async function getRecentCheckIns(
 ): Promise<CheckInHistoryEntry[]> {
   const safeLimit = Math.max(1, Math.min(Number.isFinite(limit) ? limit : 10, 100));
   return prisma.checkIn.findMany({
-    where: { event_id: eventId },
+    where: {
+      event_id: eventId,
+      source: { in: ["scan", "manual"] },
+    },
     orderBy: [{ checked_in_at: "desc" }, { id: "desc" }],
     take: safeLimit,
     include: {
-      attendee: { select: { name: true, ticket_type: true } },
+      attendee: {
+        select: {
+          name: true,
+          ticket_type: true,
+          custom_data: true,
+          company: true,
+          department: true,
+        },
+      },
     },
   });
 }

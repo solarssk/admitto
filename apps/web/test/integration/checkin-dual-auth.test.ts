@@ -173,12 +173,12 @@ describe("createCheckinPreAuth + eventScope — session matrix", () => {
     expect(res.status).toBe(200);
   });
 
-  it("operator wrong event → 401", async () => {
+  it("operator wrong event → 403", async () => {
     const cookie = await sessionCookieFor(USER_OP_A);
     const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_B}`, {
       headers: { Cookie: cookie },
     });
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
   });
 
   it("admin matching org → 200", async () => {
@@ -189,12 +189,12 @@ describe("createCheckinPreAuth + eventScope — session matrix", () => {
     expect(res.status).toBe(200);
   });
 
-  it("admin wrong org → 401", async () => {
+  it("admin wrong org → 403", async () => {
     const cookie = await sessionCookieFor(USER_ADMIN_A);
     const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_B}`, {
       headers: { Cookie: cookie },
     });
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(403);
   });
 
   it("superadmin → 200", async () => {

@@ -55,6 +55,7 @@ export function createCheckinPreAuth(deps: CheckinSessionAuthDeps) {
 
     c.set("checkinAuth", "session");
     c.set("operatorUserId", validated.userId);
+    c.set("checkinSessionId", validated.session.id);
     await next();
   };
 }
@@ -95,7 +96,7 @@ export function createCheckinEventScope(
 
     const allowed = await canPerformCheckIn(deps.prisma, userId, eventId);
     if (!allowed) {
-      return c.json({ error: "unauthorized" }, 401);
+      return c.json({ error: "forbidden" }, 403);
     }
 
     await next();

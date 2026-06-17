@@ -124,8 +124,27 @@ describe("POST /api/checkin/scan — input validation", () => {
     expect(json.error).toBe("eventId required");
   });
 
+const mockCard = {
+  id: "att-1",
+  name: "Ada",
+  company: null,
+  department: null,
+  ticket_type: null,
+  check_in_status: "admitted" as const,
+  admitted_at: new Date().toISOString(),
+  shirt_size: null,
+  items: [],
+  notes: [],
+  warnings: [],
+};
+
   it("returns 200 with domain result for valid input", async () => {
-    vi.mocked(checkInScan).mockResolvedValueOnce({ status: "VALID", attendee: { name: "Ada", ticket_type: null }, admittedAt: new Date() });
+    vi.mocked(checkInScan).mockResolvedValueOnce({
+      status: "VALID",
+      confirmed: true,
+      admittedAt: new Date(),
+      card: mockCard,
+    });
     const res = await app.request("/api/checkin/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -137,7 +156,12 @@ describe("POST /api/checkin/scan — input validation", () => {
   });
 
   it("strips leading/trailing whitespace from scanned before passing to domain", async () => {
-    vi.mocked(checkInScan).mockResolvedValueOnce({ status: "VALID", attendee: { name: "Ada", ticket_type: null }, admittedAt: new Date() });
+    vi.mocked(checkInScan).mockResolvedValueOnce({
+      status: "VALID",
+      confirmed: true,
+      admittedAt: new Date(),
+      card: mockCard,
+    });
     await app.request("/api/checkin/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
