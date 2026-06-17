@@ -75,9 +75,14 @@ export async function xlsxBufferToCsv(buf: ArrayBuffer): Promise<string> {
   if (!sheet) return "";
 
   const lines: string[] = [];
-  sheet.eachRow((row) => {
-    if (lines.length >= MAX_IMPORT_ROWS) {
-      throw new ImportRowLimitError();
+  let dataRows = 0;
+  sheet.eachRow((row, rowNumber) => {
+    // Row 1 is the header — only count data rows against the limit.
+    if (rowNumber > 1) {
+      dataRows++;
+      if (dataRows > MAX_IMPORT_ROWS) {
+        throw new ImportRowLimitError();
+      }
     }
     const values = row.values as ExcelJS.CellValue[];
     const cells = values.slice(1).map((v) => csvEscape(cellToString(v)));

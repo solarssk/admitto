@@ -66,7 +66,7 @@ export async function commitImport(
   type ExistingAttendee = Awaited<ReturnType<typeof prisma.attendee.findMany>>[number];
   const existingList: ExistingAttendee[] = [];
 
-  for (let i = 0; i < Math.max(emails.length, 1); i += PREFETCH_BATCH_SIZE) {
+  for (let i = 0; i < Math.max(emails.length, agencyIdentifiers.length, 1); i += PREFETCH_BATCH_SIZE) {
     const emailBatch = emails.slice(i, i + PREFETCH_BATCH_SIZE);
     const agencyBatch = agencyIdentifiers.slice(i, i + PREFETCH_BATCH_SIZE);
     const batch = await prisma.attendee.findMany({
