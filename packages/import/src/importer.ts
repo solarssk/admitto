@@ -177,14 +177,19 @@ export async function commitImport(
      * 1 000 rows per statement (≤ 9 000 params) to stay safely under the cap.
      */
     const CREATE_BATCH_SIZE = 1_000;
+    /** Parallel update batch — keeps large overwrite imports within the 30s tx timeout. */
+    const UPDATE_BATCH_SIZE = 250;
 
     /** Apply create/update operations on the provided Prisma client (no nested transaction). */
     const writeAll = async (client: ImportDb) => {
       for (let i = 0; i < creates.length; i += CREATE_BATCH_SIZE) {
         await client.attendee.createMany({ data: creates.slice(i, i + CREATE_BATCH_SIZE) });
       }
-      for (const { id, data } of updates) {
-        await client.attendee.update({ where: { id }, data });
+      for (let i = 0; i < updates.length; i += UPDATE_BATCH_SIZE) {
+        const batch = updates.slice(i, i + UPDATE_BATCH_SIZE);
+        await Promise.all(
+          batch.map(({ id, data }) => client.attendee.update({ where: { id }, data })),
+        );
       }
     };
 
