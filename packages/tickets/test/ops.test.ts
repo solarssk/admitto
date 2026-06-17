@@ -9,7 +9,7 @@ import { transitionItemState, ensureAttendeeItemStates } from "../src/item-state
 import { ensureDefaultEventItems } from "../src/event-items.js";
 import { addAttendeeNote, NoteTooLongError, OperatorRequiredError } from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
-import { getAttendeeCard } from "../src/attendee-card.js";
+import { getAttendeeCard, lookupAttendees } from "../src/attendee-card.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -42,6 +42,7 @@ beforeAll(async () => {
       ops_config: { badge_at_entry: true, require_confirm_on_scan: false },
     },
   });
+  // Omit giftbag on purpose — ensureDefaultEventItems should lazy-create it in tests below.
   await prisma.eventItem.createMany({
     data: [
       { event_id: EVENT_ID, key: "badge", label: "Badge", config: { issue_on_checkin: true } },
@@ -98,6 +99,27 @@ describe("admitAttendee + undo badge rollback (Lock #1)", () => {
       where: { attendee_id: attendeeId, event_item: { key: "badge" } },
     });
     expect(badgeAfter?.state).toBe("pending");
+  });
+});
+
+describe("lookupAttendees — custom_data fields", () => {
+  it("matches company/department stored only in custom_data JSON", async () => {
+    const token = generateToken();
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "json-only@example.com",
+        name: "JSON Only Guest",
+        token_hash: hashToken(token),
+        custom_data: { company: "Firma Z JSON", department: "Dział IT" },
+      },
+    });
+
+    const byCompany = await lookupAttendees(EVENT_ID, "Firma Z JSON", prisma);
+    expect(byCompany.some((r) => r.id === att.id)).toBe(true);
+
+    const byDept = await lookupAttendees(EVENT_ID, "Dział IT", prisma);
+    expect(byDept.some((r) => r.id === att.id)).toBe(true);
   });
 });
 

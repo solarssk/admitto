@@ -268,6 +268,7 @@ export function CheckInPage() {
   }
 
   const showUndo =
+    !!deviceLabel &&
     scanResult?.status === "VALID" &&
     scanResult.confirmed &&
     card?.check_in_status === "admitted";
