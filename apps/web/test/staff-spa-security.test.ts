@@ -56,19 +56,13 @@ describe("getStaffSpaSecurityHeaders", () => {
   });
 
   it("self-hosted admin build has no external CDN references in runtime HTML/CSS", () => {
-    let indexHtml: string;
+    const indexHtml = readFileSync(join(adminDistRoot, "index.html"), "utf8");
     let bundledCss = "";
-    try {
-      indexHtml = readFileSync(join(adminDistRoot, "index.html"), "utf8");
-      const assetsDir = join(adminDistRoot, "assets");
-      for (const file of readdirSync(assetsDir)) {
-        if (file.endsWith(".css")) {
-          bundledCss += readFileSync(join(assetsDir, file), "utf8");
-        }
+    const assetsDir = join(adminDistRoot, "assets");
+    for (const file of readdirSync(assetsDir)) {
+      if (file.endsWith(".css")) {
+        bundledCss += readFileSync(join(assetsDir, file), "utf8");
       }
-    } catch {
-      // dist may be absent in CI before admin build; skip cross-check
-      return;
     }
 
     const combined = `${indexHtml}\n${stripCssComments(bundledCss)}`;
