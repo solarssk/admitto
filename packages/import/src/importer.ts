@@ -53,21 +53,35 @@ export async function commitImport(
   const event = await prisma.event.findUnique({ where: { id: eventId } });
   if (!event) throw new Error(`Event not found: "${eventId}"`);
 
-  // Pre-fetch all candidates in a single query to avoid N+1.
+  // Pre-fetch all candidates. Batched to stay under Postgres 65 535 bind-param limit.
+  // Worst case: each row contributes email + external_uuid + qr_payload = 3 params.
+  // At PREFETCH_BATCH_SIZE=5 000 that is ≤15 000 params per query, well under the cap.
+  const PREFETCH_BATCH_SIZE = 5_000;
+
   const emails = rows.map((r) => r.email);
   const uuids = rows.flatMap((r) => (r.external_uuid ? [r.external_uuid] : []));
   const qrPayloads = rows.flatMap((r) => (r.qr_payload ? [r.qr_payload] : []));
   const agencyIdentifiers = [...new Set([...uuids, ...qrPayloads])];
-  const existingList = await prisma.attendee.findMany({
-    where: {
-      event_id: eventId,
-      OR: [
-        { email: { in: emails, mode: "insensitive" } },
-        ...(agencyIdentifiers.length > 0 ? [{ external_uuid: { in: agencyIdentifiers } }] : []),
-        ...(agencyIdentifiers.length > 0 ? [{ qr_payload: { in: agencyIdentifiers } }] : []),
-      ],
-    },
-  });
+
+  type ExistingAttendee = Awaited<ReturnType<typeof prisma.attendee.findMany>>[number];
+  const existingList: ExistingAttendee[] = [];
+
+  for (let i = 0; i < Math.max(emails.length, 1); i += PREFETCH_BATCH_SIZE) {
+    const emailBatch = emails.slice(i, i + PREFETCH_BATCH_SIZE);
+    const agencyBatch = agencyIdentifiers.slice(i, i + PREFETCH_BATCH_SIZE);
+    const batch = await prisma.attendee.findMany({
+      where: {
+        event_id: eventId,
+        OR: [
+          { email: { in: emailBatch, mode: "insensitive" } },
+          ...(agencyBatch.length > 0 ? [{ external_uuid: { in: agencyBatch } }] : []),
+          ...(agencyBatch.length > 0 ? [{ qr_payload: { in: agencyBatch } }] : []),
+        ],
+      },
+    });
+    existingList.push(...batch);
+  }
+
   const byUUID = new Map(existingList.filter((a) => a.external_uuid).map((a) => [a.external_uuid!, a]));
   const byQrPayload = new Map(existingList.filter((a) => a.qr_payload).map((a) => [a.qr_payload!, a]));
   const byEmail = new Map(existingList.map((a) => [a.email.toLowerCase(), a]));
