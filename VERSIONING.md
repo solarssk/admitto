@@ -28,7 +28,7 @@ This is the current product roadmap — details live in milestone descriptions a
 
 | Version | Focus |
 |---------|--------|
-| **v0.4** | Operator UI + event-day ops + staff SPA foundation (`v0.4.0` tagged). Remaining operator work (attendee card, manual lookup, scan history, camera) → `v0.4.1+`. |
+| **v0.4** | Operator UI + event-day ops + staff SPA foundation (`v0.4.0`–`v0.4.1` tagged). Next: admin event screens → `v0.4.2+`, wallet → `v0.5`. |
 | **v0.5** | Wallet passes (Apple/Google via PassCreator). |
 | **v0.6** | First-event **registration → attendance** engine: authenticated `/api/ingest` (MS Forms → Power Automate), calendar iMIP/ICS + RSVP, capacity/waitlist, exports, lifecycle mail. |
 | **v0.7–v0.9** | Hardening + dry run (Outlook/devices, batch tests, backup/restore, event-day readiness — ADR 0012). |
