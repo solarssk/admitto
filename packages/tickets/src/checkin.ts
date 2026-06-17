@@ -34,7 +34,6 @@ export async function checkInScan(
 
   const { attendee } = resolved;
   if (!isAdmittable(attendee.status as AttendeeStatus)) {
-    const card = await getAttendeeCard(eventId, attendee.id, prisma);
     await prisma.checkIn.create({
       data: {
         attendee_id: attendee.id,
@@ -45,6 +44,7 @@ export async function checkInScan(
         status: "REVOKED",
       },
     });
+    const card = await getAttendeeCard(eventId, attendee.id, prisma);
     if (!card) return { status: "INVALID", confirmed: false };
     return { status: "REVOKED", confirmed: false, card };
   }

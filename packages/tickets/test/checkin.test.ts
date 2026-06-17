@@ -91,7 +91,9 @@ beforeAll(async () => {
 afterAll(async () => {
   await prisma.attendeeActionLog.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
   await prisma.attendeeNote.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
-  await prisma.attendeeItemState.deleteMany({});
+  await prisma.attendeeItemState.deleteMany({
+    where: { event_item: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } },
+  });
   await prisma.checkIn.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
   await prisma.eventItem.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });
   await prisma.attendee.deleteMany({ where: { event_id: { in: [EVENT_ID, OTHER_EVENT_ID] } } });

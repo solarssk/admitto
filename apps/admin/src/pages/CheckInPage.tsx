@@ -47,6 +47,7 @@ export function CheckInPage() {
   const [admittedCount, setAdmittedCount] = useState(0);
   const [useCamera, setUseCamera] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [admitOrigin, setAdmitOrigin] = useState<"scan" | "manual">("manual");
 
   const deviceId = deviceLabel ?? undefined;
 
@@ -82,12 +83,15 @@ export function CheckInPage() {
 
   const applyResponse = (response: CheckInScanResponse) => {
     setScanResult(response);
-    if (response.card) setCard(response.card);
+    if (response.card) {
+      setCard(response.card);
+    } else if (response.status === "INVALID") {
+      setCard(null);
+    }
   };
 
   const runWithPending = async <T,>(fn: () => Promise<T>): Promise<T | null> => {
     clearPendingTimer();
-    setPending(true);
     pendingTimerRef.current = window.setTimeout(() => {
       setPending(true);
     }, PENDING_MS);
@@ -133,6 +137,7 @@ export function CheckInPage() {
         const response = await runWithPending(() => submitCheckInScan(eventId, scanned, deviceId));
         if (!response) return;
         applyResponse(response);
+        setAdmitOrigin("scan");
         if (response.status === "PREVIEW" && response.attendeeId && !response.card) {
           const loaded = await fetchAttendeeCard(eventId, response.attendeeId);
           setCard(loaded);
@@ -175,6 +180,7 @@ export function CheckInPage() {
       const loaded = await fetchAttendeeCard(eventId, attendeeId);
       setCard(loaded);
       setScanResult({ status: "PREVIEW", confirmed: false, card: loaded, attendeeId });
+      setAdmitOrigin("manual");
       setManualOpen(false);
     } catch (err) {
       handleApiFailure(err);
@@ -231,7 +237,7 @@ export function CheckInPage() {
     try {
       const { card: updated } = await undoLastCheckIn(eventId, deviceId);
       setCard(updated);
-      setScanResult({ status: "VALID", confirmed: true, card: updated });
+      setScanResult({ status: "PREVIEW", confirmed: false, card: updated });
       void refreshSidebar();
     } catch (err) {
       handleApiFailure(err);
@@ -340,7 +346,7 @@ export function CheckInPage() {
             canAct={canAct && !busy}
             onCheckIn={
               card.check_in_status === "not_admitted"
-                ? () => void admitCurrent(card.id, scanResult?.status === "PREVIEW" ? "scan" : "manual")
+                ? () => void admitCurrent(card.id, admitOrigin)
                 : undefined
             }
             onItemAction={(key: string, state: string) => void onItemAction(key, state)}

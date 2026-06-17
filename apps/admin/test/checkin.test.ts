@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it } from "vitest";
 import { normalizeScannedInput, CHECKIN_DUPLICATE_DEBOUNCE_MS } from "../src/checkin/normalize.js";
 import { canMutateCheckin } from "../src/checkin/connection.js";
 
@@ -17,24 +17,5 @@ describe("connection gate", () => {
     expect(canMutateCheckin("connected")).toBe(true);
     expect(canMutateCheckin("reconnecting")).toBe(false);
     expect(canMutateCheckin("offline")).toBe(false);
-  });
-});
-
-describe("camera opt-in", () => {
-  const getUserMedia = vi.fn();
-
-  beforeEach(() => {
-    vi.stubGlobal("navigator", {
-      mediaDevices: { getUserMedia },
-    });
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    getUserMedia.mockReset();
-  });
-
-  it("does not call getUserMedia on module load", () => {
-    expect(getUserMedia).not.toHaveBeenCalled();
   });
 });

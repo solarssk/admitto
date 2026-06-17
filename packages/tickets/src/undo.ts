@@ -23,21 +23,21 @@ export async function undoLastCheckIn(
     throw new UndoNotAllowedError("Device id required for undo");
   }
 
-  const lastValid = await prisma.checkIn.findFirst({
-    where: {
-      event_id: params.eventId,
-      device_id: params.audit.deviceId,
-      status: "VALID",
-      source: { in: ["scan", "manual"] },
-    },
-    orderBy: [{ checked_in_at: "desc" }, { id: "desc" }],
-  });
-
-  if (!lastValid) {
-    throw new UndoNotAllowedError("No check-in to undo on this device");
-  }
-
   return prisma.$transaction(async (tx) => {
+    const lastValid = await tx.checkIn.findFirst({
+      where: {
+        event_id: params.eventId,
+        device_id: params.audit.deviceId,
+        status: "VALID",
+        source: { in: ["scan", "manual"] },
+      },
+      orderBy: [{ checked_in_at: "desc" }, { id: "desc" }],
+    });
+
+    if (!lastValid) {
+      throw new UndoNotAllowedError("No check-in to undo on this device");
+    }
+
     const attendee = await tx.attendee.findFirst({
       where: { id: lastValid.attendee_id, event_id: params.eventId },
     });

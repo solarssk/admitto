@@ -101,8 +101,13 @@ export async function handleCheckinLookup(c: Context, db: PrismaClient): Promise
   if (typeof eventId !== "string" || !eventId) return c.json({ error: "eventId required" }, 400);
   if (typeof q !== "string" || !q.trim()) return c.json({ error: "q required" }, 400);
 
-  const results = await lookupAttendees(eventId, q, db);
-  return c.json({ results }, 200);
+  try {
+    const results = await lookupAttendees(eventId, q, db);
+    return c.json({ results }, 200);
+  } catch (err) {
+    console.error("lookupAttendees failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
 }
 
 /** GET /api/checkin/attendees/:attendeeId */
@@ -112,9 +117,14 @@ export async function handleGetAttendeeCard(c: Context, db: PrismaClient): Promi
   if (!attendeeId) return c.json({ error: "attendeeId required" }, 400);
   if (!eventId) return c.json({ error: "eventId required" }, 400);
 
-  const card = await getAttendeeCard(eventId, attendeeId, db);
-  if (!card) return c.json({ error: "not found" }, 404);
-  return c.json({ card }, 200);
+  try {
+    const card = await getAttendeeCard(eventId, attendeeId, db);
+    if (!card) return c.json({ error: "not found" }, 404);
+    return c.json({ card }, 200);
+  } catch (err) {
+    console.error("getAttendeeCard failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
 }
 
 /** POST /api/checkin/admit */
@@ -196,6 +206,7 @@ export async function handleCheckinNote(c: Context, db: PrismaClient): Promise<R
   if (typeof eventId !== "string" || !eventId) return c.json({ error: "eventId required" }, 400);
   if (typeof attendeeId !== "string" || !attendeeId) return c.json({ error: "attendeeId required" }, 400);
   if (typeof noteBody !== "string") return c.json({ error: "body required" }, 400);
+  if (!noteBody.trim()) return c.json({ error: "body required" }, 400);
 
   try {
     const audit = opsAuditFromBody(c, deviceId);
@@ -243,8 +254,13 @@ export async function handleCheckinUndo(c: Context, db: PrismaClient): Promise<R
 export async function handleCheckinStats(c: Context, db: PrismaClient): Promise<Response> {
   const eventId = c.req.query("eventId");
   if (!eventId) return c.json({ error: "eventId required" }, 400);
-  const stats = await getCheckInStats(eventId, db);
-  return c.json(stats, 200);
+  try {
+    const stats = await getCheckInStats(eventId, db);
+    return c.json(stats, 200);
+  } catch (err) {
+    console.error("getCheckInStats failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
 }
 
 /** GET /api/checkin/history */

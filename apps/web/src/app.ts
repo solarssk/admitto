@@ -439,7 +439,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/checkin/lookup",
     createCheckinPreAuth(checkinAuthDeps),
     createCheckinSessionCsrfGuard(),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "history"),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
     parseScanBodyMiddleware,
     createCheckinEventScope(checkinAuthDeps, eventIdFromCheckinBody),
     (c) => handleCheckinLookup(c, db),

@@ -19,6 +19,10 @@ const DEVICE = "tablet-1";
 const OPERATOR = "user-op-1";
 
 beforeAll(async () => {
+  const dbUrl = process.env.DATABASE_URL ?? "";
+  if (!dbUrl.includes("localhost") && !dbUrl.includes("127.0.0.1") && !dbUrl.includes("local")) {
+    throw new Error("ops.test.ts: refusing --force-reset on non-local DATABASE_URL");
+  }
   execSync("npx prisma db push --force-reset --accept-data-loss", {
     cwd: DB_ROOT,
     env: { ...process.env },

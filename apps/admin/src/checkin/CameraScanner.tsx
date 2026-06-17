@@ -33,11 +33,16 @@ export function CameraScanner({ enabled, wedgeActive, onScan }: CameraScannerPro
         if (stopped) return;
 
         const reader = new BrowserQRCodeReader();
-        controls = await reader.decodeFromVideoDevice(undefined, video, (result) => {
+        const nextControls = await reader.decodeFromVideoDevice(undefined, video, (result) => {
           if (result && !stopped) {
             onScanRef.current(result.getText());
           }
         });
+        if (stopped) {
+          nextControls.stop();
+          return;
+        }
+        controls = nextControls;
       } catch {
         if (!stopped) setError("Camera unavailable or permission denied.");
       }

@@ -1,8 +1,8 @@
 import type { PrismaClient } from "@prisma/client";
+import { MAX_ATTENDEE_NOTE_LENGTH } from "@admitto/db";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 
-/** Matches @admitto/db MAX_ATTENDEE_NOTE_LENGTH (Lock #8). */
-export const MAX_ATTENDEE_NOTE_LENGTH = 2000;
+export { MAX_ATTENDEE_NOTE_LENGTH };
 
 export class NoteTooLongError extends Error {
   constructor() {

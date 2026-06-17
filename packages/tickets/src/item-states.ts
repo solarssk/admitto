@@ -107,6 +107,14 @@ export async function transitionItemState(
   prisma: PrismaClient,
 ): Promise<{ state: string }> {
   return prisma.$transaction(async (tx) => {
+    const attendee = await tx.attendee.findFirst({
+      where: { id: params.attendeeId, event_id: params.eventId },
+      select: { id: true },
+    });
+    if (!attendee) {
+      throw new IllegalItemTransitionError("Attendee not found for this event");
+    }
+
     await ensureAttendeeItemStates(params.attendeeId, params.eventId, tx);
 
     const item = await tx.eventItem.findFirst({

@@ -62,6 +62,7 @@ export function ManualLookupPanel({
                 <button
                   type="button"
                   className="checkin-lookup__hit"
+                  disabled={busy}
                   onClick={() => onSelect(r.id)}
                 >
                   <strong>{r.name}</strong>

@@ -137,7 +137,10 @@ export function AttendeeCard({
             Add note
           </button>
         )}
-        {confirmed === false && scanStatus !== "PREVIEW" && scanStatus !== "INVALID" && (
+        {confirmed === false &&
+          scanStatus !== "PREVIEW" &&
+          scanStatus !== "INVALID" &&
+          scanStatus !== "REVOKED" && (
           <span className="checkin-card__meta">Awaiting server confirmation</span>
         )}
       </div>

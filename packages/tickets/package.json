@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@admitto/crypto": "*",
+    "@admitto/db": "*",
     "qrcode": "^1.5.3"
   },
   "devDependencies": {
