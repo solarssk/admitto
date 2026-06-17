@@ -177,6 +177,7 @@ export interface ImportInvalidRow {
 }
 
 export interface ImportPreviewResponse {
+  importId: string;
   parse: {
     validCount: number;
     invalidRows: ImportInvalidRow[];
@@ -195,6 +196,7 @@ export interface ImportSkippedRow {
 }
 
 export interface ImportCommitResponse {
+  importId: string;
   toCreate: number;
   toUpdate: number;
   toSkip: number;

@@ -9,6 +9,7 @@ import "./import.css";
 
 type Step = "upload" | "preview" | "done";
 
+/** Admin flow: upload CSV/XLSX → preview counts → commit import. */
 export function ImportPage() {
   const { eventId } = useParams();
   const { reportApiError } = useConnectionState();
@@ -72,6 +73,9 @@ export function ImportPage() {
 
   const canCommit =
     preview !== null && preview.parse.validCount > 0 && !loading;
+
+  const importCount =
+    preview !== null ? preview.summary.toCreate + preview.summary.toUpdate : 0;
 
   if (!eventId) return <p>Missing event.</p>;
 
@@ -222,7 +226,7 @@ export function ImportPage() {
             >
               {loading
                 ? "Importing…"
-                : `Import ${preview.summary.toCreate} attendee${preview.summary.toCreate === 1 ? "" : "s"}`}
+                : `Import ${importCount} attendee${importCount === 1 ? "" : "s"}`}
             </Button>
           </div>
         </Card>
@@ -231,6 +235,10 @@ export function ImportPage() {
       {step === "done" && result && (
         <Card className="import-card">
           <h2 className="import-section-title">Import complete</h2>
+          <p className="import-hint">
+            Reference ID: <code className="import-ref">{result.importId}</code>
+            {" "}(include when contacting support)
+          </p>
           <div className="import-stats">
             <div className="import-stat">
               <span className="import-stat__value">{result.created}</span>
@@ -258,8 +266,8 @@ export function ImportPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {result.skipped.map((row) => (
-                      <tr key={row.email}>
+                    {result.skipped.map((row, idx) => (
+                      <tr key={`${row.email}-${idx}`}>
                         <td>{row.email}</td>
                         <td>{row.reason}</td>
                       </tr>

@@ -70,6 +70,7 @@ function isAdminAppPath(): boolean {
   return path === "/admin" || path.startsWith("/admin/");
 }
 
+/** Build a same-origin multipart POST request (browser sets Content-Type boundary). */
 function multipartPostInit(formData: FormData): RequestInit {
   return {
     method: "POST",
@@ -81,6 +82,7 @@ function multipartPostInit(formData: FormData): RequestInit {
   };
 }
 
+/** Build multipart form fields for an attendee import upload. */
 function importFormData(file: File, overwrite: boolean): FormData {
   const fd = new FormData();
   fd.append("file", file);
@@ -88,6 +90,7 @@ function importFormData(file: File, overwrite: boolean): FormData {
   return fd;
 }
 
+/** Dry-run an attendee file import and return preview counts (no DB writes). */
 export async function previewImport(
   eventId: string,
   file: File,
@@ -100,6 +103,7 @@ export async function previewImport(
   return parseJson<ImportPreviewResponse>(res);
 }
 
+/** Commit an attendee file import after preview (creates/updates rows in the event). */
 export async function commitImport(
   eventId: string,
   file: File,

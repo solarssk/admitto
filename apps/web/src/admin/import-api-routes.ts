@@ -1,12 +1,21 @@
+import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canManageEvent } from "@admitto/auth";
 import { parseAttendees, commitImport } from "@admitto/import";
-import { writeActionLog } from "@admitto/tickets";
-import { xlsxBufferToCsv } from "./xlsx-to-csv.js";
+import { writeBulkActionLog } from "@admitto/tickets";
+import { xlsxBufferToCsv, ImportRowLimitError, MAX_CSV_CHARS, MAX_IMPORT_ROWS } from "./xlsx-to-csv.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
+import { logger } from "../logger.js";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
+/** Multipart framing overhead allowed on top of the file cap (body-limit middleware). */
+const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
+/** Maximum request body size for import routes (file cap plus multipart overhead). */
+export const MAX_IMPORT_BODY_BYTES = MAX_FILE_BYTES + MULTIPART_OVERHEAD_BYTES;
+
+const IMPORT_TX_TIMEOUT_MS = 30_000;
+const IMPORT_TX_MAX_WAIT_MS = 10_000;
 
 export type ImportInvalidRowDto = {
   rowIndex: number;
@@ -14,6 +23,7 @@ export type ImportInvalidRowDto = {
 };
 
 export type ImportPreviewDto = {
+  importId: string;
   parse: {
     validCount: number;
     invalidRows: ImportInvalidRowDto[];
@@ -27,6 +37,7 @@ export type ImportPreviewDto = {
 };
 
 export type ImportCommitDto = {
+  importId: string;
   toCreate: number;
   toUpdate: number;
   toSkip: number;
@@ -35,11 +46,29 @@ export type ImportCommitDto = {
   skipped: Array<{ email: string; reason: string }>;
 };
 
+type ImportFileType = "csv" | "xlsx";
+
 type ParsedUpload = {
   csv: string;
   filename: string;
   overwrite: boolean;
+  sizeBytes: number;
+  ext: ImportFileType;
 };
+
+type UploadLogContext = {
+  importId: string;
+  eventId: string;
+};
+
+type UploadRejectReason =
+  | "invalid_form_data"
+  | "file_required"
+  | "file_too_large"
+  | "unsupported_file_type"
+  | "invalid_file_content"
+  | "too_many_rows"
+  | "empty_file";
 
 /** Return 403 when the session user cannot manage the event; otherwise null. */
 async function assertEventManageAccess(
@@ -54,6 +83,7 @@ async function assertEventManageAccess(
   return null;
 }
 
+/** Build ops audit context from the authenticated admin request. */
 function adminAuditFromContext(c: Context) {
   const auth = c.get("auth");
   return {
@@ -63,18 +93,57 @@ function adminAuditFromContext(c: Context) {
   };
 }
 
+/** Require `:eventId` route param or return 400. */
 function requireEventId(c: Context): string | Response {
   const eventId = c.req.param("eventId");
   if (!eventId) return c.json({ error: "eventId required" }, 400);
   return eventId;
 }
 
+/** Lowercase file extension including the leading dot, or empty when absent. */
 function fileExtension(name: string): string {
   const dot = name.lastIndexOf(".");
   if (dot < 0) return "";
   return name.slice(dot).toLowerCase();
 }
 
+/** Map a dotted extension to a stable import file type label. */
+function importFileType(ext: string): ImportFileType | null {
+  if (ext === ".csv") return "csv";
+  if (ext === ".xlsx") return "xlsx";
+  return null;
+}
+
+/** Strip control chars and path segments from an uploaded filename for audit metadata. */
+function sanitizeUploadFilename(name: string): string {
+  const base = name.split(/[/\\]/).pop() ?? name;
+  const cleaned = base.replace(/[\x00-\x1f\x7f]/g, "").trim();
+  return cleaned.slice(0, 255) || "upload";
+}
+
+/** Reject CSV that exceeds post-decode row or character limits. */
+function csvWithinLimits(csv: string): string | null {
+  if (csv.length > MAX_CSV_CHARS) return "file too large";
+  const lines = csv
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0);
+  const dataRows = Math.max(0, lines.length - 1);
+  if (dataRows > MAX_IMPORT_ROWS) return "too many rows";
+  return null;
+}
+
+/** Defense-in-depth: XLSX must be ZIP (PK); CSV must not be a ZIP masquerading as text. */
+function fileSignatureValid(buf: ArrayBuffer, ext: string): boolean {
+  const bytes = new Uint8Array(buf);
+  if (bytes.length === 0) return false;
+  const isZip = bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+  if (ext === ".xlsx") return isZip;
+  if (ext === ".csv") return !isZip;
+  return false;
+}
+
+/** Decode an uploaded CSV or XLSX buffer to a CSV string (in memory). */
 async function bufferToCsvString(buf: ArrayBuffer, ext: string): Promise<string> {
   if (ext === ".csv") {
     return new TextDecoder("utf-8").decode(buf);
@@ -82,39 +151,156 @@ async function bufferToCsvString(buf: ArrayBuffer, ext: string): Promise<string>
   return xlsxBufferToCsv(buf);
 }
 
-async function parseImportUpload(c: Context): Promise<ParsedUpload | Response> {
+/** Remove cell-level values from parser diagnostics before returning preview to the client. */
+function sanitizePreviewReason(reason: string): string {
+  if (reason.startsWith("Invalid email:")) return "Invalid email format";
+  if (reason.startsWith("Duplicate email in file:")) return "Duplicate email in file";
+  if (reason.startsWith("Duplicate external_uuid in file:")) return "Duplicate external_uuid in file";
+  if (reason.startsWith("Duplicate qr_payload in file:")) return "Duplicate qr_payload in file";
+  if (reason.startsWith("Agency identifier collides")) {
+    return "Agency identifier collides across columns";
+  }
+  return reason;
+}
+
+/** Strip personal names from parser warning strings shown in preview. */
+function sanitizePreviewWarning(warning: string): string {
+  if (/^Row \d+: single-word name "/.test(warning)) {
+    return warning.replace(/single-word name "[^"]*"/, "single-word name");
+  }
+  return warning;
+}
+
+/** Group invalid rows by sanitized reason type — counts only, no cell values. */
+function groupInvalidByType(invalidRows: { reason: string }[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const row of invalidRows) {
+    const key = sanitizePreviewReason(row.reason)
+      .toLowerCase()
+      .replace(/[^a-z_ ]/g, "")
+      .trim()
+      .replace(/ /g, "_")
+      .slice(0, 40);
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
+/** Log and return a 400 response for rejected uploads. */
+function rejectUpload(
+  c: Context,
+  ctx: UploadLogContext,
+  reason: UploadRejectReason,
+  error: string,
+  fields: {
+    fileSizeBytes?: number;
+    filename?: string;
+  } = {},
+): Response {
+  logger.warn("Import upload rejected", {
+    importId: ctx.importId,
+    eventId: ctx.eventId,
+    step: "upload_validation",
+    reason,
+    ...fields,
+  });
+  return c.json({ error, importId: ctx.importId }, 400);
+}
+
+/** Parse multipart upload, validate file type/size, and return CSV text or an error response. */
+async function parseImportUpload(c: Context, ctx: UploadLogContext): Promise<ParsedUpload | Response> {
   let body: Record<string, string | File>;
   try {
     body = await c.req.parseBody();
   } catch {
-    return c.json({ error: "invalid form data" }, 400);
+    return rejectUpload(c, ctx, "invalid_form_data", "invalid form data");
   }
 
   const fileField = body.file;
   if (!(fileField instanceof File)) {
-    return c.json({ error: "file required" }, 400);
+    return rejectUpload(c, ctx, "file_required", "file required");
   }
+
+  const filename = sanitizeUploadFilename(fileField.name);
 
   if (fileField.size > MAX_FILE_BYTES) {
-    return c.json({ error: "file too large" }, 400);
+    return rejectUpload(c, ctx, "file_too_large", "file too large", {
+      fileSizeBytes: fileField.size,
+      filename,
+    });
   }
 
-  const ext = fileExtension(fileField.name);
-  if (ext !== ".csv" && ext !== ".xlsx") {
-    return c.json({ error: "unsupported file type" }, 400);
+  const extDot = fileExtension(fileField.name);
+  const fileType = importFileType(extDot);
+  if (!fileType) {
+    return rejectUpload(c, ctx, "unsupported_file_type", "unsupported file type", {
+      fileSizeBytes: fileField.size,
+      filename,
+    });
   }
 
   const overwriteRaw = body.overwrite;
   const overwrite = overwriteRaw === "true" || overwriteRaw === "on";
 
   const buf = await fileField.arrayBuffer();
-  const csv = await bufferToCsvString(buf, ext);
+  if (!fileSignatureValid(buf, extDot)) {
+    return rejectUpload(c, ctx, "invalid_file_content", "invalid file content", {
+      fileSizeBytes: fileField.size,
+      filename,
+    });
+  }
 
-  return { csv, filename: fileField.name, overwrite };
+  let csv: string;
+  try {
+    csv = await bufferToCsvString(buf, extDot);
+  } catch (err) {
+    if (err instanceof ImportRowLimitError) {
+      return rejectUpload(c, ctx, "too_many_rows", "too many rows", {
+        fileSizeBytes: fileField.size,
+        filename,
+      });
+    }
+    return rejectUpload(c, ctx, "invalid_file_content", "invalid file content", {
+      fileSizeBytes: fileField.size,
+      filename,
+    });
+  }
+
+  const limitError = csvWithinLimits(csv);
+  if (limitError === "file too large") {
+    return rejectUpload(c, ctx, "file_too_large", "file too large", {
+      fileSizeBytes: fileField.size,
+      filename,
+    });
+  }
+  if (limitError === "too many rows") {
+    return rejectUpload(c, ctx, "too_many_rows", "too many rows", {
+      fileSizeBytes: fileField.size,
+      filename,
+    });
+  }
+
+  if (!csv.trim()) {
+    return rejectUpload(c, ctx, "empty_file", "empty file", {
+      fileSizeBytes: fileField.size,
+      filename,
+    });
+  }
+
+  return {
+    csv,
+    filename,
+    overwrite,
+    sizeBytes: fileField.size,
+    ext: fileType,
+  };
 }
 
 /** POST /api/admin/events/:eventId/import/preview */
 export async function handleImportPreview(c: Context, db: PrismaClient): Promise<Response> {
+  const importId = randomUUID();
+  const startTime = Date.now();
+
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
@@ -122,35 +308,73 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const upload = await parseImportUpload(c);
-  if (upload instanceof Response) return upload;
+  const uploadCtx: UploadLogContext = { importId, eventId };
 
-  const parsed = parseAttendees(upload.csv);
-  const summary = await commitImport(
-    eventId,
-    parsed.validRows,
-    { dryRun: true, overwrite: upload.overwrite },
-    db,
-  );
+  try {
+    const upload = await parseImportUpload(c, uploadCtx);
+    if (upload instanceof Response) return upload;
 
-  const body: ImportPreviewDto = {
-    parse: {
+    const parsed = parseAttendees(upload.csv);
+    const summary = await commitImport(
+      eventId,
+      parsed.validRows,
+      { dryRun: true, overwrite: upload.overwrite },
+      db,
+    );
+
+    logger.info("Import preview complete", {
+      importId,
+      eventId,
+      step: "preview",
+      filename: upload.filename,
+      fileSizeBytes: upload.sizeBytes,
+      fileType: upload.ext,
       validCount: parsed.validRows.length,
-      invalidRows: parsed.invalidRows.map(({ rowIndex, reason }) => ({ rowIndex, reason })),
-      warnings: parsed.warnings,
-    },
-    summary: {
+      invalidCount: parsed.invalidRows.length,
+      invalidRows: parsed.invalidRows.map((r) => r.rowIndex),
+      invalidByType: groupInvalidByType(parsed.invalidRows),
+      warningCount: parsed.warnings.length,
       toCreate: summary.toCreate,
       toUpdate: summary.toUpdate,
       toSkip: summary.toSkip,
-    },
-  };
+      durationMs: Date.now() - startTime,
+    });
 
-  return c.json(body);
+    const body: ImportPreviewDto = {
+      importId,
+      parse: {
+        validCount: parsed.validRows.length,
+        invalidRows: parsed.invalidRows.map(({ rowIndex, reason }) => ({
+          rowIndex,
+          reason: sanitizePreviewReason(reason),
+        })),
+        warnings: parsed.warnings.map(sanitizePreviewWarning),
+      },
+      summary: {
+        toCreate: summary.toCreate,
+        toUpdate: summary.toUpdate,
+        toSkip: summary.toSkip,
+      },
+    };
+
+    return c.json(body);
+  } catch (err) {
+    logger.error("Import preview failed", {
+      importId,
+      eventId,
+      step: "preview",
+      error: err instanceof Error ? err.message : String(err),
+      durationMs: Date.now() - startTime,
+    });
+    return c.json({ error: "server error", importId }, 500);
+  }
 }
 
 /** POST /api/admin/events/:eventId/import/commit */
 export async function handleImportCommit(c: Context, db: PrismaClient): Promise<Response> {
+  const importId = randomUUID();
+  const startTime = Date.now();
+
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
@@ -158,36 +382,56 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const upload = await parseImportUpload(c);
-  if (upload instanceof Response) return upload;
-
-  const parsed = parseAttendees(upload.csv);
+  const uploadCtx: UploadLogContext = { importId, eventId };
 
   try {
-    const summary = await db.$transaction(async (tx) => {
-      const result = await commitImport(
-        eventId,
-        parsed.validRows,
-        { dryRun: false, overwrite: upload.overwrite, ownedTransaction: true },
-        tx,
-      );
+    const upload = await parseImportUpload(c, uploadCtx);
+    if (upload instanceof Response) return upload;
 
-      await writeActionLog(tx, {
-        event_id: eventId,
-        action_type: "attendees_imported",
-        audit: adminAuditFromContext(c),
-        metadata: {
-          created: result.created,
-          updated: result.updated,
-          skipped: result.skipped.length,
-          filename: upload.filename,
-        },
-      });
+    const parsed = parseAttendees(upload.csv);
 
-      return result;
+    const summary = await db.$transaction(
+      async (tx) => {
+        const result = await commitImport(
+          eventId,
+          parsed.validRows,
+          { dryRun: false, overwrite: upload.overwrite, ownedTransaction: true },
+          tx,
+        );
+
+        await writeBulkActionLog(tx, {
+          event_id: eventId,
+          action_type: "attendees_imported",
+          audit: adminAuditFromContext(c),
+          metadata: {
+            created: result.created,
+            updated: result.updated,
+            skipped: result.skipped.length,
+            filename: upload.filename,
+          },
+        });
+
+        return result;
+      },
+      { timeout: IMPORT_TX_TIMEOUT_MS, maxWait: IMPORT_TX_MAX_WAIT_MS },
+    );
+
+    logger.info("Import commit complete", {
+      importId,
+      eventId,
+      step: "commit",
+      filename: upload.filename,
+      fileSizeBytes: upload.sizeBytes,
+      fileType: upload.ext,
+      created: summary.created,
+      updated: summary.updated,
+      skipped: summary.skipped.length,
+      overwrite: upload.overwrite,
+      durationMs: Date.now() - startTime,
     });
 
     const body: ImportCommitDto = {
+      importId,
       toCreate: summary.toCreate,
       toUpdate: summary.toUpdate,
       toSkip: summary.toSkip,
@@ -198,7 +442,13 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
 
     return c.json(body);
   } catch (err) {
-    console.error("handleImportCommit failed:", err);
-    return c.json({ error: "server error" }, 500);
+    logger.error("Import commit failed", {
+      importId,
+      eventId,
+      step: "commit",
+      error: err instanceof Error ? err.message : String(err),
+      durationMs: Date.now() - startTime,
+    });
+    return c.json({ error: "server error", importId }, 500);
   }
 }

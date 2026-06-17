@@ -40,6 +40,7 @@ let adminId: string;
 let adminCookie = "";
 let opCookie = "";
 
+/** Build multipart form data for a CSV import fixture. */
 function csvFormData(content: string, filename = "import.csv", overwrite = false): FormData {
   const fd = new FormData();
   fd.append("file", new Blob([content], { type: "text/csv" }), filename);
@@ -47,6 +48,7 @@ function csvFormData(content: string, filename = "import.csv", overwrite = false
   return fd;
 }
 
+/** Build multipart form data for an XLSX import fixture. */
 async function xlsxFormData(rows: string[][]): Promise<FormData> {
   const buf = await buildXlsxBuffer(rows);
   const fd = new FormData();
@@ -54,6 +56,7 @@ async function xlsxFormData(rows: string[][]): Promise<FormData> {
   return fd;
 }
 
+/** POST a multipart import request with session cookie and CSRF Origin header. */
 async function postImport(
   path: string,
   formData: FormData,
@@ -66,6 +69,7 @@ async function postImport(
   });
 }
 
+/** Seed orgs, events, users, and a baseline attendee for import integration tests. */
 async function seed(client: PrismaClient) {
   await client.attendeeActionLog.deleteMany({
     where: { event_id: { in: [EVENT_A, EVENT_B] } },
@@ -143,6 +147,7 @@ async function seed(client: PrismaClient) {
   });
 }
 
+/** Create a full-session cookie string for the given user id. */
 async function sessionCookieFor(userId: string): Promise<string> {
   const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
   return `admitto_session=${rawToken}`;
@@ -197,6 +202,113 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     expect(body.parse.invalidRows).toHaveLength(1);
     expect(body.parse.invalidRows[0]).not.toHaveProperty("raw");
     expect(body.parse.invalidRows[0]!.reason).toMatch(/first_name|last_name|name/i);
+    expect(body.parse.invalidRows[0]!.reason).not.toMatch(/@/);
+  });
+
+  it("sanitizes invalid-email reasons without exposing the address", async () => {
+    const csv = ["first_name,last_name,email", "Ann,Example,not-an-email"].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      parse: { invalidRows: { reason: string }[] };
+    };
+    expect(body.parse.invalidRows[0]!.reason).toBe("Invalid email format");
+    expect(body.parse.invalidRows[0]!.reason).not.toContain("not-an-email");
+  });
+
+  it("sanitizes duplicate-email reasons without exposing the address", async () => {
+    const csv = [
+      "first_name,last_name,email",
+      "Ann,One,dup@example.com",
+      "Bob,Two,dup@example.com",
+    ].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      parse: { invalidRows: { reason: string }[] };
+    };
+    expect(body.parse.invalidRows[0]!.reason).toBe("Duplicate email in file");
+    expect(body.parse.invalidRows[0]!.reason).not.toContain("dup@example.com");
+    expect(body.parse.invalidRows[0]!.reason).not.toMatch(/@/);
+  });
+
+  it("sanitizes single-word name warnings without exposing the name", async () => {
+    const csv = ["name,email", "Madonna,solo@example.com"].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { parse: { warnings: string[] } };
+    expect(body.parse.warnings.length).toBeGreaterThan(0);
+    expect(body.parse.warnings[0]).toMatch(/single-word name/);
+    expect(body.parse.warnings[0]).not.toContain("Madonna");
+  });
+
+  it("returns importId on successful preview", async () => {
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(VALID_CSV),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { importId: string };
+    expect(body.importId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+  });
+
+  it("returns importId when upload is rejected", async () => {
+    const fd = new FormData();
+    fd.append("file", new Blob(["hello"]), "notes.txt");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      fd,
+      adminCookie,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; importId: string };
+    expect(body.error).toBe("unsupported file type");
+    expect(body.importId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+  });
+
+  it("rejects csv with zip magic bytes (renamed xlsx)", async () => {
+    const zipLike = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00]);
+    const fd = new FormData();
+    fd.append("file", new Blob([zipLike]), "renamed.csv");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      fd,
+      adminCookie,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; importId: string };
+    expect(body.error).toBe("invalid file content");
+    expect(body.importId).toBeTruthy();
+  });
+
+  it("rejects corrupt XLSX with 400", async () => {
+    const fd = new FormData();
+    fd.append("file", new Blob(["not-a-real-xlsx"]), "broken.xlsx");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      fd,
+      adminCookie,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid file content");
   });
 
   it("counts existing attendee as skip when overwrite=false", async () => {
@@ -293,9 +405,13 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
+      importId: string;
       created: number;
       skipped: { email: string; reason: string }[];
     };
+    expect(body.importId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
     expect(body.created).toBe(2);
 
     const rows = await prisma.attendee.findMany({
@@ -385,6 +501,7 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       expect(row).not.toHaveProperty("raw");
       expect(row).toHaveProperty("rowIndex");
       expect(row).toHaveProperty("reason");
+      expect(row.reason).not.toMatch(/@/);
     }
   });
 });

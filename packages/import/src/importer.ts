@@ -35,7 +35,7 @@ type ImportDb = PrismaClient | Prisma.TransactionClient;
  *
  * @param eventId   - Target event ID (must exist in DB).
  * @param rows      - Validated rows from parseAttendees().
- * @param options   - overwrite and dryRun flags (both default false).
+ * @param options   - overwrite, dryRun, and ownedTransaction flags (dryRun/overwrite default false).
  * @param db        - Injectable Prisma client (defaults to shared singleton from @admitto/db).
  */
 export async function commitImport(
@@ -62,7 +62,7 @@ export async function commitImport(
     where: {
       event_id: eventId,
       OR: [
-        { email: { in: emails } },
+        { email: { in: emails, mode: "insensitive" } },
         ...(agencyIdentifiers.length > 0 ? [{ external_uuid: { in: agencyIdentifiers } }] : []),
         ...(agencyIdentifiers.length > 0 ? [{ qr_payload: { in: agencyIdentifiers } }] : []),
       ],
@@ -70,7 +70,7 @@ export async function commitImport(
   });
   const byUUID = new Map(existingList.filter((a) => a.external_uuid).map((a) => [a.external_uuid!, a]));
   const byQrPayload = new Map(existingList.filter((a) => a.qr_payload).map((a) => [a.qr_payload!, a]));
-  const byEmail = new Map(existingList.map((a) => [a.email, a]));
+  const byEmail = new Map(existingList.map((a) => [a.email.toLowerCase(), a]));
 
   // Classify rows — pure in-memory, no DB calls inside loop.
   const creates: AttendeeCreateData[] = [];
@@ -157,9 +157,14 @@ export async function commitImport(
   };
 
   if (!dryRun && (creates.length > 0 || updates.length > 0)) {
+    /** Apply create/update operations on the provided Prisma client (no nested transaction). */
     const writeAll = async (client: ImportDb) => {
-      for (const data of creates) await client.attendee.create({ data });
-      for (const { id, data } of updates) await client.attendee.update({ where: { id }, data });
+      if (creates.length > 0) {
+        await client.attendee.createMany({ data: creates });
+      }
+      for (const { id, data } of updates) {
+        await client.attendee.update({ where: { id }, data });
+      }
     };
 
     if (ownedTransaction) {

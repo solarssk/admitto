@@ -1,5 +1,21 @@
 import ExcelJS from "exceljs";
 
+/** Cap rows materialized from XLSX/CSV to limit decompression-bomb memory use. */
+export const MAX_IMPORT_ROWS = 50_000;
+
+/** Max CSV text length after decode/conversion (post-decompression guard). */
+export const MAX_CSV_CHARS = 10 * 1024 * 1024;
+
+class ImportRowLimitError extends Error {
+  constructor() {
+    super("too many rows");
+    this.name = "ImportRowLimitError";
+  }
+}
+
+export { ImportRowLimitError };
+
+/** Normalize an ExcelJS cell value to a plain string for CSV export. */
 function cellToString(value: ExcelJS.CellValue | undefined): string {
   if (value == null || value === "") return "";
   if (value instanceof Date) return value.toISOString();
@@ -13,6 +29,7 @@ function cellToString(value: ExcelJS.CellValue | undefined): string {
   return String(value);
 }
 
+/** Quote and escape a CSV field when it contains special characters. */
 function csvEscape(value: string): string {
   if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
   return value;
@@ -27,6 +44,9 @@ export async function xlsxBufferToCsv(buf: ArrayBuffer): Promise<string> {
 
   const lines: string[] = [];
   sheet.eachRow((row) => {
+    if (lines.length >= MAX_IMPORT_ROWS) {
+      throw new ImportRowLimitError();
+    }
     const values = row.values as ExcelJS.CellValue[];
     const cells = values.slice(1).map((v) => csvEscape(cellToString(v)));
     lines.push(cells.join(","));

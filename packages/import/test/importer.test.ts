@@ -303,6 +303,29 @@ describe("commitImport — UUID/email fallback", () => {
   });
 });
 
+describe("commitImport — case-insensitive email matching", () => {
+  it("skips existing attendee when import email differs only by case", async () => {
+    await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "MixedCase@Example.com",
+        name: "Mixed Case",
+      },
+    });
+
+    const summary = await commitImport(
+      EVENT_ID,
+      [{ first_name: "Mixed", last_name: "Case", email: "mixedcase@example.com" }],
+      { overwrite: false },
+      prisma,
+    );
+
+    expect(summary.toSkip).toBe(1);
+    expect(summary.created).toBe(0);
+    expect(summary.skipped[0]?.email).toBe("mixedcase@example.com");
+  });
+});
+
 describe("commitImport — idempotency", () => {
   it("re-importing same file twice is idempotent (overwrite=false)", async () => {
     const newRow: AttendeeRow = { first_name: "New", last_name: "User", email: "new@example.com" };
