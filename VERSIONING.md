@@ -12,6 +12,37 @@ Admitto uses **one product version** for releases. Internal workspace packages a
 
 GitHub **milestones** (`v0.3.6`, `v0.4.0`, …) group PRs toward the next tag; milestone title matches the upcoming product version.
 
+## Product version lines (what `v0.x` vs `v1.0` means)
+
+Admitto ships as **one product** with git tags like `v0.4.0`. That is **not** independent semver for each npm workspace package — it is the **release train** toward the first real event.
+
+| Line | Meaning |
+|------|---------|
+| **`v0.x`** | **Path to MVP.** Everything required for the **first event** is built across `v0.4` → `v0.9`. Pre-1.0 tags are expected to iterate and refactor. |
+| **`v1.0`** | **First-event go-live gate.** MVP is complete and event-ready. After this tag, the product can run a real event end-to-end. |
+| **`v1.1+`** | **Post-first-event feature waves.** Capabilities that are useful but **not** required for the first go-live (see examples below). |
+
+### Planned sequence (high level)
+
+This is the current product roadmap — details live in milestone descriptions and `CHANGELOG.md`:
+
+| Version | Focus |
+|---------|--------|
+| **v0.4** | Operator UI + event-day ops + staff SPA foundation (`v0.4.0` tagged). Remaining operator work (attendee card, manual lookup, scan history, camera) → `v0.4.1+`. |
+| **v0.5** | Wallet passes (Apple/Google via PassCreator). |
+| **v0.6** | First-event **registration → attendance** engine: authenticated `/api/ingest` (MS Forms → Power Automate), calendar iMIP/ICS + RSVP, capacity/waitlist, exports, lifecycle mail. |
+| **v0.7–v0.9** | Hardening + dry run (Outlook/devices, batch tests, backup/restore, event-day readiness — ADR 0012). |
+| **v1.0** | First event **go-live ready** = MVP complete. |
+| **v1.1+** | New waves **after** the first event — e.g. native bounded registration form, branded domain (CNAME), i18n, multi-room, mini-CRM. |
+
+### Common scope mistakes (read before opening a milestone PR)
+
+- **First-event attendee intake** is **MS Forms → Power Automate → `/api/ingest`** (target **v0.6**), not a native public registration UI inside Admitto.
+- **Native registration form**, custom branded domain, full i18n, multi-room scheduling, and mini-CRM belong to **`v1.1+`**, not to `v0.6`/`v0.7` pre-go-live milestones.
+- **`v0.x` patches** (`v0.4.1`, `v0.4.2`, …) are normal — they still belong to the same minor line until the next tagged minor (e.g. `v0.5.0`).
+
+Internal Polish product guide (maintainer docs, outside this public repo) mirrors this model; **this file is the canonical English definition for contributors and operators.**
+
 ## Workspace packages (`0.0.1`)
 
 Every `packages/*` and `apps/web` `package.json` keeps `"version": "0.0.1"`. That is intentional:
