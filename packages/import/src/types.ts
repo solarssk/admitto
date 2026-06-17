@@ -26,6 +26,8 @@ export type ImportOptions = {
   overwrite?: boolean;
   /** When true: count rows only, write nothing to DB. */
   dryRun?: boolean;
+  /** When true: caller owns the transaction (no nested $transaction wrapper). */
+  ownedTransaction?: boolean;
 };
 
 export type SkippedRow = { email: string; reason: string };

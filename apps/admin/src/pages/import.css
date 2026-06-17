@@ -1,0 +1,123 @@
+.import-back {
+  margin: 0 0 var(--space-4);
+  font-size: var(--fs-sm);
+}
+
+.import-back a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.import-back a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.import-card {
+  margin-bottom: var(--space-4);
+}
+
+.import-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.import-hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.import-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.import-label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.import-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.import-checkbox__hint {
+  display: block;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-top: var(--space-1);
+}
+
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.import-section-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--fs-h3);
+  font-weight: 600;
+}
+
+.import-subtitle {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.import-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.import-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 100px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.import-stat__value {
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.import-stat__label {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.import-warn {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3);
+  background: var(--status-warn-bg, #fff8e6);
+  border: 1px solid var(--status-warn, #f59e0b);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+}
+
+.import-warnings ul {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.import-invalid {
+  margin-bottom: var(--space-4);
+}

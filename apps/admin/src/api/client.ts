@@ -13,6 +13,8 @@ import type {
   ResendTicketBody,
   ThemeResponse,
   UpdateAttendeePatch,
+  ImportPreviewResponse,
+  ImportCommitResponse,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -66,6 +68,52 @@ function jsonPatchInit(body: unknown): RequestInit {
 function isAdminAppPath(): boolean {
   const path = window.location.pathname;
   return path === "/admin" || path.startsWith("/admin/");
+}
+
+/** Build a same-origin multipart POST request (browser sets Content-Type boundary). */
+function multipartPostInit(formData: FormData): RequestInit {
+  return {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      Origin: window.location.origin,
+    },
+    body: formData,
+  };
+}
+
+/** Build multipart form fields for an attendee import upload. */
+function importFormData(file: File, overwrite: boolean): FormData {
+  const fd = new FormData();
+  fd.append("file", file);
+  if (overwrite) fd.append("overwrite", "true");
+  return fd;
+}
+
+/** Dry-run an attendee file import and return preview counts (no DB writes). */
+export async function previewImport(
+  eventId: string,
+  file: File,
+  overwrite: boolean,
+): Promise<ImportPreviewResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/import/preview`,
+    multipartPostInit(importFormData(file, overwrite)),
+  );
+  return parseJson<ImportPreviewResponse>(res);
+}
+
+/** Commit an attendee file import after preview (creates/updates rows in the event). */
+export async function commitImport(
+  eventId: string,
+  file: File,
+  overwrite: boolean,
+): Promise<ImportCommitResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/import/commit`,
+    multipartPostInit(importFormData(file, overwrite)),
+  );
+  return parseJson<ImportCommitResponse>(res);
 }
 
 export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {

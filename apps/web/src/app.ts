@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "@admitto/db";
@@ -67,6 +68,7 @@ import {
   handlePatchEventAttendee,
   handleResendEventAttendeeTicket,
 } from "./admin/attendees-api-routes.js";
+import { handleImportPreview, handleImportCommit, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
 import {
   handleGetCheckinEvents,
   handleCheckinScan,
@@ -171,6 +173,10 @@ export function createApp(options: CreateAppOptions = {}) {
   const requireAdminAccess = createAdminAccessMiddleware(db);
   const staffAdminGate = createStaffAdminGate(db);
   const adminResendRateLimit = createAdminResendRateLimit(rateLimitStore);
+  const importBodyLimit = bodyLimit({
+    maxSize: MAX_IMPORT_BODY_BYTES,
+    onError: (c) => c.json({ error: "file too large" }, 400),
+  });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
   const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot });
 
@@ -269,6 +275,12 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminResendRateLimit,
     (c) => handleResendEventAttendeeTicket(c, db, mailDeliveryDeps),
+  );
+  app.post("/api/admin/events/:eventId/import/preview", jsonPostCsrf, staffAdminGate, importBodyLimit, (c) =>
+    handleImportPreview(c, db),
+  );
+  app.post("/api/admin/events/:eventId/import/commit", jsonPostCsrf, staffAdminGate, importBodyLimit, (c) =>
+    handleImportCommit(c, db),
   );
   app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
   app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));

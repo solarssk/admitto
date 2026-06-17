@@ -170,3 +170,37 @@ export interface UpdateAttendeePatch {
 export interface ResendTicketBody {
   to?: string;
 }
+
+export interface ImportInvalidRow {
+  rowIndex: number;
+  reason: string;
+}
+
+export interface ImportPreviewResponse {
+  importId: string;
+  parse: {
+    validCount: number;
+    invalidRows: ImportInvalidRow[];
+    warnings: string[];
+  };
+  summary: {
+    toCreate: number;
+    toUpdate: number;
+    toSkip: number;
+  };
+}
+
+export interface ImportSkippedRow {
+  email: string;
+  reason: string;
+}
+
+export interface ImportCommitResponse {
+  importId: string;
+  toCreate: number;
+  toUpdate: number;
+  toSkip: number;
+  created: number;
+  updated: number;
+  skipped: ImportSkippedRow[];
+}

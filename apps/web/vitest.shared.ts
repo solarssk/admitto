@@ -3,6 +3,11 @@ import { WEB_TEST_DATABASE_URL } from "./test/testEnv.ts";
 /**
  * Env vars shared by unit and integration Vitest projects.
  * Fixed test-only secrets (not production); mirrors `.github/workflows/ci.yml` test env.
+ *
+ * REDIS_URL is NOT listed here — it is injected at runtime by integrationGlobalSetup.ts
+ * which starts a Testcontainers Redis container when REDIS_URL is not already set.
+ * Fork-pool workers inherit the updated process.env after globalSetup runs, so
+ * redis.test.ts always executes.  No manual Docker setup required.
  */
 export const sharedTestEnv: Record<string, string> = {
   DATABASE_URL: WEB_TEST_DATABASE_URL,
