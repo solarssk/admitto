@@ -13,6 +13,15 @@ export const MAX_CSV_CHARS = 10 * 1024 * 1024;
  */
 const MAX_XLSX_ZIP_ENTRIES = 1_000;
 
+/** Reject archives whose declared uncompressed payload exceeds this total. */
+const MAX_XLSX_UNCOMPRESSED_TOTAL = 50 * 1024 * 1024;
+
+/** Reject a single ZIP entry whose declared uncompressed size exceeds this. */
+const MAX_XLSX_UNCOMPRESSED_ENTRY = 20 * 1024 * 1024;
+
+const EOCD_SIGNATURE = 0x06054b50;
+const CD_SIGNATURE = 0x02014b50;
+
 class ImportRowLimitError extends Error {
   constructor() {
     super("too many rows");
@@ -29,18 +38,62 @@ class ImportZipBombError extends Error {
 
 export { ImportRowLimitError, ImportZipBombError };
 
-/** Count ZIP local-file-header signatures in the buffer without unpacking. */
-function countZipEntries(buf: ArrayBuffer): number {
-  const bytes = new Uint8Array(buf);
-  let count = 0;
-  // Local file header magic: PK\x03\x04
-  for (let i = 0; i < bytes.length - 3; i++) {
-    if (bytes[i] === 0x50 && bytes[i + 1] === 0x4b && bytes[i + 2] === 0x03 && bytes[i + 3] === 0x04) {
-      count++;
-      i += 3;
-    }
+function readUint16LE(bytes: Uint8Array, offset: number): number {
+  return bytes[offset]! | (bytes[offset + 1]! << 8);
+}
+
+function readUint32LE(bytes: Uint8Array, offset: number): number {
+  return (
+    bytes[offset]! |
+    (bytes[offset + 1]! << 8) |
+    (bytes[offset + 2]! << 16) |
+    (bytes[offset + 3]! << 24)
+  ) >>> 0;
+}
+
+/** Locate the end-of-central-directory record (PK\\x05\\x06) near the archive tail. */
+function findEndOfCentralDirectory(bytes: Uint8Array): number {
+  const minEocd = 22;
+  const maxComment = 65535;
+  const start = Math.max(0, bytes.length - minEocd - maxComment);
+  for (let i = bytes.length - minEocd; i >= start; i--) {
+    if (readUint32LE(bytes, i) === EOCD_SIGNATURE) return i;
   }
-  return count;
+  return -1;
+}
+
+/**
+ * Scan the ZIP central directory and enforce entry count plus declared uncompressed
+ * sizes before ExcelJS inflates the archive.
+ */
+function assertZipWithinUncompressedLimits(buf: ArrayBuffer): void {
+  const bytes = new Uint8Array(buf);
+  const eocd = findEndOfCentralDirectory(bytes);
+  if (eocd < 0) throw new ImportZipBombError();
+
+  const entryCount = readUint16LE(bytes, eocd + 10);
+  if (entryCount > MAX_XLSX_ZIP_ENTRIES) throw new ImportZipBombError();
+
+  const cdOffset = readUint32LE(bytes, eocd + 16);
+  let pos = cdOffset;
+  let totalUncompressed = 0;
+
+  for (let n = 0; n < entryCount; n++) {
+    if (pos + 46 > bytes.length) throw new ImportZipBombError();
+    if (readUint32LE(bytes, pos) !== CD_SIGNATURE) throw new ImportZipBombError();
+
+    const uncompressed = readUint32LE(bytes, pos + 24);
+    const nameLen = readUint16LE(bytes, pos + 28);
+    const extraLen = readUint16LE(bytes, pos + 30);
+    const commentLen = readUint16LE(bytes, pos + 32);
+
+    if (uncompressed > MAX_XLSX_UNCOMPRESSED_ENTRY) throw new ImportZipBombError();
+
+    totalUncompressed += uncompressed;
+    if (totalUncompressed > MAX_XLSX_UNCOMPRESSED_TOTAL) throw new ImportZipBombError();
+
+    pos += 46 + nameLen + extraLen + commentLen;
+  }
 }
 
 /** Normalize an ExcelJS cell value to a plain string for CSV export. */
@@ -65,9 +118,7 @@ function csvEscape(value: string): string {
 
 /** Convert the first worksheet of an XLSX buffer to a CSV string (in memory). */
 export async function xlsxBufferToCsv(buf: ArrayBuffer): Promise<string> {
-  if (countZipEntries(buf) > MAX_XLSX_ZIP_ENTRIES) {
-    throw new ImportZipBombError();
-  }
+  assertZipWithinUncompressedLimits(buf);
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buf);

@@ -250,6 +250,8 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { parse: { warnings: string[] } };
+    expect(body.parse.warnings.length).toBeGreaterThan(0);
+    expect(body.parse.warnings.some((w) => w.includes("Unknown column ignored"))).toBe(true);
     const allWarnings = body.parse.warnings.join(" ");
     expect(allWarnings).not.toMatch(/@/);
     expect(allWarnings).not.toContain("john@example.com");
