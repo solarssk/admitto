@@ -70,6 +70,14 @@ import {
 } from "./admin/attendees-api-routes.js";
 import { handleImportPreview, handleImportCommit, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
 import {
+  handleListEventItems,
+  handleCreateEventItem,
+  handlePatchEventItem,
+  handleDeleteEventItem,
+  handleGetEventOpsConfig,
+  handlePatchEventOpsConfig,
+} from "./admin/event-items-api-routes.js";
+import {
   handleGetCheckinEvents,
   handleCheckinScan,
   handleCheckinLookup,
@@ -281,6 +289,20 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/api/admin/events/:eventId/import/commit", jsonPostCsrf, staffAdminGate, importBodyLimit, (c) =>
     handleImportCommit(c, db),
+  );
+  app.get("/api/admin/events/:eventId/items", staffAdminGate, (c) => handleListEventItems(c, db));
+  app.post("/api/admin/events/:eventId/items", jsonPostCsrf, staffAdminGate, (c) =>
+    handleCreateEventItem(c, db),
+  );
+  app.patch("/api/admin/events/:eventId/items/:itemId", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePatchEventItem(c, db),
+  );
+  app.delete("/api/admin/events/:eventId/items/:itemId", jsonPostCsrf, staffAdminGate, (c) =>
+    handleDeleteEventItem(c, db),
+  );
+  app.get("/api/admin/events/:eventId/ops-config", staffAdminGate, (c) => handleGetEventOpsConfig(c, db));
+  app.patch("/api/admin/events/:eventId/ops-config", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePatchEventOpsConfig(c, db),
   );
   app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
   app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));

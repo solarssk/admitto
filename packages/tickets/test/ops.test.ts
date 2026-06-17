@@ -144,13 +144,27 @@ describe("lookupAttendees — custom_data fields", () => {
   });
 });
 
-describe("getAttendeeCard — giftbag shirt hint", () => {
-  it("shows shirt size on giftbag item, not as separate EventItem", async () => {
+describe("getAttendeeCard — item detail from contents", () => {
+  it("shows shirt size on giftbag via contents config", async () => {
     const card = await getAttendeeCard(EVENT_ID, attendeeId, prisma);
     expect(card).not.toBeNull();
     const giftbag = card!.items.find((i) => i.key === "giftbag");
     expect(giftbag?.detail).toBe("Shirt size: L");
     expect(card!.items.some((i) => i.key === "tshirt")).toBe(false);
+  });
+
+  it("omits disabled items from the card", async () => {
+    await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_ID,
+        key: "socks",
+        label: "Socks",
+        enabled: false,
+        config: { contents: [{ label: "Socks size", source_field: "sock_size" }] },
+      },
+    });
+    const card = await getAttendeeCard(EVENT_ID, attendeeId, prisma);
+    expect(card!.items.some((i) => i.key === "socks")).toBe(false);
   });
 });
 
@@ -176,6 +190,9 @@ describe("ensureDefaultEventItems (Lock #7 lazy seed)", () => {
     });
     expect(items.map((i) => i.key)).toEqual(["badge", "giftbag", "headset"]);
     expect(items.find((i) => i.key === "badge")?.config).toEqual({ issue_on_checkin: true });
+    expect(items.find((i) => i.key === "giftbag")?.config).toEqual({
+      contents: [{ label: "Shirt size", source_field: "shirt_size" }],
+    });
   });
 });
 

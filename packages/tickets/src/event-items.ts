@@ -4,7 +4,11 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
 const DEFAULT_EVENT_ITEMS = [
-  { key: "giftbag", label: "Gift bag", config: { size_field: "shirt_size" } },
+  {
+    key: "giftbag",
+    label: "Gift bag",
+    config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
+  },
   { key: "badge", label: "Badge", config: { issue_on_checkin: true } },
   { key: "headset", label: "Headset", config: { requires_return: true } },
 ] as const;

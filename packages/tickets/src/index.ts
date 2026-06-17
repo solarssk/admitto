@@ -14,7 +14,9 @@ export {
 } from "./item-states.js";
 export { addAttendeeNote, NoteTooLongError, OperatorRequiredError, MAX_ATTENDEE_NOTE_LENGTH } from "./notes.js";
 export { undoLastCheckIn, UndoNotAllowedError } from "./undo.js";
-export { parseCustomData, shirtSizeFromCustomData } from "./custom-data.js";
+export { parseCustomData, shirtSizeFromCustomData, customDataValue } from "./custom-data.js";
+export { buildItemDetail, resolveEventItemContents } from "./event-item-contents.js";
+export { parseEventOpsConfig } from "./ops-config.js";
 export { writeActionLog, writeBulkActionLog } from "./ops-audit.js";
 export type { OpsAuditContext } from "./ops-audit.js";
 export type {
@@ -32,5 +34,8 @@ export type {
   CheckInHistoryEntry,
   AttendeeCardDto,
   AttendeeCardItemDto,
+  EventItemConfig,
+  EventItemContent,
   LookupAttendeeResult,
 } from "./types.js";
+export type { EventOpsConfig } from "./ops-config.js";

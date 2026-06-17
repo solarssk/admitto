@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { parseCustomData, shirtSizeFromCustomData } from "./custom-data.js";
+import { buildItemDetail } from "./event-item-contents.js";
 import { ensureAttendeeItemStates, operatorItemActions } from "./item-states.js";
 import { isAdmittable } from "./admittable.js";
 import type { AttendeeCardDto, LookupAttendeeResult } from "./types.js";
@@ -167,8 +168,7 @@ export async function getAttendeeCard(
         label: item.label,
         state,
         actions: operatorItemActions(state),
-        detail:
-          item.key === "giftbag" && shirtSize ? `Shirt size: ${shirtSize}` : undefined,
+        detail: buildItemDetail(item.config, attendee.custom_data),
       };
     }),
     notes: notes.map((n) => ({

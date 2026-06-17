@@ -18,3 +18,12 @@ export function parseCustomData(raw: unknown): AttendeeCustomData {
 export function shirtSizeFromCustomData(raw: unknown): string | null {
   return parseCustomData(raw).shirt_size ?? null;
 }
+
+/** Read a single custom_data field by key (any slug, not limited to AttendeeCustomData). */
+export function customDataValue(raw: unknown, field: string): string | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const v = (raw as Record<string, unknown>)[field];
+  if (typeof v !== "string") return null;
+  const trimmed = v.trim();
+  return trimmed || null;
+}

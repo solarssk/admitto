@@ -56,6 +56,14 @@ export type CheckInScanParams = {
   ip?: string;
 };
 
+export type EventItemContent = { label: string; source_field: string };
+
+export type EventItemConfig = {
+  contents?: EventItemContent[];
+  requires_return?: boolean;
+  issue_on_checkin?: boolean;
+};
+
 export type AttendeeCardItemDto = {
   key: string;
   label: string;
