@@ -144,14 +144,18 @@ export function AttendeeDetailDrawer({
   async function handleResend(e: React.FormEvent) {
     e.preventDefault();
     if (!detail) return;
+
+    if (resendMode === "other" && !resendEmail.trim()) {
+      setResendError("Enter an email address for the alternate recipient.");
+      return;
+    }
+
     setResending(true);
     setResendError(null);
     setResendSuccess(null);
     try {
       const body =
-        resendMode === "other" && resendEmail.trim()
-          ? { to: resendEmail.trim() }
-          : {};
+        resendMode === "other" ? { to: resendEmail.trim() } : {};
       const delivery = await resendTicket(eventId, attendeeId, body);
       prependDelivery(delivery);
       setResendOpen(false);

@@ -98,6 +98,13 @@ export async function sendTicketEmails(
   const baseUrl = resolveBaseUrl(env);
   const batchId = randomUUID();
 
+  if (
+    options.recipientEmail &&
+    (!options.attendeeIds || options.attendeeIds.length !== 1)
+  ) {
+    throw new Error("recipientEmail requires exactly one attendeeId");
+  }
+
   const event = await prisma.event.findUniqueOrThrow({
     where: { id: eventId },
     include: { organization: true },
@@ -263,5 +270,9 @@ export async function sendTicketEmails(
     batchId,
     sent: sentCount,
     skipped,
+    deliveries: pending.map((item) => ({
+      attendeeId: item.attendeeId,
+      deliveryId: item.deliveryId,
+    })),
   };
 }

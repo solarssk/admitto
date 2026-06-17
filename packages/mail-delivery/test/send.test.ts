@@ -226,6 +226,17 @@ describe("sendTicketEmails", () => {
 
     spy.mockRestore();
   });
+
+  it("rejects recipientEmail override unless exactly one attendee is targeted", async () => {
+    await expect(
+      sendTicketEmails(
+        EVENT_ID,
+        { purpose: "resend", attendeeIds: ["att-mode-a", "att-mode-b"], recipientEmail: "x@example.com" },
+        prisma,
+        { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      ),
+    ).rejects.toThrow("recipientEmail requires exactly one attendeeId");
+  });
 });
 
 describe("resendTicketEmail", () => {

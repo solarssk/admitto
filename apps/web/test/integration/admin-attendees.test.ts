@@ -27,6 +27,7 @@ const PASSWORD = "admin-att-pass-123";
 
 const ATT_A1 = "att-admin-a1";
 const ATT_A2 = "att-admin-a2";
+const ATT_RL = "att-admin-a-rl";
 const ATT_B1 = "att-admin-b1";
 
 let prisma: PrismaClient;
@@ -134,6 +135,16 @@ async function seed(client: PrismaClient) {
         name: "Bob Beta",
         company: "Beta Ltd",
         ticket_type: "standard",
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+      },
+      {
+        id: ATT_RL,
+        event_id: EVENT_A,
+        email: "rate@example.com",
+        name: "Rate Limit",
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
       },
       {
         id: ATT_B1,
@@ -199,7 +210,7 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
       page: number;
       pageSize: number;
     };
-    expect(body.total).toBe(2);
+    expect(body.total).toBe(3);
     expect(body.page).toBe(1);
     expect(body.pageSize).toBe(1);
     expect(body.items).toHaveLength(1);
@@ -234,6 +245,26 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
     );
     const notBody = (await notAdmitted.json()) as { items: { id: string }[] };
     expect(notBody.items.some((i) => i.id === ATT_A2)).toBe(true);
+  });
+
+  it("finds attendees by company stored only in custom_data", async () => {
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: {
+        company: null,
+        custom_data: { company: "JSON Only Corp" },
+      },
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees?q=JSON+Only`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { id: string; company: string | null }[] };
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]!.id).toBe(ATT_A2);
+    expect(body.items[0]!.company).toBe("JSON Only Corp");
   });
 
   it("rejects operator", async () => {
@@ -330,6 +361,25 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(cd.agency_ref).toBe("REF-001");
     expect(cd.shirt_size).toBe("L");
   });
+
+  it("syncs company edits into custom_data for operator parity", async () => {
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { company: null, custom_data: { company: "Old JSON Co" } },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ company: "New Admin Co" }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
+    expect(row.company).toBe("New Admin Co");
+    const cd = row.custom_data as { company?: string };
+    expect(cd.company).toBe("New Admin Co");
+  });
 });
 
 describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
@@ -366,5 +416,47 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(403);
+  });
+
+  it("returns 422 when resend is skipped (cancelled attendee)", async () => {
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { status: "cancelled" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}/resend`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: string; reason?: string };
+    expect(body.error).toBe("resend_skipped");
+    expect(body.reason).toBe("cancelled");
+
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { status: "registered" },
+    });
+  });
+
+  it("returns 429 after 5 resends per minute for the same attendee", async () => {
+    for (let i = 0; i < 5; i++) {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_RL}/resend`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(200);
+    }
+
+    const limited = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_RL}/resend`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(limited.status).toBe(429);
+    const body = (await limited.json()) as { error: string };
+    expect(body.error).toBe("too many requests");
   });
 });

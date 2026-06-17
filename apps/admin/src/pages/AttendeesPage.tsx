@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { PageHeader } from "@admitto/ui";
 import { ApiError, fetchEventAttendees } from "../api/client.js";
@@ -13,6 +13,7 @@ const DEBOUNCE_MS = 300;
 export function AttendeesPage() {
   const { eventId } = useParams();
   const { reportApiError } = useConnectionState();
+  const listAbortRef = useRef<AbortController | null>(null);
 
   const [items, setItems] = useState<AttendeeRowDto[]>([]);
   const [total, setTotal] = useState(0);
@@ -36,18 +37,32 @@ export function AttendeesPage() {
 
   const loadList = useCallback(async () => {
     if (!eventId) return;
+
+    listAbortRef.current?.abort();
+    const ac = new AbortController();
+    listAbortRef.current = ac;
+
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchEventAttendees(eventId, {
-        page,
-        pageSize,
-        q: searchQuery || undefined,
-        status: statusFilter,
-      });
+      const data = await fetchEventAttendees(
+        eventId,
+        {
+          page,
+          pageSize,
+          q: searchQuery || undefined,
+          status: statusFilter,
+        },
+        ac.signal,
+      );
+      if (ac.signal.aborted) return;
       setItems(data.items);
       setTotal(data.total);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setItems([]);
+      setTotal(0);
+      setSelectedId(null);
       if (err instanceof ApiError) {
         reportApiError(err.status);
         if (err.status === 401) {
@@ -60,12 +75,13 @@ export function AttendeesPage() {
         setError("Failed to load attendees.");
       }
     } finally {
-      setLoading(false);
+      if (!ac.signal.aborted) setLoading(false);
     }
   }, [eventId, page, pageSize, searchQuery, statusFilter, reportApiError]);
 
   useEffect(() => {
     void loadList();
+    return () => listAbortRef.current?.abort();
   }, [loadList, reloadToken]);
 
   const emptyMessage =

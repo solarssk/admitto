@@ -11,6 +11,7 @@ import {
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
 import {
+  parseCustomData,
   shirtSizeFromCustomData,
   writeActionLog,
   type OpsAuditContext,
@@ -22,6 +23,8 @@ const ATTENDEE_LIST_SELECT = {
   name: true,
   email: true,
   company: true,
+  department: true,
+  custom_data: true,
   ticket_type: true,
   admitted_at: true,
 } as const;
@@ -85,6 +88,34 @@ function checkInStatus(admittedAt: Date | null): "admitted" | "not_admitted" {
   return admittedAt ? "admitted" : "not_admitted";
 }
 
+/** Resolve company/department from custom_data with legacy column fallback (operator parity). */
+function resolveCompanyDepartment(attendee: {
+  custom_data: unknown;
+  company: string | null;
+  department: string | null;
+}): { company: string | null; department: string | null } {
+  const cd = parseCustomData(attendee.custom_data);
+  return {
+    company: cd.company ?? attendee.company,
+    department: cd.department ?? attendee.department,
+  };
+}
+
+/** Clone custom_data JSON for partial updates without dropping unknown keys. */
+function cloneCustomData(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return { ...(raw as Record<string, unknown>) };
+  }
+  return {};
+}
+
+/** Parse a positive integer query param with safe fallback. */
+function positiveIntQuery(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n) || n < 1) return fallback;
+  return n;
+}
+
 /** Return 403 when the session user cannot manage the event; otherwise null. */
 async function assertEventManageAccess(
   c: Context,
@@ -144,9 +175,9 @@ function parseListQuery(c: Context): {
   status: "all" | "admitted" | "not_admitted";
   ticket_type?: string;
 } {
-  const page = Math.max(1, Number(c.req.query("page") ?? "1") || 1);
-  const rawSize = Number(c.req.query("pageSize") ?? "25") || 25;
-  const pageSize = Math.min(100, Math.max(1, rawSize));
+  const page = positiveIntQuery(c.req.query("page"), 1);
+  const rawSize = positiveIntQuery(c.req.query("pageSize"), 25);
+  const pageSize = Math.min(100, rawSize);
   const qRaw = c.req.query("q")?.trim();
   const q = qRaw ? qRaw : undefined;
   const statusRaw = c.req.query("status") ?? "all";
@@ -186,16 +217,19 @@ function serializeAttendeeRow(
     name: string;
     email: string;
     company: string | null;
+    department: string | null;
+    custom_data: unknown;
     ticket_type: string | null;
     admitted_at: Date | null;
   },
   lastMail: Map<string, string>,
 ): AttendeeRowDto {
+  const { company } = resolveCompanyDepartment(row);
   return {
     id: row.id,
     name: row.name,
     email: row.email,
-    company: row.company,
+    company,
     ticket_type: row.ticket_type,
     check_in_status: checkInStatus(row.admitted_at),
     last_mail_status: lastMail.get(row.id) ?? null,
@@ -222,13 +256,14 @@ async function buildAttendeeDetailDto(
     { eventId, filters: { attendeeId: row.id } },
     db,
   );
+  const { company, department } = resolveCompanyDepartment(row);
 
   return {
     id: row.id,
     name: row.name,
     email: row.email,
-    company: row.company,
-    department: row.department,
+    company,
+    department,
     ticket_type: row.ticket_type,
     status: row.status,
     check_in_status: checkInStatus(row.admitted_at),
@@ -254,16 +289,30 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
     ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
     ...(status === "not_admitted" ? { admitted_at: null } : {}),
     ...(ticket_type ? { ticket_type } : {}),
-    ...(q
-      ? {
-          OR: [
-            { name: { contains: q, mode: "insensitive" } },
-            { email: { contains: q, mode: "insensitive" } },
-            { company: { contains: q, mode: "insensitive" } },
-          ],
-        }
-      : {}),
   };
+
+  if (q) {
+    const jsonMatches = await db.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "Attendee"
+      WHERE event_id = ${eventId}
+        AND (
+          (custom_data->>'company') ILIKE ${`%${q}%`}
+          OR (custom_data->>'department') ILIKE ${`%${q}%`}
+        )
+    `;
+    const jsonIds = jsonMatches.map((r) => r.id);
+    where.AND = [
+      {
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { email: { contains: q, mode: "insensitive" } },
+          { company: { contains: q, mode: "insensitive" } },
+          { department: { contains: q, mode: "insensitive" } },
+          ...(jsonIds.length > 0 ? [{ id: { in: jsonIds } }] : []),
+        ],
+      },
+    ];
+  }
 
   const [total, rows] = await Promise.all([
     db.attendee.count({ where }),
@@ -324,6 +373,13 @@ function computePatchChanges(
 ): { data: Prisma.AttendeeUpdateInput; fields: string[] } | null {
   const fields: string[] = [];
   const data: Prisma.AttendeeUpdateInput = {};
+  const resolved = resolveCompanyDepartment(existing);
+  let customData: Record<string, unknown> | null = null;
+
+  const touchCustomData = (): Record<string, unknown> => {
+    if (!customData) customData = cloneCustomData(existing.custom_data);
+    return customData;
+  };
 
   if (patch.name !== undefined && patch.name !== existing.name) {
     data.name = patch.name;
@@ -333,12 +389,18 @@ function computePatchChanges(
     data.email = patch.email;
     fields.push("email");
   }
-  if (patch.company !== undefined && patch.company !== existing.company) {
+  if (patch.company !== undefined && patch.company !== resolved.company) {
     data.company = patch.company;
+    const raw = touchCustomData();
+    if (patch.company === null || patch.company === "") delete raw.company;
+    else raw.company = patch.company;
     fields.push("company");
   }
-  if (patch.department !== undefined && patch.department !== existing.department) {
+  if (patch.department !== undefined && patch.department !== resolved.department) {
     data.department = patch.department;
+    const raw = touchCustomData();
+    if (patch.department === null || patch.department === "") delete raw.department;
+    else raw.department = patch.department;
     fields.push("department");
   }
   if (patch.ticket_type !== undefined && patch.ticket_type !== existing.ticket_type) {
@@ -349,21 +411,18 @@ function computePatchChanges(
     const current = shirtSizeFromCustomData(existing.custom_data);
     const next = patch.shirt_size;
     if (next !== current) {
-      const raw: Record<string, unknown> =
-        existing.custom_data &&
-        typeof existing.custom_data === "object" &&
-        !Array.isArray(existing.custom_data)
-          ? { ...(existing.custom_data as Record<string, unknown>) }
-          : {};
-
+      const raw = touchCustomData();
       if (next === null || next === undefined || next === "") {
         delete raw.shirt_size;
       } else {
         raw.shirt_size = next;
       }
-      data.custom_data = raw as Prisma.InputJsonValue;
       fields.push("shirt_size");
     }
+  }
+
+  if (customData) {
+    data.custom_data = customData as Prisma.InputJsonValue;
   }
 
   if (fields.length === 0) return null;
@@ -474,22 +533,31 @@ export async function handleResendEventAttendeeTicket(
   // A domain allowlist per org/event is planned for v0.5 (see follow-up task).
   // Rationale: admins legitimately resend to corporate relay addresses outside the registrant's
   // personal domain; a hardcoded allowlist would break that use-case without org configuration.
-  await resendTicketEmail(attendeeId, db, process.env, mailDeps, { to });
+  const sendResult = await resendTicketEmail(attendeeId, db, process.env, mailDeps, { to });
 
-  const deliveryRow = await db.emailDelivery.findFirst({
-    where: { attendee_id: attendeeId, event_id: eventId, purpose: "resend" },
-    orderBy: { created_at: "desc" },
+  const skipped = sendResult.skipped.find((s) => s.attendeeId === attendeeId);
+  if (skipped) {
+    return c.json({ error: "resend_skipped", reason: skipped.reason }, 422);
+  }
+
+  const created = sendResult.deliveries.find((d) => d.attendeeId === attendeeId);
+  if (!created) {
+    return c.json({ error: "delivery_not_created" }, 500);
+  }
+
+  const deliveryRow = await db.emailDelivery.findUnique({
+    where: { id: created.deliveryId },
   });
 
-  if (!deliveryRow) {
-    return c.json({ error: "delivery_not_created" }, 500);
+  if (!deliveryRow || deliveryRow.event_id !== eventId) {
+    return c.json({ error: "delivery_not_found" }, 500);
   }
 
   const deliveries = await listDeliveries(
     { eventId, filters: { attendeeId } },
     db,
   );
-  const latest = deliveries.find((d) => d.id === deliveryRow.id);
+  const latest = deliveries.find((d) => d.id === created.deliveryId);
   if (!latest) {
     return c.json({ error: "delivery_not_found" }, 500);
   }
