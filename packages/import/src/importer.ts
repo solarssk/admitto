@@ -82,7 +82,7 @@ export async function commitImport(
 
     // Match strategy: agency identifiers first (Mode B), then email (Mode A).
     // Fallback handles existing Mode A attendees re-imported with newly assigned agency identifiers.
-    const emailMatch = byEmail.get(row.email);
+    const emailMatch = byEmail.get(row.email.toLowerCase());
     const uuidMatch = row.external_uuid ? byUUID.get(row.external_uuid) : undefined;
     const uuidCrossMatch = row.external_uuid ? byQrPayload.get(row.external_uuid) : undefined;
     const qrMatch = row.qr_payload ? byQrPayload.get(row.qr_payload) : undefined;

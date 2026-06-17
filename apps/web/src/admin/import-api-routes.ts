@@ -4,7 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import { canManageEvent } from "@admitto/auth";
 import { parseAttendees, commitImport } from "@admitto/import";
 import { writeBulkActionLog } from "@admitto/tickets";
-import { xlsxBufferToCsv, ImportRowLimitError, MAX_CSV_CHARS, MAX_IMPORT_ROWS } from "./xlsx-to-csv.js";
+import { xlsxBufferToCsv, ImportRowLimitError, ImportZipBombError, MAX_CSV_CHARS, MAX_IMPORT_ROWS } from "./xlsx-to-csv.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { logger } from "../logger.js";
 
@@ -254,7 +254,7 @@ async function parseImportUpload(c: Context, ctx: UploadLogContext): Promise<Par
   try {
     csv = await bufferToCsvString(buf, extDot);
   } catch (err) {
-    if (err instanceof ImportRowLimitError) {
+    if (err instanceof ImportRowLimitError || err instanceof ImportZipBombError) {
       return rejectUpload(c, ctx, "too_many_rows", "too many rows", {
         fileSizeBytes: fileField.size,
         filename,
