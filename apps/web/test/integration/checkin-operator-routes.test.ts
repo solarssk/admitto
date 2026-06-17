@@ -13,6 +13,7 @@ import {
   handleCheckinLookup,
   handleCheckinAdmit,
   handleCheckinNote,
+  handleCheckinUndo,
   eventIdFromCheckinBody,
 } from "../../src/admin/checkin-api-routes.js";
 
@@ -22,6 +23,7 @@ const EVENT_A = "event-op-routes-a";
 const EVENT_B = "event-op-routes-b";
 const USER_OP_A = "user-op-routes-a";
 const ATTENDEE_A = "attendee-op-routes-a";
+const SESSION_DEVICE = "tablet-session-a";
 
 let prisma: PrismaClient;
 let attendeeId: string;
@@ -103,6 +105,7 @@ function buildMutatingApp() {
   app.post("/api/checkin/lookup", ...chain, (c) => handleCheckinLookup(c, prisma));
   app.post("/api/checkin/admit", ...chain, (c) => handleCheckinAdmit(c, prisma));
   app.post("/api/checkin/notes", ...chain, (c) => handleCheckinNote(c, prisma));
+  app.post("/api/checkin/undo", ...chain, (c) => handleCheckinUndo(c, prisma));
   return app;
 }
 
@@ -112,6 +115,7 @@ beforeAll(async () => {
   const { rawToken, session } = await createSession(prisma, {
     userId: USER_OP_A,
     stage: SESSION_STAGE.FULL,
+    deviceLabel: SESSION_DEVICE,
   });
   sessionCookie = `admitto_session=${rawToken}`;
   sessionId = session.id;
@@ -157,7 +161,7 @@ describe("POST /api/checkin/admit — session_id audit (Lock #5)", () => {
     const res = await post("/api/checkin/admit", {
       eventId: EVENT_A,
       attendeeId,
-      deviceId: "tablet-op",
+      deviceId: "spoofed-tablet",
       method: "manual",
     });
     expect(res.status).toBe(200);
@@ -167,6 +171,67 @@ describe("POST /api/checkin/admit — session_id audit (Lock #5)", () => {
       orderBy: { created_at: "desc" },
     });
     expect(log?.session_id).toBe(sessionId);
+
+    const checkIn = await prisma.checkIn.findFirst({
+      where: { attendee_id: attendeeId, status: "VALID" },
+      orderBy: { checked_in_at: "desc" },
+    });
+    expect(checkIn?.device_id).toBe(SESSION_DEVICE);
+  });
+});
+
+describe("POST /api/checkin/undo — session device binding", () => {
+  it("ignores spoofed body deviceId and undoes this session device only", async () => {
+    await prisma.attendee.update({
+      where: { id: attendeeId },
+      data: { admitted_at: null, admitted_by: null },
+    });
+    await prisma.checkIn.deleteMany({ where: { attendee_id: attendeeId } });
+
+    const otherToken = generateToken();
+    const otherAtt = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_A,
+        email: "other@example.com",
+        name: "Other Guest",
+        token_hash: hashToken(otherToken),
+      },
+    });
+
+    await prisma.checkIn.create({
+      data: {
+        attendee_id: otherAtt.id,
+        event_id: EVENT_A,
+        status: "VALID",
+        source: "manual",
+        device_id: "other-tablet",
+        checked_in_by: USER_OP_A,
+      },
+    });
+    await prisma.attendee.update({
+      where: { id: otherAtt.id },
+      data: { admitted_at: new Date(), admitted_by: USER_OP_A },
+    });
+
+    const admitRes = await post("/api/checkin/admit", {
+      eventId: EVENT_A,
+      attendeeId,
+      deviceId: "other-tablet",
+      method: "manual",
+    });
+    expect(admitRes.status).toBe(200);
+
+    const undoRes = await post("/api/checkin/undo", {
+      eventId: EVENT_A,
+      deviceId: "other-tablet",
+    });
+    expect(undoRes.status).toBe(200);
+
+    const self = await prisma.attendee.findUnique({ where: { id: attendeeId } });
+    expect(self?.admitted_at).toBeNull();
+
+    const other = await prisma.attendee.findUnique({ where: { id: otherAtt.id } });
+    expect(other?.admitted_at).not.toBeNull();
   });
 });
 

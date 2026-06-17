@@ -79,7 +79,10 @@ export async function getRecentCheckIns(
 ): Promise<CheckInHistoryEntry[]> {
   const safeLimit = Math.max(1, Math.min(Number.isFinite(limit) ? limit : 10, 100));
   return prisma.checkIn.findMany({
-    where: { event_id: eventId },
+    where: {
+      event_id: eventId,
+      source: { in: ["scan", "manual"] },
+    },
     orderBy: [{ checked_in_at: "desc" }, { id: "desc" }],
     take: safeLimit,
     include: {

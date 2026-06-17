@@ -37,22 +37,36 @@ export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Prom
   });
 }
 
-function opsAuditFromContext(c: Context): OpsAuditContext {
+/** Build audit context for mutating check-in routes.
+ *  Session auth: `deviceId` from `Session.device_label` (body value ignored).
+ *  Bearer emergency: `deviceId` from request body. */
+async function opsAuditFromBody(
+  c: Context,
+  db: PrismaClient,
+  bodyDeviceId: unknown,
+): Promise<OpsAuditContext> {
+  const sessionId = c.get("checkinSessionId") as string | undefined;
+  let deviceId: string | undefined;
+
+  if (c.get("checkinAuth") === "bearer") {
+    deviceId = typeof bodyDeviceId === "string" ? bodyDeviceId : undefined;
+  } else if (sessionId) {
+    const session = await db.session.findUnique({
+      where: { id: sessionId },
+      select: { device_label: true },
+    });
+    deviceId = session?.device_label ?? undefined;
+  }
+
   return {
     operator: c.get("operatorUserId") as string | undefined,
-    sessionId: c.get("checkinSessionId") as string | undefined,
-    deviceId: undefined,
+    sessionId,
+    deviceId,
     ip: resolveClientIp(c),
   };
 }
 
-function opsAuditFromBody(c: Context, deviceId: unknown): OpsAuditContext {
-  return {
-    ...opsAuditFromContext(c),
-    deviceId: typeof deviceId === "string" ? deviceId : undefined,
-  };
-}
-
+/** Serialize admit/scan result for JSON (Date → ISO string). */
 function serializeScanResult(result: CheckInScanResult): unknown {
   if ("admittedAt" in result && result.admittedAt instanceof Date) {
     return { ...result, admittedAt: result.admittedAt.toISOString() };
@@ -60,6 +74,7 @@ function serializeScanResult(result: CheckInScanResult): unknown {
   return result;
 }
 
+/** Resolve company/department for history rows (custom_data with legacy column fallback). */
 function historyCompany(attendee: {
   custom_data?: unknown;
   company: string | null;
@@ -81,7 +96,7 @@ export async function handleCheckinScan(c: Context, db: PrismaClient): Promise<R
   if (typeof eventId !== "string" || !eventId) return c.json({ error: "eventId required" }, 400);
 
   try {
-    const audit = opsAuditFromBody(c, deviceId);
+    const audit = await opsAuditFromBody(c, db, deviceId);
     const result = await checkInScan(
       { scanned, eventId, operator: audit.operator, deviceId: audit.deviceId, sessionId: audit.sessionId, ip: audit.ip },
       db,
@@ -147,7 +162,7 @@ export async function handleCheckinAdmit(c: Context, db: PrismaClient): Promise<
         attendeeId,
         eventId,
         method: admitMethod,
-        audit: opsAuditFromBody(c, deviceId),
+        audit: await opsAuditFromBody(c, db, deviceId),
         notes: typeof notes === "string" ? notes : undefined,
       },
       db,
@@ -180,7 +195,7 @@ export async function handleCheckinItemAction(c: Context, db: PrismaClient): Pro
         eventId,
         itemKey,
         targetState,
-        audit: opsAuditFromBody(c, deviceId),
+        audit: await opsAuditFromBody(c, db, deviceId),
       },
       db,
     );
@@ -209,7 +224,7 @@ export async function handleCheckinNote(c: Context, db: PrismaClient): Promise<R
   if (!noteBody.trim()) return c.json({ error: "body required" }, 400);
 
   try {
-    const audit = opsAuditFromBody(c, deviceId);
+    const audit = await opsAuditFromBody(c, db, deviceId);
     if (!audit.operator) return c.json({ error: "unauthorized" }, 401);
 
     const note = await addAttendeeNote(
@@ -236,8 +251,9 @@ export async function handleCheckinUndo(c: Context, db: PrismaClient): Promise<R
   if (typeof eventId !== "string" || !eventId) return c.json({ error: "eventId required" }, 400);
 
   try {
+    const audit = await opsAuditFromBody(c, db, deviceId);
     const result = await undoLastCheckIn(
-      { eventId, audit: opsAuditFromBody(c, deviceId) },
+      { eventId, audit },
       db,
     );
     return c.json(result, 200);

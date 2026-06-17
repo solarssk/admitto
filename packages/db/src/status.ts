@@ -21,6 +21,7 @@ export type CheckInStatus =
   | 'ALREADY_CHECKED_IN'
   | 'INVALID'
   | 'REVOKED'
+  | 'UNDO'
   | 'UNKNOWN_EVENT'
   | 'NETWORK_ERROR';
 
@@ -45,6 +46,7 @@ export const CHECKIN_STATUS = [
   'ALREADY_CHECKED_IN',
   'INVALID',
   'REVOKED',
+  'UNDO',
   'UNKNOWN_EVENT',
   'NETWORK_ERROR',
 ] as const satisfies CheckInStatus[];

@@ -6,6 +6,7 @@ import { PrismaClient } from "@prisma/client";
 import { admitAttendee } from "../src/admit.js";
 import { undoLastCheckIn as undoFn } from "../src/undo.js";
 import { transitionItemState, ensureAttendeeItemStates } from "../src/item-states.js";
+import { ensureDefaultEventItems } from "../src/event-items.js";
 import { addAttendeeNote, NoteTooLongError } from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
 
@@ -86,10 +87,41 @@ describe("admitAttendee + undo badge rollback (Lock #1)", () => {
     const undo = await undoFn({ eventId: EVENT_ID, audit }, prisma);
     expect(undo.card.check_in_status).toBe("not_admitted");
 
+    const undoRow = await prisma.checkIn.findFirst({
+      where: { attendee_id: attendeeId, source: "undo" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(undoRow?.status).toBe("UNDO");
+
     const badgeAfter = await prisma.attendeeItemState.findFirst({
       where: { attendee_id: attendeeId, event_item: { key: "badge" } },
     });
     expect(badgeAfter?.state).toBe("pending");
+  });
+});
+
+describe("ensureDefaultEventItems (Lock #7 lazy seed)", () => {
+  it("creates default items for events created after migration", async () => {
+    const eventId = "test-event-no-items";
+    await prisma.event.create({
+      data: {
+        id: eventId,
+        title: "No Items Yet",
+        slug: "no-items-yet",
+        date: new Date("2026-10-01"),
+        organization_id: "org_ops",
+      },
+    });
+
+    await ensureDefaultEventItems(eventId, prisma);
+    await ensureDefaultEventItems(eventId, prisma);
+
+    const items = await prisma.eventItem.findMany({
+      where: { event_id: eventId },
+      orderBy: { key: "asc" },
+    });
+    expect(items.map((i) => i.key)).toEqual(["badge", "giftbag", "headset", "tshirt"]);
+    expect(items.find((i) => i.key === "badge")?.config).toEqual({ issue_on_checkin: true });
   });
 });
 
@@ -111,7 +143,7 @@ describe("ensureAttendeeItemStates (Lock #2)", () => {
     const rows = await prisma.attendeeItemState.findMany({
       where: { attendee_id: att.id },
     });
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(4);
     expect(rows.every((r) => r.state === "pending")).toBe(true);
   });
 });

@@ -77,7 +77,7 @@ export async function undoLastCheckIn(
       data: {
         attendee_id: lastValid.attendee_id,
         event_id: params.eventId,
-        status: "VALID",
+        status: "UNDO",
         source: "undo",
         checked_in_by: params.audit.operator ?? null,
         device_id: params.audit.deviceId ?? null,
