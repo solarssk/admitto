@@ -157,10 +157,17 @@ export async function commitImport(
   };
 
   if (!dryRun && (creates.length > 0 || updates.length > 0)) {
+    /**
+     * Postgres bind-parameter limit is 65 535.  AttendeeCreateData has up to
+     * 9 columns, so one createMany with 50 k rows would exceed it.  Batch at
+     * 1 000 rows per statement (≤ 9 000 params) to stay safely under the cap.
+     */
+    const CREATE_BATCH_SIZE = 1_000;
+
     /** Apply create/update operations on the provided Prisma client (no nested transaction). */
     const writeAll = async (client: ImportDb) => {
-      if (creates.length > 0) {
-        await client.attendee.createMany({ data: creates });
+      for (let i = 0; i < creates.length; i += CREATE_BATCH_SIZE) {
+        await client.attendee.createMany({ data: creates.slice(i, i + CREATE_BATCH_SIZE) });
       }
       for (const { id, data } of updates) {
         await client.attendee.update({ where: { id }, data });
