@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -10,6 +10,12 @@ import {
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../../admin/dist");
 
+/** Remove CSS block comments so license URLs in bundled vendor CSS are not treated as runtime origins. */
+function stripCssComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+/** Collect unique HTTPS origins referenced in HTML/CSS fixture text. */
 function collectHttpsOrigins(text: string): Set<string> {
   const origins = new Set<string>();
   for (const match of text.matchAll(/https:\/\/[^/ "';)]+/g)) {
@@ -22,6 +28,7 @@ function collectHttpsOrigins(text: string): Set<string> {
   return origins;
 }
 
+/** Return whether `csp` allows loading resources from `origin` for the given directive. */
 function cspAllowsOrigin(csp: string, directive: "style-src" | "font-src", origin: string): boolean {
   const match = csp.match(new RegExp(`${directive}\\s+([^;]+)`));
   if (!match) return false;
@@ -51,32 +58,40 @@ describe("getStaffSpaSecurityHeaders", () => {
     }
   });
 
-  it("allows external stylesheet and font origins used by the production admin build", () => {
-    let indexHtml: string;
+  it("self-hosted admin build has no external CDN references in runtime HTML/CSS", () => {
+    const indexPath = join(adminDistRoot, "index.html");
+    expect(
+      existsSync(indexPath),
+      "admin dist missing — run npm run build -w @admitto/admin (pretest should do this)",
+    ).toBe(true);
+
+    const indexHtml = readFileSync(indexPath, "utf8");
     let bundledCss = "";
-    try {
-      indexHtml = readFileSync(join(adminDistRoot, "index.html"), "utf8");
-      const assetsDir = join(adminDistRoot, "assets");
-      for (const file of readdirSync(assetsDir)) {
-        if (file.endsWith(".css")) {
-          bundledCss += readFileSync(join(assetsDir, file), "utf8");
-        }
+    const assetsDir = join(adminDistRoot, "assets");
+    for (const file of readdirSync(assetsDir)) {
+      if (file.endsWith(".css")) {
+        bundledCss += readFileSync(join(assetsDir, file), "utf8");
       }
-    } catch {
-      // dist may be absent in CI before admin build; skip origin cross-check
-      return;
     }
 
+    const combined = `${indexHtml}\n${stripCssComments(bundledCss)}`;
+    expect(combined).not.toMatch(/jsdelivr/i);
+    expect(combined).not.toMatch(/fonts\.googleapis/i);
+    expect(combined).not.toMatch(/fonts\.gstatic/i);
+
     const csp = getStaffSpaSecurityHeaders()["Content-Security-Policy"]!;
-    const styleOrigins = collectHttpsOrigins(`${indexHtml}\n${bundledCss}`);
+    const styleOrigins = collectHttpsOrigins(combined);
     for (const origin of styleOrigins) {
       expect(cspAllowsOrigin(csp, "style-src", origin), `missing style-src for ${origin}`).toBe(
         true,
       );
     }
+  });
 
-    // Tabler icon webfont files resolve under jsDelivr when the stylesheet is CDN-hosted.
-    expect(cspAllowsOrigin(csp, "font-src", "https://cdn.jsdelivr.net")).toBe(true);
-    expect(cspAllowsOrigin(csp, "font-src", "https://fonts.gstatic.com")).toBe(true);
+  it("keeps font-src https: for optional superadmin branding fonts (regression guard)", () => {
+    const csp = getStaffSpaSecurityHeaders()["Content-Security-Policy"]!;
+    expect(csp).toContain("font-src 'self' https:");
+    // Regression: wildcard must allow a configured branding host (not branding logic itself).
+    expect(cspAllowsOrigin(csp, "font-src", "https://cdn.example.com")).toBe(true);
   });
 });

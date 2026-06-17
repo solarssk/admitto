@@ -16,24 +16,14 @@ const MIME: Record<string, string> = {
   ".json": "application/json",
 };
 
-/** Stylesheet origins referenced by `apps/admin/index.html` and bundled UI CSS. */
-export const STAFF_SPA_STYLE_SRC = [
-  "'self'",
-  "'unsafe-inline'",
-  "https://cdn.jsdelivr.net",
-  "https://fonts.googleapis.com",
-] as const;
+/** Stylesheet origins for bundled staff SPA CSS (self-hosted; no external CDNs). */
+export const STAFF_SPA_STYLE_SRC = ["'self'", "'unsafe-inline'"] as const;
 
 /**
- * Font origins for Tabler icons (jsDelivr), Inter (Google Fonts), and org theme `@font-face` URLs.
- * `https:` remains for arbitrary HTTPS branding font hosts validated in `@admitto/ui`.
+ * Font origins for self-hosted Inter/Tabler icons and optional org theme `@font-face` URLs.
+ * `https:` allows arbitrary HTTPS branding font hosts validated in `@admitto/ui` (opt-in superadmin).
  */
-export const STAFF_SPA_FONT_SRC = [
-  "'self'",
-  "https://cdn.jsdelivr.net",
-  "https://fonts.gstatic.com",
-  "https:",
-] as const;
+export const STAFF_SPA_FONT_SRC = ["'self'", "https:"] as const;
 
 function buildStaffSpaContentSecurityPolicy(): string {
   return [
