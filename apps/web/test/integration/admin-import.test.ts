@@ -240,6 +240,21 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     expect(body.parse.invalidRows[0]!.reason).not.toMatch(/@/);
   });
 
+  it("sanitizes unknown-column warnings that could contain email addresses", async () => {
+    // No header row — first data row is treated as headers, values become column names.
+    const csv = ["john@example.com,Smith,col3", "Jane,Doe,jane@example.com"].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { parse: { warnings: string[] } };
+    const allWarnings = body.parse.warnings.join(" ");
+    expect(allWarnings).not.toMatch(/@/);
+    expect(allWarnings).not.toContain("john@example.com");
+  });
+
   it("sanitizes single-word name warnings without exposing the name", async () => {
     const csv = ["name,email", "Madonna,solo@example.com"].join("\n");
     const res = await postImport(

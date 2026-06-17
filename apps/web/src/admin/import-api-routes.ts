@@ -163,10 +163,19 @@ function sanitizePreviewReason(reason: string): string {
   return reason;
 }
 
-/** Strip personal names from parser warning strings shown in preview. */
+/** Strip any interpolated cell/column values from parser warning strings shown in preview. */
 function sanitizePreviewWarning(warning: string): string {
+  // "Row N: single-word name "Cher" — ..." → strip quoted name
   if (/^Row \d+: single-word name "/.test(warning)) {
     return warning.replace(/single-word name "[^"]*"/, "single-word name");
+  }
+  // "Unknown column ignored: "john@example.com"" → strip quoted value
+  if (/^Unknown column ignored: "/.test(warning)) {
+    return "Unknown column ignored";
+  }
+  // "Duplicate column(s) detected (first value used): col1, col2" → strip column list
+  if (/^Duplicate column\(s\) detected/.test(warning)) {
+    return "Duplicate column(s) detected";
   }
   return warning;
 }
