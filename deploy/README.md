@@ -203,6 +203,51 @@ docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > b
 
 Test a restore on a non-production database before the first large event.
 
+## Rollback runbook
+
+`prisma migrate deploy` is forward-only — the database always rolls **forward**.
+App rollback is a separate operation and covers the vast majority of incidents.
+
+### Case A — bad app code, schema is fine (the common case)
+
+Additive migrations keep the new schema backward-compatible with the previous app image.
+Roll back by pointing at the previous image tag — **no DB operation needed, no data loss, ~30 seconds**.
+
+**Portainer:** Stack → edit image tag → redeploy.
+
+**CLI:**
+
+```bash
+# in deploy/.env: set ADMITTO_IMAGE to the previous tag, e.g. ghcr.io/solarssk/admitto:0.4.1
+docker compose pull app && docker compose up -d app
+```
+
+This works for any number of skipped versions — all intermediate migrations are additive
+(enforced by CI), so the old app runs safely against a newer schema.
+
+### Case B — a bad migration destroyed or corrupted data (disaster only)
+
+Stop the app, restore from the automatic pre-migration dump, redeploy the previous image.
+
+```bash
+docker compose stop app
+gunzip -c /backups/pre-migration-<UTC-timestamp>.sql.gz | psql "$DATABASE_URL"
+# then set image to previous tag and:
+docker compose up -d app
+```
+
+Backups are written to the `migration_backups` volume before every `migrate deploy` run.
+Restore point is always available; data loss is limited to changes between the dump and the incident.
+
+### Case C — the schema needs fixing after a bad migration
+
+Do **not** reverse the migration. Ship a new corrective (additive) migration in the next release.
+
+### Invariant
+
+Every app release must run correctly against **both** the previous and the new schema (expand-contract).
+That is what makes Case A — image rollback without touching the DB — safe by default.
+
 ## Uptime Kuma (observability)
 
 Set `OPS_HEALTH_TOKEN` in `deploy/.env` (see `.env.example`). `/readyz` is **disabled** (404) until the token is set.

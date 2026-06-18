@@ -1,30 +1,34 @@
 #!/usr/bin/env bash
 # Integration smoke: pre-migration backup in docker entrypoint (ADR 0027).
+# Uses an isolated Compose project name and .env.smoke so it does not tear down
+# or overwrite a developer's normal deploy/ stack (postgres_data, migration_backups, .env).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEPLOY="$ROOT/deploy"
-COMPOSE="docker compose -f docker-compose.yml"
+SMOKE_PROJECT="admitto-migration-smoke"
+SMOKE_ENV="$DEPLOY/.env.smoke"
+COMPOSE="docker compose -p ${SMOKE_PROJECT} -f docker-compose.yml -f docker-compose.smoke.yml --env-file .env.smoke"
 
 cd "$DEPLOY"
 
 prepare_env() {
-  cp .env.example .env
+  cp .env.example "$SMOKE_ENV"
   if sed --version >/dev/null 2>&1; then
-    sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=smoke-test-secret/' .env
-    sed -i 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://admitto_app:smoke-test-secret@db:5432/admitto|' .env
+    sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=smoke-test-secret/' "$SMOKE_ENV"
+    sed -i 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://admitto_app:smoke-test-secret@db:5432/admitto|' "$SMOKE_ENV"
     ENCRYPTION_KEY="$(openssl rand -base64 32)"
     node -e "if (Buffer.from(process.argv[1], 'base64').length !== 32) process.exit(1)" "$ENCRYPTION_KEY"
-    sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" .env
-    sed -i 's|^BASE_URL=.*|BASE_URL=http://127.0.0.1:8080|' .env
+    sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" "$SMOKE_ENV"
+    sed -i 's|^BASE_URL=.*|BASE_URL=http://127.0.0.1:8080|' "$SMOKE_ENV"
   else
-    sed -i.bak 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=smoke-test-secret/' .env
-    sed -i.bak 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://admitto_app:smoke-test-secret@db:5432/admitto|' .env
+    sed -i.bak 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=smoke-test-secret/' "$SMOKE_ENV"
+    sed -i.bak 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://admitto_app:smoke-test-secret@db:5432/admitto|' "$SMOKE_ENV"
     ENCRYPTION_KEY="$(openssl rand -base64 32)"
     node -e "if (Buffer.from(process.argv[1], 'base64').length !== 32) process.exit(1)" "$ENCRYPTION_KEY"
-    sed -i.bak "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" .env
-    sed -i.bak 's|^BASE_URL=.*|BASE_URL=http://127.0.0.1:8080|' .env
-    rm -f .env.bak
+    sed -i.bak "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" "$SMOKE_ENV"
+    sed -i.bak 's|^BASE_URL=.*|BASE_URL=http://127.0.0.1:8080|' "$SMOKE_ENV"
+    rm -f "${SMOKE_ENV}.bak"
   fi
 }
 
@@ -35,6 +39,7 @@ on_fail() {
 
 cleanup() {
   $COMPOSE down -v --remove-orphans >/dev/null 2>&1 || true
+  rm -f "$SMOKE_ENV"
 }
 
 trap cleanup EXIT
