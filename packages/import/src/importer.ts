@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { AttendeeRow, ImportOptions, ImportSummary, SkippedRow } from "./types.js";
 import { generateToken } from "@admitto/crypto";
@@ -5,7 +6,11 @@ import { generateToken } from "@admitto/crypto";
 /** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token_hash. */
 const OVERWRITE_FIELDS = ["name", "ticket_type", "company", "department"] as const;
 
+/** Skip reason when insert hits a unique constraint at commit time (ADR 0028). */
+export const IMPORT_CONFLICT_SKIP_REASON = "Duplicate email (conflict on insert)";
+
 type AttendeeCreateData = {
+  id: string;
   event_id: string;
   email: string;
   name: string;
@@ -29,6 +34,49 @@ type AttendeeUpdateArgs = {
 };
 
 type ImportDb = PrismaClient | Prisma.TransactionClient;
+
+/**
+ * Insert create rows via batched `createMany` (tx-safe `skipDuplicates`).
+ * Happy path: one round-trip. On partial conflict, classify skips by pre-assigned row ids.
+ */
+export async function createAttendeesBatch(
+  client: ImportDb,
+  rows: AttendeeCreateData[],
+): Promise<{ created: number; skipped: SkippedRow[] }> {
+  if (rows.length === 0) return { created: 0, skipped: [] };
+
+  const rowsWithIds = rows.map((row) => ({
+    ...row,
+    id: row.id ?? randomUUID(),
+  }));
+
+  const { count } = await client.attendee.createMany({
+    data: rowsWithIds,
+    skipDuplicates: true,
+  });
+
+  if (count === rowsWithIds.length) {
+    return { created: count, skipped: [] };
+  }
+
+  const inserted = await client.attendee.findMany({
+    where: { id: { in: rowsWithIds.map((row) => row.id) } },
+    select: { id: true },
+  });
+  const insertedIds = new Set(inserted.map((row) => row.id));
+
+  let created = 0;
+  const skipped: SkippedRow[] = [];
+  for (const row of rowsWithIds) {
+    if (insertedIds.has(row.id)) {
+      created++;
+    } else {
+      skipped.push({ email: row.email, reason: IMPORT_CONFLICT_SKIP_REASON });
+    }
+  }
+
+  return { created, skipped };
+}
 
 /**
  * Commit validated attendee rows to the database.
@@ -148,6 +196,7 @@ export async function commitImport(
     } else {
       const isAgency = row.external_uuid !== undefined || row.qr_payload !== undefined;
       creates.push({
+        id: randomUUID(),
         event_id: eventId,
         email: row.email,
         name,
@@ -182,24 +231,36 @@ export async function commitImport(
 
     /** Apply create/update operations on the provided Prisma client (no nested transaction). */
     const writeAll = async (client: ImportDb) => {
+      let created = 0;
+      let updated = 0;
+
       for (let i = 0; i < creates.length; i += CREATE_BATCH_SIZE) {
-        await client.attendee.createMany({ data: creates.slice(i, i + CREATE_BATCH_SIZE) });
+        const batch = creates.slice(i, i + CREATE_BATCH_SIZE);
+        const result = await createAttendeesBatch(client, batch);
+        created += result.created;
+        skipped.push(...result.skipped);
       }
+
       for (let i = 0; i < updates.length; i += UPDATE_BATCH_SIZE) {
         const batch = updates.slice(i, i + UPDATE_BATCH_SIZE);
         await Promise.all(
           batch.map(({ id, data }) => client.attendee.update({ where: { id }, data })),
         );
+        updated += batch.length;
       }
+
+      return { created, updated };
     };
 
+    let writeCounts: { created: number; updated: number };
     if (ownedTransaction) {
-      await writeAll(prisma);
+      writeCounts = await writeAll(prisma);
     } else {
-      await (prisma as PrismaClient).$transaction(async (tx) => writeAll(tx));
+      writeCounts = await (prisma as PrismaClient).$transaction(async (tx) => writeAll(tx));
     }
-    summary.created = creates.length;
-    summary.updated = updates.length;
+    summary.created = writeCounts.created;
+    summary.updated = writeCounts.updated;
+    summary.toSkip = skipped.length;
   }
 
   return summary;

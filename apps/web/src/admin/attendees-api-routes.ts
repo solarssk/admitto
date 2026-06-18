@@ -20,6 +20,7 @@ import {
   positiveIntQuery,
   requireEventId,
 } from "./admin-helpers.js";
+import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
 
 const ATTENDEE_LIST_SELECT = {
   id: true,
@@ -42,9 +43,10 @@ const ATTENDEE_DETAIL_SELECT = {
   status: true,
   admitted_at: true,
   custom_data: true,
+  updated_at: true,
 } as const;
 
-const patchAttendeeSchema = z
+const patchAttendeeFieldsSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
     email: z.string().trim().email().max(254).optional(),
@@ -54,6 +56,11 @@ const patchAttendeeSchema = z
     shirt_size: z.string().trim().max(20).optional().nullable(),
   })
   .strict();
+
+const patchAttendeeSchema = patchAttendeeFieldsSchema.extend({
+  // Optional at parse time; required in handler when computePatchChanges finds a real delta (no-op exempt).
+  expected_updated_at: z.string().datetime({ offset: true }).optional(),
+});
 
 const resendBodySchema = z
   .object({
@@ -81,6 +88,7 @@ export type AttendeeDetailDto = {
   status: string;
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
+  updated_at: string;
   shirt_size: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
@@ -215,6 +223,7 @@ async function buildAttendeeDetailDto(
     status: string;
     admitted_at: Date | null;
     custom_data: unknown;
+    updated_at: Date;
   },
 ): Promise<AttendeeDetailDto> {
   const { items: deliveries } = await listDeliveries(
@@ -233,6 +242,7 @@ async function buildAttendeeDetailDto(
     status: row.status,
     check_in_status: checkInStatus(row.admitted_at),
     admitted_at: row.admitted_at ? row.admitted_at.toISOString() : null,
+    updated_at: row.updated_at.toISOString(),
     shirt_size: shirtSizeFromCustomData(row.custom_data),
     custom_data: row.custom_data ?? null,
     deliveries: deliveries.map(toDeliveryDto),
@@ -322,7 +332,7 @@ export async function handleGetEventAttendee(c: Context, db: PrismaClient): Prom
   return c.json(dto);
 }
 
-type PatchInput = z.infer<typeof patchAttendeeSchema>;
+type PatchInput = z.infer<typeof patchAttendeeFieldsSchema>;
 
 /** Compute Prisma update payload and changed field names from a PATCH body. */
 function computePatchChanges(
@@ -421,19 +431,33 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const changes = computePatchChanges(existing, parsed.data);
+  const { expected_updated_at: expectedUpdatedAtRaw, ...patchFields } = parsed.data;
+  const changes = computePatchChanges(existing, patchFields);
   if (!changes) {
     const dto = await buildAttendeeDetailDto(db, eventId, existing);
     return c.json(dto);
   }
 
+  if (!expectedUpdatedAtRaw) {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
+  const expectedUpdatedAt = new Date(expectedUpdatedAtRaw);
+  if (Number.isNaN(expectedUpdatedAt.getTime())) {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
   try {
     const updated = await db.$transaction(async (tx) => {
-      const row = await tx.attendee.update({
-        where: { id: attendeeId },
+      const result = await optimisticAttendeeUpdate(tx, {
+        id: attendeeId,
+        expectedUpdatedAt,
         data: changes.data,
         select: ATTENDEE_DETAIL_SELECT,
       });
+
+      // Fail fast before any other writes in this transaction.
+      if (isStaleWrite(result)) throw new StaleWriteError();
 
       await writeActionLog(tx, {
         event_id: eventId,
@@ -443,12 +467,15 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
         metadata: { fields: changes.fields },
       });
 
-      return row;
+      return result.row;
     });
 
     const dto = await buildAttendeeDetailDto(db, eventId, updated);
     return c.json(dto);
   } catch (err) {
+    if (err instanceof StaleWriteError) {
+      return c.json({ error: "stale_write" }, 409);
+    }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return c.json({ error: "email_conflict" }, 409);
     }

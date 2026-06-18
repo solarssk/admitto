@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, IconButton, Input, StatusBadge } from "@admitto/ui";
 import {
   ApiError,
@@ -6,7 +6,7 @@ import {
   resendTicket,
   updateAttendee,
 } from "../api/client.js";
-import type { AttendeeDetailDto, DeliveryDto } from "../api/types.js";
+import type { AttendeeDetailDto, DeliveryDto, UpdateAttendeePatch } from "../api/types.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
 
 export interface AttendeeDetailDrawerProps {
@@ -36,6 +36,34 @@ function toForm(detail: AttendeeDetailDto): FormState {
   };
 }
 
+/** After stale_write reload: keep user-edited fields, refresh untouched fields from server. */
+function mergeFormAfterReload(
+  currentForm: FormState,
+  previousDetail: AttendeeDetailDto,
+  reloaded: AttendeeDetailDto,
+): FormState {
+  const previousForm = toForm(previousDetail);
+  const nextForm = toForm(reloaded);
+  return {
+    name: currentForm.name !== previousForm.name ? currentForm.name : nextForm.name,
+    email: currentForm.email !== previousForm.email ? currentForm.email : nextForm.email,
+    company:
+      currentForm.company !== previousForm.company ? currentForm.company : nextForm.company,
+    department:
+      currentForm.department !== previousForm.department
+        ? currentForm.department
+        : nextForm.department,
+    ticket_type:
+      currentForm.ticket_type !== previousForm.ticket_type
+        ? currentForm.ticket_type
+        : nextForm.ticket_type,
+    shirt_size:
+      currentForm.shirt_size !== previousForm.shirt_size
+        ? currentForm.shirt_size
+        : nextForm.shirt_size,
+  };
+}
+
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-GB", {
@@ -47,6 +75,7 @@ function formatDateTime(iso: string | null): string {
   });
 }
 
+/** Slide-over panel for viewing/editing one attendee (admin list drill-down). */
 export function AttendeeDetailDrawer({
   eventId,
   attendeeId,
@@ -60,6 +89,8 @@ export function AttendeeDetailDrawer({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [emailConflict, setEmailConflict] = useState(false);
+  const [staleWrite, setStaleWrite] = useState(false);
+  const [reloading, setReloading] = useState(false);
   const [resendOpen, setResendOpen] = useState(false);
   const [resendMode, setResendMode] = useState<"same" | "other">("same");
   const [resendEmail, setResendEmail] = useState("");
@@ -67,10 +98,21 @@ export function AttendeeDetailDrawer({
   const [resendError, setResendError] = useState<string | null>(null);
   const [resendSuccess, setResendSuccess] = useState<string | null>(null);
 
+  /** Tracks the row currently selected in the parent list (guards async save/reload). */
+  const selectionRef = useRef({ eventId, attendeeId });
+  selectionRef.current = { eventId, attendeeId };
+
+  function isStillSelected(target: { eventId: string; attendeeId: string }): boolean {
+    const current = selectionRef.current;
+    return current.eventId === target.eventId && current.attendeeId === target.attendeeId;
+  }
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setStaleWrite(false);
+    setEmailConflict(false);
     (async () => {
       try {
         const d = await fetchAttendeeDetail(eventId, attendeeId);
@@ -105,7 +147,7 @@ export function AttendeeDetailDrawer({
     e.preventDefault();
     if (!detail || !form) return;
 
-    const patch: Record<string, string | null> = {};
+    const patch: UpdateAttendeePatch = {};
     if (form.name !== detail.name) patch.name = form.name;
     if (form.email !== detail.email) patch.email = form.email;
     if (form.company !== (detail.company ?? "")) patch.company = form.company || null;
@@ -115,23 +157,62 @@ export function AttendeeDetailDrawer({
 
     if (Object.keys(patch).length === 0) return;
 
+    patch.expected_updated_at = detail.updated_at;
+    const target = { eventId, attendeeId };
+
     setSaving(true);
     setEmailConflict(false);
     setError(null);
     try {
-      const updated = await updateAttendee(eventId, attendeeId, patch);
+      const updated = await updateAttendee(target.eventId, target.attendeeId, patch);
+      if (!isStillSelected(target)) return;
       setDetail(updated);
       setForm(toForm(updated));
       setInitialEmail(updated.email);
+      setStaleWrite(false);
       onUpdated();
     } catch (err) {
+      if (!isStillSelected(target)) return;
       if (err instanceof ApiError && err.status === 409) {
-        setEmailConflict(true);
+        if (err.message === "email_conflict") {
+          setEmailConflict(true);
+        } else if (err.message === "stale_write") {
+          setStaleWrite(true);
+        } else {
+          setError("Could not save changes. Reload and try again.");
+        }
       } else {
         setError(err instanceof ApiError ? err.message : "Failed to save changes.");
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleReload() {
+    const target = { eventId, attendeeId };
+    const previousDetail = detail;
+    setReloading(true);
+    setError(null);
+    try {
+      const d = await fetchAttendeeDetail(target.eventId, target.attendeeId);
+      if (!isStillSelected(target)) return;
+      setForm((currentForm) => {
+        if (!currentForm || !previousDetail) return currentForm;
+        return mergeFormAfterReload(currentForm, previousDetail, d);
+      });
+      setDetail(d);
+      setInitialEmail(d.email);
+      setStaleWrite(false);
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Failed to reload — please try again.",
+      );
+    } finally {
+      setReloading(false);
     }
   }
 
@@ -223,6 +304,22 @@ export function AttendeeDetailDrawer({
                       This email is already used by another attendee in this event.
                     </p>
                   )}
+                  {staleWrite && (
+                    <div className="attendee-form__warn">
+                      <p>
+                        This record was changed by someone else — reload and reapply.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleReload}
+                        disabled={reloading}
+                      >
+                        {reloading ? "Reloading…" : "Reload"}
+                      </Button>
+                    </div>
+                  )}
                   <Input
                     label="Company"
                     value={form.company}
@@ -253,7 +350,7 @@ export function AttendeeDetailDrawer({
                     </dd>
                   </dl>
                   <div className="attendee-form__actions">
-                    <Button type="submit" variant="primary" disabled={saving}>
+                    <Button type="submit" variant="primary" disabled={saving || reloading || staleWrite}>
                       {saving ? "Saving…" : "Save changes"}
                     </Button>
                   </div>

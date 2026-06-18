@@ -35,6 +35,7 @@ export type SkippedRow = { email: string; reason: string };
 export type ImportSummary = {
   toCreate: number;
   toUpdate: number;
+  /** Final skip count after commit (includes runtime insert conflicts in `skipped`). */
   toSkip: number;
   /** 0 in dry-run */
   created: number;

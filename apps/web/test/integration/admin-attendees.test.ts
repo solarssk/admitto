@@ -306,11 +306,24 @@ describe("GET /api/admin/events/:eventId/attendees/:id", () => {
 });
 
 describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
+  async function currentUpdatedAt(attendeeId: string): Promise<string> {
+    const row = await prisma.attendee.findUniqueOrThrow({
+      where: { id: attendeeId },
+      select: { updated_at: true },
+    });
+    return row.updated_at.toISOString();
+  }
+
   it("updates attendee and writes audit without PII in metadata", async () => {
+    const expectedUpdatedAt = await currentUpdatedAt(ATT_A2);
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Bob Updated", company: "Beta Updated" }),
+      body: JSON.stringify({
+        name: "Bob Updated",
+        company: "Beta Updated",
+        expected_updated_at: expectedUpdatedAt,
+      }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { name: string; company: string | null };
@@ -329,10 +342,14 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
   });
 
   it("returns 409 on email conflict", async () => {
+    const expectedUpdatedAt = await currentUpdatedAt(ATT_A2);
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "anna@example.com" }),
+      body: JSON.stringify({
+        email: "anna@example.com",
+        expected_updated_at: expectedUpdatedAt,
+      }),
     });
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: string };
@@ -350,7 +367,10 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ shirt_size: "L" }),
+      body: JSON.stringify({
+        shirt_size: "L",
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { shirt_size: string | null };
@@ -371,7 +391,10 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ company: "New Admin Co" }),
+      body: JSON.stringify({
+        company: "New Admin Co",
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
     });
     expect(res.status).toBe(200);
 
@@ -379,6 +402,75 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(row.company).toBe("New Admin Co");
     const cd = row.custom_data as { company?: string };
     expect(cd.company).toBe("New Admin Co");
+  });
+
+  it("returns 409 stale_write when expected_updated_at is stale", async () => {
+    const staleUpdatedAt = await currentUpdatedAt(ATT_A2);
+
+    const first = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Stale Test First",
+        expected_updated_at: staleUpdatedAt,
+      }),
+    });
+    expect(first.status).toBe(200);
+
+    const second = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Stale Test Second",
+        expected_updated_at: staleUpdatedAt,
+      }),
+    });
+    expect(second.status).toBe(409);
+    const body = (await second.json()) as { error: string };
+    expect(body.error).toBe("stale_write");
+
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
+    expect(row.name).toBe("Stale Test First");
+  });
+
+  it("allows no-op PATCH without expected_updated_at", async () => {
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
+    const beforeLogs = await prisma.attendeeActionLog.count({
+      where: { attendee_id: ATT_A2, action_type: "attendee_edited" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: row.name }),
+    });
+    expect(res.status).toBe(200);
+
+    const afterLogs = await prisma.attendeeActionLog.count({
+      where: { attendee_id: ATT_A2, action_type: "attendee_edited" },
+    });
+    expect(afterLogs).toBe(beforeLogs);
+  });
+
+  it("allows no-op PATCH with only expected_updated_at", async () => {
+    const expectedUpdatedAt = await currentUpdatedAt(ATT_A2);
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ expected_updated_at: expectedUpdatedAt }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 400 when expected_updated_at is missing for a real change", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ department: "Ops" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_failed");
   });
 });
 

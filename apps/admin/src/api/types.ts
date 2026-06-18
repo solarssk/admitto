@@ -138,6 +138,7 @@ export interface AttendeeDetailDto {
   status: string;
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
+  updated_at: string;
   shirt_size: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
@@ -165,6 +166,7 @@ export interface UpdateAttendeePatch {
   department?: string | null;
   ticket_type?: string | null;
   shirt_size?: string | null;
+  expected_updated_at?: string;
 }
 
 export interface ResendTicketBody {

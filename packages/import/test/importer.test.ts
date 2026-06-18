@@ -3,7 +3,11 @@ import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
-import { commitImport } from "../src/importer.js";
+import {
+  commitImport,
+  createAttendeesBatch,
+  IMPORT_CONFLICT_SKIP_REASON,
+} from "../src/importer.js";
 import type { AttendeeRow } from "../src/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -333,5 +337,42 @@ describe("commitImport — idempotency", () => {
     const summary = await commitImport(EVENT_ID, [newRow], {}, prisma);
     expect(summary.toSkip).toBe(1);
     expect(summary.created).toBe(0);
+  });
+});
+
+describe("createAttendeesBatch — skipDuplicates", () => {
+  it("skips conflicting rows without aborting the transaction", async () => {
+    await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "tx-conflict@example.com",
+        name: "Existing",
+      },
+    });
+
+    const result = await prisma.$transaction(async (tx) =>
+      createAttendeesBatch(tx, [
+        {
+          event_id: EVENT_ID,
+          email: "tx-conflict@example.com",
+          name: "Race Loser",
+        },
+        {
+          event_id: EVENT_ID,
+          email: "tx-new@example.com",
+          name: "Race Winner",
+        },
+      ]),
+    );
+
+    expect(result.created).toBe(1);
+    expect(result.skipped).toEqual([
+      { email: "tx-conflict@example.com", reason: IMPORT_CONFLICT_SKIP_REASON },
+    ]);
+
+    const count = await prisma.attendee.count({
+      where: { event_id: EVENT_ID, email: { in: ["tx-conflict@example.com", "tx-new@example.com"] } },
+    });
+    expect(count).toBe(2);
   });
 });
