@@ -15,3 +15,9 @@ WHERE "config" ? 'size_field'
   AND NOT ("config" ? 'contents')
   AND ("config"->>'size_field') IS NOT NULL
   AND ("config"->>'size_field') <> '';
+
+-- Non-returnable defaults: giftbag and badge (explicit false for operator transitions).
+UPDATE "EventItem"
+SET "config" = "config" || '{"requires_return":false}'::jsonb
+WHERE "key" IN ('giftbag', 'badge')
+  AND NOT ("config" ? 'requires_return');

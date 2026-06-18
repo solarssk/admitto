@@ -7,9 +7,16 @@ const DEFAULT_EVENT_ITEMS = [
   {
     key: "giftbag",
     label: "Gift bag",
-    config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
+    config: {
+      contents: [{ label: "Shirt size", source_field: "shirt_size" }],
+      requires_return: false,
+    },
   },
-  { key: "badge", label: "Badge", config: { issue_on_checkin: true } },
+  {
+    key: "badge",
+    label: "Badge",
+    config: { issue_on_checkin: true, requires_return: false },
+  },
   { key: "headset", label: "Headset", config: { requires_return: true } },
 ] as const;
 

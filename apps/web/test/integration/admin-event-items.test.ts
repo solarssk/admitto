@@ -176,6 +176,7 @@ describe("GET /api/admin/events/:eventId/items", () => {
     const giftbag = body.items.find((i) => i.key === "giftbag");
     expect(giftbag?.config).toEqual({
       contents: [{ label: "Shirt size", source_field: "shirt_size" }],
+      requires_return: false,
     });
   });
 

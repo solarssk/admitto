@@ -189,9 +189,13 @@ describe("ensureDefaultEventItems (Lock #7 lazy seed)", () => {
       orderBy: { key: "asc" },
     });
     expect(items.map((i) => i.key)).toEqual(["badge", "giftbag", "headset"]);
-    expect(items.find((i) => i.key === "badge")?.config).toEqual({ issue_on_checkin: true });
+    expect(items.find((i) => i.key === "badge")?.config).toEqual({
+      issue_on_checkin: true,
+      requires_return: false,
+    });
     expect(items.find((i) => i.key === "giftbag")?.config).toEqual({
       contents: [{ label: "Shirt size", source_field: "shirt_size" }],
+      requires_return: false,
     });
   });
 });
