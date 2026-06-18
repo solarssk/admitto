@@ -1,6 +1,10 @@
 export type ContentRow = { label: string; source_field: string };
 
-const SLUG_PATTERN = /^[a-z0-9_]+$/;
+export const SOURCE_FIELD_SLUG_PATTERN = /^[a-z0-9_]+$/;
+
+export function isValidSourceFieldSlug(value: string): boolean {
+  return SOURCE_FIELD_SLUG_PATTERN.test(value);
+}
 
 export type ContentsValidationResult =
   | { ok: true; contents: ContentRow[] }
@@ -23,7 +27,7 @@ export function validateContentsRows(rows: ContentRow[]): ContentsValidationResu
       };
     }
 
-    if (!SLUG_PATTERN.test(source_field)) {
+    if (!isValidSourceFieldSlug(source_field)) {
       return {
         ok: false,
         message:

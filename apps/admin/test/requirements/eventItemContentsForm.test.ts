@@ -14,20 +14,38 @@ describe("validateContentsRows", () => {
     });
   });
 
+  it("returns empty contents when all rows are blank", () => {
+    expect(validateContentsRows([])).toEqual({ ok: true, contents: [] });
+    expect(validateContentsRows([{ label: "", source_field: "" }])).toEqual({
+      ok: true,
+      contents: [],
+    });
+  });
+
   it("rejects partial rows", () => {
-    const result = validateContentsRows([{ label: "Shirt size", source_field: "" }]);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.message).toMatch(/both a label and a source field/i);
-    }
+    expect(validateContentsRows([{ label: "Shirt size", source_field: "" }])).toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/both a label and a source field/i),
+    });
   });
 
   it("rejects invalid source_field slugs instead of dropping them", () => {
-    const result = validateContentsRows([{ label: "Shirt size", source_field: "shirt-size" }]);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.message).toMatch(/lowercase letters/i);
-    }
+    expect(validateContentsRows([{ label: "Shirt size", source_field: "shirt-size" }])).toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/lowercase letters/i),
+    });
+  });
+
+  it("rejects when a later row has an invalid slug", () => {
+    expect(
+      validateContentsRows([
+        { label: "Valid", source_field: "valid_field" },
+        { label: "Bad", source_field: "bad-slug" },
+      ]),
+    ).toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/lowercase letters/i),
+    });
   });
 
   it("trims whitespace before validation", () => {

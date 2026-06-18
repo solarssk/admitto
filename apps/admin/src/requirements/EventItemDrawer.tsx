@@ -6,7 +6,7 @@ import {
   updateEventItem,
 } from "../api/client.js";
 import type { EventItemConfigDto, EventItemDto } from "../api/types.js";
-import { validateContentsRows } from "./eventItemContentsForm.js";
+import { isValidSourceFieldSlug, validateContentsRows } from "./eventItemContentsForm.js";
 import "../attendees/attendees.css";
 
 export interface EventItemDrawerProps {
@@ -24,8 +24,6 @@ type FormState = {
   contents: { label: string; source_field: string }[];
 };
 
-const SLUG_PATTERN = /^[a-z0-9_]+$/;
-
 /** Resolve contents rows from API config, including legacy `size_field`. */
 function contentsFromConfig(cfg: EventItemConfigDto | null): { label: string; source_field: string }[] {
   if (!cfg) return [];
@@ -35,7 +33,7 @@ function contentsFromConfig(cfg: EventItemConfigDto | null): { label: string; so
   const legacy = cfg as EventItemConfigDto & { size_field?: string };
   if (typeof legacy.size_field === "string" && legacy.size_field.trim()) {
     const source_field = legacy.size_field.trim();
-    if (SLUG_PATTERN.test(source_field)) {
+    if (isValidSourceFieldSlug(source_field)) {
       return [{ label: "Shirt size", source_field }];
     }
   }
