@@ -361,6 +361,19 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     expect(text).not.toContain("Vip One");
   });
 
+  it("export respects all active filters simultaneously", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip&status=admitted&q=Vip+One`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const lines = (await res.text()).split("\r\n").filter(Boolean);
+    expect(lines.length).toBe(2);
+    expect(lines[1]).toContain("Vip One");
+    expect(lines[1]).not.toContain("Vip Two");
+    expect(lines[1]).not.toContain("Standard Guest");
+  });
+
   it("no matches → file with headers only", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=nonexistent`,

@@ -24,7 +24,7 @@ export function AttendeesPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "admitted" | "not_admitted">("all");
   const [ticketTypeFilter, setTicketTypeFilter] = useState("");
   const [availableTypes, setAvailableTypes] = useState<string[]>([]);
-  const [exportLoading, setExportLoading] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<"xlsx" | "csv" | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,10 +41,18 @@ export function AttendeesPage() {
 
   useEffect(() => {
     if (!eventId) return;
+    setTicketTypeFilter("");
+    setAvailableTypes([]);
     const ac = new AbortController();
     fetchTicketTypes(eventId, ac.signal)
-      .then(setAvailableTypes)
-      .catch(() => {});
+      .then((types) => {
+        if (ac.signal.aborted) return;
+        setAvailableTypes(types);
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setAvailableTypes([]);
+      });
     return () => ac.abort();
   }, [eventId]);
 
@@ -101,7 +109,7 @@ export function AttendeesPage() {
   const handleExport = useCallback(
     async (format: "xlsx" | "csv") => {
       if (!eventId) return;
-      setExportLoading(true);
+      setExportingFormat(format);
       setExportError(null);
       try {
         await exportAttendees(
@@ -114,12 +122,22 @@ export function AttendeesPage() {
           format,
         );
       } catch (err) {
-        setExportError(err instanceof ApiError ? err.message : "Export failed.");
+        if (err instanceof ApiError) {
+          reportApiError(err.status);
+          if (err.status === 401) {
+            const next = encodeURIComponent(window.location.pathname);
+            window.location.assign(`/login?next=${next}`);
+            return;
+          }
+          setExportError(err.message);
+        } else {
+          setExportError("Export failed.");
+        }
       } finally {
-        setExportLoading(false);
+        setExportingFormat(null);
       }
     },
-    [eventId, searchQuery, statusFilter, ticketTypeFilter],
+    [eventId, searchQuery, statusFilter, ticketTypeFilter, reportApiError],
   );
 
   const emptyMessage =
@@ -136,22 +154,21 @@ export function AttendeesPage() {
         subtitle="Manage attendee records and resend tickets."
         actions={
           <>
-            {exportError && <span className="text-error">{exportError}</span>}
             <Button
               variant="secondary"
               icon={<i className="ti ti-download" aria-hidden="true" />}
-              disabled={exportLoading}
+              disabled={exportingFormat !== null}
               onClick={() => void handleExport("xlsx")}
             >
-              {exportLoading ? "Exporting…" : "Export XLSX"}
+              {exportingFormat === "xlsx" ? "Exporting…" : "Export XLSX"}
             </Button>
             <Button
               variant="secondary"
               icon={<i className="ti ti-file-text" aria-hidden="true" />}
-              disabled={exportLoading}
+              disabled={exportingFormat !== null}
               onClick={() => void handleExport("csv")}
             >
-              CSV
+              {exportingFormat === "csv" ? "Exporting…" : "CSV"}
             </Button>
             <Link to={`/admin/events/${eventId}/attendees/import`}>
               <Button variant="primary">Import attendees</Button>
@@ -160,6 +177,7 @@ export function AttendeesPage() {
         }
       />
       {error && <p className="text-error">{error}</p>}
+      {exportError && <p className="text-error">{exportError}</p>}
 
       <AttendeesTable
         items={items}

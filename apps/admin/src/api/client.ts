@@ -510,13 +510,13 @@ export async function exportAttendees(
   params: { q?: string; status?: string; ticket_type?: string },
   format: "xlsx" | "csv",
 ): Promise<void> {
-  const q = new URLSearchParams({ format });
-  if (params.q) q.set("q", params.q);
-  if (params.status && params.status !== "all") q.set("status", params.status);
-  if (params.ticket_type) q.set("ticket_type", params.ticket_type);
+  const urlParams = new URLSearchParams({ format });
+  if (params.q) urlParams.set("q", params.q);
+  if (params.status && params.status !== "all") urlParams.set("status", params.status);
+  if (params.ticket_type) urlParams.set("ticket_type", params.ticket_type);
 
   const res = await fetch(
-    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${q.toString()}`,
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${urlParams.toString()}`,
     { credentials: "same-origin" },
   );
   if (!res.ok) {

@@ -71,6 +71,7 @@ const resendBodySchema = z
 
 const EXPORT_ROW_CAP = 50_000;
 
+/** Column headers for attendee export files (XLSX/CSV). */
 const EXPORT_COLUMNS = [
   "Name",
   "Email",
@@ -87,6 +88,87 @@ function sanitizeCell(value: string | null | undefined): string {
   const s = String(value);
   if (/^[=+\-@\t\r]/.test(s)) return `'${s}`;
   return s;
+}
+
+/** RFC 6266 attachment header with `"` escaped in the filename. */
+function exportContentDisposition(filename: string): string {
+  const safeFilename = filename.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `attachment; filename="${safeFilename}"`;
+}
+
+/** Build CSV text for sanitized export rows (CRLF, quoted fields). */
+function buildExportCsv(exportRows: {
+  name: string;
+  email: string;
+  company: string;
+  department: string;
+  ticket_type: string;
+  check_in_status: string;
+  admitted_at: string;
+}[]): string {
+  const header = EXPORT_COLUMNS.join(",");
+  const csvRows = exportRows.map((r) =>
+    [r.name, r.email, r.company, r.department, r.ticket_type, r.check_in_status, r.admitted_at]
+      .map((v) => `"${v.replace(/"/g, '""')}"`)
+      .join(","),
+  );
+  return [header, ...csvRows].join("\r\n");
+}
+
+/** Build XLSX bytes for sanitized export rows (dynamic exceljs import, ESM-safe). */
+async function buildExportXlsxBuffer(exportRows: {
+  name: string;
+  email: string;
+  company: string;
+  department: string;
+  ticket_type: string;
+  check_in_status: string;
+  admitted_at: string;
+}[]): Promise<Uint8Array> {
+  const exceljs = await import("exceljs");
+  const ExcelJS = exceljs.default ?? exceljs;
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Attendees");
+  ws.columns = EXPORT_COLUMNS.map((h) => ({ header: h, width: 28 }));
+  for (const r of exportRows) {
+    ws.addRow([
+      r.name,
+      r.email,
+      r.company,
+      r.department,
+      r.ticket_type,
+      r.check_in_status,
+      r.admitted_at,
+    ]);
+  }
+  return new Uint8Array(await wb.xlsx.writeBuffer());
+}
+
+/** Append bulk audit row after a successful filtered export (no raw search term). */
+async function auditAttendeesExported(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  format: "xlsx" | "csv",
+  count: number,
+  filters: { status: string; ticket_type?: string; has_query: boolean },
+): Promise<void> {
+  await db.$transaction(async (tx) => {
+    await writeBulkActionLog(tx, {
+      event_id: eventId,
+      action_type: "attendees_exported",
+      audit: adminAuditFromContext(c),
+      metadata: {
+        format,
+        count,
+        filters: {
+          status: filters.status,
+          ticket_type: filters.ticket_type ?? null,
+          has_query: filters.has_query,
+        },
+      },
+    });
+  });
 }
 
 export type AttendeeRowDto = {
@@ -334,7 +416,7 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   });
 }
 
-/** GET /api/admin/events/:eventId/attendees/ticket-types */
+/** GET /api/admin/events/:eventId/attendees/ticket-types — distinct non-empty ticket_type labels. */
 export async function handleListTicketTypes(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -356,7 +438,7 @@ export async function handleListTicketTypes(c: Context, db: PrismaClient): Promi
   return c.json({ types });
 }
 
-/** GET /api/admin/events/:eventId/attendees/export?format=xlsx|csv */
+/** GET /api/admin/events/:eventId/attendees/export — filtered subset as XLSX or CSV (no tokens). */
 export async function handleExportAttendees(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -387,7 +469,11 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
           (custom_data->>'company') ILIKE ${`%${q}%`}
           OR (custom_data->>'department') ILIKE ${`%${q}%`}
         )
+      LIMIT ${EXPORT_ROW_CAP + 1}
     `;
+    if (jsonMatches.length > EXPORT_ROW_CAP) {
+      return c.json({ error: "export_too_large", count: jsonMatches.length, cap: EXPORT_ROW_CAP }, 400);
+    }
     const jsonIds = jsonMatches.map((r) => r.id);
     where.AND = [
       {
@@ -434,67 +520,28 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
     };
   });
 
-  await db.$transaction(async (tx) => {
-    await writeBulkActionLog(tx, {
-      event_id: eventId,
-      action_type: "attendees_exported",
-      audit: adminAuditFromContext(c),
-      metadata: {
-        format,
-        count: exportRows.length,
-        filters: {
-          status,
-          ticket_type: ticket_type ?? null,
-          has_query: Boolean(q),
-        },
-      },
-    });
-  });
-
   const timestamp = new Date().toISOString().slice(0, 10);
   const filename = `attendees-${eventId}-${timestamp}.${format}`;
+  const auditFilters = { status, ticket_type, has_query: Boolean(q) };
 
   if (format === "csv") {
-    const header = EXPORT_COLUMNS.join(",");
-    const csvRows = exportRows.map((r) =>
-      [r.name, r.email, r.company, r.department, r.ticket_type, r.check_in_status, r.admitted_at]
-        .map((v) => `"${v.replace(/"/g, '""')}"`)
-        .join(","),
-    );
-    const csv = [header, ...csvRows].join("\r\n");
+    const csv = buildExportCsv(exportRows);
+    await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
     return new Response(csv, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": exportContentDisposition(filename),
       },
     });
   }
 
-  const ExcelJS = await import("exceljs");
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Attendees");
-  ws.columns = EXPORT_COLUMNS.map((h) => ({ header: h, width: 28 }));
-  for (const r of exportRows) {
-    ws.addRow([
-      r.name,
-      r.email,
-      r.company,
-      r.department,
-      r.ticket_type,
-      r.check_in_status,
-      r.admitted_at,
-    ]);
-  }
-  const written = await wb.xlsx.writeBuffer();
-  const bytes =
-    written instanceof ArrayBuffer
-      ? new Uint8Array(written)
-      : new Uint8Array(written);
+  const bytes = await buildExportXlsxBuffer(exportRows);
+  await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
   return new Response(bytes, {
     headers: {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Disposition": exportContentDisposition(filename),
     },
   });
 }
