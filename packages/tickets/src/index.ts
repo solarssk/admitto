@@ -16,6 +16,7 @@ export { addAttendeeNote, NoteTooLongError, OperatorRequiredError, MAX_ATTENDEE_
 export { undoLastCheckIn, UndoNotAllowedError } from "./undo.js";
 export { parseCustomData, shirtSizeFromCustomData, customDataValue } from "./custom-data.js";
 export { buildItemDetail, resolveEventItemContents } from "./event-item-contents.js";
+export { DEFAULT_EVENT_ITEM_KEYS } from "./event-items.js";
 export { parseEventOpsConfig } from "./ops-config.js";
 export { writeActionLog, writeBulkActionLog } from "./ops-audit.js";
 export type { OpsAuditContext } from "./ops-audit.js";

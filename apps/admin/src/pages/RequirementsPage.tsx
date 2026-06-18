@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Button, Card, Input, PageHeader, Switch } from "@admitto/ui";
 import {
@@ -30,6 +30,7 @@ function configSummary(config: EventItemDto["config"]): string {
 export function RequirementsPage() {
   const { eventId } = useParams();
   const { reportApiError } = useConnectionState();
+  const listAbortRef = useRef<AbortController | null>(null);
 
   const [items, setItems] = useState<EventItemDto[]>([]);
   const [opsConfig, setOpsConfig] = useState<OpsConfigDto | null>(null);
@@ -49,16 +50,23 @@ export function RequirementsPage() {
 
   const load = useCallback(async () => {
     if (!eventId) return;
+
+    listAbortRef.current?.abort();
+    const ac = new AbortController();
+    listAbortRef.current = ac;
+
     setLoading(true);
     setError(null);
     try {
       const [itemRows, ops] = await Promise.all([
-        fetchEventItems(eventId),
-        fetchOpsConfig(eventId),
+        fetchEventItems(eventId, ac.signal),
+        fetchOpsConfig(eventId, ac.signal),
       ]);
+      if (ac.signal.aborted) return;
       setItems(itemRows);
       setOpsConfig(ops);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       if (err instanceof ApiError) {
         reportApiError(err.status);
         if (err.status === 401) {
@@ -71,12 +79,13 @@ export function RequirementsPage() {
         setError("Failed to load requirements.");
       }
     } finally {
-      setLoading(false);
+      if (!ac.signal.aborted) setLoading(false);
     }
   }, [eventId, reportApiError]);
 
   useEffect(() => {
     void load();
+    return () => listAbortRef.current?.abort();
   }, [load, reloadToken]);
 
   const badgeItem = items.find((i) => i.key === "badge");

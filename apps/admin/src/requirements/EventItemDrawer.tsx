@@ -23,24 +23,45 @@ type FormState = {
   contents: { label: string; source_field: string }[];
 };
 
+const SLUG_PATTERN = /^[a-z0-9_]+$/;
+
+function contentsFromConfig(cfg: EventItemConfigDto | null): { label: string; source_field: string }[] {
+  if (!cfg) return [];
+  if (cfg.contents?.length) {
+    return cfg.contents.map((c) => ({ label: c.label, source_field: c.source_field }));
+  }
+  const legacy = cfg as EventItemConfigDto & { size_field?: string };
+  if (typeof legacy.size_field === "string" && legacy.size_field.trim()) {
+    const source_field = legacy.size_field.trim();
+    if (SLUG_PATTERN.test(source_field)) {
+      return [{ label: "Shirt size", source_field }];
+    }
+  }
+  return [];
+}
+
 function toForm(item: EventItemDto): FormState {
-  const cfg = item.config ?? {};
+  const cfg = item.config ?? null;
   return {
     label: item.label,
     enabled: item.enabled,
-    requires_return: cfg.requires_return ?? false,
-    issue_on_checkin: cfg.issue_on_checkin ?? false,
-    contents: cfg.contents?.map((c) => ({ ...c })) ?? [],
+    requires_return: cfg?.requires_return ?? false,
+    issue_on_checkin: cfg?.issue_on_checkin ?? false,
+    contents: contentsFromConfig(cfg),
   };
 }
 
 function toConfig(form: FormState): EventItemConfigDto {
-  const config: EventItemConfigDto = {};
-  if (form.contents.length > 0) {
-    config.contents = form.contents.filter((c) => c.label.trim() && c.source_field.trim());
+  const config: EventItemConfigDto = {
+    requires_return: form.requires_return,
+    issue_on_checkin: form.issue_on_checkin,
+  };
+  const contents = form.contents
+    .map((c) => ({ label: c.label.trim(), source_field: c.source_field.trim() }))
+    .filter((c) => c.label && c.source_field && SLUG_PATTERN.test(c.source_field));
+  if (contents.length > 0) {
+    config.contents = contents;
   }
-  if (form.requires_return) config.requires_return = true;
-  if (form.issue_on_checkin) config.issue_on_checkin = true;
   return config;
 }
 
@@ -49,12 +70,12 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [deleteBlocked, setDeleteBlocked] = useState(false);
+  const [deleteBlockReason, setDeleteBlockReason] = useState<"in_use" | "default" | null>(null);
 
   useEffect(() => {
     setForm(toForm(item));
     setError(null);
-    setDeleteBlocked(false);
+    setDeleteBlockReason(null);
   }, [item]);
 
   useEffect(() => {
@@ -88,14 +109,16 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
     if (!window.confirm(`Delete item "${item.label}"? This cannot be undone.`)) return;
     setDeleting(true);
     setError(null);
-    setDeleteBlocked(false);
+    setDeleteBlockReason(null);
     try {
       await deleteEventItem(eventId, item.id);
       onUpdated();
       onClose();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setDeleteBlocked(true);
+        setDeleteBlockReason(
+          err.message === "default_item_not_deletable" ? "default" : "in_use",
+        );
       } else {
         setError(err instanceof ApiError ? err.message : "Failed to delete item.");
       }
@@ -127,9 +150,14 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
         </div>
         <form className="attendee-drawer__body" onSubmit={(e) => void handleSave(e)}>
           {error && <p className="text-error">{error}</p>}
-          {deleteBlocked && (
+          {deleteBlockReason === "in_use" && (
             <p className="text-error">
               This item has been issued to attendees — disable it instead of deleting.
+            </p>
+          )}
+          {deleteBlockReason === "default" && (
+            <p className="text-error">
+              Default items (giftbag, badge, headset) cannot be deleted — disable them instead.
             </p>
           )}
 

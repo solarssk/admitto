@@ -13,6 +13,10 @@ const DEFAULT_EVENT_ITEMS = [
   { key: "headset", label: "Headset", config: { requires_return: true } },
 ] as const;
 
+export const DEFAULT_EVENT_ITEM_KEYS = new Set(
+  DEFAULT_EVENT_ITEMS.map((item) => item.key),
+);
+
 /** Matches migration SQL id: `ei_` + first 24 hex chars of md5(eventId:key). */
 function defaultEventItemId(eventId: string, key: string): string {
   const digest = createHash("md5").update(`${eventId}:${key}`).digest("hex").slice(0, 24);

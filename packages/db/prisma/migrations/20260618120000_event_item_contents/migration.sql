@@ -12,4 +12,6 @@ SET "config" = jsonb_set(
   )
 )
 WHERE "config" ? 'size_field'
-  AND NOT ("config" ? 'contents');
+  AND NOT ("config" ? 'contents')
+  AND ("config"->>'size_field') IS NOT NULL
+  AND ("config"->>'size_field') <> '';

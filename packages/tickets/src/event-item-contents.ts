@@ -6,21 +6,27 @@ const DETAIL_SEPARATOR = " · ";
 /** Legacy EventItem.config with size_field before contents generalization (ADR 0025). */
 type LegacyEventItemConfig = EventItemConfig & { size_field?: string };
 
+const SLUG_PATTERN = /^[a-z0-9_]+$/;
+
 /** Normalize config.contents, falling back to legacy size_field when present. */
 export function resolveEventItemContents(config: unknown): EventItemContent[] {
   if (!config || typeof config !== "object" || Array.isArray(config)) return [];
   const o = config as LegacyEventItemConfig;
   if (Array.isArray(o.contents) && o.contents.length > 0) {
-    return o.contents.filter(
-      (c): c is EventItemContent =>
-        Boolean(c) &&
-        typeof c === "object" &&
-        typeof c.label === "string" &&
-        typeof c.source_field === "string",
-    );
+    return o.contents.flatMap((c) => {
+      if (!c || typeof c !== "object") return [];
+      if (typeof c.label !== "string" || typeof c.source_field !== "string") return [];
+      const label = c.label.trim();
+      const source_field = c.source_field.trim();
+      if (!label || !source_field || !SLUG_PATTERN.test(source_field)) return [];
+      return [{ label, source_field }];
+    });
   }
   if (typeof o.size_field === "string" && o.size_field.trim()) {
-    return [{ label: "Shirt size", source_field: o.size_field.trim() }];
+    const source_field = o.size_field.trim();
+    if (SLUG_PATTERN.test(source_field)) {
+      return [{ label: "Shirt size", source_field }];
+    }
   }
   return [];
 }

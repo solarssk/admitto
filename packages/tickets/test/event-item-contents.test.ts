@@ -36,6 +36,22 @@ describe("resolveEventItemContents", () => {
     expect(resolveEventItemContents(null)).toEqual([]);
     expect(resolveEventItemContents({})).toEqual([]);
   });
+
+  it("trims labels and source fields", () => {
+    expect(
+      resolveEventItemContents({
+        contents: [{ label: "  Shirt size  ", source_field: " shirt_size " }],
+      }),
+    ).toEqual([{ label: "Shirt size", source_field: "shirt_size" }]);
+  });
+
+  it("drops invalid source_field slugs", () => {
+    expect(
+      resolveEventItemContents({
+        contents: [{ label: "Bad", source_field: "Shirt-Size" }],
+      }),
+    ).toEqual([]);
+  });
 });
 
 describe("buildItemDetail", () => {

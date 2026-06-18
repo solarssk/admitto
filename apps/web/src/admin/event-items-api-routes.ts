@@ -4,7 +4,9 @@ import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { canManageEvent } from "@admitto/auth";
 import {
+  DEFAULT_EVENT_ITEM_KEYS,
   parseEventOpsConfig,
+  resolveEventItemContents,
   writeBulkActionLog,
   type EventItemConfig,
   type OpsAuditContext,
@@ -22,7 +24,7 @@ const eventItemContentSchema = z
 
 const eventItemConfigSchema = z
   .object({
-    contents: z.array(eventItemContentSchema).optional(),
+    contents: z.array(eventItemContentSchema).max(20).optional(),
     requires_return: z.boolean().optional(),
     issue_on_checkin: z.boolean().optional(),
   })
@@ -60,6 +62,22 @@ export type EventItemDto = {
   config: EventItemConfig | null;
 };
 
+function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const parsed = eventItemConfigSchema.safeParse({
+    contents: o.contents,
+    requires_return: o.requires_return,
+    issue_on_checkin: o.issue_on_checkin,
+  });
+  const config: EventItemConfig = parsed.success ? { ...parsed.data } : {};
+  const resolved = resolveEventItemContents(raw);
+  if (resolved.length > 0) {
+    config.contents = resolved;
+  }
+  return Object.keys(config).length > 0 ? config : null;
+}
+
 function serializeEventItem(row: {
   id: string;
   key: string;
@@ -74,7 +92,7 @@ function serializeEventItem(row: {
     label: row.label,
     type: row.type,
     enabled: row.enabled,
-    config: (row.config as EventItemConfig | null) ?? null,
+    config: serializeEventItemConfig(row.config),
   };
 }
 
@@ -304,14 +322,16 @@ export async function handleDeleteEventItem(c: Context, db: PrismaClient): Promi
   const existing = await loadEventItemInEvent(db, eventId, itemId);
   if (!existing) return c.json({ error: "forbidden" }, 403);
 
-  const inUse = await db.attendeeItemState.count({
-    where: { event_item_id: itemId },
-  });
-  if (inUse > 0) {
-    return c.json({ error: "item_in_use" }, 409);
+  if (DEFAULT_EVENT_ITEM_KEYS.has(existing.key)) {
+    return c.json({ error: "default_item_not_deletable" }, 409);
   }
 
-  await db.$transaction(async (tx) => {
+  const deleted = await db.$transaction(async (tx) => {
+    const inUse = await tx.attendeeItemState.count({
+      where: { event_item_id: itemId },
+    });
+    if (inUse > 0) return { ok: false as const, reason: "in_use" as const };
+
     await tx.eventItem.delete({ where: { id: itemId } });
     await writeBulkActionLog(tx, {
       event_id: eventId,
@@ -319,7 +339,12 @@ export async function handleDeleteEventItem(c: Context, db: PrismaClient): Promi
       audit: adminAuditFromContext(c),
       metadata: { item_key: existing.key },
     });
+    return { ok: true as const };
   });
+
+  if (!deleted.ok) {
+    return c.json({ error: "item_in_use" }, 409);
+  }
 
   return c.json({ ok: true });
 }

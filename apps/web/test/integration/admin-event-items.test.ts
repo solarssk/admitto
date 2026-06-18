@@ -171,8 +171,12 @@ describe("GET /api/admin/events/:eventId/items", () => {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { items: { key: string }[] };
+    const body = (await res.json()) as { items: { key: string; config: unknown }[] };
     expect(body.items.map((i) => i.key).sort()).toEqual(["giftbag", "socks"]);
+    const giftbag = body.items.find((i) => i.key === "giftbag");
+    expect(giftbag?.config).toEqual({
+      contents: [{ label: "Shirt size", source_field: "shirt_size" }],
+    });
   });
 
   it("returns 403 for operator", async () => {
@@ -221,6 +225,19 @@ describe("POST /api/admin/events/:eventId/items", () => {
     });
     expect(res.status).toBe(409);
   });
+
+  it("rejects more than 20 content rows", async () => {
+    const contents = Array.from({ length: 21 }, (_, i) => ({
+      label: `Field ${i}`,
+      source_field: `field_${i}`,
+    }));
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ key: "too_many", label: "Too many", config: { contents } }),
+    });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
@@ -244,15 +261,99 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("persists issue_on_checkin false explicitly", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        config: {
+          contents: [{ label: "Socks size", source_field: "sock_size" }],
+          issue_on_checkin: false,
+          requires_return: false,
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      config: { issue_on_checkin: boolean; requires_return: boolean };
+    };
+    expect(body.config.issue_on_checkin).toBe(false);
+    expect(body.config.requires_return).toBe(false);
+
+    const row = await prisma.eventItem.findUnique({ where: { id: ITEM_SOCKS } });
+    expect(row?.config).toMatchObject({ issue_on_checkin: false, requires_return: false });
+  });
+
+  it("returns 403 for cross-event item patch", async () => {
+    const itemB = await prisma.eventItem.create({
+      data: {
+        id: "ei_event_b_only",
+        event_id: EVENT_EI_B,
+        key: "lanyard",
+        label: "Lanyard",
+        type: "item",
+      },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_EI_B}/items/${itemB.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ label: "Hijacked" }),
+    });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe("DELETE /api/admin/events/:eventId/items/:itemId", () => {
   it("returns 409 when item in use", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ key: "temp_in_use", label: "Temp in use" }),
+    });
+    const created = (await createRes.json()) as { id: string };
+    await prisma.attendeeItemState.create({
+      data: {
+        attendee_id: ATT_EI,
+        event_item_id: created.id,
+        state: "issued",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${created.id}`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("item_in_use");
+  });
+
+  it("returns 409 for default items", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_GIFTBAG}`, {
       method: "DELETE",
       headers: { Cookie: adminCookie, ...sameOrigin },
     });
     expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("default_item_not_deletable");
+  });
+
+  it("returns 403 for cross-event item delete", async () => {
+    const itemB = await prisma.eventItem.create({
+      data: {
+        id: "ei_event_b_delete",
+        event_id: EVENT_EI_B,
+        key: "pin",
+        label: "Pin",
+        type: "item",
+      },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_EI_B}/items/${itemB.id}`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(403);
   });
 
   it("deletes unused item", async () => {

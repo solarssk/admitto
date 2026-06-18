@@ -12,6 +12,7 @@
 }
 
 .requirements-config-summary {
+  display: inline-block;
   font-size: var(--fs-sm);
   color: var(--text-muted);
   max-width: 280px;
