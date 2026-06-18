@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import type { EmailDeliveryStatus } from "@admitto/db";
+import { EMAIL_DELIVERY_STATUS } from "@admitto/db/status";
 import { z } from "zod";
 import {
   ALLOWED_PLACEHOLDERS,
@@ -42,10 +43,27 @@ import {
   requireEventId,
 } from "./admin-helpers.js";
 
+/** Max character length for `body_template` (schema); shared with wire byte cap below. */
+export const TEMPLATE_BODY_CHAR_LIMIT = 200_000;
+
+/** Max character length for `subject_template` (schema). */
+export const TEMPLATE_SUBJECT_CHAR_LIMIT = 500;
+
+/**
+ * Max JSON body size for template save/preview routes.
+ * Sized for `body_template` at {@link TEMPLATE_BODY_CHAR_LIMIT} with worst-case UTF-8 (4 B/char)
+ * and JSON escaping overhead; still rejects multi-megabyte payloads before `c.req.json()`.
+ */
+export const MAX_TEMPLATE_BODY_BYTES =
+  (TEMPLATE_BODY_CHAR_LIMIT + TEMPLATE_SUBJECT_CHAR_LIMIT) * 4 * 2 + 32_768;
+
+/** Max JSON body for POST `/template/test-send` (`{ to }` only). */
+export const MAX_TEMPLATE_TEST_SEND_BODY_BYTES = 4_096;
+
 const templateBodySchema = z
   .object({
-    subject_template: z.string().trim().min(1).max(500),
-    body_template: z.string().min(1).max(200_000),
+    subject_template: z.string().trim().min(1).max(TEMPLATE_SUBJECT_CHAR_LIMIT),
+    body_template: z.string().min(1).max(TEMPLATE_BODY_CHAR_LIMIT),
     template_format: z.enum(["mjml", "html"]),
   })
   .strict();
@@ -81,15 +99,7 @@ export type EventDeliveriesListDto = {
 
 const ALLOWED_PLACEHOLDER_LIST = [...ALLOWED_PLACEHOLDERS].sort();
 const REQUIRED_URL_PLACEHOLDER_LIST = [...REQUIRED_URL_PLACEHOLDERS].sort();
-const ALLOWED_DELIVERY_STATUSES = new Set<string>([
-  "queued",
-  "accepted",
-  "sent",
-  "delivered",
-  "failed",
-  "bounced",
-  "rejected",
-]);
+const ALLOWED_DELIVERY_STATUSES = new Set<string>(EMAIL_DELIVERY_STATUS);
 
 /** Collect template source validation errors for API 400 responses. */
 function collectTemplateSourceErrors(subject: string, body: string): string[] {

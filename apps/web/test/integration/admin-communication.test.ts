@@ -11,6 +11,7 @@ import {
 } from "@admitto/mail-templates";
 import type { ExportPayload } from "@admitto/mailer";
 import { createApp } from "../../src/app.js";
+import { MAX_TEMPLATE_BODY_BYTES, MAX_TEMPLATE_TEST_SEND_BODY_BYTES } from "../../src/admin/communication-api-routes.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
@@ -255,6 +256,44 @@ describe("PUT /api/admin/events/:eventId/template", () => {
     expect(body.errors.some((e) => e.includes("ticket_url"))).toBe(true);
     expect(body.errors.some((e) => e.includes("qr_image_url"))).toBe(true);
   });
+
+  it("rejects body larger than schema char limit", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subject_template: "Subject",
+        body_template: "x".repeat(260_000),
+        template_format: "html",
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects JSON body larger than wire byte cap", async () => {
+    const oversizeChars = MAX_TEMPLATE_BODY_BYTES;
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subject_template: "Subject",
+        body_template: "x".repeat(oversizeChars),
+        template_format: "html",
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("template too large");
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template`, {
+      method: "PUT",
+      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(validTemplate),
+    });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe("POST /api/admin/events/:eventId/template/preview", () => {
@@ -282,6 +321,42 @@ describe("POST /api/admin/events/:eventId/template/preview", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { errors: string[] };
     expect(body.errors.length).toBeGreaterThan(0);
+  });
+
+  it("rejects body larger than schema char limit", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template/preview`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...validTemplate,
+        body_template: "x".repeat(260_000),
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects JSON body larger than wire byte cap", async () => {
+    const oversizeChars = MAX_TEMPLATE_BODY_BYTES;
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template/preview`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...validTemplate,
+        body_template: "x".repeat(oversizeChars),
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("template too large");
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template/preview`, {
+      method: "POST",
+      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(validTemplate),
+    });
+    expect(res.status).toBe(403);
   });
 });
 
@@ -326,6 +401,26 @@ describe("POST /api/admin/events/:eventId/template/test-send", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("rejects operator", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template/test-send`, {
+      method: "POST",
+      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "tester@example.com" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects oversized JSON body", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template/test-send`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ to: `${"x".repeat(MAX_TEMPLATE_TEST_SEND_BODY_BYTES)}@example.com` }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("request too large");
+  });
 });
 
 describe("GET /api/admin/events/:eventId/deliveries", () => {
@@ -365,5 +460,12 @@ describe("GET /api/admin/events/:eventId/deliveries", () => {
       { headers: { Cookie: adminCookie } },
     );
     expect(res.status).toBe(400);
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/deliveries`, {
+      headers: { Cookie: opCookie },
+    });
+    expect(res.status).toBe(403);
   });
 });

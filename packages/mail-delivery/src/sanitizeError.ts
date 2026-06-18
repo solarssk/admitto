@@ -15,9 +15,14 @@ export function clientSafeDeliveryError(message: string | undefined): string {
   const sanitized = sanitizeDeliveryError(message);
   if (!sanitized) return "send failed";
   if (
-    /AADSTS|client_id|client_secret|smtp:|graph\.microsoft|oauth|bearer\s|authorization\s+failed/i.test(
+    /AADSTS|client_id|client_secret|smtp:|graph\.microsoft|oauth|bearer\s|authorization\s+failed|exportSink|createMailer/i.test(
       sanitized,
     )
+  ) {
+    return "send failed";
+  }
+  if (
+    /https?:\/\/|[a-zA-Z0-9.-]+:\d{2,5}\b|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/i.test(sanitized)
   ) {
     return "send failed";
   }

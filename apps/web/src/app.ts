@@ -84,6 +84,8 @@ import {
   handlePreviewEventTemplate,
   handleTestSendEventTemplate,
   handleListEventDeliveries,
+  MAX_TEMPLATE_BODY_BYTES,
+  MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
 } from "./admin/communication-api-routes.js";
 import {
   handleGetCheckinEvents,
@@ -200,6 +202,14 @@ export function createApp(options: CreateAppOptions = {}) {
     maxSize: MAX_IMPORT_BODY_BYTES,
     onError: (c) => c.json({ error: "file too large" }, 400),
   });
+  const templateBodyLimit = bodyLimit({
+    maxSize: MAX_TEMPLATE_BODY_BYTES,
+    onError: (c) => c.json({ error: "template too large" }, 400),
+  });
+  const templateTestSendBodyLimit = bodyLimit({
+    maxSize: MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
   const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot });
 
@@ -310,16 +320,17 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/template", staffAdminGate, (c) =>
     handleGetEventTemplate(c, db),
   );
-  app.put("/api/admin/events/:eventId/template", jsonPostCsrf, staffAdminGate, (c) =>
+  app.put("/api/admin/events/:eventId/template", jsonPostCsrf, staffAdminGate, templateBodyLimit, (c) =>
     handlePutEventTemplate(c, db),
   );
-  app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, (c) =>
+  app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, templateBodyLimit, (c) =>
     handlePreviewEventTemplate(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/template/test-send",
     jsonPostCsrf,
     staffAdminGate,
+    templateTestSendBodyLimit,
     adminCommunicationRateLimit,
     (c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps),
   );

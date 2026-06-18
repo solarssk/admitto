@@ -33,6 +33,27 @@ describe("clientSafeDeliveryError", () => {
     expect(clientSafeDeliveryError("Bearer token expired")).toBe("send failed");
     expect(clientSafeDeliveryError("client_secret mismatch")).toBe("send failed");
   });
+
+  it("redacts internal URLs", () => {
+    expect(clientSafeDeliveryError("http://internal-relay/api failed")).toBe("send failed");
+    expect(clientSafeDeliveryError("https://smtp.corp.local/send failed")).toBe("send failed");
+    expect(clientSafeDeliveryError("HTTPS://smtp.corp.local/send failed")).toBe("send failed");
+  });
+
+  it("redacts host:port patterns", () => {
+    expect(clientSafeDeliveryError("Connection refused smtp.corp.local:25")).toBe("send failed");
+    expect(clientSafeDeliveryError("TLS handshake failed: 10.0.1.15:587")).toBe("send failed");
+  });
+
+  it("redacts internal mailer implementation errors", () => {
+    expect(
+      clientSafeDeliveryError("export_only provider requires exportSink in createMailer deps"),
+    ).toBe("send failed");
+  });
+
+  it("allows plain send error without internals", () => {
+    expect(clientSafeDeliveryError("Mailbox does not exist")).toBe("Mailbox does not exist");
+  });
 });
 
 describe("sanitizeDeliveryError", () => {
