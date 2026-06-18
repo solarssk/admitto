@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, IconButton, Input, StatusBadge } from "@admitto/ui";
 import {
   ApiError,
@@ -98,10 +98,21 @@ export function AttendeeDetailDrawer({
   const [resendError, setResendError] = useState<string | null>(null);
   const [resendSuccess, setResendSuccess] = useState<string | null>(null);
 
+  /** Tracks the row currently selected in the parent list (guards async save/reload). */
+  const selectionRef = useRef({ eventId, attendeeId });
+  selectionRef.current = { eventId, attendeeId };
+
+  function isStillSelected(target: { eventId: string; attendeeId: string }): boolean {
+    const current = selectionRef.current;
+    return current.eventId === target.eventId && current.attendeeId === target.attendeeId;
+  }
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setStaleWrite(false);
+    setEmailConflict(false);
     (async () => {
       try {
         const d = await fetchAttendeeDetail(eventId, attendeeId);
@@ -147,18 +158,21 @@ export function AttendeeDetailDrawer({
     if (Object.keys(patch).length === 0) return;
 
     patch.expected_updated_at = detail.updated_at;
+    const target = { eventId, attendeeId };
 
     setSaving(true);
     setEmailConflict(false);
     setError(null);
     try {
-      const updated = await updateAttendee(eventId, attendeeId, patch);
+      const updated = await updateAttendee(target.eventId, target.attendeeId, patch);
+      if (!isStillSelected(target)) return;
       setDetail(updated);
       setForm(toForm(updated));
       setInitialEmail(updated.email);
       setStaleWrite(false);
       onUpdated();
     } catch (err) {
+      if (!isStillSelected(target)) return;
       if (err instanceof ApiError && err.status === 409) {
         if (err.message === "email_conflict") {
           setEmailConflict(true);
@@ -176,18 +190,22 @@ export function AttendeeDetailDrawer({
   }
 
   async function handleReload() {
+    const target = { eventId, attendeeId };
+    const previousDetail = detail;
     setReloading(true);
     setError(null);
     try {
-      const d = await fetchAttendeeDetail(eventId, attendeeId);
+      const d = await fetchAttendeeDetail(target.eventId, target.attendeeId);
+      if (!isStillSelected(target)) return;
       setForm((currentForm) => {
-        if (!currentForm || !detail) return currentForm;
-        return mergeFormAfterReload(currentForm, detail, d);
+        if (!currentForm || !previousDetail) return currentForm;
+        return mergeFormAfterReload(currentForm, previousDetail, d);
       });
       setDetail(d);
       setInitialEmail(d.email);
       setStaleWrite(false);
     } catch (err) {
+      if (!isStillSelected(target)) return;
       setError(
         err instanceof ApiError
           ? err.message
