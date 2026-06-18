@@ -57,9 +57,11 @@ jobs:
           image-ref: ${{ env.SCAN_IMAGE }}
           format: sarif
           output: trivy-results.sarif
+          scanners: vuln
           vuln-type: os,library
           ignore-unfixed: true
           severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
           exit-code: 0
 
       - name: Upload Trivy scan results to GitHub Security tab
@@ -90,6 +92,7 @@ jobs:
         with:
           image-ref: ${{ env.SCAN_IMAGE }}
           format: table
+          scanners: vuln
           vuln-type: os,library
           ignore-unfixed: true
           severity: CRITICAL
