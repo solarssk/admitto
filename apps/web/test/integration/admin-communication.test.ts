@@ -255,6 +255,28 @@ describe("PUT /api/admin/events/:eventId/template", () => {
     expect(body.errors.some((e) => e.includes("ticket_url"))).toBe(true);
     expect(body.errors.some((e) => e.includes("qr_image_url"))).toBe(true);
   });
+
+  it("rejects body larger than limit", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subject_template: "Subject",
+        body_template: "x".repeat(260_000),
+        template_format: "html",
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template`, {
+      method: "PUT",
+      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(validTemplate),
+    });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe("POST /api/admin/events/:eventId/template/preview", () => {
@@ -282,6 +304,27 @@ describe("POST /api/admin/events/:eventId/template/preview", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { errors: string[] };
     expect(body.errors.length).toBeGreaterThan(0);
+  });
+
+  it("rejects body larger than limit", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template/preview`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...validTemplate,
+        body_template: "x".repeat(260_000),
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template/preview`, {
+      method: "POST",
+      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(validTemplate),
+    });
+    expect(res.status).toBe(403);
   });
 });
 
@@ -326,6 +369,15 @@ describe("POST /api/admin/events/:eventId/template/test-send", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("rejects operator", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template/test-send`, {
+      method: "POST",
+      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "tester@example.com" }),
+    });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe("GET /api/admin/events/:eventId/deliveries", () => {
@@ -365,5 +417,12 @@ describe("GET /api/admin/events/:eventId/deliveries", () => {
       { headers: { Cookie: adminCookie } },
     );
     expect(res.status).toBe(400);
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/deliveries`, {
+      headers: { Cookie: opCookie },
+    });
+    expect(res.status).toBe(403);
   });
 });

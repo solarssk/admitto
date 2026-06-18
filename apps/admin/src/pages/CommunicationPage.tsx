@@ -72,6 +72,7 @@ export function CommunicationPage() {
   const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const subjectRef = useRef<HTMLInputElement>(null);
 
   const templatePayload = useCallback(
     () => ({
@@ -167,7 +168,17 @@ export function CommunicationPage() {
   const insertPlaceholder = (name: string) => {
     const token = `{{${name}}}`;
     if (activeField === "subject") {
-      setSubject((prev) => prev + token);
+      const el = subjectRef.current;
+      const start = el?.selectionStart ?? subject.length;
+      const end = el?.selectionEnd ?? subject.length;
+      const newVal = subject.slice(0, start) + token + subject.slice(end);
+      setSubject(newVal);
+      requestAnimationFrame(() => {
+        if (el) {
+          el.focus();
+          el.setSelectionRange(start + token.length, start + token.length);
+        }
+      });
       return;
     }
     const el = bodyRef.current;
@@ -266,6 +277,9 @@ export function CommunicationPage() {
   if (error) return <p>{error}</p>;
 
   const deliveryPages = Math.max(1, Math.ceil(deliveryTotal / DELIVERY_PAGE_SIZE));
+  const deliveryRangeStart =
+    deliveryTotal === 0 ? 0 : (deliveryPage - 1) * DELIVERY_PAGE_SIZE + 1;
+  const deliveryRangeEnd = Math.min(deliveryPage * DELIVERY_PAGE_SIZE, deliveryTotal);
 
   return (
     <div className="screen">
@@ -321,10 +335,12 @@ export function CommunicationPage() {
               </div>
 
               <Input
+                ref={subjectRef}
                 label="Subject"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
                 onFocus={() => setActiveField("subject")}
+                onClick={() => setActiveField("subject")}
               />
 
               <div className="communication-format-row">
@@ -457,10 +473,13 @@ export function CommunicationPage() {
               }}
             >
               <option value="all">All</option>
+              <option value="queued">Queued</option>
               <option value="accepted">Accepted</option>
               <option value="sent">Sent</option>
+              <option value="delivered">Delivered</option>
               <option value="failed">Failed</option>
-              <option value="queued">Queued</option>
+              <option value="bounced">Bounced</option>
+              <option value="rejected">Rejected</option>
             </Select>
           </div>
 
@@ -504,7 +523,7 @@ export function CommunicationPage() {
             {!deliveriesError && deliveryTotal > 0 && (
               <div className="communication-pager">
                 <span>
-                  Page {deliveryPage} of {deliveryPages} ({deliveryTotal} total)
+                  Showing {deliveryRangeStart}–{deliveryRangeEnd} of {deliveryTotal}
                 </span>
                 <Button
                   variant="secondary"

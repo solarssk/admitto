@@ -1,4 +1,4 @@
-import { useId, type InputHTMLAttributes, type ReactNode } from "react";
+import { useId, forwardRef, type InputHTMLAttributes, type ReactNode } from "react";
 
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
   label?: string;
@@ -8,16 +8,19 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   invalid?: boolean;
 }
 
-export function Input({
-  label,
-  hint,
-  error,
-  icon = null,
-  id,
-  invalid = false,
-  className,
-  ...rest
-}: InputProps) {
+export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
+  {
+    label,
+    hint,
+    error,
+    icon = null,
+    id,
+    invalid = false,
+    className,
+    ...rest
+  },
+  ref,
+) {
   const uid = useId();
   const autoId = id ?? (label ? `f-${uid}` : undefined);
   const isInvalid = invalid || !!error;
@@ -26,6 +29,7 @@ export function Input({
   const describedBy = [errorId, hintId].filter(Boolean).join(" ") || undefined;
   const field = (
     <input
+      ref={ref}
       id={autoId}
       className={["at-input", isInvalid && "at-input--invalid", className].filter(Boolean).join(" ")}
       aria-invalid={isInvalid || undefined}
@@ -61,4 +65,4 @@ export function Input({
       ) : null}
     </div>
   );
-}
+});

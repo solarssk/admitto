@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import type { EmailDeliveryStatus } from "@admitto/db";
+import { EMAIL_DELIVERY_STATUS } from "@admitto/db/status";
 import { z } from "zod";
 import {
   ALLOWED_PLACEHOLDERS,
@@ -42,6 +43,8 @@ import {
   requireEventId,
 } from "./admin-helpers.js";
 
+export const MAX_TEMPLATE_BODY_BYTES = 250_000; // ~250 KB — margin over max(200k) + JSON overhead
+
 const templateBodySchema = z
   .object({
     subject_template: z.string().trim().min(1).max(500),
@@ -81,15 +84,7 @@ export type EventDeliveriesListDto = {
 
 const ALLOWED_PLACEHOLDER_LIST = [...ALLOWED_PLACEHOLDERS].sort();
 const REQUIRED_URL_PLACEHOLDER_LIST = [...REQUIRED_URL_PLACEHOLDERS].sort();
-const ALLOWED_DELIVERY_STATUSES = new Set<string>([
-  "queued",
-  "accepted",
-  "sent",
-  "delivered",
-  "failed",
-  "bounced",
-  "rejected",
-]);
+const ALLOWED_DELIVERY_STATUSES = new Set<string>(EMAIL_DELIVERY_STATUS);
 
 /** Collect template source validation errors for API 400 responses. */
 function collectTemplateSourceErrors(subject: string, body: string): string[] {
