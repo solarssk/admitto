@@ -1,20 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  isStaleWrite,
   runOptimisticUpdate,
-  staleWriteFromCount,
 } from "../src/admin/optimistic-update.js";
 
-describe("staleWriteFromCount", () => {
-  it("returns stale_write when count is 0", () => {
-    expect(staleWriteFromCount(0)).toEqual({ kind: "stale_write" });
-  });
-
-  it("returns null when count is exactly one", () => {
-    expect(staleWriteFromCount(1)).toBeNull();
-  });
-
-  it("throws when count is greater than one", () => {
-    expect(() => staleWriteFromCount(2)).toThrow(/expected exactly one/);
+describe("isStaleWrite", () => {
+  it("detects stale_write results", () => {
+    expect(isStaleWrite({ kind: "stale_write" })).toBe(true);
+    expect(isStaleWrite({ ok: true, row: { id: "a1" } })).toBe(false);
   });
 });
 
@@ -37,6 +30,17 @@ describe("runOptimisticUpdate", () => {
     const result = await runOptimisticUpdate({ updateMany, loadUpdated });
 
     expect(result).toEqual({ kind: "stale_write" });
+    expect(isStaleWrite(result)).toBe(true);
+    expect(loadUpdated).not.toHaveBeenCalled();
+  });
+
+  it("throws when count is greater than one", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 2 });
+    const loadUpdated = vi.fn();
+
+    await expect(runOptimisticUpdate({ updateMany, loadUpdated })).rejects.toThrow(
+      /expected exactly one/,
+    );
     expect(loadUpdated).not.toHaveBeenCalled();
   });
 });

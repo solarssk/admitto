@@ -150,13 +150,13 @@ export function AttendeeDetailDrawer({
 
     setSaving(true);
     setEmailConflict(false);
-    setStaleWrite(false);
     setError(null);
     try {
       const updated = await updateAttendee(eventId, attendeeId, patch);
       setDetail(updated);
       setForm(toForm(updated));
       setInitialEmail(updated.email);
+      setStaleWrite(false);
       onUpdated();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -165,7 +165,7 @@ export function AttendeeDetailDrawer({
         } else if (err.message === "stale_write") {
           setStaleWrite(true);
         } else {
-          setError(err.message);
+          setError("Could not save changes. Reload and try again.");
         }
       } else {
         setError(err instanceof ApiError ? err.message : "Failed to save changes.");
@@ -177,7 +177,6 @@ export function AttendeeDetailDrawer({
 
   async function handleReload() {
     setReloading(true);
-    setStaleWrite(false);
     setError(null);
     try {
       const d = await fetchAttendeeDetail(eventId, attendeeId);
@@ -187,8 +186,13 @@ export function AttendeeDetailDrawer({
       });
       setDetail(d);
       setInitialEmail(d.email);
+      setStaleWrite(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to reload attendee.");
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Failed to reload — please try again.",
+      );
     } finally {
       setReloading(false);
     }
@@ -328,7 +332,7 @@ export function AttendeeDetailDrawer({
                     </dd>
                   </dl>
                   <div className="attendee-form__actions">
-                    <Button type="submit" variant="primary" disabled={saving}>
+                    <Button type="submit" variant="primary" disabled={saving || reloading || staleWrite}>
                       {saving ? "Saving…" : "Save changes"}
                     </Button>
                   </div>

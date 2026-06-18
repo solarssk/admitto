@@ -20,7 +20,7 @@ import {
   positiveIntQuery,
   requireEventId,
 } from "./admin-helpers.js";
-import { optimisticAttendeeUpdate } from "./optimistic-update.js";
+import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
 
 const ATTENDEE_LIST_SELECT = {
   id: true,
@@ -58,6 +58,7 @@ const patchAttendeeFieldsSchema = z
   .strict();
 
 const patchAttendeeSchema = patchAttendeeFieldsSchema.extend({
+  // Optional at parse time; required in handler when computePatchChanges finds a real delta (no-op exempt).
   expected_updated_at: z.string().datetime({ offset: true }).optional(),
 });
 
@@ -455,9 +456,8 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
         select: ATTENDEE_DETAIL_SELECT,
       });
 
-      if ("kind" in result) {
-        return result;
-      }
+      // Fail fast before any other writes in this transaction.
+      if (isStaleWrite(result)) throw new StaleWriteError();
 
       await writeActionLog(tx, {
         event_id: eventId,
@@ -470,13 +470,12 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
       return result.row;
     });
 
-    if ("kind" in updated) {
-      return c.json({ error: "stale_write" }, 409);
-    }
-
     const dto = await buildAttendeeDetailDto(db, eventId, updated);
     return c.json(dto);
   } catch (err) {
+    if (err instanceof StaleWriteError) {
+      return c.json({ error: "stale_write" }, 409);
+    }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return c.json({ error: "email_conflict" }, 409);
     }

@@ -6,8 +6,8 @@ import { generateToken } from "@admitto/crypto";
 /** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token_hash. */
 const OVERWRITE_FIELDS = ["name", "ticket_type", "company", "department"] as const;
 
-/** Skip reason when a concurrent import wins the unique-constraint race (ADR 0028). */
-export const IMPORT_CONFLICT_SKIP_REASON = "Conflict (concurrent import)";
+/** Skip reason when insert hits a unique constraint at commit time (ADR 0028). */
+export const IMPORT_CONFLICT_SKIP_REASON = "Duplicate email (conflict on insert)";
 
 type AttendeeCreateData = {
   id: string;
@@ -36,8 +36,8 @@ type AttendeeUpdateArgs = {
 type ImportDb = PrismaClient | Prisma.TransactionClient;
 
 /**
- * Insert create rows in one batched `createMany` (tx-safe via `skipDuplicates`).
- * Pre-assigns row ids so skipped conflicts are detected with a single follow-up query.
+ * Insert create rows via batched `createMany` (tx-safe `skipDuplicates`).
+ * Happy path: one round-trip. On partial conflict, classify skips by pre-assigned row ids.
  */
 export async function createAttendeesBatch(
   client: ImportDb,
@@ -50,10 +50,14 @@ export async function createAttendeesBatch(
     id: row.id ?? randomUUID(),
   }));
 
-  await client.attendee.createMany({
+  const { count } = await client.attendee.createMany({
     data: rowsWithIds,
     skipDuplicates: true,
   });
+
+  if (count === rowsWithIds.length) {
+    return { created: count, skipped: [] };
+  }
 
   const inserted = await client.attendee.findMany({
     where: { id: { in: rowsWithIds.map((row) => row.id) } },

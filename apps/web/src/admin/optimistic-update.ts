@@ -3,12 +3,22 @@ import type { Prisma } from "@prisma/client";
 /** Optimistic-lock conflict — caller should respond with HTTP 409 `stale_write`. */
 export type StaleWrite = { kind: "stale_write" };
 
-/**
- * Interpret `updateMany` row count for single-row CAS updates.
- * @returns `stale_write` when count is 0, `null` when exactly one row updated.
- * @throws when count > 1 (non-unique predicate — must never silently corrupt data).
- */
-export function staleWriteFromCount(count: number): StaleWrite | null {
+/** Thrown from a transaction when CAS `updateMany` matched zero rows (prefer over returning from tx). */
+export class StaleWriteError extends Error {
+  constructor() {
+    super("stale_write");
+    this.name = "StaleWriteError";
+  }
+}
+
+/** Type guard for optimistic-update results (explicit `kind`, not `"kind" in row`). */
+export function isStaleWrite<T>(
+  result: { ok: true; row: T } | StaleWrite,
+): result is StaleWrite {
+  return "kind" in result && result.kind === "stale_write";
+}
+
+function staleWriteFromCount(count: number): StaleWrite | null {
   if (count === 0) return { kind: "stale_write" };
   if (count === 1) return null;
   throw new Error(`Optimistic update affected ${count} rows; expected exactly one`);
