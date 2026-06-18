@@ -1,13 +1,24 @@
 import type { Prisma } from "@prisma/client";
 
+/** Optimistic-lock conflict — caller should respond with HTTP 409 `stale_write`. */
 export type StaleWrite = { kind: "stale_write" };
 
-/** Interpret updateMany count; caller runs the actual Prisma updateMany. */
+/**
+ * Interpret `updateMany` row count for single-row CAS updates.
+ * @returns `stale_write` when count is 0, `null` when exactly one row updated.
+ * @throws when count > 1 (non-unique predicate — must never silently corrupt data).
+ */
 export function staleWriteFromCount(count: number): StaleWrite | null {
-  return count === 0 ? { kind: "stale_write" } : null;
+  if (count === 0) return { kind: "stale_write" };
+  if (count === 1) return null;
+  throw new Error(`Optimistic update affected ${count} rows; expected exactly one`);
 }
 
-/** Run CAS updateMany then load the updated row when count > 0. */
+/**
+ * Run CAS `updateMany` then load the updated row when exactly one row matched.
+ * @param args.updateMany - Prisma `updateMany` returning `{ count }`.
+ * @param args.loadUpdated - Fetch the row after a successful CAS (updateMany returns no row payload).
+ */
 export async function runOptimisticUpdate<T>(args: {
   updateMany: () => Promise<{ count: number }>;
   loadUpdated: () => Promise<T | null>;
@@ -23,6 +34,10 @@ export async function runOptimisticUpdate<T>(args: {
   return { ok: true, row };
 }
 
+/**
+ * Conditional attendee update guarded by `updated_at` (ADR 0028).
+ * Reused pattern for future admin models (EventItem, MailTemplate).
+ */
 export async function optimisticAttendeeUpdate<S extends Prisma.AttendeeSelect>(
   tx: Prisma.TransactionClient,
   args: {

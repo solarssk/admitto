@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { AttendeeRow, ImportOptions, ImportSummary, SkippedRow } from "./types.js";
 import { generateToken } from "@admitto/crypto";
@@ -5,9 +6,11 @@ import { generateToken } from "@admitto/crypto";
 /** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token_hash. */
 const OVERWRITE_FIELDS = ["name", "ticket_type", "company", "department"] as const;
 
+/** Skip reason when a concurrent import wins the unique-constraint race (ADR 0028). */
 export const IMPORT_CONFLICT_SKIP_REASON = "Conflict (concurrent import)";
 
 type AttendeeCreateData = {
+  id: string;
   event_id: string;
   email: string;
   name: string;
@@ -32,20 +35,36 @@ type AttendeeUpdateArgs = {
 
 type ImportDb = PrismaClient | Prisma.TransactionClient;
 
-/** Create attendees row-by-row with skipDuplicates (tx-safe under interactive transactions). */
+/**
+ * Insert create rows in one batched `createMany` (tx-safe via `skipDuplicates`).
+ * Pre-assigns row ids so skipped conflicts are detected with a single follow-up query.
+ */
 export async function createAttendeesBatch(
   client: ImportDb,
   rows: AttendeeCreateData[],
 ): Promise<{ created: number; skipped: SkippedRow[] }> {
+  if (rows.length === 0) return { created: 0, skipped: [] };
+
+  const rowsWithIds = rows.map((row) => ({
+    ...row,
+    id: row.id ?? randomUUID(),
+  }));
+
+  await client.attendee.createMany({
+    data: rowsWithIds,
+    skipDuplicates: true,
+  });
+
+  const inserted = await client.attendee.findMany({
+    where: { id: { in: rowsWithIds.map((row) => row.id) } },
+    select: { id: true },
+  });
+  const insertedIds = new Set(inserted.map((row) => row.id));
+
   let created = 0;
   const skipped: SkippedRow[] = [];
-
-  for (const row of rows) {
-    const { count } = await client.attendee.createMany({
-      data: [row],
-      skipDuplicates: true,
-    });
-    if (count === 1) {
+  for (const row of rowsWithIds) {
+    if (insertedIds.has(row.id)) {
       created++;
     } else {
       skipped.push({ email: row.email, reason: IMPORT_CONFLICT_SKIP_REASON });
@@ -173,6 +192,7 @@ export async function commitImport(
     } else {
       const isAgency = row.external_uuid !== undefined || row.qr_payload !== undefined;
       creates.push({
+        id: randomUUID(),
         event_id: eventId,
         email: row.email,
         name,

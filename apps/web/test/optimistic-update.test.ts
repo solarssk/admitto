@@ -9,8 +9,12 @@ describe("staleWriteFromCount", () => {
     expect(staleWriteFromCount(0)).toEqual({ kind: "stale_write" });
   });
 
-  it("returns null when count is positive", () => {
+  it("returns null when count is exactly one", () => {
     expect(staleWriteFromCount(1)).toBeNull();
+  });
+
+  it("throws when count is greater than one", () => {
+    expect(() => staleWriteFromCount(2)).toThrow(/expected exactly one/);
   });
 });
 

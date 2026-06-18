@@ -36,6 +36,34 @@ function toForm(detail: AttendeeDetailDto): FormState {
   };
 }
 
+/** After stale_write reload: keep user-edited fields, refresh untouched fields from server. */
+function mergeFormAfterReload(
+  currentForm: FormState,
+  previousDetail: AttendeeDetailDto,
+  reloaded: AttendeeDetailDto,
+): FormState {
+  const previousForm = toForm(previousDetail);
+  const nextForm = toForm(reloaded);
+  return {
+    name: currentForm.name !== previousForm.name ? currentForm.name : nextForm.name,
+    email: currentForm.email !== previousForm.email ? currentForm.email : nextForm.email,
+    company:
+      currentForm.company !== previousForm.company ? currentForm.company : nextForm.company,
+    department:
+      currentForm.department !== previousForm.department
+        ? currentForm.department
+        : nextForm.department,
+    ticket_type:
+      currentForm.ticket_type !== previousForm.ticket_type
+        ? currentForm.ticket_type
+        : nextForm.ticket_type,
+    shirt_size:
+      currentForm.shirt_size !== previousForm.shirt_size
+        ? currentForm.shirt_size
+        : nextForm.shirt_size,
+  };
+}
+
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-GB", {
@@ -47,6 +75,7 @@ function formatDateTime(iso: string | null): string {
   });
 }
 
+/** Slide-over panel for viewing/editing one attendee (admin list drill-down). */
 export function AttendeeDetailDrawer({
   eventId,
   attendeeId,
@@ -152,6 +181,10 @@ export function AttendeeDetailDrawer({
     setError(null);
     try {
       const d = await fetchAttendeeDetail(eventId, attendeeId);
+      setForm((currentForm) => {
+        if (!currentForm || !detail) return currentForm;
+        return mergeFormAfterReload(currentForm, detail, d);
+      });
       setDetail(d);
       setInitialEmail(d.email);
     } catch (err) {
