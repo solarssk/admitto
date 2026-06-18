@@ -85,6 +85,7 @@ import {
   handleTestSendEventTemplate,
   handleListEventDeliveries,
   MAX_TEMPLATE_BODY_BYTES,
+  MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
 } from "./admin/communication-api-routes.js";
 import {
   handleGetCheckinEvents,
@@ -204,6 +205,10 @@ export function createApp(options: CreateAppOptions = {}) {
   const templateBodyLimit = bodyLimit({
     maxSize: MAX_TEMPLATE_BODY_BYTES,
     onError: (c) => c.json({ error: "template too large" }, 400),
+  });
+  const templateTestSendBodyLimit = bodyLimit({
+    maxSize: MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
   const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot });
@@ -325,6 +330,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/events/:eventId/template/test-send",
     jsonPostCsrf,
     staffAdminGate,
+    templateTestSendBodyLimit,
     adminCommunicationRateLimit,
     (c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps),
   );

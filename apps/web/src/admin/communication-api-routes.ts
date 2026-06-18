@@ -57,6 +57,9 @@ export const TEMPLATE_SUBJECT_CHAR_LIMIT = 500;
 export const MAX_TEMPLATE_BODY_BYTES =
   (TEMPLATE_BODY_CHAR_LIMIT + TEMPLATE_SUBJECT_CHAR_LIMIT) * 4 * 2 + 32_768;
 
+/** Max JSON body for POST `/template/test-send` (`{ to }` only). */
+export const MAX_TEMPLATE_TEST_SEND_BODY_BYTES = 4_096;
+
 const templateBodySchema = z
   .object({
     subject_template: z.string().trim().min(1).max(TEMPLATE_SUBJECT_CHAR_LIMIT),

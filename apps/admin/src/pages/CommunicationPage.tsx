@@ -277,8 +277,7 @@ export function CommunicationPage() {
   if (error) return <p>{error}</p>;
 
   const deliveryPages = Math.max(1, Math.ceil(deliveryTotal / DELIVERY_PAGE_SIZE));
-  const deliveryRangeStart =
-    deliveryTotal === 0 ? 0 : (deliveryPage - 1) * DELIVERY_PAGE_SIZE + 1;
+  const deliveryRangeStart = (deliveryPage - 1) * DELIVERY_PAGE_SIZE + 1;
   const deliveryRangeEnd = Math.min(deliveryPage * DELIVERY_PAGE_SIZE, deliveryTotal);
 
   return (
