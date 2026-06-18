@@ -89,7 +89,9 @@ cp .env.example .env
 # Edit .env: POSTGRES_PASSWORD, ENCRYPTION_KEY (openssl rand -base64 32), BASE_URL
 # Set EMAIL_PROVIDER to one of: smtp, graph, powerautomate (production paths)
 # export_only is dev/test dry-run only — requires a runtime exportSink; npm run dev wires one
-# automatically; production deploy must use a real provider (default in .env.example: smtp)
+# automatically; production deploy must use a real provider (default in .env.example: smtp).
+# If EMAIL_PROVIDER=export_only slips into production anyway, boot logs a warning but does not
+# exit — mail sends fail at runtime until a real provider is configured.
 # Populate only the mail section for that provider
 
 docker compose up -d --build
