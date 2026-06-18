@@ -28,7 +28,7 @@ function assertTestDatabaseUrl(databaseUrl: string): void {
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const DB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "db");
-const REPO_ROOT = path.resolve(DB_ROOT, "..");
+const REPO_ROOT = path.resolve(DB_ROOT, "..", "..");
 const MIGRATE_TIMEOUT_MS = 60_000;
 
 /** Process env with `DATABASE_URL` set to the web integration test database. */
