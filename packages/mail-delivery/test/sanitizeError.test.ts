@@ -37,6 +37,7 @@ describe("clientSafeDeliveryError", () => {
   it("redacts internal URLs", () => {
     expect(clientSafeDeliveryError("http://internal-relay/api failed")).toBe("send failed");
     expect(clientSafeDeliveryError("https://smtp.corp.local/send failed")).toBe("send failed");
+    expect(clientSafeDeliveryError("HTTPS://smtp.corp.local/send failed")).toBe("send failed");
   });
 
   it("redacts host:port patterns", () => {
