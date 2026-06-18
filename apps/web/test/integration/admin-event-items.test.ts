@@ -88,7 +88,10 @@ async function seed(client: PrismaClient) {
         event_id: EVENT_EI_A,
         key: "giftbag",
         label: "Gift bag",
-        config: { size_field: "shirt_size" },
+        config: {
+          contents: [{ label: "Shirt size", source_field: "shirt_size" }],
+          requires_return: false,
+        },
       },
       {
         id: ITEM_SOCKS,
