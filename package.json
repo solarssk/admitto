@@ -17,6 +17,8 @@
     "db:seed": "npm run db:seed -w @admitto/db",
     "db:backfill-public-ref": "npm run db:backfill-public-ref -w @admitto/db",
     "db:test-setup": "bash infra/scripts/create-test-dbs.sh",
+    "db:test-reset-web": "bash infra/scripts/reset-test-db.sh admitto_web_test",
+    "db:test-schema-web": "bash infra/scripts/apply-test-schema.sh admitto_web_test",
     "mail:test-send": "npm run cli -w @admitto/mail-delivery -- test-send",
     "mail:config": "npm run cli -w @admitto/mail-delivery -- config-describe",
     "mail:deliveries": "npm run cli -w @admitto/mail-delivery -- deliveries",

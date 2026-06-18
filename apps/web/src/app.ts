@@ -43,6 +43,7 @@ import { createOidcAuthRateLimitMiddleware } from "./auth/oidc-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
 import { createAdminResendRateLimit } from "./admin-resend-rate-limit.js";
+import { createAdminCommunicationRateLimit } from "./admin-communication-rate-limit.js";
 import { handleLogin, handleLogout, handleMe, handleMfaVerify, handleTotpEnroll, handleTotpConfirm } from "./auth/routes.js";
 import {
   handleGetMfaEnroll,
@@ -77,6 +78,13 @@ import {
   handleGetEventOpsConfig,
   handlePatchEventOpsConfig,
 } from "./admin/event-items-api-routes.js";
+import {
+  handleGetEventTemplate,
+  handlePutEventTemplate,
+  handlePreviewEventTemplate,
+  handleTestSendEventTemplate,
+  handleListEventDeliveries,
+} from "./admin/communication-api-routes.js";
 import {
   handleGetCheckinEvents,
   handleCheckinScan,
@@ -187,6 +195,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const requireAdminAccess = createAdminAccessMiddleware(db);
   const staffAdminGate = createStaffAdminGate(db);
   const adminResendRateLimit = createAdminResendRateLimit(rateLimitStore);
+  const adminCommunicationRateLimit = createAdminCommunicationRateLimit(rateLimitStore);
   const importBodyLimit = bodyLimit({
     maxSize: MAX_IMPORT_BODY_BYTES,
     onError: (c) => c.json({ error: "file too large" }, 400),
@@ -297,6 +306,25 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminResendRateLimit,
     (c) => handleResendEventAttendeeTicket(c, db, mailDeliveryDeps),
+  );
+  app.get("/api/admin/events/:eventId/template", staffAdminGate, (c) =>
+    handleGetEventTemplate(c, db),
+  );
+  app.put("/api/admin/events/:eventId/template", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePutEventTemplate(c, db),
+  );
+  app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePreviewEventTemplate(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/template/test-send",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminCommunicationRateLimit,
+    (c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps),
+  );
+  app.get("/api/admin/events/:eventId/deliveries", staffAdminGate, (c) =>
+    handleListEventDeliveries(c, db),
   );
   app.post("/api/admin/events/:eventId/import/preview", jsonPostCsrf, staffAdminGate, importBodyLimit, (c) =>
     handleImportPreview(c, db),

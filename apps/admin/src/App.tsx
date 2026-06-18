@@ -12,6 +12,7 @@ import { AdminCheckInRoute } from "./pages/AdminCheckInRoute.js";
 import { AttendeesPage } from "./pages/AttendeesPage.js";
 import { ImportPage } from "./pages/ImportPage.js";
 import { RequirementsPage } from "./pages/RequirementsPage.js";
+import { CommunicationPage } from "./pages/CommunicationPage.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
 import { ApiError, fetchAdminEvents } from "./api/client.js";
 import type { EventDto } from "./api/types.js";
@@ -87,6 +88,8 @@ export default function App() {
                       <AttendeesPage />
                     ) : r.path === "requirements" ? (
                       <RequirementsPage />
+                    ) : r.path === "communication" ? (
+                      <CommunicationPage />
                     ) : (
                       <PlaceholderPage title={r.title} />
                     )

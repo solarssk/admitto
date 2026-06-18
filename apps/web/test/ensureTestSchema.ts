@@ -1,9 +1,10 @@
-import { exec } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { WEB_TEST_DATABASE_URL } from "./testEnv.js";
 
+/** Refuse Prisma setup unless DATABASE_URL targets a local or `*_test` database. */
 function assertTestDatabaseUrl(databaseUrl: string): void {
   let parsed: URL;
   try {
@@ -25,13 +26,17 @@ function assertTestDatabaseUrl(databaseUrl: string): void {
 }
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const DB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "db");
+const REPO_ROOT = path.resolve(DB_ROOT, "..", "..");
 const MIGRATE_TIMEOUT_MS = 60_000;
 
+/** Process env with `DATABASE_URL` set to the web integration test database. */
 function testDbEnv(): NodeJS.ProcessEnv {
   return { ...process.env, DATABASE_URL: WEB_TEST_DATABASE_URL };
 }
 
+/** Flatten Prisma CLI exec errors for P3005 detection. */
 function migrateErrorText(error: unknown): string {
   if (error && typeof error === "object") {
     const err = error as { message?: string; stderr?: string };
@@ -45,8 +50,24 @@ function isMissingMigrationHistoryError(error: unknown): boolean {
   return migrateErrorText(error).includes("P3005");
 }
 
+/** Run a Prisma CLI command in the db package with a timeout. */
 async function runPrisma(command: string, env: NodeJS.ProcessEnv): Promise<void> {
   await execAsync(command, { cwd: DB_ROOT, env, timeout: MIGRATE_TIMEOUT_MS });
+}
+
+/** Extract database name from a PostgreSQL connection URL. */
+function testDatabaseName(databaseUrl: string): string {
+  return new URL(databaseUrl).pathname.replace(/^\//, "");
+}
+
+/** Drop and recreate the test database (P3005 recovery — restores migration history). */
+async function resetTestDatabase(env: NodeJS.ProcessEnv): Promise<void> {
+  const dbName = testDatabaseName(env.DATABASE_URL!);
+  await execFileAsync("bash", ["infra/scripts/reset-test-db.sh", dbName], {
+    cwd: REPO_ROOT,
+    env,
+    timeout: MIGRATE_TIMEOUT_MS,
+  });
 }
 
 /**
@@ -59,7 +80,15 @@ export async function ensureIntegrationTestSchema(): Promise<void> {
   try {
     await runPrisma("npx prisma migrate deploy", env);
   } catch (migrateError) {
-    if (process.env["CI"] && !isMissingMigrationHistoryError(migrateError)) {
+    if (isMissingMigrationHistoryError(migrateError)) {
+      console.warn(
+        "[ensureTestSchema] P3005 — resetting test DB and retrying migrate deploy",
+      );
+      await resetTestDatabase(env);
+      await runPrisma("npx prisma migrate deploy", env);
+      return;
+    }
+    if (process.env["CI"]) {
       throw migrateError;
     }
     console.warn(

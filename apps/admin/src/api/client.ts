@@ -21,6 +21,13 @@ import type {
   UpdateEventItemPatch,
   OpsConfigDto,
   UpdateOpsConfigPatch,
+  EventTemplateDto,
+  SaveTemplateBody,
+  PreviewTemplateResponse,
+  TestSendBody,
+  TestSendResponse,
+  EventDeliveriesListParams,
+  EventDeliveriesListResponse,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -72,6 +79,18 @@ function jsonDeleteInit(): RequestInit {
 function jsonPatchInit(body: unknown): RequestInit {
   return {
     method: "PATCH",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: window.location.origin,
+    },
+    body: JSON.stringify(body),
+  };
+}
+
+function jsonPutInit(body: unknown): RequestInit {
+  return {
+    method: "PUT",
     credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
@@ -374,4 +393,100 @@ export async function updateOpsConfig(
     jsonPatchInit(patch),
   );
   return parseJson<OpsConfigDto>(res);
+}
+
+/** Thrown when save/preview returns `template_validation_failed` with an error list. */
+export class TemplateValidationError extends Error {
+  constructor(public readonly errors: string[]) {
+    super("template_validation_failed");
+    this.name = "TemplateValidationError";
+  }
+}
+
+/** Parse template save/preview JSON; maps validation errors to `TemplateValidationError`. */
+async function parseTemplateActionJson<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    try {
+      const body = (await res.json()) as { error?: string; errors?: string[] };
+      if (body.errors?.length) {
+        throw new TemplateValidationError(body.errors);
+      }
+      throw new ApiError(res.status, body.error ?? res.statusText);
+    } catch (err) {
+      if (err instanceof TemplateValidationError || err instanceof ApiError) throw err;
+      throw new ApiError(res.status, res.statusText);
+    }
+  }
+  return (await res.json()) as T;
+}
+
+/** Load editable mail template for an event (event → org → builtin). */
+export async function fetchEventTemplate(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventTemplateDto> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/template`, {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<EventTemplateDto>(res);
+}
+
+/** Save and compile an event-scoped mail template. */
+export async function saveEventTemplate(
+  eventId: string,
+  body: SaveTemplateBody,
+): Promise<void> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/template`,
+    jsonPutInit(body),
+  );
+  await parseTemplateActionJson<{ ok: boolean }>(res);
+}
+
+/** Render a draft template with sample data (no DB write). */
+export async function previewEventTemplate(
+  eventId: string,
+  body: SaveTemplateBody,
+): Promise<PreviewTemplateResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/template/preview`,
+    jsonPostInit(body),
+  );
+  return parseTemplateActionJson<PreviewTemplateResponse>(res);
+}
+
+/** Send a one-off test mail for the current event template. */
+export async function testSendEventTemplate(
+  eventId: string,
+  body: TestSendBody,
+): Promise<TestSendResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/template/test-send`,
+    jsonPostInit(body),
+  );
+  return parseJson<TestSendResponse>(res);
+}
+
+/** Build query string for paginated event delivery log requests. */
+function deliveriesListQuery(eventId: string, params: EventDeliveriesListParams = {}): string {
+  const q = new URLSearchParams();
+  if (params.page != null) q.set("page", String(params.page));
+  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
+  if (params.status && params.status !== "all") q.set("status", params.status);
+  const qs = q.toString();
+  return `/api/admin/events/${encodeURIComponent(eventId)}/deliveries${qs ? `?${qs}` : ""}`;
+}
+
+/** Fetch paginated email delivery rows for an event (no rendered HTML). */
+export async function fetchEventDeliveries(
+  eventId: string,
+  params: EventDeliveriesListParams = {},
+  signal?: AbortSignal,
+): Promise<EventDeliveriesListResponse> {
+  const res = await fetch(deliveriesListQuery(eventId, params), {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<EventDeliveriesListResponse>(res);
 }

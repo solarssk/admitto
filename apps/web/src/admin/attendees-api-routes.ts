@@ -2,7 +2,6 @@ import type { Context } from "hono";
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { canManageEvent } from "@admitto/auth";
 import {
   listDeliveries,
   resendTicketEmail,
@@ -14,9 +13,13 @@ import {
   parseCustomData,
   shirtSizeFromCustomData,
   writeActionLog,
-  type OpsAuditContext,
 } from "@admitto/tickets";
-import { resolveClientIp } from "../rate-limit/client-ip.js";
+import {
+  adminAuditFromContext,
+  assertEventManageAccess,
+  positiveIntQuery,
+  requireEventId,
+} from "./admin-helpers.js";
 
 const ATTENDEE_LIST_SELECT = {
   id: true,
@@ -109,43 +112,6 @@ function cloneCustomData(raw: unknown): Record<string, unknown> {
   return {};
 }
 
-/** Parse a positive integer query param with safe fallback. */
-function positiveIntQuery(raw: string | undefined, fallback: number): number {
-  const n = Number(raw);
-  if (!Number.isSafeInteger(n) || n < 1) return fallback;
-  return n;
-}
-
-/** Return 403 when the session user cannot manage the event; otherwise null. */
-async function assertEventManageAccess(
-  c: Context,
-  db: PrismaClient,
-  eventId: string,
-): Promise<Response | null> {
-  const auth = c.get("auth");
-  if (!(await canManageEvent(db, auth.userId, eventId))) {
-    return c.json({ error: "forbidden" }, 403);
-  }
-  return null;
-}
-
-/** Build ops audit context from the authenticated admin request. */
-function adminAuditFromContext(c: Context): OpsAuditContext {
-  const auth = c.get("auth");
-  return {
-    operator: auth.userId,
-    sessionId: auth.sessionId,
-    ip: resolveClientIp(c),
-  };
-}
-
-/** Require `:eventId` route param or return 400. */
-function requireEventId(c: Context): string | Response {
-  const eventId = c.req.param("eventId");
-  if (!eventId) return c.json({ error: "eventId required" }, 400);
-  return eventId;
-}
-
 /** Require `:id` attendee route param or return 400. */
 function requireAttendeeId(c: Context): string | Response {
   const id = c.req.param("id");
@@ -176,8 +142,7 @@ function parseListQuery(c: Context): {
   ticket_type?: string;
 } {
   const page = positiveIntQuery(c.req.query("page"), 1);
-  const rawSize = positiveIntQuery(c.req.query("pageSize"), 25);
-  const pageSize = Math.min(100, rawSize);
+  const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
   const qRaw = c.req.query("q")?.trim();
   const q = qRaw ? qRaw : undefined;
   const statusRaw = c.req.query("status") ?? "all";
@@ -252,7 +217,7 @@ async function buildAttendeeDetailDto(
     custom_data: unknown;
   },
 ): Promise<AttendeeDetailDto> {
-  const deliveries = await listDeliveries(
+  const { items: deliveries } = await listDeliveries(
     { eventId, filters: { attendeeId: row.id } },
     db,
   );
@@ -553,7 +518,7 @@ export async function handleResendEventAttendeeTicket(
     return c.json({ error: "delivery_not_found" }, 500);
   }
 
-  const deliveries = await listDeliveries(
+  const { items: deliveries } = await listDeliveries(
     { eventId, filters: { attendeeId } },
     db,
   );

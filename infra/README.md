@@ -27,6 +27,16 @@ npm run db:test-setup   # creates admitto_*_test databases for package tests
 
 `infra/scripts/create-test-dbs.sh` is invoked by `npm run db:test-setup`. It creates isolated Postgres databases for Vitest (e.g. `admitto_web_test`, `admitto_import_test`). Idempotent — safe to re-run.
 
+If `prisma migrate deploy` fails with **P3005** (tables exist without `_prisma_migrations`), reset the web test DB and re-apply migrations:
+
+```bash
+npm run db:test-schema-web   # auto-reset on P3005, then migrate deploy
+# or manually:
+npm run db:test-reset-web && npm run db:test-schema-web
+```
+
+`scripts/test-web-like-ci.sh` uses `apply-test-schema.sh` for the same behaviour before web tests.
+
 ## vs `deploy/`
 
 | | `infra/` (this) | `deploy/` |
