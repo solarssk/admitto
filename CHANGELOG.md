@@ -54,12 +54,9 @@ badge rollback, operator notes, and opt-in camera QR decode.
 
 ### Deploy notes
 
-```bash
-npm run build
-npx prisma migrate deploy   # packages/db — two new migrations since v0.4.0
-```
-
-- Rebuild Docker image after tag push (`ghcr.io/solarssk/admitto:0.4.1`).
+- **Database:** migrations apply automatically on container start (entrypoint, fail-fast, with a
+  pre-migration backup when pending migrations exist). No manual `migrate deploy` step.
+- Rebuild or pull the Docker image after tag push (`ghcr.io/solarssk/admitto:0.4.1`).
 - Operators should set a **device label** at login (e.g. `Tablet 1 — main entrance`) if
   they need per-tablet undo.
 

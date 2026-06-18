@@ -1,0 +1,9 @@
+# Overlay for scripts/test-migration-backup.sh only.
+# Uses .env.smoke (gitignored) instead of deploy/.env so a local stack is untouched.
+services:
+  app:
+    env_file: !override
+      - .env.smoke
+  db:
+    env_file: !override
+      - .env.smoke

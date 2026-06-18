@@ -11,6 +11,9 @@ services:
       TRUST_PROXY: "true"
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
+      MIGRATION_BACKUP_DIR: /backups
+    volumes:
+      - migration_backups:/backups
     depends_on:
       db:
         condition: service_healthy
@@ -74,3 +77,4 @@ networks:
 
 volumes:
   postgres_data:
+  migration_backups:

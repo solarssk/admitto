@@ -64,6 +64,7 @@ Do not bump per-package versions unless we start publishing libraries separately
    (`git tag -s` — never lightweight or unsigned `git tag -a`.)
 4. Create the GitHub Release: `gh release create v0.x.y --title "…" --notes-file …`  
    Use the **v0.3.x release notes template** (see e.g. GitHub Release `v0.3.7`): milestone + merged PR links, summary blockquote, `### ✨ Included`, deploy/docker section, `### 🗄️ Database`, checklist, `### ⏳ Not in this release`, `### ➡️ Next`, `### 📦 Release scope`.  
+   **`### 🗄️ Database`:** migrations apply automatically on container start (entrypoint, fail-fast, with a pre-migration backup when pending migrations exist). No manual `migrate deploy` step for operators.  
    Do **not** paste raw `CHANGELOG.md` into the GitHub Release body — CHANGELOG is the engineering log; the Release is the operator/maintainer-facing summary.
 5. Close the matching GitHub milestone
 

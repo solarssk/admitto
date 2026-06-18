@@ -43,6 +43,28 @@ npm run db:seed
 From repo root, `npm run db:test-setup` creates `admitto_tickets_test` and `admitto_import_test`
 (idempotent). Required before `npm test` when using the local Docker Postgres.
 
+## Schema change policy
+
+Additive-by-default (ADR 0027 expand-contract). Production upgrades must never destroy data.
+
+1. **Expand** — add columns/tables (nullable or with defaults) in release N.
+2. **Backfill + verify** — dual-write/read; backfill in release N or N+1.
+3. **Contract** — drop old columns/tables in a **later** release after nothing reads them.
+
+**Renames:** add new column → backfill → switch application code → drop old column. Do not use raw
+`RENAME COLUMN` / `RENAME TABLE` in a release that still runs older code.
+
+**Destructive SQL** (`DROP TABLE`, `DROP COLUMN`, `TRUNCATE`, `ALTER COLUMN TYPE`, `SET NOT NULL` on
+existing columns, `DROP` without `IF EXISTS`) is blocked in CI for **new** migration folders. Override
+only with PR label `migration-destructive-approved`, SQL comment
+`-- destructive-approved: <reason>`, and Opus pre-merge review.
+
+**Never edit** an existing `prisma/migrations/<name>/migration.sql` after merge — add a new migration
+folder instead. The CI guard scans only newly added files (`git diff --diff-filter=A` vs `main`).
+
+**Production path:** only `prisma migrate deploy` (automatic on container start). Never
+`migrate reset`, `db push`, or `db push --force-reset` against production.
+
 ## Import
 
 ```ts

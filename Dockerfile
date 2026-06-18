@@ -26,8 +26,17 @@ RUN npm prune --omit=dev
 
 FROM node:22-bookworm-slim AS production
 
+# postgresql-client-16 for pre-migration pg_dump (ADR 0027; server is postgres:16).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends wget openssl ca-certificates \
+  && apt-get install -y --no-install-recommends wget openssl ca-certificates curl gnupg \
+  && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg \
+  && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+    > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends postgresql-client-16 \
+  && apt-get purge -y curl gnupg \
+  && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -73,7 +82,7 @@ COPY deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
 RUN chmod +x ./deploy/docker-entrypoint.sh \
   && chown -R node:node /app
 
-USER node
+# Entrypoint starts as root (backup volume permissions), drops to node for the web server.
 
 ENV NODE_ENV=production
 EXPOSE 3000
