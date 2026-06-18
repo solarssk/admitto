@@ -19,6 +19,7 @@ const LIFECYCLE_NAV = [
 
 const LIVE_SEGMENTS = new Set(["overview", "attendees", "requirements", "communication", "checkin"]);
 
+/** Format event date and optional location for the sidebar event switcher. */
 function formatEventMeta(event: EventDto): string {
   const date = new Date(event.date).toLocaleDateString("en-GB", {
     day: "numeric",
@@ -32,6 +33,7 @@ export interface AdminShellProps {
   event: EventDto;
 }
 
+/** Event-scoped admin layout: lifecycle sidebar, top bar, and nested route outlet. */
 export function AdminShell({ event }: AdminShellProps) {
   const { eventId } = useParams();
   const navigate = useNavigate();
@@ -57,19 +59,22 @@ export function AdminShell({ event }: AdminShellProps) {
           {LIFECYCLE_NAV.map((item) => {
             const to = `/admin/events/${eventId}/${item.segment}`;
             const isLive = LIVE_SEGMENTS.has(item.segment);
-            return (
+            return isLive ? (
               <NavLink
                 key={item.segment}
                 to={to}
-                className={({ isActive }) =>
-                  `nav-item${isActive ? " nav-item--active" : ""}${!isLive ? " nav-item--soon" : ""}`
-                }
+                className={({ isActive }) => `nav-item${isActive ? " nav-item--active" : ""}`}
                 end={item.segment === "overview"}
               >
                 <i className={`ti ti-${item.icon}`} aria-hidden="true" />
                 <span>{item.label}</span>
-                {!isLive && <span className="nav-item__badge">Soon</span>}
               </NavLink>
+            ) : (
+              <span key={item.segment} className="nav-item nav-item--soon" aria-disabled="true">
+                <i className={`ti ti-${item.icon}`} aria-hidden="true" />
+                <span>{item.label}</span>
+                <span className="nav-item__badge">Soon</span>
+              </span>
             );
           })}
         </nav>
