@@ -2,6 +2,8 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { ensureDefaultEventItems } from "./event-items.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 
+import type { EventItemConfig } from "./types.js";
+
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
 const OPERATOR_TRANSITIONS: Record<string, string[]> = {
@@ -44,9 +46,16 @@ function allowedTarget(current: string, target: string): boolean {
   return OPERATOR_TRANSITIONS[current]?.includes(target) ?? false;
 }
 
-/** Operator-visible actions for current state. */
-export function operatorItemActions(state: string): string[] {
-  return OPERATOR_TRANSITIONS[state] ?? [];
+/** Operator-visible actions for current state and item config. */
+export function operatorItemActions(
+  state: string,
+  config?: EventItemConfig | null,
+): string[] {
+  const actions = OPERATOR_TRANSITIONS[state] ?? [];
+  if (state === "issued" && config?.requires_return === false) {
+    return actions.filter((action) => action !== "returned");
+  }
+  return actions;
 }
 
 /**
@@ -133,6 +142,11 @@ export async function transitionItemState(
     const fromState = current?.state ?? "pending";
     if (!allowedTarget(fromState, params.targetState)) {
       throw new IllegalItemTransitionError(`Illegal transition ${fromState} → ${params.targetState}`);
+    }
+
+    const itemConfig = item.config as EventItemConfig | null;
+    if (params.targetState === "returned" && itemConfig?.requires_return === false) {
+      throw new IllegalItemTransitionError("Return is not enabled for this item");
     }
 
     const updated = await tx.attendeeItemState.updateMany({

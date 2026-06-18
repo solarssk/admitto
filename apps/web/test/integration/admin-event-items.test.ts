@@ -349,6 +349,9 @@ describe("DELETE /api/admin/events/:eventId/items/:itemId", () => {
       headers: { Cookie: adminCookie, ...sameOrigin },
     });
     expect(res.status).toBe(200);
+
+    const deleted = await prisma.eventItem.findUnique({ where: { id: created.id } });
+    expect(deleted).toBeNull();
   });
 
   it("returns 409 for default items", async () => {

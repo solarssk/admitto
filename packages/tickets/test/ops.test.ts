@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { admitAttendee } from "../src/admit.js";
 import { undoLastCheckIn as undoFn } from "../src/undo.js";
-import { transitionItemState, ensureAttendeeItemStates } from "../src/item-states.js";
+import { transitionItemState, ensureAttendeeItemStates, operatorItemActions } from "../src/item-states.js";
 import { ensureDefaultEventItems } from "../src/event-items.js";
 import { addAttendeeNote, NoteTooLongError, OperatorRequiredError } from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
@@ -249,6 +249,15 @@ describe("addAttendeeNote (Lock #8)", () => {
   });
 });
 
+describe("operatorItemActions", () => {
+  it("hides returned when requires_return is false", () => {
+    expect(operatorItemActions("issued", { requires_return: false })).toEqual([]);
+    expect(operatorItemActions("issued", { requires_return: true })).toEqual(["returned"]);
+    expect(operatorItemActions("issued", {})).toEqual(["returned"]);
+    expect(operatorItemActions("pending", { requires_return: false })).toEqual(["issued"]);
+  });
+});
+
 describe("transitionItemState", () => {
   it("rejects illegal pending→returned", async () => {
     const freshToken = generateToken();
@@ -272,5 +281,43 @@ describe("transitionItemState", () => {
         prisma,
       ),
     ).rejects.toThrow(/Illegal transition/);
+  });
+
+  it("rejects returned when requires_return is false", async () => {
+    await prisma.eventItem.update({
+      where: { event_id_key: { event_id: EVENT_ID, key: "headset" } },
+      data: { config: { requires_return: false } },
+    });
+    const freshToken = generateToken();
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "no-return@example.com",
+        name: "No Return",
+        token_hash: hashToken(freshToken),
+      },
+    });
+    await transitionItemState(
+      {
+        attendeeId: att.id,
+        eventId: EVENT_ID,
+        itemKey: "headset",
+        targetState: "issued",
+        audit: { operator: OPERATOR, deviceId: DEVICE },
+      },
+      prisma,
+    );
+    await expect(
+      transitionItemState(
+        {
+          attendeeId: att.id,
+          eventId: EVENT_ID,
+          itemKey: "headset",
+          targetState: "returned",
+          audit: { operator: OPERATOR, deviceId: DEVICE },
+        },
+        prisma,
+      ),
+    ).rejects.toThrow(/Return is not enabled/);
   });
 });

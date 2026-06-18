@@ -51,11 +51,13 @@ function toForm(item: EventItemDto): FormState {
   };
 }
 
-function toConfig(form: FormState): EventItemConfigDto {
+function toConfig(form: FormState, itemKey: string): EventItemConfigDto {
   const config: EventItemConfigDto = {
     requires_return: form.requires_return,
-    issue_on_checkin: form.issue_on_checkin,
   };
+  if (itemKey === "badge") {
+    config.issue_on_checkin = form.issue_on_checkin;
+  }
   const contents = form.contents
     .map((c) => ({ label: c.label.trim(), source_field: c.source_field.trim() }))
     .filter((c) => c.label && c.source_field && SLUG_PATTERN.test(c.source_field));
@@ -94,7 +96,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
       await updateEventItem(eventId, item.id, {
         label: form.label.trim(),
         enabled: form.enabled,
-        config: toConfig(form),
+        config: toConfig(form, item.key),
       });
       onUpdated();
       onClose();
@@ -240,13 +242,15 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                   setForm((f) => ({ ...f, requires_return: e.target.checked }))
                 }
               />
-              <Checkbox
-                label="Issue on check-in"
-                checked={form.issue_on_checkin}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, issue_on_checkin: e.target.checked }))
-                }
-              />
+              {item.key === "badge" && (
+                <Checkbox
+                  label="Issue on check-in"
+                  checked={form.issue_on_checkin}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, issue_on_checkin: e.target.checked }))
+                  }
+                />
+              )}
             </div>
           </div>
 
