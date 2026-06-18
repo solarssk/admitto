@@ -11,9 +11,9 @@ export function sanitizeDeliveryError(message: string | undefined): string | und
 
 /** Admin API-safe send error text — no provider internals or long opaque messages. */
 export function clientSafeDeliveryError(message: string | undefined): string {
+  if (!message || message.length > 120) return "send failed";
   const sanitized = sanitizeDeliveryError(message);
   if (!sanitized) return "send failed";
-  if (sanitized.length > 120) return "send failed";
   if (
     /AADSTS|client_id|client_secret|smtp:|graph\.microsoft|oauth|bearer\s|authorization\s+failed/i.test(
       sanitized,

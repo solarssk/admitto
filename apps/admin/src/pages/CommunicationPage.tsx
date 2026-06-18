@@ -115,19 +115,28 @@ export function CommunicationPage() {
     }
   }, [eventId, reportApiError]);
 
-  const loadDeliveries = useCallback(async () => {
+  const loadDeliveries = useCallback(async (signal?: AbortSignal) => {
     if (!eventId) return;
     setDeliveriesLoading(true);
     setDeliveriesError(null);
     try {
-      const data = await fetchEventDeliveries(eventId, {
-        page: deliveryPage,
-        pageSize: DELIVERY_PAGE_SIZE,
-        status: deliveryStatus,
-      });
+      const data = await fetchEventDeliveries(
+        eventId,
+        {
+          page: deliveryPage,
+          pageSize: DELIVERY_PAGE_SIZE,
+          status: deliveryStatus,
+        },
+        signal,
+      );
+      if (signal?.aborted) return;
       setDeliveries(data.items);
       setDeliveryTotal(data.total);
     } catch (err) {
+      if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) {
+        return;
+      }
+      if (err instanceof Error && err.name === "AbortError") return;
       if (err instanceof ApiError) {
         reportApiError(err.status);
         if (err.status === 401) {
@@ -138,7 +147,9 @@ export function CommunicationPage() {
       }
       setDeliveriesError("Failed to load deliveries.");
     } finally {
-      setDeliveriesLoading(false);
+      if (!signal?.aborted) {
+        setDeliveriesLoading(false);
+      }
     }
   }, [eventId, deliveryPage, deliveryStatus, reportApiError]);
 
@@ -147,9 +158,10 @@ export function CommunicationPage() {
   }, [loadTemplate]);
 
   useEffect(() => {
-    if (tab === "log") {
-      void loadDeliveries();
-    }
+    if (tab !== "log") return;
+    const controller = new AbortController();
+    void loadDeliveries(controller.signal);
+    return () => controller.abort();
   }, [tab, loadDeliveries]);
 
   const insertPlaceholder = (name: string) => {

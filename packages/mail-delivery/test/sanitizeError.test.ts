@@ -19,6 +19,20 @@ describe("clientSafeDeliveryError", () => {
     expect(out).not.toContain("user@example.com");
     expect(out).toContain("[redacted]");
   });
+
+  it("returns generic message for long errors", () => {
+    expect(clientSafeDeliveryError("x".repeat(121))).toBe("send failed");
+  });
+
+  it("returns generic message for empty input", () => {
+    expect(clientSafeDeliveryError("")).toBe("send failed");
+    expect(clientSafeDeliveryError(undefined)).toBe("send failed");
+  });
+
+  it("returns generic message for bearer token errors", () => {
+    expect(clientSafeDeliveryError("Bearer token expired")).toBe("send failed");
+    expect(clientSafeDeliveryError("client_secret mismatch")).toBe("send failed");
+  });
 });
 
 describe("sanitizeDeliveryError", () => {
