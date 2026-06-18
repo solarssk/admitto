@@ -49,7 +49,7 @@ scan_file() {
     hits+=("SET NOT NULL")
   fi
   if printf '%s' "$content" | grep -qE 'DROP[[:space:]]+(TABLE|COLUMN|INDEX|CONSTRAINT|TYPE|SCHEMA|DATABASE|VIEW|SEQUENCE|FUNCTION|TRIGGER|RULE|DOMAIN)'; then
-    if ! printf '%s' "$content" | grep -q 'IF[[:space:]]+EXISTS'; then
+    if ! printf '%s' "$content" | grep -qE 'IF[[:space:]]+EXISTS'; then
       hits+=("DROP without IF EXISTS")
     fi
   fi

@@ -65,6 +65,7 @@ assert_fail() {
 }
 
 assert_ok "$FIXTURES/additive/migration.sql"
+assert_ok "$FIXTURES/drop-if-exists/migration.sql"
 assert_fail "$FIXTURES/drop-column/migration.sql"
 assert_fail "$FIXTURES/set-not-null/migration.sql"
 assert_fail "$FIXTURES/approved-marker/migration.sql" 0

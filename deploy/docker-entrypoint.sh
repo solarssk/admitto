@@ -7,46 +7,55 @@ log() {
   printf '%s\n' "$*" >&2
 }
 
-ensure_backup_dir_owned() {
+ensure_backup_dir_permissions() {
   backup_dir="${MIGRATION_BACKUP_DIR:-/backups}"
   if [ "$(id -u)" = "0" ] && [ -d "$backup_dir" ]; then
-    chown node:node "$backup_dir"
+    chown root:root "$backup_dir"
+    chmod 700 "$backup_dir"
   fi
+}
+
+quote_cmd_args() {
+  node -e 'console.log(process.argv.slice(1).map((a) => JSON.stringify(a)).join(" "))' "$@"
 }
 
 run_as_node() {
   if [ "$(id -u)" = "0" ]; then
-    exec su -s /bin/sh node -c 'exec "$@"' _ "$@"
+    # shellcheck disable=SC2046
+    exec su -s /bin/sh node -c "exec $(quote_cmd_args "$@")"
   fi
   exec "$@"
 }
 
-run_prisma() {
-  node node_modules/prisma/build/index.js "$@"
+run_as_node_cmd() {
+  if [ "$(id -u)" = "0" ]; then
+    # shellcheck disable=SC2046
+    su -s /bin/sh node -c "exec $(quote_cmd_args "$@")"
+  else
+    "$@"
+  fi
 }
 
+# Parse DATABASE_URL via node stdout — never eval (password may contain shell metacharacters).
 load_pg_env_from_database_url() {
   if [ -z "${DATABASE_URL:-}" ]; then
     log "error: DATABASE_URL is not set"
     exit 1
   fi
-  # shellcheck disable=SC2046
-  eval "$(
-    node -e "
-      const u = new URL(process.env.DATABASE_URL);
-      const q = (s) => JSON.stringify(s);
-      console.log('PGHOST=' + q(u.hostname));
-      console.log('PGPORT=' + q(u.port || '5432'));
-      console.log('PGUSER=' + q(decodeURIComponent(u.username)));
-      console.log('PGPASSWORD=' + q(decodeURIComponent(u.password)));
-      console.log('PGDATABASE=' + q(decodeURIComponent(u.pathname.replace(/^\\//, ''))));
-    "
-  )"
+  PGHOST="$(node -e "const u = new URL(process.env.DATABASE_URL); process.stdout.write(u.hostname)")"
+  PGPORT="$(node -e "const u = new URL(process.env.DATABASE_URL); process.stdout.write(u.port || '5432')")"
+  PGUSER="$(node -e "const u = new URL(process.env.DATABASE_URL); process.stdout.write(decodeURIComponent(u.username))")"
+  PGPASSWORD="$(node -e "const u = new URL(process.env.DATABASE_URL); process.stdout.write(decodeURIComponent(u.password))")"
+  PGDATABASE="$(node -e "const u = new URL(process.env.DATABASE_URL); process.stdout.write(decodeURIComponent(u.pathname.replace(/^\\//, '')))")"
   export PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
 }
 
+unset_pg_env() {
+  unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
+}
+
 migration_status_output() {
-  run_prisma migrate status --schema "$SCHEMA" 2>&1
+  run_as_node_cmd node node_modules/prisma/build/index.js migrate status --schema "$SCHEMA" 2>&1
 }
 
 is_connection_error() {
@@ -121,15 +130,14 @@ write_pre_migration_backup() {
   trap 'rm -f "$tmp_sql"' EXIT INT HUP
 
   install -m 600 /dev/null "$backup_file"
-  if [ "$(id -u)" = "0" ]; then
-    chown node:node "$backup_file"
-  fi
 
   if ! run_pg_dump_to_file "$tmp_sql"; then
     rm -f "$backup_file"
+    unset_pg_env
     log "error: pg_dump failed — aborting before migrate deploy"
     exit 1
   fi
+  unset_pg_env
 
   if ! gzip -c "$tmp_sql" > "$backup_file"; then
     rm -f "$backup_file"
@@ -165,7 +173,7 @@ if [ "${1:-}" = "node" ] || [ "${1:-}" = "npm" ]; then
   run_as_node "$@"
 fi
 
-ensure_backup_dir_owned
+ensure_backup_dir_permissions
 
 set +e
 status_out="$(migration_status_output)"
@@ -198,7 +206,7 @@ elif [ "$status_exit" -ne 0 ]; then
   exit 1
 fi
 
-run_prisma migrate deploy --schema "$SCHEMA"
-node packages/db/dist/scripts/backfill-public-ref.js
+run_as_node_cmd node node_modules/prisma/build/index.js migrate deploy --schema "$SCHEMA"
+run_as_node_cmd node packages/db/dist/scripts/backfill-public-ref.js
 
 run_as_node node apps/web/dist/src/index.js
