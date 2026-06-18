@@ -266,6 +266,17 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects invalid source_field slug in contents", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        config: { contents: [{ label: "Shirt size", source_field: "shirt-size" }] },
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("persists issue_on_checkin false explicitly", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
       method: "PATCH",
