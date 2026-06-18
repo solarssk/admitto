@@ -1,8 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Prisma } from "@prisma/client";
 import { PrismaClient } from "@prisma/client";
 import {
   commitImport,
@@ -341,92 +340,39 @@ describe("commitImport — idempotency", () => {
   });
 });
 
-describe("createAttendeesBatch — P2002 fallback", () => {
-  it("skips conflicting rows when createMany hits a unique violation", async () => {
-    const row: AttendeeRow = {
-      first_name: "Race",
-      last_name: "User",
-      email: "race@example.com",
-    };
-
-    const p2002 = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
-      code: "P2002",
-      clientVersion: "test",
+describe("createAttendeesBatch — skipDuplicates", () => {
+  it("skips conflicting rows without aborting the transaction", async () => {
+    await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "tx-conflict@example.com",
+        name: "Existing",
+      },
     });
 
-    const createManySpy = vi
-      .spyOn(prisma.attendee, "createMany")
-      .mockRejectedValueOnce(p2002);
-    const createSpy = vi.spyOn(prisma.attendee, "create");
-
-    const result = await createAttendeesBatch(prisma, [
-      {
-        event_id: EVENT_ID,
-        email: row.email,
-        name: "Race User",
-      },
-    ]);
+    const result = await prisma.$transaction(async (tx) =>
+      createAttendeesBatch(tx, [
+        {
+          event_id: EVENT_ID,
+          email: "tx-conflict@example.com",
+          name: "Race Loser",
+        },
+        {
+          event_id: EVENT_ID,
+          email: "tx-new@example.com",
+          name: "Race Winner",
+        },
+      ]),
+    );
 
     expect(result.created).toBe(1);
-    expect(result.skipped).toEqual([]);
-    expect(createManySpy).toHaveBeenCalledOnce();
-    expect(createSpy).toHaveBeenCalledOnce();
-
-    createManySpy.mockRestore();
-    createSpy.mockRestore();
-  });
-
-  it("reports skipped row when row-by-row create also conflicts", async () => {
-    const p2002 = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
-      code: "P2002",
-      clientVersion: "test",
-    });
-
-    const createManySpy = vi
-      .spyOn(prisma.attendee, "createMany")
-      .mockRejectedValueOnce(p2002);
-    const createSpy = vi.spyOn(prisma.attendee, "create").mockRejectedValueOnce(p2002);
-
-    const result = await createAttendeesBatch(prisma, [
-      {
-        event_id: EVENT_ID,
-        email: "conflict@example.com",
-        name: "Conflict User",
-      },
-    ]);
-
-    expect(result.created).toBe(0);
     expect(result.skipped).toEqual([
-      { email: "conflict@example.com", reason: IMPORT_CONFLICT_SKIP_REASON },
+      { email: "tx-conflict@example.com", reason: IMPORT_CONFLICT_SKIP_REASON },
     ]);
 
-    createManySpy.mockRestore();
-    createSpy.mockRestore();
-  });
-});
-
-describe("commitImport — P2002 hardening", () => {
-  it("does not throw when createMany fails with P2002 during commit", async () => {
-    const row: AttendeeRow = {
-      first_name: "Concurrent",
-      last_name: "Import",
-      email: "concurrent-import@example.com",
-    };
-
-    const p2002 = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
-      code: "P2002",
-      clientVersion: "test",
+    const count = await prisma.attendee.count({
+      where: { event_id: EVENT_ID, email: { in: ["tx-conflict@example.com", "tx-new@example.com"] } },
     });
-
-    const createManySpy = vi
-      .spyOn(prisma.attendee, "createMany")
-      .mockRejectedValueOnce(p2002);
-
-    const summary = await commitImport(EVENT_ID, [row], {}, prisma);
-
-    expect(summary.created).toBe(1);
-    expect(summary.skipped.some((s) => s.reason === IMPORT_CONFLICT_SKIP_REASON)).toBe(false);
-
-    createManySpy.mockRestore();
+    expect(count).toBe(2);
   });
 });

@@ -1,5 +1,4 @@
-import { Prisma } from "@prisma/client";
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { AttendeeRow, ImportOptions, ImportSummary, SkippedRow } from "./types.js";
 import { generateToken } from "@admitto/crypto";
 
@@ -23,7 +22,6 @@ type AttendeeCreateData = {
 
 type AttendeeUpdateArgs = {
   id: string;
-  email: string;
   data: {
     name: string;
     ticket_type?: string;
@@ -34,53 +32,27 @@ type AttendeeUpdateArgs = {
 
 type ImportDb = PrismaClient | Prisma.TransactionClient;
 
-function isUniqueViolation(err: unknown): boolean {
-  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
-}
-
-/** Create attendees in bulk; on unique violation fall back row-by-row and skip conflicts. */
+/** Create attendees row-by-row with skipDuplicates (tx-safe under interactive transactions). */
 export async function createAttendeesBatch(
   client: ImportDb,
   rows: AttendeeCreateData[],
 ): Promise<{ created: number; skipped: SkippedRow[] }> {
-  if (rows.length === 0) return { created: 0, skipped: [] };
-
-  try {
-    await client.attendee.createMany({ data: rows });
-    return { created: rows.length, skipped: [] };
-  } catch (err) {
-    if (!isUniqueViolation(err)) throw err;
-  }
-
   let created = 0;
   const skipped: SkippedRow[] = [];
+
   for (const row of rows) {
-    try {
-      await client.attendee.create({ data: row });
+    const { count } = await client.attendee.createMany({
+      data: [row],
+      skipDuplicates: true,
+    });
+    if (count === 1) {
       created++;
-    } catch (rowErr) {
-      if (isUniqueViolation(rowErr)) {
-        skipped.push({ email: row.email, reason: IMPORT_CONFLICT_SKIP_REASON });
-      } else {
-        throw rowErr;
-      }
+    } else {
+      skipped.push({ email: row.email, reason: IMPORT_CONFLICT_SKIP_REASON });
     }
   }
-  return { created, skipped };
-}
 
-/** Update one attendee; unique violations become skip instead of failing the batch. */
-async function updateAttendeeSafe(
-  client: ImportDb,
-  update: AttendeeUpdateArgs,
-): Promise<"updated" | "skipped"> {
-  try {
-    await client.attendee.update({ where: { id: update.id }, data: update.data });
-    return "updated";
-  } catch (err) {
-    if (isUniqueViolation(err)) return "skipped";
-    throw err;
-  }
+  return { created, skipped };
 }
 
 /**
@@ -191,7 +163,6 @@ export async function commitImport(
       // Never touch: status, qr_payload, external_uuid, token_hash.
       updates.push({
         id: found.id,
-        email: row.email,
         data: {
           name,
           ...(row.ticket_type !== undefined && { ticket_type: row.ticket_type }),
@@ -248,19 +219,10 @@ export async function commitImport(
 
       for (let i = 0; i < updates.length; i += UPDATE_BATCH_SIZE) {
         const batch = updates.slice(i, i + UPDATE_BATCH_SIZE);
-        const outcomes = await Promise.all(
-          batch.map((entry) => updateAttendeeSafe(client, entry)),
+        await Promise.all(
+          batch.map(({ id, data }) => client.attendee.update({ where: { id }, data })),
         );
-        for (let j = 0; j < outcomes.length; j++) {
-          if (outcomes[j] === "updated") {
-            updated++;
-          } else {
-            skipped.push({
-              email: batch[j]!.email,
-              reason: IMPORT_CONFLICT_SKIP_REASON,
-            });
-          }
-        }
+        updated += batch.length;
       }
 
       return { created, updated };
