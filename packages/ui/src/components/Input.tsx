@@ -8,6 +8,7 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   invalid?: boolean;
 }
 
+/** Labeled text field with optional hint, error state, and icon; forwards ref to the native input. */
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   {
     label,

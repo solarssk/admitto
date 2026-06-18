@@ -43,7 +43,8 @@ import {
   requireEventId,
 } from "./admin-helpers.js";
 
-export const MAX_TEMPLATE_BODY_BYTES = 250_000; // ~250 KB — margin over max(200k) + JSON overhead
+/** Max JSON body size for template save/preview routes (~250 KB; margin over 200k field limit). */
+export const MAX_TEMPLATE_BODY_BYTES = 250_000;
 
 const templateBodySchema = z
   .object({
