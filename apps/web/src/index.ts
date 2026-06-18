@@ -4,6 +4,7 @@ import { createApp } from "./app.js";
 import { validateCfAccessBootConfig } from "./config.js";
 import { devConsoleExportSink, warnExportOnlyProductionEnv } from "./dev-export-sink.js";
 
+/** Boot the Admitto web server; wires a dev-only export_only sink when NODE_ENV is development. */
 async function main(): Promise<void> {
   await validateCfAccessBootConfig(prisma);
   warnExportOnlyProductionEnv();
