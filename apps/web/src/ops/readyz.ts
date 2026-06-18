@@ -11,16 +11,22 @@ import { logger } from "../logger.js";
 import { checkMigrationsStatus } from "./migrations-check.js";
 import { resolveProductVersion } from "./product-version.js";
 
+/** Mailer provider id exposed in `/readyz` JSON (ADR 0026 snake_case). */
 export type ReadyzApiProvider = "graph" | "smtp" | "power_automate" | "export_only" | null;
 
+/** Postgres probe result for `/readyz`. */
 export type ReadyzDatabaseCheck = { status: "ok" | "down"; latency_ms: number };
+/** Redis rate-limit store probe result for `/readyz`. */
 export type ReadyzRedisCheck = {
   status: "ok" | "degraded" | "disabled";
   latency_ms: number | null;
 };
+/** Prisma migration drift status for `/readyz`. */
 export type ReadyzMigrationsCheck = { status: "ok" | "pending" };
+/** Deployment env mailer configuration summary for `/readyz`. */
 export type ReadyzMailerCheck = { configured: boolean; provider: ReadyzApiProvider };
 
+/** Per-component readiness checks returned by `/readyz`. */
 export type ReadyzChecks = {
   database: ReadyzDatabaseCheck;
   redis: ReadyzRedisCheck;
@@ -28,11 +34,13 @@ export type ReadyzChecks = {
   mailer: ReadyzMailerCheck;
 };
 
+/** Operational email delivery counters (aggregates, no PII). */
 export type ReadyzGauges = {
   email_deliveries_queued: number;
   email_deliveries_failed_retryable: number;
 };
 
+/** Full `/readyz` response body (ADR 0026). */
 export type ReadyzResponse = {
   status: "ok" | "degraded" | "unavailable";
   version: string;
@@ -41,6 +49,7 @@ export type ReadyzResponse = {
   gauges: ReadyzGauges;
 };
 
+/** Injectable dependencies for `/readyz` handler and payload builder. */
 export type ReadyzDeps = {
   db: PrismaClient;
   rateLimitStore: RateLimitStore;
@@ -50,6 +59,7 @@ export type ReadyzDeps = {
 
 type EnvLike = Record<string, string | undefined>;
 
+/** Read ops token from `Authorization: Bearer` or `X-Ops-Token` (empty values rejected). */
 export function extractOpsToken(c: Context): string | null {
   const bearer = c.req.header("Authorization");
   if (bearer?.startsWith("Bearer ")) {
@@ -60,6 +70,7 @@ export function extractOpsToken(c: Context): string | null {
   return header?.trim() || null;
 }
 
+/** Constant-time compare of request token against configured `OPS_HEALTH_TOKEN`. */
 export function isValidOpsToken(c: Context, expected: string): boolean {
   const provided = extractOpsToken(c);
   if (!provided) return false;
@@ -69,11 +80,13 @@ export function isValidOpsToken(c: Context, expected: string): boolean {
   return timingSafeEqual(expectedBuf, providedBuf);
 }
 
+/** Map internal mailer provider id to ADR 0026 API snake_case (`power_automate`). */
 export function mapProviderForApi(provider: MailerProvider): Exclude<ReadyzApiProvider, null> {
   if (provider === "powerautomate") return "power_automate";
   return provider;
 }
 
+/** Postgres liveness probe with round-trip latency (`SELECT 1`). */
 export async function checkDatabase(db: PrismaClient): Promise<ReadyzDatabaseCheck> {
   const started = Date.now();
   try {
@@ -84,6 +97,7 @@ export async function checkDatabase(db: PrismaClient): Promise<ReadyzDatabaseChe
   }
 }
 
+/** Redis ping when backed by Redis; in-memory store reports `disabled`. */
 export async function checkRedis(store: RateLimitStore): Promise<ReadyzRedisCheck> {
   try {
     if (store instanceof InMemoryRateLimitStore) {
@@ -99,11 +113,13 @@ export async function checkRedis(store: RateLimitStore): Promise<ReadyzRedisChec
   }
 }
 
+/** Read-only migration drift check (disk folders vs `_prisma_migrations`). */
 export async function checkMigrations(db: PrismaClient): Promise<ReadyzMigrationsCheck> {
   const status = await checkMigrationsStatus(db);
   return { status };
 }
 
+/** Deployment env mailer config only — provider name, no credentials or live ping. */
 export function checkMailer(env: EnvLike = process.env): ReadyzMailerCheck {
   try {
     const cfg = configFromEnv(env as NodeJS.ProcessEnv);
@@ -113,6 +129,7 @@ export function checkMailer(env: EnvLike = process.env): ReadyzMailerCheck {
   }
 }
 
+/** Aggregate email delivery queue depth; `-1` gauges when DB count fails. */
 export async function collectGauges(db: PrismaClient): Promise<ReadyzGauges> {
   try {
     const [email_deliveries_queued, email_deliveries_failed_retryable] = await Promise.all([
@@ -125,6 +142,7 @@ export async function collectGauges(db: PrismaClient): Promise<ReadyzGauges> {
   }
 }
 
+/** Worst-of readiness status and HTTP code (ADR 0026). */
 export function computeOverallStatus(checks: ReadyzChecks): {
   status: ReadyzResponse["status"];
   httpStatus: 200 | 503;
@@ -138,6 +156,7 @@ export function computeOverallStatus(checks: ReadyzChecks): {
   return { status: "ok", httpStatus: 200 };
 }
 
+/** Run all `/readyz` collectors and assemble the ADR 0026 JSON payload. */
 export async function buildReadyzPayload(deps: ReadyzDeps): Promise<ReadyzResponse> {
   const env = deps.env ?? process.env;
   const [database, redis, migrations, gauges] = await Promise.all([
@@ -158,6 +177,7 @@ export async function buildReadyzPayload(deps: ReadyzDeps): Promise<ReadyzRespon
   };
 }
 
+/** Token-gated `GET /readyz` handler (404 disabled, 401 bad token, 503 on hard failure). */
 export async function handleReadyz(c: Context, deps: ReadyzDeps) {
   const token = deps.opsHealthToken;
   if (!token) {

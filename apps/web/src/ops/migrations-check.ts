@@ -10,6 +10,7 @@ type MigrationRow = {
   rolled_back_at: Date | null;
 };
 
+/** List Prisma migration folder names that contain `migration.sql`. */
 function listMigrationNamesOnDisk(): Set<string> {
   const root = findAdmittoRepoRoot();
   if (!root) return new Set();
