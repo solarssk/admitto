@@ -39,7 +39,7 @@
   align-items: flex-start;
   gap: var(--space-4);
   padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 .requirements-behaviour-row:last-child {
@@ -68,7 +68,7 @@
   gap: var(--space-3);
   align-items: flex-end;
   padding: var(--space-4);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 .requirements-add-form__field {

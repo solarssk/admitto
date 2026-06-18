@@ -533,7 +533,7 @@ export async function handleResendEventAttendeeTicket(
       attendee_id: attendeeId,
       action_type: "ticket_resent",
       audit: adminAuditFromContext(c),
-      metadata: alternate ? { to: targetEmail, alternate: true } : { alternate: false },
+      metadata: { alternate },
     });
   });
 

@@ -42,6 +42,7 @@ COPY packages/mailer/package.json packages/mailer/
 COPY packages/mailer-config/package.json packages/mailer-config/
 COPY packages/mail-templates/package.json packages/mail-templates/
 COPY packages/mail-delivery/package.json packages/mail-delivery/
+COPY packages/import/package.json packages/import/
 COPY packages/ui/package.json packages/ui/
 COPY apps/admin/package.json apps/admin/
 COPY apps/web/package.json apps/web/
@@ -61,6 +62,7 @@ COPY --from=builder /app/packages/mailer/dist ./packages/mailer/dist
 COPY --from=builder /app/packages/mailer-config/dist ./packages/mailer-config/dist
 COPY --from=builder /app/packages/mail-templates/dist ./packages/mail-templates/dist
 COPY --from=builder /app/packages/mail-delivery/dist ./packages/mail-delivery/dist
+COPY --from=builder /app/packages/import/dist ./packages/import/dist
 
 COPY --from=builder /opt/prisma-runtime/dot-prisma ./node_modules/.prisma
 COPY --from=builder /opt/prisma-runtime/@prisma ./node_modules/@prisma

@@ -87,7 +87,7 @@
   flex-direction: column;
   min-width: 100px;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
 

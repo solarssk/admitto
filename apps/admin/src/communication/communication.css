@@ -2,8 +2,8 @@
   margin-bottom: var(--space-4);
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
-  background: var(--bg-surface-secondary, rgba(0, 0, 0, 0.04));
-  border: 1px solid var(--border-color);
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
   font-size: var(--fs-sm);
   color: var(--text-muted);
 }
@@ -42,12 +42,12 @@
 }
 
 .communication-chip {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--radius-pill, 999px);
   padding: 2px 10px;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--fs-xs);
-  background: var(--bg-surface);
+  background: var(--surface-sunken);
   cursor: pointer;
 }
 
@@ -56,7 +56,7 @@
 }
 
 .communication-chip:hover {
-  background: var(--bg-surface-secondary, rgba(0, 0, 0, 0.04));
+  background: var(--surface-hover);
 }
 
 .communication-format-row {
@@ -86,7 +86,7 @@
   width: 100%;
   min-height: 220px;
   padding: var(--space-3);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--fs-sm);
@@ -97,15 +97,15 @@
   margin-top: var(--space-3);
   padding: var(--space-3);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--status-danger, #d63939) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--status-danger, #d63939) 30%, transparent);
+  background: color-mix(in srgb, var(--status-error, #d63939) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-error, #d63939) 30%, transparent);
 }
 
 .communication-errors ul {
   margin: 0;
   padding-left: var(--space-4);
   font-size: var(--fs-sm);
-  color: var(--status-danger, #d63939);
+  color: var(--status-error, #d63939);
 }
 
 .communication-actions {
@@ -125,7 +125,7 @@
 }
 
 .communication-status--error {
-  color: var(--status-danger, #d63939);
+  color: var(--status-error, #d63939);
 }
 
 .communication-preview-subject {
@@ -148,7 +148,7 @@
 .communication-preview-frame {
   width: 100%;
   min-height: 320px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: #fff;
 }

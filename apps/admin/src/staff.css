@@ -52,6 +52,12 @@
   cursor: not-allowed;
 }
 
+.nav-item--soon {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
 .nav-item__badge {
   margin-left: auto;
   font-size: var(--fs-xs);

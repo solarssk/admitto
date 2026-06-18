@@ -51,6 +51,11 @@ jobs:
             exit 1
           fi
 
+      - name: Verify import package in image
+        working-directory: deploy
+        run: |
+          docker compose run --rm app node --input-type=module -e "import('@admitto/import').then(() => console.log('ok'))"
+
       - name: Tear down
         if: always()
         working-directory: deploy

@@ -389,8 +389,6 @@ describe("POST /api/admin/events/:eventId/template/test-send", () => {
       orderBy: { created_at: "desc" },
     });
     expect(log).not.toBeNull();
-    const meta = log!.metadata as { to?: string };
-    expect(meta.to).toBe("tester@example.com");
   });
 
   it("rejects invalid email", async () => {

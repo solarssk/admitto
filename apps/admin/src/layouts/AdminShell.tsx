@@ -17,6 +17,8 @@ const LIFECYCLE_NAV = [
   { segment: "reports", icon: "chart-bar", label: "Reports" },
 ] as const;
 
+const LIVE_SEGMENTS = new Set(["overview", "attendees", "requirements", "communication", "checkin"]);
+
 function formatEventMeta(event: EventDto): string {
   const date = new Date(event.date).toLocaleDateString("en-GB", {
     day: "numeric",
@@ -54,8 +56,7 @@ export function AdminShell({ event }: AdminShellProps) {
         <nav className="sidebar__nav" aria-label="Event lifecycle">
           {LIFECYCLE_NAV.map((item) => {
             const to = `/admin/events/${eventId}/${item.segment}`;
-            const isOverview = item.segment === "overview";
-            const isLive = item.segment === "overview" || item.segment === "attendees" || item.segment === "checkin";
+            const isLive = LIVE_SEGMENTS.has(item.segment);
             return (
               <NavLink
                 key={item.segment}

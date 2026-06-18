@@ -55,6 +55,9 @@ function createMockPrisma(opts: MockPrismaOpts = {}): PrismaClient {
 
   return {
     $queryRaw: vi.fn(queryRaw),
+    oidcAuthState: {
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     emailDelivery: {
       count: vi.fn(async (args: { where?: { status?: string; retryable?: boolean } }) => {
         if (opts.emailDeliveryCountThrows) {
