@@ -11,6 +11,7 @@ import {
 } from "@admitto/mail-templates";
 import type { ExportPayload } from "@admitto/mailer";
 import { createApp } from "../../src/app.js";
+import { MAX_TEMPLATE_BODY_BYTES } from "../../src/admin/communication-api-routes.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
@@ -256,7 +257,7 @@ describe("PUT /api/admin/events/:eventId/template", () => {
     expect(body.errors.some((e) => e.includes("qr_image_url"))).toBe(true);
   });
 
-  it("rejects body larger than limit", async () => {
+  it("rejects body larger than schema char limit", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/template`, {
       method: "PUT",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
@@ -267,6 +268,22 @@ describe("PUT /api/admin/events/:eventId/template", () => {
       }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("rejects JSON body larger than wire byte cap", async () => {
+    const oversizeChars = MAX_TEMPLATE_BODY_BYTES;
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subject_template: "Subject",
+        body_template: "x".repeat(oversizeChars),
+        template_format: "html",
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("template too large");
   });
 
   it("rejects operator", async () => {
@@ -306,7 +323,7 @@ describe("POST /api/admin/events/:eventId/template/preview", () => {
     expect(body.errors.length).toBeGreaterThan(0);
   });
 
-  it("rejects body larger than limit", async () => {
+  it("rejects body larger than schema char limit", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/template/preview`, {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
@@ -316,6 +333,21 @@ describe("POST /api/admin/events/:eventId/template/preview", () => {
       }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("rejects JSON body larger than wire byte cap", async () => {
+    const oversizeChars = MAX_TEMPLATE_BODY_BYTES;
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template/preview`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...validTemplate,
+        body_template: "x".repeat(oversizeChars),
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("template too large");
   });
 
   it("rejects operator", async () => {

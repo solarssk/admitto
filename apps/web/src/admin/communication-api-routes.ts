@@ -43,13 +43,24 @@ import {
   requireEventId,
 } from "./admin-helpers.js";
 
-/** Max JSON body size for template save/preview routes (~250 KB; margin over 200k field limit). */
-export const MAX_TEMPLATE_BODY_BYTES = 250_000;
+/** Max character length for `body_template` (schema); shared with wire byte cap below. */
+export const TEMPLATE_BODY_CHAR_LIMIT = 200_000;
+
+/** Max character length for `subject_template` (schema). */
+export const TEMPLATE_SUBJECT_CHAR_LIMIT = 500;
+
+/**
+ * Max JSON body size for template save/preview routes.
+ * Sized for `body_template` at {@link TEMPLATE_BODY_CHAR_LIMIT} with worst-case UTF-8 (4 B/char)
+ * and JSON escaping overhead; still rejects multi-megabyte payloads before `c.req.json()`.
+ */
+export const MAX_TEMPLATE_BODY_BYTES =
+  (TEMPLATE_BODY_CHAR_LIMIT + TEMPLATE_SUBJECT_CHAR_LIMIT) * 4 * 2 + 32_768;
 
 const templateBodySchema = z
   .object({
-    subject_template: z.string().trim().min(1).max(500),
-    body_template: z.string().min(1).max(200_000),
+    subject_template: z.string().trim().min(1).max(TEMPLATE_SUBJECT_CHAR_LIMIT),
+    body_template: z.string().min(1).max(TEMPLATE_BODY_CHAR_LIMIT),
     template_format: z.enum(["mjml", "html"]),
   })
   .strict();
