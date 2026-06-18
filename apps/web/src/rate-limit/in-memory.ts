@@ -72,6 +72,11 @@ export class InMemoryRateLimitStore implements RateLimitStore {
     };
   }
 
+  /** In-memory store has no external backend to ping. */
+  async health(): Promise<{ ok: boolean; latencyMs: number | null }> {
+    return { ok: true, latencyMs: null };
+  }
+
   /** @internal test helper */
   reset(): void {
     this.buckets.clear();

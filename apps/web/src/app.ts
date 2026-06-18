@@ -107,6 +107,7 @@ import {
   handlePostCfAccess,
   handlePostCfAccessTest,
 } from "./admin/cf-access-routes.js";
+import { handleReadyz, resolveOpsHealthToken } from "./ops/readyz.js";
 
 /** Parse check-in history `limit` query param: default 10, clamped to 1–100. */
 function parseCheckinHistoryLimit(raw: string | undefined): number {
@@ -125,6 +126,7 @@ export interface CreateAppOptions {
   rateLimitStore?: RateLimitStore;
   adminDistRoot?: string;
   mailDeliveryDeps?: MailDeliveryDeps;
+  opsHealthToken?: string | null;
 }
 
 /**
@@ -168,6 +170,10 @@ export function createApp(options: CreateAppOptions = {}) {
 
   const app = new Hono();
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
+  const opsHealthToken =
+    options.opsHealthToken !== undefined
+      ? options.opsHealthToken
+      : resolveOpsHealthToken();
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
   const loginRateLimitHtml = createLoginRateLimitMiddleware(rateLimitStore, { format: "text" });
@@ -259,6 +265,14 @@ export function createApp(options: CreateAppOptions = {}) {
   }
 
   app.get("/healthz", (c) => handleHealthz(c, db));
+  app.get("/readyz", (c) =>
+    handleReadyz(c, {
+      db,
+      rateLimitStore,
+      opsHealthToken,
+      env: process.env,
+    }),
+  );
 
   app.post("/api/auth/login", jsonPostCsrf, loginRateLimitJson, (c) =>
     handleLogin(c, db, rateLimitStore),
