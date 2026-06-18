@@ -17,17 +17,20 @@ import "../communication/communication.css";
 type ActiveField = "subject" | "body";
 type TemplateFormat = "mjml" | "html";
 
+/** Format an ISO timestamp for the delivery log table. */
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString();
 }
 
+/** Insert placeholder text at the textarea cursor selection. */
 function insertAtCursor(value: string, insertion: string, start: number, end: number): string {
   return value.slice(0, start) + insertion + value.slice(end);
 }
 
 const DELIVERY_PAGE_SIZE = 25;
 
+/** Admin screen for event mail template editing, preview, test-send, and delivery log. */
 export function CommunicationPage() {
   const { eventId } = useParams();
   const { reportApiError } = useConnectionState();

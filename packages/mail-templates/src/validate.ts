@@ -21,6 +21,7 @@ export function validateTemplate(input: TemplateSourceInput): string[] {
   return findUnknownPlaceholders(input.subject, input.body);
 }
 
+/** Reject placeholders inside HTML comments or unquoted attributes. */
 function assertSafeHtmlMarkup(body: string): void {
   const inComments = findPlaceholdersInHtmlComments(body);
   if (inComments.length > 0) {

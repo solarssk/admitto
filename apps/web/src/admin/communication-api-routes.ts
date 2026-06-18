@@ -60,6 +60,7 @@ const testSendBodySchema = z
   })
   .strict();
 
+/** API response for GET /template — editable source plus placeholder metadata. */
 export type EventTemplateDto = {
   subject_template: string;
   body_template: string;
@@ -69,6 +70,7 @@ export type EventTemplateDto = {
   required_url_placeholders: string[];
 };
 
+/** Paginated delivery log response for GET /deliveries. */
 export type EventDeliveriesListDto = {
   items: DeliveryDto[];
   total: number;
@@ -111,10 +113,12 @@ function collectTemplateSourceErrors(subject: string, body: string): string[] {
   return errors;
 }
 
+/** Return 400 JSON when template source validation fails. */
 function templateValidationResponse(c: Context, errors: string[]): Response {
   return c.json({ error: "template_validation_failed", errors }, 400);
 }
 
+/** Return 400 JSON when MJML compilation fails. */
 function mjmlCompileErrorResponse(c: Context, err: MjmlCompileError): Response {
   const errors = err.errors.map((e) => e.formattedMessage ?? e.message);
   return c.json({ error: "template_validation_failed", errors }, 400);

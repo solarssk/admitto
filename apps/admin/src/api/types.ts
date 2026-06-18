@@ -252,6 +252,7 @@ export interface UpdateOpsConfigPatch {
   badge_at_entry?: boolean;
 }
 
+/** Admin SPA DTOs for event mail template editing and delivery log (mirror of web API). */
 export interface EventTemplateDto {
   subject_template: string;
   body_template: string;

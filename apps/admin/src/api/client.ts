@@ -395,6 +395,7 @@ export async function updateOpsConfig(
   return parseJson<OpsConfigDto>(res);
 }
 
+/** Thrown when save/preview returns `template_validation_failed` with an error list. */
 export class TemplateValidationError extends Error {
   constructor(public readonly errors: string[]) {
     super("template_validation_failed");
@@ -402,6 +403,7 @@ export class TemplateValidationError extends Error {
   }
 }
 
+/** Parse template save/preview JSON; maps validation errors to `TemplateValidationError`. */
 async function parseTemplateActionJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     try {
@@ -418,6 +420,7 @@ async function parseTemplateActionJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Load editable mail template for an event (event → org → builtin). */
 export async function fetchEventTemplate(
   eventId: string,
   signal?: AbortSignal,
@@ -429,6 +432,7 @@ export async function fetchEventTemplate(
   return parseJson<EventTemplateDto>(res);
 }
 
+/** Save and compile an event-scoped mail template. */
 export async function saveEventTemplate(
   eventId: string,
   body: SaveTemplateBody,
@@ -440,6 +444,7 @@ export async function saveEventTemplate(
   await parseTemplateActionJson<{ ok: boolean }>(res);
 }
 
+/** Render a draft template with sample data (no DB write). */
 export async function previewEventTemplate(
   eventId: string,
   body: SaveTemplateBody,
@@ -451,6 +456,7 @@ export async function previewEventTemplate(
   return parseTemplateActionJson<PreviewTemplateResponse>(res);
 }
 
+/** Send a one-off test mail for the current event template. */
 export async function testSendEventTemplate(
   eventId: string,
   body: TestSendBody,
@@ -462,6 +468,7 @@ export async function testSendEventTemplate(
   return parseJson<TestSendResponse>(res);
 }
 
+/** Build query string for paginated event delivery log requests. */
 function deliveriesListQuery(eventId: string, params: EventDeliveriesListParams = {}): string {
   const q = new URLSearchParams();
   if (params.page != null) q.set("page", String(params.page));
@@ -471,6 +478,7 @@ function deliveriesListQuery(eventId: string, params: EventDeliveriesListParams 
   return `/api/admin/events/${encodeURIComponent(eventId)}/deliveries${qs ? `?${qs}` : ""}`;
 }
 
+/** Fetch paginated email delivery rows for an event (no rendered HTML). */
 export async function fetchEventDeliveries(
   eventId: string,
   params: EventDeliveriesListParams = {},

@@ -67,6 +67,7 @@ function normalizeStatusFilter(
   return Array.isArray(status) ? status : [status];
 }
 
+/** Build Prisma `where` clause for delivery log queries. */
 function buildWhere(params: ListDeliveriesParams) {
   const { eventId, filters } = params;
   return {
@@ -79,6 +80,7 @@ function buildWhere(params: ListDeliveriesParams) {
   };
 }
 
+/** Map a Prisma row to a delivery log entry with sanitized error text. */
 function mapRow(row: {
   id: string;
   attendee_id: string;
