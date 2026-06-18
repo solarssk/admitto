@@ -50,8 +50,8 @@ Container image scanning fails the release pipeline on **CRITICAL** vulnerabilit
 with a known fix (`ignore-unfixed: true`). **HIGH** findings are reported (SARIF in the
 Security tab) but do not block the pipeline.
 
-Build provenance attestations are published for images pushed to GHCR on release tags
-(`actions/attest`).
+Build provenance attestations (SLSA, `actions/attest-build-provenance`) are published for images
+pushed to GHCR on release tags.
 
 ### Secrets policy
 
