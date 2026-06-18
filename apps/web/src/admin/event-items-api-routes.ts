@@ -289,12 +289,6 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
     fields.push("label");
   }
   if (parsed.data.enabled !== undefined && parsed.data.enabled !== existing.enabled) {
-    if (parsed.data.enabled === false && existing.enabled) {
-      const inUse = await countIssuedOrReturnedStates(db, itemId);
-      if (inUse > 0) {
-        return c.json({ error: "item_in_use" }, 409);
-      }
-    }
     data.enabled = parsed.data.enabled;
     fields.push("enabled");
   }
@@ -307,31 +301,47 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
     return c.json(serializeEventItem(existing));
   }
 
-  const updated = await db.$transaction(async (tx) => {
-    const row = await tx.eventItem.update({
-      where: { id: itemId },
-      data,
-      select: {
-        id: true,
-        key: true,
-        label: true,
-        type: true,
-        enabled: true,
-        config: true,
-      },
-    });
+  const disabling = parsed.data.enabled === false && existing.enabled;
 
-    await writeBulkActionLog(tx, {
-      event_id: eventId,
-      action_type: "event_item_updated",
-      audit: adminAuditFromContext(c),
-      metadata: { item_key: row.key, fields },
-    });
+  const result = await db.$transaction(
+    async (tx) => {
+      if (disabling) {
+        const inUse = await countIssuedOrReturnedStates(tx, itemId);
+        if (inUse > 0) return { ok: false as const, reason: "in_use" as const };
+      }
 
-    return row;
-  });
+      const row = await tx.eventItem.update({
+        where: { id: itemId },
+        data,
+        select: {
+          id: true,
+          key: true,
+          label: true,
+          type: true,
+          enabled: true,
+          config: true,
+        },
+      });
 
-  return c.json(serializeEventItem(updated));
+      await writeBulkActionLog(tx, {
+        event_id: eventId,
+        action_type: "event_item_updated",
+        audit: adminAuditFromContext(c),
+        metadata: { item_key: row.key, fields },
+      });
+
+      return { ok: true as const, row };
+    },
+    disabling
+      ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+      : undefined,
+  );
+
+  if (!result.ok) {
+    return c.json({ error: "item_in_use" }, 409);
+  }
+
+  return c.json(serializeEventItem(result.row));
 }
 
 /** DELETE /api/admin/events/:eventId/items/:itemId */
