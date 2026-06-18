@@ -2,16 +2,18 @@ import type { Context } from "hono";
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { canManageEvent } from "@admitto/auth";
 import {
   DEFAULT_EVENT_ITEM_KEYS,
   parseEventOpsConfig,
   resolveEventItemContents,
   writeBulkActionLog,
   type EventItemConfig,
-  type OpsAuditContext,
 } from "@admitto/tickets";
-import { resolveClientIp } from "../rate-limit/client-ip.js";
+import {
+  adminAuditFromContext,
+  assertEventManageAccess,
+  requireEventId,
+} from "./admin-helpers.js";
 
 const slugField = z.string().trim().regex(/^[a-z0-9_]+$/, "invalid slug");
 
@@ -97,36 +99,6 @@ function serializeEventItem(row: {
     enabled: row.enabled,
     config: serializeEventItemConfig(row.config),
   };
-}
-
-/** Return 403 when the session user cannot manage the event; otherwise null. */
-async function assertEventManageAccess(
-  c: Context,
-  db: PrismaClient,
-  eventId: string,
-): Promise<Response | null> {
-  const auth = c.get("auth");
-  if (!(await canManageEvent(db, auth.userId, eventId))) {
-    return c.json({ error: "forbidden" }, 403);
-  }
-  return null;
-}
-
-/** Build ops audit context from the authenticated admin request. */
-function adminAuditFromContext(c: Context): OpsAuditContext {
-  const auth = c.get("auth");
-  return {
-    operator: auth.userId,
-    sessionId: auth.sessionId,
-    ip: resolveClientIp(c),
-  };
-}
-
-/** Require `:eventId` route param or return 400. */
-function requireEventId(c: Context): string | Response {
-  const eventId = c.req.param("eventId");
-  if (!eventId) return c.json({ error: "eventId required" }, 400);
-  return eventId;
 }
 
 /** Require `:itemId` route param or return 400. */

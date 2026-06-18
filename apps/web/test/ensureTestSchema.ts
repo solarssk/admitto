@@ -26,6 +26,7 @@ function assertTestDatabaseUrl(databaseUrl: string): void {
 
 const execAsync = promisify(exec);
 const DB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "db");
+const REPO_ROOT = path.resolve(DB_ROOT, "..");
 const MIGRATE_TIMEOUT_MS = 60_000;
 
 function testDbEnv(): NodeJS.ProcessEnv {
@@ -49,6 +50,20 @@ async function runPrisma(command: string, env: NodeJS.ProcessEnv): Promise<void>
   await execAsync(command, { cwd: DB_ROOT, env, timeout: MIGRATE_TIMEOUT_MS });
 }
 
+function testDatabaseName(databaseUrl: string): string {
+  return new URL(databaseUrl).pathname.replace(/^\//, "");
+}
+
+/** Drop and recreate the test database (P3005 recovery — restores migration history). */
+async function resetTestDatabase(env: NodeJS.ProcessEnv): Promise<void> {
+  const dbName = testDatabaseName(env.DATABASE_URL!);
+  await execAsync(`bash infra/scripts/reset-test-db.sh ${dbName}`, {
+    cwd: REPO_ROOT,
+    env,
+    timeout: MIGRATE_TIMEOUT_MS,
+  });
+}
+
 /**
  * Run `prisma migrate deploy` once per integration Vitest run (via globalSetup).
  * See ADR-0015-test-strategy.md — no `db push --force-reset` in test files.
@@ -59,7 +74,15 @@ export async function ensureIntegrationTestSchema(): Promise<void> {
   try {
     await runPrisma("npx prisma migrate deploy", env);
   } catch (migrateError) {
-    if (process.env["CI"] && !isMissingMigrationHistoryError(migrateError)) {
+    if (isMissingMigrationHistoryError(migrateError)) {
+      console.warn(
+        "[ensureTestSchema] P3005 — resetting test DB and retrying migrate deploy",
+      );
+      await resetTestDatabase(env);
+      await runPrisma("npx prisma migrate deploy", env);
+      return;
+    }
+    if (process.env["CI"]) {
       throw migrateError;
     }
     console.warn(

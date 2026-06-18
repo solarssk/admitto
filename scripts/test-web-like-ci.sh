@@ -11,6 +11,6 @@ export DATABASE_URL="${WEB_TEST_DATABASE_URL:-postgresql://admitto:admitto@local
 export ENCRYPTION_KEY="${ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
 
 bash infra/scripts/create-test-dbs.sh
-npx prisma migrate deploy --schema packages/db/prisma/schema.prisma
+bash infra/scripts/apply-test-schema.sh admitto_web_test
 npm run build
 npm test -w @admitto/web

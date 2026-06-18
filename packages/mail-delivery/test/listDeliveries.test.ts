@@ -79,8 +79,9 @@ afterAll(async () => {
 
 describe("listDeliveries", () => {
   it("returns safe fields scoped to event_id", async () => {
-    const rows = await listDeliveries({ eventId: EVENT_A }, prisma);
+    const { items: rows, total } = await listDeliveries({ eventId: EVENT_A }, prisma);
 
+    expect(total).toBeGreaterThanOrEqual(1);
     expect(rows.length).toBeGreaterThanOrEqual(1);
     expect(rows.every((r) => r.attendee_id === "att-list-a")).toBe(true);
 
@@ -96,8 +97,8 @@ describe("listDeliveries", () => {
   });
 
   it("does not return deliveries from other events", async () => {
-    const rowsA = await listDeliveries({ eventId: EVENT_A }, prisma);
-    const rowsB = await listDeliveries({ eventId: EVENT_B }, prisma);
+    const { items: rowsA } = await listDeliveries({ eventId: EVENT_A }, prisma);
+    const { items: rowsB } = await listDeliveries({ eventId: EVENT_B }, prisma);
 
     expect(rowsA.some((r) => r.attendee_id === "att-list-b")).toBe(false);
     expect(rowsB.some((r) => r.attendee_id === "att-list-a")).toBe(false);
@@ -105,14 +106,14 @@ describe("listDeliveries", () => {
   });
 
   it("filters by status", async () => {
-    const accepted = await listDeliveries(
+    const { items: accepted } = await listDeliveries(
       { eventId: EVENT_A, filters: { status: "accepted" } },
       prisma,
     );
     expect(accepted.length).toBeGreaterThanOrEqual(1);
     expect(accepted.every((r) => r.status === "accepted")).toBe(true);
 
-    const failed = await listDeliveries(
+    const { items: failed } = await listDeliveries(
       { eventId: EVENT_A, filters: { status: "failed" } },
       prisma,
     );
@@ -120,11 +121,21 @@ describe("listDeliveries", () => {
   });
 
   it("filters by purpose", async () => {
-    const initial = await listDeliveries(
+    const { items: initial } = await listDeliveries(
       { eventId: EVENT_A, filters: { purpose: "initial" } },
       prisma,
     );
     expect(initial.length).toBeGreaterThanOrEqual(1);
     expect(initial.every((r) => r.purpose === "initial")).toBe(true);
+  });
+
+  it("supports skip/take pagination", async () => {
+    const page1 = await listDeliveries({ eventId: EVENT_A, skip: 0, take: 1 }, prisma);
+    const page2 = await listDeliveries({ eventId: EVENT_A, skip: 1, take: 1 }, prisma);
+
+    expect(page1.total).toBeGreaterThanOrEqual(page1.items.length);
+    if (page1.total > 1) {
+      expect(page1.items[0]?.id).not.toBe(page2.items[0]?.id);
+    }
   });
 });

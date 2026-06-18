@@ -1,7 +1,9 @@
 import {
+  extractPlaceholderNames,
   findUnknownPlaceholders,
   findPlaceholdersInHtmlComments,
   findUnquotedAttributePlaceholders,
+  REQUIRED_URL_PLACEHOLDERS,
 } from "./placeholders.js";
 import {
   UnknownPlaceholdersError,
@@ -33,6 +35,15 @@ function assertSafeHtmlMarkup(body: string): void {
 /** Throws when compiled HTML would fail render-time placeholder safety checks. */
 export function assertRenderableCompiledHtml(html: string): void {
   assertSafeHtmlMarkup(html);
+}
+
+/** Returns required URL placeholder names missing from subject/body source. */
+export function findMissingRequiredPlaceholders(subject: string, body: string): string[] {
+  const found = new Set([
+    ...extractPlaceholderNames(subject),
+    ...extractPlaceholderNames(body),
+  ]);
+  return [...REQUIRED_URL_PLACEHOLDERS].filter((p) => !found.has(p)).sort();
 }
 
 /** Throws when the source contains unknown placeholders or unsafe HTML markup. */

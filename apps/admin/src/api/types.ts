@@ -251,3 +251,45 @@ export interface UpdateOpsConfigPatch {
   require_confirm_on_scan?: boolean;
   badge_at_entry?: boolean;
 }
+
+export interface EventTemplateDto {
+  subject_template: string;
+  body_template: string;
+  template_format: "mjml" | "html";
+  source: "event" | "organization" | "builtin";
+  allowed_placeholders: string[];
+  required_url_placeholders: string[];
+}
+
+export interface SaveTemplateBody {
+  subject_template: string;
+  body_template: string;
+  template_format: "mjml" | "html";
+}
+
+export interface PreviewTemplateResponse {
+  subject: string;
+  html: string;
+}
+
+export interface TestSendBody {
+  to: string;
+}
+
+export interface TestSendResponse {
+  status: "sent" | "failed";
+  error?: string;
+}
+
+export interface EventDeliveriesListParams {
+  page?: number;
+  pageSize?: number;
+  status?: string;
+}
+
+export interface EventDeliveriesListResponse {
+  items: DeliveryDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}

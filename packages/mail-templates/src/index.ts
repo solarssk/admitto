@@ -37,6 +37,7 @@ export {
   validateTemplate,
   assertValidTemplate,
   assertRenderableCompiledHtml,
+  findMissingRequiredPlaceholders,
 } from "./validate.js";
 export {
   DEFAULT_SUBJECT_TEMPLATE,

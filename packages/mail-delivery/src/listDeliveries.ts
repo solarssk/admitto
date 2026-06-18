@@ -30,6 +30,13 @@ export interface ListDeliveriesParams {
     purpose?: EmailDeliveryPurpose;
     attendeeId?: string;
   };
+  skip?: number;
+  take?: number;
+}
+
+export interface ListDeliveriesResult {
+  items: DeliveryLogEntry[];
+  total: number;
 }
 
 const DELIVERY_LOG_SELECT = {
@@ -60,30 +67,66 @@ function normalizeStatusFilter(
   return Array.isArray(status) ? status : [status];
 }
 
+function buildWhere(params: ListDeliveriesParams) {
+  const { eventId, filters } = params;
+  return {
+    event_id: eventId,
+    ...(filters?.status
+      ? { status: { in: normalizeStatusFilter(filters.status) } }
+      : {}),
+    ...(filters?.purpose ? { purpose: filters.purpose } : {}),
+    ...(filters?.attendeeId ? { attendee_id: filters.attendeeId } : {}),
+  };
+}
+
+function mapRow(row: {
+  id: string;
+  attendee_id: string;
+  status: string;
+  provider: string;
+  provider_message_id: string | null;
+  attempts: number;
+  purpose: string;
+  recipient_email: string | null;
+  rendered_subject: string | null;
+  error_code: string | null;
+  error: string | null;
+  queued_at: Date;
+  attempted_at: Date | null;
+  accepted_at: Date | null;
+  sent_at: Date | null;
+  failed_at: Date | null;
+  delivered_at: Date | null;
+  created_at: Date;
+}): DeliveryLogEntry {
+  return {
+    ...row,
+    error: sanitizeDeliveryError(row.error ?? undefined) ?? null,
+  };
+}
+
 /**
  * Lists EmailDelivery rows for an event with a safe field projection (no rendered body).
  */
 export async function listDeliveries(
   params: ListDeliveriesParams,
   prisma: PrismaClient,
-): Promise<DeliveryLogEntry[]> {
-  const { eventId, filters } = params;
+): Promise<ListDeliveriesResult> {
+  const where = buildWhere(params);
 
-  const rows = await prisma.emailDelivery.findMany({
-    where: {
-      event_id: eventId,
-      ...(filters?.status
-        ? { status: { in: normalizeStatusFilter(filters.status) } }
-        : {}),
-      ...(filters?.purpose ? { purpose: filters.purpose } : {}),
-      ...(filters?.attendeeId ? { attendee_id: filters.attendeeId } : {}),
-    },
-    select: DELIVERY_LOG_SELECT,
-    orderBy: { created_at: "desc" },
-  });
+  const [total, rows] = await Promise.all([
+    prisma.emailDelivery.count({ where }),
+    prisma.emailDelivery.findMany({
+      where,
+      select: DELIVERY_LOG_SELECT,
+      orderBy: { created_at: "desc" },
+      ...(params.skip !== undefined ? { skip: params.skip } : {}),
+      ...(params.take !== undefined ? { take: params.take } : {}),
+    }),
+  ]);
 
-  return rows.map((row) => ({
-    ...row,
-    error: sanitizeDeliveryError(row.error ?? undefined) ?? null,
-  }));
+  return {
+    items: rows.map(mapRow),
+    total,
+  };
 }

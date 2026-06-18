@@ -8,7 +8,11 @@ export {
 } from "./configDescribe.js";
 export type { CliConfigDescriptor, SecretPresenceField } from "./configDescribe.js";
 export { listDeliveries } from "./listDeliveries.js";
-export type { DeliveryLogEntry, ListDeliveriesParams } from "./listDeliveries.js";
+export type {
+  DeliveryLogEntry,
+  ListDeliveriesParams,
+  ListDeliveriesResult,
+} from "./listDeliveries.js";
 export { toDeliveryDto } from "./toDeliveryDto.js";
 export type { DeliveryDto } from "./toDeliveryDto.js";
 export { resendTicketEmail } from "./resend.js";

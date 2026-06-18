@@ -130,7 +130,7 @@ async function cmdDeliveries(prisma: PrismaClient): Promise<number> {
   }
   if (attendeeId) filters.attendeeId = attendeeId;
 
-  const rows = await listDeliveries(
+  const { items: rows } = await listDeliveries(
     {
       eventId,
       filters: Object.keys(filters).length > 0 ? filters : undefined,

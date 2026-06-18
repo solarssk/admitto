@@ -16,7 +16,7 @@ Orchestrates ticket email delivery: resolve config/template → issue ticket →
 
 - `sendTestEmail({ eventId, toAddress }, prisma, env?, deps?)` — one test mail with **sample** template data (`previewTemplate`); does **not** create `EmailDelivery` rows
 - `getMailConfigDescription(eventId, prisma, env?)` — masked read-only config (passthrough to `describeMailConfig`)
-- `listDeliveries({ eventId, filters? }, prisma)` — safe delivery log projection (no `rendered_html` / `rendered_subject`)
+- `listDeliveries({ eventId, filters?, skip?, take? }, prisma)` — returns `{ items, total }`; safe delivery log projection (no `rendered_html` body)
 
 ## Test-send vs ticket send
 
