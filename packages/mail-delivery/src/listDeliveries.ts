@@ -121,7 +121,7 @@ export async function listDeliveries(
     prisma.emailDelivery.findMany({
       where,
       select: DELIVERY_LOG_SELECT,
-      orderBy: { created_at: "desc" },
+      orderBy: [{ created_at: "desc" }, { id: "desc" }],
       ...(params.skip !== undefined ? { skip: params.skip } : {}),
       ...(params.take !== undefined ? { take: params.take } : {}),
     }),

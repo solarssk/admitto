@@ -1,4 +1,4 @@
-import { exec } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -26,6 +26,7 @@ function assertTestDatabaseUrl(databaseUrl: string): void {
 }
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const DB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "db");
 const REPO_ROOT = path.resolve(DB_ROOT, "..");
 const MIGRATE_TIMEOUT_MS = 60_000;
@@ -62,7 +63,7 @@ function testDatabaseName(databaseUrl: string): string {
 /** Drop and recreate the test database (P3005 recovery — restores migration history). */
 async function resetTestDatabase(env: NodeJS.ProcessEnv): Promise<void> {
   const dbName = testDatabaseName(env.DATABASE_URL!);
-  await execAsync(`bash infra/scripts/reset-test-db.sh ${dbName}`, {
+  await execFileAsync("bash", ["infra/scripts/reset-test-db.sh", dbName], {
     cwd: REPO_ROOT,
     env,
     timeout: MIGRATE_TIMEOUT_MS,

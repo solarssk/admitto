@@ -285,7 +285,7 @@ export interface TestSendResponse {
 export interface EventDeliveriesListParams {
   page?: number;
   pageSize?: number;
-  status?: string;
+  status?: "all" | "queued" | "accepted" | "sent" | "delivered" | "failed" | "bounced" | "rejected";
 }
 
 export interface EventDeliveriesListResponse {

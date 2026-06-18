@@ -142,8 +142,7 @@ function parseListQuery(c: Context): {
   ticket_type?: string;
 } {
   const page = positiveIntQuery(c.req.query("page"), 1);
-  const rawSize = positiveIntQuery(c.req.query("pageSize"), 25);
-  const pageSize = Math.min(100, rawSize);
+  const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
   const qRaw = c.req.query("q")?.trim();
   const q = qRaw ? qRaw : undefined;
   const statusRaw = c.req.query("status") ?? "all";

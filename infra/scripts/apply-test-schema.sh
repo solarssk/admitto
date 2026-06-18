@@ -9,13 +9,20 @@ cd "$ROOT"
 DB_NAME="${1:?usage: apply-test-schema.sh <database_name>}"
 PGHOST="${PGHOST:-localhost}"
 PGUSER="${PGUSER:-admitto}"
+PGPASSWORD="${PGPASSWORD:-admitto}"
 
-if [[ ! "$DB_NAME" =~ _test$ ]]; then
-  echo "Refusing: only *_test databases are allowed" >&2
+if [[ ! "$DB_NAME" =~ ^[A-Za-z0-9_]+_test$ ]]; then
+  echo "Refusing: only alphanumeric *_test databases are allowed" >&2
   exit 1
 fi
 
-export DATABASE_URL="${DATABASE_URL:-postgresql://${PGUSER}:admitto@${PGHOST}:5432/${DB_NAME}}"
+if [[ "$PGHOST" != "localhost" && "$PGHOST" != "127.0.0.1" && "$PGHOST" != "::1" ]]; then
+  echo "Refusing on non-local host: ${PGHOST}" >&2
+  exit 1
+fi
+
+export PGPASSWORD
+export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:5432/${DB_NAME}"
 
 run_migrate_deploy() {
   npx prisma migrate deploy --schema packages/db/prisma/schema.prisma

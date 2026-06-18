@@ -10,7 +10,7 @@ import {
   TemplateValidationError,
   testSendEventTemplate,
 } from "../api/client.js";
-import type { DeliveryDto, EventTemplateDto } from "../api/types.js";
+import type { DeliveryDto, EventDeliveriesListParams, EventTemplateDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import "../communication/communication.css";
 
@@ -29,6 +29,11 @@ function insertAtCursor(value: string, insertion: string, start: number, end: nu
 }
 
 const DELIVERY_PAGE_SIZE = 25;
+
+/** Minimal client-side email shape check (submit is via button, not native form validation). */
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
 
 /** Admin screen for event mail template editing, preview, test-send, and delivery log. */
 export function CommunicationPage() {
@@ -62,8 +67,9 @@ export function CommunicationPage() {
   const [deliveries, setDeliveries] = useState<DeliveryDto[]>([]);
   const [deliveryTotal, setDeliveryTotal] = useState(0);
   const [deliveryPage, setDeliveryPage] = useState(1);
-  const [deliveryStatus, setDeliveryStatus] = useState("all");
+  const [deliveryStatus, setDeliveryStatus] = useState<EventDeliveriesListParams["status"]>("all");
   const [deliveriesLoading, setDeliveriesLoading] = useState(false);
+  const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
@@ -112,6 +118,7 @@ export function CommunicationPage() {
   const loadDeliveries = useCallback(async () => {
     if (!eventId) return;
     setDeliveriesLoading(true);
+    setDeliveriesError(null);
     try {
       const data = await fetchEventDeliveries(eventId, {
         page: deliveryPage,
@@ -129,8 +136,7 @@ export function CommunicationPage() {
           return;
         }
       }
-      setDeliveries([]);
-      setDeliveryTotal(0);
+      setDeliveriesError("Failed to load deliveries.");
     } finally {
       setDeliveriesLoading(false);
     }
@@ -219,7 +225,11 @@ export function CommunicationPage() {
     } catch (err) {
       if (err instanceof ApiError) {
         reportApiError(err.status);
-        setTestStatus({ kind: "error", message: err.message });
+        const message =
+          err.status === 400 && err.message === "validation_failed"
+            ? "Enter a valid email address."
+            : err.message;
+        setTestStatus({ kind: "error", message });
       } else {
         setTestStatus({ kind: "error", message: "Send failed." });
       }
@@ -366,7 +376,7 @@ export function CommunicationPage() {
                   <iframe
                     className="communication-preview-frame"
                     title="Email preview"
-                    sandbox="allow-same-origin"
+                    sandbox=""
                     srcDoc={previewHtml}
                   />
                 </>
@@ -388,7 +398,7 @@ export function CommunicationPage() {
               <Button
                 variant="secondary"
                 onClick={() => void handleTestSend()}
-                disabled={testSending || !testEmail.trim()}
+                disabled={testSending || !isValidEmail(testEmail.trim())}
               >
                 {testSending ? "Sending…" : "Send test"}
               </Button>
@@ -412,7 +422,7 @@ export function CommunicationPage() {
               label="Status"
               value={deliveryStatus}
               onChange={(e) => {
-                setDeliveryStatus(e.target.value);
+                setDeliveryStatus(e.target.value as EventDeliveriesListParams["status"]);
                 setDeliveryPage(1);
               }}
             >
@@ -427,6 +437,8 @@ export function CommunicationPage() {
           <Card padded={false}>
             {deliveriesLoading ? (
               <div className="communication-empty">Loading deliveries…</div>
+            ) : deliveriesError ? (
+              <div className="communication-empty">{deliveriesError}</div>
             ) : deliveries.length === 0 ? (
               <div className="communication-empty">No messages sent yet.</div>
             ) : (

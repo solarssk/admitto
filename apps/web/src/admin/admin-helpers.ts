@@ -34,9 +34,13 @@ export function requireEventId(c: Context): string | Response {
   return eventId;
 }
 
-/** Parse a positive integer query param with safe fallback. */
-export function positiveIntQuery(raw: string | undefined, fallback: number): number {
+/** Parse a positive integer query param with safe fallback and optional upper bound. */
+export function positiveIntQuery(
+  raw: string | undefined,
+  fallback: number,
+  max?: number,
+): number {
   const n = Number(raw);
   if (!Number.isSafeInteger(n) || n < 1) return fallback;
-  return n;
+  return max !== undefined ? Math.min(n, max) : n;
 }

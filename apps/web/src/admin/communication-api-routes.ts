@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
-import type { EmailDeliveryStatus } from "@admitto/db";
+import { EMAIL_DELIVERY_STATUS, type EmailDeliveryStatus } from "@admitto/db";
 import { z } from "zod";
 import {
   ALLOWED_PLACEHOLDERS,
@@ -80,6 +80,7 @@ export type EventDeliveriesListDto = {
 
 const ALLOWED_PLACEHOLDER_LIST = [...ALLOWED_PLACEHOLDERS].sort();
 const REQUIRED_URL_PLACEHOLDER_LIST = [...REQUIRED_URL_PLACEHOLDERS].sort();
+const ALLOWED_DELIVERY_STATUSES = new Set<string>(EMAIL_DELIVERY_STATUS);
 
 /** Collect template source validation errors for API 400 responses. */
 function collectTemplateSourceErrors(subject: string, body: string): string[] {
@@ -370,20 +371,24 @@ export async function handleTestSendEventTemplate(
     return c.json({ status: "failed", error: message } satisfies { status: "failed"; error: string });
   }
 
-  await db.$transaction(async (tx) => {
-    await writeBulkActionLog(tx, {
-      event_id: eventId,
-      action_type: "mail_test_sent",
-      audit: adminAuditFromContext(c),
-      metadata: { to: body.to },
-    });
-  });
-
   if (!isSendSuccess(result.status) || result.error) {
     return c.json({
       status: "failed",
       error: result.error ?? "send failed",
     } satisfies { status: "failed"; error: string });
+  }
+
+  try {
+    await db.$transaction(async (tx) => {
+      await writeBulkActionLog(tx, {
+        event_id: eventId,
+        action_type: "mail_test_sent",
+        audit: adminAuditFromContext(c),
+        metadata: { to: body.to },
+      });
+    });
+  } catch (auditErr) {
+    console.error("[audit] mail_test_sent log failed", auditErr);
   }
 
   return c.json({ status: "sent" } satisfies { status: "sent" });
@@ -398,11 +403,14 @@ export async function handleListEventDeliveries(c: Context, db: PrismaClient): P
   if (forbidden) return forbidden;
 
   const page = positiveIntQuery(c.req.query("page"), 1);
-  const pageSize = Math.min(positiveIntQuery(c.req.query("pageSize"), 25), 100);
+  const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
   const statusRaw = c.req.query("status")?.trim();
 
   const filters: { status?: EmailDeliveryStatus } = {};
   if (statusRaw && statusRaw !== "all") {
+    if (!ALLOWED_DELIVERY_STATUSES.has(statusRaw)) {
+      return c.json({ error: "validation_failed" }, 400);
+    }
     filters.status = statusRaw as EmailDeliveryStatus;
   }
 

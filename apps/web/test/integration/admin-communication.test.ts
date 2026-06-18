@@ -358,4 +358,12 @@ describe("GET /api/admin/events/:eventId/deliveries", () => {
     const body = (await res.json()) as { items: { status: string }[] };
     expect(body.items.every((r) => r.status === "sent")).toBe(true);
   });
+
+  it("returns 400 for invalid status filter", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries?status=not-a-status`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(400);
+  });
 });
