@@ -31,3 +31,39 @@ rotated before any further use.
 
 We follow coordinated disclosure. Please give us reasonable time to fix the issue
 before making it public. We will credit researchers who follow this policy.
+
+## Security controls / CI
+
+Active automated checks in this repository:
+
+| Control | Scope | Workflow |
+|---|---|---|
+| CodeQL | SAST (JavaScript/TypeScript) | `.github/workflows/codeql.yml` |
+| Semgrep | SAST (JavaScript/TypeScript) | `.github/workflows/semgrep.yml` |
+| gitleaks | Secret scan (full history) | `.github/workflows/ci.yml` (`secret-scan`) |
+| npm audit | Dependency SCA (`--audit-level=high`) | `.github/workflows/ci.yml` (`build-test`) |
+| Dependabot | npm + GitHub Actions updates | `.github/dependabot.yml` |
+| Trivy | Container image scan (OS + libraries) | `.github/workflows/publish-container.yml` (on release tags) |
+| CycloneDX SBOM | Container image bill of materials | `.github/workflows/publish-container.yml` (artifact + release asset) |
+
+Container image scanning fails the release pipeline on **CRITICAL** vulnerabilities
+with a known fix (`ignore-unfixed: true`). **HIGH** findings are reported (SARIF in the
+Security tab) but do not block the pipeline.
+
+Build provenance attestations are published for images pushed to GHCR on release tags
+(`actions/attest`).
+
+### Secrets policy
+
+Only `.env.example` belongs in this repository. Real credentials (Graph, SMTP, database,
+TLS keys, API tokens) must be supplied via environment variables or a secret manager at
+deploy time — never committed. See **What counts as a secret** above.
+
+### Supported versions
+
+Only the **latest minor release** is supported (currently `0.4.x`). Deploy from signed
+semver tags (`v0.4.y`) published to `ghcr.io/solarssk/admitto`.
+
+### Data protection
+
+See [DATA-PROTECTION.md](DATA-PROTECTION.md) for GDPR design notes and data-handling intent.
