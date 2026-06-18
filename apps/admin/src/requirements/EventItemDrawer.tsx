@@ -6,6 +6,7 @@ import {
   updateEventItem,
 } from "../api/client.js";
 import type { EventItemConfigDto, EventItemDto } from "../api/types.js";
+import { isValidSourceFieldSlug, validateContentsRows } from "./eventItemContentsForm.js";
 import "../attendees/attendees.css";
 
 export interface EventItemDrawerProps {
@@ -23,8 +24,6 @@ type FormState = {
   contents: { label: string; source_field: string }[];
 };
 
-const SLUG_PATTERN = /^[a-z0-9_]+$/;
-
 /** Resolve contents rows from API config, including legacy `size_field`. */
 function contentsFromConfig(cfg: EventItemConfigDto | null): { label: string; source_field: string }[] {
   if (!cfg) return [];
@@ -34,7 +33,7 @@ function contentsFromConfig(cfg: EventItemConfigDto | null): { label: string; so
   const legacy = cfg as EventItemConfigDto & { size_field?: string };
   if (typeof legacy.size_field === "string" && legacy.size_field.trim()) {
     const source_field = legacy.size_field.trim();
-    if (SLUG_PATTERN.test(source_field)) {
+    if (isValidSourceFieldSlug(source_field)) {
       return [{ label: "Shirt size", source_field }];
     }
   }
@@ -54,16 +53,17 @@ function toForm(item: EventItemDto): FormState {
 }
 
 /** Build PATCH payload; `issue_on_checkin` is persisted only for the badge item. */
-function toConfig(form: FormState, itemKey: string): EventItemConfigDto {
+function toConfig(
+  form: FormState,
+  itemKey: string,
+  contents: { label: string; source_field: string }[],
+): EventItemConfigDto {
   const config: EventItemConfigDto = {
     requires_return: form.requires_return,
   };
   if (itemKey === "badge") {
     config.issue_on_checkin = form.issue_on_checkin;
   }
-  const contents = form.contents
-    .map((c) => ({ label: c.label.trim(), source_field: c.source_field.trim() }))
-    .filter((c) => c.label && c.source_field && SLUG_PATTERN.test(c.source_field));
   if (contents.length > 0) {
     config.contents = contents;
   }
@@ -96,11 +96,19 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
     e.preventDefault();
     setSaving(true);
     setError(null);
+
+    const contentsResult = validateContentsRows(form.contents);
+    if (!contentsResult.ok) {
+      setError(contentsResult.message);
+      setSaving(false);
+      return;
+    }
+
     try {
       await updateEventItem(eventId, item.id, {
         label: form.label.trim(),
         enabled: form.enabled,
-        config: toConfig(form, item.key),
+        config: toConfig(form, item.key, contentsResult.contents),
       });
       onUpdated();
       onClose();
@@ -211,6 +219,8 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                     value={row.source_field}
                     onChange={(e) => updateContent(i, "source_field", e.target.value)}
                     placeholder="shirt_size"
+                    pattern="[a-z0-9_]+"
+                    title="Lowercase letters, numbers, and underscores only"
                   />
                   <IconButton
                     label="Remove row"
