@@ -13,6 +13,7 @@ import {
   parseCustomData,
   shirtSizeFromCustomData,
   writeActionLog,
+  writeBulkActionLog,
 } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -67,6 +68,26 @@ const resendBodySchema = z
     to: z.string().trim().email().optional(),
   })
   .strict();
+
+const EXPORT_ROW_CAP = 50_000;
+
+const EXPORT_COLUMNS = [
+  "Name",
+  "Email",
+  "Company",
+  "Department",
+  "Ticket type",
+  "Check-in status",
+  "Admitted at",
+] as const;
+
+/** Guard against CSV/formula injection — prefix cells starting with = + - @ TAB CR. */
+function sanitizeCell(value: string | null | undefined): string {
+  if (value == null) return "";
+  const s = String(value);
+  if (/^[=+\-@\t\r]/.test(s)) return `'${s}`;
+  return s;
+}
 
 export type AttendeeRowDto = {
   id: string;
@@ -310,6 +331,171 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
     total,
     page,
     pageSize,
+  });
+}
+
+/** GET /api/admin/events/:eventId/attendees/ticket-types */
+export async function handleListTicketTypes(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const rows = await db.attendee.findMany({
+    where: { event_id: eventId, ticket_type: { not: null } },
+    select: { ticket_type: true },
+    distinct: ["ticket_type"],
+    orderBy: { ticket_type: "asc" },
+  });
+
+  const types = rows
+    .map((r) => r.ticket_type)
+    .filter((t): t is string => t !== null && t.trim() !== "");
+
+  return c.json({ types });
+}
+
+/** GET /api/admin/events/:eventId/attendees/export?format=xlsx|csv */
+export async function handleExportAttendees(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const formatRaw = c.req.query("format");
+  if (formatRaw !== "xlsx" && formatRaw !== "csv") {
+    return c.json({ error: "format must be xlsx or csv" }, 400);
+  }
+  const format = formatRaw;
+
+  const { q, status, ticket_type } = parseListQuery(c);
+
+  const where: Prisma.AttendeeWhereInput = {
+    event_id: eventId,
+    ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
+    ...(status === "not_admitted" ? { admitted_at: null } : {}),
+    ...(ticket_type ? { ticket_type } : {}),
+  };
+
+  if (q) {
+    const jsonMatches = await db.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "Attendee"
+      WHERE event_id = ${eventId}
+        AND (
+          (custom_data->>'company') ILIKE ${`%${q}%`}
+          OR (custom_data->>'department') ILIKE ${`%${q}%`}
+        )
+    `;
+    const jsonIds = jsonMatches.map((r) => r.id);
+    where.AND = [
+      {
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { email: { contains: q, mode: "insensitive" } },
+          { company: { contains: q, mode: "insensitive" } },
+          { department: { contains: q, mode: "insensitive" } },
+          ...(jsonIds.length > 0 ? [{ id: { in: jsonIds } }] : []),
+        ],
+      },
+    ];
+  }
+
+  const total = await db.attendee.count({ where });
+  if (total > EXPORT_ROW_CAP) {
+    return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+  }
+
+  const rows = await db.attendee.findMany({
+    where,
+    select: {
+      name: true,
+      email: true,
+      company: true,
+      department: true,
+      custom_data: true,
+      ticket_type: true,
+      admitted_at: true,
+    },
+    orderBy: { name: "asc" },
+  });
+
+  const exportRows = rows.map((row) => {
+    const { company, department } = resolveCompanyDepartment(row);
+    return {
+      name: sanitizeCell(row.name),
+      email: sanitizeCell(row.email),
+      company: sanitizeCell(company),
+      department: sanitizeCell(department),
+      ticket_type: sanitizeCell(row.ticket_type),
+      check_in_status: row.admitted_at ? "admitted" : "not_admitted",
+      admitted_at: row.admitted_at ? row.admitted_at.toISOString() : "",
+    };
+  });
+
+  await db.$transaction(async (tx) => {
+    await writeBulkActionLog(tx, {
+      event_id: eventId,
+      action_type: "attendees_exported",
+      audit: adminAuditFromContext(c),
+      metadata: {
+        format,
+        count: exportRows.length,
+        filters: {
+          status,
+          ticket_type: ticket_type ?? null,
+          has_query: Boolean(q),
+        },
+      },
+    });
+  });
+
+  const timestamp = new Date().toISOString().slice(0, 10);
+  const filename = `attendees-${eventId}-${timestamp}.${format}`;
+
+  if (format === "csv") {
+    const header = EXPORT_COLUMNS.join(",");
+    const csvRows = exportRows.map((r) =>
+      [r.name, r.email, r.company, r.department, r.ticket_type, r.check_in_status, r.admitted_at]
+        .map((v) => `"${v.replace(/"/g, '""')}"`)
+        .join(","),
+    );
+    const csv = [header, ...csvRows].join("\r\n");
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    });
+  }
+
+  const ExcelJS = await import("exceljs");
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Attendees");
+  ws.columns = EXPORT_COLUMNS.map((h) => ({ header: h, width: 28 }));
+  for (const r of exportRows) {
+    ws.addRow([
+      r.name,
+      r.email,
+      r.company,
+      r.department,
+      r.ticket_type,
+      r.check_in_status,
+      r.admitted_at,
+    ]);
+  }
+  const written = await wb.xlsx.writeBuffer();
+  const bytes =
+    written instanceof ArrayBuffer
+      ? new Uint8Array(written)
+      : new Uint8Array(written);
+  return new Response(bytes, {
+    headers: {
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+    },
   });
 }
 

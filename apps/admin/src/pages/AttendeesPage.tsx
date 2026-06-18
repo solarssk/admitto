@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button, PageHeader } from "@admitto/ui";
-import { ApiError, fetchEventAttendees } from "../api/client.js";
+import { ApiError, exportAttendees, fetchEventAttendees, fetchTicketTypes } from "../api/client.js";
 import type { AttendeeRowDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { AttendeeDetailDrawer } from "../attendees/AttendeeDetailDrawer.js";
@@ -22,6 +22,10 @@ export function AttendeesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "admitted" | "not_admitted">("all");
+  const [ticketTypeFilter, setTicketTypeFilter] = useState("");
+  const [availableTypes, setAvailableTypes] = useState<string[]>([]);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -34,6 +38,15 @@ export function AttendeesPage() {
     }, DEBOUNCE_MS);
     return () => window.clearTimeout(t);
   }, [searchInput]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    const ac = new AbortController();
+    fetchTicketTypes(eventId, ac.signal)
+      .then(setAvailableTypes)
+      .catch(() => {});
+    return () => ac.abort();
+  }, [eventId]);
 
   const loadList = useCallback(async () => {
     if (!eventId) return;
@@ -52,6 +65,7 @@ export function AttendeesPage() {
           pageSize,
           q: searchQuery || undefined,
           status: statusFilter,
+          ticket_type: ticketTypeFilter || undefined,
         },
         ac.signal,
       );
@@ -77,15 +91,39 @@ export function AttendeesPage() {
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [eventId, page, pageSize, searchQuery, statusFilter, reportApiError]);
+  }, [eventId, page, pageSize, searchQuery, statusFilter, ticketTypeFilter, reportApiError]);
 
   useEffect(() => {
     void loadList();
     return () => listAbortRef.current?.abort();
   }, [loadList, reloadToken]);
 
+  const handleExport = useCallback(
+    async (format: "xlsx" | "csv") => {
+      if (!eventId) return;
+      setExportLoading(true);
+      setExportError(null);
+      try {
+        await exportAttendees(
+          eventId,
+          {
+            q: searchQuery || undefined,
+            status: statusFilter,
+            ticket_type: ticketTypeFilter || undefined,
+          },
+          format,
+        );
+      } catch (err) {
+        setExportError(err instanceof ApiError ? err.message : "Export failed.");
+      } finally {
+        setExportLoading(false);
+      }
+    },
+    [eventId, searchQuery, statusFilter, ticketTypeFilter],
+  );
+
   const emptyMessage =
-    total === 0 && !searchQuery && statusFilter === "all"
+    total === 0 && !searchQuery && statusFilter === "all" && !ticketTypeFilter
       ? "No attendees yet. Import a CSV or XLSX file to get started."
       : "No matches";
 
@@ -93,12 +131,34 @@ export function AttendeesPage() {
 
   return (
     <>
-      <div className="attendees-page-header">
-        <PageHeader title="Attendees" subtitle="Manage attendee records and resend tickets." />
-        <Link to={`/admin/events/${eventId}/attendees/import`}>
-          <Button variant="primary">Import attendees</Button>
-        </Link>
-      </div>
+      <PageHeader
+        title="Attendees"
+        subtitle="Manage attendee records and resend tickets."
+        actions={
+          <>
+            {exportError && <span className="text-error">{exportError}</span>}
+            <Button
+              variant="secondary"
+              icon={<i className="ti ti-download" aria-hidden="true" />}
+              disabled={exportLoading}
+              onClick={() => void handleExport("xlsx")}
+            >
+              {exportLoading ? "Exporting…" : "Export XLSX"}
+            </Button>
+            <Button
+              variant="secondary"
+              icon={<i className="ti ti-file-text" aria-hidden="true" />}
+              disabled={exportLoading}
+              onClick={() => void handleExport("csv")}
+            >
+              CSV
+            </Button>
+            <Link to={`/admin/events/${eventId}/attendees/import`}>
+              <Button variant="primary">Import attendees</Button>
+            </Link>
+          </>
+        }
+      />
       {error && <p className="text-error">{error}</p>}
 
       <AttendeesTable
@@ -110,9 +170,15 @@ export function AttendeesPage() {
         emptyMessage={emptyMessage}
         searchInput={searchInput}
         statusFilter={statusFilter}
+        ticketTypeFilter={ticketTypeFilter}
+        availableTypes={availableTypes}
         onSearchChange={setSearchInput}
         onStatusFilterChange={(v) => {
           setStatusFilter(v);
+          setPage(1);
+        }}
+        onTicketTypeFilterChange={(v) => {
+          setTicketTypeFilter(v);
           setPage(1);
         }}
         onRowClick={setSelectedId}

@@ -68,6 +68,8 @@ import {
   handleGetEventAttendee,
   handlePatchEventAttendee,
   handleResendEventAttendeeTicket,
+  handleListTicketTypes,
+  handleExportAttendees,
 } from "./admin/attendees-api-routes.js";
 import { handleImportPreview, handleImportCommit, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
 import {
@@ -301,6 +303,12 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get("/api/admin/me", staffAdminGate, (c) => handleMe(c, db));
   app.get("/api/admin/events", staffAdminGate, (c) => handleGetAdminEvents(c, db));
+  app.get("/api/admin/events/:eventId/attendees/ticket-types", staffAdminGate, (c) =>
+    handleListTicketTypes(c, db),
+  );
+  app.get("/api/admin/events/:eventId/attendees/export", staffAdminGate, (c) =>
+    handleExportAttendees(c, db),
+  );
   app.get("/api/admin/events/:eventId/attendees", staffAdminGate, (c) =>
     handleListEventAttendees(c, db),
   );

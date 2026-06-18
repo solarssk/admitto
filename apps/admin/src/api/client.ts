@@ -490,3 +490,57 @@ export async function fetchEventDeliveries(
   });
   return parseJson<EventDeliveriesListResponse>(res);
 }
+
+/** Fetch distinct ticket types for an event (for the filter dropdown). */
+export async function fetchTicketTypes(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/ticket-types`,
+    { credentials: "same-origin", signal },
+  );
+  const data = await parseJson<{ types: string[] }>(res);
+  return data.types;
+}
+
+/** Download a filtered attendee export and trigger browser save. */
+export async function exportAttendees(
+  eventId: string,
+  params: { q?: string; status?: string; ticket_type?: string },
+  format: "xlsx" | "csv",
+): Promise<void> {
+  const q = new URLSearchParams({ format });
+  if (params.q) q.set("q", params.q);
+  if (params.status && params.status !== "all") q.set("status", params.status);
+  if (params.ticket_type) q.set("ticket_type", params.ticket_type);
+
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${q.toString()}`,
+    { credentials: "same-origin" },
+  );
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error) message = body.error;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match?.[1] ?? `attendees.${format}`;
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
