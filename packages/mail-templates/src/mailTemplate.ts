@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { compileTemplate } from "./compile.js";
 import { getBuiltinTemplate } from "./defaultTemplate.js";
 import { assertRenderableCompiledHtml, assertValidTemplate } from "./validate.js";
@@ -78,7 +78,7 @@ function rowToResolved(
 export async function setMailTemplate(
   scope: TemplateScope,
   input: SetMailTemplateInput,
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<void> {
   assertValidTemplate({ subject: input.subject, body: input.body });
 

@@ -240,15 +240,23 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
   }
 
   try {
-    await setMailTemplate(
-      { scopeType: "event", scopeId: eventId },
-      {
-        subject: body.subject_template,
-        body: body.body_template,
-        format: body.template_format,
-      },
-      db,
-    );
+    await db.$transaction(async (tx) => {
+      await setMailTemplate(
+        { scopeType: "event", scopeId: eventId },
+        {
+          subject: body.subject_template,
+          body: body.body_template,
+          format: body.template_format,
+        },
+        tx,
+      );
+      await writeBulkActionLog(tx, {
+        event_id: eventId,
+        action_type: "mail_template_updated",
+        audit: adminAuditFromContext(c),
+        metadata: { format: body.template_format },
+      });
+    });
   } catch (err) {
     if (err instanceof UnknownPlaceholdersError) {
       return templateValidationResponse(
@@ -273,15 +281,6 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
     }
     throw err;
   }
-
-  await db.$transaction(async (tx) => {
-    await writeBulkActionLog(tx, {
-      event_id: eventId,
-      action_type: "mail_template_updated",
-      audit: adminAuditFromContext(c),
-      metadata: { format: body.template_format },
-    });
-  });
 
   return c.json({ ok: true });
 }

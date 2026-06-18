@@ -26,6 +26,8 @@ function insertAtCursor(value: string, insertion: string, start: number, end: nu
   return value.slice(0, start) + insertion + value.slice(end);
 }
 
+const DELIVERY_PAGE_SIZE = 25;
+
 export function CommunicationPage() {
   const { eventId } = useParams();
   const { reportApiError } = useConnectionState();
@@ -57,7 +59,6 @@ export function CommunicationPage() {
   const [deliveries, setDeliveries] = useState<DeliveryDto[]>([]);
   const [deliveryTotal, setDeliveryTotal] = useState(0);
   const [deliveryPage, setDeliveryPage] = useState(1);
-  const [deliveryPageSize] = useState(25);
   const [deliveryStatus, setDeliveryStatus] = useState("all");
   const [deliveriesLoading, setDeliveriesLoading] = useState(false);
 
@@ -111,7 +112,7 @@ export function CommunicationPage() {
     try {
       const data = await fetchEventDeliveries(eventId, {
         page: deliveryPage,
-        pageSize: deliveryPageSize,
+        pageSize: DELIVERY_PAGE_SIZE,
         status: deliveryStatus,
       });
       setDeliveries(data.items);
@@ -130,7 +131,7 @@ export function CommunicationPage() {
     } finally {
       setDeliveriesLoading(false);
     }
-  }, [eventId, deliveryPage, deliveryPageSize, deliveryStatus, reportApiError]);
+  }, [eventId, deliveryPage, deliveryStatus, reportApiError]);
 
   useEffect(() => {
     void loadTemplate();
@@ -228,7 +229,7 @@ export function CommunicationPage() {
   if (loading) return <p>Loading communication…</p>;
   if (error) return <p>{error}</p>;
 
-  const deliveryPages = Math.max(1, Math.ceil(deliveryTotal / deliveryPageSize));
+  const deliveryPages = Math.max(1, Math.ceil(deliveryTotal / DELIVERY_PAGE_SIZE));
 
   return (
     <div className="screen">
