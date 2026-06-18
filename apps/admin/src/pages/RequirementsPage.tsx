@@ -48,6 +48,14 @@ export function RequirementsPage() {
   const [opsSaving, setOpsSaving] = useState(false);
   const [opsError, setOpsError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setItems([]);
+    setOpsConfig(null);
+    setSelectedItem(null);
+    setError(null);
+    setOpsError(null);
+  }, [eventId]);
+
   const load = useCallback(async () => {
     if (!eventId) return;
 
@@ -67,6 +75,9 @@ export function RequirementsPage() {
       setOpsConfig(ops);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
+      setItems([]);
+      setOpsConfig(null);
+      setSelectedItem(null);
       if (err instanceof ApiError) {
         reportApiError(err.status);
         if (err.status === 401) {
@@ -91,7 +102,9 @@ export function RequirementsPage() {
   const badgeItem = items.find((i) => i.key === "badge");
   const badgeWarning =
     opsConfig?.badge_at_entry &&
-    (!badgeItem || !badgeItem.enabled);
+    (!badgeItem ||
+      !badgeItem.enabled ||
+      badgeItem.config?.issue_on_checkin === false);
 
   async function handleToggleEnabled(item: EventItemDto) {
     if (!eventId) return;
@@ -280,7 +293,8 @@ export function RequirementsPage() {
               </div>
               {badgeWarning && (
                 <p className="requirements-warning">
-                  Badge at entry is on, but no enabled badge item exists — check-in will not auto-issue a badge.
+                  Badge at entry is on, but check-in will not auto-issue a badge — enable the
+                  badge item and turn on “Issue on check-in”.
                 </p>
               )}
               <div className="requirements-behaviour-row">
