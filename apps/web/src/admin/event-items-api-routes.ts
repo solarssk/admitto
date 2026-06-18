@@ -328,7 +328,10 @@ export async function handleDeleteEventItem(c: Context, db: PrismaClient): Promi
 
   const deleted = await db.$transaction(async (tx) => {
     const inUse = await tx.attendeeItemState.count({
-      where: { event_item_id: itemId },
+      where: {
+        event_item_id: itemId,
+        state: { in: ["issued", "returned"] },
+      },
     });
     if (inUse > 0) return { ok: false as const, reason: "in_use" as const };
 

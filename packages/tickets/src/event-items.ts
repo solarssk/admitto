@@ -13,7 +13,7 @@ const DEFAULT_EVENT_ITEMS = [
   { key: "headset", label: "Headset", config: { requires_return: true } },
 ] as const;
 
-export const DEFAULT_EVENT_ITEM_KEYS = new Set(
+export const DEFAULT_EVENT_ITEM_KEYS: ReadonlySet<string> = new Set(
   DEFAULT_EVENT_ITEMS.map((item) => item.key),
 );
 

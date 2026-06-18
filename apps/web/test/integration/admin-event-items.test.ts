@@ -329,6 +329,28 @@ describe("DELETE /api/admin/events/:eventId/items/:itemId", () => {
     expect(body.error).toBe("item_in_use");
   });
 
+  it("allows delete when attendee states are only pending", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ key: "temp_pending", label: "Temp pending" }),
+    });
+    const created = (await createRes.json()) as { id: string };
+    await prisma.attendeeItemState.create({
+      data: {
+        attendee_id: ATT_EI,
+        event_item_id: created.id,
+        state: "pending",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${created.id}`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("returns 409 for default items", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_GIFTBAG}`, {
       method: "DELETE",
