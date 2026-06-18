@@ -4,9 +4,10 @@ import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { configFromEnv } from "@admitto/mailer";
 import type { MailerProvider } from "@admitto/mailer";
+import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { InMemoryRateLimitStore } from "../rate-limit/in-memory.js";
-import { RedisRateLimitStore } from "../rate-limit/redis.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
+import { logger } from "../logger.js";
 import { checkMigrationsStatus } from "./migrations-check.js";
 import { resolveProductVersion } from "./product-version.js";
 
@@ -49,12 +50,6 @@ export type ReadyzDeps = {
 
 type EnvLike = Record<string, string | undefined>;
 
-/** Returns configured token or null when unset/blank (endpoint disabled). */
-export function resolveOpsHealthToken(env: EnvLike = process.env): string | null {
-  const token = env["OPS_HEALTH_TOKEN"]?.trim();
-  return token || null;
-}
-
 export function extractOpsToken(c: Context): string | null {
   const bearer = c.req.header("Authorization");
   if (bearer?.startsWith("Bearer ")) {
@@ -90,21 +85,18 @@ export async function checkDatabase(db: PrismaClient): Promise<ReadyzDatabaseChe
 }
 
 export async function checkRedis(store: RateLimitStore): Promise<ReadyzRedisCheck> {
-  if (store instanceof InMemoryRateLimitStore) {
-    return { status: "disabled", latency_ms: null };
-  }
-  if (store instanceof RedisRateLimitStore) {
+  try {
+    if (store instanceof InMemoryRateLimitStore) {
+      return { status: "disabled", latency_ms: null };
+    }
     const result = await store.health();
     return {
       status: result.ok ? "ok" : "degraded",
       latency_ms: result.latencyMs,
     };
+  } catch {
+    return { status: "degraded", latency_ms: null };
   }
-  const result = await store.health();
-  return {
-    status: result.ok ? "ok" : "degraded",
-    latency_ms: result.latencyMs,
-  };
 }
 
 export async function checkMigrations(db: PrismaClient): Promise<ReadyzMigrationsCheck> {
@@ -122,11 +114,15 @@ export function checkMailer(env: EnvLike = process.env): ReadyzMailerCheck {
 }
 
 export async function collectGauges(db: PrismaClient): Promise<ReadyzGauges> {
-  const [email_deliveries_queued, email_deliveries_failed_retryable] = await Promise.all([
-    db.emailDelivery.count({ where: { status: "queued" } }),
-    db.emailDelivery.count({ where: { status: "failed", retryable: true } }),
-  ]);
-  return { email_deliveries_queued, email_deliveries_failed_retryable };
+  try {
+    const [email_deliveries_queued, email_deliveries_failed_retryable] = await Promise.all([
+      db.emailDelivery.count({ where: { status: "queued" } }),
+      db.emailDelivery.count({ where: { status: "failed", retryable: true } }),
+    ]);
+    return { email_deliveries_queued, email_deliveries_failed_retryable };
+  } catch {
+    return { email_deliveries_queued: -1, email_deliveries_failed_retryable: -1 };
+  }
 }
 
 export function computeOverallStatus(checks: ReadyzChecks): {
@@ -168,10 +164,15 @@ export async function handleReadyz(c: Context, deps: ReadyzDeps) {
     return c.body(null, 404);
   }
   if (!isValidOpsToken(c, token)) {
+    logger.warn("readyz auth failed", { ip: resolveClientIp(c) });
     return c.body(null, 401);
   }
 
-  const payload = await buildReadyzPayload(deps);
-  const { httpStatus } = computeOverallStatus(payload.checks);
-  return c.json(payload, httpStatus);
+  try {
+    const payload = await buildReadyzPayload(deps);
+    const { httpStatus } = computeOverallStatus(payload.checks);
+    return c.json(payload, httpStatus);
+  } catch {
+    return c.json({ status: "unavailable" }, 503);
+  }
 }

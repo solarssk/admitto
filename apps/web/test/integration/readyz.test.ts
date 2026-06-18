@@ -38,6 +38,7 @@ type MockPrismaOpts = {
   queryRaw?: (query: unknown) => Promise<unknown>;
   queuedCount?: number;
   failedRetryableCount?: number;
+  emailDeliveryCountThrows?: boolean;
 };
 
 function createMockPrisma(opts: MockPrismaOpts = {}): PrismaClient {
@@ -54,6 +55,9 @@ function createMockPrisma(opts: MockPrismaOpts = {}): PrismaClient {
     $queryRaw: vi.fn(queryRaw),
     emailDelivery: {
       count: vi.fn(async (args: { where?: { status?: string; retryable?: boolean } }) => {
+        if (opts.emailDeliveryCountThrows) {
+          throw new Error("connection refused");
+        }
         const status = args?.where?.status;
         if (status === "queued") return opts.queuedCount ?? 0;
         if (status === "failed" && args?.where?.retryable === true) {
@@ -94,6 +98,51 @@ describe("GET /readyz", () => {
 
     const res = await app.request("/readyz", { headers: authHeaders() });
     expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when OPS_HEALTH_TOKEN is too short", async () => {
+    const app = createApp({
+      ...BASE_APP_OPTS,
+      opsHealthToken: "too-short",
+      prisma: createMockPrisma(),
+    });
+
+    const res = await app.request("/readyz", { headers: authHeaders("too-short") });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 429 when rate limit is exceeded", async () => {
+    const store = new InMemoryRateLimitStore();
+    const app = createApp({
+      ...BASE_APP_OPTS,
+      prisma: createMockPrisma(),
+      rateLimitStore: store,
+    });
+
+    for (let i = 0; i < 10; i++) {
+      const res = await app.request("/readyz");
+      expect(res.status).toBe(401);
+    }
+
+    const blocked = await app.request("/readyz");
+    expect(blocked.status).toBe(429);
+    expect(await blocked.text()).toBe("");
+  });
+
+  it("logs auth failures without the presented token", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const app = createApp({
+      ...BASE_APP_OPTS,
+      prisma: createMockPrisma(),
+    });
+
+    await app.request("/readyz", { headers: authHeaders("wrong-token") });
+
+    expect(warnSpy).toHaveBeenCalled();
+    const logged = JSON.stringify(warnSpy.mock.calls);
+    expect(logged).not.toContain("wrong-token");
+    expect(logged).toContain("readyz auth failed");
+    warnSpy.mockRestore();
   });
 
   it("returns 401 for missing token", async () => {
@@ -180,6 +229,30 @@ describe("GET /readyz", () => {
     await expect(res.json()).resolves.toMatchObject({ status: "ok" });
   });
 
+  it("returns 200 degraded when Redis health throws", async () => {
+    const throwingStore = {
+      hit: async () => ({ allowed: true, remaining: 99, resetAt: Date.now() + 60_000 }),
+      health: async () => {
+        throw new Error("redis probe failed");
+      },
+    };
+
+    const app = createApp({
+      ...BASE_APP_OPTS,
+      prisma: createMockPrisma(),
+      rateLimitStore: throwingStore,
+    });
+
+    const res = await app.request("/readyz", { headers: authHeaders() });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      status: "degraded",
+      checks: {
+        redis: { status: "degraded", latency_ms: null },
+      },
+    });
+  });
+
   it("returns 503 unavailable when database is down", async () => {
     const app = createApp({
       ...BASE_APP_OPTS,
@@ -190,6 +263,7 @@ describe("GET /readyz", () => {
           }
           throw new Error("connection refused");
         },
+        emailDeliveryCountThrows: true,
       }),
       rateLimitStore: new InMemoryRateLimitStore(),
     });
@@ -200,6 +274,28 @@ describe("GET /readyz", () => {
       status: "unavailable",
       checks: {
         database: { status: "down", latency_ms: expect.any(Number) },
+      },
+      gauges: {
+        email_deliveries_queued: -1,
+        email_deliveries_failed_retryable: -1,
+      },
+    });
+  });
+
+  it("returns gauge sentinels when emailDelivery.count throws but database is up", async () => {
+    const app = createApp({
+      ...BASE_APP_OPTS,
+      prisma: createMockPrisma({ emailDeliveryCountThrows: true }),
+      rateLimitStore: new InMemoryRateLimitStore(),
+    });
+
+    const res = await app.request("/readyz", { headers: authHeaders() });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      status: "ok",
+      gauges: {
+        email_deliveries_queued: -1,
+        email_deliveries_failed_retryable: -1,
       },
     });
   });

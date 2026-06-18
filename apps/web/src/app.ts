@@ -21,7 +21,7 @@ import {
   renderRevoked,
   renderServerError,
 } from "./ticket-page.js";
-import { resolveBaseUrl, resolveCheckinToken, resolveAllowCheckinBearer, validateCheckinBootConfig, validateCfAccessBootConfig } from "./config.js";
+import { resolveBaseUrl, resolveCheckinToken, resolveAllowCheckinBearer, validateCheckinBootConfig, validateCfAccessBootConfig, resolveOpsHealthTokenOption, validateOpsHealthBootConfig } from "./config.js";
 import {
   createCheckinPreAuth,
   createCheckinSessionCsrfGuard,
@@ -107,7 +107,8 @@ import {
   handlePostCfAccess,
   handlePostCfAccessTest,
 } from "./admin/cf-access-routes.js";
-import { handleReadyz, resolveOpsHealthToken } from "./ops/readyz.js";
+import { handleReadyz } from "./ops/readyz.js";
+import { createReadyzRateLimitMiddleware } from "./ops/readyz-rate-limit.js";
 
 /** Parse check-in history `limit` query param: default 10, clamped to 1–100. */
 function parseCheckinHistoryLimit(raw: string | undefined): number {
@@ -159,6 +160,7 @@ export function createApp(options: CreateAppOptions = {}) {
       ALLOW_CHECKIN_BEARER: allowCheckinBearer ? "true" : "",
       CHECKIN_OPERATOR_TOKEN: checkinToken ?? "",
     });
+    validateOpsHealthBootConfig(process.env);
   }
 
   const checkinGateConfig: CheckinGateConfig = {
@@ -170,10 +172,8 @@ export function createApp(options: CreateAppOptions = {}) {
 
   const app = new Hono();
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
-  const opsHealthToken =
-    options.opsHealthToken !== undefined
-      ? options.opsHealthToken
-      : resolveOpsHealthToken();
+  const opsHealthToken = resolveOpsHealthTokenOption(options.opsHealthToken);
+  const readyzRateLimit = createReadyzRateLimitMiddleware(rateLimitStore);
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
   const loginRateLimitHtml = createLoginRateLimitMiddleware(rateLimitStore, { format: "text" });
@@ -265,7 +265,7 @@ export function createApp(options: CreateAppOptions = {}) {
   }
 
   app.get("/healthz", (c) => handleHealthz(c, db));
-  app.get("/readyz", (c) =>
+  app.get("/readyz", readyzRateLimit, (c) =>
     handleReadyz(c, {
       db,
       rateLimitStore,

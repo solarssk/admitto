@@ -7,9 +7,13 @@ let cachedVersion: string | undefined;
 /** Product semver from root `package.json` (not workspace package versions). */
 export function resolveProductVersion(): string {
   if (cachedVersion) return cachedVersion;
-  const root = findAdmittoRepoRoot();
-  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version?: string };
-  cachedVersion = typeof pkg.version === "string" ? pkg.version : "unknown";
+  try {
+    const root = findAdmittoRepoRoot();
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version?: string };
+    cachedVersion = typeof pkg.version === "string" ? pkg.version : "unknown";
+  } catch {
+    cachedVersion = "unknown";
+  }
   return cachedVersion;
 }
 

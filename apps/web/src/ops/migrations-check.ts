@@ -14,11 +14,15 @@ function listMigrationNamesOnDisk(): Set<string> {
   const migrationsDir = join(findAdmittoRepoRoot(), "packages/db/prisma/migrations");
   if (!existsSync(migrationsDir)) return new Set();
 
-  return new Set(
-    readdirSync(migrationsDir).filter((name) =>
-      existsSync(join(migrationsDir, name, "migration.sql")),
-    ),
-  );
+  try {
+    return new Set(
+      readdirSync(migrationsDir).filter((name) =>
+        existsSync(join(migrationsDir, name, "migration.sql")),
+      ),
+    );
+  } catch {
+    return new Set();
+  }
 }
 
 /** Compare applied `_prisma_migrations` rows with migration folders on disk (read-only). */
