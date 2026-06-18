@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 /** Walk up from `startDir` until monorepo root `package.json` with `"name": "admitto"`. */
-export function findAdmittoRepoRoot(startDir: string = process.cwd()): string {
+export function findAdmittoRepoRoot(startDir: string = process.cwd()): string | null {
   let dir = startDir;
   while (true) {
     const pkgPath = join(dir, "package.json");
@@ -15,7 +15,7 @@ export function findAdmittoRepoRoot(startDir: string = process.cwd()): string {
       }
     }
     const parent = dirname(dir);
-    if (parent === dir) return startDir;
+    if (parent === dir) return null;
     dir = parent;
   }
 }

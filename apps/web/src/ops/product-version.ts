@@ -9,6 +9,10 @@ export function resolveProductVersion(): string {
   if (cachedVersion) return cachedVersion;
   try {
     const root = findAdmittoRepoRoot();
+    if (!root) {
+      cachedVersion = "unknown";
+      return cachedVersion;
+    }
     const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version?: string };
     cachedVersion = typeof pkg.version === "string" ? pkg.version : "unknown";
   } catch {

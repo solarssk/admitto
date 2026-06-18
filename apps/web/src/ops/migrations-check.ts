@@ -11,7 +11,10 @@ type MigrationRow = {
 };
 
 function listMigrationNamesOnDisk(): Set<string> {
-  const migrationsDir = join(findAdmittoRepoRoot(), "packages/db/prisma/migrations");
+  const root = findAdmittoRepoRoot();
+  if (!root) return new Set();
+
+  const migrationsDir = join(root, "packages/db/prisma/migrations");
   if (!existsSync(migrationsDir)) return new Set();
 
   try {
@@ -27,10 +30,10 @@ function listMigrationNamesOnDisk(): Set<string> {
 
 /** Compare applied `_prisma_migrations` rows with migration folders on disk (read-only). */
 export async function checkMigrationsStatus(db: PrismaClient): Promise<"ok" | "pending"> {
-  const onDisk = listMigrationNamesOnDisk();
-  if (onDisk.size === 0) return "pending";
-
   try {
+    const onDisk = listMigrationNamesOnDisk();
+    if (onDisk.size === 0) return "pending";
+
     const rows = await db.$queryRaw<MigrationRow[]>(Prisma.sql`
       SELECT migration_name, finished_at, rolled_back_at
       FROM _prisma_migrations

@@ -24,7 +24,9 @@ function queryRawSqlText(query: unknown): string {
 }
 
 function appliedMigrationRows() {
-  const migrationsDir = join(findAdmittoRepoRoot(), "packages/db/prisma/migrations");
+  const root = findAdmittoRepoRoot();
+  if (!root) throw new Error("test requires monorepo root package.json");
+  const migrationsDir = join(root, "packages/db/prisma/migrations");
   return readdirSync(migrationsDir)
     .filter((name) => existsSync(join(migrationsDir, name, "migration.sql")))
     .map((migration_name) => ({
