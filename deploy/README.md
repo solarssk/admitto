@@ -87,7 +87,9 @@ We have not tested or documented Synology ARM vs Intel paths separately — pick
 cd deploy
 cp .env.example .env
 # Edit .env: POSTGRES_PASSWORD, ENCRYPTION_KEY (openssl rand -base64 32), BASE_URL
-# Set EMAIL_PROVIDER to one of: export_only, powerautomate, smtp, graph
+# Set EMAIL_PROVIDER to one of: smtp, graph, powerautomate (production paths)
+# export_only is dev/test dry-run only — requires a runtime exportSink; npm run dev wires one
+# automatically; production deploy must use a real provider (default in .env.example: smtp)
 # Populate only the mail section for that provider
 
 docker compose up -d --build
