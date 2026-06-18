@@ -43,7 +43,7 @@ Active automated checks in this repository:
 | gitleaks | Secret scan (full history) | `.github/workflows/ci.yml` (`secret-scan`) |
 | npm audit | Dependency SCA (`--audit-level=high`) | `.github/workflows/ci.yml` (`build-test`) |
 | Dependabot | npm + GitHub Actions updates | `.github/dependabot.yml` |
-| Trivy | Container image scan (OS + libraries) | `.github/workflows/publish-container.yml` (on release tags) |
+| Trivy | Container image scan (OS + libraries); **scan-before-push** on release tags | `.github/workflows/publish-container.yml` |
 | CycloneDX SBOM | Container image bill of materials | `.github/workflows/publish-container.yml` (artifact + release asset) |
 
 Container image scanning fails the release pipeline on **CRITICAL** vulnerabilities
