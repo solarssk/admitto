@@ -56,6 +56,15 @@ export type CheckInScanParams = {
   ip?: string;
 };
 
+export type EventItemContent = { label: string; source_field: string };
+
+/** Per-item JSON config: operator hints and issuance behaviour flags (ADR 0025). */
+export type EventItemConfig = {
+  contents?: EventItemContent[];
+  requires_return?: boolean;
+  issue_on_checkin?: boolean;
+};
+
 export type AttendeeCardItemDto = {
   key: string;
   label: string;

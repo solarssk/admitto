@@ -4,10 +4,26 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
 const DEFAULT_EVENT_ITEMS = [
-  { key: "giftbag", label: "Gift bag", config: { size_field: "shirt_size" } },
-  { key: "badge", label: "Badge", config: { issue_on_checkin: true } },
+  {
+    key: "giftbag",
+    label: "Gift bag",
+    config: {
+      contents: [{ label: "Shirt size", source_field: "shirt_size" }],
+      requires_return: false,
+    },
+  },
+  {
+    key: "badge",
+    label: "Badge",
+    config: { issue_on_checkin: true, requires_return: false },
+  },
   { key: "headset", label: "Headset", config: { requires_return: true } },
 ] as const;
+
+/** Stable keys seeded by `ensureDefaultEventItems` — not deletable via admin API. */
+export const DEFAULT_EVENT_ITEM_KEYS: ReadonlySet<string> = new Set(
+  DEFAULT_EVENT_ITEMS.map((item) => item.key),
+);
 
 /** Matches migration SQL id: `ei_` + first 24 hex chars of md5(eventId:key). */
 function defaultEventItemId(eventId: string, key: string): string {

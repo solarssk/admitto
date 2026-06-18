@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { admitAttendee } from "../src/admit.js";
 import { undoLastCheckIn as undoFn } from "../src/undo.js";
-import { transitionItemState, ensureAttendeeItemStates } from "../src/item-states.js";
+import { transitionItemState, ensureAttendeeItemStates, operatorItemActions } from "../src/item-states.js";
 import { ensureDefaultEventItems } from "../src/event-items.js";
 import { addAttendeeNote, NoteTooLongError, OperatorRequiredError } from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
@@ -144,13 +144,27 @@ describe("lookupAttendees — custom_data fields", () => {
   });
 });
 
-describe("getAttendeeCard — giftbag shirt hint", () => {
-  it("shows shirt size on giftbag item, not as separate EventItem", async () => {
+describe("getAttendeeCard — item detail from contents", () => {
+  it("shows shirt size on giftbag via contents config", async () => {
     const card = await getAttendeeCard(EVENT_ID, attendeeId, prisma);
     expect(card).not.toBeNull();
     const giftbag = card!.items.find((i) => i.key === "giftbag");
     expect(giftbag?.detail).toBe("Shirt size: L");
     expect(card!.items.some((i) => i.key === "tshirt")).toBe(false);
+  });
+
+  it("omits disabled items from the card", async () => {
+    await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_ID,
+        key: "socks",
+        label: "Socks",
+        enabled: false,
+        config: { contents: [{ label: "Socks size", source_field: "sock_size" }] },
+      },
+    });
+    const card = await getAttendeeCard(EVENT_ID, attendeeId, prisma);
+    expect(card!.items.some((i) => i.key === "socks")).toBe(false);
   });
 });
 
@@ -175,7 +189,14 @@ describe("ensureDefaultEventItems (Lock #7 lazy seed)", () => {
       orderBy: { key: "asc" },
     });
     expect(items.map((i) => i.key)).toEqual(["badge", "giftbag", "headset"]);
-    expect(items.find((i) => i.key === "badge")?.config).toEqual({ issue_on_checkin: true });
+    expect(items.find((i) => i.key === "badge")?.config).toEqual({
+      issue_on_checkin: true,
+      requires_return: false,
+    });
+    expect(items.find((i) => i.key === "giftbag")?.config).toEqual({
+      contents: [{ label: "Shirt size", source_field: "shirt_size" }],
+      requires_return: false,
+    });
   });
 });
 
@@ -232,6 +253,15 @@ describe("addAttendeeNote (Lock #8)", () => {
   });
 });
 
+describe("operatorItemActions", () => {
+  it("hides returned when requires_return is false", () => {
+    expect(operatorItemActions("issued", { requires_return: false })).toEqual([]);
+    expect(operatorItemActions("issued", { requires_return: true })).toEqual(["returned"]);
+    expect(operatorItemActions("issued", {})).toEqual(["returned"]);
+    expect(operatorItemActions("pending", { requires_return: false })).toEqual(["issued"]);
+  });
+});
+
 describe("transitionItemState", () => {
   it("rejects illegal pending→returned", async () => {
     const freshToken = generateToken();
@@ -255,5 +285,43 @@ describe("transitionItemState", () => {
         prisma,
       ),
     ).rejects.toThrow(/Illegal transition/);
+  });
+
+  it("rejects returned when requires_return is false", async () => {
+    await prisma.eventItem.update({
+      where: { event_id_key: { event_id: EVENT_ID, key: "headset" } },
+      data: { config: { requires_return: false } },
+    });
+    const freshToken = generateToken();
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "no-return@example.com",
+        name: "No Return",
+        token_hash: hashToken(freshToken),
+      },
+    });
+    await transitionItemState(
+      {
+        attendeeId: att.id,
+        eventId: EVENT_ID,
+        itemKey: "headset",
+        targetState: "issued",
+        audit: { operator: OPERATOR, deviceId: DEVICE },
+      },
+      prisma,
+    );
+    await expect(
+      transitionItemState(
+        {
+          attendeeId: att.id,
+          eventId: EVENT_ID,
+          itemKey: "headset",
+          targetState: "returned",
+          audit: { operator: OPERATOR, deviceId: DEVICE },
+        },
+        prisma,
+      ),
+    ).rejects.toThrow(/Return is not enabled/);
   });
 });
