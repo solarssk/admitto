@@ -235,7 +235,8 @@ Entrypoint backups are plain `pg_dump` SQL (`--no-owner`, no `--clean`). Replayi
 docker compose stop app
 
 # Pick the dump written immediately before the failed upgrade (migration_backups volume)
-docker compose run --rm --no-deps app ls -lt /backups/pre-migration-*.sql.gz
+docker compose run --rm --no-deps --entrypoint sh app -c \
+  'ls -lt /backups/pre-migration-*.sql.gz'
 
 # Empty target DB (credentials from the db container env — same pattern as manual backups above)
 docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
@@ -243,8 +244,8 @@ docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERRO
   -c "DROP DATABASE IF EXISTS \"$POSTGRES_DB\"" \
   -c "CREATE DATABASE \"$POSTGRES_DB\" OWNER \"$POSTGRES_USER\""'
 
-# Replay into the empty database (app container has DATABASE_URL + /backups mount)
-docker compose run --rm --no-deps app sh -c \
+# Replay into the empty database (app image entrypoint only passes node/npm — override for restore)
+docker compose run --rm --no-deps --entrypoint sh app -c \
   'gunzip -c /backups/pre-migration-<UTC-timestamp>.sql.gz | psql "$DATABASE_URL"'
 
 # in deploy/.env: set ADMITTO_IMAGE to the previous tag, e.g. ghcr.io/solarssk/admitto:0.4.1
