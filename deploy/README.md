@@ -227,17 +227,33 @@ This works for any number of skipped versions — all intermediate migrations ar
 
 ### Case B — a bad migration destroyed or corrupted data (disaster only)
 
-Stop the app, restore from the automatic pre-migration dump, redeploy the previous image.
+Stop the app, **empty the target database**, restore from the automatic pre-migration dump, redeploy the previous image.
+
+Entrypoint backups are plain `pg_dump` SQL (`--no-owner`, no `--clean`). Replaying into a database that already ran the bad migration will hit existing tables/types and can leave a **partial** schema — not a true rollback. You must drop and recreate the application database first.
 
 ```bash
 docker compose stop app
-gunzip -c /backups/pre-migration-<UTC-timestamp>.sql.gz | psql "$DATABASE_URL"
-# then set image to previous tag and:
-docker compose up -d app
+
+# Pick the dump written immediately before the failed upgrade (migration_backups volume)
+docker compose run --rm --no-deps app ls -lt /backups/pre-migration-*.sql.gz
+
+# Empty target DB (credentials from the db container env — same pattern as manual backups above)
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
+  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '\''$POSTGRES_DB'\'' AND pid <> pg_backend_pid()" \
+  -c "DROP DATABASE IF EXISTS \"$POSTGRES_DB\"" \
+  -c "CREATE DATABASE \"$POSTGRES_DB\" OWNER \"$POSTGRES_USER\""'
+
+# Replay into the empty database (app container has DATABASE_URL + /backups mount)
+docker compose run --rm --no-deps app sh -c \
+  'gunzip -c /backups/pre-migration-<UTC-timestamp>.sql.gz | psql "$DATABASE_URL"'
+
+# in deploy/.env: set ADMITTO_IMAGE to the previous tag, e.g. ghcr.io/solarssk/admitto:0.4.1
+docker compose pull app && docker compose up -d app
 ```
 
 Backups are written to the `migration_backups` volume before every `migrate deploy` run.
 Restore point is always available; data loss is limited to changes between the dump and the incident.
+Practice this on a non-production database before the first large event.
 
 ### Case C — the schema needs fixing after a bad migration
 
