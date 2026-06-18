@@ -154,6 +154,19 @@ async function loadEventItemInEvent(db: PrismaClient, eventId: string, itemId: s
   return row;
 }
 
+/** Count attendee rows where the item was actually issued or returned (not synthetic pending). */
+async function countIssuedOrReturnedStates(
+  db: PrismaClient | Prisma.TransactionClient,
+  itemId: string,
+): Promise<number> {
+  return db.attendeeItemState.count({
+    where: {
+      event_item_id: itemId,
+      state: { in: ["issued", "returned"] },
+    },
+  });
+}
+
 /** GET /api/admin/events/:eventId/items */
 export async function handleListEventItems(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -276,6 +289,12 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
     fields.push("label");
   }
   if (parsed.data.enabled !== undefined && parsed.data.enabled !== existing.enabled) {
+    if (parsed.data.enabled === false && existing.enabled) {
+      const inUse = await countIssuedOrReturnedStates(db, itemId);
+      if (inUse > 0) {
+        return c.json({ error: "item_in_use" }, 409);
+      }
+    }
     data.enabled = parsed.data.enabled;
     fields.push("enabled");
   }
@@ -335,12 +354,7 @@ export async function handleDeleteEventItem(c: Context, db: PrismaClient): Promi
   }
 
   const deleted = await db.$transaction(async (tx) => {
-    const inUse = await tx.attendeeItemState.count({
-      where: {
-        event_item_id: itemId,
-        state: { in: ["issued", "returned"] },
-      },
-    });
+    const inUse = await countIssuedOrReturnedStates(tx, itemId);
     if (inUse > 0) return { ok: false as const, reason: "in_use" as const };
 
     await tx.eventItem.delete({ where: { id: itemId } });

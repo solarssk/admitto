@@ -285,6 +285,17 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
     expect(row?.config).toMatchObject({ issue_on_checkin: false, requires_return: false });
   });
 
+  it("returns 409 when disabling item with issued states", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_GIFTBAG}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("item_in_use");
+  });
+
   it("returns 403 for cross-event item patch", async () => {
     const itemB = await prisma.eventItem.create({
       data: {

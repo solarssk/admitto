@@ -105,7 +105,13 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
       onUpdated();
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to save item.");
+      if (err instanceof ApiError && err.status === 409 && err.message === "item_in_use") {
+        setError(
+          "This item has been issued to attendees — record returns before disabling it.",
+        );
+      } else {
+        setError(err instanceof ApiError ? err.message : "Failed to save item.");
+      }
     } finally {
       setSaving(false);
     }
