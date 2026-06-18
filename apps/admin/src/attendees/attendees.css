@@ -21,7 +21,7 @@
   gap: var(--space-3);
   align-items: flex-end;
   padding: var(--space-4);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 .attendees-toolbar__search {
@@ -39,7 +39,7 @@
   justify-content: space-between;
   align-items: center;
   padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border);
   font-size: var(--fs-sm);
   color: var(--text-muted);
 }
@@ -100,7 +100,7 @@
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-4);
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 .attendee-drawer__title {
@@ -165,7 +165,7 @@
 
 .attendee-delivery {
   padding: var(--space-3);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   font-size: var(--fs-sm);
 }

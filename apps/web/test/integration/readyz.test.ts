@@ -16,6 +16,7 @@ const BASE_APP_OPTS = {
   opsHealthToken: TEST_TOKEN,
 } as const;
 
+/** Extract SQL template text from a Prisma tagged `$queryRaw` argument for test assertions. */
 function queryRawSqlText(query: unknown): string {
   if (typeof query === "object" && query !== null && "strings" in query) {
     return (query as Prisma.Sql).strings.join("");
@@ -23,6 +24,7 @@ function queryRawSqlText(query: unknown): string {
   return String(query);
 }
 
+/** Build fake `_prisma_migrations` rows from the repo migrations directory. */
 function appliedMigrationRows() {
   const root = findAdmittoRepoRoot();
   if (!root) throw new Error("test requires monorepo root package.json");
@@ -43,6 +45,7 @@ type MockPrismaOpts = {
   emailDeliveryCountThrows?: boolean;
 };
 
+/** Minimal Prisma stub for `/readyz` integration tests (DB, mail gauges, OIDC sweep). */
 function createMockPrisma(opts: MockPrismaOpts = {}): PrismaClient {
   const queryRaw =
     opts.queryRaw ??
@@ -55,6 +58,9 @@ function createMockPrisma(opts: MockPrismaOpts = {}): PrismaClient {
 
   return {
     $queryRaw: vi.fn(queryRaw),
+    oidcAuthState: {
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     emailDelivery: {
       count: vi.fn(async (args: { where?: { status?: string; retryable?: boolean } }) => {
         if (opts.emailDeliveryCountThrows) {
@@ -86,6 +92,7 @@ class DegradedRedisStore extends RedisRateLimitStore {
   }
 }
 
+/** Bearer token header for authenticated `/readyz` requests in tests. */
 function authHeaders(token = TEST_TOKEN): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }

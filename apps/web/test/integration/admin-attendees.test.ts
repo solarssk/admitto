@@ -404,8 +404,8 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
       orderBy: { created_at: "desc" },
     });
     expect(log).not.toBeNull();
-    const meta = log!.metadata as { to?: string; alternate?: boolean };
-    expect(meta.to).toBe("alt@example.com");
+    const meta = log!.metadata as { alternate?: boolean; to?: string };
+    expect(meta.to).toBeUndefined();
     expect(meta.alternate).toBe(true);
   });
 

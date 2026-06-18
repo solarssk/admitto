@@ -406,7 +406,6 @@ export async function handleTestSendEventTemplate(
         event_id: eventId,
         action_type: "mail_test_sent",
         audit: adminAuditFromContext(c),
-        metadata: { to: body.to },
       });
     });
   } catch (auditErr) {
