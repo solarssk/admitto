@@ -6,7 +6,7 @@ import {
   resendTicket,
   updateAttendee,
 } from "../api/client.js";
-import type { AttendeeDetailDto, DeliveryDto } from "../api/types.js";
+import type { AttendeeDetailDto, DeliveryDto, UpdateAttendeePatch } from "../api/types.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
 
 export interface AttendeeDetailDrawerProps {
@@ -60,6 +60,8 @@ export function AttendeeDetailDrawer({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [emailConflict, setEmailConflict] = useState(false);
+  const [staleWrite, setStaleWrite] = useState(false);
+  const [reloading, setReloading] = useState(false);
   const [resendOpen, setResendOpen] = useState(false);
   const [resendMode, setResendMode] = useState<"same" | "other">("same");
   const [resendEmail, setResendEmail] = useState("");
@@ -105,7 +107,7 @@ export function AttendeeDetailDrawer({
     e.preventDefault();
     if (!detail || !form) return;
 
-    const patch: Record<string, string | null> = {};
+    const patch: UpdateAttendeePatch = {};
     if (form.name !== detail.name) patch.name = form.name;
     if (form.email !== detail.email) patch.email = form.email;
     if (form.company !== (detail.company ?? "")) patch.company = form.company || null;
@@ -115,8 +117,11 @@ export function AttendeeDetailDrawer({
 
     if (Object.keys(patch).length === 0) return;
 
+    patch.expected_updated_at = detail.updated_at;
+
     setSaving(true);
     setEmailConflict(false);
+    setStaleWrite(false);
     setError(null);
     try {
       const updated = await updateAttendee(eventId, attendeeId, patch);
@@ -126,12 +131,33 @@ export function AttendeeDetailDrawer({
       onUpdated();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setEmailConflict(true);
+        if (err.message === "email_conflict") {
+          setEmailConflict(true);
+        } else if (err.message === "stale_write") {
+          setStaleWrite(true);
+        } else {
+          setError(err.message);
+        }
       } else {
         setError(err instanceof ApiError ? err.message : "Failed to save changes.");
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleReload() {
+    setReloading(true);
+    setStaleWrite(false);
+    setError(null);
+    try {
+      const d = await fetchAttendeeDetail(eventId, attendeeId);
+      setDetail(d);
+      setInitialEmail(d.email);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to reload attendee.");
+    } finally {
+      setReloading(false);
     }
   }
 
@@ -222,6 +248,22 @@ export function AttendeeDetailDrawer({
                     <p className="attendee-form__error">
                       This email is already used by another attendee in this event.
                     </p>
+                  )}
+                  {staleWrite && (
+                    <div className="attendee-form__warn">
+                      <p>
+                        This record was changed by someone else — reload and reapply.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleReload}
+                        disabled={reloading}
+                      >
+                        {reloading ? "Reloading…" : "Reload"}
+                      </Button>
+                    </div>
                   )}
                   <Input
                     label="Company"

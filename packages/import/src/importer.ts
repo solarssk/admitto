@@ -1,9 +1,12 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import type { AttendeeRow, ImportOptions, ImportSummary, SkippedRow } from "./types.js";
 import { generateToken } from "@admitto/crypto";
 
 /** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token_hash. */
 const OVERWRITE_FIELDS = ["name", "ticket_type", "company", "department"] as const;
+
+export const IMPORT_CONFLICT_SKIP_REASON = "Conflict (concurrent import)";
 
 type AttendeeCreateData = {
   event_id: string;
@@ -20,6 +23,7 @@ type AttendeeCreateData = {
 
 type AttendeeUpdateArgs = {
   id: string;
+  email: string;
   data: {
     name: string;
     ticket_type?: string;
@@ -29,6 +33,55 @@ type AttendeeUpdateArgs = {
 };
 
 type ImportDb = PrismaClient | Prisma.TransactionClient;
+
+function isUniqueViolation(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+}
+
+/** Create attendees in bulk; on unique violation fall back row-by-row and skip conflicts. */
+export async function createAttendeesBatch(
+  client: ImportDb,
+  rows: AttendeeCreateData[],
+): Promise<{ created: number; skipped: SkippedRow[] }> {
+  if (rows.length === 0) return { created: 0, skipped: [] };
+
+  try {
+    await client.attendee.createMany({ data: rows });
+    return { created: rows.length, skipped: [] };
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+  }
+
+  let created = 0;
+  const skipped: SkippedRow[] = [];
+  for (const row of rows) {
+    try {
+      await client.attendee.create({ data: row });
+      created++;
+    } catch (rowErr) {
+      if (isUniqueViolation(rowErr)) {
+        skipped.push({ email: row.email, reason: IMPORT_CONFLICT_SKIP_REASON });
+      } else {
+        throw rowErr;
+      }
+    }
+  }
+  return { created, skipped };
+}
+
+/** Update one attendee; unique violations become skip instead of failing the batch. */
+async function updateAttendeeSafe(
+  client: ImportDb,
+  update: AttendeeUpdateArgs,
+): Promise<"updated" | "skipped"> {
+  try {
+    await client.attendee.update({ where: { id: update.id }, data: update.data });
+    return "updated";
+  } catch (err) {
+    if (isUniqueViolation(err)) return "skipped";
+    throw err;
+  }
+}
 
 /**
  * Commit validated attendee rows to the database.
@@ -138,6 +191,7 @@ export async function commitImport(
       // Never touch: status, qr_payload, external_uuid, token_hash.
       updates.push({
         id: found.id,
+        email: row.email,
         data: {
           name,
           ...(row.ticket_type !== undefined && { ticket_type: row.ticket_type }),
@@ -182,24 +236,45 @@ export async function commitImport(
 
     /** Apply create/update operations on the provided Prisma client (no nested transaction). */
     const writeAll = async (client: ImportDb) => {
+      let created = 0;
+      let updated = 0;
+
       for (let i = 0; i < creates.length; i += CREATE_BATCH_SIZE) {
-        await client.attendee.createMany({ data: creates.slice(i, i + CREATE_BATCH_SIZE) });
+        const batch = creates.slice(i, i + CREATE_BATCH_SIZE);
+        const result = await createAttendeesBatch(client, batch);
+        created += result.created;
+        skipped.push(...result.skipped);
       }
+
       for (let i = 0; i < updates.length; i += UPDATE_BATCH_SIZE) {
         const batch = updates.slice(i, i + UPDATE_BATCH_SIZE);
-        await Promise.all(
-          batch.map(({ id, data }) => client.attendee.update({ where: { id }, data })),
+        const outcomes = await Promise.all(
+          batch.map((entry) => updateAttendeeSafe(client, entry)),
         );
+        for (let j = 0; j < outcomes.length; j++) {
+          if (outcomes[j] === "updated") {
+            updated++;
+          } else {
+            skipped.push({
+              email: batch[j]!.email,
+              reason: IMPORT_CONFLICT_SKIP_REASON,
+            });
+          }
+        }
       }
+
+      return { created, updated };
     };
 
+    let writeCounts: { created: number; updated: number };
     if (ownedTransaction) {
-      await writeAll(prisma);
+      writeCounts = await writeAll(prisma);
     } else {
-      await (prisma as PrismaClient).$transaction(async (tx) => writeAll(tx));
+      writeCounts = await (prisma as PrismaClient).$transaction(async (tx) => writeAll(tx));
     }
-    summary.created = creates.length;
-    summary.updated = updates.length;
+    summary.created = writeCounts.created;
+    summary.updated = writeCounts.updated;
+    summary.toSkip = skipped.length;
   }
 
   return summary;

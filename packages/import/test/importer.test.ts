@@ -1,9 +1,14 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Prisma } from "@prisma/client";
 import { PrismaClient } from "@prisma/client";
-import { commitImport } from "../src/importer.js";
+import {
+  commitImport,
+  createAttendeesBatch,
+  IMPORT_CONFLICT_SKIP_REASON,
+} from "../src/importer.js";
 import type { AttendeeRow } from "../src/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -333,5 +338,95 @@ describe("commitImport — idempotency", () => {
     const summary = await commitImport(EVENT_ID, [newRow], {}, prisma);
     expect(summary.toSkip).toBe(1);
     expect(summary.created).toBe(0);
+  });
+});
+
+describe("createAttendeesBatch — P2002 fallback", () => {
+  it("skips conflicting rows when createMany hits a unique violation", async () => {
+    const row: AttendeeRow = {
+      first_name: "Race",
+      last_name: "User",
+      email: "race@example.com",
+    };
+
+    const p2002 = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+      code: "P2002",
+      clientVersion: "test",
+    });
+
+    const createManySpy = vi
+      .spyOn(prisma.attendee, "createMany")
+      .mockRejectedValueOnce(p2002);
+    const createSpy = vi.spyOn(prisma.attendee, "create");
+
+    const result = await createAttendeesBatch(prisma, [
+      {
+        event_id: EVENT_ID,
+        email: row.email,
+        name: "Race User",
+      },
+    ]);
+
+    expect(result.created).toBe(1);
+    expect(result.skipped).toEqual([]);
+    expect(createManySpy).toHaveBeenCalledOnce();
+    expect(createSpy).toHaveBeenCalledOnce();
+
+    createManySpy.mockRestore();
+    createSpy.mockRestore();
+  });
+
+  it("reports skipped row when row-by-row create also conflicts", async () => {
+    const p2002 = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+      code: "P2002",
+      clientVersion: "test",
+    });
+
+    const createManySpy = vi
+      .spyOn(prisma.attendee, "createMany")
+      .mockRejectedValueOnce(p2002);
+    const createSpy = vi.spyOn(prisma.attendee, "create").mockRejectedValueOnce(p2002);
+
+    const result = await createAttendeesBatch(prisma, [
+      {
+        event_id: EVENT_ID,
+        email: "conflict@example.com",
+        name: "Conflict User",
+      },
+    ]);
+
+    expect(result.created).toBe(0);
+    expect(result.skipped).toEqual([
+      { email: "conflict@example.com", reason: IMPORT_CONFLICT_SKIP_REASON },
+    ]);
+
+    createManySpy.mockRestore();
+    createSpy.mockRestore();
+  });
+});
+
+describe("commitImport — P2002 hardening", () => {
+  it("does not throw when createMany fails with P2002 during commit", async () => {
+    const row: AttendeeRow = {
+      first_name: "Concurrent",
+      last_name: "Import",
+      email: "concurrent-import@example.com",
+    };
+
+    const p2002 = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+      code: "P2002",
+      clientVersion: "test",
+    });
+
+    const createManySpy = vi
+      .spyOn(prisma.attendee, "createMany")
+      .mockRejectedValueOnce(p2002);
+
+    const summary = await commitImport(EVENT_ID, [row], {}, prisma);
+
+    expect(summary.created).toBe(1);
+    expect(summary.skipped.some((s) => s.reason === IMPORT_CONFLICT_SKIP_REASON)).toBe(false);
+
+    createManySpy.mockRestore();
   });
 });

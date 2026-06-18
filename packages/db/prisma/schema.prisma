@@ -75,6 +75,7 @@ model Attendee {
   admitted_at      DateTime?
   admitted_by      String?
   created_at       DateTime        @default(now())
+  updated_at       DateTime        @updatedAt
   email_deliveries EmailDelivery[]
   wallet_pass      WalletPass?
   check_ins        CheckIn[]
