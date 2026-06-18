@@ -46,7 +46,7 @@ function allowedTarget(current: string, target: string): boolean {
   return OPERATOR_TRANSITIONS[current]?.includes(target) ?? false;
 }
 
-/** Operator-visible actions for current state and item config. */
+/** Operator-visible actions for current state; omits return when `requires_return` is false. */
 export function operatorItemActions(
   state: string,
   config?: EventItemConfig | null,

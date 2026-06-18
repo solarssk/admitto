@@ -14,6 +14,7 @@ import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
 import "../requirements/requirements.css";
 
+/** One-line summary of item config for the Requirements table. */
 function configSummary(config: EventItemDto["config"]): string {
   if (!config) return "—";
   const parts: string[] = [];
@@ -27,6 +28,7 @@ function configSummary(config: EventItemDto["config"]): string {
   return parts.length > 0 ? parts.join(" · ") : "—";
 }
 
+/** Admin screen for per-event item configuration and operational behaviour. */
 export function RequirementsPage() {
   const { eventId } = useParams();
   const { reportApiError } = useConnectionState();

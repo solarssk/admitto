@@ -25,6 +25,7 @@ type FormState = {
 
 const SLUG_PATTERN = /^[a-z0-9_]+$/;
 
+/** Resolve contents rows from API config, including legacy `size_field`. */
 function contentsFromConfig(cfg: EventItemConfigDto | null): { label: string; source_field: string }[] {
   if (!cfg) return [];
   if (cfg.contents?.length) {
@@ -40,6 +41,7 @@ function contentsFromConfig(cfg: EventItemConfigDto | null): { label: string; so
   return [];
 }
 
+/** Map API item row to editable drawer form state. */
 function toForm(item: EventItemDto): FormState {
   const cfg = item.config ?? null;
   return {
@@ -51,6 +53,7 @@ function toForm(item: EventItemDto): FormState {
   };
 }
 
+/** Build PATCH payload; `issue_on_checkin` is persisted only for the badge item. */
 function toConfig(form: FormState, itemKey: string): EventItemConfigDto {
   const config: EventItemConfigDto = {
     requires_return: form.requires_return,
@@ -67,6 +70,7 @@ function toConfig(form: FormState, itemKey: string): EventItemConfigDto {
   return config;
 }
 
+/** Side drawer to edit or delete a single event item. */
 export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItemDrawerProps) {
   const [form, setForm] = useState<FormState>(() => toForm(item));
   const [saving, setSaving] = useState(false);

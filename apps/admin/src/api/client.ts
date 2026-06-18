@@ -308,6 +308,7 @@ export async function resendTicket(
   return parseJson<DeliveryDto>(res);
 }
 
+/** Fetch all event items for the Requirements admin screen. */
 export async function fetchEventItems(
   eventId: string,
   signal?: AbortSignal,
@@ -320,6 +321,7 @@ export async function fetchEventItems(
   return data.items;
 }
 
+/** Create a custom event item (key must be unique per event). */
 export async function createEventItem(
   eventId: string,
   body: CreateEventItemBody,
@@ -331,6 +333,7 @@ export async function createEventItem(
   return parseJson<EventItemDto>(res);
 }
 
+/** Update label, enabled flag, or config for an existing event item. */
 export async function updateEventItem(
   eventId: string,
   itemId: string,
@@ -343,6 +346,7 @@ export async function updateEventItem(
   return parseJson<EventItemDto>(res);
 }
 
+/** Delete an unused custom event item; throws ApiError 409 when blocked. */
 export async function deleteEventItem(eventId: string, itemId: string): Promise<void> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/items/${encodeURIComponent(itemId)}`,
@@ -351,6 +355,7 @@ export async function deleteEventItem(eventId: string, itemId: string): Promise<
   await parseJson<{ ok: boolean }>(res);
 }
 
+/** Load parsed operational settings for an event (`ops_config`). */
 export async function fetchOpsConfig(eventId: string, signal?: AbortSignal): Promise<OpsConfigDto> {
   const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/ops-config`, {
     credentials: "same-origin",
@@ -359,6 +364,7 @@ export async function fetchOpsConfig(eventId: string, signal?: AbortSignal): Pro
   return parseJson<OpsConfigDto>(res);
 }
 
+/** Patch operational settings (`badge_at_entry`, `require_confirm_on_scan`). */
 export async function updateOpsConfig(
   eventId: string,
   patch: UpdateOpsConfigPatch,

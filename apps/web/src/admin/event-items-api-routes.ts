@@ -53,6 +53,7 @@ const patchOpsConfigSchema = z
   })
   .strict();
 
+/** Admin API shape for a single event item row. */
 export type EventItemDto = {
   id: string;
   key: string;
@@ -62,6 +63,7 @@ export type EventItemDto = {
   config: EventItemConfig | null;
 };
 
+/** Normalize stored JSON config for API responses (strict fields + legacy contents). */
 function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
@@ -78,6 +80,7 @@ function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
   return Object.keys(config).length > 0 ? config : null;
 }
 
+/** Map a Prisma EventItem row to the admin API DTO. */
 function serializeEventItem(row: {
   id: string;
   key: string;
@@ -96,6 +99,7 @@ function serializeEventItem(row: {
   };
 }
 
+/** Return 403 when the session user cannot manage the event; otherwise null. */
 async function assertEventManageAccess(
   c: Context,
   db: PrismaClient,
@@ -108,6 +112,7 @@ async function assertEventManageAccess(
   return null;
 }
 
+/** Build ops audit context from the authenticated admin request. */
 function adminAuditFromContext(c: Context): OpsAuditContext {
   const auth = c.get("auth");
   return {
@@ -117,18 +122,21 @@ function adminAuditFromContext(c: Context): OpsAuditContext {
   };
 }
 
+/** Require `:eventId` route param or return 400. */
 function requireEventId(c: Context): string | Response {
   const eventId = c.req.param("eventId");
   if (!eventId) return c.json({ error: "eventId required" }, 400);
   return eventId;
 }
 
+/** Require `:itemId` route param or return 400. */
 function requireItemId(c: Context): string | Response {
   const itemId = c.req.param("itemId");
   if (!itemId) return c.json({ error: "itemId required" }, 400);
   return itemId;
 }
 
+/** Load event item scoped to event; null when missing or cross-event (caller returns 403). */
 async function loadEventItemInEvent(db: PrismaClient, eventId: string, itemId: string) {
   const row = await db.eventItem.findUnique({
     where: { id: itemId },

@@ -205,6 +205,7 @@ export interface ImportCommitResponse {
   skipped: ImportSkippedRow[];
 }
 
+/** Admin SPA DTOs for event item configuration (mirror of web API). */
 export interface EventItemContentDto {
   label: string;
   source_field: string;

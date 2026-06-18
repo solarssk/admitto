@@ -13,6 +13,7 @@ const DEFAULT_EVENT_ITEMS = [
   { key: "headset", label: "Headset", config: { requires_return: true } },
 ] as const;
 
+/** Stable keys seeded by `ensureDefaultEventItems` — not deletable via admin API. */
 export const DEFAULT_EVENT_ITEM_KEYS: ReadonlySet<string> = new Set(
   DEFAULT_EVENT_ITEMS.map((item) => item.key),
 );
