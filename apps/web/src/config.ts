@@ -10,6 +10,9 @@ type EnvLike = Record<string, string | undefined>;
 /** Minimum length for break-glass operator Bearer token (high entropy). */
 export const MIN_CHECKIN_OPERATOR_TOKEN_LENGTH = 32;
 
+/** Minimum length for ops readiness token (`OPS_HEALTH_TOKEN`). */
+export const MIN_OPS_HEALTH_TOKEN_LENGTH = 32;
+
 function normalizeCheckinOperatorToken(raw: string | undefined): string | null {
   if (!raw) return null;
   const trimmed = raw.trim();
@@ -90,6 +93,39 @@ export function validateCheckinBootConfig(env: EnvLike = process.env): void {
   if (allowBearer && env["NODE_ENV"] !== "development") {
     console.warn(
       "WARNING: ALLOW_CHECKIN_BEARER is enabled outside development — emergency break-glass only",
+    );
+  }
+}
+
+/** Normalize ops readiness token; returns null when unset or shorter than minimum. */
+export function normalizeOpsHealthToken(raw: string | undefined | null): string | null {
+  if (raw == null) return null;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length < MIN_OPS_HEALTH_TOKEN_LENGTH) return null;
+  return trimmed;
+}
+
+/** Resolve `OPS_HEALTH_TOKEN` from env; null when unset or too short (endpoint disabled). */
+export function resolveOpsHealthToken(env: EnvLike = process.env): string | null {
+  return normalizeOpsHealthToken(env["OPS_HEALTH_TOKEN"]);
+}
+
+/** Resolve token from explicit test/deploy override or env. */
+export function resolveOpsHealthTokenOption(
+  explicit: string | null | undefined,
+  env: EnvLike = process.env,
+): string | null {
+  if (explicit !== undefined) return normalizeOpsHealthToken(explicit);
+  return resolveOpsHealthToken(env);
+}
+
+/** Warn when a too-short token is configured — `/readyz` stays disabled (404). */
+export function validateOpsHealthBootConfig(env: EnvLike = process.env): void {
+  const raw = env["OPS_HEALTH_TOKEN"]?.trim();
+  if (!raw) return;
+  if (raw.length < MIN_OPS_HEALTH_TOKEN_LENGTH) {
+    console.warn(
+      `OPS_HEALTH_TOKEN is set but shorter than ${MIN_OPS_HEALTH_TOKEN_LENGTH} characters; /readyz will stay disabled`,
     );
   }
 }

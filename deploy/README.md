@@ -187,6 +187,20 @@ docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > b
 
 Test a restore on a non-production database before the first large event.
 
+## Uptime Kuma (observability)
+
+Set `OPS_HEALTH_TOKEN` in `deploy/.env` (see `.env.example`). `/readyz` is **disabled** (404) until the token is set.
+
+| Monitor | URL | Notes |
+|---------|-----|-------|
+| Basic up/down | `GET /healthz` | Expect HTTP 200 and body keyword `ok` (no auth) |
+| Critical readiness | `GET /readyz` | Header `Authorization: Bearer $OPS_HEALTH_TOKEN` or `X-Ops-Token: $OPS_HEALTH_TOKEN`; HTTP **503** = critical failure |
+| DB | same `/readyz` | JSON-query: `$.checks.database.status == "ok"` |
+| Redis | same `/readyz` | JSON-query: `$.checks.redis.status == "ok"` (or `disabled` when Redis not configured) |
+| Mail queue | same `/readyz` | JSON-query: `$.gauges.email_deliveries_failed_retryable < 50` (adjust threshold) |
+
+`/readyz` may sit on the Cloudflare Access bypass list — it is token-gated, not CF-protected. Docker `HEALTHCHECK` stays on `/healthz` only.
+
 ## TLS notes
 
 - **Cloudflare public:** CF terminates TLS; origin can use HTTP on the internal/docker path (Full strict with origin cert is also supported).

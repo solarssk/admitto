@@ -19,6 +19,7 @@
     "@admitto/auth": "*",
     "@admitto/db": "*",
     "@admitto/import": "*",
+    "@admitto/mailer": "*",
     "@admitto/mail-delivery": "*",
     "@admitto/tickets": "*",
     "@admitto/ui": "*",

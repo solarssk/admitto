@@ -150,6 +150,20 @@ export class RedisRateLimitStore implements RateLimitStore {
     }
   }
 
+  /** Ping Redis and measure round-trip latency for readiness probes. */
+  async health(): Promise<{ ok: boolean; latencyMs: number | null }> {
+    const started = Date.now();
+    try {
+      await this.ensureConnected();
+      await this.client
+        .withAbortSignal(AbortSignal.timeout(this.commandTimeoutMs))
+        .ping();
+      return { ok: true, latencyMs: Date.now() - started };
+    } catch {
+      return { ok: false, latencyMs: Date.now() - started };
+    }
+  }
+
   /** @internal test helper */
   async disconnect(): Promise<void> {
     if (this.client.isOpen) {

@@ -30,6 +30,7 @@ npm run start -w @admitto/web
 | Prefix | Auth | Purpose |
 |--------|------|---------|
 | `/healthz` | none | Liveness + DB ping (for Docker healthcheck) |
+| `/readyz` | `OPS_HEALTH_TOKEN` (Bearer or `X-Ops-Token`) | Detailed readiness + gauges (Uptime Kuma; disabled when token unset) |
 | `/t/*`, `/q/*` | none | Attendee ticket page + hosted QR PNG (rate-limited) |
 | `/login`, `/mfa/*`, `/logout` | session / partial | Staff local login + TOTP |
 | `/api/auth/*` | varies | JSON auth API |

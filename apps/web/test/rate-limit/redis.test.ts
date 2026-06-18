@@ -43,6 +43,13 @@ describe.skipIf(!redisUrl)("RedisRateLimitStore", () => {
     expect(blocked.remaining).toBe(0);
   });
 
+  it("health() returns ok with latency when Redis responds", async () => {
+    const result = await store.health();
+    expect(result.ok).toBe(true);
+    expect(result.latencyMs).not.toBeNull();
+    expect(result.latencyMs).toBeGreaterThanOrEqual(0);
+  });
+
   it("expires key after window via PEXPIRE", async () => {
     const key = `test-ttl-${Date.now()}`;
     const windowMs = 500;
