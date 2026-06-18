@@ -29,6 +29,7 @@ import {
   listDeliveries,
   sendTestEmail,
   toDeliveryDto,
+  clientSafeDeliveryError,
   type DeliveryDto,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
@@ -375,14 +376,17 @@ export async function handleTestSendEventTemplate(
       mailDeliveryDeps,
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : "send failed";
-    return c.json({ status: "failed", error: message } satisfies { status: "failed"; error: string });
+    console.error("[admin] template test-send failed", err);
+    return c.json({
+      status: "failed",
+      error: clientSafeDeliveryError(err instanceof Error ? err.message : undefined),
+    } satisfies { status: "failed"; error: string });
   }
 
   if (!isSendSuccess(result.status) || result.error) {
     return c.json({
       status: "failed",
-      error: result.error ?? "send failed",
+      error: clientSafeDeliveryError(result.error),
     } satisfies { status: "failed"; error: string });
   }
 

@@ -191,6 +191,17 @@ export function CommunicationPage() {
 
   const handleSave = async () => {
     if (!eventId) return;
+    if (source !== "event") {
+      const inherited =
+        source === "organization" ? "organization template" : "default template";
+      if (
+        !window.confirm(
+          `This will create an event-specific template override (replacing the ${inherited} for this event). Continue?`,
+        )
+      ) {
+        return;
+      }
+    }
     setValidationErrors([]);
     setSaveStatus(null);
     try {
@@ -319,6 +330,9 @@ export function CommunicationPage() {
                 >
                   HTML
                 </Button>
+                <span className="communication-format-hint muted">
+                  Changing format does not convert the template body.
+                </span>
               </div>
 
               <div className="communication-body-field">
@@ -345,6 +359,8 @@ export function CommunicationPage() {
 
               {saveStatus && (
                 <p
+                  role="status"
+                  aria-live="polite"
                   className={[
                     "communication-status",
                     saveStatus.endsWith(".") && !saveStatus.toLowerCase().includes("fail")
@@ -405,6 +421,8 @@ export function CommunicationPage() {
             </div>
             {testStatus && (
               <p
+                role="status"
+                aria-live="polite"
                 className={[
                   "communication-status",
                   testStatus.kind === "ok" ? "communication-status--ok" : "communication-status--error",
@@ -471,7 +489,7 @@ export function CommunicationPage() {
                 </tbody>
               </table>
             )}
-            {deliveryTotal > 0 && (
+            {!deliveriesError && deliveryTotal > 0 && (
               <div className="communication-pager">
                 <span>
                   Page {deliveryPage} of {deliveryPages} ({deliveryTotal} total)

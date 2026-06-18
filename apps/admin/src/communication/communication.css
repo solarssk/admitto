@@ -61,8 +61,14 @@
 
 .communication-format-row {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
   margin: var(--space-3) 0;
+}
+
+.communication-format-hint {
+  font-size: var(--fs-sm);
 }
 
 .communication-body-field {
