@@ -6,7 +6,7 @@ describe("devConsoleExportSink", () => {
     vi.restoreAllMocks();
   });
 
-  it("logs to, subject, and html byte length without full html body", () => {
+  it("logs recipient hash and byte lengths without email, subject text, or html body", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     devConsoleExportSink({
       message: {
@@ -20,9 +20,11 @@ describe("devConsoleExportSink", () => {
     expect(log).toHaveBeenCalledOnce();
     const line = String(log.mock.calls[0]?.[0]);
     expect(line).toContain("[export_only dry-run]");
-    expect(line).toContain("to=tester@example.com");
-    expect(line).toContain("subject=Your ticket");
+    expect(line).toContain("recipientRef=");
+    expect(line).toContain(`subjectBytes=${Buffer.byteLength("Your ticket", "utf8")}`);
     expect(line).toContain(`htmlBytes=${Buffer.byteLength("<p>Secret attendee content</p>", "utf8")}`);
+    expect(line).not.toContain("tester@example.com");
+    expect(line).not.toContain("Your ticket");
     expect(line).not.toContain("Secret attendee content");
     expect(line).not.toContain("<p>");
   });
