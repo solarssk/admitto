@@ -123,9 +123,33 @@ jobs:
           fi
           echo "OK: no real email addresses in data files"
 
+  migration-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: PR destructive override label
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh pr view "${{ github.event.pull_request.number }}" \
+            --json labels -q '.labels[].name' \
+            | grep -qx 'migration-destructive-approved'; then
+            echo "MIGRATION_DESTRUCTIVE_LABEL_APPROVED=1" >> "$GITHUB_ENV"
+          fi
+      - name: Scan new migrations for destructive SQL
+        run: bash scripts/check-migrations-destructive.sh
+      - name: Migration guard unit tests
+        run: bash scripts/check-migrations-destructive.test.sh
+      - name: Pre-migration backup entrypoint smoke (docker compose)
+        run: bash scripts/test-migration-backup.sh
+
   docker-build:
     runs-on: ubuntu-latest
-    needs: [build-test, lint]
+    needs: [build-test, lint, migration-safety]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
         with:

@@ -104,11 +104,19 @@ The app listens on port 3000 **inside** the compose network only. Use the proxy 
 
 On every `app` start, `deploy/docker-entrypoint.sh` runs **fail-fast** (any step fails → container exits, no web server):
 
-1. `prisma migrate deploy` — idempotent schema migrations
-2. `backfill-public-ref.js` — idempotent agency `public_ref` backfill (safe to re-run; throws if DB/schema incompatible)
-3. `node apps/web/dist/src/index.js` — HTTP server
+1. `prisma migrate status` — detect pending migrations (text parse; connection errors abort with a clear log)
+2. **If pending migrations** and backup not disabled: pre-migration `pg_dump` to the `migration_backups` volume (`/backups/pre-migration-<UTC>.sql.gz`, `gzip -t` integrity check, `install -m 600`). If `pg_dump` fails → **no migrate**. Routine restarts with no pending migrations skip the dump.
+3. `prisma migrate deploy` — idempotent schema migrations (automatic; operators never run this by hand)
+4. `backfill-public-ref.js` — idempotent agency `public_ref` backfill (safe to re-run; throws if DB/schema incompatible)
+5. `node apps/web/dist/src/index.js` — HTTP server (drops from root to `node` user when needed)
 
-This is intentional: a broken migration or backfill must not serve traffic on a half-upgraded database.
+**Operator upgrade:** pull the new image and `docker compose up -d` — migrations apply automatically with a restore point when needed. No manual migration step.
+
+Env (see `.env.example`): `MIGRATION_BACKUP_DIR`, `MIGRATION_BACKUP_RETENTION`, `MIGRATION_BACKUP_MIN_FREE_MB` (default 512 — tune per deployment), `MIGRATION_BACKUP_DISABLE` (dev/test only).
+
+Copy pre-migration backups offsite per [ADR 0023](../../_ops/adr/0023-backup-and-disaster-recovery.md) (nightly dumps are separate).
+
+Schema change policy (expand-contract, CI guard): [packages/db/README.md](../packages/db/README.md#schema-change-policy).
 
 For one-off CLI (bootstrap, MFA reset), the entrypoint passes through `node …` / `npm …` without starting the web server — see below.
 
@@ -171,9 +179,13 @@ See [`../../_ops/design/deployment-cloudflare-access.md`](../../_ops/design/depl
 
 Public attendee paths (`/t/*`, `/q/*`) must stay bypassed at Cloudflare.
 
-## PostgreSQL backups (ADR 0012)
+## PostgreSQL backups (ADR 0012, ADR 0027)
 
-Manual `pg_dump` before/after key operations. Run from the `deploy/` directory. Postgres credentials come from the **db container env** (compose `.env`), not your host shell — use `sh -c` so `$POSTGRES_USER` / `$POSTGRES_DB` expand inside the container:
+**Automatic (upgrades):** when pending migrations exist, the app entrypoint writes
+`pre-migration-<UTC>.sql.gz` to the `migration_backups` volume before `migrate deploy`. Copy these
+offsite when possible (ADR 0023).
+
+**Manual (ops milestones):** run from the `deploy/` directory. Postgres credentials come from the **db container env** (compose `.env`), not your host shell — use `sh -c` so `$POSTGRES_USER` / `$POSTGRES_DB` expand inside the container:
 
 ```bash
 # Pre-import
