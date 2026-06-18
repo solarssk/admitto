@@ -165,6 +165,15 @@ export function CommunicationPage() {
     return () => controller.abort();
   }, [tab, loadDeliveries]);
 
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(deliveryTotal / DELIVERY_PAGE_SIZE));
+    if (deliveryTotal === 0) {
+      if (deliveryPage !== 1) setDeliveryPage(1);
+    } else if (deliveryPage > maxPage) {
+      setDeliveryPage(maxPage);
+    }
+  }, [deliveryTotal, deliveryPage]);
+
   const insertPlaceholder = (name: string) => {
     const token = `{{${name}}}`;
     if (activeField === "subject") {
@@ -277,8 +286,9 @@ export function CommunicationPage() {
   if (error) return <p>{error}</p>;
 
   const deliveryPages = Math.max(1, Math.ceil(deliveryTotal / DELIVERY_PAGE_SIZE));
-  const deliveryRangeStart = (deliveryPage - 1) * DELIVERY_PAGE_SIZE + 1;
-  const deliveryRangeEnd = Math.min(deliveryPage * DELIVERY_PAGE_SIZE, deliveryTotal);
+  const effectiveDeliveryPage = Math.min(deliveryPage, deliveryPages);
+  const deliveryRangeStart = (effectiveDeliveryPage - 1) * DELIVERY_PAGE_SIZE + 1;
+  const deliveryRangeEnd = Math.min(effectiveDeliveryPage * DELIVERY_PAGE_SIZE, deliveryTotal);
 
   return (
     <div className="screen">
@@ -527,7 +537,7 @@ export function CommunicationPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={deliveryPage <= 1}
+                  disabled={effectiveDeliveryPage <= 1}
                   onClick={() => setDeliveryPage((p) => Math.max(1, p - 1))}
                 >
                   Previous
@@ -535,7 +545,7 @@ export function CommunicationPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={deliveryPage >= deliveryPages}
+                  disabled={effectiveDeliveryPage >= deliveryPages}
                   onClick={() => setDeliveryPage((p) => p + 1)}
                 >
                   Next
