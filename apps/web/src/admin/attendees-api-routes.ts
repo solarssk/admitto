@@ -455,7 +455,7 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
         select: ATTENDEE_DETAIL_SELECT,
       });
 
-      if (!result.ok) {
+      if ("kind" in result) {
         return result;
       }
 
@@ -467,14 +467,14 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
         metadata: { fields: changes.fields },
       });
 
-      return { ok: true as const, row: result.row };
+      return result.row;
     });
 
-    if (!updated.ok) {
+    if ("kind" in updated) {
       return c.json({ error: "stale_write" }, 409);
     }
 
-    const dto = await buildAttendeeDetailDto(db, eventId, updated.row);
+    const dto = await buildAttendeeDetailDto(db, eventId, updated);
     return c.json(dto);
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
