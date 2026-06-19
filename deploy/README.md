@@ -118,7 +118,7 @@ Copy pre-migration backups offsite per [ADR 0023](../../_ops/adr/0023-backup-and
 
 Schema change policy (expand-contract, CI guard): [packages/db/README.md](../packages/db/README.md#schema-change-policy).
 
-For one-off CLI (bootstrap, MFA reset), the entrypoint passes through `node …` / `npm …` without starting the web server — see below.
+For one-off CLI (bootstrap, MFA reset), the entrypoint passes through `node …` without starting the web server — see below. `npm`/`npx` are not available in the production image.
 
 ## First superadmin
 
@@ -244,7 +244,7 @@ docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERRO
   -c "DROP DATABASE IF EXISTS \"$POSTGRES_DB\"" \
   -c "CREATE DATABASE \"$POSTGRES_DB\" OWNER \"$POSTGRES_USER\""'
 
-# Replay into the empty database (app image entrypoint only passes node/npm — override for restore)
+# Replay into the empty database (override entrypoint for restore — production image has no npm/npx)
 docker compose run --rm --no-deps --entrypoint sh app -c \
   'gunzip -c /backups/pre-migration-<UTC-timestamp>.sql.gz | psql "$DATABASE_URL"'
 
