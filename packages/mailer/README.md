@@ -19,7 +19,7 @@ is a configuration concern (ultimately from the UI Settings screen).
 | Provider | Status | Notes |
 |---|---|---|
 | `powerautomate` | ready | HTTP trigger is a premium licence |
-| `smtp` | ready | Generic SMTP relay (DuoCircle, Postfix, etc.) with pooling + rate limits |
+| `smtp` | ready | Generic SMTP relay (e.g. Microsoft 365 SMTP, Amazon SES, SendGrid, Mailgun, Postfix, corporate relay) with pooling + rate limits |
 | `graph` | built, not live-tested | App-only `Mail.Send`; tests use mocked fetch |
 | `export_only` | ready | No send — `createMailer` **requires** `exportSink`; validates messages like other providers. **Not a production mailer** without a sink (`npm run dev` wires a dev-only console sink logging byte lengths + truncated recipient hash — do not use where logs are archived; deploy must use smtp/graph/powerautomate). Production boot with `EMAIL_PROVIDER=export_only` warns but does not exit; sends fail until reconfigured. |
 
