@@ -221,6 +221,8 @@ export function AttendeeDetailDrawer({
         } else {
           setError("Could not save changes. Reload and try again.");
         }
+      } else if (err instanceof ApiError && err.status === 400 && err.message === "unknown_custom_data_field") {
+        setError("Event configuration changed — close and reopen this attendee to edit attributes.");
       } else {
         setError(err instanceof ApiError ? err.message : "Failed to save changes.");
       }
@@ -235,11 +237,16 @@ export function AttendeeDetailDrawer({
     setReloading(true);
     setError(null);
     try {
-      const d = await fetchAttendeeDetail(target.eventId, target.attendeeId);
+      const [d, items] = await Promise.all([
+        fetchAttendeeDetail(target.eventId, target.attendeeId),
+        fetchEventItems(target.eventId),
+      ]);
       if (!isStillSelected(target)) return;
+      const fields = flattenCustomDataFieldsFromItems(items);
+      setAttributeFields(fields);
       setForm((currentForm) => {
-        if (!currentForm || !previousDetail) return currentForm;
-        return mergeFormAfterReload(currentForm, previousDetail, d, attributeFields);
+        if (!currentForm || !previousDetail) return toForm(d, fields);
+        return mergeFormAfterReload(currentForm, previousDetail, d, fields);
       });
       setDetail(d);
       setInitialEmail(d.email);

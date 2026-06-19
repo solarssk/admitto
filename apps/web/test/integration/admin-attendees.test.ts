@@ -392,6 +392,19 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(cd.shirt_size).toBe("L");
   });
 
+  it("accepts custom_data_fields values up to 100 characters", async () => {
+    const longValue = "x".repeat(100);
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields: { shirt_size: longValue },
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("writes jacket_size under correct key and check-in card shows parity", async () => {
     await prisma.eventItem.updateMany({
       where: { event_id: EVENT_A, key: "giftbag" },
@@ -492,19 +505,6 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
 
     const card = await getAttendeeCard(EVENT_A, ATT_A2, prisma);
     expect(card!.items.some((i) => i.key === "socks")).toBe(false);
-  });
-
-  it("accepts custom_data_fields values up to 100 characters", async () => {
-    const longValue = "x".repeat(100);
-    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
-      method: "PATCH",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        custom_data_fields: { sock_size: longValue },
-        expected_updated_at: await currentUpdatedAt(ATT_A2),
-      }),
-    });
-    expect(res.status).toBe(200);
   });
 
   it("syncs company edits into custom_data for operator parity", async () => {
