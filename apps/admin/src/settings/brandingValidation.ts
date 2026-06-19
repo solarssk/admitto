@@ -1,3 +1,4 @@
+import { isSafeBrandingFontUrl } from "@admitto/ui";
 import type { BrandingThemeDto } from "../api/types.js";
 
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
@@ -18,10 +19,10 @@ export interface BrandingValidationResult {
   errors: BrandingFieldErrors;
 }
 
-function isValidHttpsUrl(value: string): boolean {
+function fontUrlHasCredentials(value: string): boolean {
   try {
     const url = new URL(value);
-    return url.protocol === "https:";
+    return Boolean(url.username || url.password);
   } catch {
     return false;
   }
@@ -40,10 +41,10 @@ export function validateBrandingDraft(draft: BrandingThemeDto): BrandingValidati
   const fontName = draft.font_family_name?.trim() ?? "";
 
   if (fontUrl) {
-    if (!isValidHttpsUrl(fontUrl)) {
+    if (fontUrlHasCredentials(fontUrl)) {
+      errors.font_family_url = "Font URL must not contain embedded credentials.";
+    } else if (!isSafeBrandingFontUrl(fontUrl)) {
       errors.font_family_url = "Font URL must be a valid HTTPS URL.";
-    } else if (fontUrl.length > 2048) {
-      errors.font_family_url = "Font URL must be 2048 characters or fewer.";
     }
   }
 
@@ -79,7 +80,7 @@ export function brandingDraftForSave(draft: BrandingThemeDto): BrandingThemeDto 
   }
   const fontUrl = draft.font_family_url?.trim();
   const fontName = draft.font_family_name?.trim();
-  if (fontUrl && fontName && isValidHttpsUrl(fontUrl)) {
+  if (fontUrl && fontName && isSafeBrandingFontUrl(fontUrl)) {
     result.font_family_url = fontUrl.slice(0, 2048);
     result.font_family_name = fontName.slice(0, 128);
   }

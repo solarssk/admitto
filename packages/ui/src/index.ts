@@ -20,6 +20,7 @@ export {
   type BadgeVariant,
 } from "./status-map.js";
 export {
+  isSafeBrandingFontUrl,
   resolveThemeVars,
   themeVarsToStyleBlock,
   applyThemeVars,

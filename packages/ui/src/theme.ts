@@ -37,7 +37,8 @@ function mix(hex: string, amount: number, towardWhite: boolean): string {
   return `#${[r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function isSafeFontUrl(url: string): boolean {
+/** HTTPS font URL safe for storage and @font-face (no credentials, max 2048). */
+export function isSafeBrandingFontUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "https:") return false;
@@ -67,7 +68,7 @@ export function resolveThemeVars(input?: BrandingThemeInput | null): ResolvedThe
 
   const fontUrl = input?.font_family_url?.trim();
   const fontName = input?.font_family_name?.trim();
-  if (fontUrl && fontName && isSafeFontUrl(fontUrl)) {
+  if (fontUrl && fontName && isSafeBrandingFontUrl(fontUrl)) {
     const safeName = fontName.replace(/["\\]/g, "");
     const canonicalUrl = new URL(fontUrl).href;
     vars["--font-sans"] = `"${safeName}", Inter, system-ui, sans-serif`;

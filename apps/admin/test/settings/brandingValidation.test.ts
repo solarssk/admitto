@@ -65,6 +65,16 @@ describe("validateBrandingDraft", () => {
     expect(result.errors.font_family_name).toBeUndefined();
   });
 
+  it("rejects credentialed HTTPS font URL", () => {
+    const result = validateBrandingDraft({
+      font_family_url: "https://user:pass@example.com/font.woff2",
+      font_family_name: "Brand Sans",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.font_family_url).toMatch(/credentials/i);
+    expect(result.errors.font_family_name).toBeUndefined();
+  });
+
   it("accepts valid HTTPS font pair", () => {
     const result = validateBrandingDraft({
       font_family_url: "https://cdn.example.com/font.woff2",
@@ -81,6 +91,12 @@ describe("brandingDraftForSave", () => {
         primary: "bad",
         font_family_url: "http://evil",
         font_family_name: "Evil",
+      }),
+    ).toEqual({});
+    expect(
+      brandingDraftForSave({
+        font_family_url: "https://user:pass@example.com/font.woff2",
+        font_family_name: "Brand Sans",
       }),
     ).toEqual({});
     expect(

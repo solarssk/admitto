@@ -342,6 +342,38 @@ describe("PUT /api/admin/theme", () => {
     expect(persisted.theme.font_family_url).toBeUndefined();
     expect(persisted.theme.font_family_name).toBe("Evil");
   });
+
+  it("rejects credentialed HTTPS font URL on save", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(superId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        font_family_url: "https://user:pass@example.com/font.woff2",
+        font_family_name: "Brand Sans",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      theme: { font_family_url?: string; font_family_name?: string };
+      vars: Record<string, string>;
+    };
+    expect(body.theme.font_family_url).toBeUndefined();
+    expect(body.theme.font_family_name).toBe("Brand Sans");
+    expect(body.vars["--font-sans"]).toBeUndefined();
+
+    const getRes = await app.request("/api/admin/theme", {
+      headers: { Cookie: await sessionCookieFor(superId) },
+    });
+    const persisted = (await getRes.json()) as {
+      theme: { font_family_url?: string; font_family_name?: string };
+    };
+    expect(persisted.theme.font_family_url).toBeUndefined();
+    expect(persisted.theme.font_family_name).toBe("Brand Sans");
+  });
 });
 
 describe("staff SPA routes", () => {
