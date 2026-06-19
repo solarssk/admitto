@@ -16,6 +16,19 @@ ADR references appear only where they explain a design constraint.
 
 ## Unreleased
 
+## v0.4.4 — 2026-06-19
+
+Security patch and container publish workflow hardening after v0.4.3. Git tag `v0.4.4`.
+
+### Security / dependencies
+
+- **undici (#94):** bump transitive `undici` 6.26.0 → 6.27.0 — addresses CVE-2026-12151 (high), CVE-2026-9679 (moderate), CVE-2026-11525 and CVE-2026-6733 (low).
+
+### Infra / CI
+
+- **Publish container (#93):** manual `workflow_dispatch` on branch refs (e.g. `refs/heads/main`) runs **scan-only** — build image, Trivy SARIF upload, CRITICAL gate — without invalid SBOM paths or semver Docker metadata failures.
+- **Tag gate:** GHCR push, provenance attestation, and release SBOM upload run only for `refs/tags/*` semver refs; semver-shaped branch names cannot publish.
+
 ## v0.4.3 — 2026-06-19
 
 Admin capabilities, dynamic event attributes, and corporate due-diligence readiness. Git tag `v0.4.3`.
