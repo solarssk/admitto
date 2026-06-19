@@ -32,13 +32,24 @@ For integration tests, use `@admitto/auth/testing` helpers.
 
 Requires `DATABASE_URL` and `ENCRYPTION_KEY`. Password is read from stdin (never pass on argv).
 
+**Local dev** (from repo root):
+
 ```bash
 npm run cli -w @admitto/auth -- bootstrap-superadmin --email admin@example.com
 npm run cli -w @admitto/auth -- reset-mfa --email superadmin@example.com
 npm run cli -w @admitto/auth -- generate-emergency-recovery --email superadmin@example.com
 ```
 
-In Docker production, run via the app container entrypoint passthrough — see [`deploy/README.md`](../../deploy/README.md).
+**Docker production** — the runtime image has no `npm`/`npx`; use `node` via the app entrypoint passthrough (see [`deploy/README.md`](../../deploy/README.md)):
+
+```bash
+docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin \
+  --email admin@example.com
+docker compose run --rm app node packages/auth/dist/cli.js reset-mfa \
+  --email superadmin@example.com
+docker compose run --rm app node packages/auth/dist/cli.js generate-emergency-recovery \
+  --email superadmin@example.com
+```
 
 ## Tests
 
