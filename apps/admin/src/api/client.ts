@@ -508,7 +508,8 @@ export async function fetchTicketTypes(
 export async function exportAttendees(
   eventId: string,
   params: { q?: string; status?: string; ticket_type?: string },
-  format: "xlsx" | "csv",
+  format: "xlsx" | "csv" | "pdf",
+  signal?: AbortSignal,
 ): Promise<void> {
   const urlParams = new URLSearchParams({ format });
   if (params.q) urlParams.set("q", params.q);
@@ -517,7 +518,7 @@ export async function exportAttendees(
 
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${urlParams.toString()}`,
-    { credentials: "same-origin" },
+    { credentials: "same-origin", signal },
   );
   if (!res.ok) {
     let message = `HTTP ${res.status}`;

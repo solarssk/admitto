@@ -14,6 +14,7 @@ export function AttendeesPage() {
   const { eventId } = useParams();
   const { reportApiError } = useConnectionState();
   const listAbortRef = useRef<AbortController | null>(null);
+  const exportAbortRef = useRef<AbortController | null>(null);
 
   const [items, setItems] = useState<AttendeeRowDto[]>([]);
   const [total, setTotal] = useState(0);
@@ -24,7 +25,7 @@ export function AttendeesPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "admitted" | "not_admitted">("all");
   const [ticketTypeFilter, setTicketTypeFilter] = useState("");
   const [availableTypes, setAvailableTypes] = useState<string[]>([]);
-  const [exportingFormat, setExportingFormat] = useState<"xlsx" | "csv" | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<"xlsx" | "csv" | "pdf" | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -106,9 +107,16 @@ export function AttendeesPage() {
     return () => listAbortRef.current?.abort();
   }, [loadList, reloadToken]);
 
+  useEffect(() => () => exportAbortRef.current?.abort(), []);
+
   const handleExport = useCallback(
-    async (format: "xlsx" | "csv") => {
+    async (format: "xlsx" | "csv" | "pdf") => {
       if (!eventId) return;
+
+      exportAbortRef.current?.abort();
+      const ac = new AbortController();
+      exportAbortRef.current = ac;
+
       setExportingFormat(format);
       setExportError(null);
       try {
@@ -120,8 +128,10 @@ export function AttendeesPage() {
             ticket_type: ticketTypeFilter || undefined,
           },
           format,
+          ac.signal,
         );
       } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
         if (err instanceof ApiError) {
           reportApiError(err.status);
           if (err.status === 401) {
@@ -134,7 +144,7 @@ export function AttendeesPage() {
           setExportError("Export failed.");
         }
       } finally {
-        setExportingFormat(null);
+        if (!ac.signal.aborted) setExportingFormat(null);
       }
     },
     [eventId, searchQuery, statusFilter, ticketTypeFilter, reportApiError],
@@ -168,7 +178,15 @@ export function AttendeesPage() {
               disabled={exportingFormat !== null}
               onClick={() => void handleExport("csv")}
             >
-              {exportingFormat === "csv" ? "Exporting…" : "CSV"}
+              {exportingFormat === "csv" ? "Exporting…" : "Export CSV"}
+            </Button>
+            <Button
+              variant="secondary"
+              icon={<i className="ti ti-file-type-pdf" aria-hidden="true" />}
+              disabled={exportingFormat !== null}
+              onClick={() => void handleExport("pdf")}
+            >
+              {exportingFormat === "pdf" ? "Exporting…" : "Export PDF"}
             </Button>
             <Link to={`/admin/events/${eventId}/attendees/import`}>
               <Button variant="primary">Import attendees</Button>
