@@ -27,7 +27,9 @@ jobs:
 
       - name: Install Semgrep
         run: |
-          python -m pip install --upgrade pip setuptools wheel --break-system-packages
+          python -m pip install --upgrade pip wheel --break-system-packages
+          # semgrep 1.136.x still imports pkg_resources via opentelemetry; setuptools 82+ drops it on GH runners
+          python -m pip install "setuptools>=69,<82" --break-system-packages
           python -m pip install semgrep==1.136.0 --break-system-packages
 
       - name: Run Semgrep
