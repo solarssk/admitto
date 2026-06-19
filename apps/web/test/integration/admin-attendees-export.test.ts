@@ -28,6 +28,8 @@ const ATT_VIP2 = "att-export-vip2";
 const ATT_STD = "att-export-std";
 const ATT_INJ = "att-export-inj";
 const ATT_CROSS = "att-export-cross";
+const ATT_MEGA_VIP = "att-export-mega-vip";
+const ATT_MEGA_STD = "att-export-mega-std";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -170,6 +172,29 @@ async function seed(client: PrismaClient) {
       },
     ],
   });
+
+  await client.attendee.createMany({
+    data: [
+      {
+        id: ATT_MEGA_STD,
+        event_id: EVENT_EX,
+        email: "mega-std@example.com",
+        name: "Mega Bulk Guest",
+        ticket_type: "standard",
+        custom_data: { company: "MegaCorp" },
+        ...mkToken(),
+      },
+      {
+        id: ATT_MEGA_VIP,
+        event_id: EVENT_EX,
+        email: "mega-vip@example.com",
+        name: "Mega Vip",
+        ticket_type: "vip",
+        custom_data: { company: "MegaCorp" },
+        ...mkToken(),
+      },
+    ],
+  });
 }
 
 async function sessionCookieFor(userId: string): Promise<string> {
@@ -244,11 +269,12 @@ describe("GET /api/admin/events/:eventId/attendees — ticket_type filter", () =
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: { id: string }[]; total: number };
-    expect(body.total).toBe(3);
+    expect(body.total).toBe(4);
     const ids = body.items.map((i) => i.id);
     expect(ids).toContain(ATT_VIP1);
     expect(ids).toContain(ATT_VIP2);
     expect(ids).toContain(ATT_INJ);
+    expect(ids).toContain(ATT_MEGA_VIP);
     expect(ids).not.toContain(ATT_STD);
   });
 
@@ -331,7 +357,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     );
     expect(res.status).toBe(200);
     const rows = await parseXlsxRows(await res.arrayBuffer());
-    expect(rows.length).toBe(4);
+    expect(rows.length).toBe(5);
     const dataRows = rows.slice(1);
     expect(dataRows.every((r) => r[4] === "vip")).toBe(true);
     expect(dataRows.some((r) => r[0] === "Standard Guest")).toBe(false);
@@ -372,6 +398,18 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     expect(lines[1]).toContain("Vip One");
     expect(lines[1]).not.toContain("Vip Two");
     expect(lines[1]).not.toContain("Standard Guest");
+  });
+
+  it("json custom_data search respects ticket_type before export cap", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip&q=MegaCorp`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const lines = (await res.text()).split("\r\n").filter(Boolean);
+    expect(lines.length).toBe(2);
+    expect(lines[1]).toContain("Mega Vip");
+    expect(lines[1]).not.toContain("Mega Standard");
   });
 
   it("no matches → file with headers only", async () => {

@@ -115,6 +115,28 @@ function buildExportCsv(exportRows: {
   return [header, ...csvRows].join("\r\n");
 }
 
+/** IDs from custom_data company/department search, scoped to active export filters. */
+async function fetchJsonSearchAttendeeIds(
+  db: PrismaClient,
+  eventId: string,
+  q: string,
+  status: "all" | "admitted" | "not_admitted",
+  ticket_type?: string,
+): Promise<string[]> {
+  const rows = await db.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "Attendee"
+    WHERE event_id = ${eventId}
+      ${status === "admitted" ? Prisma.sql`AND admitted_at IS NOT NULL` : Prisma.empty}
+      ${status === "not_admitted" ? Prisma.sql`AND admitted_at IS NULL` : Prisma.empty}
+      ${ticket_type ? Prisma.sql`AND ticket_type = ${ticket_type}` : Prisma.empty}
+      AND (
+        (custom_data->>'company') ILIKE ${`%${q}%`}
+        OR (custom_data->>'department') ILIKE ${`%${q}%`}
+      )
+  `;
+  return rows.map((r) => r.id);
+}
+
 /** Build XLSX bytes for sanitized export rows (dynamic exceljs import, ESM-safe). */
 async function buildExportXlsxBuffer(exportRows: {
   name: string;
@@ -462,19 +484,7 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   };
 
   if (q) {
-    const jsonMatches = await db.$queryRaw<{ id: string }[]>`
-      SELECT id FROM "Attendee"
-      WHERE event_id = ${eventId}
-        AND (
-          (custom_data->>'company') ILIKE ${`%${q}%`}
-          OR (custom_data->>'department') ILIKE ${`%${q}%`}
-        )
-      LIMIT ${EXPORT_ROW_CAP + 1}
-    `;
-    if (jsonMatches.length > EXPORT_ROW_CAP) {
-      return c.json({ error: "export_too_large", count: jsonMatches.length, cap: EXPORT_ROW_CAP }, 400);
-    }
-    const jsonIds = jsonMatches.map((r) => r.id);
+    const jsonIds = await fetchJsonSearchAttendeeIds(db, eventId, q, status, ticket_type);
     where.AND = [
       {
         OR: [
