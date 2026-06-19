@@ -10,25 +10,29 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 > **How to read this:** rows describe what organizations commonly require and how Admitto can be
 > configured — not a checklist of what any single deployment must enable. Your runbook and
 > environment variables define the effective control set.
+>
+> **`Where` column:** **App** = built into the application; **Config** = available but must be
+> enabled or tuned in deployment settings; **Operator** = customer infrastructure or process
+> (reverse proxy, disk encryption, perimeter, runbooks).
 
 ---
 
 ## Control areas (summary)
 
-| Area | Typical enterprise expectation | Admitto support |
-|------|-------------------------------|-----------------|
-| Authentication | Staff sign-in before admin/operator actions | Local accounts and/or **OIDC** — implemented; optional per deployment |
-| Authorization | Least privilege by role and event/org scope | **RBAC** with separate admin, operator, and platform roles |
-| Strong auth | MFA for privileged users | **TOTP** for elevated roles — implemented; enable via deployment config |
-| Edge access | Restrict staff URLs at the perimeter | Optional **zero-trust / access gateway** in front of staff paths (customer choice) |
-| Session security | HttpOnly cookies, TLS, rotation | Configurable session lifetime; revocation supported |
-| CSRF | Protect state-changing browser requests | Same-origin checks on mutating requests when deployed behind a standard reverse proxy |
-| Abuse prevention | Rate limits on login and public pages | Configurable per-route throttling (shared store recommended in production) |
-| Secrets | No credentials in source code | Environment / secret manager only; integration secrets encrypted in the database |
-| Data at rest | Protect tickets and integration secrets | Application-level encryption for sensitive fields; **disk encryption is the operator's responsibility** |
-| Transport | TLS to users | Terminated at the customer's **reverse proxy, load balancer, or CDN** |
-| Logging | Minimise personal data in logs | Design goal: redacted identifiers in audit output; no secrets in log lines |
-| Supply chain | Scans on code and container image | Documented in [SECURITY.md](../SECURITY.md) |
+| Area | Typical enterprise expectation | Admitto support | Where |
+|------|-------------------------------|-----------------|-------|
+| Authentication | Staff sign-in before admin/operator actions | Local accounts and/or **OIDC** | App · Config |
+| Authorization | Least privilege by role and event/org scope | **RBAC** (admin, operator, platform roles) | App |
+| Strong auth | MFA for privileged users | **TOTP** for elevated roles | App · Config |
+| Edge access | Restrict staff URLs at the perimeter | Optional zero-trust / access gateway in front of staff paths | Operator |
+| Session security | HttpOnly cookies, TLS, rotation | Configurable lifetime; server-side revocation | App · Config |
+| CSRF | Protect state-changing browser requests | Same-origin checks on mutating requests (behind standard reverse proxy) | App |
+| Abuse prevention | Rate limits on login and public pages | Per-route throttling (shared store recommended in production) | App · Config |
+| Secrets | No credentials in source code | Env / secret manager; integration secrets encrypted in DB | App · Operator |
+| Data at rest | Protect tickets and integration secrets | Field-level encryption for sensitive data; **disk encryption** | App · Operator |
+| Transport | TLS to users | Terminated at customer **reverse proxy, load balancer, or CDN** | Operator |
+| Logging | Minimise personal data in logs | Redacted identifiers in audit output; no secrets in log lines | App |
+| Supply chain | Scans on code and container image | Documented in [SECURITY.md](../SECURITY.md) | App |
 
 ---
 
