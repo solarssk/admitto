@@ -62,7 +62,6 @@ export interface AttendeeCardDto {
   ticket_type: string | null;
   check_in_status: "not_admitted" | "admitted";
   admitted_at: string | null;
-  shirt_size: string | null;
   items: AttendeeCardItemDto[];
   notes: { body: string; author_display: string; created_at: string }[];
   warnings: string[];
@@ -139,7 +138,6 @@ export interface AttendeeDetailDto {
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
   updated_at: string;
-  shirt_size: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
 }
@@ -165,7 +163,7 @@ export interface UpdateAttendeePatch {
   company?: string | null;
   department?: string | null;
   ticket_type?: string | null;
-  shirt_size?: string | null;
+  custom_data_fields?: Record<string, string | null>;
   expected_updated_at?: string;
 }
 

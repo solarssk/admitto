@@ -2,7 +2,6 @@
 export type AttendeeCustomData = {
   company?: string;
   department?: string;
-  shirt_size?: string;
 };
 
 export function parseCustomData(raw: unknown): AttendeeCustomData {
@@ -11,12 +10,7 @@ export function parseCustomData(raw: unknown): AttendeeCustomData {
   const out: AttendeeCustomData = {};
   if (typeof o.company === "string" && o.company.trim()) out.company = o.company.trim();
   if (typeof o.department === "string" && o.department.trim()) out.department = o.department.trim();
-  if (typeof o.shirt_size === "string" && o.shirt_size.trim()) out.shirt_size = o.shirt_size.trim();
   return out;
-}
-
-export function shirtSizeFromCustomData(raw: unknown): string | null {
-  return parseCustomData(raw).shirt_size ?? null;
 }
 
 /** Read a single custom_data field by key (any slug, not limited to AttendeeCustomData). */

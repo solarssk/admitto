@@ -43,6 +43,7 @@ async function seed(client: PrismaClient) {
   const eventIds = [EVENT_EX, EVENT_EX_B, EVENT_EMPTY];
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
+  await client.eventItem.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.roleAssignment.deleteMany({
     where: { OR: [{ scope_id: { in: [ORG_EX, ORG_EX_B, ...eventIds] } }] },
   });
@@ -429,7 +430,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     expect(admittedCol).toBe(expected);
   });
 
-  it("export does not include shirt_size attribute column", async () => {
+  it("export does not include attribute columns when event has no contents", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_EX}/attendees/export?format=csv`,
       { headers: { Cookie: adminCookie } },
@@ -439,6 +440,60 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     const header = text.split("\r\n")[0] ?? "";
     expect(header).not.toContain("Shirt size");
     expect(header).not.toContain("shirt_size");
+    expect(header).not.toContain("Jacket size");
+  });
+
+  it("export includes dynamic Jacket size column from event item contents", async () => {
+    await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_EX,
+        key: "giftbag",
+        label: "Gift bag",
+        config: { contents: [{ label: "Jacket size", source_field: "jacket_size" }] },
+      },
+    });
+    await prisma.attendee.update({
+      where: { id: ATT_VIP1 },
+      data: { custom_data: { jacket_size: "L" } },
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&status=admitted`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const lines = (await res.text()).split("\r\n").filter(Boolean);
+    const header = lines[0] ?? "";
+    expect(header).toContain("Jacket size");
+    expect(header).not.toContain("Shirt size");
+    const vipRow = lines.find((l) => l.includes("Vip One"));
+    expect(vipRow).toContain('"L"');
+  });
+
+  it("export includes Shirt size column for default seed contents", async () => {
+    await prisma.eventItem.deleteMany({ where: { event_id: EVENT_EX } });
+    await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_EX,
+        key: "giftbag",
+        label: "Gift bag",
+        config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
+      },
+    });
+    await prisma.attendee.update({
+      where: { id: ATT_STD },
+      data: { custom_data: { shirt_size: "M" } },
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx&q=Standard`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const rows = await parseXlsxRows(await res.arrayBuffer());
+    expect(rows[0]).toContain("Shirt size");
+    const dataRow = rows.find((r) => r[1] === "Standard Guest");
+    expect(dataRow?.[8]).toBe("M");
   });
 
   it("list and export return same subset (parity)", async () => {

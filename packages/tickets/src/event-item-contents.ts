@@ -31,6 +31,20 @@ export function resolveEventItemContents(config: unknown): EventItemContent[] {
   return [];
 }
 
+/** Collect unique custom_data attribute fields across multiple EventItem configs (first label wins). */
+export function collectEventCustomDataFields(itemConfigs: unknown[]): EventItemContent[] {
+  const seen = new Set<string>();
+  const out: EventItemContent[] = [];
+  for (const config of itemConfigs) {
+    for (const field of resolveEventItemContents(config)) {
+      if (seen.has(field.source_field)) continue;
+      seen.add(field.source_field);
+      out.push(field);
+    }
+  }
+  return out;
+}
+
 /** Build operator hint detail from item config + attendee custom_data. */
 export function buildItemDetail(config: unknown, customData: unknown): string | undefined {
   const contents = resolveEventItemContents(config);
