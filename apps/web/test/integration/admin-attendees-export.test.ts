@@ -546,6 +546,32 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     expect(lines[1]).not.toContain("Mega Standard");
   });
 
+  it("json search with many standard matches does not materialize ids for vip export", async () => {
+    await prisma.attendee.createMany({
+      data: Array.from({ length: 60 }, (_, i) => {
+        const token = generateToken();
+        return {
+          id: `att-export-bulk-json-${i}`,
+          event_id: EVENT_EX,
+          email: `bulk-json-${i}@example.com`,
+          name: `Bulk JSON ${i}`,
+          ticket_type: "standard",
+          custom_data: { company: "SharedBulkCorp" },
+          token_hash: hashToken(token),
+          token_enc: encryptToString(generateToken()),
+        };
+      }),
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip&q=SharedBulkCorp`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const lines = (await res.text()).split("\r\n").filter(Boolean);
+    expect(lines.length).toBe(1);
+  });
+
   it("no matches → file with headers only", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=nonexistent`,

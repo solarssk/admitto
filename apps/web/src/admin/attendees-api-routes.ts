@@ -155,44 +155,136 @@ function buildExportCsv(exportRows: SanitizedExportRow[]): string {
   return [header, ...csvRows].join("\r\n");
 }
 
-/** Build Prisma where for attendee list and export (shared filters + search). */
-async function buildAttendeeListWhere(
-  db: PrismaClient,
+/** Build Prisma where for attendee list and export (status/ticket_type only — no search). */
+function buildAttendeeListWhere(
   eventId: string,
   params: AttendeeListFilterParams,
-): Promise<Prisma.AttendeeWhereInput> {
-  const { q, status, ticket_type } = params;
-  const where: Prisma.AttendeeWhereInput = {
+): Prisma.AttendeeWhereInput {
+  const { status, ticket_type } = params;
+  return {
     event_id: eventId,
     ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
     ...(status === "not_admitted" ? { admitted_at: null } : {}),
     ...(ticket_type ? { ticket_type } : {}),
   };
+}
 
-  if (q) {
-    const jsonMatches = await db.$queryRaw<{ id: string }[]>`
-      SELECT id FROM "Attendee"
-      WHERE event_id = ${eventId}
-        AND (
-          (custom_data->>'company') ILIKE ${`%${q}%`}
-          OR (custom_data->>'department') ILIKE ${`%${q}%`}
-        )
-    `;
-    const jsonIds = jsonMatches.map((r) => r.id);
-    where.AND = [
-      {
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { email: { contains: q, mode: "insensitive" } },
-          { company: { contains: q, mode: "insensitive" } },
-          { department: { contains: q, mode: "insensitive" } },
-          ...(jsonIds.length > 0 ? [{ id: { in: jsonIds } }] : []),
-        ],
-      },
-    ];
+function attendeeStatusSql(status: AttendeeListFilterParams["status"]) {
+  if (status === "admitted") return Prisma.sql`AND admitted_at IS NOT NULL`;
+  if (status === "not_admitted") return Prisma.sql`AND admitted_at IS NULL`;
+  return Prisma.empty;
+}
+
+function attendeeTicketTypeSql(ticket_type?: string) {
+  return ticket_type ? Prisma.sql`AND ticket_type = ${ticket_type}` : Prisma.empty;
+}
+
+/** Search OR (columns + custom_data json), inlined in SQL — no id materialization. */
+function attendeeSearchOrSql(q: string) {
+  const pattern = `%${q}%`;
+  return Prisma.sql`AND (
+    name ILIKE ${pattern}
+    OR email ILIKE ${pattern}
+    OR company ILIKE ${pattern}
+    OR department ILIKE ${pattern}
+    OR (custom_data->>'company') ILIKE ${pattern}
+    OR (custom_data->>'department') ILIKE ${pattern}
+  )`;
+}
+
+async function countFilteredAttendees(
+  db: PrismaClient,
+  eventId: string,
+  params: AttendeeListFilterParams,
+): Promise<number> {
+  const { q, status, ticket_type } = params;
+  if (!q) {
+    return db.attendee.count({ where: buildAttendeeListWhere(eventId, params) });
   }
+  const [{ count }] = await db.$queryRaw<[{ count: bigint }]>`
+    SELECT COUNT(*)::bigint AS count FROM "Attendee"
+    WHERE event_id = ${eventId}
+      ${attendeeStatusSql(status)}
+      ${attendeeTicketTypeSql(ticket_type)}
+      ${attendeeSearchOrSql(q)}
+  `;
+  return Number(count);
+}
 
-  return where;
+type AttendeeListSqlRow = {
+  id: string;
+  name: string;
+  email: string;
+  company: string | null;
+  department: string | null;
+  custom_data: unknown;
+  ticket_type: string | null;
+  admitted_at: Date | null;
+};
+
+async function findFilteredAttendeesForList(
+  db: PrismaClient,
+  eventId: string,
+  params: AttendeeListFilterParams,
+  page: number,
+  pageSize: number,
+): Promise<AttendeeListSqlRow[]> {
+  const { q, status, ticket_type } = params;
+  if (!q) {
+    return db.attendee.findMany({
+      where: buildAttendeeListWhere(eventId, params),
+      select: ATTENDEE_LIST_SELECT,
+      orderBy: { name: "asc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+  }
+  const skip = (page - 1) * pageSize;
+  return db.$queryRaw<AttendeeListSqlRow[]>`
+    SELECT id, name, email, company, department, custom_data, ticket_type, admitted_at
+    FROM "Attendee"
+    WHERE event_id = ${eventId}
+      ${attendeeStatusSql(status)}
+      ${attendeeTicketTypeSql(ticket_type)}
+      ${attendeeSearchOrSql(q)}
+    ORDER BY name ASC
+    LIMIT ${pageSize} OFFSET ${skip}
+  `;
+}
+
+type ExportAttendeeSqlRow = {
+  name: string;
+  email: string;
+  company: string | null;
+  department: string | null;
+  custom_data: unknown;
+  ticket_type: string | null;
+  admitted_at: Date | null;
+};
+
+async function findFilteredAttendeesForExport(
+  db: PrismaClient,
+  eventId: string,
+  params: AttendeeListFilterParams,
+): Promise<ExportAttendeeSqlRow[]> {
+  const { q, status, ticket_type } = params;
+  if (!q) {
+    return db.attendee.findMany({
+      where: buildAttendeeListWhere(eventId, params),
+      select: EXPORT_ATTENDEE_SELECT,
+      orderBy: { name: "asc" },
+    });
+  }
+  return db.$queryRaw<ExportAttendeeSqlRow[]>`
+    SELECT name, email, company, department, custom_data, ticket_type, admitted_at
+    FROM "Attendee"
+    WHERE event_id = ${eventId}
+      ${attendeeStatusSql(status)}
+      ${attendeeTicketTypeSql(ticket_type)}
+      ${attendeeSearchOrSql(q)}
+    ORDER BY name ASC
+    LIMIT ${EXPORT_ROW_CAP}
+  `;
 }
 
 /** Build XLSX bytes for sanitized export rows (dynamic exceljs import, ESM-safe). */
@@ -530,17 +622,11 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
 
   const { page, pageSize, q, status, ticket_type } = parseListQuery(c);
 
-  const where = await buildAttendeeListWhere(db, eventId, { q, status, ticket_type });
+  const filterParams = { q, status, ticket_type };
 
   const [total, rows] = await Promise.all([
-    db.attendee.count({ where }),
-    db.attendee.findMany({
-      where,
-      select: ATTENDEE_LIST_SELECT,
-      orderBy: { name: "asc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
+    countFilteredAttendees(db, eventId, filterParams),
+    findFilteredAttendeesForList(db, eventId, filterParams, page, pageSize),
   ]);
 
   const lastMail = await lastMailStatusByAttendee(
@@ -595,28 +681,23 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   const { q, status, ticket_type } = parseListQuery(c);
   const timeZone = resolvePreviewEventTimeZone();
 
-  const [event, where] = await Promise.all([
-    db.event.findUnique({
-      where: { id: eventId },
-      select: { title: true, date: true },
-    }),
-    buildAttendeeListWhere(db, eventId, { q, status, ticket_type }),
-  ]);
+  const filterParams = { q, status, ticket_type };
+
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: { title: true, date: true },
+  });
 
   if (!event) {
     return c.json({ error: "forbidden" }, 403);
   }
 
-  const total = await db.attendee.count({ where });
+  const total = await countFilteredAttendees(db, eventId, filterParams);
   if (total > EXPORT_ROW_CAP) {
     return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
   }
 
-  const rows = await db.attendee.findMany({
-    where,
-    select: EXPORT_ATTENDEE_SELECT,
-    orderBy: { name: "asc" },
-  });
+  const rows = await findFilteredAttendeesForExport(db, eventId, filterParams);
 
   const exportRows: SanitizedExportRow[] = rows.map((row) => {
     const { company, department } = resolveCompanyDepartment(row);
