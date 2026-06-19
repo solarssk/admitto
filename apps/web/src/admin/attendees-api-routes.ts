@@ -9,6 +9,7 @@ import {
   type DeliveryDto,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
+import { formatEventDate, resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
   parseCustomData,
   shirtSizeFromCustomData,
@@ -71,8 +72,9 @@ const resendBodySchema = z
 
 const EXPORT_ROW_CAP = 50_000;
 
-/** Column headers for attendee export files (XLSX/CSV). */
+/** Column headers for XLSX/PDF export (includes check-off). */
 const EXPORT_COLUMNS = [
+  "✓",
   "Name",
   "Email",
   "Company",
@@ -81,6 +83,51 @@ const EXPORT_COLUMNS = [
   "Check-in status",
   "Admitted at",
 ] as const;
+
+/** CSV export omits the visual check-off column. */
+const EXPORT_CSV_COLUMNS = EXPORT_COLUMNS.slice(1);
+
+const EXPORT_ATTENDEE_SELECT = {
+  name: true,
+  email: true,
+  company: true,
+  department: true,
+  custom_data: true,
+  ticket_type: true,
+  admitted_at: true,
+} as const;
+
+type SanitizedExportRow = {
+  check_off: string;
+  name: string;
+  email: string;
+  company: string;
+  department: string;
+  ticket_type: string;
+  check_in_status: string;
+  admitted_at: string;
+};
+
+type AttendeeListFilterParams = {
+  q?: string;
+  status: "all" | "admitted" | "not_admitted";
+  ticket_type?: string;
+};
+
+/** Format admitted_at for export in the event default timezone (YYYY-MM-DD HH:mm). */
+function formatAdmittedAtLocal(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+    .format(date)
+    .replace(",", "");
+}
 
 /** Guard against CSV/formula injection — prefix cells starting with = + - @ TAB CR. */
 function sanitizeCell(value: string | null | undefined): string {
@@ -97,16 +144,8 @@ function exportContentDisposition(filename: string): string {
 }
 
 /** Build CSV text for sanitized export rows (CRLF, quoted fields). */
-function buildExportCsv(exportRows: {
-  name: string;
-  email: string;
-  company: string;
-  department: string;
-  ticket_type: string;
-  check_in_status: string;
-  admitted_at: string;
-}[]): string {
-  const header = EXPORT_COLUMNS.join(",");
+function buildExportCsv(exportRows: SanitizedExportRow[]): string {
+  const header = EXPORT_CSV_COLUMNS.join(",");
   const csvRows = exportRows.map((r) =>
     [r.name, r.email, r.company, r.department, r.ticket_type, r.check_in_status, r.admitted_at]
       .map((v) => `"${v.replace(/"/g, '""')}"`)
@@ -115,97 +154,59 @@ function buildExportCsv(exportRows: {
   return [header, ...csvRows].join("\r\n");
 }
 
-type ExportFilterParams = {
-  eventId: string;
-  status: "all" | "admitted" | "not_admitted";
-  ticket_type?: string;
-  q?: string;
-};
-
-type ExportAttendeeRow = {
-  name: string;
-  email: string;
-  company: string | null;
-  department: string | null;
-  custom_data: unknown;
-  ticket_type: string | null;
-  admitted_at: Date | null;
-};
-
-function exportStatusSql(status: ExportFilterParams["status"]) {
-  if (status === "admitted") return Prisma.sql`AND admitted_at IS NOT NULL`;
-  if (status === "not_admitted") return Prisma.sql`AND admitted_at IS NULL`;
-  return Prisma.empty;
-}
-
-function exportTicketTypeSql(ticket_type?: string) {
-  return ticket_type ? Prisma.sql`AND ticket_type = ${ticket_type}` : Prisma.empty;
-}
-
-/** Full-text export search OR (columns + custom_data json), inlined in SQL — no id materialization. */
-function exportSearchOrSql(q: string) {
-  const pattern = `%${q}%`;
-  return Prisma.sql`AND (
-    name ILIKE ${pattern}
-    OR email ILIKE ${pattern}
-    OR company ILIKE ${pattern}
-    OR department ILIKE ${pattern}
-    OR (custom_data->>'company') ILIKE ${pattern}
-    OR (custom_data->>'department') ILIKE ${pattern}
-  )`;
-}
-
-/** Count export rows with optional search — cap check without loading matching ids. */
-async function countExportAttendees(
+/** Build Prisma where for attendee list and export (shared filters + search). */
+async function buildAttendeeListWhere(
   db: PrismaClient,
-  filters: ExportFilterParams,
-): Promise<number> {
-  const { eventId, status, ticket_type, q } = filters;
-  const [{ count }] = await db.$queryRaw<[{ count: bigint }]>`
-    SELECT COUNT(*)::bigint AS count FROM "Attendee"
-    WHERE event_id = ${eventId}
-      ${exportStatusSql(status)}
-      ${exportTicketTypeSql(ticket_type)}
-      ${q ? exportSearchOrSql(q) : Prisma.empty}
-  `;
-  return Number(count);
-}
+  eventId: string,
+  params: AttendeeListFilterParams,
+): Promise<Prisma.AttendeeWhereInput> {
+  const { q, status, ticket_type } = params;
+  const where: Prisma.AttendeeWhereInput = {
+    event_id: eventId,
+    ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
+    ...(status === "not_admitted" ? { admitted_at: null } : {}),
+    ...(ticket_type ? { ticket_type } : {}),
+  };
 
-/** Fetch export rows when search is active (same predicate as countExportAttendees). */
-async function fetchExportAttendeeRowsWithSearch(
-  db: PrismaClient,
-  filters: ExportFilterParams & { q: string },
-): Promise<ExportAttendeeRow[]> {
-  const { eventId, status, ticket_type, q } = filters;
-  return db.$queryRaw<ExportAttendeeRow[]>`
-    SELECT name, email, company, department, custom_data, ticket_type, admitted_at
-    FROM "Attendee"
-    WHERE event_id = ${eventId}
-      ${exportStatusSql(status)}
-      ${exportTicketTypeSql(ticket_type)}
-      ${exportSearchOrSql(q)}
-    ORDER BY name ASC
-    LIMIT ${EXPORT_ROW_CAP}
-  `;
+  if (q) {
+    const jsonMatches = await db.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "Attendee"
+      WHERE event_id = ${eventId}
+        AND (
+          (custom_data->>'company') ILIKE ${`%${q}%`}
+          OR (custom_data->>'department') ILIKE ${`%${q}%`}
+        )
+    `;
+    const jsonIds = jsonMatches.map((r) => r.id);
+    where.AND = [
+      {
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { email: { contains: q, mode: "insensitive" } },
+          { company: { contains: q, mode: "insensitive" } },
+          { department: { contains: q, mode: "insensitive" } },
+          ...(jsonIds.length > 0 ? [{ id: { in: jsonIds } }] : []),
+        ],
+      },
+    ];
+  }
+
+  return where;
 }
 
 /** Build XLSX bytes for sanitized export rows (dynamic exceljs import, ESM-safe). */
-async function buildExportXlsxBuffer(exportRows: {
-  name: string;
-  email: string;
-  company: string;
-  department: string;
-  ticket_type: string;
-  check_in_status: string;
-  admitted_at: string;
-}[]): Promise<Uint8Array> {
+async function buildExportXlsxBuffer(exportRows: SanitizedExportRow[]): Promise<Uint8Array> {
   const exceljs = await import("exceljs");
   const ExcelJS = exceljs.default ?? exceljs;
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Attendees");
-  ws.columns = EXPORT_COLUMNS.map((h) => ({ header: h, width: 28 }));
+  ws.columns = EXPORT_COLUMNS.map((h, i) => ({
+    header: h,
+    width: i === 0 ? 5 : 28,
+  }));
   for (const r of exportRows) {
-    ws.addRow([
+    const row = ws.addRow([
+      r.check_off,
       r.name,
       r.email,
       r.company,
@@ -214,8 +215,89 @@ async function buildExportXlsxBuffer(exportRows: {
       r.check_in_status,
       r.admitted_at,
     ]);
+    row.getCell(1).alignment = { horizontal: "center" };
   }
+  ws.pageSetup = {
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+    orientation: "landscape",
+    paperSize: 9,
+  };
+  ws.views = [{ state: "frozen", ySplit: 1 }];
   return new Uint8Array(await wb.xlsx.writeBuffer());
+}
+
+const PDF_COL_WIDTHS = [22, 85, 100, 75, 70, 65, 75, 80];
+const PDF_ROW_HEIGHT = 16;
+const PDF_FONT_SIZE = 8;
+const PDF_PAGE_BOTTOM = 555;
+
+/** Build PDF bytes for export rows (dynamic pdfkit import, ESM-safe). */
+async function buildExportPdfBuffer(
+  exportRows: SanitizedExportRow[],
+  eventMeta: { title: string; date: Date },
+  timeZone: string,
+): Promise<Uint8Array> {
+  const pdfkitMod = await import("pdfkit");
+  const PDFDocument = pdfkitMod.default ?? pdfkitMod;
+
+  const chunks: Buffer[] = [];
+  const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 40 });
+  doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+  const eventDateStr = formatEventDate(eventMeta.date, timeZone);
+  doc.fontSize(14).font("Helvetica-Bold").text(`${eventMeta.title} — ${eventDateStr}`);
+  doc.moveDown(0.5);
+
+  let y = doc.y;
+
+  const drawTableHeader = () => {
+    doc.fontSize(PDF_FONT_SIZE).font("Helvetica-Bold");
+    let x = 40;
+    for (let i = 0; i < EXPORT_COLUMNS.length; i++) {
+      doc.text(EXPORT_COLUMNS[i]!, x, y, { width: PDF_COL_WIDTHS[i], lineBreak: false });
+      x += PDF_COL_WIDTHS[i]!;
+    }
+    y += PDF_ROW_HEIGHT;
+    doc.font("Helvetica");
+  };
+
+  drawTableHeader();
+
+  for (const row of exportRows) {
+    if (y + PDF_ROW_HEIGHT > PDF_PAGE_BOTTOM) {
+      doc.addPage({ size: "A4", layout: "landscape", margin: 40 });
+      y = 40;
+      drawTableHeader();
+    }
+    const cells = [
+      row.check_off,
+      row.name,
+      row.email,
+      row.company,
+      row.department,
+      row.ticket_type,
+      row.check_in_status,
+      row.admitted_at,
+    ];
+    doc.fontSize(PDF_FONT_SIZE);
+    let x = 40;
+    for (let i = 0; i < cells.length; i++) {
+      doc.text(cells[i] ?? "", x, y, { width: PDF_COL_WIDTHS[i], lineBreak: false, ellipsis: true });
+      x += PDF_COL_WIDTHS[i]!;
+    }
+    y += PDF_ROW_HEIGHT;
+  }
+
+  const done = new Promise<void>((resolve, reject) => {
+    doc.on("end", () => resolve());
+    doc.on("error", reject);
+  });
+  doc.end();
+  await done;
+
+  return new Uint8Array(Buffer.concat(chunks));
 }
 
 /** Append bulk audit row after a successful filtered export (no raw search term). */
@@ -223,7 +305,7 @@ async function auditAttendeesExported(
   db: PrismaClient,
   c: Context,
   eventId: string,
-  format: "xlsx" | "csv",
+  format: "xlsx" | "csv" | "pdf",
   count: number,
   filters: { status: string; ticket_type?: string; has_query: boolean },
 ): Promise<void> {
@@ -436,35 +518,7 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
 
   const { page, pageSize, q, status, ticket_type } = parseListQuery(c);
 
-  const where: Prisma.AttendeeWhereInput = {
-    event_id: eventId,
-    ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
-    ...(status === "not_admitted" ? { admitted_at: null } : {}),
-    ...(ticket_type ? { ticket_type } : {}),
-  };
-
-  if (q) {
-    const jsonMatches = await db.$queryRaw<{ id: string }[]>`
-      SELECT id FROM "Attendee"
-      WHERE event_id = ${eventId}
-        AND (
-          (custom_data->>'company') ILIKE ${`%${q}%`}
-          OR (custom_data->>'department') ILIKE ${`%${q}%`}
-        )
-    `;
-    const jsonIds = jsonMatches.map((r) => r.id);
-    where.AND = [
-      {
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { email: { contains: q, mode: "insensitive" } },
-          { company: { contains: q, mode: "insensitive" } },
-          { department: { contains: q, mode: "insensitive" } },
-          ...(jsonIds.length > 0 ? [{ id: { in: jsonIds } }] : []),
-        ],
-      },
-    ];
-  }
+  const where = await buildAttendeeListWhere(db, eventId, { q, status, ticket_type });
 
   const [total, rows] = await Promise.all([
     db.attendee.count({ where }),
@@ -512,7 +566,7 @@ export async function handleListTicketTypes(c: Context, db: PrismaClient): Promi
   return c.json({ types });
 }
 
-/** GET /api/admin/events/:eventId/attendees/export — filtered subset as XLSX or CSV (no tokens). */
+/** GET /api/admin/events/:eventId/attendees/export — filtered subset as XLSX, CSV, or PDF (no tokens). */
 export async function handleExportAttendees(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -521,57 +575,48 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   if (forbidden) return forbidden;
 
   const formatRaw = c.req.query("format");
-  if (formatRaw !== "xlsx" && formatRaw !== "csv") {
-    return c.json({ error: "format must be xlsx or csv" }, 400);
+  if (formatRaw !== "xlsx" && formatRaw !== "csv" && formatRaw !== "pdf") {
+    return c.json({ error: "format must be xlsx, csv, or pdf" }, 400);
   }
   const format = formatRaw;
 
   const { q, status, ticket_type } = parseListQuery(c);
+  const timeZone = resolvePreviewEventTimeZone();
 
-  let rows: ExportAttendeeRow[];
+  const [event, where] = await Promise.all([
+    db.event.findUnique({
+      where: { id: eventId },
+      select: { title: true, date: true },
+    }),
+    buildAttendeeListWhere(db, eventId, { q, status, ticket_type }),
+  ]);
 
-  if (q) {
-    const total = await countExportAttendees(db, { eventId, status, ticket_type, q });
-    if (total > EXPORT_ROW_CAP) {
-      return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
-    }
-    rows = await fetchExportAttendeeRowsWithSearch(db, { eventId, status, ticket_type, q });
-  } else {
-    const where: Prisma.AttendeeWhereInput = {
-      event_id: eventId,
-      ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
-      ...(status === "not_admitted" ? { admitted_at: null } : {}),
-      ...(ticket_type ? { ticket_type } : {}),
-    };
-    const total = await db.attendee.count({ where });
-    if (total > EXPORT_ROW_CAP) {
-      return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
-    }
-    rows = await db.attendee.findMany({
-      where,
-      select: {
-        name: true,
-        email: true,
-        company: true,
-        department: true,
-        custom_data: true,
-        ticket_type: true,
-        admitted_at: true,
-      },
-      orderBy: { name: "asc" },
-    });
+  if (!event) {
+    return c.json({ error: "forbidden" }, 403);
   }
 
-  const exportRows = rows.map((row) => {
+  const total = await db.attendee.count({ where });
+  if (total > EXPORT_ROW_CAP) {
+    return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+  }
+
+  const rows = await db.attendee.findMany({
+    where,
+    select: EXPORT_ATTENDEE_SELECT,
+    orderBy: { name: "asc" },
+  });
+
+  const exportRows: SanitizedExportRow[] = rows.map((row) => {
     const { company, department } = resolveCompanyDepartment(row);
     return {
+      check_off: "",
       name: sanitizeCell(row.name),
       email: sanitizeCell(row.email),
       company: sanitizeCell(company),
       department: sanitizeCell(department),
       ticket_type: sanitizeCell(row.ticket_type),
       check_in_status: row.admitted_at ? "admitted" : "not_admitted",
-      admitted_at: row.admitted_at ? row.admitted_at.toISOString() : "",
+      admitted_at: row.admitted_at ? formatAdmittedAtLocal(row.admitted_at, timeZone) : "",
     };
   });
 
@@ -585,6 +630,21 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
     return new Response(csv, {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": exportContentDisposition(filename),
+      },
+    });
+  }
+
+  if (format === "pdf") {
+    const bytes = await buildExportPdfBuffer(
+      exportRows,
+      { title: event.title, date: event.date },
+      timeZone,
+    );
+    await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
+    return new Response(bytes, {
+      headers: {
+        "Content-Type": "application/pdf",
         "Content-Disposition": exportContentDisposition(filename),
       },
     });
