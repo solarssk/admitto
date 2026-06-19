@@ -115,26 +115,78 @@ function buildExportCsv(exportRows: {
   return [header, ...csvRows].join("\r\n");
 }
 
-/** IDs from custom_data company/department search, scoped to active export filters. */
-async function fetchJsonSearchAttendeeIds(
+type ExportFilterParams = {
+  eventId: string;
+  status: "all" | "admitted" | "not_admitted";
+  ticket_type?: string;
+  q?: string;
+};
+
+type ExportAttendeeRow = {
+  name: string;
+  email: string;
+  company: string | null;
+  department: string | null;
+  custom_data: unknown;
+  ticket_type: string | null;
+  admitted_at: Date | null;
+};
+
+function exportStatusSql(status: ExportFilterParams["status"]) {
+  if (status === "admitted") return Prisma.sql`AND admitted_at IS NOT NULL`;
+  if (status === "not_admitted") return Prisma.sql`AND admitted_at IS NULL`;
+  return Prisma.empty;
+}
+
+function exportTicketTypeSql(ticket_type?: string) {
+  return ticket_type ? Prisma.sql`AND ticket_type = ${ticket_type}` : Prisma.empty;
+}
+
+/** Full-text export search OR (columns + custom_data json), inlined in SQL — no id materialization. */
+function exportSearchOrSql(q: string) {
+  const pattern = `%${q}%`;
+  return Prisma.sql`AND (
+    name ILIKE ${pattern}
+    OR email ILIKE ${pattern}
+    OR company ILIKE ${pattern}
+    OR department ILIKE ${pattern}
+    OR (custom_data->>'company') ILIKE ${pattern}
+    OR (custom_data->>'department') ILIKE ${pattern}
+  )`;
+}
+
+/** Count export rows with optional search — cap check without loading matching ids. */
+async function countExportAttendees(
   db: PrismaClient,
-  eventId: string,
-  q: string,
-  status: "all" | "admitted" | "not_admitted",
-  ticket_type?: string,
-): Promise<string[]> {
-  const rows = await db.$queryRaw<{ id: string }[]>`
-    SELECT id FROM "Attendee"
+  filters: ExportFilterParams,
+): Promise<number> {
+  const { eventId, status, ticket_type, q } = filters;
+  const [{ count }] = await db.$queryRaw<[{ count: bigint }]>`
+    SELECT COUNT(*)::bigint AS count FROM "Attendee"
     WHERE event_id = ${eventId}
-      ${status === "admitted" ? Prisma.sql`AND admitted_at IS NOT NULL` : Prisma.empty}
-      ${status === "not_admitted" ? Prisma.sql`AND admitted_at IS NULL` : Prisma.empty}
-      ${ticket_type ? Prisma.sql`AND ticket_type = ${ticket_type}` : Prisma.empty}
-      AND (
-        (custom_data->>'company') ILIKE ${`%${q}%`}
-        OR (custom_data->>'department') ILIKE ${`%${q}%`}
-      )
+      ${exportStatusSql(status)}
+      ${exportTicketTypeSql(ticket_type)}
+      ${q ? exportSearchOrSql(q) : Prisma.empty}
   `;
-  return rows.map((r) => r.id);
+  return Number(count);
+}
+
+/** Fetch export rows when search is active (same predicate as countExportAttendees). */
+async function fetchExportAttendeeRowsWithSearch(
+  db: PrismaClient,
+  filters: ExportFilterParams & { q: string },
+): Promise<ExportAttendeeRow[]> {
+  const { eventId, status, ticket_type, q } = filters;
+  return db.$queryRaw<ExportAttendeeRow[]>`
+    SELECT name, email, company, department, custom_data, ticket_type, admitted_at
+    FROM "Attendee"
+    WHERE event_id = ${eventId}
+      ${exportStatusSql(status)}
+      ${exportTicketTypeSql(ticket_type)}
+      ${exportSearchOrSql(q)}
+    ORDER BY name ASC
+    LIMIT ${EXPORT_ROW_CAP}
+  `;
 }
 
 /** Build XLSX bytes for sanitized export rows (dynamic exceljs import, ESM-safe). */
@@ -476,46 +528,39 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
 
   const { q, status, ticket_type } = parseListQuery(c);
 
-  const where: Prisma.AttendeeWhereInput = {
-    event_id: eventId,
-    ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
-    ...(status === "not_admitted" ? { admitted_at: null } : {}),
-    ...(ticket_type ? { ticket_type } : {}),
-  };
+  let rows: ExportAttendeeRow[];
 
   if (q) {
-    const jsonIds = await fetchJsonSearchAttendeeIds(db, eventId, q, status, ticket_type);
-    where.AND = [
-      {
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { email: { contains: q, mode: "insensitive" } },
-          { company: { contains: q, mode: "insensitive" } },
-          { department: { contains: q, mode: "insensitive" } },
-          ...(jsonIds.length > 0 ? [{ id: { in: jsonIds } }] : []),
-        ],
+    const total = await countExportAttendees(db, { eventId, status, ticket_type, q });
+    if (total > EXPORT_ROW_CAP) {
+      return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+    }
+    rows = await fetchExportAttendeeRowsWithSearch(db, { eventId, status, ticket_type, q });
+  } else {
+    const where: Prisma.AttendeeWhereInput = {
+      event_id: eventId,
+      ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
+      ...(status === "not_admitted" ? { admitted_at: null } : {}),
+      ...(ticket_type ? { ticket_type } : {}),
+    };
+    const total = await db.attendee.count({ where });
+    if (total > EXPORT_ROW_CAP) {
+      return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+    }
+    rows = await db.attendee.findMany({
+      where,
+      select: {
+        name: true,
+        email: true,
+        company: true,
+        department: true,
+        custom_data: true,
+        ticket_type: true,
+        admitted_at: true,
       },
-    ];
+      orderBy: { name: "asc" },
+    });
   }
-
-  const total = await db.attendee.count({ where });
-  if (total > EXPORT_ROW_CAP) {
-    return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
-  }
-
-  const rows = await db.attendee.findMany({
-    where,
-    select: {
-      name: true,
-      email: true,
-      company: true,
-      department: true,
-      custom_data: true,
-      ticket_type: true,
-      admitted_at: true,
-    },
-    orderBy: { name: "asc" },
-  });
 
   const exportRows = rows.map((row) => {
     const { company, department } = resolveCompanyDepartment(row);
