@@ -45,6 +45,26 @@ describe("validateBrandingDraft", () => {
     expect(result.errors.font_family_url).toMatch(/HTTPS/i);
   });
 
+  it("rejects malformed HTTPS font URL", () => {
+    const result = validateBrandingDraft({
+      font_family_url: "https://",
+      font_family_name: "Brand Sans",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.font_family_url).toBeTruthy();
+    expect(result.errors.font_family_name).toBeUndefined();
+  });
+
+  it("does not add pair error when URL already has its own validation error", () => {
+    const result = validateBrandingDraft({
+      font_family_url: "http://evil.com/font.woff2",
+      font_family_name: "",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.font_family_url).toMatch(/HTTPS/i);
+    expect(result.errors.font_family_name).toBeUndefined();
+  });
+
   it("accepts valid HTTPS font pair", () => {
     const result = validateBrandingDraft({
       font_family_url: "https://cdn.example.com/font.woff2",
@@ -61,6 +81,12 @@ describe("brandingDraftForSave", () => {
         primary: "bad",
         font_family_url: "http://evil",
         font_family_name: "Evil",
+      }),
+    ).toEqual({});
+    expect(
+      brandingDraftForSave({
+        font_family_url: "https://",
+        font_family_name: "Brand Sans",
       }),
     ).toEqual({});
   });

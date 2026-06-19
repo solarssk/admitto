@@ -415,6 +415,12 @@
   }
 }
 
+.sidebar__context-meta {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  margin-top: var(--space-1);
+}
+
 /* Instance settings */
 .settings-sections {
   display: flex;
@@ -521,7 +527,8 @@
   justify-content: space-between;
   padding: var(--space-3);
   border-radius: var(--radius);
-  color: var(--surface-card);
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   font-size: var(--fs-sm);
   font-weight: 600;
 }

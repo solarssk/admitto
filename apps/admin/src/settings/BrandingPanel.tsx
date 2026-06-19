@@ -4,55 +4,67 @@ import { ApiError, fetchStaffTheme, saveStaffTheme } from "../api/client.js";
 import type { BrandingThemeDto } from "../api/types.js";
 import {
   brandingDraftForSave,
+  type BrandingFieldErrors,
+  isValidHex,
   primaryForColorInput,
   validateBrandingDraft,
 } from "./brandingValidation.js";
-
-const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
 /** Superadmin branding editor with live theme preview and anti-lockout guards. */
 export function BrandingPanel() {
   const [draft, setDraft] = useState<BrandingThemeDto>({});
   const [loading, setLoading] = useState(true);
+  const [loadedOk, setLoadedOk] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<BrandingFieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const savedRef = useRef<BrandingThemeDto>({});
+  const loadAbortRef = useRef<AbortController | null>(null);
 
   const loadTheme = useCallback(async () => {
+    loadAbortRef.current?.abort();
+    const ac = new AbortController();
+    loadAbortRef.current = ac;
+    const { signal } = ac;
+
     setLoading(true);
     setLoadError(null);
+    setLoadedOk(false);
     try {
-      const { theme } = await fetchStaffTheme();
+      const { theme } = await fetchStaffTheme(signal);
+      if (signal.aborted) return;
       savedRef.current = theme;
       setDraft(theme);
       setFieldErrors({});
+      setLoadedOk(true);
     } catch {
-      setLoadError(
-        "Failed to load branding settings. Showing defaults — try again or save to reset.",
-      );
-      savedRef.current = {};
+      if (signal.aborted) return;
+      setLoadError("Failed to load branding settings. Use Retry to reload.");
       setDraft({});
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void loadTheme();
+    return () => loadAbortRef.current?.abort();
   }, [loadTheme]);
 
   useEffect(() => {
+    if (!loadedOk) return;
     applyThemeVars(draft);
-  }, [draft]);
+  }, [draft, loadedOk]);
 
   useEffect(() => {
     return () => {
-      applyThemeVars(savedRef.current);
+      if (loadedOk) {
+        applyThemeVars(savedRef.current);
+      }
     };
-  }, []);
+  }, [loadedOk]);
 
   const updateDraft = (patch: Partial<BrandingThemeDto>) => {
     setDraft((prev) => ({ ...prev, ...patch }));
@@ -69,6 +81,7 @@ export function BrandingPanel() {
   };
 
   const handleReset = () => {
+    if (!loadedOk) return;
     setDraft(savedRef.current);
     setFieldErrors({});
     setSaveMessage(null);
@@ -76,9 +89,10 @@ export function BrandingPanel() {
   };
 
   const handleSave = async () => {
+    if (!loadedOk || loadError) return;
     const validation = validateBrandingDraft(draft);
     if (!validation.valid) {
-      setFieldErrors(validation.errors as Record<string, string>);
+      setFieldErrors(validation.errors);
       return;
     }
     setFieldErrors({});
@@ -92,7 +106,7 @@ export function BrandingPanel() {
       setDraft(response.theme);
       applyThemeVars(response.theme);
       setSaveMessage("Branding saved.");
-      window.setTimeout(() => setSaveMessage(null), 2000);
+      setTimeout(() => setSaveMessage(null), 2000);
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.message : "Failed to save branding.");
     } finally {
@@ -100,8 +114,11 @@ export function BrandingPanel() {
     }
   };
 
+  const formDisabled = loading || saving || !loadedOk;
   const colorValue = primaryForColorInput(draft.primary);
-  const displayHex = draft.primary && HEX_RE.test(draft.primary) ? draft.primary : "";
+  const displayHex = draft.primary ?? "";
+  const previewLabel =
+    displayHex && isValidHex(displayHex) ? displayHex : displayHex ? "invalid" : "default";
 
   return (
     <Card
@@ -113,10 +130,10 @@ export function BrandingPanel() {
               {saveMessage}
             </span>
           )}
-          <Button variant="secondary" disabled={loading || saving} onClick={handleReset}>
+          <Button variant="secondary" disabled={formDisabled} onClick={handleReset}>
             Reset to saved
           </Button>
-          <Button variant="primary" disabled={loading || saving} onClick={() => void handleSave()}>
+          <Button variant="primary" disabled={formDisabled} onClick={() => void handleSave()}>
             {saving ? "Saving…" : "Save branding"}
           </Button>
         </div>
@@ -146,14 +163,14 @@ export function BrandingPanel() {
               id="branding-primary-picker"
               type="color"
               value={colorValue}
-              disabled={loading || saving}
+              disabled={formDisabled}
               onChange={(e) => handleColorPickerChange(e.target.value)}
               aria-label="Primary colour picker"
             />
             <Input
               label="Hex value"
               value={displayHex}
-              disabled={loading || saving}
+              disabled={formDisabled}
               placeholder="#066fd1"
               error={fieldErrors.primary}
               onChange={(e) => handlePrimaryHexChange(e.target.value)}
@@ -165,7 +182,7 @@ export function BrandingPanel() {
         <Input
           label="Font family name"
           value={draft.font_family_name ?? ""}
-          disabled={loading || saving}
+          disabled={formDisabled}
           placeholder="e.g. Acme Sans"
           error={fieldErrors.font_family_name}
           hint="Used with the font URL below for @font-face injection."
@@ -175,7 +192,7 @@ export function BrandingPanel() {
         <Input
           label="Font URL"
           value={draft.font_family_url ?? ""}
-          disabled={loading || saving}
+          disabled={formDisabled}
           placeholder="https://cdn.example.com/fonts/brand.woff2"
           error={fieldErrors.font_family_url}
           hint="HTTPS only. Provide both name and URL, or leave both empty."
@@ -186,7 +203,7 @@ export function BrandingPanel() {
           <span className="overline">Live preview</span>
           <div className="branding-preview__swatch" style={{ background: "var(--primary)" }}>
             <span>Primary</span>
-            <span>{displayHex || "default"}</span>
+            <span>{previewLabel}</span>
           </div>
           <div className="branding-preview__tokens">
             <span className="branding-preview__token" style={{ background: "var(--primary-hover)" }}>

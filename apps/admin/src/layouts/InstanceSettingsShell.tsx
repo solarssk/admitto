@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Avatar, Badge } from "@admitto/ui";
+import { Avatar } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 
@@ -17,7 +17,7 @@ export function InstanceSettingsShell() {
         </div>
         <div className="sidebar__event">
           <div className="overline">Instance</div>
-          <div className="event-switch__meta">System-wide configuration</div>
+          <div className="sidebar__context-meta">System-wide configuration</div>
         </div>
         <div className="sidebar__foot">
           <NavLink to="/admin" className={({ isActive }) => `nav-item${isActive ? " nav-item--active" : ""}`} end>
@@ -50,7 +50,6 @@ export function InstanceSettingsShell() {
         <header className="topbar">
           <div className="topbar__title">Instance settings</div>
           <div className="topbar__right">
-            <Badge variant="neutral">Foundation</Badge>
             <div className="topbar__user">
               <Avatar name={displayName} size="sm" />
               <span>{displayName}</span>

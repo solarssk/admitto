@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Badge, Card, PageHeader } from "@admitto/ui";
 import { BrandingPanel } from "../settings/BrandingPanel.js";
 
@@ -5,6 +6,15 @@ interface SettingsPlaceholderProps {
   title: string;
   description: string;
   badge: string;
+}
+
+/** Secondary action link — Button primitive has no native href support yet. */
+function SettingsManageLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a className="at-btn at-btn--secondary" href={href}>
+      <span>{children}</span>
+    </a>
+  );
 }
 
 function SettingsPlaceholderCard({ title, description, badge }: SettingsPlaceholderProps) {
@@ -23,18 +33,14 @@ function IdentityProvidersCard() {
           <strong>OIDC providers</strong>
           <p>Configure external OpenID Connect identity providers and group-to-role mapping.</p>
         </div>
-        <a className="at-btn at-btn--secondary" href="/admin/auth/providers">
-          Manage
-        </a>
+        <SettingsManageLink href="/admin/auth/providers">Manage</SettingsManageLink>
       </div>
       <div className="settings-row">
         <div className="settings-row__text">
           <strong>Cloudflare Access</strong>
           <p>Protect admin paths with Cloudflare Zero Trust while keeping a local break-glass path.</p>
         </div>
-        <a className="at-btn at-btn--secondary" href="/admin/auth/cf-access">
-          Manage
-        </a>
+        <SettingsManageLink href="/admin/auth/cf-access">Manage</SettingsManageLink>
       </div>
     </Card>
   );
