@@ -32,7 +32,7 @@ function assertEncryptedPayload(payload: EncryptedData): void {
 export function encrypt(plaintext: string): EncryptedData {
   const key = getEncryptionKey();
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: GCM_AUTH_TAG_BYTES });
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
   return {
@@ -54,7 +54,7 @@ export function decrypt(payload: EncryptedData): string {
   const iv = Buffer.from(payload.iv, "base64");
   const authTag = Buffer.from(payload.authTag, "base64");
   const ciphertext = Buffer.from(payload.ciphertext, "base64");
-  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  const decipher = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: GCM_AUTH_TAG_BYTES });
   decipher.setAuthTag(authTag);
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
 }
