@@ -52,7 +52,7 @@ export function SettingsPage() {
     <>
       <PageHeader
         title="Settings"
-        subtitle="Instance branding, mail transport, sessions, and identity."
+        subtitle="Instance branding, mail transport, sessions, and identity providers."
       />
       <div className="settings-sections">
         <BrandingPanel />

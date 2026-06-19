@@ -453,6 +453,21 @@
   font-size: var(--fs-sm);
 }
 
+@media (max-width: 640px) {
+  .settings-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-row .at-btn {
+    align-self: flex-start;
+  }
+}
+
+.branding-scope-hint {
+  margin: 0 0 var(--space-4);
+}
+
 .foot-actions {
   display: flex;
   align-items: center;

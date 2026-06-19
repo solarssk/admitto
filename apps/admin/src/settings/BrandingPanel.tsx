@@ -113,7 +113,7 @@ export function BrandingPanel() {
     }
   };
 
-  const formDisabled = loading || saving || !loadedOk;
+  const formDisabled = saving;
   const colorValue = primaryForColorInput(draft.primary);
   const displayHex = draft.primary ?? "";
   const previewLabel =
@@ -129,17 +129,25 @@ export function BrandingPanel() {
               {saveMessage}
             </span>
           )}
-          <Button variant="secondary" disabled={formDisabled} onClick={handleReset}>
+          <Button variant="secondary" disabled={!loadedOk || formDisabled} onClick={handleReset}>
             Reset to saved
           </Button>
-          <Button variant="primary" disabled={formDisabled} onClick={() => void handleSave()}>
+          <Button
+            variant="primary"
+            disabled={!loadedOk || formDisabled}
+            onClick={() => void handleSave()}
+          >
             {saving ? "Saving…" : "Save branding"}
           </Button>
         </div>
       }
     >
+      <p className="at-hint branding-scope-hint">
+        Instance-wide accent colour and custom font for staff UI and public ticket pages. Ticket logos
+        are configured per organization, not here.
+      </p>
       {loading && <p>Loading branding…</p>}
-      {loadError && (
+      {loadError && !loading && (
         <p className="text-error" role="alert">
           {loadError}{" "}
           <button type="button" className="settings-retry-link" onClick={() => void loadTheme()}>
@@ -152,80 +160,82 @@ export function BrandingPanel() {
           {saveError}
         </p>
       )}
-      <div className="branding-form">
-        <div className="branding-form__row">
-          <label className="at-label" htmlFor="branding-primary-picker">
-            Primary colour
-          </label>
-          <div className="branding-form__color">
-            <input
-              id="branding-primary-picker"
-              type="color"
-              value={colorValue}
-              disabled={formDisabled}
-              onChange={(e) => handleColorPickerChange(e.target.value)}
-              aria-label="Primary colour picker"
-            />
-            <Input
-              label="Hex value"
-              value={displayHex}
-              disabled={formDisabled}
-              placeholder="#066fd1"
-              error={fieldErrors.primary}
-              onChange={(e) => handlePrimaryHexChange(e.target.value)}
-            />
-          </div>
-          <span className="at-hint">Leave empty to use the default Admitto blue.</span>
-        </div>
-
-        <Input
-          label="Font family name"
-          value={draft.font_family_name ?? ""}
-          disabled={formDisabled}
-          placeholder="e.g. Acme Sans"
-          error={fieldErrors.font_family_name}
-          hint="Used with the font URL below for @font-face injection."
-          onChange={(e) => updateDraft({ font_family_name: e.target.value || undefined })}
-        />
-
-        <Input
-          label="Font URL"
-          value={draft.font_family_url ?? ""}
-          disabled={formDisabled}
-          placeholder="https://cdn.example.com/fonts/brand.woff2"
-          error={fieldErrors.font_family_url}
-          hint="HTTPS only. Provide both name and URL, or leave both empty."
-          onChange={(e) => updateDraft({ font_family_url: e.target.value || undefined })}
-        />
-
-        <div className="branding-preview">
-          <span className="overline">Live preview</span>
-          <div className="branding-preview__swatch" style={{ background: "var(--primary)" }}>
-            <span>Primary</span>
-            <span>{previewLabel}</span>
-          </div>
-          <div className="branding-preview__tokens">
-            <span className="branding-preview__token" style={{ background: "var(--primary-hover)" }}>
-              Hover
+      {loadedOk && (
+        <div className="branding-form">
+          <div className="branding-form__row">
+            <span className="at-label" id="branding-primary-label">
+              Primary colour
             </span>
-            <span className="branding-preview__token" style={{ background: "var(--primary-tint)" }}>
-              Tint
-            </span>
+            <div className="branding-form__color" aria-labelledby="branding-primary-label">
+              <input
+                type="color"
+                value={colorValue}
+                disabled={formDisabled}
+                onChange={(e) => handleColorPickerChange(e.target.value)}
+                aria-label="Primary colour picker"
+              />
+              <Input
+                id="branding-primary-hex"
+                label="Hex value"
+                value={displayHex}
+                disabled={formDisabled}
+                placeholder="#066fd1"
+                error={fieldErrors.primary}
+                onChange={(e) => handlePrimaryHexChange(e.target.value)}
+              />
+            </div>
+            <span className="at-hint">Leave empty to use the default Admitto blue.</span>
           </div>
-          <div className="branding-preview__components">
-            <Button variant="primary" type="button">
-              Primary action
-            </Button>
-            <Button variant="secondary" type="button">
-              Secondary
-            </Button>
-            <Badge variant="neutral">Neutral badge</Badge>
+
+          <Input
+            label="Font family name"
+            value={draft.font_family_name ?? ""}
+            disabled={formDisabled}
+            placeholder="e.g. Acme Sans"
+            error={fieldErrors.font_family_name}
+            hint="Used with the font URL below for @font-face injection."
+            onChange={(e) => updateDraft({ font_family_name: e.target.value || undefined })}
+          />
+
+          <Input
+            label="Font URL"
+            value={draft.font_family_url ?? ""}
+            disabled={formDisabled}
+            placeholder="https://cdn.example.com/fonts/brand.woff2"
+            error={fieldErrors.font_family_url}
+            hint="HTTPS only. Provide both name and URL, or leave both empty."
+            onChange={(e) => updateDraft({ font_family_url: e.target.value || undefined })}
+          />
+
+          <div className="branding-preview">
+            <span className="overline">Live preview</span>
+            <div className="branding-preview__swatch" style={{ background: "var(--primary)" }}>
+              <span>Primary</span>
+              <span>{previewLabel}</span>
+            </div>
+            <div className="branding-preview__tokens">
+              <span className="branding-preview__token" style={{ background: "var(--primary-hover)" }}>
+                Hover
+              </span>
+              <span className="branding-preview__token" style={{ background: "var(--primary-tint)" }}>
+                Tint
+              </span>
+            </div>
+            <div className="branding-preview__components">
+              <Button variant="primary" type="button">
+                Primary action
+              </Button>
+              <Button variant="secondary" type="button">
+                Secondary
+              </Button>
+              <Badge variant="neutral">Neutral badge</Badge>
+            </div>
+            <p className="branding-preview__sample" style={{ fontFamily: "var(--font-sans, inherit)" }}>
+              Sample text with the configured font family.
+            </p>
           </div>
-          <p className="branding-preview__sample" style={{ fontFamily: "var(--font-sans, inherit)" }}>
-            Sample text with the configured font family.
-          </p>
         </div>
-      </div>
+      )}
     </Card>
   );
 }
