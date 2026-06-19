@@ -16,9 +16,9 @@ ADR references appear only where they explain a design constraint.
 
 ## Unreleased
 
-## v0.4.3.1 — 2026-06-19
+## v0.4.4 — 2026-06-19
 
-Security patch and container publish workflow hardening after v0.4.3. Git tag `v0.4.3.1`.
+Security patch and container publish workflow hardening after v0.4.3. Git tag `v0.4.4`.
 
 ### Security / dependencies
 
