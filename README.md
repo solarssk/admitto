@@ -1,7 +1,8 @@
 # Admitto
 
 > **Status: pre-MVP / early development — internal use only.**
-> Not ready for production use with real personal data until GDPR compliance is confirmed.
+> Not ready for production use with real personal data until DPO confirms lawful basis and DSAR model.
+> See [DATA-PROTECTION.md](DATA-PROTECTION.md) and [docs/GDPR-ONE-PAGER.md](docs/GDPR-ONE-PAGER.md).
 
 A self-hostable event access gateway: attendee import, QR tickets, wallet passes, M365 mail,
 and check-in scanning. See [SECURITY.md](SECURITY.md) before deploying with real data.
@@ -65,7 +66,7 @@ Local dev database stack: [infra/README.md](infra/README.md).
 This tool processes personal data (name, email, attendance status).
 
 - See [SECURITY.md](SECURITY.md) for how to report vulnerabilities.
-- GDPR/data-minimisation guidance will be published in the project wiki.
+- GDPR / data protection: [DATA-PROTECTION.md](DATA-PROTECTION.md), [docs/](docs/) corp pack
 - Never commit `.env` files, real attendee lists, or any credentials.
 - Public `/t/*` and `/q/*` rate limiting and CSRF on mutating POSTs trust forwarded headers only when
   `TRUST_PROXY=true` behind a reverse proxy that overwrites or sanitizes `X-Forwarded-*` from clients.

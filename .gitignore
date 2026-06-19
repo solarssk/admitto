@@ -1,8 +1,14 @@
 node_modules/
 dist/
 _reference/
-# Local docs (prompts, reports, notes) — never publish
-docs/
+# Local docs — ignore by default; corp compliance pack is versioned (v0.4.3+)
+docs/*
+!docs/SECURITY-CONTROLS.md
+!docs/CORPORATE-DEPLOYMENT.md
+!docs/ARCHITECTURE-FOR-AUDITORS.md
+!docs/GDPR-ONE-PAGER.md
+!docs/SUBPROCESSORS.md
+!docs/INCIDENT-RESPONSE.md
 # Local sanitization denylist — never commit
 .sanitize-denylist*
 .env

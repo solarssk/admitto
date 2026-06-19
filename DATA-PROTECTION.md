@@ -1,7 +1,10 @@
 # Data Protection Notes (GDPR)
 
-> **TODO:** Confirm the legal basis with your DPO / legal team before processing real
-> personal data in production. This document captures design intent, not legal advice.
+> **Legal basis:** to be confirmed by your organisation's privacy officer or legal team. This
+> document captures **design intent**, not legal advice.
+
+**Corp pack:** [GDPR-ONE-PAGER.md](docs/GDPR-ONE-PAGER.md) ·
+[SUBPROCESSORS.md](docs/SUBPROCESSORS.md) · [SECURITY-CONTROLS.md](docs/SECURITY-CONTROLS.md)
 
 ## Data processed
 
@@ -22,38 +25,56 @@ contains only a random, unguessable identifier — no name, email, or other PII.
 
 ## Legal basis
 
-**TODO:** Confirm with DPO / legal. Likely candidates:
+**Pending legal confirmation.** Likely candidates (to be validated internally):
+
 - Legitimate interest (internal event management), or
 - Consent obtained at registration.
 
 ## Logs
 
-- No PII in application logs (no full email addresses, no names in log lines).
+- Design goal: no full email addresses or names in routine application log lines.
 - No secrets or tokens in logs.
+- Audit output uses redacted identifiers where email is logged.
 
 ## Retention
 
 Operational data (attendees, check-ins, email delivery records) should be deleted or
-anonymised 30–60 days after the event. Export before deletion if required for reporting.
+anonymised **30–60 days after the event**. Export before deletion if required for reporting.
 
-**TODO:** implement attendee export + delete endpoint before production use.
+| Mechanism | Status |
+|-----------|--------|
+| Policy documented | Yes (this document + GDPR one-pager) |
+| Organizer export before purge | Available in admin UI |
+| Automated purge job | Planned for a future release |
 
 ## Data subject rights
 
-Attendees have the right to access, rectify, and erase their data.
+Attendees may have rights of access, rectification, and erasure under applicable law.
+**Choose an operating model with legal** — both options are described in
+[GDPR-ONE-PAGER.md](docs/GDPR-ONE-PAGER.md):
 
-**TODO:** implement export and deletion endpoints before production use.
+| Model | Summary |
+|-------|---------|
+| **Self-service API** | Dedicated export/delete endpoints — build if legal requires |
+| **Organizer-mediated** | Staff export via admin UI; erasure via documented procedure |
+
+## Subprocessors
+
+Depends on customer configuration — hosting, corporate email (e.g. Microsoft 365 / Graph or SMTP
+relay), optional CDN/WAF, optional future wallet provider. Template:
+[SUBPROCESSORS.md](docs/SUBPROCESSORS.md).
 
 ## Hosting
 
-- Target hosting: EU region.
-- Secrets stored outside the repository (environment variables / secret manager).
+- Target: customer-selected region (EU common for GDPR-oriented deployments).
+- Secrets outside the repository (environment variables / secret manager).
 - Database not exposed to the public internet.
 
-## Shadow-IT note
+See [CORPORATE-DEPLOYMENT.md](docs/CORPORATE-DEPLOYMENT.md).
 
-This is an internal tool under development. **Do not process real personal data until:**
+## Before production use with real personal data
 
-1. Legal basis is confirmed with DPO / legal.
-2. Export and deletion endpoints are implemented and tested.
-3. Hosting environment meets your organisation's data protection requirements.
+1. Legal confirms lawful basis and subprocessors (DPAs in place).
+2. DSAR operating model agreed and documented internally.
+3. Hosting meets organisational data protection requirements.
+4. Deployment runbook records perimeter and identity choices.
