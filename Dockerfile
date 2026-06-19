@@ -39,6 +39,11 @@ RUN apt-get update \
   && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
 
+# Global npm is unused at runtime (Prisma/app invoked via node directly).
+# Removes bundled picomatch 4.0.3 flagged by Trivy (CVE-2026-33671).
+RUN rm -rf /usr/local/lib/node_modules/npm \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./
