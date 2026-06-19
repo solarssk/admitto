@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import type { Context } from "hono";
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
@@ -232,6 +233,15 @@ const PDF_COL_WIDTHS = [22, 85, 100, 75, 70, 65, 75, 80];
 const PDF_ROW_HEIGHT = 16;
 const PDF_FONT_SIZE = 8;
 const PDF_PAGE_BOTTOM = 555;
+const PDF_FONT = "DejaVuSans";
+const PDF_FONT_BOLD = "DejaVuSans-Bold";
+
+const require = createRequire(import.meta.url);
+
+function resolvePdfFontFile(bold: boolean): string {
+  const file = bold ? "DejaVuSans-Bold.ttf" : "DejaVuSans.ttf";
+  return require.resolve(`dejavu-fonts-ttf/ttf/${file}`);
+}
 
 /** Build PDF bytes for export rows (dynamic pdfkit import, ESM-safe). */
 async function buildExportPdfBuffer(
@@ -244,23 +254,25 @@ async function buildExportPdfBuffer(
 
   const chunks: Buffer[] = [];
   const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 40 });
+  doc.registerFont(PDF_FONT, resolvePdfFontFile(false));
+  doc.registerFont(PDF_FONT_BOLD, resolvePdfFontFile(true));
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
 
   const eventDateStr = formatEventDate(eventMeta.date, timeZone);
-  doc.fontSize(14).font("Helvetica-Bold").text(`${eventMeta.title} — ${eventDateStr}`);
+  doc.fontSize(14).font(PDF_FONT_BOLD).text(`${eventMeta.title} — ${eventDateStr}`);
   doc.moveDown(0.5);
 
   let y = doc.y;
 
   const drawTableHeader = () => {
-    doc.fontSize(PDF_FONT_SIZE).font("Helvetica-Bold");
+    doc.fontSize(PDF_FONT_SIZE).font(PDF_FONT_BOLD);
     let x = 40;
     for (let i = 0; i < EXPORT_COLUMNS.length; i++) {
       doc.text(EXPORT_COLUMNS[i]!, x, y, { width: PDF_COL_WIDTHS[i], lineBreak: false });
       x += PDF_COL_WIDTHS[i]!;
     }
     y += PDF_ROW_HEIGHT;
-    doc.font("Helvetica");
+    doc.font(PDF_FONT);
   };
 
   drawTableHeader();

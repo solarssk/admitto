@@ -26,6 +26,7 @@
     "@admitto/ui": "*",
     "@hono/node-server": "^2.0.4",
     "@prisma/client": "^5.17.0",
+    "dejavu-fonts-ttf": "^2.37.3",
     "exceljs": "^4.4.0",
     "hono": "^4.12.25",
     "pdfkit": "^0.19.1",
