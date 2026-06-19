@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@admitto/ui": "*",
-    "@tabler/icons-webfont": "^3.44.0",
-    "@zxing/browser": "^0.2.0",
+    "@tabler/icons-webfont": "3.31.0",
+    "@zxing/browser": "^0.1.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.6.2"
@@ -27,6 +27,6 @@
     "jsdom": "^26.1.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.16",
-    "vitest": "^4.1.9"
+    "vitest": "4.1.9"
   }
 }
