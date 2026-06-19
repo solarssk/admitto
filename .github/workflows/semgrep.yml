@@ -37,6 +37,7 @@ jobs:
           semgrep scan \
             --config=p/javascript \
             --config=p/typescript \
+            --error \
             --sarif \
             --output=semgrep.sarif \
             . \
