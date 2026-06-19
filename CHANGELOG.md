@@ -41,9 +41,7 @@ Backend routes are event-scoped (wrong event → 403) with CSRF on mutating call
 
 ### Import
 
-Upload **CSV or XLSX**, map columns, preview rows, choose whether to overwrite existing
-fields, then commit. Supports both internally generated QR/tokens and agency-provided UUID/QR
-payloads — same rules as the server import pipeline.
+Upload **CSV or XLSX** with **canonical column headers** (`first_name`, `last_name`, `email`, or a single `name` column, plus optional agency fields), preview row counts and validation errors, choose whether to overwrite existing fields, then commit. Supports both internally generated QR/tokens and agency-provided UUID/QR payloads.
 
 ### Event-day requirements
 
@@ -80,7 +78,7 @@ do not run `migrate deploy` by hand.
   rollback runbook, smoke test for backup path.
 - **Supply chain:** Trivy image scan + CycloneDX SBOM in CI; `SECURITY.md` updated.
 - **Dependencies:** transitive `uuid` forced to 14.0.0 (Dependabot #13); patch bumps for vitest,
-  eslint, argon2. Requires Node ≥22.12 for exceljs ↔ uuid interop (`require(esm)`).
+  eslint, argon2. Requires Node ≥22.13 (see root `engines`) for exceljs ↔ uuid interop (`require(esm)`).
 
 ### Deploy notes
 
