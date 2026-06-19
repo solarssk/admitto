@@ -17,9 +17,9 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 
 | Area | Typical enterprise expectation | Admitto support |
 |------|-------------------------------|-----------------|
-| Authentication | Staff sign-in before admin/operator actions | Local accounts and/or **OIDC** (optional); server-side sessions |
+| Authentication | Staff sign-in before admin/operator actions | Local accounts and/or **OIDC** — implemented; optional per deployment |
 | Authorization | Least privilege by role and event/org scope | **RBAC** with separate admin, operator, and platform roles |
-| Strong auth | MFA for privileged users | **TOTP** for elevated roles (configurable) |
+| Strong auth | MFA for privileged users | **TOTP** for elevated roles — implemented; enable via deployment config |
 | Edge access | Restrict staff URLs at the perimeter | Optional **zero-trust / access gateway** in front of staff paths (customer choice) |
 | Session security | HttpOnly cookies, TLS, rotation | Configurable session lifetime; revocation supported |
 | CSRF | Protect state-changing browser requests | Same-origin checks on mutating requests when deployed behind a standard reverse proxy |
@@ -43,6 +43,20 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 
 Sessions are **server-side** (opaque token, hash stored in the database). Cookie flags follow
 common web hardening (`httpOnly`, `SameSite`, `secure` in production).
+
+### Implemented in codebase (v0.4.3)
+
+These capabilities exist in the application — they are **not** roadmap-only claims:
+
+| Capability | Where |
+|------------|-------|
+| TOTP MFA (privileged roles) | `packages/auth` — MFA enrollment and verification |
+| OIDC / SSO | `packages/auth` OIDC provider module; staff login routes in the web app |
+| Local break-glass admin | Local account provider alongside OIDC |
+
+Effective controls still depend on **customer configuration** (OIDC disabled by default; TOTP
+required only when policy flags are set). Confirm your deployment runbook matches your security
+policy.
 
 ---
 

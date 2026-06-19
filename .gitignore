@@ -9,6 +9,7 @@ docs/*
 !docs/GDPR-ONE-PAGER.md
 !docs/SUBPROCESSORS.md
 !docs/INCIDENT-RESPONSE.md
+!docs/DSAR-PROCEDURE.md
 # Local sanitization denylist — never commit
 .sanitize-denylist*
 .env

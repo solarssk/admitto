@@ -27,7 +27,7 @@ contains only a random, unguessable identifier — no name, email, or other PII.
 
 **Pending legal confirmation.** Likely candidates (to be validated internally):
 
-- Legitimate interest (internal event management), or
+- Legitimate interest (internal event management) — **LIA may be required** for external guests, or
 - Consent obtained at registration.
 
 ## Logs
@@ -44,7 +44,7 @@ anonymised **30–60 days after the event**. Export before deletion if required 
 | Mechanism | Status |
 |-----------|--------|
 | Policy documented | Yes (this document + GDPR one-pager) |
-| Organizer export before purge | Available in admin UI |
+| Organizer export before purge | Admin UI — **Attendees → Export** (CSV/XLSX/PDF; v0.4.2+) |
 | Automated purge job | Planned for a future release |
 
 ## Data subject rights
@@ -56,7 +56,7 @@ Attendees may have rights of access, rectification, and erasure under applicable
 | Model | Summary |
 |-------|---------|
 | **Self-service API** | Dedicated export/delete endpoints — build if legal requires |
-| **Organizer-mediated** | Staff export via admin UI; erasure via documented procedure |
+| **Organizer-mediated** | Staff export via admin UI; erasure per [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md) |
 
 ## Subprocessors
 

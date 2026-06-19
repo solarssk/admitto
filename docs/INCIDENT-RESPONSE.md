@@ -20,7 +20,11 @@ Assign names and contacts in your internal runbook.
 1. **Contain** — rotate exposed secrets; disable compromised accounts; block abusive traffic at edge.
 2. **Assess** — audit log, readiness probe, mail delivery log, recent deployments.
 3. **Preserve** — snapshot logs and database if investigation is likely.
-4. **Notify** — privacy officer if personal data may be affected (breach assessment per local law).
+4. **Notify** — privacy officer if personal data may be affected. Under **GDPR Art. 33** (when
+   applicable), notify the supervisory authority **without undue delay and, where feasible, within
+   72 hours** of becoming aware of a personal-data breach — unless the breach is unlikely to result
+   in a risk to individuals. Notify affected data subjects when required (**Art. 34**). Record
+   timeline, scope, and decision in your internal breach register.
 
 ---
 
@@ -66,7 +70,7 @@ Readiness output is intended for operators — no personal data in responses.
 
 1. Root cause and timeline.
 2. Update runbook or perimeter controls if needed.
-3. Privacy sign-off when personal data was involved.
+3. Privacy / DPO sign-off when personal data was involved (include 72h authority notification decision if GDPR applies).
 4. Patch dependencies or deploy hotfix release if applicable.
 
 ---

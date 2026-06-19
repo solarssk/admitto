@@ -131,8 +131,9 @@ Useful answers when enterprise checklists ask for features not in scope:
 | Artefact | Location |
 |----------|----------|
 | Signed release tags | Project releases |
-| Container SBOM | Release assets / CI artefacts |
-| Static analysis SARIF | Repository security tab |
-| Migration safety checks | CI workflow |
+| Container SBOM | `.github/workflows/publish-container.yml` — Syft SBOM attached to release assets |
+| Container vulnerability scan | `.github/workflows/publish-container.yml` — Trivy on built image |
+| Static analysis SARIF | `.github/workflows/semgrep.yml` — Semgrep with `--error` (PR gate since v0.4.3) |
+| Migration safety checks | `.github/workflows/ci.yml` job `migration-safety` — `scripts/check-migrations-destructive.sh` on PRs |
 
 Release **v0.4.3** added the corporate documentation pack and Semgrep PR gating.

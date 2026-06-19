@@ -33,6 +33,7 @@ jobs:
           python -m pip install semgrep==1.136.0 --break-system-packages
 
       - name: Run Semgrep
+        # --error: PR gate since v0.4.3. Baseline verified clean on feature/corp-docs-v043 (0 findings).
         run: |
           semgrep scan \
             --config=p/javascript \

@@ -26,13 +26,15 @@ response template, and Semgrep SAST gating on pull requests.
 
 ### Security and compliance
 
-- **Semgrep gate:** removed `|| true` from CI — SAST findings block pull requests (SARIF still uploaded).
+- **Semgrep gate:** removed `|| true` from CI — SAST findings block pull requests (baseline verified 0 findings before merge).
 - **SECURITY-CONTROLS.md:** configurable security capabilities (auth, RBAC, optional edge/OIDC, logging intent).
 - **CORPORATE-DEPLOYMENT.md:** self-hosted model, customer-hosted stack, no SaaS.
 - **ARCHITECTURE-FOR-AUDITORS.md:** scope, generic exposure overview, roadmap flows.
 - **GDPR-ONE-PAGER.md** + **SUBPROCESSORS.md:** purposes, retention, subprocessor template, DSAR options.
-- **INCIDENT-RESPONSE.md:** rotation, rollback, severity template.
-- **DATA-PROTECTION.md:** updated; legal basis remains customer legal sign-off.
+- **DSAR-PROCEDURE.md:** organizer-mediated access/erasure template (Option B).
+- **INCIDENT-RESPONSE.md:** rotation, rollback, severity template; GDPR Art. 33/34 72h breach notification.
+- **DATA-PROTECTION.md:** updated; legal basis remains customer legal sign-off (LIA note for legitimate interest).
+- **SECURITY-CONTROLS.md:** explicit codebase implementation table for TOTP and OIDC (config-dependent).
 
 ### References
 

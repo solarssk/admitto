@@ -21,10 +21,13 @@
 
 | Purpose | Lawful basis (candidates — confirm with legal) |
 |---------|--------------------------------------------------|
-| Event access (ticketing, check-in) | Legitimate interest / contract |
+| Event access (ticketing, check-in) | Legitimate interest / contract — **LIA may be required** for external guests |
 | Ticket email delivery | Same as above |
 | Security and audit logging | Legitimate interest |
 | Staff administration | Contract / legitimate interest |
+
+If you rely on **legitimate interest** (Art. 6(1)(f) GDPR), your DPO should document a
+**Legitimate Interest Assessment (LIA)**, especially when processing data of external event guests.
 
 ---
 
@@ -36,7 +39,7 @@
 | Optional profile | Company, department, custom fields | Personal data |
 | Access token | Random QR / opaque ID | Not PII in the QR itself |
 | Operational | Check-in time, ticket type | Operational |
-| Technical | IP, user-agent (sessions / throttling) | Limited personal data |
+| Technical | IP address, user-agent (sessions / throttling) | Personal data (online identifier) |
 
 ---
 
@@ -78,7 +81,7 @@ Authorized staff export attendee data through the admin UI; erasure follows a **
 | Works with existing organizer workflows | Manual steps; legal must approve process |
 | No extra public API surface | Less suited to high-volume self-service DSAR |
 
-**Status:** export available in current admin UI; deletion via documented procedure.
+**Status:** export available in admin UI (v0.4.2+); erasure per [DSAR-PROCEDURE.md](DSAR-PROCEDURE.md).
 
 ---
 
@@ -113,3 +116,4 @@ See [SUBPROCESSORS.md](SUBPROCESSORS.md).
 - [ARCHITECTURE-FOR-AUDITORS.md](ARCHITECTURE-FOR-AUDITORS.md)
 - [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md)
 - [INCIDENT-RESPONSE.md](INCIDENT-RESPONSE.md)
+- [DSAR-PROCEDURE.md](DSAR-PROCEDURE.md)
