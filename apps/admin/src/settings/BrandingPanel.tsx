@@ -104,7 +104,6 @@ export function BrandingPanel() {
       const response = await saveStaffTheme(body);
       savedRef.current = response.theme;
       setDraft(response.theme);
-      applyThemeVars(response.theme);
       setSaveMessage("Branding saved.");
       setTimeout(() => setSaveMessage(null), 2000);
     } catch (err) {

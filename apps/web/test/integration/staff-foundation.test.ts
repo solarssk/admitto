@@ -229,19 +229,17 @@ describe("GET /api/staff/theme", () => {
 });
 
 describe("GET /api/admin/theme", () => {
+  beforeEach(async () => {
+    await prisma.systemSettings.deleteMany({
+      where: { key: SETTING_BRANDING_THEME },
+    });
+  });
+
   it("allows org admin via admin API path", async () => {
     const res = await app.request("/api/admin/theme", {
       headers: { Cookie: await sessionCookieFor(adminId) },
     });
     expect(res.status).toBe(200);
-  });
-});
-
-describe("PUT /api/admin/theme", () => {
-  beforeEach(async () => {
-    await prisma.systemSettings.deleteMany({
-      where: { key: SETTING_BRANDING_THEME },
-    });
   });
 
   it("returns default theme when no branding configured", async () => {
@@ -255,6 +253,14 @@ describe("PUT /api/admin/theme", () => {
     };
     expect(body.theme).toEqual({});
     expect(body.vars["--primary"]).toBe("#066fd1");
+  });
+});
+
+describe("PUT /api/admin/theme", () => {
+  beforeEach(async () => {
+    await prisma.systemSettings.deleteMany({
+      where: { key: SETTING_BRANDING_THEME },
+    });
   });
 
   it("persists valid primary for superadmin", async () => {

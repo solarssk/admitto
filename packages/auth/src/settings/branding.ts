@@ -29,7 +29,7 @@ function sanitizeTheme(raw: unknown): BrandingTheme {
   const primary = typeof o.primary === "string" && HEX_RE.test(o.primary) ? o.primary : undefined;
   const font_family_url =
     typeof o.font_family_url === "string" && isSafeBrandingFontUrl(o.font_family_url)
-      ? o.font_family_url.slice(0, 2048)
+      ? o.font_family_url
       : undefined;
   const font_family_name =
     typeof o.font_family_name === "string" ? o.font_family_name.slice(0, 128) : undefined;

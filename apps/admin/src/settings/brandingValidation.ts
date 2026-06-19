@@ -81,7 +81,7 @@ export function brandingDraftForSave(draft: BrandingThemeDto): BrandingThemeDto 
   const fontUrl = draft.font_family_url?.trim();
   const fontName = draft.font_family_name?.trim();
   if (fontUrl && fontName && isSafeBrandingFontUrl(fontUrl)) {
-    result.font_family_url = fontUrl.slice(0, 2048);
+    result.font_family_url = fontUrl;
     result.font_family_name = fontName.slice(0, 128);
   }
   return result;
