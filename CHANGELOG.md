@@ -10,6 +10,10 @@ It is still not a polished public release feed.
 At this stage it is an internal engineering changelog for a product that is still converging on its
 first event-ready MVP.
 
+**How to read each entry:** one-line theme and git tag, then a short summary of what changed for
+operators and organizers, then sections grouped by **product capability** (not by pull request).
+ADR references appear only where they explain a design constraint.
+
 ## Unreleased
 
 ## v0.4.2 — 2026-06-19
@@ -49,8 +53,6 @@ Configure what operators handle at the door:
 - **`ops_config`** toggles (e.g. confirm on scan, badge at entry).
 - **Content fields** linked to attendee data — invalid field slugs are rejected in the UI.
 
-Database: migration `20260618120000_event_item_contents`.
-
 ### Communication and mail
 
 Prepare ticket email without leaving the admin UI:
@@ -61,8 +63,6 @@ Prepare ticket email without leaving the admin UI:
   testing (ADR 0029).
 
 ### Database
-
-Two migrations since v0.4.1:
 
 | Migration | Purpose |
 |-----------|---------|
@@ -75,28 +75,25 @@ do not run `migrate deploy` by hand.
 
 ### Deploy, ops, and security
 
-- **`GET /readyz`** — token-protected readiness check (database, Redis, migration status;
-  ADR 0026).
-- **Safe upgrades (ADR 0027):** pre-migration backup, CI guard against destructive migration
-  SQL, rollback runbook, smoke test for backup path.
+- **`GET /readyz`** — token-protected readiness check (database, Redis, migration status; ADR 0026).
+- **Safe upgrades (ADR 0027):** pre-migration backup, CI guard against destructive migration SQL,
+  rollback runbook, smoke test for backup path.
 - **Supply chain:** Trivy image scan + CycloneDX SBOM in CI; `SECURITY.md` updated.
-- **Dependencies:** transitive `uuid` forced to 14.0.0 (Dependabot #13 / CVE-2026-41907);
-  patch bumps for vitest, eslint, argon2. Requires Node ≥22.12 for exceljs ↔ uuid interop
-  (`require(esm)`).
-- Pre-deploy cleanup: Docker import paths, admin navigation, PII guard, CSS fixes.
+- **Dependencies:** transitive `uuid` forced to 14.0.0 (Dependabot #13); patch bumps for vitest,
+  eslint, argon2. Requires Node ≥22.12 for exceljs ↔ uuid interop (`require(esm)`).
 
 ### Deploy notes
 
 - Pull or rebuild: `ghcr.io/solarssk/admitto:0.4.2` (rolling `:0.4` on the same minor line).
 - Restart the app container after upgrade — migrations and optional backup run on start.
-- Smoke after deploy: admin login → guest list → import a test CSV → edit one row → export
-  XLSX → communication preview/test-send → operator check-in still works.
+- Smoke: admin login → guest list → import CSV → edit row → export XLSX → mail preview/test-send
+  → operator check-in still works.
 
 ### Not in this release
 
 - Wallet passes (Apple / Google) → **v0.5**.
 - Public self-registration form.
-- Major framework upgrades (Prisma 7, React 19) — planned for a later hardening milestone.
+- Major framework upgrades (Prisma 7, React 19).
 
 ### Next
 
@@ -104,646 +101,351 @@ do not run `migrate deploy` by hand.
 
 ## v0.4.1 — 2026-06-17
 
-Operator check-in phase 2 (ADR 0010 event-day ops). Git tag `v0.4.1`.
+Operator check-in — full event-day screen. Git tag `v0.4.1`.
 
-Full operator lane on top of v0.4.0 foundation: one attendee card after scan or manual
-lookup, item fulfilment (gift bag, badge, headset), scan history, device-scoped undo with
-badge rollback, operator notes, and opt-in camera QR decode.
+Builds on v0.4.0’s scan wedge into a **complete hostess workflow**: one attendee card after scan
+or manual search, item fulfilment at the door, scan history, per-tablet undo, operator notes,
+and optional camera QR. Designed for real event-day use (ADR 0010).
 
-### Event-day domain and database (PR #67)
+### Attendee card
 
-- **Migration `20260617120000_event_day_ops`:** `custom_data`, `ops_config`, `EventItem`,
-  `AttendeeItemState`, `AttendeeNote`, `AttendeeActionLog` (`session_id`); default items
-  per event (`giftbag`, `badge`, `headset` — shirt size shown on gift bag row, not a
-  separate item).
-- **`packages/tickets`:** `admitAttendee` (single CAS path for scan + manual),
-  `undoLastCheckIn` (device-scoped, badge rollback via `check_in_id` metadata),
-  `transitionItemState`, `getAttendeeCard`, `lookupAttendees`, `addAttendeeNote`,
-  lazy `ensureDefaultEventItems` for events created after migration.
-- **Status types:** `UNDO` check-in rows; `scan_preview` action log; note max 2000 chars.
+After a successful scan or manual lookup, the operator sees **one card** with:
 
-### Operator API (`apps/web`, PR #67)
+- Guest name, company, ticket type, check-in status, warnings.
+- Item rows (gift bag, badge, headset) and their states.
+- Recent notes and audit context.
+- Layout stacks on narrow screens (&lt;1024px).
 
-- `POST /api/checkin/lookup` (PII in body, not URL), admit, items, notes, undo, stats,
-  history; session auth binds `deviceId` to `Session.device_label`.
-- RBAC event-scoped (403); CSRF on mutating routes; `resolveClientIp` for audit.
+### Item fulfilment
 
-### Operator UI (`apps/admin`, PR #67)
+Per-event items operators can mark at the door:
 
-- **`AttendeeCard`:** check-in status, items, notes, warnings; split layout (stack &lt;1024px).
-- **`ManualLookupPanel`**, **`ScanHistoryList`**, **`CameraScanner`** (opt-in, dynamic
-  `@zxing/browser`).
-- **`CheckInPage`:** connection gate, `admitOrigin` (manual ≠ scan), scan buffer refocus,
-  duplicate debounce.
+- **Gift bag** — shirt size shown on the gift bag row when known (not a separate item).
+- **Badge** — can auto-issue on check-in when configured.
+- **Headset** — issue and return.
+- Every change is logged in **AttendeeActionLog** (who, session, device, IP).
 
-### Follow-ups (PR #68)
+### Manual lookup
 
-- Hide **Undo** when session has no device label (matches server 409).
-- Lookup also searches `custom_data.company` / `custom_data.department` (ordered, limit 20).
-- **Migration `20260617130000_attendee_note_body_check`:** DB CHECK on note body length.
+- Search by name or email; PII stays in the **request body**, not the URL (access-log safe).
+- Also matches **company** and **department** inside `custom_data` when present.
+- Same admit path as scan — no double admission on repeat tap (CAS).
+
+### Scan history and undo
+
+- Sidebar shows recent scans and admitted count for the event.
+- **Undo last check-in** on **this tablet only** — rolls back admission and auto-issued badge
+  when safe. Requires a **device label** at login; undo is hidden if none was set.
+- Operator notes (max 2000 characters) with author and timestamp.
+
+### Camera scan
+
+- **Opt-in** “Use camera” checkbox — no camera access until enabled.
+- USB keyboard wedge remains the primary scan path.
+- Dynamic load of the browser QR library.
+
+### Database
+
+| Migration | Purpose |
+|-----------|---------|
+| `20260617120000_event_day_ops` | `custom_data`, `ops_config`, event items, item states, notes, action log |
+| `20260617130000_attendee_note_body_check` | DB limit on note body length |
 
 ### Deploy notes
 
-- **Database:** migrations apply automatically on container start (entrypoint, fail-fast, with a
-  pre-migration backup when pending migrations exist). No manual `migrate deploy` step.
-- Rebuild or pull the Docker image after tag push (`ghcr.io/solarssk/admitto:0.4.1`).
-- Operators should set a **device label** at login (e.g. `Tablet 1 — main entrance`) if
-  they need per-tablet undo.
+- Image: `ghcr.io/solarssk/admitto:0.4.1`.
+- Migrations apply on container start.
+- Set **device label** at operator login (e.g. `Tablet 1 — main entrance`) on tablets that need undo.
 
 ### Not in this release
 
-- Admin event screens (import, attendee table, mail) — prompt #3.
-- Settings / branding panel, exports, wallet passes (v0.5).
-- Zebra/DataWedge runbook; offline check-in queue.
-- Admin revert/reissue of check-ins.
+- Admin guest list, import, mail templates (→ v0.4.2).
+- Wallet passes (→ v0.5).
+- Offline check-in queue; Zebra/DataWedge runbook.
 
 ### Next
 
-- Admin event screens and CSV import (roadmap prompt #3).
-- `v0.5.0` — wallet passes (PassCreator).
+- Admin event screens (v0.4.2).
 
 ## v0.4.0 — 2026-06-17
 
-Staff SPA foundation and operator check-in phase 1 (ADR 0012 event-day readiness). Git tag `v0.4.0`.
+Staff UI foundation and operator check-in wedge. Git tag `v0.4.0`.
 
-First Tabler-flavoured admin/operator UI on origin: design system, lifecycle shell placeholders,
-scanner-first check-in wedge, ticket page reskin, and self-hosted fonts/icons so event-network
-deployments do not depend on jsDelivr or Google Fonts egress.
+First **Tabler-based staff application** served from the same origin as the API: shared design
+system, admin/operator shells, scanner-first check-in entry point, reskinned public ticket page,
+and **self-hosted fonts/icons** so venue networks without CDN egress still work (ADR 0012).
 
-### Frontend foundation (`@admitto/ui`, `@admitto/admin`, PR #56)
+### Staff application
 
-- **`packages/ui`:** Tabler-flavoured tokens + 13 React primitives; `StatusBadge` DB mapping;
-  `resolveThemeVars` with anti-lockout branding fallback.
-- **`apps/admin`:** Vite + React Router staff SPA — `AdminShell` lifecycle nav placeholders,
-  `OperatorShell`, event picker, check-in entry (single event → redirect),
-  `ConnectionStateProvider` (auth-aware heartbeat via `/api/auth/me`).
-- **Backend APIs:** `GET /api/admin/events`, `GET /api/checkin/events` (session-only, P4),
-  `GET/PUT /api/staff/theme`; gates `canAccessAdminPanel` / `canAccessCheckInPanel`.
-- **Hono integration:** staff SPA static serving + fallback, `createStaffAdminGate` (ADR 0017),
-  role-based post-login redirect (`resolvePostAuthPath`).
-- **`@admitto/auth`:** `BrandingTheme`, panel helpers, `listAdminEvents` / `listCheckInEvents`.
-- **`/t` reskin:** ticket kit layout, CSS vars from theme, `StatusBadge` semantics (SSR, no JS).
+- **Design system** (`@admitto/ui`): tokens, status badges, 13 primitives; theme vars with
+  anti-lockout branding fallback.
+- **Admin shell:** lifecycle navigation placeholders, event picker, role-based entry to admin vs
+  operator surfaces.
+- **Connection state:** auth-aware heartbeat so tablets know when the server session is alive.
+- Staff SPA at `/admin`, `/operator`; ticket page `/t` reskinned to match.
 
-### Operator check-in phase 1 (PR #59)
+### Operator check-in (phase 1)
 
-- Scanner-first scan buffer (autofocus, Enter submit, refocus after each scan).
-- `POST /api/checkin/scan` integration with attendee result card + `StatusBadge`.
-- Shared route for `/operator/events/:id/checkin` and `/admin/events/:id/checkin`.
-- Duplicate wedge debounce (~300 ms).
+- Scanner-first: autofocus buffer, Enter to submit, refocus after each scan, ~300 ms duplicate debounce.
+- Scan result card with status badge.
+- Shared check-in route for admin and operator URLs.
 
-### Event-day asset hardening (PR #62)
+### Security and assets
 
-- Self-host Tabler Icons (`@tabler/icons-webfont@3.31.0`) and Inter (`@fontsource/inter`) in
-  `apps/admin/dist` — zero runtime `jsdelivr` / `fonts.googleapis` / `fonts.gstatic` in default UI.
-- Staff SPA CSP tightened: `style-src 'self' 'unsafe-inline'`; `font-src 'self' https:` for opt-in
-  branding fonts only.
-
-### Security and auth follow-ups (PR #57, #61)
-
-- Unify `isAdminRoleAssignment` export; controlled redirects when post-login path resolution fails
-  (OIDC, password, MFA) instead of HTTP 500.
-- Defense-in-depth headers on `/admin` and `/operator` SPA shell (`getStaffSpaSecurityHeaders`):
-  CSP, `nosniff`, `no-referrer`, `frame-ancestors 'none'`.
-
-### UI polish (PR #60)
-
-- Semantic theme tokens replace hardcoded hex in `components.css` / `ticket.css`.
-- `Tabs` reconciles `active` when the `tabs` prop changes after mount.
-
-### Docs (PR #58)
-
-- `deploy/staff-entry-smoke-matrix.md` — city CF ZTNA vs event WireGuard vs session login smoke paths.
+- Self-hosted Tabler Icons and Inter — no runtime dependency on jsDelivr or Google Fonts.
+- Tightened CSP on staff routes; defense-in-depth headers on SPA shell (ADR 0017).
+- Controlled redirects when post-login path resolution fails (no HTTP 500 on auth edge cases).
 
 ### Deploy notes
 
-```bash
-npm run build
-```
-
-- Staff UI is served from `apps/admin/dist` at `/admin`, `/operator`, and `/assets/*` (immutable cache).
-- Event-day venue networks may block outbound CDN egress — default UI no longer requires it.
-- Rebuild Docker image after tag push (`ghcr.io/solarssk/admitto:0.4.0`).
+- Build includes `@admitto/admin`; static assets at `/admin`, `/operator`, `/assets/*`.
+- Image: `ghcr.io/solarssk/admitto:0.4.0`.
+- Venue networks that block outbound CDN egress are supported by default.
 
 ### Not in this release
 
-- Camera QR decode (deferred to `v0.4.1`).
-- Check-in scan history panel (deferred to `v0.4.1`).
-- Manual guest lookup on operator surface.
-- Full lifecycle feature screens (attendees, mail, wallet, etc.) — shell placeholders only.
-- `POST` create event from admin UI.
+- Full attendee card, manual lookup, items, history, camera (→ v0.4.1).
+- Admin lifecycle screens (guest list, import, mail) — navigation placeholders only.
 
 ### Next
 
-- `v0.4.1` — camera scanner + scan history view.
-- Operator attendee card and fulfilment lanes per roadmap prompts 22+.
+- v0.4.1 — complete operator check-in screen.
 
 ## v0.3.7 — 2026-06-16
 
-Release hygiene — signed git tags and documented cut process.
+Release hygiene. Git tag `v0.3.7`.
 
-### Release tooling
-
-- `scripts/release-tag.sh` — signed annotated tags (`git tag -s`) with pre-push checks
-- `VERSIONING.md` — one-time SSH/GPG signing setup; release steps include GitHub Release
-- Re-signed tags `v0.3.3`–`v0.3.6` on GitHub (`verified: true`); future tags use the script
+Signed git tags and a documented cut process so releases show **Verified** on GitHub and
+maintainers follow one repeatable path (`scripts/release-tag.sh`, `VERSIONING.md`).
 
 ## v0.3.6 — 2026-06-16
 
-Production Docker deployment (ADR 0018) — self-hosted compose stack for the first on-infra runs. Git tag `v0.3.6` released.
+Production Docker deployment. Git tag `v0.3.6`.
 
-### Deployment (`deploy/`, `Dockerfile`, CI)
+First **self-hosted compose stack** for running Admitto on real infrastructure (ADR 0018):
 
-- Multi-stage production image for `apps/web`; `prisma migrate deploy` + idempotent backfill on container start
-- `deploy/docker-compose.yml`: app + Postgres + Redis + nginx (loopback `:8080` only; app `:3000` internal)
-- `GET /healthz` with DB ping for Docker healthcheck
-- CI `docker-build` job (after test + lint); `publish-container` pushes `ghcr.io/solarssk/admitto:0.x.y` (+ rolling `:0.x`) on each `vX.Y.Z` tag
-- Optional `deploy-smoke` workflow_dispatch
-- Docs: deployment model, platform/arch notes, package READMEs, [VERSIONING.md](VERSIONING.md)
+- Multi-stage image for `apps/web`; migrations on container start.
+- Compose: app + Postgres + Redis + nginx (loopback `:8080`; app internal `:3000`).
+- **`GET /healthz`** with database ping for health checks.
+- CI builds image; tag push publishes `ghcr.io/solarssk/admitto:0.x.y` and rolling `:0.x`.
 
 ## v0.3.5 — 2026-06-15
 
-Cloudflare Access pass-through (prompt 16c) — closes the auth foundation lane for v0.3.
+Cloudflare Access for off-site admins. Git tag `v0.3.5`.
 
-Off-site admins authenticate at the **collision point** (`/admin*`, `/api/admin*`) via Cloudflare Access
-JWT; on-site break-glass remains password + TOTP at `/login`. Per-request identity resolution reuses the
-OIDC `ExternalIdentity` seam without creating long-lived Admitto sessions.
+**Off-site organizers** reach `/admin` through Cloudflare Access JWT at the edge; **on-site
+break-glass** stays password + TOTP at `/login`. Identity resolves per request via the same
+`ExternalIdentity` seam as OIDC — no long-lived Admitto session for CF logins (ADR 0017).
 
-### Cloudflare Access (`@admitto/auth`, `@admitto/web`, PR #50)
+### How it works
 
-- **Conditional edge gate (ADR 0017):** validates `Cf-Access-Jwt-Assertion` on `/admin*` and `/api/admin*`
-  only; absent JWT → `/login` boundary (not 401); invalid JWT → reject without session fallback.
-- **Per-request auth:** CF JWT resolves to `User` via `ExternalIdentity` without creating a long-lived
-  Admitto session (revocation invariant).
-- **Config:** `SystemSettings` keys with `env > DB > default` locks; superadmin UI at
-  `/admin/auth/cf-access` with JWKS Test; boot fail-fast when enabled without team domain/AUD.
-- **Staff entrypoint:** `GET /` redirects to `/login` (shared login boundary).
-- **Review hardening:** header-only JWT at collision point (CF docs); group-role sync on each valid CF
-  JWT (mapping rule revocation); validate-before-save + transactional settings write;
-  restart-bound config cache; loopback team domain only in `NODE_ENV=test`; API `/api/admin*` JSON auth
-  errors; boot-time `ensureCloudflareAccessProvider` (atomic upsert) for env-only deploy;
-  case-insensitive env booleans; numeric env locks not coerced as booleans.
-- **Rollout:** no email auto-link — pre-link `ExternalIdentity` for existing admins before CF go-live
-  (see `_ops/design/deployment-cloudflare-access.md` in project docs).
+- JWT validated on `/admin*` and `/api/admin*` only; missing JWT → login page, not opaque 401.
+- Superadmin UI to configure team domain, audience, JWKS test; env locks override DB for kill switch.
+- Group → role mapping synced on each valid JWT.
 
 ### Database
 
-- `20260615200000_cf_access_settings` — seeds `SystemSettings` defaults for CF Access keys.
+- `20260615200000_cf_access_settings` — default system settings for CF Access keys.
 
 ### Deploy notes
 
-```bash
-npm run db:migrate
-```
-
-- Optional env locks: `CF_ACCESS_ENABLED`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`,
-  `CF_ACCESS_PROTECTED_PREFIXES` (see `apps/web/.env.example`).
-- Before enabling CF off-site: pre-link each admin `ExternalIdentity` for provider `cloudflare_access`;
-  configure group→role mappings; protect origin (Tunnel/firewall).
-- `CF_ACCESS_ENABLED=false` in env overrides DB — use as kill switch.
+- Pre-link admin `ExternalIdentity` rows before enabling CF off-site.
+- `CF_ACCESS_ENABLED=false` in env acts as emergency kill switch.
 
 ### Next
 
-- `v0.4` — Tabler admin UI foundation and operator/event-day lane (per roadmap).
+- v0.4 — staff UI and operator lane.
 
 ## v0.3.4 — 2026-06-15
 
-OIDC linking (prompt 16b) and security hygiene (prompt 18 / ADR 0016 DO-NOW).
+Corporate SSO (OIDC) and auth hardening. Git tag `v0.3.4`.
 
-This milestone adds corporate SSO via OIDC (Authentik-first) as an additive login path, then hardens
-RBAC/OIDC data integrity, outbound OIDC admin saves, check-in API limits, and SMTP TLS before the
-next auth work (Cloudflare Access / 16c).
+**OIDC login** (Authentik-first) as an additive path beside local passwords, plus data-integrity
+and transport fixes before Cloudflare Access (ADR 0016).
 
-### OIDC linking (`@admitto/auth`, PR #47)
+### OIDC sign-in and account linking
 
-- **Additive login:** Authorization Code + PKCE; server-side `state` / `nonce`; full ID token validation
-  (JWKS, `iss`, `aud`, `exp`, `nonce`). Local `User` linked through `ExternalIdentity`.
-- **JIT provisioning:** new OIDC users get **zero roles** unless a configured group→role rule matches
-  (fail-closed; not read-only by default).
-- **Grant ownership:** `OidcRoleGrant` rows track OIDC-provisioned roles; demotion revokes grants without
-  touching manual `RoleAssignment` rows.
-- **Sessions:** OIDC logins receive `full` sessions with `auth_method=oidc` (local TOTP skipped — MFA is
-  the IdP's responsibility per ADR 0011).
-- **Account linking:** explicit `?link=1` → `/account/oidc/:id/link` step-up (password + TOTP when required);
-  `link_step_up_at` on OAuth state (5 min TTL at callback); OIDC flow cookie binds callback to the
-  initiating browser.
-- **Superadmin UI:** server-rendered `/admin/auth/providers` — IdP config, write-only `client_secret`, Test
-  connection, transactional save.
-- **SSRF guards:** `assertSafeOidcFetchUrl` blocks private/link-local targets (RFC 1918, IMDS, IPv6 ULA)
-  on outbound OIDC discovery/token fetches.
-- **Seam:** `resolveOrCreateUserFromExternalIdentity` shared with future Cloudflare Access (16c).
+- Authorization Code + PKCE; full ID token validation (JWKS, issuer, audience, nonce).
+- New SSO users get **zero roles** unless a group→role rule matches (fail-closed).
+- Existing users can **link** an IdP account after password (+ TOTP when required) step-up.
+- Superadmin UI for provider config; client secrets encrypted at rest; SSRF guards on discovery URLs.
 
-### Security hygiene (PR #48)
+### Security hardening
 
-- **RBAC-2:** deduplicate `RoleAssignment` rows, then partial UNIQUE indexes (scoped rows + instance rows
-  where `scope_id IS NULL`). Migration repoints `OidcRoleGrant` to the survivor assignment before dedup.
-- **SEC-2:** orphan `OidcRoleGrant` cleanup; FK `OidcRoleGrant.role_assignment_id → RoleAssignment` with
-  `ON DELETE CASCADE`; Prisma relation on both sides.
-- **SEC-3:** OIDC discovery/endpoints resolved **before** `$transaction` in provider save paths (no
-  network I/O inside DB transactions).
-- **OIDC grant races:** idempotent grant creation under concurrent logins (`P2002` → safe no-op; winner
-  creates assignment + grant in one transaction).
-- **API-001:** check-in history `limit` clamped to **1–100** at HTTP and domain layers.
-- **TLS P1:** SMTP adapter `minVersion: "TLSv1.2"`.
-- **CI:** `prisma migrate deploy` on `admitto_auth_test` before auth integration tests.
+- Duplicate role assignments removed; partial unique indexes on scoped roles.
+- OIDC provider save resolves HTTP endpoints **before** DB transactions.
+- Check-in history `limit` clamped to 1–100.
+- SMTP requires TLS 1.2+.
 
 ### Database
 
-Migrations (run in order on deploy; folder names as merged on `main`):
-
-- `20260615120000_oidc_linking` — `IdentityProvider`, `ExternalIdentity`, OIDC OAuth state tables.
-- `20260615140000_oidc_hardening` — OIDC schema/index hardening from review.
-- `20260615160000_oidc_scope_normalization` — scope normalization for group→role mappings.
-- `20260615170000_oidc_link_step_up` — `link_step_up_at` on OAuth state.
-- `20260615180000_oidc_role_grants` — `OidcRoleGrant` + group mapping tables.
-- `20260615190000_role_assignment_unique` — dedup, partial UNIQUE indexes, grant repoint, FK cascade.
+Six OIDC-related migrations (`20260615120000` … `20260615190000`) — providers, external
+identities, OAuth state, role grants, deduplicated assignments.
 
 ### Deploy notes
 
-```bash
-npm run db:migrate
-```
-
-- Set `ENCRYPTION_KEY` (32-byte base64) — required for encrypted IdP `client_secret` and existing TOTP
-  secrets.
-- Configure at least one OIDC provider in `/admin/auth/providers` before expecting SSO logins.
-- After migrate `20260615190000`, duplicate `RoleAssignment` rows are removed automatically; surviving
-  OIDC grants are repointed to the oldest row per `(user, role, scope)`.
-- Set `TRUST_PROXY=true` behind nginx/traefik when the app is not directly exposed.
-- SMTP paths now require TLS 1.2+ from the server — verify legacy mail relays before go-live.
+- `ENCRYPTION_KEY` required for IdP secrets and TOTP.
+- Configure at least one OIDC provider before expecting SSO logins.
+- `TRUST_PROXY=true` behind reverse proxy.
 
 ### Not in this release
 
-- Cloudflare Access / header identity (prompt 16c)
-- DNS rebinding hardening for OIDC SSRF (SEC-1 — deferred per ADR 0016)
-- Tabler admin UI (`v0.4`)
-- `viewer` read-only RBAC role (RBAC-1 — deferred)
+- Cloudflare Access (→ v0.3.5).
+- Admin Tabler UI (→ v0.4).
 
 ### Next
 
-- Prompt 16c — Cloudflare Access seam on top of `ExternalIdentity`
-- `v0.4` — Tabler admin UI foundation
+- Cloudflare Access; v0.4 staff UI.
 
+## v0.3.3 — 2026-06-14
 
-## v0.3.3 - 2026-06-14
+Two-factor authentication for admins. Git tag `v0.3.3`.
 
-2FA / TOTP for admin and superadmin (prompt 16a).
+**TOTP 2FA** for admin and superadmin roles; **operators unchanged** on event day (password only).
+Partial sessions gate privileged routes until enrollment or verification completes.
 
-This milestone adds a second authentication factor for elevated roles while keeping operator login
-unchanged. Partial sessions (`mfa_pending`, `enrollment_required`) gate admin actions until TOTP
-enrollment and verification complete; break-glass CLI commands cover lost authenticator scenarios.
+### MFA flow
 
-### MFA domain (`@admitto/auth`)
+- Enroll authenticator app; backup recovery codes (one-time, hashed).
+- Optional **trusted device** cookie to skip TOTP on known browsers.
+- Break-glass CLI: reset MFA, generate emergency recovery (superadmin, audited).
 
-- **`UserMfaMethod`:** `totp` and `recovery` rows (seam for future `webauthn`); TOTP `secret_enc` via
-  `@admitto/crypto`; backup recovery codes hashed (argon2id), one-time use.
-- **Login stages:** admin/superadmin → `mfa_pending` or `enrollment_required`; operators → full session
-  after password (no 2FA friction on event day).
-- **TOTP:** enroll + confirm, verify with otplib v13 (`epochTolerance: 30` = ±30 s); MFA verify rate
-  limits (separate buckets for TOTP vs recovery codes).
-- **Trusted device:** optional `admitto_trusted_device` cookie (hash-only in DB); skip TOTP on
-  remember; revoked on logout, MFA reset, and session revoke paths.
-- **Break-glass CLI:** `reset-mfa`, `generate-emergency-recovery` (password from stdin, no echo,
-  superadmin@instance only, audit log).
-- **`SystemSettings`:** `session_ttl`, `operator_session_ttl`, `trusted_device_days`,
-  `mfa_required_roles` (env lock → DB → default).
-- **Session hardening:** `createSession` derives partial stage when omitted (fail-closed for MFA users);
-  `validateSession` re-checks MFA policy; `promoteSessionToFull` requires non-expired partial session.
+### Operator impact
 
-### HTTP (API + minimal HTML)
-
-- **API:** `POST /api/auth/mfa/verify`, `POST /api/auth/mfa/totp/enroll`, `POST /api/auth/mfa/totp/confirm`.
-- **HTML:** `GET/POST /mfa/verify`; `GET /mfa/enroll` (read-only), `POST /mfa/enroll/start`,
-  `POST /mfa/enroll` (CSRF-protected); safe `?next=` via `resolveSafeRedirectPath`.
-- **Gates:** only `full` session grants `/api/auth/me`, check-in, and `/operator`; partial sessions
-  blocked from privileged routes.
+- Operators still get a full session after password — no 2FA friction at the door.
+- Existing admin sessions re-staged after deploy; plan communication before an event.
 
 ### Database
 
-- Migration `20260614130000_2fa_totp`: `Session.stage`, `UserMfaMethod`, `TrustedDevice`,
-  `SystemSettings` seed; active elevated sessions re-staged to `mfa_pending` / `enrollment_required`
-  with `expires_at` clamped (`LEAST`, max 15 minutes).
-- Migration `20260614210000_totp_replay_protection`: `UserMfaMethod.last_totp_time_step` (nullable int).
-
-### Dependencies
-
-Bundled Dependabot updates (closes #40–#45):
-
-- **`@admitto/web`:** `hono` 4.12.25, `@hono/node-server` 2.0.4, `redis` 6.0.0.
-- **`@admitto/mailer` / `@admitto/import`:** `zod` 4.4.3 (no code changes — `z.string().email()` unchanged).
-- **Root:** `@typescript-eslint/parser` 8.61.0.
-- **CI:** `github/codeql-action` → `8aad20d1` in `codeql.yml` and `semgrep.yml`.
-- **Adapter:** `RedisRateLimitStore` uses `withAbortSignal()` + two-arg `eval()` for redis v6.
-
-### Security
-
-- **CSRF / `TRUST_PROXY`:** `resolveRequestOrigin` honours `X-Forwarded-Proto` and `X-Forwarded-Host`
-  only when `TRUST_PROXY=true`, matching the existing rate-limit client-IP policy. Defense-in-depth when
-  the app is reachable without a sanitizing reverse proxy.
-- **`resolveTrustProxy`:** shared env parser in `apps/web/src/config.ts` (CSRF + rate limits).
-- **TOTP replay protection:** `UserMfaMethod.last_totp_time_step` + otplib `afterTimeStep`; login MFA
-  verify rejects reuse of the same time-step code; conditional DB update guards parallel replay.
+- `20260614130000_2fa_totp` — MFA methods, trusted devices, session stages, settings seed.
+- `20260614210000_totp_replay_protection` — TOTP time-step replay guard.
 
 ### Deploy notes
 
-- Run `npm run db:migrate` on deploy (new migration required — includes `last_totp_time_step`).
-- Set `ENCRYPTION_KEY` (32-byte base64) in production — required for TOTP `secret_enc`.
-- Set `TRUST_PROXY=true` behind nginx/traefik (rate limits, audit IP, and CSRF origin); proxy must
-  overwrite client-supplied `X-Forwarded-*` headers.
-- After rollout, existing admin/superadmin sessions are re-staged — users must complete enrollment or
-  MFA verify before admin/check-in access; plan communication before an event.
-- Break-glass: `npm run cli -w @admitto/auth -- reset-mfa --email <superadmin>` (server-side only).
+- `ENCRYPTION_KEY` and `TRUST_PROXY=true` in production.
+- Run migrations before rollout.
 
 ### Not in this release
 
-- OIDC linking (`v0.3.4` / prompt 16b)
-- WebAuthn / passkeys (schema seam only)
-- Admin UI for MFA (Tabler / v0.4)
-- Encryption key rotation and expired trusted-device cleanup jobs
+- OIDC (→ v0.3.4).
+- MFA settings UI in Tabler (→ v0.4).
 
-## v0.3.2 - 2026-06-14
+## v0.3.2 — 2026-06-14
 
-Operator login, session-first check-in, Mode B `public_ref`, and stable web test infrastructure.
+Operator login and session-first check-in. Git tag `v0.3.2`.
 
-This milestone closes the gap between auth core (`v0.3.1`) and event-day operator work: tablets log in
-with a real session, check-in is session-first with Bearer as break-glass only, and agency ticket URLs
-no longer expose internal attendee IDs.
+Tablets **log in with a real session**; check-in is session-first with Bearer token as
+break-glass only. Agency ticket URLs use opaque **public_ref** instead of internal attendee IDs (ADR 0015).
 
-### Operator login (HTML)
+### Operator login
 
-- Added server-rendered operator auth: `GET/POST /login`, `GET /operator`, `POST /logout`.
-- `/operator` is a temporary post-login landing (events from RBAC, sign-out) — not the v0.4 admin UI.
-- Reused API session cookie (`httpOnly`, `SameSite=Lax`); optional `device_label` on login (capped server-side).
-- CSRF guards on HTML and JSON login/logout and on session-authenticated `POST /api/checkin/scan`.
-- Login rate limits (IP + per-email on failed attempts); HTML 429 returns plain text, API returns JSON.
+- Server-rendered `/login`, `/operator` landing, `/logout`.
+- Session cookie (`httpOnly`, `SameSite=Lax`); optional device label; CSRF on mutating routes.
+- Login rate limits (IP + per-email on failures).
 
-### Check-in: session-first, Bearer break-glass
+### Check-in authorization
 
-- Default `ALLOW_CHECKIN_BEARER=false`; boot-time validation via `validateCheckinBootConfig()`.
-- Gate pipeline: `preAuth` → optional session CSRF (scan) → rate limit → body parse → `eventScope`.
-- Per-operator scan/history rate limits after authentication (not shared IP quota for authed traffic).
-- Removed legacy bearer-only gate helpers; tests use `preAuth` + `eventScope`.
+- Default `ALLOW_CHECKIN_BEARER=false`; session + event scope required for scan and history.
+- Per-operator rate limits after authentication.
 
-### Mode B — `public_ref`
+### Public ticket URLs (Mode B)
 
-- Added `Attendee.public_ref` (unique, non-guessable); agency import generates refs on create.
-- Public routes `/t/:slug/a/:ref` and `/q/:slug/a/:ref.png` resolve by `public_ref`, not `Attendee.id`.
-- Mail ticket links require `public_ref` for Mode B; per-attendee skip when missing.
-- Backfill on deploy: `npm run db:migrate` runs migrations plus agency `public_ref` backfill.
-
-### Test infrastructure (ADR 0015)
-
-- Fixed CI failures from shared `admitto_web_test` DB (`P3005`, Prisma segfault on repeated
-  `force-reset`): fixture cleanup instead of per-file DB resets (#36).
-- Stabilized `@admitto/web` tests: Vitest **unit** (no Postgres) vs **integration** (one `globalSetup`
-  with `migrate deploy`), integration files under `test/integration/` (#37).
-- Added `scripts/test-web-like-ci.sh` for local CI parity; contract in `apps/web/test/README.md`.
+- Routes `/t/:slug/a/:ref` and `/q/:slug/a/:ref.png` use **public_ref**, not database id.
+- Backfill runs on deploy for existing agency imports.
 
 ### Deploy notes
 
-- Set `ALLOW_CHECKIN_BEARER=false` in production; keep `CHECKIN_OPERATOR_TOKEN` only for break-glass.
-- Run `npm run db:migrate` on deploy (includes `public_ref` backfill).
-- Legacy Mode B URLs using `Attendee.id` in the path no longer work; resend tickets if needed.
+- `npm run db:migrate` (includes public_ref backfill).
+- Resend tickets if old Mode B links used internal ids.
 
 ### Not in this release
 
-- 2FA / TOTP (planned for `v0.3.3`)
-- OIDC linking (`v0.3.4`)
-- Operator scan UI (`v0.4`)
-
-## v0.3.1 - 2026-06-14
-
-Auth core foundation.
-
-This release is the first real identity and session layer for Admitto.
-It moves the system away from “temporary guarded endpoints” toward a model where operator work can be
-attributed to real users, sessions can be revoked, and future operator/admin UI has a stable backend
-auth contract to build on.
-
-### Identity and account model
-
-- Introduced first-class local `User` accounts as the baseline identity model.
-- Used `argon2id` password hashing for local credentials.
-- Added `is_active` account state so a user can be disabled without deleting history.
-- Included CLI bootstrap for a local break-glass superadmin:
-  - `npm run auth:bootstrap -- --email admin@example.com`
-  - password is read from stdin / prompt, not argv
-  - creates a first-run local `superadmin@instance`
-
-### Sessions and revocation
-
-- Added DB-backed `Session` records instead of stateless browser auth.
-- Session tokens are opaque and high-entropy; only `token_hash` is stored in the database.
-- Added expiry and revocation handling to session validation.
-- Added support for revoking a single session and bulk-revoking operator sessions for an event.
-- Established role-sensitive session lifetime defaults:
-  - shorter-lived operator sessions
-  - longer-lived admin and superadmin sessions
+- 2FA (→ v0.3.3).
+- Operator scan UI in staff SPA (→ v0.4).
 
-### Auth package and backend API
-
-- Added new `@admitto/auth` package as the core auth domain layer.
-- Implemented:
-  - login flow
-  - logout flow
-  - session validation
-  - password verification helpers
-  - auth audit logging
-  - capability-aware authorization helpers
-- Added HTTP auth endpoints:
-  - `POST /api/auth/login`
-  - `POST /api/auth/logout`
-  - `GET /api/auth/me`
+## v0.3.1 — 2026-06-14
 
-### Security posture of the login flow
+Auth core — users, sessions, RBAC. Git tag `v0.3.1`.
 
-- Added uniform unauthorized responses for bad email / bad password to reduce user enumeration risk.
-- Added dummy verification path for missing users.
-- Added rate limiting for login attempts.
-- Added structured login audit logs without password or session token leakage.
-- Added `httpOnly` session cookie handling with `SameSite=Lax` and `Secure` outside development.
+First **real identity layer**: local accounts, revocable DB sessions, capability-aware authorization,
+and a safe bridge from the legacy check-in Bearer token to session-first operator work (ADR 0011).
 
-### RBAC and check-in authorization
+### Accounts and sessions
 
-- Kept `RoleAssignment` as the role/scope source of truth, but replaced raw exact-match middleware with capability-aware checks.
-- Introduced event-aware authorization helpers such as:
-  - `canPerformCheckIn`
-  - `canManageEvent`
-  - `canManageInstance`
-- Established the intended check-in access model:
-  - `superadmin@instance` -> all events
-  - `admin@organization` -> events in that organization
-  - `operator@event` -> only assigned events
+- Local `User` with argon2id passwords; break-glass superadmin bootstrap CLI.
+- Opaque session tokens (hash stored); expiry, revocation, role-sensitive TTLs.
+- Login/logout/`/api/auth/me`; uniform errors to reduce user enumeration.
 
-### Safe migration of `/api/checkin/*`
+### Authorization
 
-- Extended `/api/checkin/*` to accept:
-  - a valid session with correct event scope
-  - or the transitional legacy Bearer token
-- Preserved ADR 0003 deploy policy so check-in never becomes public during the migration.
-- Kept missing `CHECKIN_OPERATOR_TOKEN` behavior unchanged:
-  - `503` in development
-  - fail-fast at boot in non-development environments
-- Added route-specific `eventId` extraction rules for session-gated check-in endpoints.
+- Event-scoped check-in: superadmin (all events), org admin (org events), operator (assigned event).
+- `/api/checkin/*` accepts valid session **or** transitional Bearer (ADR 0003 deploy policy).
 
-### Why this release matters
+### Deploy notes
 
-`v0.3.1` is not just “login endpoints landed”.
-It is the release that turns auth into a real subsystem:
+- Bootstrap superadmin before first login: `npm run auth:bootstrap`.
+- Missing `CHECKIN_OPERATOR_TOKEN`: 503 in dev, fail-fast in production.
 
-- real local accounts
-- revocable sessions
-- explicit check-in authorization
-- break-glass superadmin
-- and a safe bridge from the shared Bearer-token era to future session-first operator work
+### Next
 
-This is the backend prerequisite for:
+- Operator HTML login (v0.3.2); 2FA (v0.3.3); OIDC (v0.3.4).
 
-- operator login UI
-- session-backed check-in attribution
-- admin/session revocation workflows
-- 2FA
-- and OIDC linking in the next auth milestone
+## v0.3.0 — 2026-06-13
 
-## v0.3.0 - 2026-06-13
+Mail operations and public route protection. Git tag `v0.3.0`.
 
-Mailer milestone completed.
+Mail delivery becomes **operable**: test-send, masked config inspection, delivery log listing.
+Public ticket/QR routes get **Redis-backed rate limiting** when configured (in-memory fallback locally).
 
-This release closes the first mail-delivery milestone and adds the first shared infra hardening for
-public ticket routes.
+### Mail operations
 
-### Mail-delivery operations
+- Send one test message per event without triggering bulk delivery.
+- Read-only config describe (secrets masked).
+- Delivery log without exposing full rendered HTML bodies.
 
-- Added provider-level test-send support so one message can be sent per event without triggering the
-  full attendee-delivery flow.
-- Added read-only config inspection with masked secrets.
-- Added delivery-log listing without exposing sensitive rendered HTML payloads.
+### Public routes
 
-### Public route hardening
+- Shared rate limits on `/t/*` and `/q/*` across instances when Redis is available.
+- Fail-open if Redis is down — ticket access prioritized over strict limiting.
 
-- Added Redis-backed shared rate limiting for public `/t/*` and `/q/*` routes.
-- Kept in-memory rate limiting as the default local/dev path when `REDIS_URL` is not configured.
-- Added shared, cross-instance counters when Redis is configured.
-- Preserved fail-open behavior if Redis is configured but unavailable, prioritizing ticket access
-  availability over strict limiting during an outage.
+## v0.2.4 — 2026-06-11
 
-### Why this release matters
+Post-tenant hardening. Git tag `v0.2.4`.
 
-`v0.3.0` is the point where Admitto stops being “can render/send mail in principle” and becomes
-operationally closer to “can inspect, test, and protect the delivery surface”.
+Tighter guardrails after multi-tenant foundation: defensive DB checks on role assignments,
+crypto key-version behavior, predictable seed failure when encryption is misconfigured.
 
-## v0.2.4 - 2026-06-11
+## v0.2.3 — 2026-06-11
 
-Post-merge hardening.
+Multi-tenant foundation and encryption. Git tag `v0.2.3`.
 
-This release tightened several foundational guardrails after the first multi-tenant/encryption pass.
+**Organization** as tenant boundary; roles and scopes for superadmin, admin, operator.
+Attendee ticket tokens encrypted at rest (AES-256-GCM, ADR 0006).
 
-- Added defensive DB `CHECK` constraints on `RoleAssignment`.
-- Hardened crypto key-version behavior.
-- Hardened seed behavior around missing encryption keys so local/setup paths fail more predictably.
+## v0.2.2 — 2026-06-11
 
-### Why this release matters
+PostgreSQL everywhere. Git tag `v0.2.2`.
 
-`v0.2.4` is small in scope but important in posture: it reduces the chance that invalid role/scope
-data or partially configured crypto state quietly slips into the system.
+Single database engine across dev, CI, and production (ADR 0004). Docker compose for local runs;
+relational constraints prevent cross-event check-in mistakes at the DB layer.
 
-## v0.2.3 - 2026-06-11
+## v0.2.1 — 2026-06-11
 
-Multi-tenant foundation and encryption.
+Atomic check-in backend. Git tag `v0.2.1`.
 
-This release is where Admitto stopped being a single-event toy model and gained the core shapes
-needed for multi-client or multi-organization operation.
+**Single-use admission**: one QR/token cannot admit twice (CAS, ADR 0001). Temporary Bearer gate
+on `/api/checkin/*` until session auth lands in v0.3.
 
-### Tenant model
+## v0.2.0 — 2026-06-08
 
-- Added `Organization` as the tenant boundary.
-- Threaded `organization_id` through the core event and delivery model.
-- Established role/scope groundwork for:
-  - `superadmin`
-  - `admin`
-  - `operator`
+Core ticketing. Git tag `v0.2.0`.
 
-### Sensitive token handling
+End-to-end guest model: CSV/XLSX import, internal QR/token issuance, agency UUID preservation,
+public ticket page and hosted QR image routes.
 
-- Added encrypted attendee token storage via `@admitto/crypto`.
-- Preserved the principle that raw ticket tokens should not be casually exposed or left lying around
-  in plaintext persistence.
+## v0.1.0 — 2026-06-08
 
-### Why this release matters
+Project skeleton and Gate 0. Git tag `v0.1.0`.
 
-This is one of the most structurally important releases so far:
-
-- it makes later mail configuration scope possible,
-- it makes organization-aware RBAC possible,
-- and it creates the data model that later auth, reporting, and operations all depend on.
-
-## v0.2.2 - 2026-06-11
-
-PostgreSQL-only infra foundation.
-
-This release simplifies the persistence story and removes split-brain assumptions between environments.
-
-- Standardized on PostgreSQL across development, CI, and production.
-- Added docker-compose support for local setup.
-- Added CI service wiring for the real database path.
-- Strengthened relational guarantees around check-in data.
-
-### Why this release matters
-
-Choosing one real database engine early avoids a large class of “works locally, breaks in prod”
-schema and query problems.
-This also gave later milestones a stable base for migrations, tests, and operational runbooks.
-
-## v0.2.1 - 2026-06-11
-
-Check-in backend foundation.
-
-This release established the first real event-day backend behavior.
-
-- Added atomic single-use check-in behavior.
-- Added recent-history support for check-in activity.
-- Added the temporary operator Bearer gate for `/api/checkin/*` so state-changing admission routes
-  are not publicly callable.
-
-### Why this release matters
-
-`v0.2.1` is where Admitto gained a real admission boundary instead of only ticket rendering.
-Even though the auth model was still temporary, this release created the security and concurrency
-baseline for later operator-facing work.
-
-## v0.2.0 - 2026-06-08
-
-Core ticketing foundation.
-
-This release established the product’s first end-to-end guest/ticket model.
-
-- Added attendee import foundations.
-- Added internal token and QR issuance.
-- Added agency UUID / external payload support.
-- Added public ticket page routes.
-- Added the split between internally generated token-based tickets and agency-provided identifiers.
-
-### Why this release matters
-
-This is the release where Admitto first became recognizable as an event access gateway rather than a
-generic monorepo skeleton.
-
-## v0.1.0 - 2026-06-08
-
-Project skeleton and Gate 0 outcome.
-
-Initial project skeleton and validated starting assumptions.
-
-- Landed monorepo setup.
-- Added the first DB schema and package boundaries.
-- Added CI and basic security baseline.
-- Added mail adapter groundwork.
-- Recorded the Gate 0 outcome that Power Automate remains the MVP mail path while Graph/SMTP stay
-  future re-validation candidates.
-
-### Why this release matters
-
-`v0.1.0` set the product direction:
-
-- Admitto is not a generic event platform,
-- mail delivery is a core operational constraint,
-- and the codebase should be built around a narrow, reviewable, security-conscious MVP path.
+Monorepo, initial schema, CI/security baseline, mail adapter groundwork. Gate 0 validated
+Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates.
