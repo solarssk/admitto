@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { resolveThemeVars, themeVarsToStyleBlock } from "../src/theme.js";
+import {
+  isValidBrandingFontFamilyName,
+  resolveThemeVars,
+  themeVarsToStyleBlock,
+} from "../src/theme.js";
+
+describe("isValidBrandingFontFamilyName", () => {
+  it("rejects forbidden characters after repeated calls (no global regex lastIndex drift)", () => {
+    expect(isValidBrandingFontFamilyName("Brand Sans")).toBe(true);
+    expect(isValidBrandingFontFamilyName("</style>evil")).toBe(false);
+    expect(isValidBrandingFontFamilyName("Brand Sans")).toBe(true);
+  });
+});
 
 describe("resolveThemeVars", () => {
   it("uses default primary when invalid", () => {

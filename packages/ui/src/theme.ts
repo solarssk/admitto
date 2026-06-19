@@ -38,11 +38,12 @@ function mix(hex: string, amount: number, towardWhite: boolean): string {
 }
 
 const FONT_FAMILY_NAME_MAX = 128;
-const FONT_FAMILY_NAME_CHARS_RE = /[^A-Za-z0-9 \-_.]/g;
+const FONT_FAMILY_NAME_REPLACE_RE = /[^A-Za-z0-9 \-_.]/g;
+const FONT_FAMILY_NAME_TEST_RE = /[^A-Za-z0-9 \-_.]/;
 
 /** Strip unsafe characters from a CSS font-family name (ticket page / @font-face). */
 export function sanitizeBrandingFontFamilyName(name: string): string | undefined {
-  const cleaned = name.trim().replace(FONT_FAMILY_NAME_CHARS_RE, "").slice(0, FONT_FAMILY_NAME_MAX);
+  const cleaned = name.trim().replace(FONT_FAMILY_NAME_REPLACE_RE, "").slice(0, FONT_FAMILY_NAME_MAX);
   return cleaned || undefined;
 }
 
@@ -50,7 +51,7 @@ export function sanitizeBrandingFontFamilyName(name: string): string | undefined
 export function isValidBrandingFontFamilyName(name: string): boolean {
   const trimmed = name.trim();
   if (!trimmed || trimmed.length > FONT_FAMILY_NAME_MAX) return false;
-  return !FONT_FAMILY_NAME_CHARS_RE.test(trimmed);
+  return !FONT_FAMILY_NAME_TEST_RE.test(trimmed);
 }
 
 /** HTTPS font URL safe for storage and @font-face (no credentials, max 2048). */
