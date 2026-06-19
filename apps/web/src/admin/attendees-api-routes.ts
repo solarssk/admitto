@@ -360,19 +360,48 @@ const PDF_PAGE_BOTTOM = 555;
 const PDF_FONT = "DejaVuSans";
 const PDF_FONT_BOLD = "DejaVuSans-Bold";
 
+const PDF_MIN_COLUMN_WIDTH = 20;
+
 function buildExportPdfColumnWidths(attributeFieldCount: number): number[] {
-  const base = [...EXPORT_BASE_PDF_WIDTHS];
+  let base: number[] = [...EXPORT_BASE_PDF_WIDTHS];
   if (attributeFieldCount === 0) return base;
 
-  const baseSum = base.reduce((sum, w) => sum + w, 0);
+  const minAttrWidth = 28;
+  const baseSum = () => base.reduce((sum, w) => sum + w, 0);
   let attrWidth = EXPORT_ATTRIBUTE_PDF_WIDTH;
-  const total = baseSum + attributeFieldCount * attrWidth;
-  if (total > PDF_PRINTABLE_WIDTH) {
-    const remaining = PDF_PRINTABLE_WIDTH - baseSum;
-    attrWidth = Math.max(28, Math.floor(remaining / attributeFieldCount));
+
+  const totalWidth = () => baseSum() + attributeFieldCount * attrWidth;
+
+  if (totalWidth() <= PDF_PRINTABLE_WIDTH) {
+    return [...base, ...Array.from({ length: attributeFieldCount }, () => attrWidth)];
   }
 
-  return [...base, ...Array.from({ length: attributeFieldCount }, () => attrWidth)];
+  const spaceForAttrs = PDF_PRINTABLE_WIDTH - baseSum();
+  if (spaceForAttrs >= attributeFieldCount * minAttrWidth) {
+    attrWidth = Math.floor(spaceForAttrs / attributeFieldCount);
+    return [...base, ...Array.from({ length: attributeFieldCount }, () => attrWidth)];
+  }
+
+  attrWidth = minAttrWidth;
+  const targetBaseSum = PDF_PRINTABLE_WIDTH - attributeFieldCount * minAttrWidth;
+  if (targetBaseSum > 0) {
+    const scale = targetBaseSum / baseSum();
+    base = base.map((w) => Math.max(PDF_MIN_COLUMN_WIDTH, Math.floor(w * scale)));
+  } else {
+    const widths = [...base, ...Array.from({ length: attributeFieldCount }, () => attrWidth)];
+    const sum = widths.reduce((s, w) => s + w, 0);
+    const scale = PDF_PRINTABLE_WIDTH / sum;
+    return widths.map((w) => Math.max(PDF_MIN_COLUMN_WIDTH, Math.floor(w * scale)));
+  }
+
+  let widths = [...base, ...Array.from({ length: attributeFieldCount }, () => attrWidth)];
+  const sum = widths.reduce((s, w) => s + w, 0);
+  if (sum > PDF_PRINTABLE_WIDTH) {
+    const scale = PDF_PRINTABLE_WIDTH / sum;
+    widths = widths.map((w) => Math.max(PDF_MIN_COLUMN_WIDTH, Math.floor(w * scale)));
+  }
+
+  return widths;
 }
 
 const require = createRequire(import.meta.url);

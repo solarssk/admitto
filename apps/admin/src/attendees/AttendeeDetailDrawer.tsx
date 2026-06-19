@@ -98,6 +98,9 @@ function formatDateTime(iso: string | null): string {
 }
 
 /** Load attendee detail; event items are best-effort so core fields stay editable on items API failure. */
+const ITEMS_LOAD_WARNING =
+  "Attribute fields could not be loaded — core fields are still editable.";
+
 async function loadDrawerData(
   eventId: string,
   attendeeId: string,
@@ -106,24 +109,20 @@ async function loadDrawerData(
   attributeFields: CustomDataFieldDef[];
   itemsWarning: string | null;
 }> {
-  const detail = await fetchAttendeeDetail(eventId, attendeeId);
-  try {
-    const items = await fetchEventItems(eventId);
-    return {
-      detail,
-      attributeFields: flattenCustomDataFieldsFromItems(items),
-      itemsWarning: null,
-    };
-  } catch (err) {
-    return {
-      detail,
-      attributeFields: [],
-      itemsWarning:
-        err instanceof ApiError
-          ? "Attribute fields could not be loaded — core fields are still editable."
-          : "Attribute fields could not be loaded — core fields are still editable.",
-    };
-  }
+  const [detail, itemsResult] = await Promise.all([
+    fetchAttendeeDetail(eventId, attendeeId),
+    fetchEventItems(eventId).then(
+      (items) => ({ ok: true as const, items }),
+      () => ({ ok: false as const }),
+    ),
+  ]);
+  return {
+    detail,
+    attributeFields: itemsResult.ok
+      ? flattenCustomDataFieldsFromItems(itemsResult.items)
+      : [],
+    itemsWarning: itemsResult.ok ? null : ITEMS_LOAD_WARNING,
+  };
 }
 
 /** Slide-over panel for viewing/editing one attendee (admin list drill-down). */
@@ -140,6 +139,7 @@ export function AttendeeDetailDrawer({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [itemsWarning, setItemsWarning] = useState<string | null>(null);
   const [emailConflict, setEmailConflict] = useState(false);
   const [staleWrite, setStaleWrite] = useState(false);
   const [reloading, setReloading] = useState(false);
@@ -163,6 +163,7 @@ export function AttendeeDetailDrawer({
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setItemsWarning(null);
     setStaleWrite(false);
     setEmailConflict(false);
     (async () => {
@@ -176,7 +177,7 @@ export function AttendeeDetailDrawer({
         setDetail(d);
         setForm(toForm(d, fields));
         setInitialEmail(d.email);
-        setError(itemsWarning);
+        setItemsWarning(itemsWarning);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : "Failed to load attendee.");
@@ -279,7 +280,7 @@ export function AttendeeDetailDrawer({
       setDetail(d);
       setInitialEmail(d.email);
       setStaleWrite(false);
-      setError(itemsWarning);
+      setItemsWarning(itemsWarning);
     } catch (err) {
       if (!isStillSelected(target)) return;
       setError(
@@ -349,6 +350,7 @@ export function AttendeeDetailDrawer({
         <div className="attendee-drawer__body">
           {loading && <p>Loading…</p>}
           {error && <p className="attendee-form__error">{error}</p>}
+          {itemsWarning && <p className="attendee-form__warn">{itemsWarning}</p>}
           {resendSuccess && <p className="attendee-success">{resendSuccess}</p>}
 
           {detail && form && !loading && (
