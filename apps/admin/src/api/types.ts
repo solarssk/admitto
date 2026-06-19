@@ -37,6 +37,7 @@ export interface BrandingThemeDto {
 
 export interface ThemeResponse {
   theme: BrandingThemeDto;
+  vars: Record<string, string>;
 }
 
 export type CheckInStatus =

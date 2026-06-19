@@ -3,6 +3,7 @@ import type {
   AttendeeDetailDto,
   AttendeesListParams,
   AttendeesListResponse,
+  BrandingThemeDto,
   CheckInHistoryEntry,
   CheckInScanResponse,
   CheckInStatsResponse,
@@ -172,6 +173,12 @@ export async function fetchCheckInEvents(signal?: AbortSignal): Promise<EventDto
 export async function fetchStaffTheme(signal?: AbortSignal): Promise<ThemeResponse> {
   const url = isAdminAppPath() ? "/api/admin/theme" : "/api/staff/theme";
   const res = await fetch(url, { credentials: "same-origin", signal });
+  return parseJson<ThemeResponse>(res);
+}
+
+export async function saveStaffTheme(body: BrandingThemeDto): Promise<ThemeResponse> {
+  const url = isAdminAppPath() ? "/api/admin/theme" : "/api/staff/theme";
+  const res = await fetch(url, jsonPutInit(body));
   return parseJson<ThemeResponse>(res);
 }
 
