@@ -11,8 +11,11 @@ export interface AttendeesTableProps {
   emptyMessage: string;
   searchInput: string;
   statusFilter: "all" | "admitted" | "not_admitted";
+  ticketTypeFilter: string;
+  availableTypes: string[];
   onSearchChange: (value: string) => void;
   onStatusFilterChange: (value: "all" | "admitted" | "not_admitted") => void;
+  onTicketTypeFilterChange: (value: string) => void;
   onRowClick: (id: string) => void;
   onPageChange: (page: number) => void;
 }
@@ -26,8 +29,11 @@ export function AttendeesTable({
   emptyMessage,
   searchInput,
   statusFilter,
+  ticketTypeFilter,
+  availableTypes,
   onSearchChange,
   onStatusFilterChange,
+  onTicketTypeFilterChange,
   onRowClick,
   onPageChange,
 }: AttendeesTableProps) {
@@ -58,6 +64,20 @@ export function AttendeesTable({
             <option value="all">All</option>
             <option value="admitted">Checked in</option>
             <option value="not_admitted">Not checked in</option>
+          </Select>
+        </div>
+        <div className="attendees-toolbar__filter">
+          <Select
+            label="Type"
+            value={ticketTypeFilter}
+            onChange={(e) => onTicketTypeFilterChange(e.target.value)}
+          >
+            <option value="">All types</option>
+            {availableTypes.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
           </Select>
         </div>
       </div>

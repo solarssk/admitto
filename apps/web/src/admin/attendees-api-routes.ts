@@ -13,6 +13,7 @@ import {
   parseCustomData,
   shirtSizeFromCustomData,
   writeActionLog,
+  writeBulkActionLog,
 } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -67,6 +68,182 @@ const resendBodySchema = z
     to: z.string().trim().email().optional(),
   })
   .strict();
+
+const EXPORT_ROW_CAP = 50_000;
+
+/** Column headers for attendee export files (XLSX/CSV). */
+const EXPORT_COLUMNS = [
+  "Name",
+  "Email",
+  "Company",
+  "Department",
+  "Ticket type",
+  "Check-in status",
+  "Admitted at",
+] as const;
+
+/** Guard against CSV/formula injection — prefix cells starting with = + - @ TAB CR. */
+function sanitizeCell(value: string | null | undefined): string {
+  if (value == null) return "";
+  const s = String(value);
+  if (/^[=+\-@\t\r]/.test(s)) return `'${s}`;
+  return s;
+}
+
+/** RFC 6266 attachment header with `"` escaped in the filename. */
+function exportContentDisposition(filename: string): string {
+  const safeFilename = filename.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `attachment; filename="${safeFilename}"`;
+}
+
+/** Build CSV text for sanitized export rows (CRLF, quoted fields). */
+function buildExportCsv(exportRows: {
+  name: string;
+  email: string;
+  company: string;
+  department: string;
+  ticket_type: string;
+  check_in_status: string;
+  admitted_at: string;
+}[]): string {
+  const header = EXPORT_COLUMNS.join(",");
+  const csvRows = exportRows.map((r) =>
+    [r.name, r.email, r.company, r.department, r.ticket_type, r.check_in_status, r.admitted_at]
+      .map((v) => `"${v.replace(/"/g, '""')}"`)
+      .join(","),
+  );
+  return [header, ...csvRows].join("\r\n");
+}
+
+type ExportFilterParams = {
+  eventId: string;
+  status: "all" | "admitted" | "not_admitted";
+  ticket_type?: string;
+  q?: string;
+};
+
+type ExportAttendeeRow = {
+  name: string;
+  email: string;
+  company: string | null;
+  department: string | null;
+  custom_data: unknown;
+  ticket_type: string | null;
+  admitted_at: Date | null;
+};
+
+function exportStatusSql(status: ExportFilterParams["status"]) {
+  if (status === "admitted") return Prisma.sql`AND admitted_at IS NOT NULL`;
+  if (status === "not_admitted") return Prisma.sql`AND admitted_at IS NULL`;
+  return Prisma.empty;
+}
+
+function exportTicketTypeSql(ticket_type?: string) {
+  return ticket_type ? Prisma.sql`AND ticket_type = ${ticket_type}` : Prisma.empty;
+}
+
+/** Full-text export search OR (columns + custom_data json), inlined in SQL — no id materialization. */
+function exportSearchOrSql(q: string) {
+  const pattern = `%${q}%`;
+  return Prisma.sql`AND (
+    name ILIKE ${pattern}
+    OR email ILIKE ${pattern}
+    OR company ILIKE ${pattern}
+    OR department ILIKE ${pattern}
+    OR (custom_data->>'company') ILIKE ${pattern}
+    OR (custom_data->>'department') ILIKE ${pattern}
+  )`;
+}
+
+/** Count export rows with optional search — cap check without loading matching ids. */
+async function countExportAttendees(
+  db: PrismaClient,
+  filters: ExportFilterParams,
+): Promise<number> {
+  const { eventId, status, ticket_type, q } = filters;
+  const [{ count }] = await db.$queryRaw<[{ count: bigint }]>`
+    SELECT COUNT(*)::bigint AS count FROM "Attendee"
+    WHERE event_id = ${eventId}
+      ${exportStatusSql(status)}
+      ${exportTicketTypeSql(ticket_type)}
+      ${q ? exportSearchOrSql(q) : Prisma.empty}
+  `;
+  return Number(count);
+}
+
+/** Fetch export rows when search is active (same predicate as countExportAttendees). */
+async function fetchExportAttendeeRowsWithSearch(
+  db: PrismaClient,
+  filters: ExportFilterParams & { q: string },
+): Promise<ExportAttendeeRow[]> {
+  const { eventId, status, ticket_type, q } = filters;
+  return db.$queryRaw<ExportAttendeeRow[]>`
+    SELECT name, email, company, department, custom_data, ticket_type, admitted_at
+    FROM "Attendee"
+    WHERE event_id = ${eventId}
+      ${exportStatusSql(status)}
+      ${exportTicketTypeSql(ticket_type)}
+      ${exportSearchOrSql(q)}
+    ORDER BY name ASC
+    LIMIT ${EXPORT_ROW_CAP}
+  `;
+}
+
+/** Build XLSX bytes for sanitized export rows (dynamic exceljs import, ESM-safe). */
+async function buildExportXlsxBuffer(exportRows: {
+  name: string;
+  email: string;
+  company: string;
+  department: string;
+  ticket_type: string;
+  check_in_status: string;
+  admitted_at: string;
+}[]): Promise<Uint8Array> {
+  const exceljs = await import("exceljs");
+  const ExcelJS = exceljs.default ?? exceljs;
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Attendees");
+  ws.columns = EXPORT_COLUMNS.map((h) => ({ header: h, width: 28 }));
+  for (const r of exportRows) {
+    ws.addRow([
+      r.name,
+      r.email,
+      r.company,
+      r.department,
+      r.ticket_type,
+      r.check_in_status,
+      r.admitted_at,
+    ]);
+  }
+  return new Uint8Array(await wb.xlsx.writeBuffer());
+}
+
+/** Append bulk audit row after a successful filtered export (no raw search term). */
+async function auditAttendeesExported(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  format: "xlsx" | "csv",
+  count: number,
+  filters: { status: string; ticket_type?: string; has_query: boolean },
+): Promise<void> {
+  await db.$transaction(async (tx) => {
+    await writeBulkActionLog(tx, {
+      event_id: eventId,
+      action_type: "attendees_exported",
+      audit: adminAuditFromContext(c),
+      metadata: {
+        format,
+        count,
+        filters: {
+          status: filters.status,
+          ticket_type: filters.ticket_type ?? null,
+          has_query: filters.has_query,
+        },
+      },
+    });
+  });
+}
 
 export type AttendeeRowDto = {
   id: string;
@@ -310,6 +487,117 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
     total,
     page,
     pageSize,
+  });
+}
+
+/** GET /api/admin/events/:eventId/attendees/ticket-types — distinct non-empty ticket_type labels. */
+export async function handleListTicketTypes(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const rows = await db.attendee.findMany({
+    where: { event_id: eventId, ticket_type: { not: null } },
+    select: { ticket_type: true },
+    distinct: ["ticket_type"],
+    orderBy: { ticket_type: "asc" },
+  });
+
+  const types = rows
+    .map((r) => r.ticket_type)
+    .filter((t): t is string => t !== null && t.trim() !== "");
+
+  return c.json({ types });
+}
+
+/** GET /api/admin/events/:eventId/attendees/export — filtered subset as XLSX or CSV (no tokens). */
+export async function handleExportAttendees(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const formatRaw = c.req.query("format");
+  if (formatRaw !== "xlsx" && formatRaw !== "csv") {
+    return c.json({ error: "format must be xlsx or csv" }, 400);
+  }
+  const format = formatRaw;
+
+  const { q, status, ticket_type } = parseListQuery(c);
+
+  let rows: ExportAttendeeRow[];
+
+  if (q) {
+    const total = await countExportAttendees(db, { eventId, status, ticket_type, q });
+    if (total > EXPORT_ROW_CAP) {
+      return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+    }
+    rows = await fetchExportAttendeeRowsWithSearch(db, { eventId, status, ticket_type, q });
+  } else {
+    const where: Prisma.AttendeeWhereInput = {
+      event_id: eventId,
+      ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
+      ...(status === "not_admitted" ? { admitted_at: null } : {}),
+      ...(ticket_type ? { ticket_type } : {}),
+    };
+    const total = await db.attendee.count({ where });
+    if (total > EXPORT_ROW_CAP) {
+      return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+    }
+    rows = await db.attendee.findMany({
+      where,
+      select: {
+        name: true,
+        email: true,
+        company: true,
+        department: true,
+        custom_data: true,
+        ticket_type: true,
+        admitted_at: true,
+      },
+      orderBy: { name: "asc" },
+    });
+  }
+
+  const exportRows = rows.map((row) => {
+    const { company, department } = resolveCompanyDepartment(row);
+    return {
+      name: sanitizeCell(row.name),
+      email: sanitizeCell(row.email),
+      company: sanitizeCell(company),
+      department: sanitizeCell(department),
+      ticket_type: sanitizeCell(row.ticket_type),
+      check_in_status: row.admitted_at ? "admitted" : "not_admitted",
+      admitted_at: row.admitted_at ? row.admitted_at.toISOString() : "",
+    };
+  });
+
+  const timestamp = new Date().toISOString().slice(0, 10);
+  const filename = `attendees-${eventId}-${timestamp}.${format}`;
+  const auditFilters = { status, ticket_type, has_query: Boolean(q) };
+
+  if (format === "csv") {
+    const csv = buildExportCsv(exportRows);
+    await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": exportContentDisposition(filename),
+      },
+    });
+  }
+
+  const bytes = await buildExportXlsxBuffer(exportRows);
+  await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
+  return new Response(bytes, {
+    headers: {
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": exportContentDisposition(filename),
+    },
   });
 }
 
