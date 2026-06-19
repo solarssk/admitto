@@ -12,10 +12,12 @@ import {
 } from "@admitto/mail-delivery";
 import { formatEventDate, resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
+  collectEventCustomDataFields,
+  customDataValue,
   parseCustomData,
-  shirtSizeFromCustomData,
   writeActionLog,
   writeBulkActionLog,
+  type EventItemContent,
 } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -56,7 +58,9 @@ const patchAttendeeFieldsSchema = z
     company: z.string().trim().max(200).optional().nullable(),
     department: z.string().trim().max(200).optional().nullable(),
     ticket_type: z.string().trim().max(100).optional().nullable(),
-    shirt_size: z.string().trim().max(20).optional().nullable(),
+    custom_data_fields: z
+      .record(z.string(), z.string().trim().max(100).nullable())
+      .optional(),
   })
   .strict();
 
@@ -73,8 +77,8 @@ const resendBodySchema = z
 
 const EXPORT_ROW_CAP = 50_000;
 
-/** Column headers for XLSX/PDF export (includes check-off). */
-const EXPORT_COLUMNS = [
+/** Fixed column headers for XLSX/PDF export (includes check-off). Attribute columns appended at runtime. */
+const EXPORT_BASE_COLUMNS = [
   "✓",
   "Name",
   "Email",
@@ -85,8 +89,8 @@ const EXPORT_COLUMNS = [
   "Admitted at",
 ] as const;
 
-/** CSV export omits the visual check-off column. */
-const EXPORT_CSV_COLUMNS = EXPORT_COLUMNS.slice(1);
+const EXPORT_BASE_PDF_WIDTHS = [22, 85, 100, 75, 70, 65, 75, 80];
+const EXPORT_ATTRIBUTE_PDF_WIDTH = 55;
 
 const EXPORT_ATTENDEE_SELECT = {
   name: true,
@@ -107,6 +111,7 @@ type SanitizedExportRow = {
   ticket_type: string;
   check_in_status: string;
   admitted_at: string;
+  attribute_values: string[];
 };
 
 type AttendeeListFilterParams = {
@@ -145,10 +150,20 @@ function exportContentDisposition(filename: string): string {
 }
 
 /** Build CSV text for sanitized export rows (CRLF, quoted fields). */
-function buildExportCsv(exportRows: SanitizedExportRow[]): string {
-  const header = EXPORT_CSV_COLUMNS.join(",");
+function buildExportCsv(exportRows: SanitizedExportRow[], exportColumns: string[]): string {
+  const csvColumns = exportColumns.slice(1);
+  const header = csvColumns.join(",");
   const csvRows = exportRows.map((r) =>
-    [r.name, r.email, r.company, r.department, r.ticket_type, r.check_in_status, r.admitted_at]
+    [
+      r.name,
+      r.email,
+      r.company,
+      r.department,
+      r.ticket_type,
+      r.check_in_status,
+      r.admitted_at,
+      ...r.attribute_values,
+    ]
       .map((v) => `"${v.replace(/"/g, '""')}"`)
       .join(","),
   );
@@ -288,12 +303,15 @@ async function findFilteredAttendeesForExport(
 }
 
 /** Build XLSX bytes for sanitized export rows (dynamic exceljs import, ESM-safe). */
-async function buildExportXlsxBuffer(exportRows: SanitizedExportRow[]): Promise<Uint8Array> {
+async function buildExportXlsxBuffer(
+  exportRows: SanitizedExportRow[],
+  exportColumns: string[],
+): Promise<Uint8Array> {
   const exceljs = await import("exceljs");
   const ExcelJS = exceljs.default ?? exceljs;
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Attendees");
-  ws.columns = EXPORT_COLUMNS.map((h, i) => ({
+  ws.columns = exportColumns.map((h, i) => ({
     header: h,
     width: i === 0 ? 5 : 28,
   }));
@@ -307,6 +325,7 @@ async function buildExportXlsxBuffer(exportRows: SanitizedExportRow[]): Promise<
       r.ticket_type,
       r.check_in_status,
       r.admitted_at,
+      ...r.attribute_values,
     ]);
     row.getCell(1).alignment = { horizontal: "center" };
   }
@@ -321,12 +340,18 @@ async function buildExportXlsxBuffer(exportRows: SanitizedExportRow[]): Promise<
   return new Uint8Array(await wb.xlsx.writeBuffer());
 }
 
-const PDF_COL_WIDTHS = [22, 85, 100, 75, 70, 65, 75, 80];
 const PDF_ROW_HEIGHT = 16;
 const PDF_FONT_SIZE = 8;
 const PDF_PAGE_BOTTOM = 555;
 const PDF_FONT = "DejaVuSans";
 const PDF_FONT_BOLD = "DejaVuSans-Bold";
+
+function buildExportPdfColumnWidths(attributeFieldCount: number): number[] {
+  return [
+    ...EXPORT_BASE_PDF_WIDTHS,
+    ...Array.from({ length: attributeFieldCount }, () => EXPORT_ATTRIBUTE_PDF_WIDTH),
+  ];
+}
 
 const require = createRequire(import.meta.url);
 
@@ -338,9 +363,11 @@ function resolvePdfFontFile(bold: boolean): string {
 /** Build PDF bytes for export rows (dynamic pdfkit import, ESM-safe). */
 async function buildExportPdfBuffer(
   exportRows: SanitizedExportRow[],
+  exportColumns: string[],
   eventMeta: { title: string; date: Date },
   timeZone: string,
 ): Promise<Uint8Array> {
+  const pdfColWidths = buildExportPdfColumnWidths(exportColumns.length - EXPORT_BASE_COLUMNS.length);
   const pdfkitMod = await import("pdfkit");
   const PDFDocument = pdfkitMod.default ?? pdfkitMod;
 
@@ -359,9 +386,9 @@ async function buildExportPdfBuffer(
   const drawTableHeader = () => {
     doc.fontSize(PDF_FONT_SIZE).font(PDF_FONT_BOLD);
     let x = 40;
-    for (let i = 0; i < EXPORT_COLUMNS.length; i++) {
-      doc.text(EXPORT_COLUMNS[i]!, x, y, { width: PDF_COL_WIDTHS[i], lineBreak: false });
-      x += PDF_COL_WIDTHS[i]!;
+    for (let i = 0; i < exportColumns.length; i++) {
+      doc.text(exportColumns[i]!, x, y, { width: pdfColWidths[i], lineBreak: false });
+      x += pdfColWidths[i]!;
     }
     y += PDF_ROW_HEIGHT;
     doc.font(PDF_FONT);
@@ -384,12 +411,13 @@ async function buildExportPdfBuffer(
       row.ticket_type,
       row.check_in_status,
       row.admitted_at,
+      ...row.attribute_values,
     ];
     doc.fontSize(PDF_FONT_SIZE);
     let x = 40;
     for (let i = 0; i < cells.length; i++) {
-      doc.text(cells[i] ?? "", x, y, { width: PDF_COL_WIDTHS[i], lineBreak: false, ellipsis: true });
-      x += PDF_COL_WIDTHS[i]!;
+      doc.text(cells[i] ?? "", x, y, { width: pdfColWidths[i], lineBreak: false, ellipsis: true });
+      x += pdfColWidths[i]!;
     }
     y += PDF_ROW_HEIGHT;
   }
@@ -452,7 +480,6 @@ export type AttendeeDetailDto = {
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
   updated_at: string;
-  shirt_size: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
 };
@@ -481,6 +508,45 @@ function cloneCustomData(raw: unknown): Record<string, unknown> {
     return { ...(raw as Record<string, unknown>) };
   }
   return {};
+}
+
+/** Load dynamic custom_data attribute definitions for an event (all items, enabled or not). */
+async function loadEventCustomDataFields(
+  db: PrismaClient,
+  eventId: string,
+): Promise<EventItemContent[]> {
+  const items = await db.eventItem.findMany({
+    where: { event_id: eventId },
+    select: { config: true },
+  });
+  return collectEventCustomDataFields(items.map((i) => i.config));
+}
+
+function buildSanitizedExportRows(
+  rows: ExportAttendeeSqlRow[],
+  attributeFields: EventItemContent[],
+  timeZone: string,
+): SanitizedExportRow[] {
+  return rows.map((row) => {
+    const { company, department } = resolveCompanyDepartment(row);
+    return {
+      check_off: "",
+      name: sanitizeCell(row.name),
+      email: sanitizeCell(row.email),
+      company: sanitizeCell(company),
+      department: sanitizeCell(department),
+      ticket_type: sanitizeCell(row.ticket_type),
+      check_in_status: row.admitted_at ? "admitted" : "not_admitted",
+      admitted_at: row.admitted_at ? formatAdmittedAtLocal(row.admitted_at, timeZone) : "",
+      attribute_values: attributeFields.map((field) =>
+        sanitizeCell(customDataValue(row.custom_data, field.source_field)),
+      ),
+    };
+  });
+}
+
+function buildExportColumns(attributeFields: EventItemContent[]): string[] {
+  return [...EXPORT_BASE_COLUMNS, ...attributeFields.map((f) => f.label)];
 }
 
 /** Require `:id` attendee route param or return 400. */
@@ -606,7 +672,6 @@ async function buildAttendeeDetailDto(
     check_in_status: checkInStatus(row.admitted_at),
     admitted_at: row.admitted_at ? row.admitted_at.toISOString() : null,
     updated_at: row.updated_at.toISOString(),
-    shirt_size: shirtSizeFromCustomData(row.custom_data),
     custom_data: row.custom_data ?? null,
     deliveries: deliveries.map(toDeliveryDto),
   };
@@ -697,28 +762,20 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
     return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
   }
 
-  const rows = await findFilteredAttendeesForExport(db, eventId, filterParams);
+  const [rows, attributeFields] = await Promise.all([
+    findFilteredAttendeesForExport(db, eventId, filterParams),
+    loadEventCustomDataFields(db, eventId),
+  ]);
 
-  const exportRows: SanitizedExportRow[] = rows.map((row) => {
-    const { company, department } = resolveCompanyDepartment(row);
-    return {
-      check_off: "",
-      name: sanitizeCell(row.name),
-      email: sanitizeCell(row.email),
-      company: sanitizeCell(company),
-      department: sanitizeCell(department),
-      ticket_type: sanitizeCell(row.ticket_type),
-      check_in_status: row.admitted_at ? "admitted" : "not_admitted",
-      admitted_at: row.admitted_at ? formatAdmittedAtLocal(row.admitted_at, timeZone) : "",
-    };
-  });
+  const exportColumns = buildExportColumns(attributeFields);
+  const exportRows = buildSanitizedExportRows(rows, attributeFields, timeZone);
 
   const timestamp = new Date().toISOString().slice(0, 10);
   const filename = `attendees-${eventId}-${timestamp}.${format}`;
   const auditFilters = { status, ticket_type, has_query: Boolean(q) };
 
   if (format === "csv") {
-    const csv = buildExportCsv(exportRows);
+    const csv = buildExportCsv(exportRows, exportColumns);
     await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
     return new Response(csv, {
       headers: {
@@ -731,6 +788,7 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   if (format === "pdf") {
     const bytes = await buildExportPdfBuffer(
       exportRows,
+      exportColumns,
       { title: event.title, date: event.date },
       timeZone,
     );
@@ -743,7 +801,7 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
     });
   }
 
-  const bytes = await buildExportXlsxBuffer(exportRows);
+  const bytes = await buildExportXlsxBuffer(exportRows, exportColumns);
   await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
   return new Response(bytes, {
     headers: {
@@ -823,17 +881,19 @@ function computePatchChanges(
     data.ticket_type = patch.ticket_type;
     fields.push("ticket_type");
   }
-  if (patch.shirt_size !== undefined) {
-    const current = shirtSizeFromCustomData(existing.custom_data);
-    const next = patch.shirt_size;
-    if (next !== current) {
-      const raw = touchCustomData();
-      if (next === null || next === undefined || next === "") {
-        delete raw.shirt_size;
-      } else {
-        raw.shirt_size = next;
+  if (patch.custom_data_fields) {
+    for (const [sourceField, next] of Object.entries(patch.custom_data_fields)) {
+      const current = customDataValue(existing.custom_data, sourceField);
+      const normalizedNext = next === null || next === "" ? null : next;
+      if (normalizedNext !== current) {
+        const raw = touchCustomData();
+        if (normalizedNext === null) {
+          delete raw[sourceField];
+        } else {
+          raw[sourceField] = normalizedNext;
+        }
+        fields.push(sourceField);
       }
-      fields.push("shirt_size");
     }
   }
 
@@ -873,6 +933,17 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   }
 
   const { expected_updated_at: expectedUpdatedAtRaw, ...patchFields } = parsed.data;
+
+  if (patchFields.custom_data_fields) {
+    const allowedFields = await loadEventCustomDataFields(db, eventId);
+    const allowed = new Set(allowedFields.map((f) => f.source_field));
+    for (const key of Object.keys(patchFields.custom_data_fields)) {
+      if (!allowed.has(key)) {
+        return c.json({ error: "unknown_custom_data_field" }, 400);
+      }
+    }
+  }
+
   const changes = computePatchChanges(existing, patchFields);
   if (!changes) {
     const dto = await buildAttendeeDetailDto(db, eventId, existing);

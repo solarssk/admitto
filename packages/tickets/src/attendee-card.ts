@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { parseCustomData, shirtSizeFromCustomData } from "./custom-data.js";
+import { parseCustomData } from "./custom-data.js";
 import { buildItemDetail } from "./event-item-contents.js";
 import { ensureAttendeeItemStates, operatorItemActions } from "./item-states.js";
 import { isAdmittable } from "./admittable.js";
@@ -150,8 +150,6 @@ export async function getAttendeeCard(
     warnings.push("Ticket is not admittable (cancelled or revoked).");
   }
 
-  const shirtSize = shirtSizeFromCustomData(attendee.custom_data);
-
   return {
     id: attendee.id,
     name: attendee.name,
@@ -160,7 +158,6 @@ export async function getAttendeeCard(
     ticket_type: attendee.ticket_type,
     check_in_status: attendee.admitted_at ? "admitted" : "not_admitted",
     admitted_at: attendee.admitted_at?.toISOString() ?? null,
-    shirt_size: shirtSize,
     items: eventItems.map((item) => {
       const state = stateByItem.get(item.id) ?? "pending";
       return {

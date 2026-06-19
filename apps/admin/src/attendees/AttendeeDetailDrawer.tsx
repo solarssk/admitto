@@ -3,10 +3,16 @@ import { Button, IconButton, Input, StatusBadge } from "@admitto/ui";
 import {
   ApiError,
   fetchAttendeeDetail,
+  fetchEventItems,
   resendTicket,
   updateAttendee,
 } from "../api/client.js";
 import type { AttendeeDetailDto, DeliveryDto, UpdateAttendeePatch } from "../api/types.js";
+import {
+  flattenCustomDataFieldsFromItems,
+  readCustomDataField,
+  type CustomDataFieldDef,
+} from "./customData.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
 
 export interface AttendeeDetailDrawerProps {
@@ -22,17 +28,28 @@ type FormState = {
   company: string;
   department: string;
   ticket_type: string;
-  shirt_size: string;
+  customFields: Record<string, string>;
 };
 
-function toForm(detail: AttendeeDetailDto): FormState {
+function customFieldsFromDetail(
+  detail: AttendeeDetailDto,
+  attributeFields: CustomDataFieldDef[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const field of attributeFields) {
+    out[field.source_field] = readCustomDataField(detail.custom_data, field.source_field) ?? "";
+  }
+  return out;
+}
+
+function toForm(detail: AttendeeDetailDto, attributeFields: CustomDataFieldDef[]): FormState {
   return {
     name: detail.name,
     email: detail.email,
     company: detail.company ?? "",
     department: detail.department ?? "",
     ticket_type: detail.ticket_type ?? "",
-    shirt_size: detail.shirt_size ?? "",
+    customFields: customFieldsFromDetail(detail, attributeFields),
   };
 }
 
@@ -41,9 +58,17 @@ function mergeFormAfterReload(
   currentForm: FormState,
   previousDetail: AttendeeDetailDto,
   reloaded: AttendeeDetailDto,
+  attributeFields: CustomDataFieldDef[],
 ): FormState {
-  const previousForm = toForm(previousDetail);
-  const nextForm = toForm(reloaded);
+  const previousForm = toForm(previousDetail, attributeFields);
+  const nextForm = toForm(reloaded, attributeFields);
+  const customFields: Record<string, string> = { ...nextForm.customFields };
+  for (const field of attributeFields) {
+    const key = field.source_field;
+    if (currentForm.customFields[key] !== previousForm.customFields[key]) {
+      customFields[key] = currentForm.customFields[key] ?? "";
+    }
+  }
   return {
     name: currentForm.name !== previousForm.name ? currentForm.name : nextForm.name,
     email: currentForm.email !== previousForm.email ? currentForm.email : nextForm.email,
@@ -57,10 +82,7 @@ function mergeFormAfterReload(
       currentForm.ticket_type !== previousForm.ticket_type
         ? currentForm.ticket_type
         : nextForm.ticket_type,
-    shirt_size:
-      currentForm.shirt_size !== previousForm.shirt_size
-        ? currentForm.shirt_size
-        : nextForm.shirt_size,
+    customFields,
   };
 }
 
@@ -83,6 +105,7 @@ export function AttendeeDetailDrawer({
   onUpdated,
 }: AttendeeDetailDrawerProps) {
   const [detail, setDetail] = useState<AttendeeDetailDto | null>(null);
+  const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
   const [form, setForm] = useState<FormState | null>(null);
   const [initialEmail, setInitialEmail] = useState("");
   const [loading, setLoading] = useState(true);
@@ -115,10 +138,15 @@ export function AttendeeDetailDrawer({
     setEmailConflict(false);
     (async () => {
       try {
-        const d = await fetchAttendeeDetail(eventId, attendeeId);
+        const [d, items] = await Promise.all([
+          fetchAttendeeDetail(eventId, attendeeId),
+          fetchEventItems(eventId),
+        ]);
         if (cancelled) return;
+        const fields = flattenCustomDataFieldsFromItems(items);
+        setAttributeFields(fields);
         setDetail(d);
-        setForm(toForm(d));
+        setForm(toForm(d, fields));
         setInitialEmail(d.email);
       } catch (err) {
         if (!cancelled) {
@@ -153,7 +181,19 @@ export function AttendeeDetailDrawer({
     if (form.company !== (detail.company ?? "")) patch.company = form.company || null;
     if (form.department !== (detail.department ?? "")) patch.department = form.department || null;
     if (form.ticket_type !== (detail.ticket_type ?? "")) patch.ticket_type = form.ticket_type || null;
-    if (form.shirt_size !== (detail.shirt_size ?? "")) patch.shirt_size = form.shirt_size || null;
+
+    const customDataPatch: Record<string, string | null> = {};
+    for (const field of attributeFields) {
+      const key = field.source_field;
+      const next = form.customFields[key] ?? "";
+      const current = readCustomDataField(detail.custom_data, key) ?? "";
+      if (next !== current) {
+        customDataPatch[key] = next || null;
+      }
+    }
+    if (Object.keys(customDataPatch).length > 0) {
+      patch.custom_data_fields = customDataPatch;
+    }
 
     if (Object.keys(patch).length === 0) return;
 
@@ -167,7 +207,7 @@ export function AttendeeDetailDrawer({
       const updated = await updateAttendee(target.eventId, target.attendeeId, patch);
       if (!isStillSelected(target)) return;
       setDetail(updated);
-      setForm(toForm(updated));
+      setForm(toForm(updated, attributeFields));
       setInitialEmail(updated.email);
       setStaleWrite(false);
       onUpdated();
@@ -199,7 +239,7 @@ export function AttendeeDetailDrawer({
       if (!isStillSelected(target)) return;
       setForm((currentForm) => {
         if (!currentForm || !previousDetail) return currentForm;
-        return mergeFormAfterReload(currentForm, previousDetail, d);
+        return mergeFormAfterReload(currentForm, previousDetail, d, attributeFields);
       });
       setDetail(d);
       setInitialEmail(d.email);
@@ -335,11 +375,22 @@ export function AttendeeDetailDrawer({
                     value={form.ticket_type}
                     onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
                   />
-                  <Input
-                    label="Shirt size"
-                    value={form.shirt_size}
-                    onChange={(e) => setForm({ ...form, shirt_size: e.target.value })}
-                  />
+                  {attributeFields.map((field) => (
+                    <Input
+                      key={field.source_field}
+                      label={field.label}
+                      value={form.customFields[field.source_field] ?? ""}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          customFields: {
+                            ...form.customFields,
+                            [field.source_field]: e.target.value,
+                          },
+                        })
+                      }
+                    />
+                  ))}
                   <dl className="attendee-readonly">
                     <dt>Check-in</dt>
                     <dd>
