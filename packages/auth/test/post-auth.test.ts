@@ -83,6 +83,14 @@ describe("sanitizeBrandingTheme", () => {
     ).toBeUndefined();
   });
 
+  it("strips unsafe characters from font family name", () => {
+    expect(
+      sanitizeBrandingThemeForTests({
+        font_family_name: 'test</style><script>evil</script>',
+      }).font_family_name,
+    ).toBe("teststylescriptevilscript");
+  });
+
   it("rejects credentialed HTTPS font URL", () => {
     expect(
       sanitizeBrandingThemeForTests({

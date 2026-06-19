@@ -41,6 +41,27 @@ describe("resolveThemeVars", () => {
     expect(vars.fontFaceCss).toContain("https://cdn.example.com/fonts/brand.woff2");
   });
 
+  it("does not emit font-face CSS for injected font family names", () => {
+    const payload = 'test</style><script>alert(1)</script><style>';
+    const vars = resolveThemeVars({
+      font_family_url: "https://cdn.example.com/fonts/brand.woff2",
+      font_family_name: payload,
+    });
+    expect(vars.fontFaceCss).toBeDefined();
+    expect(vars.fontFaceCss).not.toContain("</style>");
+    expect(vars.fontFaceCss).not.toContain("<script");
+    expect(vars.fontFaceCss).not.toContain("alert(1)");
+  });
+
+  it("omits font vars when font name sanitizes to empty", () => {
+    const vars = resolveThemeVars({
+      font_family_url: "https://cdn.example.com/fonts/brand.woff2",
+      font_family_name: "</>",
+    });
+    expect(vars["--font-sans"]).toBeUndefined();
+    expect(vars.fontFaceCss).toBeUndefined();
+  });
+
   it("emits style block with root vars", () => {
     const css = themeVarsToStyleBlock(resolveThemeVars());
     expect(css).toContain(":root");

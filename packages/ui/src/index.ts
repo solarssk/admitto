@@ -21,6 +21,8 @@ export {
 } from "./status-map.js";
 export {
   isSafeBrandingFontUrl,
+  isValidBrandingFontFamilyName,
+  sanitizeBrandingFontFamilyName,
   resolveThemeVars,
   themeVarsToStyleBlock,
   applyThemeVars,

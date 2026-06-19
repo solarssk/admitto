@@ -75,6 +75,15 @@ describe("validateBrandingDraft", () => {
     expect(result.errors.font_family_name).toBeUndefined();
   });
 
+  it("rejects font family name with HTML/CSS metacharacters", () => {
+    const result = validateBrandingDraft({
+      font_family_url: "https://cdn.example.com/font.woff2",
+      font_family_name: 'test</style><script>evil</script>',
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.font_family_name).toMatch(/letters, numbers/i);
+  });
+
   it("accepts valid HTTPS font pair", () => {
     const result = validateBrandingDraft({
       font_family_url: "https://cdn.example.com/font.woff2",

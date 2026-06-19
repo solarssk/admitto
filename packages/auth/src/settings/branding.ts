@@ -10,6 +10,12 @@ export interface BrandingTheme {
 
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
+/** Mirror @admitto/ui sanitizeBrandingFontFamilyName — auth must not depend on @admitto/ui. */
+function sanitizeBrandingFontFamilyName(name: string): string | undefined {
+  const cleaned = name.trim().replace(/[^A-Za-z0-9 \-_.]/g, "").slice(0, 128);
+  return cleaned || undefined;
+}
+
 /** Mirror @admitto/ui isSafeBrandingFontUrl — auth must not depend on @admitto/ui. */
 function isSafeBrandingFontUrl(url: string): boolean {
   try {
@@ -32,7 +38,9 @@ function sanitizeTheme(raw: unknown): BrandingTheme {
       ? o.font_family_url
       : undefined;
   const font_family_name =
-    typeof o.font_family_name === "string" ? o.font_family_name.slice(0, 128) : undefined;
+    typeof o.font_family_name === "string"
+      ? sanitizeBrandingFontFamilyName(o.font_family_name)
+      : undefined;
   return { primary, font_family_url, font_family_name };
 }
 

@@ -380,6 +380,30 @@ describe("PUT /api/admin/theme", () => {
     expect(persisted.theme.font_family_url).toBeUndefined();
     expect(persisted.theme.font_family_name).toBe("Brand Sans");
   });
+
+  it("strips HTML from font family name on save", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(superId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        font_family_url: "https://cdn.example.com/font.woff2",
+        font_family_name: 'Evil</style><script>alert(1)</script>',
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      theme: { font_family_url?: string; font_family_name?: string };
+      vars: { fontFaceCss?: string };
+    };
+    expect(body.theme.font_family_name).toBe("Evilstylescriptalert1script");
+    expect(body.vars.fontFaceCss).toBeDefined();
+    expect(body.vars.fontFaceCss).not.toContain("</style>");
+    expect(body.vars.fontFaceCss).not.toContain("<script");
+  });
 });
 
 describe("staff SPA routes", () => {

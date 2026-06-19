@@ -4,6 +4,7 @@ import { AdminGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js
 import { AuthProvider } from "./auth/AuthProvider.js";
 import { ConnectionStateProvider } from "./connection/ConnectionStateProvider.js";
 import { AdminShell } from "./layouts/AdminShell.js";
+import { EventsListShell } from "./layouts/EventsListShell.js";
 import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
 import { OperatorShell } from "./layouts/OperatorShell.js";
@@ -76,7 +77,9 @@ export default function App() {
       <ConnectionStateProvider>
         <Routes>
           <Route path="/admin" element={<AdminGuard />}>
+          <Route element={<EventsListShell />}>
             <Route index element={<EventsPickerPage />} />
+          </Route>
             <Route path="settings" element={<SuperadminGuard />}>
               <Route element={<InstanceSettingsShell />}>
                 <Route index element={<SettingsPage />} />

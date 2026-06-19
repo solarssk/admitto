@@ -1,4 +1,4 @@
-import { isSafeBrandingFontUrl } from "@admitto/ui";
+import { isSafeBrandingFontUrl, isValidBrandingFontFamilyName, sanitizeBrandingFontFamilyName } from "@admitto/ui";
 import type { BrandingThemeDto } from "../api/types.js";
 
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
@@ -48,8 +48,11 @@ export function validateBrandingDraft(draft: BrandingThemeDto): BrandingValidati
     }
   }
 
-  if (fontName && fontName.length > 128) {
-    errors.font_family_name = "Font name must be 128 characters or fewer.";
+  if (fontName) {
+    if (!isValidBrandingFontFamilyName(fontName)) {
+      errors.font_family_name =
+        "Use letters, numbers, spaces, hyphens, underscores, or periods only (max 128 characters).";
+    }
   }
 
   const urlPresent = Boolean(fontUrl);
@@ -80,9 +83,10 @@ export function brandingDraftForSave(draft: BrandingThemeDto): BrandingThemeDto 
   }
   const fontUrl = draft.font_family_url?.trim();
   const fontName = draft.font_family_name?.trim();
-  if (fontUrl && fontName && isSafeBrandingFontUrl(fontUrl)) {
+  const safeFontName = fontName ? sanitizeBrandingFontFamilyName(fontName) : undefined;
+  if (fontUrl && safeFontName && isSafeBrandingFontUrl(fontUrl)) {
     result.font_family_url = fontUrl;
-    result.font_family_name = fontName.slice(0, 128);
+    result.font_family_name = safeFontName;
   }
   return result;
 }
