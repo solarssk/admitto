@@ -178,7 +178,7 @@ export function AttendeesPage() {
               disabled={exportingFormat !== null}
               onClick={() => void handleExport("csv")}
             >
-              {exportingFormat === "csv" ? "Exporting…" : "CSV"}
+              {exportingFormat === "csv" ? "Exporting…" : "Export CSV"}
             </Button>
             <Button
               variant="secondary"

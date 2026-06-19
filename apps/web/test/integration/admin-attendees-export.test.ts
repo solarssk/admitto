@@ -444,7 +444,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   it("list and export return same subset (parity)", async () => {
     const query = `ticket_type=vip&q=Vip`;
     const listRes = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees?${query}`,
+      `/api/admin/events/${EVENT_EX}/attendees?${query}&pageSize=100`,
       { headers: { Cookie: adminCookie } },
     );
     expect(listRes.status).toBe(200);
