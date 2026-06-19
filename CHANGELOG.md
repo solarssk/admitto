@@ -18,7 +18,11 @@ ADR references appear only where they explain a design constraint.
 
 ## v0.4.3.1 — 2026-06-19
 
-Container publish workflow hardening after v0.4.3. Git tag `v0.4.3.1`.
+Security patch and container publish workflow hardening after v0.4.3. Git tag `v0.4.3.1`.
+
+### Security / dependencies
+
+- **undici (#94):** bump transitive `undici` 6.26.0 → 6.27.0 — addresses CVE-2026-12151 (high), CVE-2026-9679 (moderate), CVE-2026-11525 and CVE-2026-6733 (low).
 
 ### Infra / CI
 
