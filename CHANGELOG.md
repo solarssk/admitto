@@ -12,6 +12,96 @@ first event-ready MVP.
 
 ## Unreleased
 
+## v0.4.2 — 2026-06-19
+
+Admin event management — full organizer lane. Git tag `v0.4.2`.
+
+After v0.4.1 gave hostesses a complete check-in screen, this release gives **organizers**
+the matching admin side: browse and edit the guest list, import from spreadsheet, configure
+what operators see on event day, prepare and send ticket mail, and export filtered lists.
+Deploy and security are hardened (automatic DB backup before upgrades, readiness probe,
+container scanning, dependency fixes).
+
+### Guest list
+
+Organizers open an event and work with attendees in one place:
+
+- **Table:** pagination, search, status and ticket-type filters, badges aligned with operator UI.
+- **Edit drawer:** change guest fields in place; view communication history; resend ticket email.
+- **Concurrent edits:** if two admins edit the same guest, the second save gets a clear
+  *stale write* response instead of silently overwriting (ADR 0028).
+- **Export:** download the current filter as XLSX or CSV (sanitized columns, row cap); search
+  also matches selected fields inside `custom_data` JSON.
+
+Backend routes are event-scoped (wrong event → 403) with CSRF on mutating calls.
+
+### Import
+
+Upload **CSV or XLSX**, map columns, preview rows, choose whether to overwrite existing
+fields, then commit. Supports both internally generated QR/tokens and agency-provided UUID/QR
+payloads — same rules as the server import pipeline.
+
+### Event-day requirements
+
+Configure what operators handle at the door:
+
+- **Event items** (gift bag, badge, headset, …) and how they appear on the check-in card.
+- **`ops_config`** toggles (e.g. confirm on scan, badge at entry).
+- **Content fields** linked to attendee data — invalid field slugs are rejected in the UI.
+
+Database: migration `20260618120000_event_item_contents`.
+
+### Communication and mail
+
+Prepare ticket email without leaving the admin UI:
+
+- Edit **MJML/HTML templates** (Outlook-safe), preview with sample data, send a **test message**.
+- Browse the **delivery log** (status, retries — no full rendered body in list views).
+- Hardening: request body limits, safe error messages, export-only dev sink for local mail
+  testing (ADR 0029).
+
+### Database
+
+Two migrations since v0.4.1:
+
+| Migration | Purpose |
+|-----------|---------|
+| `20260618120000_event_item_contents` | Metadata for configurable event-item content |
+| `20260618140000_attendee_updated_at` | `updated_at` on attendees for optimistic locking |
+
+Migrations apply **automatically on container start** (fail-fast). When pending migrations
+exist, the entrypoint runs a **pre-migration database backup** first (ADR 0027). Operators
+do not run `migrate deploy` by hand.
+
+### Deploy, ops, and security
+
+- **`GET /readyz`** — token-protected readiness check (database, Redis, migration status;
+  ADR 0026).
+- **Safe upgrades (ADR 0027):** pre-migration backup, CI guard against destructive migration
+  SQL, rollback runbook, smoke test for backup path.
+- **Supply chain:** Trivy image scan + CycloneDX SBOM in CI; `SECURITY.md` updated.
+- **Dependencies:** transitive `uuid` forced to 14.0.0 (Dependabot #13 / CVE-2026-41907);
+  patch bumps for vitest, eslint, argon2. Requires Node ≥22.12 for exceljs ↔ uuid interop
+  (`require(esm)`).
+- Pre-deploy cleanup: Docker import paths, admin navigation, PII guard, CSS fixes.
+
+### Deploy notes
+
+- Pull or rebuild: `ghcr.io/solarssk/admitto:0.4.2` (rolling `:0.4` on the same minor line).
+- Restart the app container after upgrade — migrations and optional backup run on start.
+- Smoke after deploy: admin login → guest list → import a test CSV → edit one row → export
+  XLSX → communication preview/test-send → operator check-in still works.
+
+### Not in this release
+
+- Wallet passes (Apple / Google) → **v0.5**.
+- Public self-registration form.
+- Major framework upgrades (Prisma 7, React 19) — planned for a later hardening milestone.
+
+### Next
+
+- **v0.5.0** — wallet passes via PassCreator.
+
 ## v0.4.1 — 2026-06-17
 
 Operator check-in phase 2 (ADR 0010 event-day ops). Git tag `v0.4.1`.
