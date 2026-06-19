@@ -169,7 +169,12 @@ write_pre_migration_backup() {
 }
 
 # docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin
-if [ "${1:-}" = "node" ] || [ "${1:-}" = "npm" ]; then
+if [ "${1:-}" = "npm" ] || [ "${1:-}" = "npx" ]; then
+  log "npm/npx are not available in the production image. Use: node <script> ..."
+  exit 64
+fi
+
+if [ "${1:-}" = "node" ]; then
   run_as_node "$@"
 fi
 
