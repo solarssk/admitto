@@ -16,6 +16,15 @@ ADR references appear only where they explain a design constraint.
 
 ## Unreleased
 
+## v0.4.3.1 — 2026-06-19
+
+Container publish workflow hardening after v0.4.3. Git tag `v0.4.3.1`.
+
+### Infra / CI
+
+- **Publish container (#93):** manual `workflow_dispatch` on branch refs (e.g. `refs/heads/main`) runs **scan-only** — build image, Trivy SARIF upload, CRITICAL gate — without invalid SBOM paths or semver Docker metadata failures.
+- **Tag gate:** GHCR push, provenance attestation, and release SBOM upload run only for `refs/tags/*` semver refs; semver-shaped branch names cannot publish.
+
 ## v0.4.3 — 2026-06-19
 
 Admin capabilities, dynamic event attributes, and corporate due-diligence readiness. Git tag `v0.4.3`.
