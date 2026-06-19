@@ -16,6 +16,31 @@ ADR references appear only where they explain a design constraint.
 
 ## Unreleased
 
+## v0.4.3 — 2026-06-19
+
+Corporate due-diligence readiness — documentation pack and Semgrep gate. Git tag `v0.4.3`.
+
+Prepares Admitto for InfoSec / GRC review in typical enterprise self-hosted deployments:
+security capability documentation, deployment model, GDPR one-pager with DSAR options, incident
+response template, and Semgrep SAST gating on pull requests.
+
+### Security and compliance
+
+- **Semgrep gate:** removed `|| true` from CI — SAST findings block pull requests (baseline verified 0 findings before merge).
+- **SECURITY-CONTROLS.md:** configurable security capabilities (auth, RBAC, optional edge/OIDC, logging intent).
+- **CORPORATE-DEPLOYMENT.md:** self-hosted model, customer-hosted stack, no SaaS.
+- **ARCHITECTURE-FOR-AUDITORS.md:** scope, generic exposure overview, roadmap flows.
+- **GDPR-ONE-PAGER.md** + **SUBPROCESSORS.md:** purposes, retention, subprocessor template, DSAR options.
+- **DSAR-PROCEDURE.md:** organizer-mediated access/erasure template (Option B).
+- **INCIDENT-RESPONSE.md:** rotation, rollback, severity template; GDPR Art. 33/34 72h breach notification.
+- **DATA-PROTECTION.md:** updated; legal basis remains customer legal sign-off (LIA note for legitimate interest).
+- **SECURITY-CONTROLS.md:** explicit codebase implementation table for TOTP and OIDC (config-dependent).
+
+### References
+
+- Triage: `_ops/design/corp-readiness-pack.md` §C
+- Prompt: `_ops/prompts/36-corp-docs-batch.md`
+
 ## v0.4.2 — 2026-06-19
 
 Admin event management — full organizer lane. Git tag `v0.4.2`.
