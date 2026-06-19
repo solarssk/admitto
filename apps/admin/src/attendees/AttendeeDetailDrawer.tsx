@@ -97,6 +97,35 @@ function formatDateTime(iso: string | null): string {
   });
 }
 
+/** Load attendee detail; event items are best-effort so core fields stay editable on items API failure. */
+async function loadDrawerData(
+  eventId: string,
+  attendeeId: string,
+): Promise<{
+  detail: AttendeeDetailDto;
+  attributeFields: CustomDataFieldDef[];
+  itemsWarning: string | null;
+}> {
+  const detail = await fetchAttendeeDetail(eventId, attendeeId);
+  try {
+    const items = await fetchEventItems(eventId);
+    return {
+      detail,
+      attributeFields: flattenCustomDataFieldsFromItems(items),
+      itemsWarning: null,
+    };
+  } catch (err) {
+    return {
+      detail,
+      attributeFields: [],
+      itemsWarning:
+        err instanceof ApiError
+          ? "Attribute fields could not be loaded — core fields are still editable."
+          : "Attribute fields could not be loaded — core fields are still editable.",
+    };
+  }
+}
+
 /** Slide-over panel for viewing/editing one attendee (admin list drill-down). */
 export function AttendeeDetailDrawer({
   eventId,
@@ -138,16 +167,16 @@ export function AttendeeDetailDrawer({
     setEmailConflict(false);
     (async () => {
       try {
-        const [d, items] = await Promise.all([
-          fetchAttendeeDetail(eventId, attendeeId),
-          fetchEventItems(eventId),
-        ]);
+        const { detail: d, attributeFields: fields, itemsWarning } = await loadDrawerData(
+          eventId,
+          attendeeId,
+        );
         if (cancelled) return;
-        const fields = flattenCustomDataFieldsFromItems(items);
         setAttributeFields(fields);
         setDetail(d);
         setForm(toForm(d, fields));
         setInitialEmail(d.email);
+        setError(itemsWarning);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : "Failed to load attendee.");
@@ -237,12 +266,11 @@ export function AttendeeDetailDrawer({
     setReloading(true);
     setError(null);
     try {
-      const [d, items] = await Promise.all([
-        fetchAttendeeDetail(target.eventId, target.attendeeId),
-        fetchEventItems(target.eventId),
-      ]);
+      const { detail: d, attributeFields: fields, itemsWarning } = await loadDrawerData(
+        target.eventId,
+        target.attendeeId,
+      );
       if (!isStillSelected(target)) return;
-      const fields = flattenCustomDataFieldsFromItems(items);
       setAttributeFields(fields);
       setForm((currentForm) => {
         if (!currentForm || !previousDetail) return toForm(d, fields);
@@ -251,6 +279,7 @@ export function AttendeeDetailDrawer({
       setDetail(d);
       setInitialEmail(d.email);
       setStaleWrite(false);
+      setError(itemsWarning);
     } catch (err) {
       if (!isStillSelected(target)) return;
       setError(

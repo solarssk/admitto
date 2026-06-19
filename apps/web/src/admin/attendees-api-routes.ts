@@ -59,7 +59,15 @@ const patchAttendeeFieldsSchema = z
     department: z.string().trim().max(200).optional().nullable(),
     ticket_type: z.string().trim().max(100).optional().nullable(),
     custom_data_fields: z
-      .record(z.string(), z.string().trim().max(100).nullable())
+      .record(
+        z
+          .string()
+          .trim()
+          .min(1)
+          .max(60)
+          .regex(/^[a-z0-9_]+$/),
+        z.string().trim().max(100).nullable(),
+      )
       .optional(),
   })
   .strict();
@@ -89,8 +97,14 @@ const EXPORT_BASE_COLUMNS = [
   "Admitted at",
 ] as const;
 
-const EXPORT_BASE_PDF_WIDTHS = [22, 85, 100, 75, 70, 65, 75, 80];
+const EXPORT_BASE_PDF_WIDTHS = [22, 85, 100, 75, 70, 65, 75, 80] as const;
 const EXPORT_ATTRIBUTE_PDF_WIDTH = 55;
+/** Printable width on A4 landscape with 40pt side margins (pdfkit default). */
+const PDF_PRINTABLE_WIDTH = 762;
+
+if (EXPORT_BASE_PDF_WIDTHS.length !== EXPORT_BASE_COLUMNS.length) {
+  throw new Error("EXPORT_BASE_PDF_WIDTHS must match EXPORT_BASE_COLUMNS length");
+}
 
 const EXPORT_ATTENDEE_SELECT = {
   name: true,
@@ -347,10 +361,18 @@ const PDF_FONT = "DejaVuSans";
 const PDF_FONT_BOLD = "DejaVuSans-Bold";
 
 function buildExportPdfColumnWidths(attributeFieldCount: number): number[] {
-  return [
-    ...EXPORT_BASE_PDF_WIDTHS,
-    ...Array.from({ length: attributeFieldCount }, () => EXPORT_ATTRIBUTE_PDF_WIDTH),
-  ];
+  const base = [...EXPORT_BASE_PDF_WIDTHS];
+  if (attributeFieldCount === 0) return base;
+
+  const baseSum = base.reduce((sum, w) => sum + w, 0);
+  let attrWidth = EXPORT_ATTRIBUTE_PDF_WIDTH;
+  const total = baseSum + attributeFieldCount * attrWidth;
+  if (total > PDF_PRINTABLE_WIDTH) {
+    const remaining = PDF_PRINTABLE_WIDTH - baseSum;
+    attrWidth = Math.max(28, Math.floor(remaining / attributeFieldCount));
+  }
+
+  return [...base, ...Array.from({ length: attributeFieldCount }, () => attrWidth)];
 }
 
 const require = createRequire(import.meta.url);
@@ -518,6 +540,7 @@ async function loadEventCustomDataFields(
   const items = await db.eventItem.findMany({
     where: { event_id: eventId },
     select: { config: true },
+    orderBy: { key: "asc" },
   });
   return collectEventCustomDataFields(items.map((i) => i.config));
 }
@@ -545,8 +568,20 @@ function buildSanitizedExportRows(
   });
 }
 
+function buildExportColumnLabels(attributeFields: EventItemContent[]): string[] {
+  const labelCounts = new Map<string, number>();
+  for (const field of attributeFields) {
+    labelCounts.set(field.label, (labelCounts.get(field.label) ?? 0) + 1);
+  }
+  return attributeFields.map((field) =>
+    (labelCounts.get(field.label) ?? 0) > 1
+      ? `${field.label} (${field.source_field})`
+      : field.label,
+  );
+}
+
 function buildExportColumns(attributeFields: EventItemContent[]): string[] {
-  return [...EXPORT_BASE_COLUMNS, ...attributeFields.map((f) => f.label)];
+  return [...EXPORT_BASE_COLUMNS, ...buildExportColumnLabels(attributeFields)];
 }
 
 /** Require `:id` attendee route param or return 400. */
