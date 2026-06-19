@@ -19,6 +19,8 @@ const ORG_EX_B = "org-export-test-b";
 const EVENT_EX = "evt-export-test";
 const EVENT_EX_B = "evt-export-test-b";
 const EVENT_EMPTY = "evt-export-empty";
+const EVENT_EX_JACKET = "evt-export-jacket";
+const EVENT_EX_SHIRT = "evt-export-shirt";
 
 const EMAIL_ADMIN_EX = "export-admin@example.com";
 const EMAIL_OP_EX = "export-op@example.com";
@@ -31,6 +33,8 @@ const ATT_INJ = "att-export-inj";
 const ATT_CROSS = "att-export-cross";
 const ATT_MEGA_VIP = "att-export-mega-vip";
 const ATT_MEGA_STD = "att-export-mega-std";
+const ATT_JACKET = "att-export-jacket";
+const ATT_SHIRT = "att-export-shirt";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -40,7 +44,7 @@ let adminCookie = "";
 let opCookie = "";
 
 async function seed(client: PrismaClient) {
-  const eventIds = [EVENT_EX, EVENT_EX_B, EVENT_EMPTY];
+  const eventIds = [EVENT_EX, EVENT_EX_B, EVENT_EMPTY, EVENT_EX_JACKET, EVENT_EX_SHIRT];
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.eventItem.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -87,6 +91,20 @@ async function seed(client: PrismaClient) {
         title: "Empty Event",
         slug: "export-empty",
         date: new Date("2026-12-01"),
+        organization_id: ORG_EX,
+      },
+      {
+        id: EVENT_EX_JACKET,
+        title: "Export Jacket Event",
+        slug: "export-jacket",
+        date: new Date("2026-10-02"),
+        organization_id: ORG_EX,
+      },
+      {
+        id: EVENT_EX_SHIRT,
+        title: "Export Shirt Event",
+        slug: "export-shirt",
+        date: new Date("2026-10-03"),
         organization_id: ORG_EX,
       },
     ],
@@ -194,6 +212,42 @@ async function seed(client: PrismaClient) {
         ticket_type: "vip",
         custom_data: { company: "MegaCorp" },
         ...mkToken(),
+      },
+      {
+        id: ATT_JACKET,
+        event_id: EVENT_EX_JACKET,
+        email: "jacket@example.com",
+        name: "Jacket Guest",
+        ticket_type: "vip",
+        admitted_at: new Date("2026-10-02T10:00:00Z"),
+        custom_data: { jacket_size: "L" },
+        ...mkToken(),
+      },
+      {
+        id: ATT_SHIRT,
+        event_id: EVENT_EX_SHIRT,
+        email: "shirt@example.com",
+        name: "Shirt Guest",
+        ticket_type: "standard",
+        custom_data: { shirt_size: "M" },
+        ...mkToken(),
+      },
+    ],
+  });
+
+  await client.eventItem.createMany({
+    data: [
+      {
+        event_id: EVENT_EX_JACKET,
+        key: "giftbag",
+        label: "Gift bag",
+        config: { contents: [{ label: "Jacket size", source_field: "jacket_size" }] },
+      },
+      {
+        event_id: EVENT_EX_SHIRT,
+        key: "giftbag",
+        label: "Gift bag",
+        config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
       },
     ],
   });
@@ -444,21 +498,8 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("export includes dynamic Jacket size column from event item contents", async () => {
-    await prisma.eventItem.create({
-      data: {
-        event_id: EVENT_EX,
-        key: "giftbag",
-        label: "Gift bag",
-        config: { contents: [{ label: "Jacket size", source_field: "jacket_size" }] },
-      },
-    });
-    await prisma.attendee.update({
-      where: { id: ATT_VIP1 },
-      data: { custom_data: { jacket_size: "L" } },
-    });
-
     const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&status=admitted`,
+      `/api/admin/events/${EVENT_EX_JACKET}/attendees/export?format=csv&status=admitted`,
       { headers: { Cookie: adminCookie } },
     );
     expect(res.status).toBe(200);
@@ -466,33 +507,19 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     const header = lines[0] ?? "";
     expect(header).toContain("Jacket size");
     expect(header).not.toContain("Shirt size");
-    const vipRow = lines.find((l) => l.includes("Vip One"));
-    expect(vipRow).toContain('"L"');
+    const jacketRow = lines.find((l) => l.includes("Jacket Guest"));
+    expect(jacketRow).toContain('"L"');
   });
 
-  it("export includes Shirt size column for default seed contents", async () => {
-    await prisma.eventItem.deleteMany({ where: { event_id: EVENT_EX } });
-    await prisma.eventItem.create({
-      data: {
-        event_id: EVENT_EX,
-        key: "giftbag",
-        label: "Gift bag",
-        config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
-      },
-    });
-    await prisma.attendee.update({
-      where: { id: ATT_STD },
-      data: { custom_data: { shirt_size: "M" } },
-    });
-
+  it("export includes Shirt size column for dedicated event contents", async () => {
     const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx&q=Standard`,
+      `/api/admin/events/${EVENT_EX_SHIRT}/attendees/export?format=xlsx`,
       { headers: { Cookie: adminCookie } },
     );
     expect(res.status).toBe(200);
     const rows = await parseXlsxRows(await res.arrayBuffer());
     expect(rows[0]).toContain("Shirt size");
-    const dataRow = rows.find((r) => r[1] === "Standard Guest");
+    const dataRow = rows.find((r) => r[1] === "Shirt Guest");
     expect(dataRow?.[8]).toBe("M");
   });
 

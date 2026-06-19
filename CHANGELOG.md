@@ -18,11 +18,13 @@ ADR references appear only where they explain a design constraint.
 
 ## v0.4.3 — 2026-06-19
 
-Corporate due-diligence readiness — documentation pack and Semgrep gate. Git tag `v0.4.3`.
+Admin capabilities, dynamic event attributes, and corporate due-diligence readiness. Git tag `v0.4.3`.
 
-Prepares Admitto for InfoSec / GRC review in typical enterprise self-hosted deployments:
-security capability documentation, deployment model, GDPR one-pager with DSAR options, incident
-response template, and Semgrep SAST gating on pull requests.
+### Admin and export
+
+- **F-print export (#88):** attendee list export to CSV, XLSX, and PDF with check-off column, filters parity with list API, formula-injection sanitization, and audit logging.
+- **Dynamic custom_data attributes (#91, ADR 0030):** admin PATCH and detail drawer edit fields from `EventItem.config.contents` instead of hardcoded `shirt_size`; export columns follow the same definitions; check-in parity preserved.
+- **Release hygiene (follow-up):** Zod validation on `custom_data_fields` keys; stable export column order (`orderBy: key`); duplicate Excel headers disambiguated as `Label (source_field)`; PDF column widths scale down when many attributes exceed printable width; drawer degrades gracefully when event-items API fails; export integration tests use isolated events.
 
 ### Security and compliance
 
