@@ -22,6 +22,7 @@ export function AdminGuard() {
   return <Outlet />;
 }
 
+/** Restricts child routes to users with instance superadmin role assignments. */
 export function SuperadminGuard() {
   const { assignments } = useAuth();
   if (!isSuperadmin(assignments)) {

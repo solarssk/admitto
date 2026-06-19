@@ -15,6 +15,7 @@ function formatDate(iso: string): string {
   });
 }
 
+/** Event picker for org admins and superadmins at `/admin` (no event context). */
 export function EventsPickerPage() {
   const { assignments } = useAuth();
   const showInstanceSettings = isSuperadmin(assignments);

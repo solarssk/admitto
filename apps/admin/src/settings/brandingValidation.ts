@@ -4,6 +4,7 @@ import type { BrandingThemeDto } from "../api/types.js";
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 const DEFAULT_PRIMARY = "#066fd1";
 
+/** True when value is a 6-digit hex colour (e.g. #066fd1). */
 export function isValidHex(value: string): boolean {
   return HEX_RE.test(value);
 }

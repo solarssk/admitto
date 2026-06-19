@@ -93,6 +93,7 @@ export function resolveThemeVars(input?: BrandingThemeInput | null): ResolvedThe
   return vars;
 }
 
+/** Serialize resolved theme vars (and optional @font-face) into a CSS style block. */
 export function themeVarsToStyleBlock(vars: ResolvedThemeVars): string {
   const { fontFaceCss, ...cssVars } = vars;
   const lines = Object.entries(cssVars)
