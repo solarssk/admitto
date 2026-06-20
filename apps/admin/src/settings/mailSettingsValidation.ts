@@ -50,7 +50,7 @@ export function emptyMailDraft(): MailDraft {
     requireTls: true,
     tlsRejectUnauthorized: true,
     heloName: "",
-    pool: false,
+    pool: true,
     user: "",
     maxConnections: "",
     maxMessages: "",
@@ -92,10 +92,6 @@ export function validateMailDraft(draft: MailDraft): { valid: boolean; errors: s
   const errors: string[] = [];
 
   if (draft.provider) {
-    const from = draft.fromAddress.trim();
-    if (!from || !EMAIL_RE.test(from)) {
-      errors.push("From address must be a valid email.");
-    }
     const reply = draft.replyTo.trim();
     if (reply && !EMAIL_RE.test(reply)) {
       errors.push("Reply-to must be a valid email.");
@@ -103,6 +99,21 @@ export function validateMailDraft(draft: MailDraft): { valid: boolean; errors: s
     const envelope = draft.envelopeFrom.trim();
     if (envelope && !EMAIL_RE.test(envelope)) {
       errors.push("Envelope from must be a valid email.");
+    }
+    const from = draft.fromAddress.trim();
+    if (from && !EMAIL_RE.test(from)) {
+      errors.push("From address must be a valid email.");
+    }
+  }
+
+  if (
+    draft.provider === "smtp" ||
+    draft.provider === "powerautomate" ||
+    draft.provider === "export_only"
+  ) {
+    const from = draft.fromAddress.trim();
+    if (!from || !EMAIL_RE.test(from)) {
+      errors.push("From address must be a valid email.");
     }
   }
 
@@ -117,6 +128,28 @@ export function validateMailDraft(draft: MailDraft): { valid: boolean; errors: s
   if (draft.provider === "graph") {
     if (!draft.tenantId.trim()) errors.push("Tenant ID is required.");
     if (!draft.clientId.trim()) errors.push("Client ID is required.");
+    const mailbox = draft.mailbox.trim();
+    const from = draft.fromAddress.trim();
+    if (!mailbox && !from) {
+      errors.push("Mailbox or from address is required.");
+    }
+    if (mailbox && !EMAIL_RE.test(mailbox)) {
+      errors.push("Mailbox must be a valid email.");
+    }
+  }
+
+  const allowedDomain = draft.allowedFromDomain.trim().toLowerCase().replace(/^@/, "");
+  if (allowedDomain && draft.provider) {
+    let effectiveFrom = draft.fromAddress.trim();
+    if (draft.provider === "graph" && !effectiveFrom) {
+      effectiveFrom = draft.mailbox.trim();
+    }
+    if (effectiveFrom) {
+      const domain = effectiveFrom.split("@")[1]?.toLowerCase();
+      if (!domain || domain !== allowedDomain) {
+        errors.push(`From address must use the allowed domain (${allowedDomain}).`);
+      }
+    }
   }
 
   return { valid: errors.length === 0, errors };
@@ -133,6 +166,40 @@ function setClearableString(
   } else {
     (body as Record<string, string>)[key] = "";
   }
+}
+
+type ClearableIntKey =
+  | "port"
+  | "maxConnections"
+  | "maxMessages"
+  | "rateLimitPerMinute"
+  | "connectionTimeout"
+  | "greetingTimeout"
+  | "socketTimeout";
+
+function setClearableInt(body: SaveMailSettingsBody, key: ClearableIntKey, value: string): void {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    body[key] = null;
+    return;
+  }
+  const n = Number(trimmed);
+  if (Number.isInteger(n)) {
+    body[key] = n;
+  }
+}
+
+/** SMTP boolean defaults aligned with @admitto/mailer schema defaults. */
+export function smtpProviderDraftDefaults(): Pick<
+  MailDraft,
+  "pool" | "requireTls" | "tlsRejectUnauthorized" | "secure"
+> {
+  return {
+    pool: true,
+    requireTls: true,
+    tlsRejectUnauthorized: true,
+    secure: false,
+  };
 }
 
 export function isMailSettingsDirty(
@@ -165,40 +232,23 @@ export function buildSaveMailSettingsBody(
 
   if (draft.provider === "smtp") {
     if (unlocked("host")) body.host = draft.host.trim();
-    if (unlocked("port")) {
-      const port = optionalInt(draft.port);
-      if (port !== undefined && !Number.isNaN(port)) body.port = port;
-    }
+    if (unlocked("port")) setClearableInt(body, "port", draft.port);
     if (unlocked("secure")) body.secure = draft.secure;
     if (unlocked("requireTls")) body.requireTls = draft.requireTls;
     if (unlocked("tlsRejectUnauthorized")) body.tlsRejectUnauthorized = draft.tlsRejectUnauthorized;
     if (unlocked("user")) setClearableString(body, "user", draft.user);
     if (unlocked("heloName")) setClearableString(body, "heloName", draft.heloName);
     if (unlocked("pool")) body.pool = draft.pool;
-    if (unlocked("maxConnections")) {
-      const maxConn = optionalInt(draft.maxConnections);
-      if (maxConn !== undefined && !Number.isNaN(maxConn)) body.maxConnections = maxConn;
-    }
-    if (unlocked("maxMessages")) {
-      const maxMsg = optionalInt(draft.maxMessages);
-      if (maxMsg !== undefined && !Number.isNaN(maxMsg)) body.maxMessages = maxMsg;
-    }
+    if (unlocked("maxConnections")) setClearableInt(body, "maxConnections", draft.maxConnections);
+    if (unlocked("maxMessages")) setClearableInt(body, "maxMessages", draft.maxMessages);
     if (unlocked("rateLimitPerMinute")) {
-      const rate = optionalInt(draft.rateLimitPerMinute);
-      if (rate !== undefined && !Number.isNaN(rate)) body.rateLimitPerMinute = rate;
+      setClearableInt(body, "rateLimitPerMinute", draft.rateLimitPerMinute);
     }
     if (unlocked("connectionTimeout")) {
-      const connT = optionalInt(draft.connectionTimeout);
-      if (connT !== undefined && !Number.isNaN(connT)) body.connectionTimeout = connT;
+      setClearableInt(body, "connectionTimeout", draft.connectionTimeout);
     }
-    if (unlocked("greetingTimeout")) {
-      const greetT = optionalInt(draft.greetingTimeout);
-      if (greetT !== undefined && !Number.isNaN(greetT)) body.greetingTimeout = greetT;
-    }
-    if (unlocked("socketTimeout")) {
-      const sockT = optionalInt(draft.socketTimeout);
-      if (sockT !== undefined && !Number.isNaN(sockT)) body.socketTimeout = sockT;
-    }
+    if (unlocked("greetingTimeout")) setClearableInt(body, "greetingTimeout", draft.greetingTimeout);
+    if (unlocked("socketTimeout")) setClearableInt(body, "socketTimeout", draft.socketTimeout);
   }
 
   if (draft.provider === "graph") {

@@ -17,6 +17,7 @@ import {
   emptyMailDraft,
   emptySecretEdits,
   isMailSettingsDirty,
+  smtpProviderDraftDefaults,
   validateMailDraft,
   type MailDraft,
   type SecretEdits,
@@ -50,7 +51,7 @@ function draftFromResponse(data: MailSettingsResponse): MailDraft {
     requireTls: boolValue(f.requireTls, true),
     tlsRejectUnauthorized: boolValue(f.tlsRejectUnauthorized, true),
     heloName: strValue(f.heloName),
-    pool: boolValue(f.pool, false),
+    pool: boolValue(f.pool, true),
     maxConnections: numValue(f.maxConnections),
     maxMessages: numValue(f.maxMessages),
     rateLimitPerMinute: numValue(f.rateLimitPerMinute),
@@ -357,7 +358,14 @@ export function MailTransportPanel() {
               label="Transport"
               value={provider}
               disabled={fieldLocked("provider")}
-              onChange={(e) => updateDraft({ provider: e.target.value as MailProvider | "" })}
+              onChange={(e) => {
+                const provider = e.target.value as MailProvider | "";
+                if (provider === "smtp" && draft.provider !== "smtp") {
+                  updateDraft({ provider, ...smtpProviderDraftDefaults() });
+                } else {
+                  updateDraft({ provider });
+                }
+              }}
             >
               <option value="">Not configured</option>
               {providerOptions.map((opt) => (
@@ -414,7 +422,7 @@ export function MailTransportPanel() {
                   value={draft.allowedFromDomain}
                   disabled={fieldLocked("allowedFromDomain")}
                   onChange={(e) => updateDraft({ allowedFromDomain: e.target.value })}
-                  hint="Optional restriction: only allow sending when the from address matches this domain."
+                  hint="When set, outbound mail is rejected unless the from address (or Graph mailbox) uses this domain."
                 />
               )}
             </div>

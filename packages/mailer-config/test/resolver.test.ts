@@ -197,4 +197,24 @@ describe("resolveMailConfigForOrg — org-scoped instance settings", () => {
       expect(config.host).toBe("smtp.env-override.example.com");
     }
   });
+
+  it("rejects resolve when allowed from domain does not match from address", async () => {
+    await setMailSettings(
+      { scopeType: "organization", scopeId: "org-r" },
+      {
+        provider: "smtp",
+        host: "smtp.org-for-org.example.com",
+        port: 587,
+        user: "org-for@example.com",
+        fromAddress: "org-for@other.com",
+        allowedFromDomain: "example.com",
+        smtpPassword: "org-for-pass",
+      },
+      prisma,
+    );
+
+    await expect(resolveMailConfigForOrg("org-r", prisma, {})).rejects.toThrow(
+      /allowed from domain/i,
+    );
+  });
 });

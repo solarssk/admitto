@@ -30,6 +30,8 @@ const optionalEmail = z
   .union([z.string().trim().email().max(254), z.literal("")])
   .optional();
 
+const optionalPositiveInt = z.union([z.number().int().min(1), z.null()]).optional();
+
 const putMailSettingsBodySchema = z
   .object({
     provider: z.union([MAIL_PROVIDER, z.literal("")]).optional(),
@@ -39,19 +41,19 @@ const putMailSettingsBodySchema = z
     envelopeFrom: optionalEmail,
     allowedFromDomain: z.string().max(253).optional(),
     host: z.string().max(253).optional(),
-    port: z.number().int().min(1).max(65535).optional(),
+    port: z.union([z.number().int().min(1).max(65535), z.null()]).optional(),
     secure: z.boolean().optional(),
     user: z.string().max(254).optional(),
     requireTls: z.boolean().optional(),
     tlsRejectUnauthorized: z.boolean().optional(),
     heloName: z.string().max(253).optional(),
     pool: z.boolean().optional(),
-    maxConnections: z.number().int().min(1).optional(),
-    maxMessages: z.number().int().min(1).optional(),
-    rateLimitPerMinute: z.number().int().min(1).optional(),
-    connectionTimeout: z.number().int().min(1).optional(),
-    greetingTimeout: z.number().int().min(1).optional(),
-    socketTimeout: z.number().int().min(1).optional(),
+    maxConnections: optionalPositiveInt,
+    maxMessages: optionalPositiveInt,
+    rateLimitPerMinute: optionalPositiveInt,
+    connectionTimeout: optionalPositiveInt,
+    greetingTimeout: optionalPositiveInt,
+    socketTimeout: optionalPositiveInt,
     mailbox: optionalEmail,
     tenantId: z.string().max(64).optional(),
     clientId: z.string().max(64).optional(),

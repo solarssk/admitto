@@ -58,19 +58,19 @@ export interface MailSettingsInput {
   allowedFromDomain?: string;
   // smtp non-secret
   host?: string;
-  port?: number;
+  port?: number | null;
   secure?: boolean;
   user?: string;
   requireTls?: boolean;
   tlsRejectUnauthorized?: boolean;
   heloName?: string;
   pool?: boolean;
-  maxConnections?: number;
-  maxMessages?: number;
-  rateLimitPerMinute?: number;
-  connectionTimeout?: number;
-  greetingTimeout?: number;
-  socketTimeout?: number;
+  maxConnections?: number | null;
+  maxMessages?: number | null;
+  rateLimitPerMinute?: number | null;
+  connectionTimeout?: number | null;
+  greetingTimeout?: number | null;
+  socketTimeout?: number | null;
   // graph non-secret
   mailbox?: string;
   tenantId?: string;

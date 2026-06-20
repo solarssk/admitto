@@ -264,6 +264,34 @@ describe("PUT /api/admin/mail-settings", () => {
     expect(after?.smtp_password_enc).toBe(before?.smtp_password_enc);
   });
 
+  it("clears stored SMTP numeric override when null is sent", async () => {
+    await setMailSettings(
+      { scopeType: "organization", scopeId: ORG_MAIL },
+      {
+        provider: "smtp",
+        host: "smtp.numeric.example.com",
+        port: 587,
+        user: "numeric@example.com",
+        fromAddress: "numeric@example.com",
+        smtpPassword: "numeric-secret",
+        maxConnections: 9,
+      },
+      prisma,
+    );
+
+    const res = await app.request("/api/admin/mail-settings", {
+      method: "PUT",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ maxConnections: null }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await prisma.mailSettings.findUnique({
+      where: { scope_type_scope_id: { scope_type: "organization", scope_id: ORG_MAIL } },
+    });
+    expect(row?.max_connections).toBeNull();
+  });
+
   it("rotates secret when new value provided", async () => {
     const res = await app.request("/api/admin/mail-settings", {
       method: "PUT",

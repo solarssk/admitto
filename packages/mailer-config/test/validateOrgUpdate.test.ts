@@ -80,4 +80,24 @@ describe("validateOrgMailSettingsUpdate", () => {
       expect(result.error).toMatch(/SMTP_SECURE/i);
     }
   });
+
+  it("rejects allowed from domain mismatch on save", () => {
+    const result = validateOrgMailSettingsUpdate(
+      null,
+      {
+        provider: "smtp",
+        host: "smtp.example.com",
+        port: 587,
+        user: "u@example.com",
+        fromAddress: "u@other.com",
+        allowedFromDomain: "example.com",
+        smtpPassword: "secret",
+      },
+      {},
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/allowed from domain/i);
+    }
+  });
 });

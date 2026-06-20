@@ -2,6 +2,7 @@ import { decryptFromString } from "@admitto/crypto";
 import { parseMailerConfig, safeParseMailerConfig, type MailerConfig } from "@admitto/mailer";
 import type { PrismaClient, MailSettings } from "@prisma/client";
 import { rawMailFieldsFromEnv } from "./envFields.js";
+import { enforceAllowedFromDomain } from "./senderPolicy.js";
 
 type Row = MailSettings | null;
 
@@ -74,7 +75,12 @@ export async function resolveMailConfig(
   }
 
   const raw = buildRawConfig(provider, envFields, eventRow, orgRow);
-  return parseMailerConfig(raw);
+  const config = parseMailerConfig(raw);
+  enforceAllowedFromDomain(
+    first(eventRow?.allowed_from_domain, orgRow?.allowed_from_domain),
+    config,
+  );
+  return config;
 }
 
 /**
@@ -106,7 +112,9 @@ export async function resolveMailConfigForOrg(
   }
 
   const raw = buildRawConfig(provider, envFields, null, orgRow);
-  return parseMailerConfig(raw);
+  const config = parseMailerConfig(raw);
+  enforceAllowedFromDomain(orgRow?.allowed_from_domain, config);
+  return config;
 }
 
 /** Safe org-scoped parse for pre-save validation (no throw). */
@@ -124,6 +132,12 @@ export function tryParseOrgMailConfigFromRow(
     const raw = buildRawConfig(provider, envFields, null, orgRow);
     const parsed = safeParseMailerConfig(raw);
     if (parsed.success) {
+      try {
+        enforceAllowedFromDomain(orgRow?.allowed_from_domain, parsed.data);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "allowed from domain mismatch";
+        return { ok: false, error: message };
+      }
       return { ok: true };
     }
 
