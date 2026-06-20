@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes, useParams } from "react-router-dom";
 import { AdminGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
 import { AuthProvider } from "./auth/AuthProvider.js";
 import { ConnectionStateProvider } from "./connection/ConnectionStateProvider.js";
+import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { AdminShell } from "./layouts/AdminShell.js";
 import { EventsListShell } from "./layouts/EventsListShell.js";
 import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
@@ -73,9 +74,10 @@ function EventLayout() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ConnectionStateProvider>
-        <Routes>
+    <ErrorBoundary>
+      <AuthProvider>
+        <ConnectionStateProvider>
+          <Routes>
           <Route path="/admin" element={<AdminGuard />}>
           <Route element={<EventsListShell />}>
             <Route index element={<EventsPickerPage />} />
@@ -118,7 +120,8 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
-      </ConnectionStateProvider>
-    </AuthProvider>
+        </ConnectionStateProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

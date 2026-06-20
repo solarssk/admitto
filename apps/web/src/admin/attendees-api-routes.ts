@@ -157,6 +157,11 @@ function sanitizeCell(value: string | null | undefined): string {
   return s;
 }
 
+/** RFC 4180 CSV field quoting (escape embedded double quotes). */
+function quoteCsvCell(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
 /** RFC 6266 attachment header with `"` escaped in the filename. */
 function exportContentDisposition(filename: string): string {
   const safeFilename = filename.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -166,7 +171,7 @@ function exportContentDisposition(filename: string): string {
 /** Build CSV text for sanitized export rows (CRLF, quoted fields). */
 function buildExportCsv(exportRows: SanitizedExportRow[], exportColumns: string[]): string {
   const csvColumns = exportColumns.slice(1);
-  const header = csvColumns.join(",");
+  const header = csvColumns.map(quoteCsvCell).join(",");
   const csvRows = exportRows.map((r) =>
     [
       r.name,
@@ -178,7 +183,7 @@ function buildExportCsv(exportRows: SanitizedExportRow[], exportColumns: string[
       r.admitted_at,
       ...r.attribute_values,
     ]
-      .map((v) => `"${v.replace(/"/g, '""')}"`)
+      .map(quoteCsvCell)
       .join(","),
   );
   return [header, ...csvRows].join("\r\n");
@@ -605,11 +610,13 @@ function buildExportColumnLabels(attributeFields: EventItemContent[]): string[] 
   for (const field of attributeFields) {
     labelCounts.set(field.label, (labelCounts.get(field.label) ?? 0) + 1);
   }
-  return attributeFields.map((field) =>
-    (labelCounts.get(field.label) ?? 0) > 1
-      ? `${field.label} (${field.source_field})`
-      : field.label,
-  );
+  return attributeFields.map((field) => {
+    const label =
+      (labelCounts.get(field.label) ?? 0) > 1
+        ? `${field.label} (${field.source_field})`
+        : field.label;
+    return sanitizeCell(label);
+  });
 }
 
 function buildExportColumns(attributeFields: EventItemContent[]): string[] {
