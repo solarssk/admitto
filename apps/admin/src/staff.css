@@ -414,3 +414,35 @@
     border-bottom: 1px solid var(--border);
   }
 }
+
+.error-boundary {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: var(--surface-muted, var(--surface));
+}
+
+.error-boundary__panel {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  width: min(420px, 100%);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  text-align: center;
+}
+
+.error-boundary__title {
+  margin: 0;
+  font-size: var(--fs-h2);
+  font-weight: 600;
+}
+
+.error-boundary__message {
+  margin: 0;
+  color: var(--text-muted);
+}

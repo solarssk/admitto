@@ -21,6 +21,7 @@ const EVENT_EX_B = "evt-export-test-b";
 const EVENT_EMPTY = "evt-export-empty";
 const EVENT_EX_JACKET = "evt-export-jacket";
 const EVENT_EX_SHIRT = "evt-export-shirt";
+const EVENT_EX_INJ_HEADER = "evt-export-inj-header";
 
 const EMAIL_ADMIN_EX = "export-admin@example.com";
 const EMAIL_OP_EX = "export-op@example.com";
@@ -35,6 +36,7 @@ const ATT_MEGA_VIP = "att-export-mega-vip";
 const ATT_MEGA_STD = "att-export-mega-std";
 const ATT_JACKET = "att-export-jacket";
 const ATT_SHIRT = "att-export-shirt";
+const ATT_INJ_HEADER = "att-export-inj-header";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -44,7 +46,7 @@ let adminCookie = "";
 let opCookie = "";
 
 async function seed(client: PrismaClient) {
-  const eventIds = [EVENT_EX, EVENT_EX_B, EVENT_EMPTY, EVENT_EX_JACKET, EVENT_EX_SHIRT];
+  const eventIds = [EVENT_EX, EVENT_EX_B, EVENT_EMPTY, EVENT_EX_JACKET, EVENT_EX_SHIRT, EVENT_EX_INJ_HEADER];
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.eventItem.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -105,6 +107,13 @@ async function seed(client: PrismaClient) {
         title: "Export Shirt Event",
         slug: "export-shirt",
         date: new Date("2026-10-03"),
+        organization_id: ORG_EX,
+      },
+      {
+        id: EVENT_EX_INJ_HEADER,
+        title: "Export Inj Header Event",
+        slug: "export-inj-header",
+        date: new Date("2026-10-04"),
         organization_id: ORG_EX,
       },
     ],
@@ -232,6 +241,15 @@ async function seed(client: PrismaClient) {
         custom_data: { shirt_size: "M" },
         ...mkToken(),
       },
+      {
+        id: ATT_INJ_HEADER,
+        event_id: EVENT_EX_INJ_HEADER,
+        email: "inj-header@example.com",
+        name: "Inj Header Guest",
+        ticket_type: "standard",
+        custom_data: { evil_field: "x" },
+        ...mkToken(),
+      },
     ],
   });
 
@@ -248,6 +266,14 @@ async function seed(client: PrismaClient) {
         key: "giftbag",
         label: "Gift bag",
         config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
+      },
+      {
+        event_id: EVENT_EX_INJ_HEADER,
+        key: "giftbag",
+        label: "Gift bag",
+        config: {
+          contents: [{ label: '=HYPERLINK("https://evil.com","click")', source_field: "evil_field" }],
+        },
       },
     ],
   });
@@ -677,6 +703,16 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     const injLine = text.split("\r\n").find((l) => l.includes("HYPERLINK"));
     expect(injLine).toBeDefined();
     expect(injLine).toMatch(/'=HYPERLINK/);
+  });
+
+  it("formula injection CSV: attribute column header quoted and sanitized", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_EX_INJ_HEADER}/attendees/export?format=csv`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const header = (await res.text()).split("\r\n")[0] ?? "";
+    expect(header).toMatch(/"'=HYPERLINK\(""https:\/\/evil\.com"",""click""\)"/);
   });
 
   it("formula injection XLSX: cell starts with apostrophe", async () => {
