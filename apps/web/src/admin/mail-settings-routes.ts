@@ -5,6 +5,7 @@ import { canManageInstance } from "@admitto/auth";
 import {
   describeMailConfigForOrg,
   setMailSettings,
+  validateOrgMailSettingsUpdate,
   type ConfigDescriptor,
   type FieldDescriptor,
   type FieldSource,
@@ -197,12 +198,20 @@ export async function handlePutMailSettings(c: Context, db: PrismaClient): Promi
 
   const orgId = await resolveInstanceOrganizationId(db, process.env);
   const current = await describeMailConfigForOrg(orgId, db, process.env);
+  const orgRow = await db.mailSettings.findUnique({
+    where: { scope_type_scope_id: { scope_type: "organization", scope_id: orgId } },
+  });
 
   for (const key of Object.keys(body) as Array<keyof typeof body>) {
     const fd = descriptorForKey(current, key as keyof MailSettingsInput);
     if (fd.locked) {
       return c.json({ error: "managed by environment" }, 400);
     }
+  }
+
+  const transportCheck = validateOrgMailSettingsUpdate(orgRow, body as MailSettingsInput, process.env);
+  if (!transportCheck.ok) {
+    return c.json({ error: "incomplete_transport", detail: transportCheck.error }, 400);
   }
 
   const fieldsChanged: string[] = [];

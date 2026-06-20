@@ -363,7 +363,7 @@ export function MailTransportPanel() {
           </div>
 
           {provider === "export_only" && (
-            <p className="mail-dev-warning" role="alert">
+            <p className="mail-dev-warning" role="status">
               Dev/test only — cannot send real mail in production.
             </p>
           )}

@@ -1,5 +1,5 @@
 import { encryptToString } from "@admitto/crypto";
-import type { PrismaClient } from "@prisma/client";
+import type { MailSettings, PrismaClient } from "@prisma/client";
 import type { MailScope, MailSettingsInput } from "./types.js";
 
 function maybeEncrypt(value: string | undefined): string | undefined {
@@ -9,6 +9,84 @@ function maybeEncrypt(value: string | undefined): string | undefined {
 
 /** Treats blank strings the same as absent — stores null instead. */
 const str = (v: string | undefined): string | null => (v === undefined || v === "" ? null : v);
+
+function emptyOrgMailSettingsRow(scopeId: string): MailSettings {
+  return {
+    id: "__merge_sim__",
+    scope_type: "organization",
+    scope_id: scopeId,
+    provider: null,
+    host: null,
+    port: null,
+    secure: null,
+    user: null,
+    require_tls: null,
+    tls_reject_unauthorized: null,
+    helo_name: null,
+    pool: null,
+    max_connections: null,
+    max_messages: null,
+    rate_limit_per_minute: null,
+    connection_timeout: null,
+    greeting_timeout: null,
+    socket_timeout: null,
+    mailbox: null,
+    tenant_id: null,
+    client_id: null,
+    save_to_sent_items: null,
+    from_address: null,
+    from_name: null,
+    reply_to: null,
+    envelope_from: null,
+    allowed_from_domain: null,
+    smtp_password_enc: null,
+    graph_client_secret_enc: null,
+    power_automate_key_enc: null,
+    power_automate_url_enc: null,
+    created_at: new Date(0),
+    updated_at: new Date(0),
+  };
+}
+
+/** Applies a partial MailSettingsInput onto an org row (same semantics as setMailSettings update). */
+export function mergeOrgMailSettingsRow(
+  current: MailSettings | null,
+  input: MailSettingsInput,
+  scopeId = "",
+): MailSettings {
+  const row = { ...(current ?? emptyOrgMailSettingsRow(scopeId)) };
+
+  if ("provider" in input) row.provider = str(input.provider);
+  if ("host" in input) row.host = str(input.host);
+  if ("port" in input) row.port = input.port ?? null;
+  if ("secure" in input) row.secure = input.secure ?? null;
+  if ("user" in input) row.user = str(input.user);
+  if ("requireTls" in input) row.require_tls = input.requireTls ?? null;
+  if ("tlsRejectUnauthorized" in input) row.tls_reject_unauthorized = input.tlsRejectUnauthorized ?? null;
+  if ("heloName" in input) row.helo_name = str(input.heloName);
+  if ("pool" in input) row.pool = input.pool ?? null;
+  if ("maxConnections" in input) row.max_connections = input.maxConnections ?? null;
+  if ("maxMessages" in input) row.max_messages = input.maxMessages ?? null;
+  if ("rateLimitPerMinute" in input) row.rate_limit_per_minute = input.rateLimitPerMinute ?? null;
+  if ("connectionTimeout" in input) row.connection_timeout = input.connectionTimeout ?? null;
+  if ("greetingTimeout" in input) row.greeting_timeout = input.greetingTimeout ?? null;
+  if ("socketTimeout" in input) row.socket_timeout = input.socketTimeout ?? null;
+  if ("mailbox" in input) row.mailbox = str(input.mailbox);
+  if ("tenantId" in input) row.tenant_id = str(input.tenantId);
+  if ("clientId" in input) row.client_id = str(input.clientId);
+  if ("saveToSentItems" in input) row.save_to_sent_items = input.saveToSentItems ?? null;
+  if ("fromAddress" in input) row.from_address = str(input.fromAddress);
+  if ("fromName" in input) row.from_name = str(input.fromName);
+  if ("replyTo" in input) row.reply_to = str(input.replyTo);
+  if ("envelopeFrom" in input) row.envelope_from = str(input.envelopeFrom);
+  if ("allowedFromDomain" in input) row.allowed_from_domain = str(input.allowedFromDomain);
+  if ("smtpPassword" in input) row.smtp_password_enc = maybeEncrypt(input.smtpPassword) ?? null;
+  if ("graphClientSecret" in input) row.graph_client_secret_enc = maybeEncrypt(input.graphClientSecret) ?? null;
+  if ("powerAutomateKey" in input) row.power_automate_key_enc = maybeEncrypt(input.powerAutomateKey) ?? null;
+  if ("powerAutomateUrl" in input) row.power_automate_url_enc = maybeEncrypt(input.powerAutomateUrl) ?? null;
+
+  return row;
+}
 
 /**
  * Upserts a MailSettings record for the given scope.

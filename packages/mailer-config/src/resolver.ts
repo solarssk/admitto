@@ -1,5 +1,5 @@
 import { decryptFromString } from "@admitto/crypto";
-import { parseMailerConfig, type MailerConfig } from "@admitto/mailer";
+import { parseMailerConfig, safeParseMailerConfig, type MailerConfig } from "@admitto/mailer";
 import type { PrismaClient, MailSettings } from "@prisma/client";
 import { rawMailFieldsFromEnv } from "./envFields.js";
 
@@ -107,6 +107,31 @@ export async function resolveMailConfigForOrg(
 
   const raw = buildRawConfig(provider, envFields, null, orgRow);
   return parseMailerConfig(raw);
+}
+
+/** Safe org-scoped parse for pre-save validation (no throw). */
+export function tryParseOrgMailConfigFromRow(
+  orgRow: MailSettings | null,
+  env: NodeJS.ProcessEnv = process.env,
+): { ok: true } | { ok: false; error: string } {
+  const envFields = rawMailFieldsFromEnv(env);
+  const provider = first<string>(envFields.provider, orgRow?.provider ?? undefined);
+  if (!provider) {
+    return { ok: true };
+  }
+
+  const raw = buildRawConfig(provider, envFields, null, orgRow);
+  const parsed = safeParseMailerConfig(raw);
+  if (parsed.success) {
+    return { ok: true };
+  }
+
+  const issue = parsed.error.issues[0];
+  const field = issue?.path.length ? issue.path.join(".") : "configuration";
+  return {
+    ok: false,
+    error: `${field}: ${issue?.message ?? "invalid"}`,
+  };
 }
 
 function buildRawConfig(

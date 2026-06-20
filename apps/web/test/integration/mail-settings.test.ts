@@ -7,6 +7,7 @@ import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import type { ExportPayload } from "@admitto/mailer";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { setMailSettings } from "@admitto/mailer-config";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -202,7 +203,9 @@ describe("PUT /api/admin/mail-settings", () => {
         provider: "smtp",
         host: "smtp.put.example.com",
         port: 587,
+        user: "put@example.com",
         fromAddress: "put@example.com",
+        smtpPassword: "put-secret",
       }),
     });
     expect(res.status).toBe(200);
@@ -213,17 +216,36 @@ describe("PUT /api/admin/mail-settings", () => {
     expect(row?.from_address).toBe("put@example.com");
   });
 
-  it("leaves secret unchanged when omitted", async () => {
-    await prisma.mailSettings.create({
-      data: {
-        scope_type: "organization",
-        scope_id: ORG_MAIL,
+  it("rejects incomplete SMTP activation", async () => {
+    const res = await app.request("/api/admin/mail-settings", {
+      method: "PUT",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
         provider: "smtp",
-        from_address: "a@example.com",
-        smtp_password_enc:
-          '{"ciphertext":"abc","iv":"def","authTag":"ghi","keyVersion":1}',
-      },
+        host: "smtp.incomplete.example.com",
+        port: 587,
+        fromAddress: "incomplete@example.com",
+      }),
     });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string; detail?: string };
+    expect(body.error).toBe("incomplete_transport");
+    expect(body.detail).toMatch(/user/i);
+  });
+
+  it("leaves secret unchanged when omitted", async () => {
+    await setMailSettings(
+      { scopeType: "organization", scopeId: ORG_MAIL },
+      {
+        provider: "smtp",
+        host: "smtp.before.example.com",
+        port: 587,
+        user: "a@example.com",
+        fromAddress: "a@example.com",
+        smtpPassword: "keep-secret",
+      },
+      prisma,
+    );
     const before = await prisma.mailSettings.findUnique({
       where: { scope_type_scope_id: { scope_type: "organization", scope_id: ORG_MAIL } },
     });
@@ -246,8 +268,10 @@ describe("PUT /api/admin/mail-settings", () => {
       headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         provider: "smtp",
-        fromAddress: "rotate@example.com",
         host: "smtp.rotate.example.com",
+        port: 587,
+        user: "rotate@example.com",
+        fromAddress: "rotate@example.com",
         smtpPassword: "new-rotate-secret",
       }),
     });
@@ -260,15 +284,18 @@ describe("PUT /api/admin/mail-settings", () => {
   });
 
   it("clears secret when empty string sent", async () => {
-    await prisma.mailSettings.create({
-      data: {
-        scope_type: "organization",
-        scope_id: ORG_MAIL,
+    await setMailSettings(
+      { scopeType: "organization", scopeId: ORG_MAIL },
+      {
         provider: "smtp",
-        from_address: "clear@example.com",
-        smtp_password_enc: "enc-value",
+        host: "smtp.clear.example.com",
+        port: 587,
+        user: "clear@example.com",
+        fromAddress: "clear@example.com",
+        smtpPassword: "clear-me",
       },
-    });
+      prisma,
+    );
 
     const res = await app.request("/api/admin/mail-settings", {
       method: "PUT",
@@ -310,8 +337,14 @@ describe("PUT /api/admin/mail-settings", () => {
   });
 
   it("allows save when env locks provider but body omits locked keys", async () => {
-    const saved = { EMAIL_PROVIDER: process.env.EMAIL_PROVIDER };
+    const saved = {
+      EMAIL_PROVIDER: process.env.EMAIL_PROVIDER,
+      SMTP_USER: process.env.SMTP_USER,
+      SMTP_PASSWORD: process.env.SMTP_PASSWORD,
+    };
     process.env.EMAIL_PROVIDER = "smtp";
+    process.env.SMTP_USER = "env-user@example.com";
+    process.env.SMTP_PASSWORD = "env-pass";
     try {
       const res = await app.request("/api/admin/mail-settings", {
         method: "PUT",
@@ -329,8 +362,10 @@ describe("PUT /api/admin/mail-settings", () => {
       expect(row?.from_address).toBe("env-lock-save@example.com");
       expect(row?.host).toBe("smtp.db-only.example.com");
     } finally {
-      if (saved.EMAIL_PROVIDER === undefined) delete process.env.EMAIL_PROVIDER;
-      else process.env.EMAIL_PROVIDER = saved.EMAIL_PROVIDER;
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
   });
 
@@ -393,6 +428,9 @@ describe("PUT /api/admin/mail-settings", () => {
       headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         provider: "smtp",
+        host: "smtp.audit.example.com",
+        port: 587,
+        user: "audit@example.com",
         fromAddress: "audit@example.com",
         smtpPassword: "audit-secret-value",
       }),

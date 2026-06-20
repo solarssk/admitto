@@ -20,7 +20,7 @@ export async function resolveInstanceOrganizationId(
       select: { id: true },
     });
     if (!org) {
-      throw new Error(`INSTANCE_ORG_ID not found: ${fromEnv}`);
+      throw new Error("INSTANCE_ORG_ID does not match any organization");
     }
     return org.id;
   }
