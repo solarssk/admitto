@@ -19,7 +19,9 @@ export { buildItemDetail, resolveEventItemContents } from "./event-item-contents
 export { DEFAULT_EVENT_ITEM_KEYS } from "./event-items.js";
 export { parseEventOpsConfig } from "./ops-config.js";
 export { writeActionLog, writeBulkActionLog } from "./ops-audit.js";
+export { writeAdminAuditLog } from "./admin-audit.js";
 export type { OpsAuditContext } from "./ops-audit.js";
+export type { AdminAuditWriteInput } from "./admin-audit.js";
 export type {
   TicketMode,
   ResolvedTicket,

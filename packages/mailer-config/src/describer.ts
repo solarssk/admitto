@@ -32,50 +32,21 @@ function secretField(
   return field(null, "default");
 }
 
-/**
- * Returns per-field descriptors for the UI Settings screen.
- * Secrets are always masked ("••••") — never decrypted.
- * locked=true means the field is set in env and cannot be edited from the UI.
- *
- * Fields with source="default" carry the actual runtime default value (same as
- * what parseMailerConfig applies), not null, so the UI shows effective config.
- */
-export async function describeMailConfig(
-  eventId: string,
-  prisma: PrismaClient,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<ConfigDescriptor> {
-  const envFields = rawMailFieldsFromEnv(env);
-
-  const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
-
-  const [ev, org]: [Row, Row] = await Promise.all([
-    prisma.mailSettings.findUnique({
-      where: { scope_type_scope_id: { scope_type: "event", scope_id: eventId } },
-    }),
-    prisma.mailSettings.findUnique({
-      where: {
-        scope_type_scope_id: {
-          scope_type: "organization",
-          scope_id: event.organization_id,
-        },
-      },
-    }),
-  ]);
-
-  // Resolve provider first so we can look up its defaults.
+function buildConfigDescriptor(
+  envFields: ReturnType<typeof rawMailFieldsFromEnv>,
+  ev: Row,
+  org: Row,
+): ConfigDescriptor {
   const providerDesc = resolveField(envFields.provider, ev?.provider, org?.provider, null);
   const d = getProviderDefaults(providerDesc.value);
 
   return {
     provider: providerDesc,
-    // shared sender
     fromAddress: resolveField(envFields.fromAddress, ev?.from_address, org?.from_address, null),
     fromName: resolveField(envFields.fromName, ev?.from_name, org?.from_name, null),
     replyTo: resolveField(envFields.replyTo, ev?.reply_to, org?.reply_to, null),
     envelopeFrom: resolveField(envFields.envelopeFrom, ev?.envelope_from, org?.envelope_from, null),
     allowedFromDomain: resolveField(undefined, ev?.allowed_from_domain, org?.allowed_from_domain, null),
-    // smtp non-secret (defaults from schema via getProviderDefaults)
     host: resolveField(envFields.host, ev?.host, org?.host, null),
     port: resolveField(envFields.port, ev?.port, org?.port, d.port ?? null),
     secure: resolveField(envFields.secure, ev?.secure, org?.secure, d.secure ?? null),
@@ -110,13 +81,11 @@ export async function describeMailConfig(
       d.greetingTimeout ?? null,
     ),
     socketTimeout: resolveField(envFields.socketTimeout, ev?.socket_timeout, org?.socket_timeout, d.socketTimeout ?? null),
-    // smtp secret — masked
     smtpPassword: secretField(
       envFields.smtpPassword !== undefined,
       !!ev?.smtp_password_enc,
       !!org?.smtp_password_enc,
     ),
-    // graph non-secret
     mailbox: resolveField(envFields.mailbox, ev?.mailbox, org?.mailbox, null),
     tenantId: resolveField(envFields.tenantId, ev?.tenant_id, org?.tenant_id, null),
     clientId: resolveField(envFields.clientId, ev?.client_id, org?.client_id, null),
@@ -126,13 +95,11 @@ export async function describeMailConfig(
       org?.save_to_sent_items,
       d.saveToSentItems ?? null,
     ),
-    // graph secret — masked
     graphClientSecret: secretField(
       envFields.graphClientSecret !== undefined,
       !!ev?.graph_client_secret_enc,
       !!org?.graph_client_secret_enc,
     ),
-    // power automate secrets — masked
     powerAutomateUrl: secretField(
       envFields.powerAutomateUrl !== undefined,
       !!ev?.power_automate_url_enc,
@@ -144,4 +111,58 @@ export async function describeMailConfig(
       !!org?.power_automate_key_enc,
     ),
   };
+}
+
+/**
+ * Returns per-field descriptors for the UI Settings screen.
+ * Secrets are always masked ("••••") — never decrypted.
+ * locked=true means the field is set in env and cannot be edited from the UI.
+ */
+export async function describeMailConfig(
+  eventId: string,
+  prisma: PrismaClient,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ConfigDescriptor> {
+  const envFields = rawMailFieldsFromEnv(env);
+
+  const event = await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
+
+  const [ev, org]: [Row, Row] = await Promise.all([
+    prisma.mailSettings.findUnique({
+      where: { scope_type_scope_id: { scope_type: "event", scope_id: eventId } },
+    }),
+    prisma.mailSettings.findUnique({
+      where: {
+        scope_type_scope_id: {
+          scope_type: "organization",
+          scope_id: event.organization_id,
+        },
+      },
+    }),
+  ]);
+
+  return buildConfigDescriptor(envFields, ev, org);
+}
+
+/**
+ * Org-scoped describe for instance Settings (ADR 0031).
+ * Precedence: env > organization DB > default (no event layer).
+ */
+export async function describeMailConfigForOrg(
+  organizationId: string,
+  prisma: PrismaClient,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ConfigDescriptor> {
+  const envFields = rawMailFieldsFromEnv(env);
+
+  const org = await prisma.mailSettings.findUnique({
+    where: {
+      scope_type_scope_id: {
+        scope_type: "organization",
+        scope_id: organizationId,
+      },
+    },
+  });
+
+  return buildConfigDescriptor(envFields, null, org);
 }

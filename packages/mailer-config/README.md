@@ -15,8 +15,10 @@ import {
 
 | Function | Purpose |
 |----------|---------|
-| `resolveMailConfig(scope, prisma, env?)` | Full config for sending — decrypts secrets via `ENCRYPTION_KEY` |
-| `describeMailConfig(scope, prisma, env?)` | Masked read-only view for admin/settings (no plaintext secrets) |
+| `resolveMailConfig(eventId, prisma, env?)` | Full config for sending — decrypts secrets via `ENCRYPTION_KEY` |
+| `resolveMailConfigForOrg(organizationId, prisma, env?)` | Org-scoped resolve for instance Settings (no event layer) |
+| `describeMailConfig(eventId, prisma, env?)` | Masked read-only view for admin/settings (no plaintext secrets) |
+| `describeMailConfigForOrg(organizationId, prisma, env?)` | Org-scoped masked describe for instance Settings |
 | `setMailSettings(scope, input, prisma)` | Persist org/event overrides |
 | `rawMailFieldsFromEnv(env?)` | Bootstrap fields from deployment env (`EMAIL_PROVIDER`, SMTP/Graph/PA vars) |
 

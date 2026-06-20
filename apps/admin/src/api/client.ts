@@ -26,6 +26,8 @@ import type {
   PreviewTemplateResponse,
   TestSendBody,
   TestSendResponse,
+  MailSettingsResponse,
+  SaveMailSettingsBody,
   EventDeliveriesListParams,
   EventDeliveriesListResponse,
 } from "./types.js";
@@ -543,4 +545,22 @@ export async function exportAttendees(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/** Load instance mail transport settings (superadmin). */
+export async function fetchMailSettings(signal?: AbortSignal): Promise<MailSettingsResponse> {
+  const res = await fetch("/api/admin/mail-settings", { credentials: "same-origin", signal });
+  return parseJson<MailSettingsResponse>(res);
+}
+
+/** Save instance mail transport settings (superadmin). */
+export async function saveMailSettings(body: SaveMailSettingsBody): Promise<MailSettingsResponse> {
+  const res = await fetch("/api/admin/mail-settings", jsonPutInit(body));
+  return parseJson<MailSettingsResponse>(res);
+}
+
+/** Send a transport-level test email (superadmin). */
+export async function sendMailTransportTest(to: string): Promise<TestSendResponse> {
+  const res = await fetch("/api/admin/mail-settings/test", jsonPostInit({ to }));
+  return parseJson<TestSendResponse>(res);
 }

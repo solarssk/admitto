@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setMailSettings } from "../src/mailSettings.js";
-import { describeMailConfig } from "../src/describer.js";
+import { describeMailConfig, describeMailConfigForOrg } from "../src/describer.js";
 import { resetDb } from "./resetDb.js";
 
 const prisma = new PrismaClient();
@@ -180,5 +180,29 @@ describe("describeMailConfig — provider defaults", () => {
     const desc = await describeMailConfig("evt-d-clean", prisma, {});
     expect(desc.port.value).toBeNull();
     expect(desc.port.source).toBe("default");
+  });
+});
+
+describe("describeMailConfigForOrg — org-scoped instance settings", () => {
+  it("reads organization MailSettings without event layer", async () => {
+    const desc = await describeMailConfigForOrg("org-d", prisma, {});
+    expect(desc.host.source).toBe("organization");
+    expect(desc.host.value).toBe("smtp.org.example.com");
+    expect(desc.smtpPassword.value).toBe("••••");
+    expect(JSON.stringify(desc)).not.toContain("org-secret-pass");
+  });
+
+  it("ignores event overrides when describing org only", async () => {
+    const desc = await describeMailConfigForOrg("org-d", prisma, {});
+    expect(desc.host.value).toBe("smtp.org.example.com");
+    expect(desc.host.value).not.toBe("smtp.event.example.com");
+  });
+
+  it("env field wins and is locked", async () => {
+    const desc = await describeMailConfigForOrg("org-d", prisma, {
+      SMTP_HOST: "smtp.env-only.example.com",
+    });
+    expect(desc.host.source).toBe("env");
+    expect(desc.host.locked).toBe(true);
   });
 });

@@ -77,6 +77,38 @@ export async function resolveMailConfig(
   return parseMailerConfig(raw);
 }
 
+/**
+ * Resolves effective MailerConfig for an organization (instance Settings).
+ * Precedence: env > organization MailSettings > provider default (no event layer).
+ */
+export async function resolveMailConfigForOrg(
+  organizationId: string,
+  prisma: PrismaClient,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<MailerConfig> {
+  const envFields = rawMailFieldsFromEnv(env);
+
+  const orgRow = await prisma.mailSettings.findUnique({
+    where: {
+      scope_type_scope_id: {
+        scope_type: "organization",
+        scope_id: organizationId,
+      },
+    },
+  });
+
+  const provider = first<string>(envFields.provider, orgRow?.provider);
+
+  if (!provider) {
+    throw new Error(
+      "Cannot resolve mail provider: not set in env (EMAIL_PROVIDER) or organization MailSettings.",
+    );
+  }
+
+  const raw = buildRawConfig(provider, envFields, null, orgRow);
+  return parseMailerConfig(raw);
+}
+
 function buildRawConfig(
   provider: string,
   env: ReturnType<typeof rawMailFieldsFromEnv>,
