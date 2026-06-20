@@ -6,7 +6,7 @@ import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import type { ExportPayload } from "@admitto/mailer";
 import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 import { setMailSettings } from "@admitto/mailer-config";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
@@ -21,6 +21,7 @@ const exported: ExportPayload[] = [];
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
+let rateLimitStore: InMemoryRateLimitStore;
 let superId: string;
 let adminId: string;
 let superCookie = "";
@@ -81,10 +82,11 @@ beforeAll(async () => {
   prisma = new PrismaClient();
   await seed(prisma);
 
+  rateLimitStore = new InMemoryRateLimitStore();
   app = createApp({
     prisma,
     baseUrl: "https://tickets.example.com",
-    rateLimitStore: createRateLimitStore(),
+    rateLimitStore,
     skipCheckinBootValidation: true,
     adminDistRoot,
     mailDeliveryDeps: {
@@ -523,5 +525,35 @@ describe("POST /api/admin/mail-settings/test", () => {
       body: JSON.stringify({ to: "tester@example.com" }),
     });
     expect(res.status).toBe(403);
+  });
+
+  it("returns 429 after 5 test sends per minute", async () => {
+    await prisma.mailSettings.create({
+      data: {
+        scope_type: "organization",
+        scope_id: ORG_MAIL,
+        provider: "export_only",
+        from_address: "transport@example.com",
+      },
+    });
+    rateLimitStore.reset();
+
+    for (let i = 0; i < 5; i++) {
+      const res = await app.request("/api/admin/mail-settings/test", {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ to: "tester@example.com" }),
+      });
+      expect(res.status).toBe(200);
+    }
+
+    const limited = await app.request("/api/admin/mail-settings/test", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "tester@example.com" }),
+    });
+    expect(limited.status).toBe(429);
+    const body = (await limited.json()) as { error?: string };
+    expect(body.error).toBe("too many requests");
   });
 });

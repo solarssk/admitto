@@ -114,24 +114,29 @@ export function tryParseOrgMailConfigFromRow(
   orgRow: MailSettings | null,
   env: NodeJS.ProcessEnv = process.env,
 ): { ok: true } | { ok: false; error: string } {
-  const envFields = rawMailFieldsFromEnv(env);
-  const provider = first<string>(envFields.provider, orgRow?.provider ?? undefined);
-  if (!provider) {
-    return { ok: true };
-  }
+  try {
+    const envFields = rawMailFieldsFromEnv(env);
+    const provider = first<string>(envFields.provider, orgRow?.provider ?? undefined);
+    if (!provider) {
+      return { ok: true };
+    }
 
-  const raw = buildRawConfig(provider, envFields, null, orgRow);
-  const parsed = safeParseMailerConfig(raw);
-  if (parsed.success) {
-    return { ok: true };
-  }
+    const raw = buildRawConfig(provider, envFields, null, orgRow);
+    const parsed = safeParseMailerConfig(raw);
+    if (parsed.success) {
+      return { ok: true };
+    }
 
-  const issue = parsed.error.issues[0];
-  const field = issue?.path.length ? issue.path.join(".") : "configuration";
-  return {
-    ok: false,
-    error: `${field}: ${issue?.message ?? "invalid"}`,
-  };
+    const issue = parsed.error.issues[0];
+    const field = issue?.path.length ? issue.path.join(".") : "configuration";
+    return {
+      ok: false,
+      error: `${field}: ${issue?.message ?? "invalid"}`,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "invalid mail environment configuration";
+    return { ok: false, error: message };
+  }
 }
 
 function buildRawConfig(

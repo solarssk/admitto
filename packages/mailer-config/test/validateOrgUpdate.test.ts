@@ -61,4 +61,23 @@ describe("validateOrgMailSettingsUpdate", () => {
     const result = validateOrgMailSettingsUpdate(current, { smtpPassword: "" }, {});
     expect(result).toEqual({ ok: true });
   });
+
+  it("returns ok false without throwing when env mail fields are malformed", () => {
+    const result = validateOrgMailSettingsUpdate(
+      null,
+      {
+        provider: "smtp",
+        host: "smtp.example.com",
+        port: 587,
+        user: "u@example.com",
+        fromAddress: "u@example.com",
+        smtpPassword: "secret",
+      },
+      { SMTP_SECURE: "not-a-boolean" },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/SMTP_SECURE/i);
+    }
+  });
 });

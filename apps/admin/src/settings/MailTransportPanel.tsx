@@ -37,7 +37,7 @@ function boolValue(fd: MailPlainFieldDto<boolean | null>, fallback: boolean): bo
 function draftFromResponse(data: MailSettingsResponse): MailDraft {
   const f = data.fields;
   return {
-    provider: (f.provider.value as MailProvider | null) ?? "",
+    provider: f.provider.value ?? "",
     fromAddress: strValue(f.fromAddress),
     fromName: strValue(f.fromName),
     replyTo: strValue(f.replyTo),

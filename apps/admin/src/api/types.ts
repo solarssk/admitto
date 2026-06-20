@@ -298,8 +298,10 @@ export interface MailSecretFieldDto {
   locked: boolean;
 }
 
+export type MailProvider = "smtp" | "graph" | "powerautomate" | "export_only";
+
 export interface MailSettingsFieldsDto {
-  provider: MailPlainFieldDto<string | null>;
+  provider: MailPlainFieldDto<MailProvider | null>;
   fromAddress: MailPlainFieldDto<string | null>;
   fromName: MailPlainFieldDto<string | null>;
   replyTo: MailPlainFieldDto<string | null>;
@@ -334,8 +336,6 @@ export interface MailSettingsResponse {
   isProduction: boolean;
   fields: MailSettingsFieldsDto;
 }
-
-export type MailProvider = "smtp" | "graph" | "powerautomate" | "export_only";
 
 export interface SaveMailSettingsBody {
   /** Omit = unchanged; `""` clears stored provider (Not configured). */

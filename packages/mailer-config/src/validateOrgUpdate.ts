@@ -1,5 +1,4 @@
 import type { MailSettings } from "@prisma/client";
-import { rawMailFieldsFromEnv } from "./envFields.js";
 import { mergeOrgMailSettingsRow } from "./mailSettings.js";
 import { tryParseOrgMailConfigFromRow } from "./resolver.js";
 import type { MailSettingsInput } from "./types.js";
@@ -15,7 +14,9 @@ function effectiveProvider(
   merged: MailSettings,
   env: NodeJS.ProcessEnv,
 ): string | null | undefined {
-  return rawMailFieldsFromEnv(env).provider ?? merged.provider;
+  const fromEnv = env.EMAIL_PROVIDER?.trim();
+  if (fromEnv) return fromEnv.toLowerCase();
+  return merged.provider;
 }
 
 function shouldValidateMergedTransport(

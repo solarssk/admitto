@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { setMailSettings } from "../src/mailSettings.js";
 import { describeMailConfig, describeMailConfigForOrg } from "../src/describer.js";
 import { resetDb } from "./resetDb.js";
@@ -184,7 +184,7 @@ describe("describeMailConfig — provider defaults", () => {
 });
 
 describe("describeMailConfigForOrg — org-scoped instance settings", () => {
-  beforeAll(async () => {
+  beforeEach(async () => {
     await setMailSettings(
       { scopeType: "organization", scopeId: "org-d" },
       {
