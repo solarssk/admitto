@@ -184,6 +184,21 @@ describe("describeMailConfig — provider defaults", () => {
 });
 
 describe("describeMailConfigForOrg — org-scoped instance settings", () => {
+  beforeAll(async () => {
+    await setMailSettings(
+      { scopeType: "organization", scopeId: "org-d" },
+      {
+        provider: "smtp",
+        host: "smtp.org.example.com",
+        port: 587,
+        user: "org@example.com",
+        fromAddress: "org@example.com",
+        smtpPassword: "org-secret-pass",
+      },
+      prisma,
+    );
+  });
+
   it("reads organization MailSettings without event layer", async () => {
     const desc = await describeMailConfigForOrg("org-d", prisma, {});
     expect(desc.host.source).toBe("organization");

@@ -1,4 +1,4 @@
-import type { MailProvider, SaveMailSettingsBody } from "../api/types.js";
+import type { MailProvider, MailSettingsFieldsDto, SaveMailSettingsBody } from "../api/types.js";
 
 export type MailDraft = {
   provider: MailProvider | "";
@@ -91,7 +91,7 @@ function optionalInt(value: string): number | undefined {
 export function validateMailDraft(draft: MailDraft): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
-  if (draft.provider && draft.provider !== "export_only") {
+  if (draft.provider) {
     const from = draft.fromAddress.trim();
     if (!from || !EMAIL_RE.test(from)) {
       errors.push("From address must be a valid email.");
@@ -122,49 +122,90 @@ export function validateMailDraft(draft: MailDraft): { valid: boolean; errors: s
   return { valid: errors.length === 0, errors };
 }
 
+function setClearableString(
+  body: SaveMailSettingsBody,
+  key: keyof SaveMailSettingsBody,
+  value: string,
+): void {
+  const trimmed = value.trim();
+  if (trimmed) {
+    (body as Record<string, string>)[key] = trimmed;
+  } else {
+    (body as Record<string, string>)[key] = "";
+  }
+}
+
+export function isMailSettingsDirty(
+  draft: MailDraft,
+  savedDraft: MailDraft,
+  secrets: SecretEdits,
+): boolean {
+  if (JSON.stringify(draft) !== JSON.stringify(savedDraft)) return true;
+  return Object.values(secrets).some((edit) => edit.mode !== "idle");
+}
+
 export function buildSaveMailSettingsBody(
   draft: MailDraft,
   secrets: SecretEdits,
+  lockedKeys: ReadonlySet<keyof MailSettingsFieldsDto> = new Set(),
 ): SaveMailSettingsBody {
   const body: SaveMailSettingsBody = {};
+  const unlocked = (key: keyof MailSettingsFieldsDto) => !lockedKeys.has(key);
 
-  if (draft.provider) body.provider = draft.provider;
-  if (draft.fromAddress.trim()) body.fromAddress = draft.fromAddress.trim();
-  else if (draft.fromAddress === "") body.fromAddress = "";
-  if (draft.fromName.trim()) body.fromName = draft.fromName.trim();
-  if (draft.replyTo.trim()) body.replyTo = draft.replyTo.trim();
-  if (draft.envelopeFrom.trim()) body.envelopeFrom = draft.envelopeFrom.trim();
-  if (draft.allowedFromDomain.trim()) body.allowedFromDomain = draft.allowedFromDomain.trim();
+  if (unlocked("provider")) {
+    body.provider = draft.provider || "";
+  }
+  if (unlocked("fromAddress")) setClearableString(body, "fromAddress", draft.fromAddress);
+  if (unlocked("fromName")) setClearableString(body, "fromName", draft.fromName);
+  if (unlocked("replyTo")) setClearableString(body, "replyTo", draft.replyTo);
+  if (unlocked("envelopeFrom")) setClearableString(body, "envelopeFrom", draft.envelopeFrom);
+  if (unlocked("allowedFromDomain")) {
+    setClearableString(body, "allowedFromDomain", draft.allowedFromDomain);
+  }
 
   if (draft.provider === "smtp") {
-    body.host = draft.host.trim();
-    const port = optionalInt(draft.port);
-    if (port !== undefined && !Number.isNaN(port)) body.port = port;
-    body.secure = draft.secure;
-    body.requireTls = draft.requireTls;
-    body.tlsRejectUnauthorized = draft.tlsRejectUnauthorized;
-    if (draft.user.trim()) body.user = draft.user.trim();
-    if (draft.heloName.trim()) body.heloName = draft.heloName.trim();
-    body.pool = draft.pool;
-    const maxConn = optionalInt(draft.maxConnections);
-    if (maxConn !== undefined && !Number.isNaN(maxConn)) body.maxConnections = maxConn;
-    const maxMsg = optionalInt(draft.maxMessages);
-    if (maxMsg !== undefined && !Number.isNaN(maxMsg)) body.maxMessages = maxMsg;
-    const rate = optionalInt(draft.rateLimitPerMinute);
-    if (rate !== undefined && !Number.isNaN(rate)) body.rateLimitPerMinute = rate;
-    const connT = optionalInt(draft.connectionTimeout);
-    if (connT !== undefined && !Number.isNaN(connT)) body.connectionTimeout = connT;
-    const greetT = optionalInt(draft.greetingTimeout);
-    if (greetT !== undefined && !Number.isNaN(greetT)) body.greetingTimeout = greetT;
-    const sockT = optionalInt(draft.socketTimeout);
-    if (sockT !== undefined && !Number.isNaN(sockT)) body.socketTimeout = sockT;
+    if (unlocked("host")) body.host = draft.host.trim();
+    if (unlocked("port")) {
+      const port = optionalInt(draft.port);
+      if (port !== undefined && !Number.isNaN(port)) body.port = port;
+    }
+    if (unlocked("secure")) body.secure = draft.secure;
+    if (unlocked("requireTls")) body.requireTls = draft.requireTls;
+    if (unlocked("tlsRejectUnauthorized")) body.tlsRejectUnauthorized = draft.tlsRejectUnauthorized;
+    if (unlocked("user")) setClearableString(body, "user", draft.user);
+    if (unlocked("heloName")) setClearableString(body, "heloName", draft.heloName);
+    if (unlocked("pool")) body.pool = draft.pool;
+    if (unlocked("maxConnections")) {
+      const maxConn = optionalInt(draft.maxConnections);
+      if (maxConn !== undefined && !Number.isNaN(maxConn)) body.maxConnections = maxConn;
+    }
+    if (unlocked("maxMessages")) {
+      const maxMsg = optionalInt(draft.maxMessages);
+      if (maxMsg !== undefined && !Number.isNaN(maxMsg)) body.maxMessages = maxMsg;
+    }
+    if (unlocked("rateLimitPerMinute")) {
+      const rate = optionalInt(draft.rateLimitPerMinute);
+      if (rate !== undefined && !Number.isNaN(rate)) body.rateLimitPerMinute = rate;
+    }
+    if (unlocked("connectionTimeout")) {
+      const connT = optionalInt(draft.connectionTimeout);
+      if (connT !== undefined && !Number.isNaN(connT)) body.connectionTimeout = connT;
+    }
+    if (unlocked("greetingTimeout")) {
+      const greetT = optionalInt(draft.greetingTimeout);
+      if (greetT !== undefined && !Number.isNaN(greetT)) body.greetingTimeout = greetT;
+    }
+    if (unlocked("socketTimeout")) {
+      const sockT = optionalInt(draft.socketTimeout);
+      if (sockT !== undefined && !Number.isNaN(sockT)) body.socketTimeout = sockT;
+    }
   }
 
   if (draft.provider === "graph") {
-    if (draft.mailbox.trim()) body.mailbox = draft.mailbox.trim();
-    body.tenantId = draft.tenantId.trim();
-    body.clientId = draft.clientId.trim();
-    body.saveToSentItems = draft.saveToSentItems;
+    if (unlocked("mailbox")) setClearableString(body, "mailbox", draft.mailbox);
+    if (unlocked("tenantId")) body.tenantId = draft.tenantId.trim();
+    if (unlocked("clientId")) body.clientId = draft.clientId.trim();
+    if (unlocked("saveToSentItems")) body.saveToSentItems = draft.saveToSentItems;
   }
 
   for (const key of [
@@ -173,6 +214,7 @@ export function buildSaveMailSettingsBody(
     "powerAutomateUrl",
     "powerAutomateKey",
   ] as const) {
+    if (!unlocked(key)) continue;
     const edit = secrets[key];
     if (edit.mode === "replace" && edit.value) {
       body[key] = edit.value;

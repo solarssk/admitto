@@ -14,7 +14,16 @@ export async function resolveInstanceOrganizationId(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<string> {
   const fromEnv = env.INSTANCE_ORG_ID?.trim();
-  if (fromEnv) return fromEnv;
+  if (fromEnv) {
+    const org = await prisma.organization.findUnique({
+      where: { id: fromEnv },
+      select: { id: true },
+    });
+    if (!org) {
+      throw new Error(`INSTANCE_ORG_ID not found: ${fromEnv}`);
+    }
+    return org.id;
+  }
 
   const preferred = await prisma.organization.findUnique({
     where: { id: INSTANCE_ORG_DEFAULT_ID },

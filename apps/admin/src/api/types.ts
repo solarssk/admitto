@@ -338,7 +338,8 @@ export interface MailSettingsResponse {
 export type MailProvider = "smtp" | "graph" | "powerautomate" | "export_only";
 
 export interface SaveMailSettingsBody {
-  provider?: MailProvider;
+  /** Omit = unchanged; `""` clears stored provider (Not configured). */
+  provider?: MailProvider | "";
   fromAddress?: string;
   fromName?: string;
   replyTo?: string;

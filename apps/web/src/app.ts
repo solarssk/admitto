@@ -108,6 +108,7 @@ import {
   handleGetMailSettings,
   handlePutMailSettings,
   handlePostMailSettingsTest,
+  MAX_MAIL_SETTINGS_BODY_BYTES,
 } from "./admin/mail-settings-routes.js";
 import { handlePostClientError } from "./admin/client-error-routes.js";
 import { createStaffSpaHandlers } from "./staff-spa.js";
@@ -218,6 +219,10 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   const templateTestSendBodyLimit = bodyLimit({
     maxSize: MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const mailSettingsBodyLimit = bodyLimit({
+    maxSize: MAX_MAIL_SETTINGS_BODY_BYTES,
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
@@ -376,7 +381,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
   app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));
   app.get("/api/admin/mail-settings", staffAdminGate, (c) => handleGetMailSettings(c, db));
-  app.put("/api/admin/mail-settings", jsonPostCsrf, staffAdminGate, (c) => handlePutMailSettings(c, db));
+  app.put("/api/admin/mail-settings", mailSettingsBodyLimit, jsonPostCsrf, staffAdminGate, (c) =>
+    handlePutMailSettings(c, db),
+  );
   app.post(
     "/api/admin/mail-settings/test",
     jsonPostCsrf,

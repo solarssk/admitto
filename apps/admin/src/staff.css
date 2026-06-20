@@ -618,6 +618,19 @@
 }
 
 /* Mail transport panel */
+/* Mail transport panel */
+.mail-transport__desc,
+.mail-transport__unsaved-hint {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.mail-transport__unsaved-hint {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
 .mail-transport-form {
   display: flex;
   flex-direction: column;

@@ -20,6 +20,9 @@ import { writeAdminAuditLog } from "@admitto/tickets";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
+/** Max JSON body for PUT /api/admin/mail-settings (includes secret fields). */
+export const MAX_MAIL_SETTINGS_BODY_BYTES = 65_536;
+
 const MAIL_PROVIDER = z.enum(["graph", "smtp", "powerautomate", "export_only"]);
 
 const optionalEmail = z
@@ -28,7 +31,7 @@ const optionalEmail = z
 
 const putMailSettingsBodySchema = z
   .object({
-    provider: MAIL_PROVIDER.optional(),
+    provider: z.union([MAIL_PROVIDER, z.literal("")]).optional(),
     fromAddress: optionalEmail,
     fromName: z.string().max(200).optional(),
     replyTo: optionalEmail,
@@ -296,7 +299,7 @@ export async function handlePostMailSettingsTest(
       sessionId: audit.sessionId,
       ip: audit.ip,
       actionType: "mail_transport_tested",
-      metadata: { to: body.to, result: resultStatus },
+      metadata: { result: resultStatus },
     });
   } catch (auditErr) {
     console.error("[audit] mail_transport_tested log failed", auditErr);

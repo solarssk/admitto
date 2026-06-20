@@ -116,7 +116,10 @@ afterAll(async () => {
 type MailSettingsApi = {
   organizationId: string;
   isProduction: boolean;
-  fields: Record<string, { value?: unknown; set?: boolean; masked?: string | null; source: string }>;
+  fields: Record<
+    string,
+    { value?: unknown; set?: boolean; masked?: string | null; source: string; locked?: boolean }
+  >;
 };
 
 describe("GET /api/admin/mail-settings", () => {
@@ -151,6 +154,42 @@ describe("GET /api/admin/mail-settings", () => {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("marks env-sourced SMTP fields as locked", async () => {
+    const saved = {
+      EMAIL_PROVIDER: process.env.EMAIL_PROVIDER,
+      SMTP_HOST: process.env.SMTP_HOST,
+      SMTP_PORT: process.env.SMTP_PORT,
+      SMTP_USER: process.env.SMTP_USER,
+      SMTP_PASSWORD: process.env.SMTP_PASSWORD,
+      MAIL_FROM_ADDRESS: process.env.MAIL_FROM_ADDRESS,
+    };
+    process.env.EMAIL_PROVIDER = "smtp";
+    process.env.SMTP_HOST = "smtp.all-env.example.com";
+    process.env.SMTP_PORT = "587";
+    process.env.SMTP_USER = "env-user@example.com";
+    process.env.SMTP_PASSWORD = "env-secret";
+    process.env.MAIL_FROM_ADDRESS = "from-env@example.com";
+    try {
+      const res = await app.request("/api/admin/mail-settings", {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as MailSettingsApi;
+      expect(body.fields.provider?.locked).toBe(true);
+      expect(body.fields.host?.locked).toBe(true);
+      expect(body.fields.port?.locked).toBe(true);
+      expect(body.fields.user?.locked).toBe(true);
+      expect(body.fields.smtpPassword?.locked).toBe(true);
+      expect(body.fields.fromAddress?.locked).toBe(true);
+      expect(body.fields.host?.source).toBe("env");
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 });
 
@@ -270,6 +309,56 @@ describe("PUT /api/admin/mail-settings", () => {
     }
   });
 
+  it("allows save when env locks provider but body omits locked keys", async () => {
+    const saved = { EMAIL_PROVIDER: process.env.EMAIL_PROVIDER };
+    process.env.EMAIL_PROVIDER = "smtp";
+    try {
+      const res = await app.request("/api/admin/mail-settings", {
+        method: "PUT",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fromAddress: "env-lock-save@example.com",
+          host: "smtp.db-only.example.com",
+          port: 587,
+        }),
+      });
+      expect(res.status).toBe(200);
+      const row = await prisma.mailSettings.findUnique({
+        where: { scope_type_scope_id: { scope_type: "organization", scope_id: ORG_MAIL } },
+      });
+      expect(row?.from_address).toBe("env-lock-save@example.com");
+      expect(row?.host).toBe("smtp.db-only.example.com");
+    } finally {
+      if (saved.EMAIL_PROVIDER === undefined) delete process.env.EMAIL_PROVIDER;
+      else process.env.EMAIL_PROVIDER = saved.EMAIL_PROVIDER;
+    }
+  });
+
+  it("clears stored provider when provider is sent as empty string", async () => {
+    await prisma.mailSettings.create({
+      data: {
+        scope_type: "organization",
+        scope_id: ORG_MAIL,
+        provider: "smtp",
+        host: "smtp.clear.example.com",
+        from_address: "clear@example.com",
+      },
+    });
+
+    const res = await app.request("/api/admin/mail-settings", {
+      method: "PUT",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "" }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await prisma.mailSettings.findUnique({
+      where: { scope_type_scope_id: { scope_type: "organization", scope_id: ORG_MAIL } },
+    });
+    expect(row?.provider).toBeNull();
+    expect(row?.host).toBe("smtp.clear.example.com");
+  });
+
   it("rejects export_only in production", async () => {
     process.env.NODE_ENV = "production";
     const res = await app.request("/api/admin/mail-settings", {
@@ -354,9 +443,9 @@ describe("POST /api/admin/mail-settings/test", () => {
       orderBy: { created_at: "desc" },
     });
     expect(log).not.toBeNull();
-    const meta = log!.metadata as { to?: string; result?: string };
-    expect(meta.to).toBe("tester@example.com");
+    const meta = log!.metadata as { result?: string };
     expect(meta.result).toBe("sent");
+    expect(JSON.stringify(meta)).not.toContain("tester@example.com");
   });
 
   it("returns friendly error when transport not configured", async () => {

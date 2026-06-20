@@ -16,6 +16,7 @@ import {
   buildSaveMailSettingsBody,
   emptyMailDraft,
   emptySecretEdits,
+  isMailSettingsDirty,
   validateMailDraft,
   type MailDraft,
   type SecretEdits,
@@ -207,7 +208,12 @@ export function MailTransportPanel() {
     setSaving(true);
     setSaveError(null);
     try {
-      const body = buildSaveMailSettingsBody(draft, secrets);
+      const lockedKeys = new Set(
+        (Object.keys(apiData.fields) as Array<keyof typeof apiData.fields>).filter((key) =>
+          fieldLocked(key),
+        ),
+      );
+      const body = buildSaveMailSettingsBody(draft, secrets, lockedKeys);
       const data = await saveMailSettings(body);
       applyResponse(data);
       setSaveMessage("Mail settings saved.");
@@ -226,7 +232,16 @@ export function MailTransportPanel() {
     setSaveError(null);
   };
 
+  const hasUnsavedChanges = isMailSettingsDirty(draft, savedDraft, secrets);
+
   const handleTestSend = async () => {
+    if (hasUnsavedChanges) {
+      setTestStatus({
+        kind: "error",
+        message: "Save your changes before sending a test email.",
+      });
+      return;
+    }
     const to = testEmail.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
       setTestStatus({ kind: "error", message: "Enter a valid email address." });
@@ -242,10 +257,15 @@ export function MailTransportPanel() {
         setTestStatus({ kind: "error", message: result.error ?? "Send failed." });
       }
     } catch (err) {
-      setTestStatus({
-        kind: "error",
-        message: err instanceof ApiError ? err.message : "Send failed.",
-      });
+      let message = "Send failed.";
+      if (err instanceof ApiError) {
+        if (err.status === 400) {
+          message = "Enter a valid email address.";
+        } else {
+          message = err.message;
+        }
+      }
+      setTestStatus({ kind: "error", message });
     } finally {
       setTestSending(false);
     }
@@ -267,7 +287,7 @@ export function MailTransportPanel() {
 
   return (
     <Card
-      title="Mail transport"
+      title={hasUnsavedChanges ? "Mail transport *" : "Mail transport"}
       footer={
         <div className="foot-actions">
           <div className="foot-actions__status">
@@ -293,8 +313,14 @@ export function MailTransportPanel() {
             <Button type="button" variant="secondary" disabled={loading || saving} onClick={handleReset}>
               Reset
             </Button>
-            <Button type="button" variant="primary" disabled={loading || saving || !!loadError} onClick={() => void handleSave()}>
-              {saving ? "Saving…" : "Save"}
+            <Button
+              type="button"
+              variant="primary"
+              disabled={loading || saving || !!loadError}
+              onClick={() => void handleSave()}
+              aria-describedby={hasUnsavedChanges ? "mail-transport-unsaved" : undefined}
+            >
+              {saving ? "Saving…" : hasUnsavedChanges ? "Save changes" : "Save"}
             </Button>
           </div>
         </div>
@@ -311,7 +337,12 @@ export function MailTransportPanel() {
       )}
       {!loading && !loadError && apiData && (
         <div className="mail-transport-form">
-          <p className="mail-test-send__hint">
+          {hasUnsavedChanges && (
+            <p id="mail-transport-unsaved" className="mail-transport__unsaved-hint">
+              Unsaved changes — save before leaving this page.
+            </p>
+          )}
+          <p className="mail-transport__desc">
             Configure outbound mail for tickets and lifecycle messages.
           </p>
           <div className="mail-field-row">
@@ -332,7 +363,7 @@ export function MailTransportPanel() {
           </div>
 
           {provider === "export_only" && (
-            <p className="mail-dev-warning" role="status">
+            <p className="mail-dev-warning" role="alert">
               Dev/test only — cannot send real mail in production.
             </p>
           )}
@@ -517,7 +548,9 @@ export function MailTransportPanel() {
           <div className="mail-test-send">
             <h3 className="mail-test-send__title">Send test email</h3>
             <p className="mail-test-send__hint">
-              Verifies transport credentials with a trivial message (not an event template).
+              {hasUnsavedChanges
+                ? "Save your changes first — the test uses the saved configuration from the database, not unsaved form values."
+                : "Verifies transport credentials with a trivial message (not an event template)."}
             </p>
             <div className="mail-test-send__row">
               <Input
@@ -526,18 +559,22 @@ export function MailTransportPanel() {
                 value={testEmail}
                 onChange={(e) => setTestEmail(e.target.value)}
                 placeholder="you@example.com"
+                disabled={hasUnsavedChanges}
               />
               <Button
                 type="button"
                 variant="secondary"
-                disabled={testSending}
+                disabled={testSending || hasUnsavedChanges}
                 onClick={() => void handleTestSend()}
               >
                 {testSending ? "Sending…" : "Send test email"}
               </Button>
             </div>
             {testStatus && (
-              <p role="status" className={testStatus.kind === "ok" ? "text-success" : "text-error"}>
+              <p
+                role={testStatus.kind === "ok" ? "status" : "alert"}
+                className={testStatus.kind === "ok" ? "text-success" : "text-error"}
+              >
                 {testStatus.message}
               </p>
             )}
