@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "@admitto/ui";
+import { reportClientError } from "../reportClientError.js";
 
 type ErrorBoundaryProps = {
   children: ReactNode;
@@ -18,7 +19,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error("Admin UI error:", error, info.componentStack);
+    reportClientError(error, {
+      source: "admin-error-boundary",
+      componentStack: info.componentStack ?? undefined,
+    });
   }
 
   render(): ReactNode {
