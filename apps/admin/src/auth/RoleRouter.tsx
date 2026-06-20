@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "./AuthProvider.js";
-import { canAccessAdminPanel, canAccessCheckInPanel } from "./capabilities.js";
+import { canAccessAdminPanel, canAccessCheckInPanel, isSuperadmin } from "./capabilities.js";
 
 function RedirectToLogin() {
   useEffect(() => {
@@ -18,6 +18,15 @@ export function AdminGuard() {
       return <Navigate to="/operator" replace />;
     }
     return <RedirectToLogin />;
+  }
+  return <Outlet />;
+}
+
+/** Restricts child routes to users with instance superadmin role assignments. */
+export function SuperadminGuard() {
+  const { assignments } = useAuth();
+  if (!isSuperadmin(assignments)) {
+    return <Navigate to="/admin" replace />;
   }
   return <Outlet />;
 }

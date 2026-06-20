@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useParams } from "react-router-dom";
-import { AdminGuard, OperatorGuard } from "./auth/RoleRouter.js";
+import { AdminGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
 import { AuthProvider } from "./auth/AuthProvider.js";
 import { ConnectionStateProvider } from "./connection/ConnectionStateProvider.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { AdminShell } from "./layouts/AdminShell.js";
+import { EventsListShell } from "./layouts/EventsListShell.js";
+import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
+import { SettingsPage } from "./pages/SettingsPage.js";
 import { OperatorShell } from "./layouts/OperatorShell.js";
 import { EventsPickerPage } from "./pages/EventsPickerPage.js";
 import { CheckInEntryPage } from "./pages/CheckInEntryPage.js";
@@ -76,7 +79,14 @@ export default function App() {
         <ConnectionStateProvider>
           <Routes>
           <Route path="/admin" element={<AdminGuard />}>
+          <Route element={<EventsListShell />}>
             <Route index element={<EventsPickerPage />} />
+          </Route>
+            <Route path="settings" element={<SuperadminGuard />}>
+              <Route element={<InstanceSettingsShell />}>
+                <Route index element={<SettingsPage />} />
+              </Route>
+            </Route>
             <Route path="events/:eventId" element={<EventLayout />}>
               <Route index element={<Navigate to="overview" replace />} />
               {PLACEHOLDER_ROUTES.map((r) => (
