@@ -235,7 +235,6 @@ export function CommunicationPage() {
       setSaveStatus("Template saved.");
       setPreviewSubject(null);
       setPreviewHtml(null);
-      setOverrideConfirmOpen(false);
     } catch (err) {
       if (err instanceof TemplateValidationError) {
         setValidationErrors(err.errors);
@@ -247,6 +246,7 @@ export function CommunicationPage() {
       }
     } finally {
       setSaving(false);
+      setOverrideConfirmOpen(false);
     }
   };
 
