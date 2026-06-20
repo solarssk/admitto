@@ -19,12 +19,13 @@ export function reportClientError(error: unknown, context: ClientErrorContext): 
     path: window.location.pathname.slice(0, 256),
   };
 
+  // Same-origin POST; browser sets Origin for jsonPostCsrf. Fire-and-forget — a 401 before
+  // session bootstrap (e.g. crash inside AuthProvider) is expected and intentionally ignored.
   void fetch("/api/admin/client-errors", {
     method: "POST",
     credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
-      Origin: window.location.origin,
     },
     body: JSON.stringify(payload),
     keepalive: true,

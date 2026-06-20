@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 
 const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -9,6 +9,11 @@ export function useModalFocusTrap(
   open: boolean,
   onCancel: () => void,
 ): void {
+  const onCancelRef = useRef(onCancel);
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+  });
+
   useEffect(() => {
     if (!open) return;
 
@@ -26,7 +31,8 @@ export function useModalFocusTrap(
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onCancel();
+        event.stopPropagation();
+        onCancelRef.current();
         return;
       }
       if (event.key !== "Tab" || focusables.length === 0) return;
@@ -34,18 +40,20 @@ export function useModalFocusTrap(
       if (event.shiftKey) {
         if (document.activeElement === first) {
           event.preventDefault();
+          event.stopPropagation();
           last?.focus();
         }
       } else if (document.activeElement === last) {
         event.preventDefault();
+        event.stopPropagation();
         first?.focus();
       }
     };
 
-    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keydown", onKeyDown, true);
     return () => {
       document.body.style.overflow = prevOverflow;
-      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [open, onCancel, panelRef]);
+  }, [open, panelRef]);
 }

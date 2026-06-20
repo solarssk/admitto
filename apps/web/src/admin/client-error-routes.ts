@@ -11,7 +11,7 @@ const clientErrorSchema = z
   })
   .strict();
 
-/** POST /api/admin/client-errors — structured client-side error reports (no PII). */
+/** POST /api/admin/client-errors — structured client-side error reports (no PII). Requires staff session. */
 export async function handlePostClientError(c: Context) {
   let raw: unknown;
   try {

@@ -88,11 +88,11 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !deleteConfirmOpen) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, deleteConfirmOpen]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
