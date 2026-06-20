@@ -85,7 +85,10 @@ export function AdminShell({ event }: AdminShellProps) {
           </NavLink>
           {isSuperadmin(assignments) && (
             <>
-              <NavLink to="/admin/settings" className={({ isActive }) => `nav-item${isActive ? " nav-item--active" : ""}`}>
+              <NavLink
+                to="/admin/settings"
+                className={({ isActive }) => `nav-item${isActive ? " nav-item--active" : ""}`}
+              >
                 <i className="ti ti-settings" aria-hidden="true" />
                 <span>Instance settings</span>
               </NavLink>

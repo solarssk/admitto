@@ -3,7 +3,11 @@ import { Navigate, Outlet, Route, Routes, useParams } from "react-router-dom";
 import { AdminGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
 import { AuthProvider } from "./auth/AuthProvider.js";
 import { ConnectionStateProvider } from "./connection/ConnectionStateProvider.js";
+import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { AdminShell } from "./layouts/AdminShell.js";
+import { EventsListShell } from "./layouts/EventsListShell.js";
+import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
+import { SettingsPage } from "./pages/SettingsPage.js";
 import { OperatorShell } from "./layouts/OperatorShell.js";
 import { EventsPickerPage } from "./pages/EventsPickerPage.js";
 import { CheckInEntryPage } from "./pages/CheckInEntryPage.js";
@@ -13,8 +17,6 @@ import { AttendeesPage } from "./pages/AttendeesPage.js";
 import { ImportPage } from "./pages/ImportPage.js";
 import { RequirementsPage } from "./pages/RequirementsPage.js";
 import { CommunicationPage } from "./pages/CommunicationPage.js";
-import { SettingsPage } from "./pages/SettingsPage.js";
-import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
 import { ApiError, fetchAdminEvents } from "./api/client.js";
 import type { EventDto } from "./api/types.js";
@@ -72,11 +74,14 @@ function EventLayout() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ConnectionStateProvider>
-        <Routes>
+    <ErrorBoundary>
+      <AuthProvider>
+        <ConnectionStateProvider>
+          <Routes>
           <Route path="/admin" element={<AdminGuard />}>
+          <Route element={<EventsListShell />}>
             <Route index element={<EventsPickerPage />} />
+          </Route>
             <Route path="settings" element={<SuperadminGuard />}>
               <Route element={<InstanceSettingsShell />}>
                 <Route index element={<SettingsPage />} />
@@ -115,7 +120,8 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
-      </ConnectionStateProvider>
-    </AuthProvider>
+        </ConnectionStateProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

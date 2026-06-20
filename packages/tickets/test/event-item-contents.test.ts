@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildItemDetail, resolveEventItemContents } from "../src/event-item-contents.js";
+import { buildItemDetail, collectEventCustomDataFields, resolveEventItemContents } from "../src/event-item-contents.js";
 import { customDataValue } from "../src/custom-data.js";
 
 describe("resolveEventItemContents", () => {
@@ -51,6 +51,39 @@ describe("resolveEventItemContents", () => {
         contents: [{ label: "Bad", source_field: "Shirt-Size" }],
       }),
     ).toEqual([]);
+  });
+});
+
+describe("collectEventCustomDataFields", () => {
+  it("deduplicates source_field across items (first label wins)", () => {
+    expect(
+      collectEventCustomDataFields([
+        { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
+        { contents: [{ label: "Shirt (dup)", source_field: "shirt_size" }] },
+      ]),
+    ).toEqual([{ label: "Shirt size", source_field: "shirt_size" }]);
+  });
+
+  it("merges fields from multiple items", () => {
+    expect(
+      collectEventCustomDataFields([
+        { contents: [{ label: "Jacket size", source_field: "jacket_size" }] },
+        { contents: [{ label: "Socks size", source_field: "sock_size" }] },
+      ]),
+    ).toEqual([
+      { label: "Jacket size", source_field: "jacket_size" },
+      { label: "Socks size", source_field: "sock_size" },
+    ]);
+  });
+
+  it("resolves legacy size_field per config", () => {
+    expect(collectEventCustomDataFields([{ size_field: "shirt_size" }, {}])).toEqual([
+      { label: "Shirt size", source_field: "shirt_size" },
+    ]);
+  });
+
+  it("returns empty for no configs", () => {
+    expect(collectEventCustomDataFields([])).toEqual([]);
   });
 });
 

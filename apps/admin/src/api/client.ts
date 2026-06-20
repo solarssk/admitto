@@ -3,6 +3,7 @@ import type {
   AttendeeDetailDto,
   AttendeesListParams,
   AttendeesListResponse,
+  BrandingThemeDto,
   CheckInHistoryEntry,
   CheckInScanResponse,
   CheckInStatsResponse,
@@ -171,9 +172,17 @@ export async function fetchCheckInEvents(signal?: AbortSignal): Promise<EventDto
   return data.events;
 }
 
+/** Load instance branding theme for the staff or admin SPA. */
 export async function fetchStaffTheme(signal?: AbortSignal): Promise<ThemeResponse> {
   const url = isAdminAppPath() ? "/api/admin/theme" : "/api/staff/theme";
   const res = await fetch(url, { credentials: "same-origin", signal });
+  return parseJson<ThemeResponse>(res);
+}
+
+/** Persist instance branding theme (superadmin-only PUT). */
+export async function saveStaffTheme(body: BrandingThemeDto): Promise<ThemeResponse> {
+  const url = isAdminAppPath() ? "/api/admin/theme" : "/api/staff/theme";
+  const res = await fetch(url, jsonPutInit(body));
   return parseJson<ThemeResponse>(res);
 }
 
@@ -510,7 +519,8 @@ export async function fetchTicketTypes(
 export async function exportAttendees(
   eventId: string,
   params: { q?: string; status?: string; ticket_type?: string },
-  format: "xlsx" | "csv",
+  format: "xlsx" | "csv" | "pdf",
+  signal?: AbortSignal,
 ): Promise<void> {
   const urlParams = new URLSearchParams({ format });
   if (params.q) urlParams.set("q", params.q);
@@ -519,7 +529,7 @@ export async function exportAttendees(
 
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${urlParams.toString()}`,
-    { credentials: "same-origin" },
+    { credentials: "same-origin", signal },
   );
   if (!res.ok) {
     let message = `HTTP ${res.status}`;

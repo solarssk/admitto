@@ -1,10 +1,9 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 import { Avatar } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 
-/** Layout shell for instance-level settings (no event context). */
+/** Instance-scoped admin layout for superadmin settings (no event context). */
 export function InstanceSettingsShell() {
-  const navigate = useNavigate();
   const { user } = useAuth();
   const displayName = user.display_name || user.email.split("@")[0] || "Staff";
 
@@ -15,24 +14,30 @@ export function InstanceSettingsShell() {
           <span className="sidebar__brand-mark" aria-hidden="true" />
           <span>Admitto</span>
         </div>
-        <nav className="sidebar__nav" aria-label="Instance settings">
+        <div className="sidebar__event">
+          <div className="overline">Instance</div>
+          <div className="sidebar__context-meta">System-wide configuration</div>
+        </div>
+        <div className="sidebar__foot">
+          <NavLink to="/admin" className={({ isActive }) => `nav-item${isActive ? " nav-item--active" : ""}`} end>
+            <i className="ti ti-calendar-event" aria-hidden="true" />
+            <span>All events</span>
+          </NavLink>
           <NavLink
             to="/admin/settings"
             className={({ isActive }) => `nav-item${isActive ? " nav-item--active" : ""}`}
             end
           >
-            <i className="ti ti-mail" aria-hidden="true" />
-            <span>Mail transport</span>
+            <i className="ti ti-settings" aria-hidden="true" />
+            <span>Instance settings</span>
           </NavLink>
-        </nav>
-        <div className="sidebar__foot">
-          <button type="button" className="nav-item" onClick={() => navigate("/admin")}>
-            <i className="ti ti-calendar-event" aria-hidden="true" />
-            <span>All events</span>
-          </button>
           <a className="nav-item" href="/admin/auth/providers">
             <i className="ti ti-key" aria-hidden="true" />
             <span>Identity providers</span>
+          </a>
+          <a className="nav-item" href="/admin/auth/cf-access">
+            <i className="ti ti-shield-lock" aria-hidden="true" />
+            <span>Cloudflare Access</span>
           </a>
         </div>
       </aside>

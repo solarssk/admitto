@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import type { Context } from "hono";
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
@@ -9,11 +10,14 @@ import {
   type DeliveryDto,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
+import { formatEventDate, resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
+  collectEventCustomDataFields,
+  customDataValue,
   parseCustomData,
-  shirtSizeFromCustomData,
   writeActionLog,
   writeBulkActionLog,
+  type EventItemContent,
 } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -54,7 +58,17 @@ const patchAttendeeFieldsSchema = z
     company: z.string().trim().max(200).optional().nullable(),
     department: z.string().trim().max(200).optional().nullable(),
     ticket_type: z.string().trim().max(100).optional().nullable(),
-    shirt_size: z.string().trim().max(20).optional().nullable(),
+    custom_data_fields: z
+      .record(
+        z
+          .string()
+          .trim()
+          .min(1)
+          .max(60)
+          .regex(/^[a-z0-9_]+$/),
+        z.string().trim().max(100).nullable(),
+      )
+      .optional(),
   })
   .strict();
 
@@ -71,8 +85,9 @@ const resendBodySchema = z
 
 const EXPORT_ROW_CAP = 50_000;
 
-/** Column headers for attendee export files (XLSX/CSV). */
-const EXPORT_COLUMNS = [
+/** Fixed column headers for XLSX/PDF export (includes check-off). Attribute columns appended at runtime. */
+const EXPORT_BASE_COLUMNS = [
+  "✓",
   "Name",
   "Email",
   "Company",
@@ -82,12 +97,69 @@ const EXPORT_COLUMNS = [
   "Admitted at",
 ] as const;
 
+const EXPORT_BASE_PDF_WIDTHS = [22, 85, 100, 75, 70, 65, 75, 80] as const;
+const EXPORT_ATTRIBUTE_PDF_WIDTH = 55;
+/** Printable width on A4 landscape with 40pt side margins (pdfkit default). */
+const PDF_PRINTABLE_WIDTH = 762;
+
+if (EXPORT_BASE_PDF_WIDTHS.length !== EXPORT_BASE_COLUMNS.length) {
+  throw new Error("EXPORT_BASE_PDF_WIDTHS must match EXPORT_BASE_COLUMNS length");
+}
+
+const EXPORT_ATTENDEE_SELECT = {
+  name: true,
+  email: true,
+  company: true,
+  department: true,
+  custom_data: true,
+  ticket_type: true,
+  admitted_at: true,
+} as const;
+
+type SanitizedExportRow = {
+  check_off: string;
+  name: string;
+  email: string;
+  company: string;
+  department: string;
+  ticket_type: string;
+  check_in_status: string;
+  admitted_at: string;
+  attribute_values: string[];
+};
+
+type AttendeeListFilterParams = {
+  q?: string;
+  status: "all" | "admitted" | "not_admitted";
+  ticket_type?: string;
+};
+
+/** Format admitted_at for export in the event default timezone (YYYY-MM-DD HH:mm). */
+function formatAdmittedAtLocal(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+    .format(date)
+    .replace(",", "");
+}
+
 /** Guard against CSV/formula injection — prefix cells starting with = + - @ TAB CR. */
 function sanitizeCell(value: string | null | undefined): string {
   if (value == null) return "";
   const s = String(value);
   if (/^[=+\-@\t\r]/.test(s)) return `'${s}`;
   return s;
+}
+
+/** RFC 4180 CSV field quoting (escape embedded double quotes). */
+function quoteCsvCell(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
 /** RFC 6266 attachment header with `"` escaped in the filename. */
@@ -97,53 +169,52 @@ function exportContentDisposition(filename: string): string {
 }
 
 /** Build CSV text for sanitized export rows (CRLF, quoted fields). */
-function buildExportCsv(exportRows: {
-  name: string;
-  email: string;
-  company: string;
-  department: string;
-  ticket_type: string;
-  check_in_status: string;
-  admitted_at: string;
-}[]): string {
-  const header = EXPORT_COLUMNS.join(",");
+function buildExportCsv(exportRows: SanitizedExportRow[], exportColumns: string[]): string {
+  const csvColumns = exportColumns.slice(1);
+  const header = csvColumns.map(quoteCsvCell).join(",");
   const csvRows = exportRows.map((r) =>
-    [r.name, r.email, r.company, r.department, r.ticket_type, r.check_in_status, r.admitted_at]
-      .map((v) => `"${v.replace(/"/g, '""')}"`)
+    [
+      r.name,
+      r.email,
+      r.company,
+      r.department,
+      r.ticket_type,
+      r.check_in_status,
+      r.admitted_at,
+      ...r.attribute_values,
+    ]
+      .map(quoteCsvCell)
       .join(","),
   );
   return [header, ...csvRows].join("\r\n");
 }
 
-type ExportFilterParams = {
-  eventId: string;
-  status: "all" | "admitted" | "not_admitted";
-  ticket_type?: string;
-  q?: string;
-};
+/** Build Prisma where for attendee list and export (status/ticket_type only — no search). */
+function buildAttendeeListWhere(
+  eventId: string,
+  params: AttendeeListFilterParams,
+): Prisma.AttendeeWhereInput {
+  const { status, ticket_type } = params;
+  return {
+    event_id: eventId,
+    ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
+    ...(status === "not_admitted" ? { admitted_at: null } : {}),
+    ...(ticket_type ? { ticket_type } : {}),
+  };
+}
 
-type ExportAttendeeRow = {
-  name: string;
-  email: string;
-  company: string | null;
-  department: string | null;
-  custom_data: unknown;
-  ticket_type: string | null;
-  admitted_at: Date | null;
-};
-
-function exportStatusSql(status: ExportFilterParams["status"]) {
+function attendeeStatusSql(status: AttendeeListFilterParams["status"]) {
   if (status === "admitted") return Prisma.sql`AND admitted_at IS NOT NULL`;
   if (status === "not_admitted") return Prisma.sql`AND admitted_at IS NULL`;
   return Prisma.empty;
 }
 
-function exportTicketTypeSql(ticket_type?: string) {
+function attendeeTicketTypeSql(ticket_type?: string) {
   return ticket_type ? Prisma.sql`AND ticket_type = ${ticket_type}` : Prisma.empty;
 }
 
-/** Full-text export search OR (columns + custom_data json), inlined in SQL — no id materialization. */
-function exportSearchOrSql(q: string) {
+/** Search OR (columns + custom_data json), inlined in SQL — no id materialization. */
+function attendeeSearchOrSql(q: string) {
   const pattern = `%${q}%`;
   return Prisma.sql`AND (
     name ILIKE ${pattern}
@@ -155,57 +226,117 @@ function exportSearchOrSql(q: string) {
   )`;
 }
 
-/** Count export rows with optional search — cap check without loading matching ids. */
-async function countExportAttendees(
+async function countFilteredAttendees(
   db: PrismaClient,
-  filters: ExportFilterParams,
+  eventId: string,
+  params: AttendeeListFilterParams,
 ): Promise<number> {
-  const { eventId, status, ticket_type, q } = filters;
+  const { q, status, ticket_type } = params;
+  if (!q) {
+    return db.attendee.count({ where: buildAttendeeListWhere(eventId, params) });
+  }
   const [{ count }] = await db.$queryRaw<[{ count: bigint }]>`
     SELECT COUNT(*)::bigint AS count FROM "Attendee"
     WHERE event_id = ${eventId}
-      ${exportStatusSql(status)}
-      ${exportTicketTypeSql(ticket_type)}
-      ${q ? exportSearchOrSql(q) : Prisma.empty}
+      ${attendeeStatusSql(status)}
+      ${attendeeTicketTypeSql(ticket_type)}
+      ${attendeeSearchOrSql(q)}
   `;
   return Number(count);
 }
 
-/** Fetch export rows when search is active (same predicate as countExportAttendees). */
-async function fetchExportAttendeeRowsWithSearch(
+type AttendeeListSqlRow = {
+  id: string;
+  name: string;
+  email: string;
+  company: string | null;
+  department: string | null;
+  custom_data: unknown;
+  ticket_type: string | null;
+  admitted_at: Date | null;
+};
+
+async function findFilteredAttendeesForList(
   db: PrismaClient,
-  filters: ExportFilterParams & { q: string },
-): Promise<ExportAttendeeRow[]> {
-  const { eventId, status, ticket_type, q } = filters;
-  return db.$queryRaw<ExportAttendeeRow[]>`
+  eventId: string,
+  params: AttendeeListFilterParams,
+  page: number,
+  pageSize: number,
+): Promise<AttendeeListSqlRow[]> {
+  const { q, status, ticket_type } = params;
+  if (!q) {
+    return db.attendee.findMany({
+      where: buildAttendeeListWhere(eventId, params),
+      select: ATTENDEE_LIST_SELECT,
+      orderBy: { name: "asc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+  }
+  const skip = (page - 1) * pageSize;
+  return db.$queryRaw<AttendeeListSqlRow[]>`
+    SELECT id, name, email, company, department, custom_data, ticket_type, admitted_at
+    FROM "Attendee"
+    WHERE event_id = ${eventId}
+      ${attendeeStatusSql(status)}
+      ${attendeeTicketTypeSql(ticket_type)}
+      ${attendeeSearchOrSql(q)}
+    ORDER BY name ASC
+    LIMIT ${pageSize} OFFSET ${skip}
+  `;
+}
+
+type ExportAttendeeSqlRow = {
+  name: string;
+  email: string;
+  company: string | null;
+  department: string | null;
+  custom_data: unknown;
+  ticket_type: string | null;
+  admitted_at: Date | null;
+};
+
+async function findFilteredAttendeesForExport(
+  db: PrismaClient,
+  eventId: string,
+  params: AttendeeListFilterParams,
+): Promise<ExportAttendeeSqlRow[]> {
+  const { q, status, ticket_type } = params;
+  if (!q) {
+    return db.attendee.findMany({
+      where: buildAttendeeListWhere(eventId, params),
+      select: EXPORT_ATTENDEE_SELECT,
+      orderBy: { name: "asc" },
+    });
+  }
+  return db.$queryRaw<ExportAttendeeSqlRow[]>`
     SELECT name, email, company, department, custom_data, ticket_type, admitted_at
     FROM "Attendee"
     WHERE event_id = ${eventId}
-      ${exportStatusSql(status)}
-      ${exportTicketTypeSql(ticket_type)}
-      ${exportSearchOrSql(q)}
+      ${attendeeStatusSql(status)}
+      ${attendeeTicketTypeSql(ticket_type)}
+      ${attendeeSearchOrSql(q)}
     ORDER BY name ASC
     LIMIT ${EXPORT_ROW_CAP}
   `;
 }
 
 /** Build XLSX bytes for sanitized export rows (dynamic exceljs import, ESM-safe). */
-async function buildExportXlsxBuffer(exportRows: {
-  name: string;
-  email: string;
-  company: string;
-  department: string;
-  ticket_type: string;
-  check_in_status: string;
-  admitted_at: string;
-}[]): Promise<Uint8Array> {
+async function buildExportXlsxBuffer(
+  exportRows: SanitizedExportRow[],
+  exportColumns: string[],
+): Promise<Uint8Array> {
   const exceljs = await import("exceljs");
   const ExcelJS = exceljs.default ?? exceljs;
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Attendees");
-  ws.columns = EXPORT_COLUMNS.map((h) => ({ header: h, width: 28 }));
+  ws.columns = exportColumns.map((h, i) => ({
+    header: h,
+    width: i === 0 ? 5 : 28,
+  }));
   for (const r of exportRows) {
-    ws.addRow([
+    const row = ws.addRow([
+      r.check_off,
       r.name,
       r.email,
       r.company,
@@ -213,9 +344,151 @@ async function buildExportXlsxBuffer(exportRows: {
       r.ticket_type,
       r.check_in_status,
       r.admitted_at,
+      ...r.attribute_values,
     ]);
+    row.getCell(1).alignment = { horizontal: "center" };
   }
+  ws.pageSetup = {
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+    orientation: "landscape",
+    paperSize: 9,
+  };
+  ws.views = [{ state: "frozen", ySplit: 1 }];
   return new Uint8Array(await wb.xlsx.writeBuffer());
+}
+
+const PDF_ROW_HEIGHT = 16;
+const PDF_FONT_SIZE = 8;
+const PDF_PAGE_BOTTOM = 555;
+const PDF_FONT = "DejaVuSans";
+const PDF_FONT_BOLD = "DejaVuSans-Bold";
+
+const PDF_MIN_COLUMN_WIDTH = 20;
+
+function sumPdfColumnWidths(widths: number[]): number {
+  return widths.reduce((sum, w) => sum + w, 0);
+}
+
+/** Scale columns down proportionally when rounding pushed the layout past the printable width. */
+function scalePdfColumnWidths(widths: number[], maxTotal: number): number[] {
+  const total = sumPdfColumnWidths(widths);
+  if (total <= maxTotal) return widths;
+  const scale = maxTotal / total;
+  return widths.map((w) => Math.max(PDF_MIN_COLUMN_WIDTH, Math.floor(w * scale)));
+}
+
+function buildExportPdfColumnWidths(attributeFieldCount: number): number[] {
+  const base = [...EXPORT_BASE_PDF_WIDTHS];
+  if (attributeFieldCount === 0) return base;
+
+  const minAttrWidth = 28;
+  const baseTotal = sumPdfColumnWidths(base);
+  const defaultTotal = baseTotal + attributeFieldCount * EXPORT_ATTRIBUTE_PDF_WIDTH;
+
+  if (defaultTotal <= PDF_PRINTABLE_WIDTH) {
+    return [...base, ...Array.from({ length: attributeFieldCount }, () => EXPORT_ATTRIBUTE_PDF_WIDTH)];
+  }
+
+  const spaceForAttrs = PDF_PRINTABLE_WIDTH - baseTotal;
+  if (spaceForAttrs >= attributeFieldCount * minAttrWidth) {
+    const attrWidth = Math.floor(spaceForAttrs / attributeFieldCount);
+    return [...base, ...Array.from({ length: attributeFieldCount }, () => attrWidth)];
+  }
+
+  const attrWidth = minAttrWidth;
+  const targetBaseTotal = PDF_PRINTABLE_WIDTH - attributeFieldCount * minAttrWidth;
+  const scaledBase =
+    targetBaseTotal > 0
+      ? base.map((w) =>
+          Math.max(PDF_MIN_COLUMN_WIDTH, Math.floor((w * targetBaseTotal) / baseTotal)),
+        )
+      : base;
+
+  return scalePdfColumnWidths(
+    [...scaledBase, ...Array.from({ length: attributeFieldCount }, () => attrWidth)],
+    PDF_PRINTABLE_WIDTH,
+  );
+}
+
+const require = createRequire(import.meta.url);
+
+function resolvePdfFontFile(bold: boolean): string {
+  const file = bold ? "DejaVuSans-Bold.ttf" : "DejaVuSans.ttf";
+  return require.resolve(`dejavu-fonts-ttf/ttf/${file}`);
+}
+
+/** Build PDF bytes for export rows (dynamic pdfkit import, ESM-safe). */
+async function buildExportPdfBuffer(
+  exportRows: SanitizedExportRow[],
+  exportColumns: string[],
+  eventMeta: { title: string; date: Date },
+  timeZone: string,
+): Promise<Uint8Array> {
+  const pdfColWidths = buildExportPdfColumnWidths(exportColumns.length - EXPORT_BASE_COLUMNS.length);
+  const pdfkitMod = await import("pdfkit");
+  const PDFDocument = pdfkitMod.default ?? pdfkitMod;
+
+  const chunks: Buffer[] = [];
+  const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 40 });
+  doc.registerFont(PDF_FONT, resolvePdfFontFile(false));
+  doc.registerFont(PDF_FONT_BOLD, resolvePdfFontFile(true));
+  doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+  const eventDateStr = formatEventDate(eventMeta.date, timeZone);
+  doc.fontSize(14).font(PDF_FONT_BOLD).text(`${eventMeta.title} — ${eventDateStr}`);
+  doc.moveDown(0.5);
+
+  let y = doc.y;
+
+  const drawTableHeader = () => {
+    doc.fontSize(PDF_FONT_SIZE).font(PDF_FONT_BOLD);
+    let x = 40;
+    for (let i = 0; i < exportColumns.length; i++) {
+      doc.text(exportColumns[i]!, x, y, { width: pdfColWidths[i], lineBreak: false });
+      x += pdfColWidths[i]!;
+    }
+    y += PDF_ROW_HEIGHT;
+    doc.font(PDF_FONT);
+  };
+
+  drawTableHeader();
+
+  for (const row of exportRows) {
+    if (y + PDF_ROW_HEIGHT > PDF_PAGE_BOTTOM) {
+      doc.addPage({ size: "A4", layout: "landscape", margin: 40 });
+      y = 40;
+      drawTableHeader();
+    }
+    const cells = [
+      row.check_off,
+      row.name,
+      row.email,
+      row.company,
+      row.department,
+      row.ticket_type,
+      row.check_in_status,
+      row.admitted_at,
+      ...row.attribute_values,
+    ];
+    doc.fontSize(PDF_FONT_SIZE);
+    let x = 40;
+    for (let i = 0; i < cells.length; i++) {
+      doc.text(cells[i] ?? "", x, y, { width: pdfColWidths[i], lineBreak: false, ellipsis: true });
+      x += pdfColWidths[i]!;
+    }
+    y += PDF_ROW_HEIGHT;
+  }
+
+  const done = new Promise<void>((resolve, reject) => {
+    doc.on("end", () => resolve());
+    doc.on("error", reject);
+  });
+  doc.end();
+  await done;
+
+  return new Uint8Array(Buffer.concat(chunks));
 }
 
 /** Append bulk audit row after a successful filtered export (no raw search term). */
@@ -223,7 +496,7 @@ async function auditAttendeesExported(
   db: PrismaClient,
   c: Context,
   eventId: string,
-  format: "xlsx" | "csv",
+  format: "xlsx" | "csv" | "pdf",
   count: number,
   filters: { status: string; ticket_type?: string; has_query: boolean },
 ): Promise<void> {
@@ -266,7 +539,6 @@ export type AttendeeDetailDto = {
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
   updated_at: string;
-  shirt_size: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
 };
@@ -295,6 +567,60 @@ function cloneCustomData(raw: unknown): Record<string, unknown> {
     return { ...(raw as Record<string, unknown>) };
   }
   return {};
+}
+
+/** Load dynamic custom_data attribute definitions for an event (all items, enabled or not). */
+async function loadEventCustomDataFields(
+  db: PrismaClient,
+  eventId: string,
+): Promise<EventItemContent[]> {
+  const items = await db.eventItem.findMany({
+    where: { event_id: eventId },
+    select: { config: true },
+    orderBy: { key: "asc" },
+  });
+  return collectEventCustomDataFields(items.map((i) => i.config));
+}
+
+function buildSanitizedExportRows(
+  rows: ExportAttendeeSqlRow[],
+  attributeFields: EventItemContent[],
+  timeZone: string,
+): SanitizedExportRow[] {
+  return rows.map((row) => {
+    const { company, department } = resolveCompanyDepartment(row);
+    return {
+      check_off: "",
+      name: sanitizeCell(row.name),
+      email: sanitizeCell(row.email),
+      company: sanitizeCell(company),
+      department: sanitizeCell(department),
+      ticket_type: sanitizeCell(row.ticket_type),
+      check_in_status: row.admitted_at ? "admitted" : "not_admitted",
+      admitted_at: row.admitted_at ? formatAdmittedAtLocal(row.admitted_at, timeZone) : "",
+      attribute_values: attributeFields.map((field) =>
+        sanitizeCell(customDataValue(row.custom_data, field.source_field)),
+      ),
+    };
+  });
+}
+
+function buildExportColumnLabels(attributeFields: EventItemContent[]): string[] {
+  const labelCounts = new Map<string, number>();
+  for (const field of attributeFields) {
+    labelCounts.set(field.label, (labelCounts.get(field.label) ?? 0) + 1);
+  }
+  return attributeFields.map((field) => {
+    const label =
+      (labelCounts.get(field.label) ?? 0) > 1
+        ? `${field.label} (${field.source_field})`
+        : field.label;
+    return sanitizeCell(label);
+  });
+}
+
+function buildExportColumns(attributeFields: EventItemContent[]): string[] {
+  return [...EXPORT_BASE_COLUMNS, ...buildExportColumnLabels(attributeFields)];
 }
 
 /** Require `:id` attendee route param or return 400. */
@@ -420,7 +746,6 @@ async function buildAttendeeDetailDto(
     check_in_status: checkInStatus(row.admitted_at),
     admitted_at: row.admitted_at ? row.admitted_at.toISOString() : null,
     updated_at: row.updated_at.toISOString(),
-    shirt_size: shirtSizeFromCustomData(row.custom_data),
     custom_data: row.custom_data ?? null,
     deliveries: deliveries.map(toDeliveryDto),
   };
@@ -436,45 +761,11 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
 
   const { page, pageSize, q, status, ticket_type } = parseListQuery(c);
 
-  const where: Prisma.AttendeeWhereInput = {
-    event_id: eventId,
-    ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
-    ...(status === "not_admitted" ? { admitted_at: null } : {}),
-    ...(ticket_type ? { ticket_type } : {}),
-  };
-
-  if (q) {
-    const jsonMatches = await db.$queryRaw<{ id: string }[]>`
-      SELECT id FROM "Attendee"
-      WHERE event_id = ${eventId}
-        AND (
-          (custom_data->>'company') ILIKE ${`%${q}%`}
-          OR (custom_data->>'department') ILIKE ${`%${q}%`}
-        )
-    `;
-    const jsonIds = jsonMatches.map((r) => r.id);
-    where.AND = [
-      {
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { email: { contains: q, mode: "insensitive" } },
-          { company: { contains: q, mode: "insensitive" } },
-          { department: { contains: q, mode: "insensitive" } },
-          ...(jsonIds.length > 0 ? [{ id: { in: jsonIds } }] : []),
-        ],
-      },
-    ];
-  }
+  const filterParams = { q, status, ticket_type };
 
   const [total, rows] = await Promise.all([
-    db.attendee.count({ where }),
-    db.attendee.findMany({
-      where,
-      select: ATTENDEE_LIST_SELECT,
-      orderBy: { name: "asc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
+    countFilteredAttendees(db, eventId, filterParams),
+    findFilteredAttendeesForList(db, eventId, filterParams, page, pageSize),
   ]);
 
   const lastMail = await lastMailStatusByAttendee(
@@ -512,7 +803,7 @@ export async function handleListTicketTypes(c: Context, db: PrismaClient): Promi
   return c.json({ types });
 }
 
-/** GET /api/admin/events/:eventId/attendees/export — filtered subset as XLSX or CSV (no tokens). */
+/** GET /api/admin/events/:eventId/attendees/export — filtered subset as XLSX, CSV, or PDF (no tokens). */
 export async function handleExportAttendees(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -521,66 +812,44 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   if (forbidden) return forbidden;
 
   const formatRaw = c.req.query("format");
-  if (formatRaw !== "xlsx" && formatRaw !== "csv") {
-    return c.json({ error: "format must be xlsx or csv" }, 400);
+  if (formatRaw !== "xlsx" && formatRaw !== "csv" && formatRaw !== "pdf") {
+    return c.json({ error: "format must be xlsx, csv, or pdf" }, 400);
   }
   const format = formatRaw;
 
   const { q, status, ticket_type } = parseListQuery(c);
+  const timeZone = resolvePreviewEventTimeZone();
 
-  let rows: ExportAttendeeRow[];
+  const filterParams = { q, status, ticket_type };
 
-  if (q) {
-    const total = await countExportAttendees(db, { eventId, status, ticket_type, q });
-    if (total > EXPORT_ROW_CAP) {
-      return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
-    }
-    rows = await fetchExportAttendeeRowsWithSearch(db, { eventId, status, ticket_type, q });
-  } else {
-    const where: Prisma.AttendeeWhereInput = {
-      event_id: eventId,
-      ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
-      ...(status === "not_admitted" ? { admitted_at: null } : {}),
-      ...(ticket_type ? { ticket_type } : {}),
-    };
-    const total = await db.attendee.count({ where });
-    if (total > EXPORT_ROW_CAP) {
-      return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
-    }
-    rows = await db.attendee.findMany({
-      where,
-      select: {
-        name: true,
-        email: true,
-        company: true,
-        department: true,
-        custom_data: true,
-        ticket_type: true,
-        admitted_at: true,
-      },
-      orderBy: { name: "asc" },
-    });
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: { title: true, date: true },
+  });
+
+  if (!event) {
+    return c.json({ error: "forbidden" }, 403);
   }
 
-  const exportRows = rows.map((row) => {
-    const { company, department } = resolveCompanyDepartment(row);
-    return {
-      name: sanitizeCell(row.name),
-      email: sanitizeCell(row.email),
-      company: sanitizeCell(company),
-      department: sanitizeCell(department),
-      ticket_type: sanitizeCell(row.ticket_type),
-      check_in_status: row.admitted_at ? "admitted" : "not_admitted",
-      admitted_at: row.admitted_at ? row.admitted_at.toISOString() : "",
-    };
-  });
+  const total = await countFilteredAttendees(db, eventId, filterParams);
+  if (total > EXPORT_ROW_CAP) {
+    return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+  }
+
+  const [rows, attributeFields] = await Promise.all([
+    findFilteredAttendeesForExport(db, eventId, filterParams),
+    loadEventCustomDataFields(db, eventId),
+  ]);
+
+  const exportColumns = buildExportColumns(attributeFields);
+  const exportRows = buildSanitizedExportRows(rows, attributeFields, timeZone);
 
   const timestamp = new Date().toISOString().slice(0, 10);
   const filename = `attendees-${eventId}-${timestamp}.${format}`;
   const auditFilters = { status, ticket_type, has_query: Boolean(q) };
 
   if (format === "csv") {
-    const csv = buildExportCsv(exportRows);
+    const csv = buildExportCsv(exportRows, exportColumns);
     await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
     return new Response(csv, {
       headers: {
@@ -590,7 +859,23 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
     });
   }
 
-  const bytes = await buildExportXlsxBuffer(exportRows);
+  if (format === "pdf") {
+    const bytes = await buildExportPdfBuffer(
+      exportRows,
+      exportColumns,
+      { title: event.title, date: event.date },
+      timeZone,
+    );
+    await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
+    return new Response(bytes, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": exportContentDisposition(filename),
+      },
+    });
+  }
+
+  const bytes = await buildExportXlsxBuffer(exportRows, exportColumns);
   await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
   return new Response(bytes, {
     headers: {
@@ -670,17 +955,19 @@ function computePatchChanges(
     data.ticket_type = patch.ticket_type;
     fields.push("ticket_type");
   }
-  if (patch.shirt_size !== undefined) {
-    const current = shirtSizeFromCustomData(existing.custom_data);
-    const next = patch.shirt_size;
-    if (next !== current) {
-      const raw = touchCustomData();
-      if (next === null || next === undefined || next === "") {
-        delete raw.shirt_size;
-      } else {
-        raw.shirt_size = next;
+  if (patch.custom_data_fields) {
+    for (const [sourceField, next] of Object.entries(patch.custom_data_fields)) {
+      const current = customDataValue(existing.custom_data, sourceField);
+      const normalizedNext = next === null || next === "" ? null : next;
+      if (normalizedNext !== current) {
+        const raw = touchCustomData();
+        if (normalizedNext === null) {
+          delete raw[sourceField];
+        } else {
+          raw[sourceField] = normalizedNext;
+        }
+        fields.push(sourceField);
       }
-      fields.push("shirt_size");
     }
   }
 
@@ -720,6 +1007,17 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   }
 
   const { expected_updated_at: expectedUpdatedAtRaw, ...patchFields } = parsed.data;
+
+  if (patchFields.custom_data_fields) {
+    const allowedFields = await loadEventCustomDataFields(db, eventId);
+    const allowed = new Set(allowedFields.map((f) => f.source_field));
+    for (const key of Object.keys(patchFields.custom_data_fields)) {
+      if (!allowed.has(key)) {
+        return c.json({ error: "unknown_custom_data_field" }, 400);
+      }
+    }
+  }
+
   const changes = computePatchChanges(existing, patchFields);
   if (!changes) {
     const dto = await buildAttendeeDetailDto(db, eventId, existing);

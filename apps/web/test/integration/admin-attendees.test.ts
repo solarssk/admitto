@@ -6,7 +6,7 @@ import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { setMailSettings } from "@admitto/mailer-config";
-import { generateToken, hashToken } from "@admitto/tickets";
+import { generateToken, getAttendeeCard, hashToken } from "@admitto/tickets";
 import type { ExportPayload } from "@admitto/mailer";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
@@ -45,6 +45,7 @@ async function seed(client: PrismaClient) {
     where: { event_id: { in: [EVENT_A, EVENT_B] } },
   });
   await client.attendee.deleteMany({ where: { event_id: { in: [EVENT_A, EVENT_B] } } });
+  await client.eventItem.deleteMany({ where: { event_id: { in: [EVENT_A, EVENT_B] } } });
   await client.roleAssignment.deleteMany({
     where: { OR: [{ scope_id: { in: [ORG_A, ORG_B, EVENT_A, EVENT_B] } }] },
   });
@@ -112,6 +113,15 @@ async function seed(client: PrismaClient) {
     { provider: "export_only", fromAddress: "events@example.com" },
     client,
   );
+
+  await client.eventItem.create({
+    data: {
+      event_id: EVENT_A,
+      key: "giftbag",
+      label: "Gift bag",
+      config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
+    },
+  });
 
   const token = generateToken();
   const tokenEnc = encryptToString(token);
@@ -356,7 +366,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(body.error).toBe("email_conflict");
   });
 
-  it("preserves extra custom_data keys when shirt_size is edited", async () => {
+  it("preserves extra custom_data keys when custom attribute is edited", async () => {
     await prisma.attendee.update({
       where: { id: ATT_A2 },
       data: {
@@ -368,18 +378,165 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
-        shirt_size: "L",
+        custom_data_fields: { shirt_size: "L" },
         expected_updated_at: await currentUpdatedAt(ATT_A2),
       }),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { shirt_size: string | null };
-    expect(body.shirt_size).toBe("L");
+    const body = (await res.json()) as { custom_data: { shirt_size?: string; agency_ref?: string } };
+    expect(body.custom_data.shirt_size).toBe("L");
 
     const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
     const cd = row.custom_data as { agency_ref?: string; shirt_size?: string };
     expect(cd.agency_ref).toBe("REF-001");
     expect(cd.shirt_size).toBe("L");
+  });
+
+  it("accepts custom_data_fields values up to 100 characters", async () => {
+    const longValue = "x".repeat(100);
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields: { shirt_size: longValue },
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects custom_data_fields values over 100 characters", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields: { shirt_size: "x".repeat(101) },
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_failed");
+  });
+
+  it.each([
+    ["uppercase", { Shirt_size: "M" }],
+    ["hyphenated", { "shirt-size": "M" }],
+    ["over 60 chars", { ["a".repeat(61)]: "M" }],
+  ])("rejects custom_data_fields with invalid key (%s)", async (_label, custom_data_fields) => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields,
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_failed");
+  });
+
+  it("writes jacket_size under correct key and check-in card shows parity", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: { contents: [{ label: "Jacket size", source_field: "jacket_size" }] },
+      },
+    });
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { custom_data: { jacket_size: "M" } },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields: { jacket_size: "L" },
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
+    const cd = row.custom_data as { jacket_size?: string; shirt_size?: string };
+    expect(cd.jacket_size).toBe("L");
+    expect(cd.shirt_size).toBeUndefined();
+
+    const card = await getAttendeeCard(EVENT_A, ATT_A2, prisma);
+    const giftbag = card!.items.find((i) => i.key === "giftbag");
+    expect(giftbag?.detail).toBe("Jacket size: L");
+  });
+
+  it("returns 400 for unknown custom_data_fields key", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields: { hacker_field: "x" },
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("unknown_custom_data_field");
+  });
+
+  it("audits custom_data field names without PII values", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: { contents: [{ label: "Jacket size", source_field: "jacket_size" }] },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields: { jacket_size: "SecretSize" },
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_A2, action_type: "attendee_edited" },
+      orderBy: { created_at: "desc" },
+    });
+    const meta = log!.metadata as { fields?: string[] };
+    expect(meta.fields).toContain("jacket_size");
+    expect(JSON.stringify(meta)).not.toContain("SecretSize");
+  });
+
+  it("includes disabled item contents in allowed custom_data_fields", async () => {
+    await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_A,
+        key: "socks",
+        label: "Socks",
+        enabled: false,
+        config: { contents: [{ label: "Socks size", source_field: "sock_size" }] },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields: { sock_size: "42" },
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
+    const cd = row.custom_data as { sock_size?: string };
+    expect(cd.sock_size).toBe("42");
+
+    const card = await getAttendeeCard(EVENT_A, ATT_A2, prisma);
+    expect(card!.items.some((i) => i.key === "socks")).toBe(false);
   });
 
   it("syncs company edits into custom_data for operator parity", async () => {

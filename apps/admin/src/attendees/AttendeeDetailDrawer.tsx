@@ -3,10 +3,16 @@ import { Button, IconButton, Input, StatusBadge } from "@admitto/ui";
 import {
   ApiError,
   fetchAttendeeDetail,
+  fetchEventItems,
   resendTicket,
   updateAttendee,
 } from "../api/client.js";
 import type { AttendeeDetailDto, DeliveryDto, UpdateAttendeePatch } from "../api/types.js";
+import {
+  flattenCustomDataFieldsFromItems,
+  readCustomDataField,
+  type CustomDataFieldDef,
+} from "./customData.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
 
 export interface AttendeeDetailDrawerProps {
@@ -22,17 +28,28 @@ type FormState = {
   company: string;
   department: string;
   ticket_type: string;
-  shirt_size: string;
+  customFields: Record<string, string>;
 };
 
-function toForm(detail: AttendeeDetailDto): FormState {
+function customFieldsFromDetail(
+  detail: AttendeeDetailDto,
+  attributeFields: CustomDataFieldDef[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const field of attributeFields) {
+    out[field.source_field] = readCustomDataField(detail.custom_data, field.source_field) ?? "";
+  }
+  return out;
+}
+
+function toForm(detail: AttendeeDetailDto, attributeFields: CustomDataFieldDef[]): FormState {
   return {
     name: detail.name,
     email: detail.email,
     company: detail.company ?? "",
     department: detail.department ?? "",
     ticket_type: detail.ticket_type ?? "",
-    shirt_size: detail.shirt_size ?? "",
+    customFields: customFieldsFromDetail(detail, attributeFields),
   };
 }
 
@@ -41,9 +58,17 @@ function mergeFormAfterReload(
   currentForm: FormState,
   previousDetail: AttendeeDetailDto,
   reloaded: AttendeeDetailDto,
+  attributeFields: CustomDataFieldDef[],
 ): FormState {
-  const previousForm = toForm(previousDetail);
-  const nextForm = toForm(reloaded);
+  const previousForm = toForm(previousDetail, attributeFields);
+  const nextForm = toForm(reloaded, attributeFields);
+  const customFields: Record<string, string> = { ...nextForm.customFields };
+  for (const field of attributeFields) {
+    const key = field.source_field;
+    if (currentForm.customFields[key] !== previousForm.customFields[key]) {
+      customFields[key] = currentForm.customFields[key] ?? "";
+    }
+  }
   return {
     name: currentForm.name !== previousForm.name ? currentForm.name : nextForm.name,
     email: currentForm.email !== previousForm.email ? currentForm.email : nextForm.email,
@@ -57,10 +82,7 @@ function mergeFormAfterReload(
       currentForm.ticket_type !== previousForm.ticket_type
         ? currentForm.ticket_type
         : nextForm.ticket_type,
-    shirt_size:
-      currentForm.shirt_size !== previousForm.shirt_size
-        ? currentForm.shirt_size
-        : nextForm.shirt_size,
+    customFields,
   };
 }
 
@@ -75,6 +97,34 @@ function formatDateTime(iso: string | null): string {
   });
 }
 
+/** Load attendee detail; event items are best-effort so core fields stay editable on items API failure. */
+const ITEMS_LOAD_WARNING =
+  "Attribute fields could not be loaded — core fields are still editable.";
+
+async function loadDrawerData(
+  eventId: string,
+  attendeeId: string,
+): Promise<{
+  detail: AttendeeDetailDto;
+  attributeFields: CustomDataFieldDef[];
+  itemsWarning: string | null;
+}> {
+  const [detail, itemsResult] = await Promise.all([
+    fetchAttendeeDetail(eventId, attendeeId),
+    fetchEventItems(eventId).then(
+      (items) => ({ ok: true as const, items }),
+      () => ({ ok: false as const }),
+    ),
+  ]);
+  return {
+    detail,
+    attributeFields: itemsResult.ok
+      ? flattenCustomDataFieldsFromItems(itemsResult.items)
+      : [],
+    itemsWarning: itemsResult.ok ? null : ITEMS_LOAD_WARNING,
+  };
+}
+
 /** Slide-over panel for viewing/editing one attendee (admin list drill-down). */
 export function AttendeeDetailDrawer({
   eventId,
@@ -83,11 +133,13 @@ export function AttendeeDetailDrawer({
   onUpdated,
 }: AttendeeDetailDrawerProps) {
   const [detail, setDetail] = useState<AttendeeDetailDto | null>(null);
+  const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
   const [form, setForm] = useState<FormState | null>(null);
   const [initialEmail, setInitialEmail] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [itemsWarning, setItemsWarning] = useState<string | null>(null);
   const [emailConflict, setEmailConflict] = useState(false);
   const [staleWrite, setStaleWrite] = useState(false);
   const [reloading, setReloading] = useState(false);
@@ -111,15 +163,21 @@ export function AttendeeDetailDrawer({
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setItemsWarning(null);
     setStaleWrite(false);
     setEmailConflict(false);
     (async () => {
       try {
-        const d = await fetchAttendeeDetail(eventId, attendeeId);
+        const { detail: d, attributeFields: fields, itemsWarning } = await loadDrawerData(
+          eventId,
+          attendeeId,
+        );
         if (cancelled) return;
+        setAttributeFields(fields);
         setDetail(d);
-        setForm(toForm(d));
+        setForm(toForm(d, fields));
         setInitialEmail(d.email);
+        setItemsWarning(itemsWarning);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof ApiError ? err.message : "Failed to load attendee.");
@@ -153,7 +211,19 @@ export function AttendeeDetailDrawer({
     if (form.company !== (detail.company ?? "")) patch.company = form.company || null;
     if (form.department !== (detail.department ?? "")) patch.department = form.department || null;
     if (form.ticket_type !== (detail.ticket_type ?? "")) patch.ticket_type = form.ticket_type || null;
-    if (form.shirt_size !== (detail.shirt_size ?? "")) patch.shirt_size = form.shirt_size || null;
+
+    const customDataPatch: Record<string, string | null> = {};
+    for (const field of attributeFields) {
+      const key = field.source_field;
+      const next = form.customFields[key] ?? "";
+      const current = readCustomDataField(detail.custom_data, key) ?? "";
+      if (next !== current) {
+        customDataPatch[key] = next || null;
+      }
+    }
+    if (Object.keys(customDataPatch).length > 0) {
+      patch.custom_data_fields = customDataPatch;
+    }
 
     if (Object.keys(patch).length === 0) return;
 
@@ -167,7 +237,7 @@ export function AttendeeDetailDrawer({
       const updated = await updateAttendee(target.eventId, target.attendeeId, patch);
       if (!isStillSelected(target)) return;
       setDetail(updated);
-      setForm(toForm(updated));
+      setForm(toForm(updated, attributeFields));
       setInitialEmail(updated.email);
       setStaleWrite(false);
       onUpdated();
@@ -181,6 +251,8 @@ export function AttendeeDetailDrawer({
         } else {
           setError("Could not save changes. Reload and try again.");
         }
+      } else if (err instanceof ApiError && err.status === 400 && err.message === "unknown_custom_data_field") {
+        setError("Event configuration changed — close and reopen this attendee to edit attributes.");
       } else {
         setError(err instanceof ApiError ? err.message : "Failed to save changes.");
       }
@@ -195,15 +267,20 @@ export function AttendeeDetailDrawer({
     setReloading(true);
     setError(null);
     try {
-      const d = await fetchAttendeeDetail(target.eventId, target.attendeeId);
+      const { detail: d, attributeFields: fields, itemsWarning } = await loadDrawerData(
+        target.eventId,
+        target.attendeeId,
+      );
       if (!isStillSelected(target)) return;
+      setAttributeFields(fields);
       setForm((currentForm) => {
-        if (!currentForm || !previousDetail) return currentForm;
-        return mergeFormAfterReload(currentForm, previousDetail, d);
+        if (!currentForm || !previousDetail) return toForm(d, fields);
+        return mergeFormAfterReload(currentForm, previousDetail, d, fields);
       });
       setDetail(d);
       setInitialEmail(d.email);
       setStaleWrite(false);
+      setItemsWarning(itemsWarning);
     } catch (err) {
       if (!isStillSelected(target)) return;
       setError(
@@ -273,6 +350,7 @@ export function AttendeeDetailDrawer({
         <div className="attendee-drawer__body">
           {loading && <p>Loading…</p>}
           {error && <p className="attendee-form__error">{error}</p>}
+          {itemsWarning && <p className="attendee-form__warn">{itemsWarning}</p>}
           {resendSuccess && <p className="attendee-success">{resendSuccess}</p>}
 
           {detail && form && !loading && (
@@ -335,11 +413,22 @@ export function AttendeeDetailDrawer({
                     value={form.ticket_type}
                     onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
                   />
-                  <Input
-                    label="Shirt size"
-                    value={form.shirt_size}
-                    onChange={(e) => setForm({ ...form, shirt_size: e.target.value })}
-                  />
+                  {attributeFields.map((field) => (
+                    <Input
+                      key={field.source_field}
+                      label={field.label}
+                      value={form.customFields[field.source_field] ?? ""}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          customFields: {
+                            ...form.customFields,
+                            [field.source_field]: e.target.value,
+                          },
+                        })
+                      }
+                    />
+                  ))}
                   <dl className="attendee-readonly">
                     <dt>Check-in</dt>
                     <dd>

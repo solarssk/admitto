@@ -132,7 +132,6 @@ const mockCard = {
   ticket_type: null,
   check_in_status: "admitted" as const,
   admitted_at: new Date().toISOString(),
-  shirt_size: null,
   items: [],
   notes: [],
   warnings: [],

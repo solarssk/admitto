@@ -16,6 +16,46 @@ ADR references appear only where they explain a design constraint.
 
 ## Unreleased
 
+## v0.4.4 — 2026-06-19
+
+Security patch and container publish workflow hardening after v0.4.3. Git tag `v0.4.4`.
+
+### Security / dependencies
+
+- **undici (#94):** bump transitive `undici` 6.26.0 → 6.27.0 — addresses CVE-2026-12151 (high), CVE-2026-9679 (moderate), CVE-2026-11525 and CVE-2026-6733 (low).
+
+### Infra / CI
+
+- **Publish container (#93):** manual `workflow_dispatch` on branch refs (e.g. `refs/heads/main`) runs **scan-only** — build image, Trivy SARIF upload, CRITICAL gate — without invalid SBOM paths or semver Docker metadata failures.
+- **Tag gate:** GHCR push, provenance attestation, and release SBOM upload run only for `refs/tags/*` semver refs; semver-shaped branch names cannot publish.
+
+## v0.4.3 — 2026-06-19
+
+Admin capabilities, dynamic event attributes, and corporate due-diligence readiness. Git tag `v0.4.3`.
+
+### Admin and export
+
+- **F-print export (#88):** attendee list export to CSV, XLSX, and PDF with check-off column, filters parity with list API, formula-injection sanitization, and audit logging.
+- **Dynamic custom_data attributes (#91, ADR 0030):** admin PATCH and detail drawer edit fields from `EventItem.config.contents` instead of hardcoded `shirt_size`; export columns follow the same definitions; check-in parity preserved.
+- **Release hygiene (follow-up):** Zod validation on `custom_data_fields` keys; stable export column order (`orderBy: key`); duplicate Excel headers disambiguated as `Label (source_field)`; PDF column widths scale down when many attributes exceed printable width; drawer degrades gracefully when event-items API fails; export integration tests use isolated events.
+
+### Security and compliance
+
+- **Semgrep gate:** removed `|| true` from CI — SAST findings block pull requests (baseline verified 0 findings before merge).
+- **SECURITY-CONTROLS.md:** configurable security capabilities (auth, RBAC, optional edge/OIDC, logging intent).
+- **CORPORATE-DEPLOYMENT.md:** self-hosted model, customer-hosted stack, no SaaS.
+- **ARCHITECTURE-FOR-AUDITORS.md:** scope, generic exposure overview, roadmap flows.
+- **GDPR-ONE-PAGER.md** + **SUBPROCESSORS.md:** purposes, retention, subprocessor template, DSAR options.
+- **DSAR-PROCEDURE.md:** organizer-mediated access/erasure template (Option B).
+- **INCIDENT-RESPONSE.md:** rotation, rollback, severity template; GDPR Art. 33/34 72h breach notification.
+- **DATA-PROTECTION.md:** updated; legal basis remains customer legal sign-off (LIA note for legitimate interest).
+- **SECURITY-CONTROLS.md:** explicit codebase implementation table for TOTP and OIDC (config-dependent).
+
+### References
+
+- Triage: `_ops/design/corp-readiness-pack.md` §C
+- Prompt: `_ops/prompts/36-corp-docs-batch.md`
+
 ## v0.4.2 — 2026-06-19
 
 Admin event management — full organizer lane. Git tag `v0.4.2`.

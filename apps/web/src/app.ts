@@ -109,6 +109,7 @@ import {
   handlePutMailSettings,
   handlePostMailSettingsTest,
 } from "./admin/mail-settings-routes.js";
+import { handlePostClientError } from "./admin/client-error-routes.js";
 import { createStaffSpaHandlers } from "./staff-spa.js";
 import { sweepExpiredOidcAuthStates } from "@admitto/auth";
 import {
@@ -383,6 +384,7 @@ export function createApp(options: CreateAppOptions = {}) {
     adminMailSettingsRateLimit,
     (c) => handlePostMailSettingsTest(c, db, mailDeliveryDeps),
   );
+  app.post("/api/admin/client-errors", jsonPostCsrf, staffAdminGate, (c) => handlePostClientError(c));
 
   app.get("/api/checkin/events", requireSession, (c) => handleGetCheckinEvents(c, db));
   app.get("/api/staff/theme", requireSession, (c) => handleGetStaffTheme(c, db));

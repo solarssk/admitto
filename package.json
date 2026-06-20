@@ -1,6 +1,6 @@
 {
   "name": "admitto",
-  "version": "0.4.2",
+  "version": "0.4.4",
   "private": true,
   "description": "Admitto — event access gateway (attendee import, QR tickets, wallet passes, M365 mail, check-in)",
   "workspaces": [

@@ -82,7 +82,6 @@ export type AttendeeCardDto = {
   ticket_type: string | null;
   check_in_status: "not_admitted" | "admitted";
   admitted_at: string | null;
-  shirt_size: string | null;
   items: AttendeeCardItemDto[];
   notes: { body: string; author_display: string; created_at: string }[];
   warnings: string[];

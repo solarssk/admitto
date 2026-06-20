@@ -22,6 +22,15 @@ export function AdminGuard() {
   return <Outlet />;
 }
 
+/** Restricts child routes to users with instance superadmin role assignments. */
+export function SuperadminGuard() {
+  const { assignments } = useAuth();
+  if (!isSuperadmin(assignments)) {
+    return <Navigate to="/admin" replace />;
+  }
+  return <Outlet />;
+}
+
 export function OperatorGuard() {
   const { assignments } = useAuth();
   if (!canAccessCheckInPanel(assignments)) {
@@ -29,14 +38,6 @@ export function OperatorGuard() {
       return <Navigate to="/admin" replace />;
     }
     return <RedirectToLogin />;
-  }
-  return <Outlet />;
-}
-
-export function SuperadminGuard() {
-  const { assignments } = useAuth();
-  if (!isSuperadmin(assignments)) {
-    return <Navigate to="/admin" replace />;
   }
   return <Outlet />;
 }

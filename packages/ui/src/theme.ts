@@ -37,7 +37,25 @@ function mix(hex: string, amount: number, towardWhite: boolean): string {
   return `#${[r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function isSafeFontUrl(url: string): boolean {
+const FONT_FAMILY_NAME_MAX = 128;
+const FONT_FAMILY_NAME_REPLACE_RE = /[^A-Za-z0-9 \-_.]/g;
+const FONT_FAMILY_NAME_TEST_RE = /[^A-Za-z0-9 \-_.]/;
+
+/** Strip unsafe characters from a CSS font-family name (ticket page / @font-face). */
+export function sanitizeBrandingFontFamilyName(name: string): string | undefined {
+  const cleaned = name.trim().replace(FONT_FAMILY_NAME_REPLACE_RE, "").slice(0, FONT_FAMILY_NAME_MAX);
+  return cleaned || undefined;
+}
+
+/** True when name is non-empty, within length, and uses the allowed charset only. */
+export function isValidBrandingFontFamilyName(name: string): boolean {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > FONT_FAMILY_NAME_MAX) return false;
+  return !FONT_FAMILY_NAME_TEST_RE.test(trimmed);
+}
+
+/** HTTPS font URL safe for storage and @font-face (no credentials, max 2048). */
+export function isSafeBrandingFontUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "https:") return false;
@@ -66,17 +84,17 @@ export function resolveThemeVars(input?: BrandingThemeInput | null): ResolvedThe
   };
 
   const fontUrl = input?.font_family_url?.trim();
-  const fontName = input?.font_family_name?.trim();
-  if (fontUrl && fontName && isSafeFontUrl(fontUrl)) {
-    const safeName = fontName.replace(/["\\]/g, "");
+  const fontName = sanitizeBrandingFontFamilyName(input?.font_family_name ?? "");
+  if (fontUrl && fontName && isSafeBrandingFontUrl(fontUrl)) {
     const canonicalUrl = new URL(fontUrl).href;
-    vars["--font-sans"] = `"${safeName}", Inter, system-ui, sans-serif`;
-    vars.fontFaceCss = `@font-face{font-family:"${safeName}";src:url("${canonicalUrl}") format("woff2"),url("${canonicalUrl}") format("woff");font-display:swap;}`;
+    vars["--font-sans"] = `"${fontName}", Inter, system-ui, sans-serif`;
+    vars.fontFaceCss = `@font-face{font-family:"${fontName}";src:url("${canonicalUrl}") format("woff2"),url("${canonicalUrl}") format("woff");font-display:swap;}`;
   }
 
   return vars;
 }
 
+/** Serialize resolved theme vars (and optional @font-face) into a CSS style block. */
 export function themeVarsToStyleBlock(vars: ResolvedThemeVars): string {
   const { fontFaceCss, ...cssVars } = vars;
   const lines = Object.entries(cssVars)

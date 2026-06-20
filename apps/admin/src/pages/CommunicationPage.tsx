@@ -12,6 +12,7 @@ import {
 } from "../api/client.js";
 import type { DeliveryDto, EventDeliveriesListParams, EventTemplateDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import "../communication/communication.css";
 
 type ActiveField = "subject" | "body";
@@ -54,6 +55,8 @@ export function CommunicationPage() {
 
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [overrideConfirmOpen, setOverrideConfirmOpen] = useState(false);
   const [previewSubject, setPreviewSubject] = useState<string | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -221,21 +224,11 @@ export function CommunicationPage() {
     }
   };
 
-  const handleSave = async () => {
+  const performSave = async () => {
     if (!eventId) return;
-    if (source !== "event") {
-      const inherited =
-        source === "organization" ? "organization template" : "default template";
-      if (
-        !window.confirm(
-          `This will create an event-specific template override (replacing the ${inherited} for this event). Continue?`,
-        )
-      ) {
-        return;
-      }
-    }
     setValidationErrors([]);
     setSaveStatus(null);
+    setSaving(true);
     try {
       await saveEventTemplate(eventId, templatePayload());
       setSource("event");
@@ -251,8 +244,25 @@ export function CommunicationPage() {
       } else {
         setSaveStatus("Save failed.");
       }
+    } finally {
+      setSaving(false);
+      setOverrideConfirmOpen(false);
     }
   };
+
+  const handleSave = () => {
+    if (!eventId) return;
+    if (source !== "event") {
+      setOverrideConfirmOpen(true);
+      return;
+    }
+    void performSave();
+  };
+
+  const overrideConfirmMessage =
+    source === "organization"
+      ? "This will create an event-specific template override (replacing the organization template for this event). Continue?"
+      : "This will create an event-specific template override (replacing the default template for this event). Continue?";
 
   const handleTestSend = async () => {
     if (!eventId) return;
@@ -413,8 +423,8 @@ export function CommunicationPage() {
                 <Button variant="secondary" onClick={() => void handlePreview()} disabled={previewLoading}>
                   {previewLoading ? "Previewing…" : "Preview"}
                 </Button>
-                <Button variant="primary" onClick={() => void handleSave()}>
-                  Save
+                <Button variant="primary" onClick={handleSave} disabled={saving}>
+                  {saving ? "Saving…" : "Save"}
                 </Button>
               </div>
             </Card>
@@ -555,6 +565,15 @@ export function CommunicationPage() {
           </Card>
         </>
       )}
+      <ConfirmDialog
+        open={overrideConfirmOpen}
+        title="Create event template override"
+        message={overrideConfirmMessage}
+        confirmLabel="Continue"
+        loading={saving}
+        onCancel={() => setOverrideConfirmOpen(false)}
+        onConfirm={() => void performSave()}
+      />
     </div>
   );
 }

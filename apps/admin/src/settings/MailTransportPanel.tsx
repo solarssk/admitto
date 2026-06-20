@@ -304,7 +304,7 @@ export function MailTransportPanel() {
       {loadError && (
         <p role="alert" className="text-error">
           {loadError}{" "}
-          <button type="button" className="link-btn" onClick={() => void loadSettings()}>
+          <button type="button" className="settings-retry-link" onClick={() => void loadSettings()}>
             Retry
           </button>
         </p>

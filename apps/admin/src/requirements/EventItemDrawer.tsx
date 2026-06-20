@@ -7,6 +7,7 @@ import {
 } from "../api/client.js";
 import type { EventItemConfigDto, EventItemDto } from "../api/types.js";
 import { isValidSourceFieldSlug, validateContentsRows } from "./eventItemContentsForm.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import "../attendees/attendees.css";
 
 export interface EventItemDrawerProps {
@@ -77,6 +78,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteBlockReason, setDeleteBlockReason] = useState<"in_use" | "default" | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   useEffect(() => {
     setForm(toForm(item));
@@ -86,11 +88,11 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !deleteConfirmOpen) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, deleteConfirmOpen]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -126,7 +128,6 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
   }
 
   async function handleDelete() {
-    if (!window.confirm(`Delete item "${item.label}"? This cannot be undone.`)) return;
     setDeleting(true);
     setError(null);
     setDeleteBlockReason(null);
@@ -144,6 +145,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
       }
     } finally {
       setDeleting(false);
+      setDeleteConfirmOpen(false);
     }
   }
 
@@ -282,13 +284,23 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
               type="button"
               variant="ghost"
               disabled={deleting}
-              onClick={() => void handleDelete()}
+              onClick={() => setDeleteConfirmOpen(true)}
             >
               Delete item
             </Button>
           </div>
         </form>
       </aside>
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="Delete item"
+        message={`Delete item "${item.label}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        loading={deleting}
+        onCancel={() => setDeleteConfirmOpen(false)}
+        onConfirm={() => void handleDelete()}
+      />
     </>
   );
 }

@@ -83,10 +83,25 @@ describe("sanitizeBrandingTheme", () => {
     ).toBeUndefined();
   });
 
-  it("truncates long font URL", () => {
+  it("strips unsafe characters from font family name", () => {
+    expect(
+      sanitizeBrandingThemeForTests({
+        font_family_name: 'test</style><script>evil</script>',
+      }).font_family_name,
+    ).toBe("teststylescriptevilscript");
+  });
+
+  it("rejects credentialed HTTPS font URL", () => {
+    expect(
+      sanitizeBrandingThemeForTests({
+        font_family_url: "https://user:pass@example.com/font.woff2",
+      }).font_family_url,
+    ).toBeUndefined();
+  });
+
+  it("rejects font URL longer than 2048 characters", () => {
     const longUrl = `https://fonts.example/${"a".repeat(2100)}.woff2`;
-    const result = sanitizeBrandingThemeForTests({ font_family_url: longUrl });
-    expect(result.font_family_url?.length).toBe(2048);
+    expect(sanitizeBrandingThemeForTests({ font_family_url: longUrl }).font_family_url).toBeUndefined();
   });
 
   it("truncates long font name", () => {

@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Git ref to build (tag or branch)
+        description: Git ref to build (semver tag publishes; branch ref scan-only)
         required: true
-        default: refs/tags/v0.4.2
+        default: refs/heads/main
 
 permissions:
   # contents: write — release upload/create only; job-wide is standard for publish workflows.
@@ -44,14 +44,31 @@ jobs:
         id: release
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.ref }}"
-            TAG="${TAG#refs/tags/}"
+            REF="${{ inputs.ref }}"
           else
-            TAG="${GITHUB_REF#refs/tags/}"
+            REF="${GITHUB_REF}"
           fi
+          case "$REF" in
+            refs/tags/*)
+              TAG="${REF#refs/tags/}"
+              if printf '%s' "$TAG" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+                echo "publish=true" >> "$GITHUB_OUTPUT"
+                echo "artifact_slug=${TAG}" >> "$GITHUB_OUTPUT"
+              else
+                echo "publish=false" >> "$GITHUB_OUTPUT"
+                echo "artifact_slug=ci-scan" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            *)
+              TAG="${REF#refs/heads/}"
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "artifact_slug=ci-scan" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Docker metadata
+        if: steps.release.outputs.publish == 'true'
         id: meta
         uses: docker/metadata-action@369eb591f429131d6889c46b94e711f089e6ca96  # v5.6.1
         with:
@@ -92,19 +109,20 @@ jobs:
           category: trivy-container
 
       - name: Generate CycloneDX SBOM
+        if: steps.release.outputs.publish == 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: ${{ env.SCAN_IMAGE }}
           format: cyclonedx
-          output: sbom-${{ steps.release.outputs.tag }}.cdx.json
+          output: sbom-${{ steps.release.outputs.artifact_slug }}.cdx.json
           skip-setup-trivy: true
 
       - name: Upload SBOM workflow artifact
+        if: steps.release.outputs.publish == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
-        if: always()
         with:
-          name: sbom-${{ steps.release.outputs.tag }}
-          path: sbom-${{ steps.release.outputs.tag }}.cdx.json
+          name: sbom-${{ steps.release.outputs.artifact_slug }}
+          path: sbom-${{ steps.release.outputs.artifact_slug }}.cdx.json
           retention-days: 90
 
       - name: Trivy gate (CRITICAL)
@@ -120,6 +138,7 @@ jobs:
           skip-setup-trivy: true
 
       - name: Push image to GHCR
+        if: steps.release.outputs.publish == 'true'
         id: push
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83  # v6.18.0
         with:
@@ -132,6 +151,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Attest build provenance
+        if: steps.release.outputs.publish == 'true'
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
         with:
           subject-name: ghcr.io/${{ github.repository }}
@@ -139,12 +159,13 @@ jobs:
           push-to-registry: true
 
       - name: Upload SBOM to GitHub Release
+        if: steps.release.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           TAG="${{ steps.release.outputs.tag }}"
-          SBOM="sbom-${TAG}.cdx.json"
+          SBOM="sbom-${{ steps.release.outputs.artifact_slug }}.cdx.json"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$SBOM" --clobber
           else
