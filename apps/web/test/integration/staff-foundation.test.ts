@@ -1,8 +1,8 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { createSession, hashPassword, SESSION_STAGE, SETTING_BRANDING_THEME } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
@@ -229,11 +229,180 @@ describe("GET /api/staff/theme", () => {
 });
 
 describe("GET /api/admin/theme", () => {
+  beforeEach(async () => {
+    await prisma.systemSettings.deleteMany({
+      where: { key: SETTING_BRANDING_THEME },
+    });
+  });
+
   it("allows org admin via admin API path", async () => {
     const res = await app.request("/api/admin/theme", {
       headers: { Cookie: await sessionCookieFor(adminId) },
     });
     expect(res.status).toBe(200);
+  });
+
+  it("returns default theme when no branding configured", async () => {
+    const res = await app.request("/api/admin/theme", {
+      headers: { Cookie: await sessionCookieFor(superId) },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      theme: Record<string, unknown>;
+      vars: Record<string, string>;
+    };
+    expect(body.theme).toEqual({});
+    expect(body.vars["--primary"]).toBe("#066fd1");
+  });
+});
+
+describe("PUT /api/admin/theme", () => {
+  beforeEach(async () => {
+    await prisma.systemSettings.deleteMany({
+      where: { key: SETTING_BRANDING_THEME },
+    });
+  });
+
+  it("persists valid primary for superadmin", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(superId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ primary: "#aabbcc" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      theme: { primary?: string };
+      vars: Record<string, string>;
+    };
+    expect(body.theme.primary).toBe("#aabbcc");
+    expect(body.vars["--primary"]).toBe("#aabbcc");
+
+    const getRes = await app.request("/api/admin/theme", {
+      headers: { Cookie: await sessionCookieFor(superId) },
+    });
+    const persisted = (await getRes.json()) as { theme: { primary?: string } };
+    expect(persisted.theme.primary).toBe("#aabbcc");
+  });
+
+  it("rejects org admin PUT", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(adminId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ primary: "#112233" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects PUT without Origin header (CSRF)", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(superId),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ primary: "#112233" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("degrades invalid primary and non-HTTPS font URL on save", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(superId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        primary: "not-hex",
+        font_family_url: "http://evil",
+        font_family_name: "Evil",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      theme: { primary?: string; font_family_url?: string; font_family_name?: string };
+      vars: Record<string, string>;
+    };
+    expect(body.theme.primary).toBeUndefined();
+    expect(body.theme.font_family_url).toBeUndefined();
+    expect(body.theme.font_family_name).toBe("Evil");
+    expect(body.vars["--primary"]).toBe("#066fd1");
+    expect(body.vars["--font-sans"]).toBeUndefined();
+
+    const getRes = await app.request("/api/admin/theme", {
+      headers: { Cookie: await sessionCookieFor(superId) },
+    });
+    const persisted = (await getRes.json()) as {
+      theme: { primary?: string; font_family_url?: string; font_family_name?: string };
+    };
+    expect(persisted.theme.primary).toBeUndefined();
+    expect(persisted.theme.font_family_url).toBeUndefined();
+    expect(persisted.theme.font_family_name).toBe("Evil");
+  });
+
+  it("rejects credentialed HTTPS font URL on save", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(superId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        font_family_url: "https://user:pass@example.com/font.woff2",
+        font_family_name: "Brand Sans",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      theme: { font_family_url?: string; font_family_name?: string };
+      vars: Record<string, string>;
+    };
+    expect(body.theme.font_family_url).toBeUndefined();
+    expect(body.theme.font_family_name).toBe("Brand Sans");
+    expect(body.vars["--font-sans"]).toBeUndefined();
+
+    const getRes = await app.request("/api/admin/theme", {
+      headers: { Cookie: await sessionCookieFor(superId) },
+    });
+    const persisted = (await getRes.json()) as {
+      theme: { font_family_url?: string; font_family_name?: string };
+    };
+    expect(persisted.theme.font_family_url).toBeUndefined();
+    expect(persisted.theme.font_family_name).toBe("Brand Sans");
+  });
+
+  it("strips HTML from font family name on save", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(superId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        font_family_url: "https://cdn.example.com/font.woff2",
+        font_family_name: 'Evil</style><script>alert(1)</script>',
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      theme: { font_family_url?: string; font_family_name?: string };
+      vars: { fontFaceCss?: string };
+    };
+    expect(body.theme.font_family_name).toBe("Evilstylescriptalert1script");
+    expect(body.vars.fontFaceCss).toBeDefined();
+    expect(body.vars.fontFaceCss).not.toContain("</style>");
+    expect(body.vars.fontFaceCss).not.toContain("<script");
   });
 });
 
@@ -264,6 +433,14 @@ describe("staff SPA routes", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("content-security-policy")).not.toContain("https://cdn.jsdelivr.net");
+    expect(await res.text()).toContain("staff-spa-fixture");
+  });
+
+  it("serves admin SPA for superadmin on /admin/settings", async () => {
+    const res = await app.request("/admin/settings", {
+      headers: { Cookie: await sessionCookieFor(superId) },
+    });
+    expect(res.status).toBe(200);
     expect(await res.text()).toContain("staff-spa-fixture");
   });
 });

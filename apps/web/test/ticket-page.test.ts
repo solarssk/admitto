@@ -111,6 +111,40 @@ describe("getTicketPageSecurityHeaders", () => {
     expect(html).toContain("@font-face");
     expect(html).toContain(fontUrl);
   });
+
+  it("does not break out of the ticket style block via font family name", () => {
+    const fontUrl = "https://cdn.example.com/fonts/brand.woff2";
+    const html = renderTicket(
+      {
+        mode: "internal",
+        attendee: {
+          id: "a1",
+          event_id: "e1",
+          email: "x@example.com",
+          name: "Guest",
+          status: "confirmed",
+          token_hash: null,
+          qr_payload: null,
+          external_uuid: null,
+          ticket_type: null,
+        },
+        event: {
+          id: "e1",
+          title: "Launch",
+          date: new Date("2026-09-01T09:00:00Z"),
+          location: null,
+        },
+      },
+      "data:image/png;base64,abc",
+      {
+        font_family_url: fontUrl,
+        font_family_name: 'test</style><script>document.location="https://evil.example"</script><style>',
+      },
+    );
+    expect(html).not.toContain("</style><script");
+    expect(html).not.toContain("<script");
+    expect(html).toMatch(/<style>[\s\S]*<\/style>/);
+  });
 });
 
 describe("buildTicketFontSrc", () => {
