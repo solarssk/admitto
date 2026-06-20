@@ -66,6 +66,12 @@ export function BrandingPanel() {
     };
   }, [loadedOk]);
 
+  useEffect(() => {
+    if (!saveMessage) return;
+    const id = window.setTimeout(() => setSaveMessage(null), 2000);
+    return () => clearTimeout(id);
+  }, [saveMessage]);
+
   const updateDraft = (patch: Partial<BrandingThemeDto>) => {
     setDraft((prev) => ({ ...prev, ...patch }));
     setSaveMessage(null);
@@ -105,7 +111,6 @@ export function BrandingPanel() {
       savedRef.current = response.theme;
       setDraft(response.theme);
       setSaveMessage("Branding saved.");
-      setTimeout(() => setSaveMessage(null), 2000);
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.message : "Failed to save branding.");
     } finally {
