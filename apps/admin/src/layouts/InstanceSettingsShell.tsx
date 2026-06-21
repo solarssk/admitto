@@ -19,13 +19,13 @@ export function InstanceSettingsShell() {
           <div className="sidebar__context-meta">System-wide configuration</div>
         </div>
         <div className="sidebar__foot">
-          <NavLink to="/admin" className={({ isActive }) => `nav-item${isActive ? " nav-item--active" : ""}`} end>
+          <NavLink to="/admin" className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`} end>
             <i className="ti ti-calendar-event" aria-hidden="true" />
             <span>All events</span>
           </NavLink>
           <NavLink
             to="/admin/settings"
-            className={({ isActive }) => `nav-item${isActive ? " nav-item--active" : ""}`}
+            className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
             end
           >
             <i className="ti ti-settings" aria-hidden="true" />

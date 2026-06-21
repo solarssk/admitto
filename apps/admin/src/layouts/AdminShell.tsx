@@ -63,7 +63,7 @@ export function AdminShell({ event }: AdminShellProps) {
               <NavLink
                 key={item.segment}
                 to={to}
-                className={({ isActive }) => `nav-item${isActive ? " nav-item--active" : ""}`}
+                className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
                 end={item.segment === "overview"}
               >
                 <i className={`ti ti-${item.icon}`} aria-hidden="true" />
@@ -79,7 +79,7 @@ export function AdminShell({ event }: AdminShellProps) {
           })}
         </nav>
         <div className="sidebar__foot">
-          <NavLink to="/admin" className={({ isActive }) => `nav-item${isActive ? " nav-item--active" : ""}`} end>
+          <NavLink to="/admin" className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`} end>
             <i className="ti ti-calendar-event" aria-hidden="true" />
             <span>All events</span>
           </NavLink>
@@ -87,7 +87,7 @@ export function AdminShell({ event }: AdminShellProps) {
             <>
               <NavLink
                 to="/admin/settings"
-                className={({ isActive }) => `nav-item${isActive ? " nav-item--active" : ""}`}
+                className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
               >
                 <i className="ti ti-settings" aria-hidden="true" />
                 <span>Instance settings</span>
