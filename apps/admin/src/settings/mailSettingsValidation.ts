@@ -112,7 +112,7 @@ export function validateMailDraft(draft: MailDraft): { valid: boolean; errors: s
     draft.provider === "export_only"
   ) {
     const from = draft.fromAddress.trim();
-    if (!from || !EMAIL_RE.test(from)) {
+    if (!from) {
       errors.push("From address must be a valid email.");
     }
   }
