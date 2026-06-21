@@ -44,6 +44,7 @@ import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
 import { createAdminResendRateLimit } from "./admin-resend-rate-limit.js";
 import { createAdminCommunicationRateLimit } from "./admin-communication-rate-limit.js";
+import { createAdminMailSettingsRateLimit } from "./admin-mail-settings-rate-limit.js";
 import { handleLogin, handleLogout, handleMe, handleMfaVerify, handleTotpEnroll, handleTotpConfirm } from "./auth/routes.js";
 import {
   handleGetMfaEnroll,
@@ -103,6 +104,12 @@ import {
   eventIdFromCheckinBody,
 } from "./admin/checkin-api-routes.js";
 import { handleGetStaffTheme, handlePutStaffTheme } from "./admin/staff-api-routes.js";
+import {
+  handleGetMailSettings,
+  handlePutMailSettings,
+  handlePostMailSettingsTest,
+  MAX_MAIL_SETTINGS_BODY_BYTES,
+} from "./admin/mail-settings-routes.js";
 import { handlePostClientError } from "./admin/client-error-routes.js";
 import { createStaffSpaHandlers } from "./staff-spa.js";
 import { sweepExpiredOidcAuthStates } from "@admitto/auth";
@@ -201,6 +208,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const staffAdminGate = createStaffAdminGate(db);
   const adminResendRateLimit = createAdminResendRateLimit(rateLimitStore);
   const adminCommunicationRateLimit = createAdminCommunicationRateLimit(rateLimitStore);
+  const adminMailSettingsRateLimit = createAdminMailSettingsRateLimit(rateLimitStore);
   const importBodyLimit = bodyLimit({
     maxSize: MAX_IMPORT_BODY_BYTES,
     onError: (c) => c.json({ error: "file too large" }, 400),
@@ -211,6 +219,10 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   const templateTestSendBodyLimit = bodyLimit({
     maxSize: MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const mailSettingsBodyLimit = bodyLimit({
+    maxSize: MAX_MAIL_SETTINGS_BODY_BYTES,
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
@@ -368,6 +380,17 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
   app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));
+  app.get("/api/admin/mail-settings", staffAdminGate, (c) => handleGetMailSettings(c, db));
+  app.put("/api/admin/mail-settings", mailSettingsBodyLimit, jsonPostCsrf, staffAdminGate, (c) =>
+    handlePutMailSettings(c, db),
+  );
+  app.post(
+    "/api/admin/mail-settings/test",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminMailSettingsRateLimit,
+    (c) => handlePostMailSettingsTest(c, db, mailDeliveryDeps),
+  );
   app.post("/api/admin/client-errors", jsonPostCsrf, staffAdminGate, (c) => handlePostClientError(c));
 
   app.get("/api/checkin/events", requireSession, (c) => handleGetCheckinEvents(c, db));

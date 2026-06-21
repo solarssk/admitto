@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createMailer, parseMailerConfig } from "@admitto/mailer";
 import { setMailSettings } from "../src/mailSettings.js";
-import { resolveMailConfig } from "../src/resolver.js";
+import { resolveMailConfig, resolveMailConfigForOrg } from "../src/resolver.js";
 import { resetDb } from "./resetDb.js";
 
 const prisma = new PrismaClient();
@@ -161,5 +161,60 @@ describe("resolveMailConfig — secret round-trip", () => {
     if (config.provider === "smtp") {
       expect(config.password).toBe("round-trip-secret");
     }
+  });
+});
+
+describe("resolveMailConfigForOrg — org-scoped instance settings", () => {
+  beforeAll(async () => {
+    await setMailSettings(
+      { scopeType: "organization", scopeId: "org-r" },
+      {
+        provider: "smtp",
+        host: "smtp.org-for-org.example.com",
+        port: 587,
+        user: "org-for@example.com",
+        fromAddress: "org-for@example.com",
+        smtpPassword: "org-for-pass",
+      },
+      prisma,
+    );
+  });
+
+  it("resolves from org DB when env has no provider", async () => {
+    const config = await resolveMailConfigForOrg("org-r", prisma, {});
+    expect(config.provider).toBe("smtp");
+    if (config.provider === "smtp") {
+      expect(config.host).toBe("smtp.org-for-org.example.com");
+    }
+  });
+
+  it("env overrides org DB", async () => {
+    const config = await resolveMailConfigForOrg("org-r", prisma, {
+      ...BASE_SMTP_ENV,
+      SMTP_HOST: "smtp.env-override.example.com",
+    });
+    if (config.provider === "smtp") {
+      expect(config.host).toBe("smtp.env-override.example.com");
+    }
+  });
+
+  it("rejects resolve when allowed from domain does not match from address", async () => {
+    await setMailSettings(
+      { scopeType: "organization", scopeId: "org-r" },
+      {
+        provider: "smtp",
+        host: "smtp.org-for-org.example.com",
+        port: 587,
+        user: "org-for@example.com",
+        fromAddress: "org-for@other.com",
+        allowedFromDomain: "example.com",
+        smtpPassword: "org-for-pass",
+      },
+      prisma,
+    );
+
+    await expect(resolveMailConfigForOrg("org-r", prisma, {})).rejects.toThrow(
+      /allowed from domain/i,
+    );
   });
 });

@@ -27,6 +27,8 @@ import type {
   PreviewTemplateResponse,
   TestSendBody,
   TestSendResponse,
+  MailSettingsResponse,
+  SaveMailSettingsBody,
   EventDeliveriesListParams,
   EventDeliveriesListResponse,
 } from "./types.js";
@@ -41,12 +43,22 @@ export class ApiError extends Error {
   }
 }
 
+type ApiErrorBody = { error?: string; detail?: string };
+
+function messageFromApiErrorBody(body: ApiErrorBody): string | undefined {
+  const detail = body.detail?.trim();
+  if (detail) return detail;
+  const error = body.error?.trim();
+  if (error) return error;
+  return undefined;
+}
+
 async function parseJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = res.statusText || `HTTP ${res.status}`;
     try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) message = body.error;
+      const body = (await res.json()) as ApiErrorBody;
+      message = messageFromApiErrorBody(body) ?? message;
     } catch {
       /* ignore */
     }
@@ -420,7 +432,7 @@ async function parseTemplateActionJson<T>(res: Response): Promise<T> {
       if (body.errors?.length) {
         throw new TemplateValidationError(body.errors);
       }
-      throw new ApiError(res.status, body.error ?? res.statusText);
+      throw new ApiError(res.status, messageFromApiErrorBody(body) ?? body.error ?? res.statusText);
     } catch (err) {
       if (err instanceof TemplateValidationError || err instanceof ApiError) throw err;
       throw new ApiError(res.status, res.statusText);
@@ -532,8 +544,8 @@ export async function exportAttendees(
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
     try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) message = body.error;
+      const body = (await res.json()) as ApiErrorBody;
+      message = messageFromApiErrorBody(body) ?? message;
     } catch {
       /* ignore */
     }
@@ -553,4 +565,22 @@ export async function exportAttendees(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/** Load instance mail transport settings (superadmin). */
+export async function fetchMailSettings(signal?: AbortSignal): Promise<MailSettingsResponse> {
+  const res = await fetch("/api/admin/mail-settings", { credentials: "same-origin", signal });
+  return parseJson<MailSettingsResponse>(res);
+}
+
+/** Save instance mail transport settings (superadmin). */
+export async function saveMailSettings(body: SaveMailSettingsBody): Promise<MailSettingsResponse> {
+  const res = await fetch("/api/admin/mail-settings", jsonPutInit(body));
+  return parseJson<MailSettingsResponse>(res);
+}
+
+/** Send a transport-level test email (superadmin). */
+export async function sendMailTransportTest(to: string): Promise<TestSendResponse> {
+  const res = await fetch("/api/admin/mail-settings/test", jsonPostInit({ to }));
+  return parseJson<TestSendResponse>(res);
 }

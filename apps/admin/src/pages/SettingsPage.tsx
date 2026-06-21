@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Badge, Card, PageHeader } from "@admitto/ui";
 import { BrandingPanel } from "../settings/BrandingPanel.js";
+import { MailTransportPanel } from "../settings/MailTransportPanel.js";
 
 interface SettingsPlaceholderProps {
   title: string;
@@ -46,7 +47,7 @@ function IdentityProvidersCard() {
   );
 }
 
-/** Instance-level settings shell content (branding + roadmap placeholders + identity links). */
+/** Instance-level settings shell content (branding, mail transport, roadmap placeholders, identity links). */
 export function SettingsPage() {
   return (
     <>
@@ -56,11 +57,7 @@ export function SettingsPage() {
       />
       <div className="settings-sections">
         <BrandingPanel />
-        <SettingsPlaceholderCard
-          title="Mail transport"
-          description="Configure Microsoft Graph, SMTP, or Power Automate for outbound event mail."
-          badge="Coming in v0.4.5b"
-        />
+        <MailTransportPanel />
         <SettingsPlaceholderCard
           title="Sessions"
           description="Review and revoke active staff sessions across admin and operator surfaces."

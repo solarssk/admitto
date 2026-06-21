@@ -232,6 +232,20 @@ model AttendeeActionLog {
   @@index([attendee_id, created_at(sort: Desc)])
 }
 
+// Instance/org-scoped admin audit (ADR 0031) — superadmin settings, sessions, archiving.
+model AdminAuditLog {
+  id              String   @id @default(cuid())
+  organization_id String?
+  actor_user_id   String
+  action_type     String
+  metadata        Json?
+  ip              String?
+  session_id      String?
+  created_at      DateTime @default(now())
+
+  @@index([organization_id, created_at(sort: Desc)])
+}
+
 // Per-scope mailer configuration (ADR 0005, ADR 0006).
 // scope_type = "organization" | "event". Secrets stored encrypted via @admitto/crypto.
 model MailSettings {

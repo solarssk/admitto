@@ -283,6 +283,92 @@ export interface TestSendResponse {
   error?: string;
 }
 
+export type MailFieldSource = "env" | "db" | "default";
+
+export interface MailPlainFieldDto<T = string | number | boolean | null> {
+  value: T;
+  source: MailFieldSource;
+  locked: boolean;
+}
+
+export interface MailSecretFieldDto {
+  set: boolean;
+  masked: "••••" | null;
+  source: MailFieldSource;
+  locked: boolean;
+}
+
+export type MailProvider = "smtp" | "graph" | "powerautomate" | "export_only";
+
+export interface MailSettingsFieldsDto {
+  provider: MailPlainFieldDto<MailProvider | null>;
+  fromAddress: MailPlainFieldDto<string | null>;
+  fromName: MailPlainFieldDto<string | null>;
+  replyTo: MailPlainFieldDto<string | null>;
+  envelopeFrom: MailPlainFieldDto<string | null>;
+  allowedFromDomain: MailPlainFieldDto<string | null>;
+  host: MailPlainFieldDto<string | null>;
+  port: MailPlainFieldDto<number | null>;
+  secure: MailPlainFieldDto<boolean | null>;
+  user: MailPlainFieldDto<string | null>;
+  requireTls: MailPlainFieldDto<boolean | null>;
+  tlsRejectUnauthorized: MailPlainFieldDto<boolean | null>;
+  heloName: MailPlainFieldDto<string | null>;
+  pool: MailPlainFieldDto<boolean | null>;
+  maxConnections: MailPlainFieldDto<number | null>;
+  maxMessages: MailPlainFieldDto<number | null>;
+  rateLimitPerMinute: MailPlainFieldDto<number | null>;
+  connectionTimeout: MailPlainFieldDto<number | null>;
+  greetingTimeout: MailPlainFieldDto<number | null>;
+  socketTimeout: MailPlainFieldDto<number | null>;
+  smtpPassword: MailSecretFieldDto;
+  mailbox: MailPlainFieldDto<string | null>;
+  tenantId: MailPlainFieldDto<string | null>;
+  clientId: MailPlainFieldDto<string | null>;
+  saveToSentItems: MailPlainFieldDto<boolean | null>;
+  graphClientSecret: MailSecretFieldDto;
+  powerAutomateUrl: MailSecretFieldDto;
+  powerAutomateKey: MailSecretFieldDto;
+}
+
+export interface MailSettingsResponse {
+  organizationId: string;
+  isProduction: boolean;
+  fields: MailSettingsFieldsDto;
+}
+
+export interface SaveMailSettingsBody {
+  /** Omit = unchanged; `""` clears stored provider (Not configured). */
+  provider?: MailProvider | "";
+  fromAddress?: string;
+  fromName?: string;
+  replyTo?: string;
+  envelopeFrom?: string;
+  allowedFromDomain?: string;
+  host?: string;
+  port?: number | null;
+  secure?: boolean;
+  user?: string;
+  requireTls?: boolean;
+  tlsRejectUnauthorized?: boolean;
+  heloName?: string;
+  pool?: boolean;
+  maxConnections?: number | null;
+  maxMessages?: number | null;
+  rateLimitPerMinute?: number | null;
+  connectionTimeout?: number | null;
+  greetingTimeout?: number | null;
+  socketTimeout?: number | null;
+  smtpPassword?: string;
+  mailbox?: string;
+  tenantId?: string;
+  clientId?: string;
+  saveToSentItems?: boolean;
+  graphClientSecret?: string;
+  powerAutomateUrl?: string;
+  powerAutomateKey?: string;
+}
+
 export interface EventDeliveriesListParams {
   page?: number;
   pageSize?: number;

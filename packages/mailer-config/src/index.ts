@@ -1,7 +1,8 @@
 export { rawMailFieldsFromEnv } from "./envFields.js";
-export { setMailSettings } from "./mailSettings.js";
-export { resolveMailConfig } from "./resolver.js";
-export { describeMailConfig } from "./describer.js";
+export { setMailSettings, mergeOrgMailSettingsRow } from "./mailSettings.js";
+export { resolveMailConfig, resolveMailConfigForOrg, tryParseOrgMailConfigFromRow } from "./resolver.js";
+export { describeMailConfig, describeMailConfigForOrg } from "./describer.js";
+export { validateOrgMailSettingsUpdate } from "./validateOrgUpdate.js";
 export type {
   MailScope,
   MailSettingsInput,
