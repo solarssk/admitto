@@ -35,7 +35,7 @@
   },
   "devDependencies": {
     "@testcontainers/redis": "^12.0.3",
-    "@types/node": "^22.19.20",
+    "@types/node": "^26.0.0",
     "@types/pdfkit": "^0.17.6",
     "jose": "^6.0.11",
     "tsx": "^4.19.2",
