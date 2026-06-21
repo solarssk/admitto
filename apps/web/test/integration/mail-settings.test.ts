@@ -235,6 +235,38 @@ describe("PUT /api/admin/mail-settings", () => {
     expect(body.detail).toMatch(/user/i);
   });
 
+  it("rejects whitespace-only SMTP host", async () => {
+    const res = await app.request("/api/admin/mail-settings", {
+      method: "PUT",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "   " }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("validation_failed");
+  });
+
+  it("trims SMTP host before persistence", async () => {
+    const res = await app.request("/api/admin/mail-settings", {
+      method: "PUT",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "smtp",
+        host: "  smtp.trim.example.com  ",
+        port: 587,
+        user: "  trim@example.com  ",
+        fromAddress: "trim@example.com",
+        smtpPassword: "trim-secret",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const row = await prisma.mailSettings.findUnique({
+      where: { scope_type_scope_id: { scope_type: "organization", scope_id: ORG_MAIL } },
+    });
+    expect(row?.host).toBe("smtp.trim.example.com");
+    expect(row?.user).toBe("trim@example.com");
+  });
+
   it("leaves secret unchanged when omitted", async () => {
     await setMailSettings(
       { scopeType: "organization", scopeId: ORG_MAIL },

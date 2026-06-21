@@ -30,23 +30,27 @@ const optionalEmail = z
   .union([z.string().trim().email().max(254), z.literal("")])
   .optional();
 
+/** Trimmed non-empty string, or explicit "" to clear a stored value. */
+const optionalTrimmedNonEmpty = (max: number) =>
+  z.union([z.string().trim().min(1).max(max), z.literal("")]).optional();
+
 const optionalPositiveInt = z.union([z.number().int().min(1), z.null()]).optional();
 
 const putMailSettingsBodySchema = z
   .object({
     provider: z.union([MAIL_PROVIDER, z.literal("")]).optional(),
     fromAddress: optionalEmail,
-    fromName: z.string().max(200).optional(),
+    fromName: optionalTrimmedNonEmpty(200),
     replyTo: optionalEmail,
     envelopeFrom: optionalEmail,
-    allowedFromDomain: z.string().max(253).optional(),
-    host: z.string().max(253).optional(),
+    allowedFromDomain: optionalTrimmedNonEmpty(253),
+    host: optionalTrimmedNonEmpty(253),
     port: z.union([z.number().int().min(1).max(65535), z.null()]).optional(),
     secure: z.boolean().optional(),
-    user: z.string().max(254).optional(),
+    user: optionalTrimmedNonEmpty(254),
     requireTls: z.boolean().optional(),
     tlsRejectUnauthorized: z.boolean().optional(),
-    heloName: z.string().max(253).optional(),
+    heloName: optionalTrimmedNonEmpty(253),
     pool: z.boolean().optional(),
     maxConnections: optionalPositiveInt,
     maxMessages: optionalPositiveInt,
@@ -55,8 +59,8 @@ const putMailSettingsBodySchema = z
     greetingTimeout: optionalPositiveInt,
     socketTimeout: optionalPositiveInt,
     mailbox: optionalEmail,
-    tenantId: z.string().max(64).optional(),
-    clientId: z.string().max(64).optional(),
+    tenantId: optionalTrimmedNonEmpty(64),
+    clientId: optionalTrimmedNonEmpty(64),
     saveToSentItems: z.boolean().optional(),
     smtpPassword: z.string().optional(),
     graphClientSecret: z.string().optional(),
