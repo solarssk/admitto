@@ -31,6 +31,9 @@ import type {
   SaveMailSettingsBody,
   EventDeliveriesListParams,
   EventDeliveriesListResponse,
+  SessionsResponse,
+  SecuritySettingsDto,
+  PatchSecuritySettingsBody,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -583,4 +586,40 @@ export async function saveMailSettings(body: SaveMailSettingsBody): Promise<Mail
 export async function sendMailTransportTest(to: string): Promise<TestSendResponse> {
   const res = await fetch("/api/admin/mail-settings/test", jsonPostInit({ to }));
   return parseJson<TestSendResponse>(res);
+}
+
+export async function fetchSessions(
+  role?: string,
+  signal?: AbortSignal,
+): Promise<SessionsResponse> {
+  const q = role && role !== "all" ? `?role=${encodeURIComponent(role)}` : "";
+  const res = await fetch(`/api/admin/sessions${q}`, { credentials: "same-origin", signal });
+  return parseJson<SessionsResponse>(res);
+}
+
+export async function revokeSessionById(sessionId: string): Promise<void> {
+  const res = await fetch(`/api/admin/sessions/${sessionId}/revoke`, jsonPostInit({}));
+  await parseJson<unknown>(res);
+}
+
+export async function revokeAllOperatorSessions(
+  eventId: string,
+): Promise<{ revokedCount: number }> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/revoke-all-operator-sessions`,
+    jsonPostInit({}),
+  );
+  return parseJson<{ revokedCount: number }>(res);
+}
+
+export async function fetchSecuritySettings(signal?: AbortSignal): Promise<SecuritySettingsDto> {
+  const res = await fetch("/api/admin/system-settings", { credentials: "same-origin", signal });
+  return parseJson<SecuritySettingsDto>(res);
+}
+
+export async function patchSecuritySettings(
+  body: PatchSecuritySettingsBody,
+): Promise<SecuritySettingsDto> {
+  const res = await fetch("/api/admin/system-settings", jsonPatchInit(body));
+  return parseJson<SecuritySettingsDto>(res);
 }

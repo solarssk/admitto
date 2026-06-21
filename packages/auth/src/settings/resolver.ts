@@ -103,7 +103,7 @@ export async function getTrustedDeviceDays(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<number> {
   const v = await getSetting<number>(prisma, "trusted_device_days");
-  return typeof v === "number" && v > 0 ? v : (SETTING_DEFAULTS["trusted_device_days"] as number);
+  return typeof v === "number" && v >= 0 ? v : (SETTING_DEFAULTS["trusted_device_days"] as number);
 }
 
 /** Role names that require MFA (from SystemSettings `mfa_required_roles`, JSON array or CSV). */

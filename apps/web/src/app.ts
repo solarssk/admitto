@@ -110,6 +110,15 @@ import {
   handlePostMailSettingsTest,
   MAX_MAIL_SETTINGS_BODY_BYTES,
 } from "./admin/mail-settings-routes.js";
+import {
+  handleGetSessions,
+  handleRevokeSession,
+  handleRevokeAllOperatorSessions,
+} from "./admin/sessions-routes.js";
+import {
+  handleGetSystemSettings,
+  handlePatchSystemSettings,
+} from "./admin/system-settings-routes.js";
 import { handlePostClientError } from "./admin/client-error-routes.js";
 import { createStaffSpaHandlers } from "./staff-spa.js";
 import { sweepExpiredOidcAuthStates } from "@admitto/auth";
@@ -390,6 +399,20 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminMailSettingsRateLimit,
     (c) => handlePostMailSettingsTest(c, db, mailDeliveryDeps),
+  );
+  app.get("/api/admin/sessions", staffAdminGate, (c) => handleGetSessions(c, db));
+  app.post("/api/admin/sessions/:id/revoke", jsonPostCsrf, staffAdminGate, (c) =>
+    handleRevokeSession(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/revoke-all-operator-sessions",
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handleRevokeAllOperatorSessions(c, db),
+  );
+  app.get("/api/admin/system-settings", staffAdminGate, (c) => handleGetSystemSettings(c, db));
+  app.patch("/api/admin/system-settings", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePatchSystemSettings(c, db),
   );
   app.post("/api/admin/client-errors", jsonPostCsrf, staffAdminGate, (c) => handlePostClientError(c));
 
