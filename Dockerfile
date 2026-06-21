@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS builder
+FROM node:24-bookworm-slim AS builder
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -24,7 +24,7 @@ RUN mkdir -p /opt/prisma-runtime \
 
 RUN npm prune --omit=dev
 
-FROM node:22-bookworm-slim AS production
+FROM node:24-bookworm-slim AS production
 
 # postgresql-client-16 for pre-migration pg_dump (ADR 0027; server is postgres:16).
 RUN apt-get update \
