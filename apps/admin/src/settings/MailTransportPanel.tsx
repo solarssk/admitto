@@ -78,6 +78,18 @@ function FieldHint({ children }: { children: string }) {
   return <p className="mail-field-hint">{children}</p>;
 }
 
+function SectionTitle({ children }: { children: string }) {
+  return <h3 className="mail-transport-section__title">{children}</h3>;
+}
+
+const PROVIDER_GUIDE: Record<MailProvider | "", string | null> = {
+  "": null,
+  smtp: "External SMTP relay (e.g. DuoCircle). Port 587 + STARTTLS, or 465 + implicit TLS.",
+  graph: "Entra app-only Graph send (Mail.Send). Mailbox may differ from From.",
+  powerautomate: "HTTP fallback when SMTP/Graph are unavailable.",
+  export_only: "No network send — message export only (non-production).",
+};
+
 function SecretFieldRow({
   label,
   field,
@@ -351,7 +363,7 @@ export function MailTransportPanel() {
             </p>
           )}
           <p className="mail-transport__desc">
-            Configure outbound mail for tickets and lifecycle messages.
+            Instance-wide outbound transport for tickets and lifecycle mail.
           </p>
           <div className="mail-field-row">
             <Select
@@ -376,6 +388,9 @@ export function MailTransportPanel() {
             </Select>
             <EnvBadge locked={fieldLocked("provider")} />
           </div>
+          {provider && PROVIDER_GUIDE[provider] && (
+            <p className="mail-transport-provider-guide">{PROVIDER_GUIDE[provider]}</p>
+          )}
 
           {provider === "export_only" && (
             <p className="mail-dev-warning" role="status">
@@ -384,21 +399,21 @@ export function MailTransportPanel() {
           )}
 
           {(provider === "smtp" || provider === "graph" || provider === "powerautomate" || provider === "export_only") && (
-            <div className="mail-transport-section">
+            <>
+              <SectionTitle>Sender</SectionTitle>
+              <div className="mail-transport-section">
               <Input
                 label="From address"
                 type="email"
                 value={draft.fromAddress}
                 disabled={fieldLocked("fromAddress")}
                 onChange={(e) => updateDraft({ fromAddress: e.target.value })}
-                hint="Visible sender address in outbound mail (From header)."
               />
               <Input
                 label="From name"
                 value={draft.fromName}
                 disabled={fieldLocked("fromName")}
                 onChange={(e) => updateDraft({ fromName: e.target.value })}
-                hint="Display name shown next to the from address."
               />
               <Input
                 label="Reply-to"
@@ -406,7 +421,6 @@ export function MailTransportPanel() {
                 value={draft.replyTo}
                 disabled={fieldLocked("replyTo")}
                 onChange={(e) => updateDraft({ replyTo: e.target.value })}
-                hint="Where replies should go. Leave empty to use the from address."
               />
               <Input
                 label="Envelope from (bounce address)"
@@ -414,7 +428,7 @@ export function MailTransportPanel() {
                 value={draft.envelopeFrom}
                 disabled={fieldLocked("envelopeFrom")}
                 onChange={(e) => updateDraft({ envelopeFrom: e.target.value })}
-                hint="SMTP MAIL FROM / return-path for bounces. Often a dedicated address on your sending domain (SPF/DKIM alignment)."
+                hint="SMTP MAIL FROM / return-path."
               />
               {(provider === "smtp" || provider === "graph" || provider === "powerautomate") && (
                 <Input
@@ -422,13 +436,16 @@ export function MailTransportPanel() {
                   value={draft.allowedFromDomain}
                   disabled={fieldLocked("allowedFromDomain")}
                   onChange={(e) => updateDraft({ allowedFromDomain: e.target.value })}
-                  hint="When set, outbound mail is rejected unless the from address (or Graph mailbox) uses this domain."
+                  hint="Optional. Send fails when From (or Graph mailbox) is outside this domain."
                 />
               )}
             </div>
+            </>
           )}
 
           {provider === "smtp" && (
+            <>
+              <SectionTitle>SMTP connection</SectionTitle>
             <div className="mail-transport-section">
               <Input
                 label="SMTP host"
@@ -444,7 +461,6 @@ export function MailTransportPanel() {
                 disabled={fieldLocked("port")}
                 onChange={(e) => updateDraft({ port: e.target.value })}
                 placeholder="587"
-                hint="587 with STARTTLS (Require STARTTLS on, Use TLS off) or 465 with implicit TLS (Use TLS on)."
               />
               <Input
                 label="Username"
@@ -469,117 +485,98 @@ export function MailTransportPanel() {
                   setSecrets((s) => ({ ...s, smtpPassword: { mode: "idle", value: "" } }))
                 }
               />
-              <div className="mail-switch-field">
-                <Switch
-                  label="Use TLS (secure)"
-                  checked={draft.secure}
-                  disabled={fieldLocked("secure")}
-                  onChange={(e) => updateDraft({ secure: e.target.checked })}
-                />
-                <FieldHint>
-                  Implicit TLS from the first byte — typical for port 465. Turn off when using port 587 with STARTTLS.
-                </FieldHint>
-              </div>
-              <div className="mail-switch-field">
-                <Switch
-                  label="Require STARTTLS"
-                  checked={draft.requireTls}
-                  disabled={fieldLocked("requireTls")}
-                  onChange={(e) => updateDraft({ requireTls: e.target.checked })}
-                />
-                <FieldHint>
-                  Upgrade plain connection with STARTTLS — typical for port 587. Usually off when Use TLS (secure) is on.
-                </FieldHint>
-              </div>
+              <Switch
+                label="Use TLS (secure)"
+                checked={draft.secure}
+                disabled={fieldLocked("secure")}
+                onChange={(e) => updateDraft({ secure: e.target.checked })}
+              />
+              <Switch
+                label="Require STARTTLS"
+                checked={draft.requireTls}
+                disabled={fieldLocked("requireTls")}
+                onChange={(e) => updateDraft({ requireTls: e.target.checked })}
+              />
+              <FieldHint>587: STARTTLS on, TLS off. 465: TLS on, STARTTLS off.</FieldHint>
+            </div>
+
+            <SectionTitle>SMTP tuning</SectionTitle>
+            <div className="mail-transport-section">
+              <Switch
+                label="Connection pool"
+                checked={draft.pool}
+                disabled={fieldLocked("pool")}
+                onChange={(e) => updateDraft({ pool: e.target.checked })}
+              />
+              <Switch
+                label="Verify TLS certificate"
+                checked={draft.tlsRejectUnauthorized}
+                disabled={fieldLocked("tlsRejectUnauthorized")}
+                onChange={(e) => updateDraft({ tlsRejectUnauthorized: e.target.checked })}
+              />
+              <Input
+                label="HELO/EHLO name"
+                value={draft.heloName}
+                disabled={fieldLocked("heloName")}
+                onChange={(e) => updateDraft({ heloName: e.target.value })}
+              />
               <Input
                 label="Rate limit (per minute)"
                 inputMode="numeric"
                 value={draft.rateLimitPerMinute}
                 disabled={fieldLocked("rateLimitPerMinute")}
                 onChange={(e) => updateDraft({ rateLimitPerMinute: e.target.value })}
-                hint="Optional cap on messages per minute for this transport."
               />
-              <details className="mail-transport-advanced">
-                <summary>Advanced SMTP options</summary>
-                <div className="mail-transport-advanced__body">
-                  <div className="mail-switch-field">
-                    <Switch
-                      label="Verify TLS certificate"
-                      checked={draft.tlsRejectUnauthorized}
-                      disabled={fieldLocked("tlsRejectUnauthorized")}
-                      onChange={(e) => updateDraft({ tlsRejectUnauthorized: e.target.checked })}
-                    />
-                    <FieldHint>Turn off only for lab/testing with self-signed certificates.</FieldHint>
-                  </div>
-                  <div className="mail-switch-field">
-                    <Switch
-                      label="Connection pool"
-                      checked={draft.pool}
-                      disabled={fieldLocked("pool")}
-                      onChange={(e) => updateDraft({ pool: e.target.checked })}
-                    />
-                    <FieldHint>Reuse SMTP connections for bulk sending.</FieldHint>
-                  </div>
-                  <Input
-                    label="HELO/EHLO name"
-                    value={draft.heloName}
-                    disabled={fieldLocked("heloName")}
-                    onChange={(e) => updateDraft({ heloName: e.target.value })}
-                    hint="Hostname presented to the SMTP server. Leave empty for the system default."
-                  />
-                  <Input
-                    label="Max connections"
-                    inputMode="numeric"
-                    value={draft.maxConnections}
-                    disabled={fieldLocked("maxConnections")}
-                    onChange={(e) => updateDraft({ maxConnections: e.target.value })}
-                  />
-                  <Input
-                    label="Max messages per connection"
-                    inputMode="numeric"
-                    value={draft.maxMessages}
-                    disabled={fieldLocked("maxMessages")}
-                    onChange={(e) => updateDraft({ maxMessages: e.target.value })}
-                  />
-                  <Input
-                    label="Connection timeout (ms)"
-                    inputMode="numeric"
-                    value={draft.connectionTimeout}
-                    disabled={fieldLocked("connectionTimeout")}
-                    onChange={(e) => updateDraft({ connectionTimeout: e.target.value })}
-                  />
-                  <Input
-                    label="Greeting timeout (ms)"
-                    inputMode="numeric"
-                    value={draft.greetingTimeout}
-                    disabled={fieldLocked("greetingTimeout")}
-                    onChange={(e) => updateDraft({ greetingTimeout: e.target.value })}
-                  />
-                  <Input
-                    label="Socket timeout (ms)"
-                    inputMode="numeric"
-                    value={draft.socketTimeout}
-                    disabled={fieldLocked("socketTimeout")}
-                    onChange={(e) => updateDraft({ socketTimeout: e.target.value })}
-                  />
-                </div>
-              </details>
+              <Input
+                label="Max connections"
+                inputMode="numeric"
+                value={draft.maxConnections}
+                disabled={fieldLocked("maxConnections")}
+                onChange={(e) => updateDraft({ maxConnections: e.target.value })}
+              />
+              <Input
+                label="Max messages per connection"
+                inputMode="numeric"
+                value={draft.maxMessages}
+                disabled={fieldLocked("maxMessages")}
+                onChange={(e) => updateDraft({ maxMessages: e.target.value })}
+              />
+              <Input
+                label="Connection timeout (ms)"
+                inputMode="numeric"
+                value={draft.connectionTimeout}
+                disabled={fieldLocked("connectionTimeout")}
+                onChange={(e) => updateDraft({ connectionTimeout: e.target.value })}
+              />
+              <Input
+                label="Greeting timeout (ms)"
+                inputMode="numeric"
+                value={draft.greetingTimeout}
+                disabled={fieldLocked("greetingTimeout")}
+                onChange={(e) => updateDraft({ greetingTimeout: e.target.value })}
+              />
+              <Input
+                label="Socket timeout (ms)"
+                inputMode="numeric"
+                value={draft.socketTimeout}
+                disabled={fieldLocked("socketTimeout")}
+                onChange={(e) => updateDraft({ socketTimeout: e.target.value })}
+              />
             </div>
+            </>
           )}
 
           {provider === "graph" && (
+            <>
+              <SectionTitle>Microsoft Graph</SectionTitle>
             <div className="mail-transport-section">
-              <FieldHint>
-                Register an app in Azure Entra ID (Microsoft Entra). Use application permissions for
-                send mail; copy Tenant ID and Client ID from the app registration.
-              </FieldHint>
               <Input
                 label="Mailbox"
                 type="email"
                 value={draft.mailbox}
                 disabled={fieldLocked("mailbox")}
                 onChange={(e) => updateDraft({ mailbox: e.target.value })}
-                hint="Shared mailbox or user mailbox used for /users/{mailbox}/sendMail. Defaults to from address when empty."
+                placeholder="shared@contoso.com"
               />
               <Input
                 label="Tenant ID"
@@ -587,7 +584,6 @@ export function MailTransportPanel() {
                 disabled={fieldLocked("tenantId")}
                 onChange={(e) => updateDraft({ tenantId: e.target.value })}
                 placeholder="00000000-0000-0000-0000-000000000000"
-                hint="Directory (tenant) GUID from Azure portal → Microsoft Entra ID → Overview."
               />
               <Input
                 label="Client ID"
@@ -595,7 +591,6 @@ export function MailTransportPanel() {
                 disabled={fieldLocked("clientId")}
                 onChange={(e) => updateDraft({ clientId: e.target.value })}
                 placeholder="00000000-0000-0000-0000-000000000000"
-                hint="Application (client) ID from the app registration."
               />
               <SecretFieldRow
                 label="Client secret"
@@ -621,18 +616,15 @@ export function MailTransportPanel() {
                 onChange={(e) => updateDraft({ saveToSentItems: e.target.checked })}
               />
             </div>
+            </>
           )}
 
           {provider === "powerautomate" && (
+            <>
+              <SectionTitle>Power Automate</SectionTitle>
             <div className="mail-transport-section">
-              <FieldHint>
-                Create a Power Automate cloud flow with the “When an HTTP request is received” trigger.
-                Paste the trigger URL below; optional key is sent as the x-admitto-key header if your flow
-                checks it.
-              </FieldHint>
               <SecretFieldRow
                 label="Flow URL"
-                hint="HTTPS URL from the flow trigger (contains a signature token — treat as a secret)."
                 field={apiData.fields.powerAutomateUrl}
                 edit={secrets.powerAutomateUrl}
                 onReplace={() =>
@@ -650,7 +642,6 @@ export function MailTransportPanel() {
               />
               <SecretFieldRow
                 label="Flow key"
-                hint="Optional shared secret for endpoint protection. Leave unset if the flow does not require it."
                 field={apiData.fields.powerAutomateKey}
                 edit={secrets.powerAutomateKey}
                 onReplace={() =>
@@ -667,6 +658,7 @@ export function MailTransportPanel() {
                 }
               />
             </div>
+            </>
           )}
 
           <div className="mail-test-send">
