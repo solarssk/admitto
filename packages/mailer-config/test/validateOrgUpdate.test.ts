@@ -100,4 +100,26 @@ describe("validateOrgMailSettingsUpdate", () => {
       expect(result.error).toMatch(/allowed from domain/i);
     }
   });
+
+  it("allows switching to export_only when clearing stale allowed from domain", () => {
+    const current = mergeOrgMailSettingsRow(null, {
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: 587,
+      user: "u@example.com",
+      fromAddress: "u@example.com",
+      allowedFromDomain: "example.com",
+      smtpPassword: "secret",
+    });
+    const result = validateOrgMailSettingsUpdate(
+      current,
+      {
+        provider: "export_only",
+        fromAddress: "dev@other.com",
+        allowedFromDomain: "",
+      },
+      {},
+    );
+    expect(result).toEqual({ ok: true });
+  });
 });

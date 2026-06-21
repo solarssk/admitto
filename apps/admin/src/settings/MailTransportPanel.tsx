@@ -430,15 +430,13 @@ export function MailTransportPanel() {
                 onChange={(e) => updateDraft({ envelopeFrom: e.target.value })}
                 hint="SMTP MAIL FROM / return-path."
               />
-              {(provider === "smtp" || provider === "graph" || provider === "powerautomate") && (
-                <Input
-                  label="Allowed from domain"
-                  value={draft.allowedFromDomain}
-                  disabled={fieldLocked("allowedFromDomain")}
-                  onChange={(e) => updateDraft({ allowedFromDomain: e.target.value })}
-                  hint="Optional. Send fails when From (or Graph mailbox) is outside this domain."
-                />
-              )}
+              <Input
+                label="Allowed from domain"
+                value={draft.allowedFromDomain}
+                disabled={fieldLocked("allowedFromDomain")}
+                onChange={(e) => updateDraft({ allowedFromDomain: e.target.value })}
+                hint="Optional. Send fails when From (or Graph mailbox) is outside this domain."
+              />
             </div>
             </>
           )}
