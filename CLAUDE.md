@@ -1,108 +1,131 @@
 # Admitto — Claude Code Guidelines
 
-## Versioning
+Repo: https://github.com/solarssk/admitto  
+Active milestone: **v0.4.5+** — settings and session management; wallet passes → v0.5.  
+Product version: git tag `v0.x.y` + root `package.json` + `CHANGELOG.md` — see [VERSIONING.md](VERSIONING.md).
 
-Milestones follow semver logic:
+---
 
-* v0.x — development iterations, expected bugs and refactors
-* v1.0 — first stable MVP: event-ready, tested, handed to operator
-* v1.x+ — post-event features
+## 1. Plan before coding
 
-**Product version** (what we tag and ship): `CHANGELOG.md` + git tag `v0.x.y` + root `package.json` `"version"`. Workspace packages stay at `0.0.1` — see [VERSIONING.md](VERSIONING.md).
+**Read first. Propose a plan. Get alignment before writing a line.**
 
-**Active milestone:** v0.4.5+ — settings and session management; wallet passes → v0.5.
+- Read the relevant packages and existing patterns — do not assume, verify.
+- State what you will change, in which files, in what order, and why.
+- If the task spans more than ~3 packages or needs a DB migration + UI + tests, propose a split into sub-tasks and get confirmation before starting.
+- Ask only when a decision blocks implementation or creates real risk. Decide small things yourself.
 
-Repo: https://github.com/solarssk/admitto
+**The test:** Could a reviewer predict every file in your diff from your plan? If not, the plan isn't specific enough.
 
-## Planning before implementing
+---
 
-Before writing any code for a non-trivial task:
+## 2. Simplicity first
 
-1. Read the relevant packages and existing patterns — do not assume, verify.
-2. Propose a plan: what changes, in which files, in what order, and why.
-3. For features that span more than ~3 packages or require a DB migration plus UI plus tests, propose splitting into sub-tasks (separate PRs or agents). Get alignment before starting.
-4. Ask only when a decision blocks implementation or creates real risk. Do not ask about details you can decide yourself.
+**Minimum code that solves the problem. Nothing speculative.**
 
-## Agent split guidelines
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No error handling for scenarios that cannot happen.
+- No backwards-compatibility shims unless explicitly required.
+- If you wrote 300 lines and 100 would do — rewrite it.
 
-Split work into parallel or sequential agents when:
+**The test:** Would a senior engineer say this is overcomplicated? If yes, simplify.
 
-* The task crosses package boundaries and parts are independent (e.g. backend domain logic vs. frontend UI vs. tests).
-* A sub-task produces an artifact another agent needs (e.g. API contract before UI).
-* The total change would exceed a single reviewable PR (~400–600 lines diff is a soft ceiling).
+---
 
-Do **not** split when the context is small and sequential — overhead outweighs the benefit.
+## 3. Surgical changes
 
-## Commit messages
+**Touch only what you must. Clean up only your own mess.**
 
-Use [Conventional Commits](https://www.conventionalcommits.org/):
+- Do not "improve" adjacent code, comments, or formatting while fixing something else.
+- Do not refactor code that is not broken.
+- Match existing style even if you would do it differently.
+- If you notice unrelated dead code, mention it in the PR — do not delete it.
+- Remove only the imports and variables that **your** changes made unused.
 
+**The test:** Every changed line should trace directly to the task. If it doesn't, revert it.
+
+---
+
+## 4. Split when it pays off
+
+**A 600-line diff across 5 packages is not one task — it's three.**
+
+Split into sequential or parallel sub-tasks when:
+- Parts are independently testable and do not break the build between steps.
+- A sub-task produces an artifact (schema, API contract, types) that another depends on.
+- The total diff would exceed ~500 lines across multiple packages.
+
+Do **not** split when sub-tasks are tightly coupled or coordination overhead exceeds implementation time.
+
+When splitting, state the plan explicitly and get alignment before starting:
 ```
-<type>(<scope>): <short description>
+1. Domain logic + migration  →  verify: unit tests pass
+2. API routes                →  verify: integration tests pass, no regression
+3. Frontend UI               →  verify: manual smoke, existing UI unchanged
 ```
 
-Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`, `security`  
-Scope: package or app name — `auth`, `web`, `admin`, `db`, `tickets`, `mailer`, `import`, `crypto`, `ui`, `infra`, `ci`
+---
 
-Examples:
+## 5. Commit messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <description>`
+
+**Types:** `feat` `fix` `chore` `docs` `refactor` `test` `perf` `security`  
+**Scopes:** `auth` `web` `admin` `db` `tickets` `mailer` `import` `crypto` `ui` `infra` `ci`
+
 ```
 feat(auth): add trusted-device cookie revocation on MFA reset
 fix(web): clamp check-in history limit to 1–100
 chore(deps): bump undici 6.26.0 → 6.27.0
-docs(changelog): standardize to Keep a Changelog 1.1.0
 ```
 
-Breaking changes: add `!` after the scope and describe in the body.
+Breaking changes: add `!` after scope and describe in the commit body.
 
-## Branch naming
+---
+
+## 6. Branch naming
 
 ```
-feature/<short-slug>
-fix/<short-slug>
-chore/<short-slug>
-docs/<short-slug>
+feature/<short-slug>    fix/<short-slug>
+chore/<short-slug>      docs/<short-slug>
 ```
 
-## Changelog
+---
+
+## 7. Changelog
 
 `CHANGELOG.md` follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 
-**When working on a feature PR:** add entries to the `[Unreleased]` section as you implement — not as a final step. Use the typed sections: `Added`, `Changed`, `Fixed`, `Security`, `Removed`, `Deprecated`. Keep entries user/operator-facing, not internal implementation detail.
+Add entries to `[Unreleased]` **as you implement** — not as a final step. Use typed sections: `Added`, `Changed`, `Fixed`, `Security`, `Removed`, `Deprecated`. Write for operators, not implementation internals.
 
-**At release time:** move `[Unreleased]` entries to a new `## [0.x.y] - YYYY-MM-DD` section, update the comparison links at the bottom. See [VERSIONING.md](VERSIONING.md) for the full release checklist.
+At release time: move `[Unreleased]` to `## [0.x.y] - YYYY-MM-DD` and update the comparison links at the bottom. Full checklist: [VERSIONING.md](VERSIONING.md).
 
-## Tests
+---
 
-Run the full test suite before committing:
+## 8. Tests
+
+Run the full suite before committing:
 
 ```bash
 npm test
 ```
 
-If tests fail, fix them before committing — do not leave a broken test suite with a TODO. If a test cannot be fixed in the current PR scope, explain explicitly in the PR description under "What stays / known limitations".
+If tests fail, fix them — do not leave a broken suite with a TODO. If a fix is out of scope for the current PR, say so explicitly in "What stays / known limitations".
 
-Integration tests require a live Postgres database. Use `npm run db:test-setup` once per environment (see root `README.md`).
+Integration tests need a live Postgres instance. Run `npm run db:test-setup` once per environment.
 
-## Pull Requests
+---
 
-Every PR description must follow the repository template in `.github/pull_request_template.md`.
+## 9. Pull Requests
 
-Required rules:
+Every PR must follow `.github/pull_request_template.md` — keep its four sections exactly:  
+`Description` · `How to test` · `What stays / known limitations` · `Checklist`
 
-* keep the exact section structure:
-  * `Description`
-  * `How to test`
-  * `What stays / known limitations`
-  * `Checklist`
-* do not replace those sections with custom headings
-* if a checklist item does not apply, keep it and explain why instead of deleting it
-* if tests were not run, say so plainly in both `How to test` and the checklist
-* every PR must have labels before it is handed off for review
-* every PR should be assigned to the intended milestone when that milestone already exists
+Required labels before handoff:
+- one `type:*` label
+- at least one `area:*` label
+- `prio:*` when priority is clear from roadmap or security scope
+- `security` for auth, secrets, access control, or personal data handling
 
-Minimum PR metadata expectation:
-
-* one `type:*` label
-* at least one relevant `area:*` label
-* a `prio:*` label when priority is clear from roadmap or security scope
-* `security` for auth, secrets, access control, personal-data handling, or other security-sensitive changes
+Assign to the current milestone when it exists. Assign to @solarssk.
