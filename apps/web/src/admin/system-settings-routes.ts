@@ -80,6 +80,7 @@ const KEY_MAP = {
   mfa_required_roles: SETTING_MFA_REQUIRED_ROLES,
 } as const satisfies Record<string, string>;
 
+/** GET /api/admin/system-settings — returns the 4 security settings with value and source (env|db|default). Superadmin only. */
 export async function handleGetSystemSettings(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
@@ -87,6 +88,7 @@ export async function handleGetSystemSettings(c: Context, db: PrismaClient): Pro
   return c.json(await buildSecuritySettingsDto(db));
 }
 
+/** PATCH /api/admin/system-settings — update security settings atomically; null clears DB override. Superadmin only. */
 export async function handlePatchSystemSettings(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
@@ -117,31 +119,29 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
     }
   }
 
-  const changedFields: string[] = [];
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
 
-  for (const bodyKey of presentKeys) {
-    const settingKey = KEY_MAP[bodyKey];
-    const value = data[bodyKey];
-    if (value === null || value === undefined) {
-      await db.systemSettings.deleteMany({ where: { key: settingKey } });
-    } else {
-      await setSetting(db, settingKey, value);
+  await db.$transaction(async (tx) => {
+    for (const bodyKey of presentKeys) {
+      const settingKey = KEY_MAP[bodyKey];
+      const value = data[bodyKey];
+      if (value === null || value === undefined) {
+        await tx.systemSettings.deleteMany({ where: { key: settingKey } });
+      } else {
+        await setSetting(tx, settingKey, value);
+      }
     }
-    changedFields.push(bodyKey);
-  }
 
-  if (changedFields.length > 0) {
-    const orgId = await resolveInstanceOrganizationId(db);
-    const audit = adminAuditFromContext(c);
-    await writeAdminAuditLog(db, {
+    await writeAdminAuditLog(tx, {
       organizationId: orgId,
       actorUserId: audit.operator ?? c.get("auth").userId,
       sessionId: audit.sessionId,
       ip: audit.ip,
       actionType: "system_settings_updated",
-      metadata: { fields: changedFields },
+      metadata: { fields: presentKeys },
     });
-  }
+  });
 
   return c.json(await buildSecuritySettingsDto(db));
 }

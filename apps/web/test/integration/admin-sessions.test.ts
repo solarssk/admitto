@@ -26,6 +26,7 @@ let operatorId: string;
 let superCookie = "";
 let adminCookie = "";
 let superSessionId = "";
+let adminSessionId = "";
 let eventId = "";
 let prevInstanceOrgId: string | undefined;
 
@@ -124,16 +125,15 @@ beforeAll(async () => {
   superCookie = `admitto_session=${superSession.rawToken}`;
   adminCookie = `admitto_session=${adminSession.rawToken}`;
   superSessionId = superSession.session.id;
+  adminSessionId = adminSession.session.id;
 });
 
 afterEach(async () => {
   await prisma.adminAuditLog.deleteMany({ where: { organization_id: ORG_SESSIONS } });
-  // Restore any extra sessions created in tests
   await prisma.session.deleteMany({
     where: {
       user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_OPERATOR] } },
-      id: { notIn: [superSessionId] },
-      revoked_at: { not: null },
+      id: { notIn: [superSessionId, adminSessionId] },
     },
   });
 });

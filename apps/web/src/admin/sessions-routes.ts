@@ -25,6 +25,7 @@ function highestRole(assignments: { role: string }[]): string {
   );
 }
 
+/** GET /api/admin/sessions — list all active, non-expired sessions with user, role, and isCurrent flag. Superadmin only. */
 export async function handleGetSessions(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
@@ -66,6 +67,7 @@ export async function handleGetSessions(c: Context, db: PrismaClient): Promise<R
   return c.json({ sessions });
 }
 
+/** POST /api/admin/sessions/:id/revoke — revoke a single session. Self-revoke returns 403. Idempotent. Superadmin only. */
 export async function handleRevokeSession(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
@@ -97,14 +99,18 @@ export async function handleRevokeSession(c: Context, db: PrismaClient): Promise
   return c.json({}, 200);
 }
 
+/** POST /api/admin/events/:eventId/revoke-all-operator-sessions — bulk-revoke all operator sessions for an event. Superadmin only. */
 export async function handleRevokeAllOperatorSessions(
   c: Context,
   db: PrismaClient,
 ): Promise<Response> {
+  const superadminDenied = await requireSuperadmin(c, db);
+  if (superadminDenied) return superadminDenied;
+
   const eventId = c.req.param("eventId") ?? "";
   if (!eventId) return c.json({ error: "eventId required" }, 400);
-  const denied = await assertEventManageAccess(c, db, eventId);
-  if (denied) return denied;
+  const eventDenied = await assertEventManageAccess(c, db, eventId);
+  if (eventDenied) return eventDenied;
 
   const revokedCount = await revokeAllOperatorSessionsForEvent(db, eventId);
 

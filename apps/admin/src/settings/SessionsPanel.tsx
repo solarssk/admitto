@@ -49,6 +49,7 @@ function formatDate(iso: string): string {
 
 type FilterValue = "all" | "admin" | "operator";
 
+/** Settings panel — lists active staff sessions, per-session revoke, and bulk operator-session revoke by event. */
 export function SessionsPanel() {
   const [sessions, setSessions] = useState<SessionListDto[]>([]);
   const [loading, setLoading] = useState(true);

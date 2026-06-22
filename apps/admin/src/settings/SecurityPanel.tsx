@@ -35,6 +35,7 @@ function draftFromSettings(s: SecuritySettingsDto): Draft {
   };
 }
 
+/** Settings panel — security policies: session TTL, remember-device duration, and MFA role requirements. Env-locked fields are read-only. */
 export function SecurityPanel() {
   const [settings, setSettings] = useState<SecuritySettingsDto | null>(null);
   const [loading, setLoading] = useState(true);
