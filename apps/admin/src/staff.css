@@ -248,6 +248,12 @@
   padding-left: 1rem;
 }
 
+.checkin-card--valid           { border-left: 4px solid var(--status-ok); }
+.checkin-card--revoked,
+.checkin-card--invalid         { border-left: 4px solid var(--status-error); }
+.checkin-card--already_checked_in { border-left: 4px solid var(--status-warn); }
+.checkin-card--preview         { border-left: 4px solid var(--status-info); }
+
 .checkin-lookup {
   display: flex;
   flex-direction: column;
