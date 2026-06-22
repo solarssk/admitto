@@ -11,6 +11,7 @@ import {
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret, generateTotpCode } from "@admitto/auth/testing";
 import { createApp } from "../src/app.js";
+import { clearEnrollmentBackupCacheForTests } from "../src/auth/enrollment-backup-cache.js";
 import { InMemoryRateLimitStore } from "../src/rate-limit/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -30,6 +31,7 @@ const sameOrigin = { Origin: "http://localhost" };
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
+let rateLimitStore: InMemoryRateLimitStore;
 let adminEmail = "web-admin@example.com";
 let adminPassword = "web-admin-pass-123";
 let operatorEmail = "web-op@example.com";
@@ -43,6 +45,20 @@ function sessionCookie(res: Response): string | undefined {
 function cookieHeader(res: Response): Record<string, string> {
   const line = sessionCookie(res);
   return line ? { Cookie: line } : {};
+}
+
+async function resetAdminAuthLabState(userId: string): Promise<void> {
+  rateLimitStore.reset();
+  clearEnrollmentBackupCacheForTests();
+  await prisma.userMfaMethod.deleteMany({ where: { user_id: userId } });
+  await prisma.trustedDevice.updateMany({
+    where: { user_id: userId, revoked_at: null },
+    data: { revoked_at: new Date() },
+  });
+  await prisma.session.updateMany({
+    where: { user_id: userId, revoked_at: null },
+    data: { revoked_at: new Date() },
+  });
 }
 
 beforeAll(async () => {
@@ -86,12 +102,13 @@ beforeAll(async () => {
     data: { user_id: op.id, role: "operator", scope_type: "event", scope_id: EVENT_ID },
   });
 
+  rateLimitStore = new InMemoryRateLimitStore();
   app = createApp({
     prisma,
     checkinToken: CHECKIN_TOKEN,
     allowCheckinBearer: false,
     baseUrl: "https://tickets.example.com",
-    rateLimitStore: new InMemoryRateLimitStore(),
+    rateLimitStore,
     skipCheckinBootValidation: true,
   });
 });
@@ -448,8 +465,8 @@ describe("HTML MFA enroll", () => {
 describe("logout revokes trusted device", () => {
   it("API logout invalidates remembered device token", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
     const secret = generateTotpSecret();
-    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
     await prisma.userMfaMethod.create({
       data: {
         user_id: admin!.id,
@@ -464,6 +481,9 @@ describe("logout revokes trusted device", () => {
       headers: { "Content-Type": "application/json", ...sameOrigin },
       body: JSON.stringify({ email: adminEmail, password: adminPassword }),
     });
+    expect((await loginRes.clone().json()) as { next: string }).toEqual(
+      expect.objectContaining({ next: LOGIN_NEXT.MFA_REQUIRED }),
+    );
 
     const verifyRes = await app.request("/api/auth/mfa/verify", {
       method: "POST",

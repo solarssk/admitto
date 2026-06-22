@@ -37,3 +37,8 @@ export function getStashedEnrollmentBackupCodes(sessionId: string): string[] | u
 export function clearEnrollmentBackupCodes(sessionId: string): void {
   cache.delete(sessionId);
 }
+
+/** @internal test helper — drop all stashed enrollment codes between tests. */
+export function clearEnrollmentBackupCacheForTests(): void {
+  cache.clear();
+}
