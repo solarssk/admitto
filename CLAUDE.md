@@ -59,7 +59,7 @@ Split into sequential or parallel sub-tasks when:
 Do **not** split when sub-tasks are tightly coupled or coordination overhead exceeds implementation time.
 
 When splitting, state the plan explicitly and get alignment before starting:
-```
+```text
 1. Domain logic + migration  →  verify: unit tests pass
 2. API routes                →  verify: integration tests pass, no regression
 3. Frontend UI               →  verify: manual smoke, existing UI unchanged
@@ -74,7 +74,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope
 **Types:** `feat` `fix` `chore` `docs` `refactor` `test` `perf` `security`  
 **Scopes:** `auth` `web` `admin` `db` `tickets` `mailer` `import` `crypto` `ui` `infra` `ci`
 
-```
+```text
 feat(auth): add trusted-device cookie revocation on MFA reset
 fix(web): clamp check-in history limit to 1–100
 chore(deps): bump undici 6.26.0 → 6.27.0
@@ -86,7 +86,7 @@ Breaking changes: add `!` after scope and describe in the commit body.
 
 ## 6. Branch naming
 
-```
+```text
 feature/<short-slug>    fix/<short-slug>
 chore/<short-slug>      docs/<short-slug>
 ```
