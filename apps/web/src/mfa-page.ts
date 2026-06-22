@@ -1,4 +1,9 @@
 import { getLoginPageSecurityHeaders } from "./login-page.js";
+import {
+  AUTH_PAGE_CSS,
+  renderAuthBrand,
+  renderAuthDocument,
+} from "./shared-auth-styles.js";
 
 /** Security headers for server-rendered MFA pages (same policy as login). */
 export function getMfaPageSecurityHeaders(): Record<string, string> {
@@ -7,36 +12,26 @@ export function getMfaPageSecurityHeaders(): Record<string, string> {
 
 /** Render MFA verification form HTML (`/mfa/verify`). */
 export function renderMfaVerifyForm(error?: string, next?: string): string {
-  const err = error ? `<p class="err">${escapeHtml(error)}</p>` : "";
+  const err = error ? `<div class="auth-error" role="alert">${escapeHtml(error)}</div>` : "";
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Two-factor authentication — Admitto</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 24rem; margin: 3rem auto; padding: 0 1rem; }
-    label { display: block; margin: 0.75rem 0 0.25rem; }
-    input[type=text] { width: 100%; padding: 0.5rem; box-sizing: border-box; font-size: 1.1rem; letter-spacing: 0.15em; }
-    button { margin-top: 1rem; padding: 0.5rem 1rem; }
-    .err { color: #b00020; }
-    label.check { display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }
-  </style>
-</head>
-<body>
-  <h1>Two-factor authentication</h1>
-  <p>Enter the code from your authenticator app or a backup recovery code.</p>
-  ${err}
-  <form method="post" action="/mfa/verify">
-    ${nextField}
-    <label for="code">Authentication code</label>
-    <input id="code" name="code" type="text" inputmode="text" autocomplete="one-time-code" required>
-    <label class="check"><input type="checkbox" name="remember_device" value="1"> Remember this device</label>
-    <button type="submit">Continue</button>
-  </form>
-</body>
-</html>`;
+  const body = `${renderAuthBrand()}
+  <div class="auth-card">
+    <h1>Two-factor authentication</h1>
+    <p class="subtitle">Enter the code from your authenticator app or a backup recovery code.</p>
+    ${err}
+    <form method="post" action="/mfa/verify">
+      ${nextField}
+      <div class="auth-field">
+        <label class="auth-label" for="code">Authentication code</label>
+        <input class="auth-input" id="code" name="code" type="text" inputmode="text" autocomplete="one-time-code" style="letter-spacing: 0.2em; font-size: 1.1rem;" required>
+      </div>
+      <label class="auth-check-label">
+        <input type="checkbox" name="remember_device" value="1"> Remember this device
+      </label>
+      <button class="auth-btn-primary" type="submit">Continue</button>
+    </form>
+  </div>`;
+  return renderAuthDocument("Admitto — Two-factor authentication", body, AUTH_PAGE_CSS);
 }
 
 /**
@@ -50,69 +45,64 @@ export function renderMfaEnrollPage(
   backupCodesAlreadyShown?: boolean,
   next?: string,
 ): string {
-  const err = error ? `<p class="err">${escapeHtml(error)}</p>` : "";
+  const err = error ? `<div class="auth-error" role="alert">${escapeHtml(error)}</div>` : "";
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
+
+  const downloadForm =
+    !backupCodesAlreadyShown && backupCodes.length > 0
+      ? `<form method="post" action="/mfa/enroll/download-codes" style="margin-top:0.75rem">
+      ${next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : ""}
+      ${backupCodes.map((c) => `<input type="hidden" name="code" value="${escapeHtml(c)}">`).join("")}
+      <button type="submit" class="auth-btn-secondary">Download backup codes</button>
+    </form>`
+      : "";
+
   const backupSection = backupCodesAlreadyShown
-    ? `<div class="warn"><strong>Backup codes</strong> were already shown — use the codes you saved earlier.</div>`
-    : `<div class="warn">
+    ? `<div class="auth-backup"><strong>Backup codes</strong> were already shown — use the codes you saved earlier.</div>`
+    : `<div class="auth-backup">
     <strong>Backup codes</strong> — save these now; they will not be shown again:
     <ul>${backupCodes.map((c) => `<li><code>${escapeHtml(c)}</code></li>`).join("")}</ul>
+    ${downloadForm}
   </div>`;
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Set up two-factor authentication — Admitto</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; }
-    label { display: block; margin: 0.75rem 0 0.25rem; }
-    input[type=text] { width: 100%; padding: 0.5rem; box-sizing: border-box; }
-    button { margin-top: 1rem; padding: 0.5rem 1rem; }
-    .err { color: #b00020; }
-    .warn { background: #fff8e1; padding: 0.75rem; border-radius: 4px; }
-    code.uri { word-break: break-all; font-size: 0.75rem; }
-  </style>
-</head>
-<body>
-  <h1>Set up two-factor authentication</h1>
-  <p>Scan this URI in your authenticator app (or enter the secret manually), then confirm with a code.</p>
-  <p><code class="uri">${escapeHtml(otpauthUri)}</code></p>
-  ${backupSection}
-  ${err}
-  <form method="post" action="/mfa/enroll">
-    ${nextField}
-    <label for="code">Confirmation code</label>
-    <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
-    <button type="submit">Confirm and continue</button>
-  </form>
-</body>
-</html>`;
+
+  const body = `${renderAuthBrand()}
+  <div class="auth-card auth-card-wide">
+    <h1>Set up two-factor authentication</h1>
+    <p class="subtitle">Scan the QR code in your authenticator app, then confirm with a code.</p>
+    <div class="auth-field">
+      <p class="auth-label">Authenticator URI</p>
+      <code class="auth-uri-code">${escapeHtml(otpauthUri)}</code>
+    </div>
+    ${backupSection}
+    ${err}
+    <p class="auth-muted">Save or download your backup codes before confirming — they cannot be recovered from Admitto after setup completes.</p>
+    <form method="post" action="/mfa/enroll">
+      ${nextField}
+      <div class="auth-field">
+        <label class="auth-label" for="code">Confirmation code</label>
+        <input class="auth-input" id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" required>
+      </div>
+      <button class="auth-btn-primary" type="submit">Confirm and continue</button>
+    </form>
+  </div>`;
+
+  return renderAuthDocument("Admitto — Set up two-factor authentication", body, AUTH_PAGE_CSS);
 }
 
 /** Render enrollment landing — start setup via CSRF-protected POST only. */
 export function renderMfaEnrollStartPage(next?: string): string {
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Set up two-factor authentication — Admitto</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; }
-    button { margin-top: 1rem; padding: 0.5rem 1rem; }
-  </style>
-</head>
-<body>
-  <h1>Set up two-factor authentication</h1>
-  <p>Two-factor authentication is required for your account. Start setup to generate your authenticator secret and one-time backup codes.</p>
-  <form method="post" action="/mfa/enroll/start">
-    ${nextField}
-    <button type="submit">Begin setup</button>
-  </form>
-</body>
-</html>`;
+  const body = `${renderAuthBrand()}
+  <div class="auth-card">
+    <h1>Set up two-factor authentication</h1>
+    <p class="subtitle">Two-factor authentication is required for your account.</p>
+    <p class="auth-muted">Start setup to generate your authenticator secret and one-time backup codes.</p>
+    <form method="post" action="/mfa/enroll/start">
+      ${nextField}
+      <button class="auth-btn-primary" type="submit">Begin setup</button>
+    </form>
+  </div>`;
+  return renderAuthDocument("Admitto — Set up two-factor authentication", body, AUTH_PAGE_CSS);
 }
 
 function escapeHtml(s: string): string {

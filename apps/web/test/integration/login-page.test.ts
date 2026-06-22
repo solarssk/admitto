@@ -88,15 +88,27 @@ describe("GET /login", () => {
     expect(html).toContain('name="email"');
     expect(html).toContain('name="password"');
     expect(html).toContain("device_label");
-    expect(html).toContain("coming soon");
+    expect(html).not.toContain("coming soon");
+    expect(html).toContain("auth-card");
+    expect(html).toContain("Sign in");
   });
 
-  it("renders friendly message for error=oidc_failed", async () => {
+  it("renders SSO fallback banner for error=oidc_failed", async () => {
     const res = await app.request("/login?error=oidc_failed");
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("Corporate sign-in failed. Try again or use your local password.");
+    expect(html).toContain("auth-sso-fallback");
+    expect(html).toContain("SSO unavailable");
+    expect(html).not.toContain("Corporate sign-in failed");
     expect(html).not.toContain("oidc_failed");
+  });
+
+  it("renders invalid credentials error", async () => {
+    const res = await app.request("/login?error=invalid_credentials");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("auth-error");
+    expect(html).toContain("Invalid email or password");
   });
 
   it("ignores unknown error query values", async () => {

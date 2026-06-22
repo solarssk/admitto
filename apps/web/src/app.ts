@@ -50,6 +50,7 @@ import {
   handleGetMfaEnroll,
   handleGetMfaVerify,
   handlePostMfaEnroll,
+  handlePostMfaEnrollDownloadCodes,
   handlePostMfaEnrollStart,
   handlePostMfaVerify,
 } from "./auth/mfa-html-routes.js";
@@ -135,6 +136,7 @@ import {
   handlePostEditProvider,
   handlePostDiscover,
   handlePostTestConnection,
+  handleToggleProvider,
 } from "./admin/auth-providers-routes.js";
 import {
   handleGetCfAccess,
@@ -469,6 +471,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/admin/auth/providers/:id/test", htmlPostCsrf, requireAdminAccess, (c) =>
     handlePostTestConnection(c, db),
   );
+  app.post("/admin/auth/providers/:id/toggle", htmlPostCsrf, requireAdminAccess, (c) =>
+    handleToggleProvider(c, db),
+  );
 
   app.get("/admin/auth/cf-access", requireAdminAccess, (c) => handleGetCfAccess(c, db));
   app.post("/admin/auth/cf-access", htmlPostCsrf, requireAdminAccess, (c) =>
@@ -490,6 +495,9 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/mfa/enroll", htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnroll(c, db, rateLimitStore),
+  );
+  app.post("/mfa/enroll/download-codes", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+    handlePostMfaEnrollDownloadCodes(c, db),
   );
   app.post("/logout", htmlPostCsrf, (c) => handlePostLogout(c, db));
 

@@ -9,6 +9,8 @@ import {
   promoteSessionToFull,
   completeMfa,
   revokeSession,
+  BACKUP_RECOVERY_CODE_COUNT,
+  verifyBackupRecoveryCodesSet,
 } from "@admitto/auth";
 import {
   getMfaPageSecurityHeaders,
@@ -17,6 +19,12 @@ import {
   renderMfaEnrollStartPage,
 } from "../mfa-page.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
+import {
+  clearEnrollmentBackupCodes,
+  getStashedEnrollmentBackupCodes,
+  stashEnrollmentBackupCodes,
+  submittedCodesMatchStashedEnrollmentBackup,
+} from "./enrollment-backup-cache.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { setTrustedDeviceCookie, clearSessionCookie } from "./routes.js";
@@ -42,23 +50,61 @@ async function parseForm(c: Context): Promise<Record<string, string>> {
   return {};
 }
 
+async function parseFormCodes(c: Context): Promise<string[]> {
+  const contentType = c.req.header("content-type") ?? "";
+  if (!contentType.includes("application/x-www-form-urlencoded")) {
+    return [];
+  }
+  const raw = await c.req.text();
+  return new URLSearchParams(raw)
+    .getAll("code")
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
 
 const MFA_ERROR = "Invalid code. Try again.";
 
+/** Re-show stashed backup codes while enrollment is still pending on this session. */
+function enrichEnrollmentForSession(
+  sessionId: string,
+  enrollment: StartTotpEnrollmentResult | null,
+): StartTotpEnrollmentResult | null {
+  if (!enrollment) return null;
+
+  if (enrollment.backupCodes.length > 0) {
+    stashEnrollmentBackupCodes(sessionId, enrollment.backupCodes);
+    return enrollment;
+  }
+
+  const stashed = getStashedEnrollmentBackupCodes(sessionId);
+  if (stashed?.length && enrollment.backupCodesAlreadyShown) {
+    return {
+      ...enrollment,
+      backupCodes: stashed,
+      backupCodesAlreadyShown: false,
+    };
+  }
+
+  return enrollment;
+}
+
 /** Build enrollment HTML from current DB enrollment state. */
 function renderEnrollFromState(
+  sessionId: string,
   enrollment: StartTotpEnrollmentResult | null,
   error?: string,
   next?: string,
 ): string {
-  if (!enrollment) {
+  const state = enrichEnrollmentForSession(sessionId, enrollment);
+  if (!state) {
     return renderMfaEnrollPage("", [], error, undefined, next);
   }
   return renderMfaEnrollPage(
-    enrollment.otpauthUri,
-    enrollment.backupCodes,
+    state.otpauthUri,
+    state.backupCodes,
     error,
-    enrollment.backupCodesAlreadyShown,
+    state.backupCodesAlreadyShown,
     next,
   );
 }
@@ -136,7 +182,7 @@ export async function handleGetMfaEnroll(c: Context, db: PrismaClient): Promise<
     return htmlResponse(c, renderMfaEnrollStartPage(next));
   }
 
-  return htmlResponse(c, renderEnrollFromState(pending, undefined, next));
+  return htmlResponse(c, renderEnrollFromState(partial.sessionId, pending, undefined, next));
 }
 
 /** POST /mfa/enroll/start — create pending TOTP + backup codes (CSRF-protected). */
@@ -151,7 +197,7 @@ export async function handlePostMfaEnrollStart(c: Context, db: PrismaClient): Pr
 
   const existing = await resumePendingTotpEnrollment(db, partial.userId);
   if (existing) {
-    return htmlResponse(c, renderEnrollFromState(existing, undefined, next));
+    return htmlResponse(c, renderEnrollFromState(partial.sessionId, existing, undefined, next));
   }
 
   const enrollment = await startTotpEnrollment(db, partial.userId);
@@ -159,7 +205,7 @@ export async function handlePostMfaEnrollStart(c: Context, db: PrismaClient): Pr
     return c.redirect("/login", 302);
   }
 
-  return htmlResponse(c, renderEnrollFromState(enrollment, undefined, next));
+  return htmlResponse(c, renderEnrollFromState(partial.sessionId, enrollment, undefined, next));
 }
 
 /** POST /mfa/enroll — confirm TOTP setup. */
@@ -181,7 +227,7 @@ export async function handlePostMfaEnroll(
     if (!pending) {
       return htmlResponse(c, renderMfaEnrollStartPage(next), 401);
     }
-    return htmlResponse(c, renderEnrollFromState(pending, MFA_ERROR, next), 401);
+    return htmlResponse(c, renderEnrollFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
   }
 
   const ip = resolveMfaClientIp(c);
@@ -195,7 +241,7 @@ export async function handlePostMfaEnroll(
     if (!pending) {
       return htmlResponse(c, renderMfaEnrollStartPage(next), 401);
     }
-    return htmlResponse(c, renderEnrollFromState(pending, MFA_ERROR, next), 401);
+    return htmlResponse(c, renderEnrollFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
   }
 
   const promoted = await promoteSessionToFull(db, partial.sessionId, partial.userId);
@@ -204,8 +250,10 @@ export async function handlePostMfaEnroll(
     if (!pending) {
       return htmlResponse(c, renderMfaEnrollStartPage(next), 401);
     }
-    return htmlResponse(c, renderEnrollFromState(pending, MFA_ERROR, next), 401);
+    return htmlResponse(c, renderEnrollFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
   }
+
+  clearEnrollmentBackupCodes(partial.sessionId);
 
   let landing: string;
   try {
@@ -217,4 +265,41 @@ export async function handlePostMfaEnroll(
     return c.redirect("/login", 302);
   }
   return c.redirect(landing, 302);
+}
+
+/** POST /mfa/enroll/download-codes — download backup codes as plain text (no inline JS). */
+export async function handlePostMfaEnrollDownloadCodes(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const partial = c.get("partialAuth");
+  if (partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED) {
+    return c.redirect("/login", 302);
+  }
+
+  const pending = await resumePendingTotpEnrollment(db, partial.userId);
+  if (!pending) {
+    return c.text("No pending enrollment.", 400);
+  }
+
+  const codes = await parseFormCodes(c);
+  if (codes.length !== BACKUP_RECOVERY_CODE_COUNT) {
+    return c.text("Invalid backup codes.", 400);
+  }
+
+  const stashed = getStashedEnrollmentBackupCodes(partial.sessionId);
+  if (stashed) {
+    if (!submittedCodesMatchStashedEnrollmentBackup(partial.sessionId, codes)) {
+      return c.text("Invalid backup codes.", 400);
+    }
+  } else if (!(await verifyBackupRecoveryCodesSet(db, partial.userId, codes))) {
+    return c.text("Invalid backup codes.", 400);
+  }
+
+  for (const [name, value] of Object.entries(getMfaPageSecurityHeaders())) {
+    c.header(name, value);
+  }
+  c.header("Content-Type", "text/plain; charset=utf-8");
+  c.header("Content-Disposition", 'attachment; filename="admitto-backup-codes.txt"');
+  return c.body(codes.join("\n") + "\n", 200);
 }

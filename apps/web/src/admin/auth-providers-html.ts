@@ -1,4 +1,7 @@
 import type { GroupRoleMappingInput, IdentityProviderFormView } from "@admitto/auth";
+import { ADMIN_PAGE_CSS } from "../shared-auth-styles.js";
+
+const ALLOWED_MAPPING_ROLES = ["superadmin", "admin", "operator"] as const;
 
 function esc(s: string): string {
   return s
@@ -26,23 +29,48 @@ export interface ProviderListItem {
   enabled: boolean;
 }
 
+function renderRoleSelect(name: string, currentRole: string): string {
+  const isKnown = ALLOWED_MAPPING_ROLES.includes(currentRole as (typeof ALLOWED_MAPPING_ROLES)[number]);
+  if (currentRole && !isKnown) {
+    const options = ALLOWED_MAPPING_ROLES.map((role) => `<option value="${role}">${role}</option>`).join("");
+    return `<p class="error" role="alert">Invalid role &quot;${esc(currentRole)}&quot; — choose a replacement before saving.</p>
+    <select name="${esc(name)}" required>
+      <option value="" selected disabled>Select role…</option>
+      ${options}
+    </select>`;
+  }
+  const options = ALLOWED_MAPPING_ROLES.map(
+    (role) => `<option value="${role}"${role === currentRole ? " selected" : ""}>${role}</option>`,
+  ).join("");
+  return `<select name="${esc(name)}" required>${options}</select>`;
+}
+
 export function renderProviderList(providers: ProviderListItem[], flash?: string): string {
   const rows =
     providers.length === 0
       ? "<p>No identity providers configured.</p>"
-      : `<table><thead><tr><th>Name</th><th>Issuer</th><th>Status</th></tr></thead><tbody>${providers
+      : `<table><thead><tr><th>Name</th><th>Issuer</th><th>Status</th><th>Actions</th></tr></thead><tbody>${providers
           .map(
             (p) =>
-              `<tr><td><a href="/admin/auth/providers/${esc(p.id)}">${esc(p.display_name)}</a></td><td>${esc(p.issuer)}</td><td>${p.enabled ? "Enabled" : "Disabled"}</td></tr>`,
+              `<tr>
+                <td><a href="/admin/auth/providers/${esc(p.id)}">${esc(p.display_name)}</a></td>
+                <td>${esc(p.issuer)}</td>
+                <td><span class="${p.enabled ? "badge-ok" : "badge-neutral"}">${p.enabled ? "Enabled" : "Disabled"}</span></td>
+                <td>
+                  <form method="post" action="/admin/auth/providers/${esc(p.id)}/toggle" style="display:inline">
+                    <button type="submit" class="toggle-btn">${p.enabled ? "Disable" : "Enable"}</button>
+                  </form>
+                </td>
+              </tr>`,
           )
           .join("")}</tbody></table>`;
 
   const flashBlock = flash ? `<p class="flash" role="status">${esc(flash)}</p>` : "";
 
   return pageShell(
-    "Identity providers",
+    "Admitto — Identity providers",
     `${flashBlock}
-    <p><a href="/admin/auth/providers/new">Add provider</a> · <a href="/admin/auth/cf-access">Cloudflare Access</a></p>
+    <p class="admin-nav"><a href="/admin/auth/providers/new">Add provider</a> · <a href="/admin/auth/cf-access">Cloudflare Access</a></p>
     ${rows}
     <p class="muted">Entra / SAML — coming soon</p>`,
   );
@@ -63,7 +91,9 @@ export function renderProviderForm(options: {
   isNew: boolean;
 }): string {
   const p = options.provider;
-  const title = options.isNew ? "Add identity provider" : `Edit: ${p?.display_name ?? ""}`;
+  const title = options.isNew
+    ? "Admitto — Add identity provider"
+    : `Admitto — Edit: ${p?.display_name ?? ""}`;
   const action = options.isNew ? "/admin/auth/providers/new" : `/admin/auth/providers/${esc(p!.id)}`;
   const secretHint = p?.has_client_secret
     ? '<p class="muted">Client secret is stored (••••). Leave blank to keep existing.</p>'
@@ -73,7 +103,7 @@ export function renderProviderForm(options: {
     .map(
       (m, i) => `<tr>
         <td><input name="mapping_group_${i}" value="${esc(m.group)}"></td>
-        <td><input name="mapping_role_${i}" value="${esc(m.role)}"></td>
+        <td>${renderRoleSelect(`mapping_role_${i}`, m.role)}</td>
         <td><input name="mapping_scope_type_${i}" value="${esc(m.scope_type)}"></td>
         <td><input name="mapping_scope_id_${i}" value="${esc(m.scope_id)}"></td>
       </tr>`,
@@ -119,7 +149,7 @@ export function renderProviderForm(options: {
         <tbody>${mappingRows}
         <tr>
           <td><input name="mapping_group_new" placeholder="admin-group"></td>
-          <td><input name="mapping_role_new" placeholder="superadmin"></td>
+          <td>${renderRoleSelect("mapping_role_new", "operator")}</td>
           <td><input name="mapping_scope_type_new" placeholder="instance"></td>
           <td><input name="mapping_scope_id_new" placeholder=""></td>
         </tr>
@@ -128,7 +158,7 @@ export function renderProviderForm(options: {
       <label><input type="checkbox" name="enabled" value="1" ${p?.enabled ? "checked" : ""}> Enabled</label>
       <button type="submit">Save</button>
     </form>
-    <p><a href="/admin/auth/providers">Back to list</a></p>`,
+    <p class="admin-nav"><a href="/admin/auth/providers">Back to list</a></p>`,
   );
 }
 
@@ -138,19 +168,8 @@ function pageShell(title: string, body: string): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${esc(title)} — Admitto</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #111; }
-    label { display: block; margin-top: 0.75rem; font-size: 0.9rem; }
-    input[type=text], input[type=password], input[type=url] { width: 100%; box-sizing: border-box; padding: 0.4rem; margin-top: 0.2rem; }
-    fieldset { margin-top: 1rem; border: 1px solid #ddd; padding: 0.75rem; }
-    table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
-    td input { width: 100%; box-sizing: border-box; }
-    .error { color: #991b1b; background: #fee2e2; padding: 0.5rem; border-radius: 4px; }
-    .flash { color: #065f46; background: #d1fae5; padding: 0.5rem; border-radius: 4px; }
-    .muted { color: #666; font-size: 0.85rem; }
-    button { margin-top: 1rem; padding: 0.5rem 1rem; }
-  </style>
+  <title>${esc(title)}</title>
+  <style>${ADMIN_PAGE_CSS}</style>
 </head>
 <body>
   <h1>${esc(title)}</h1>

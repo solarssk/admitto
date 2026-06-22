@@ -11,13 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Event archiving: `Event.archived_at` flag hides completed events from default lists while preserving data; superadmin can archive/unarchive via Settings panel or event header; archived events are read-only on admin mutating APIs; Active/Archived tabs on event picker; check-in remains available after archive for late admits (ADR 0022)
 - `POST /api/admin/events/:eventId/archive`, `POST /api/admin/events/:eventId/unarchive` (superadmin, audited via `AdminAuditLog`)
 - `GET /api/admin/events?includeArchived=true` returns archived events with `archived_at` timestamp
+- `POST /mfa/enroll/download-codes` — download one-time MFA backup codes as a `.txt` file during enrollment
 - Check-in: `NoteModal` replaces `window.prompt` for adding attendee notes — textarea with 2000-char limit and live counter, Cancel/Add note buttons, ESC support, touch-friendly
 - Settings → Sessions panel: superadmin can list all active staff sessions with role, device, IP, and last-seen; revoke individual sessions or bulk-revoke all operator sessions scoped to an event
 - Settings → Security panel: configure admin/operator session TTL, remember-device duration (`0` = disabled), and which roles require MFA; env-locked settings shown as read-only with badge
 - `GET /api/admin/sessions`, `POST /api/admin/sessions/:id/revoke`, `POST /api/admin/events/:eventId/revoke-all-operator-sessions`, `GET /api/admin/system-settings`, `PATCH /api/admin/system-settings` API endpoints (superadmin)
 - Session revoke and bulk-revoke actions write to `AdminAuditLog`
 
+### Changed
+- Login, MFA, and superadmin identity-provider HTML pages aligned with Admitto design tokens (card layout, branded auth shell)
+- OIDC group mapping role picker uses a select (`superadmin` / `admin` / `operator`) instead of free text
+- OIDC provider list supports inline enable/disable toggle without re-saving the full form
+- Cloudflare Access admin form shows status badge, fall-through explanation, and enable warning
+
 ### Fixed
+- SSO failure on `/login` shows a dedicated fallback banner; removed placeholder “SSO coming soon” when no IdP is configured
 - Check-in card now shows a coloured left border per scan status (green = valid, red = revoked/invalid, yellow = already checked in, blue = preview) — previously all cards looked identical regardless of result
 - Login page title and heading changed from "Operator sign in" to "Sign in to Admitto" — admins and operators share the same login screen
 - Sidebar no longer marks the Overview section as live; it shows "Soon" until Overview is built (v1.0)

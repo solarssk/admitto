@@ -11,6 +11,7 @@ import {
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret, generateTotpCode } from "@admitto/auth/testing";
 import { createApp } from "../src/app.js";
+import { clearEnrollmentBackupCacheForTests } from "../src/auth/enrollment-backup-cache.js";
 import { InMemoryRateLimitStore } from "../src/rate-limit/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -18,10 +19,19 @@ const DB_ROOT = path.resolve(__dirname, "..", "..", "..", "packages", "db");
 const CHECKIN_TOKEN = "test-checkin-mfa-token-32chars!!";
 const EVENT_ID = "event-mfa-web";
 const ORG_ID = "org_mfa_web";
+function extractBackupCodes(html: string): string[] {
+  const section = html.match(/<div class="auth-backup">([\s\S]*?)<\/div>/);
+  if (!section?.[1]) return [];
+  return [...section[1].matchAll(/<code>([^<]+)<\/code>/g)]
+    .map((m) => m[1])
+    .filter((code): code is string => Boolean(code));
+}
+
 const sameOrigin = { Origin: "http://localhost" };
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
+let rateLimitStore: InMemoryRateLimitStore;
 let adminEmail = "web-admin@example.com";
 let adminPassword = "web-admin-pass-123";
 let operatorEmail = "web-op@example.com";
@@ -35,6 +45,20 @@ function sessionCookie(res: Response): string | undefined {
 function cookieHeader(res: Response): Record<string, string> {
   const line = sessionCookie(res);
   return line ? { Cookie: line } : {};
+}
+
+async function resetAdminAuthLabState(userId: string): Promise<void> {
+  rateLimitStore.reset();
+  clearEnrollmentBackupCacheForTests();
+  await prisma.userMfaMethod.deleteMany({ where: { user_id: userId } });
+  await prisma.trustedDevice.updateMany({
+    where: { user_id: userId, revoked_at: null },
+    data: { revoked_at: new Date() },
+  });
+  await prisma.session.updateMany({
+    where: { user_id: userId, revoked_at: null },
+    data: { revoked_at: new Date() },
+  });
 }
 
 beforeAll(async () => {
@@ -78,12 +102,13 @@ beforeAll(async () => {
     data: { user_id: op.id, role: "operator", scope_type: "event", scope_id: EVENT_ID },
   });
 
+  rateLimitStore = new InMemoryRateLimitStore();
   app = createApp({
     prisma,
     checkinToken: CHECKIN_TOKEN,
     allowCheckinBearer: false,
     baseUrl: "https://tickets.example.com",
-    rateLimitStore: new InMemoryRateLimitStore(),
+    rateLimitStore,
     skipCheckinBootValidation: true,
   });
 });
@@ -324,13 +349,124 @@ describe("HTML MFA enroll", () => {
     expect(html).toContain("otpauth://totp/");
     expect(await prisma.userMfaMethod.count({ where: { user_id: admin!.id, type: "totp" } })).toBe(1);
   });
+
+  it("POST /mfa/enroll/download-codes returns attachment when enrollment pending", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const startRes = await app.request("/mfa/enroll/start", {
+      method: "POST",
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(startRes.status).toBe(200);
+    const enrollHtml = await startRes.text();
+    const codeMatches = extractBackupCodes(enrollHtml);
+    expect(codeMatches.length).toBeGreaterThan(0);
+
+    const downloadRes = await app.request("/mfa/enroll/download-codes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...sameOrigin,
+        ...cookieHeader(loginRes),
+      },
+      body: new URLSearchParams(
+        codeMatches.map((code) => ["code", code] as [string, string]),
+      ).toString(),
+    });
+    expect(downloadRes.status).toBe(200);
+    expect(downloadRes.headers.get("content-disposition")).toContain("admitto-backup-codes.txt");
+    const body = await downloadRes.text();
+    for (const code of codeMatches) {
+      expect(body).toContain(code);
+    }
+  });
+
+  it("POST /mfa/enroll/download-codes redirects without enrollment session", async () => {
+    const res = await app.request("/mfa/enroll/download-codes", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin },
+      body: "code=abc123",
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login");
+  });
+
+  it("POST /mfa/enroll/download-codes rejects tampered codes", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    await app.request("/mfa/enroll/start", {
+      method: "POST",
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+
+    const downloadRes = await app.request("/mfa/enroll/download-codes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...sameOrigin,
+        ...cookieHeader(loginRes),
+      },
+      body: new URLSearchParams([["code", "FAKE-CODE-0001"]]).toString(),
+    });
+    expect(downloadRes.status).toBe(400);
+  });
+
+  it("POST /mfa/enroll keeps backup codes visible after invalid confirmation code", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const startRes = await app.request("/mfa/enroll/start", {
+      method: "POST",
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(startRes.status).toBe(200);
+    const initialCodes = extractBackupCodes(await startRes.text());
+    expect(initialCodes.length).toBeGreaterThan(0);
+
+    const failRes = await app.request("/mfa/enroll", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...sameOrigin,
+        ...cookieHeader(loginRes),
+      },
+      body: new URLSearchParams({ code: "000000" }).toString(),
+    });
+    expect(failRes.status).toBe(401);
+    const retryHtml = await failRes.text();
+    expect(retryHtml).toContain("Invalid code");
+    expect(retryHtml).toContain("Download backup codes");
+    const retryCodes = extractBackupCodes(retryHtml);
+    expect(retryCodes).toEqual(initialCodes);
+  });
 });
 
 describe("logout revokes trusted device", () => {
   it("API logout invalidates remembered device token", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
     const secret = generateTotpSecret();
-    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
     await prisma.userMfaMethod.create({
       data: {
         user_id: admin!.id,
@@ -345,6 +481,9 @@ describe("logout revokes trusted device", () => {
       headers: { "Content-Type": "application/json", ...sameOrigin },
       body: JSON.stringify({ email: adminEmail, password: adminPassword }),
     });
+    expect((await loginRes.clone().json()) as { next: string }).toEqual(
+      expect.objectContaining({ next: LOGIN_NEXT.MFA_REQUIRED }),
+    );
 
     const verifyRes = await app.request("/api/auth/mfa/verify", {
       method: "POST",

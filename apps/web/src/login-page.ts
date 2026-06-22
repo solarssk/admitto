@@ -1,3 +1,9 @@
+import {
+  AUTH_PAGE_CSS,
+  renderAuthBrand,
+  renderAuthDocument,
+} from "./shared-auth-styles.js";
+
 function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -31,13 +37,23 @@ export const LOGIN_ERROR_CODE = "invalid_credentials";
 
 function loginErrorMessage(error?: string): string | undefined {
   if (!error) return undefined;
-  if (error === "oidc_failed") {
-    return "Corporate sign-in failed. Try again or use your local password.";
-  }
   if (error === LOGIN_ERROR_CODE) {
     return "Invalid email or password.";
   }
   return undefined;
+}
+
+const SSO_ICON_SVG = `<svg width="18" height="18" viewBox="0 0 21 21" fill="none" aria-hidden="true"><path d="M20.283 10.356h-8.327v3.451h4.792c-.446 2.193-2.313 3.453-4.792 3.453a5.27 5.27 0 01-5.279-5.28 5.27 5.27 0 015.279-5.279c1.259 0 2.397.447 3.29 1.178l2.6-2.599c-1.584-1.381-3.615-2.233-5.89-2.233a8.908 8.908 0 00-8.934 8.934 8.907 8.907 0 008.934 8.934c4.467 0 8.529-3.249 8.529-8.934 0-.528-.081-1.097-.202-1.625z" fill="#4285F4"/><path d="M1.329 6.817l3.005 2.204a5.268 5.268 0 015.245-3.643c1.259 0 2.397.447 3.29 1.178l2.6-2.599c-1.584-1.381-3.615-2.233-5.89-2.233-3.199 0-5.956 1.681-7.25 4.093z" fill="#EA4335"/><path d="M9.579 19.73c2.213 0 4.22-.725 5.779-1.96l-2.67-2.259a5.274 5.274 0 01-3.109.974 5.27 5.27 0 01-4.979-3.59L1.58 15.116c1.278 2.435 4.042 4.614 7.999 4.614z" fill="#34A853"/><path d="M20.283 10.356h-8.327v3.451h4.792c-.21 1.102-.87 2.064-1.822 2.72l2.67 2.258c1.556-1.439 2.687-3.673 2.687-8.429z" fill="#FBBC05"/></svg>`;
+
+function renderSsoBlock(ssoProviders: LoginSsoProvider[], next?: string): string {
+  if (ssoProviders.length === 0) return "";
+  const buttons = ssoProviders
+    .map((p) => {
+      const startUrl = `/api/auth/oidc/${encodeURIComponent(p.id)}/start${next ? `?next=${encodeURIComponent(next)}` : ""}`;
+      return `<a href="${esc(startUrl)}" class="auth-btn-secondary">${SSO_ICON_SVG} Continue with ${esc(p.display_name)}</a>`;
+    })
+    .join("");
+  return `<div class="auth-sso-list">${buttons}</div><div class="auth-divider">or</div>`;
 }
 
 /** Render the operator sign-in form HTML (optional uniform error message). */
@@ -46,49 +62,42 @@ export function renderLoginForm(
   next?: string,
   ssoProviders: LoginSsoProvider[] = [],
 ): string {
-  const message = loginErrorMessage(error);
-  const errorBlock = message ? `<p class="error" role="alert">${esc(message)}</p>` : "";
+  const ssoFailed = error === "oidc_failed";
+  const loginError = !ssoFailed ? loginErrorMessage(error) : undefined;
+  const ssoFallbackBlock = ssoFailed
+    ? `<div class="auth-sso-fallback" role="alert">SSO unavailable — use your local password below</div>`
+    : "";
+  const errorBlock = loginError ? `<div class="auth-error" role="alert">${esc(loginError)}</div>` : "";
   const nextField = next ? `<input type="hidden" name="next" value="${esc(next)}">` : "";
-  const ssoBlock =
-    ssoProviders.length > 0
-      ? `<div class="sso">${ssoProviders
-          .map((p) => {
-            const startUrl = `/api/auth/oidc/${encodeURIComponent(p.id)}/start${next ? `?next=${encodeURIComponent(next)}` : ""}`;
-            return `<p><a href="${esc(startUrl)}">Sign in with ${esc(p.display_name)}</a></p>`;
-          })
-          .join("")}</div>`
-      : `<footer>SSO / corporate login — coming soon</footer>`;
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Sign in to Admitto</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 400px; margin: 2rem auto; padding: 0 1rem; color: #111; }
-    h1 { font-size: 1.25rem; }
-    label { display: block; margin-top: 1rem; font-size: 0.9rem; }
-    input { width: 100%; box-sizing: border-box; margin-top: 0.25rem; padding: 0.5rem; }
-    button { margin-top: 1.25rem; padding: 0.5rem 1rem; }
-    .error { color: #991b1b; background: #fee2e2; padding: 0.5rem; border-radius: 4px; }
-    footer, .sso { margin-top: 2rem; font-size: 0.85rem; color: #666; }
-  </style>
-</head>
-<body>
-  <h1>Sign in to Admitto</h1>
-  ${errorBlock}
-  <form method="post" action="/login">
-    ${nextField}
-    <label>Email <input type="email" name="email" required autocomplete="username"></label>
-    <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
-    <label>Device label <span style="color:#666">(optional)</span>
-      <input type="text" name="device_label" placeholder="Tablet 1 — main entrance" maxlength="120">
-    </label>
-    <button type="submit">Sign in</button>
-  </form>
-  ${ssoBlock}
-</body>
-</html>`;
+  const ssoBlock = renderSsoBlock(ssoProviders, next);
+
+  const body = `${renderAuthBrand()}
+  <div class="auth-card">
+    <h1>Sign in</h1>
+    <p class="subtitle">Internal event access gateway</p>
+    ${ssoFallbackBlock}
+    ${errorBlock}
+    ${ssoBlock}
+    <form method="post" action="/login">
+      ${nextField}
+      <div class="auth-field">
+        <label class="auth-label" for="email">Email</label>
+        <input class="auth-input" id="email" type="email" name="email" placeholder="operator@company.com" required autocomplete="username">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label" for="password">Password</label>
+        <input class="auth-input" id="password" type="password" name="password" required autocomplete="current-password">
+      </div>
+      <div class="auth-field">
+        <label class="auth-label" for="device_label">Device label <span style="font-weight:400;color:var(--at-gray-500)">(optional)</span></label>
+        <input class="auth-input" id="device_label" type="text" name="device_label" placeholder="Tablet 1 — main entrance" maxlength="120">
+      </div>
+      <button class="auth-btn-primary" type="submit">Sign in</button>
+    </form>
+    <p class="auth-footer">Admitto is an internal tool. Access is managed by your IT administrator.</p>
+  </div>`;
+
+  return renderAuthDocument("Admitto — Sign in", body, AUTH_PAGE_CSS);
 }
 
 /** Event row shown on the temporary `/operator` landing page. */
