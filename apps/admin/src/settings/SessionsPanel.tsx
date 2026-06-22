@@ -81,7 +81,7 @@ export function SessionsPanel() {
 
   useEffect(() => {
     void load();
-    fetchAdminEvents()
+    fetchAdminEvents({ includeArchived: true })
       .then(setEvents)
       .catch(() => {});
   }, [load]);
@@ -246,6 +246,7 @@ export function SessionsPanel() {
             {events.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.title}
+                {e.archived_at ? " (archived)" : ""}
               </option>
             ))}
           </select>
