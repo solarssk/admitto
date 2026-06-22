@@ -7,6 +7,25 @@ See also: [GDPR-ONE-PAGER.md](GDPR-ONE-PAGER.md) (Option B).
 
 ---
 
+## Process overview
+
+```mermaid
+flowchart TD
+    A([Request received]) --> B[Record date + identity claim\nAcknowledge within 1 business day]
+    B --> C{Identity verified?}
+    C -- No --> D[Request proof\nDecline to disclose]
+    C -- Yes --> E{Access or erasure?}
+    E -- Access --> F[Admin exports attendee row\nAdmin → Attendees → Export]
+    F --> G[Deliver via secure channel]
+    E -- Erasure --> H{Legal confirms erasure\nno retention exception?}
+    H -- No --> I[Explain retention exception\nDocument decision]
+    H -- Yes --> J[Delete / anonymise record\nRemove copies from exports + backups]
+    J --> K([Document completion date\n+ responsible person])
+    G --> K
+```
+
+---
+
 ## 1. Intake
 
 - Request arrives (email, helpdesk, in person) → record **date received**, requester identity, event.

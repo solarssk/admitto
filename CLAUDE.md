@@ -1,39 +1,131 @@
 # Admitto — Claude Code Guidelines
 
-## Versioning
+Repo: https://github.com/solarssk/admitto  
+Active milestone: **v0.4.5+** — settings and session management; wallet passes → v0.5.  
+Product version: git tag `v0.x.y` + root `package.json` + `CHANGELOG.md` — see [VERSIONING.md](VERSIONING.md).
 
-Milestones follow semver logic:
+---
 
-* v0.x — development iterations, expected bugs and refactors
-* v1.0 — first stable MVP: event-ready, tested, handed to operator
-* v1.x+ — post-event features
+## 1. Plan before coding
 
-**Product version** (what we tag and ship): `CHANGELOG.md` + git tag `v0.x.y` + root `package.json` `"version"`. Workspace packages stay at `0.0.1` — see [VERSIONING.md](VERSIONING.md).
+**Read first. Propose a plan. Get alignment before writing a line.**
 
-**Active milestone:** v0.4.2+ — admin event screens (prompt #3); wallet passes → v0.5.
+- Read the relevant packages and existing patterns — do not assume, verify.
+- State what you will change, in which files, in what order, and why.
+- If the task spans more than ~3 packages or needs a DB migration + UI + tests, propose a split into sub-tasks and get confirmation before starting.
+- Ask only when a decision blocks implementation or creates real risk. Decide small things yourself.
 
-Repo: https://github.com/solarssk/admitto
+**The test:** Could a reviewer predict every file in your diff from your plan? If not, the plan isn't specific enough.
 
-## Pull Requests
+---
 
-Every PR description must follow the repository template in `.github/pull_request_template.md`.
+## 2. Simplicity first
 
-Required rules:
+**Minimum code that solves the problem. Nothing speculative.**
 
-* keep the exact section structure:
-  * `Description`
-  * `How to test`
-  * `What stays / known limitations`
-  * `Checklist`
-* do not replace those sections with custom headings
-* if a checklist item does not apply, keep it and explain why instead of deleting it
-* if tests were not run, say so plainly in both `How to test` and the checklist
-* every PR must have labels before it is handed off for review
-* every PR should be assigned to the intended milestone when that milestone already exists
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No error handling for scenarios that cannot happen.
+- No backwards-compatibility shims unless explicitly required.
+- If you wrote 300 lines and 100 would do — rewrite it.
 
-Minimum PR metadata expectation:
+**The test:** Would a senior engineer say this is overcomplicated? If yes, simplify.
 
-* one `type:*` label
-* at least one relevant `area:*` label
-* a `prio:*` label when priority is clear from roadmap or security scope
-* `security` for auth, secrets, access control, personal-data handling, or other security-sensitive changes
+---
+
+## 3. Surgical changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+- Do not "improve" adjacent code, comments, or formatting while fixing something else.
+- Do not refactor code that is not broken.
+- Match existing style even if you would do it differently.
+- If you notice unrelated dead code, mention it in the PR — do not delete it.
+- Remove only the imports and variables that **your** changes made unused.
+
+**The test:** Every changed line should trace directly to the task. If it doesn't, revert it.
+
+---
+
+## 4. Split when it pays off
+
+**A 600-line diff across 5 packages is not one task — it's three.**
+
+Split into sequential or parallel sub-tasks when:
+- Parts are independently testable and do not break the build between steps.
+- A sub-task produces an artifact (schema, API contract, types) that another depends on.
+- The total diff would exceed ~500 lines across multiple packages.
+
+Do **not** split when sub-tasks are tightly coupled or coordination overhead exceeds implementation time.
+
+When splitting, state the plan explicitly and get alignment before starting:
+```text
+1. Domain logic + migration  →  verify: unit tests pass
+2. API routes                →  verify: integration tests pass, no regression
+3. Frontend UI               →  verify: manual smoke, existing UI unchanged
+```
+
+---
+
+## 5. Commit messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <description>`
+
+**Types:** `feat` `fix` `chore` `docs` `refactor` `test` `perf` `security`  
+**Scopes:** `auth` `web` `admin` `db` `tickets` `mailer` `import` `crypto` `ui` `infra` `ci`
+
+```text
+feat(auth): add trusted-device cookie revocation on MFA reset
+fix(web): clamp check-in history limit to 1–100
+chore(deps): bump undici 6.26.0 → 6.27.0
+```
+
+Breaking changes: add `!` after scope and describe in the commit body.
+
+---
+
+## 6. Branch naming
+
+```text
+feature/<short-slug>    fix/<short-slug>
+chore/<short-slug>      docs/<short-slug>
+```
+
+---
+
+## 7. Changelog
+
+`CHANGELOG.md` follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
+
+Add entries to `[Unreleased]` **as you implement** — not as a final step. Use typed sections: `Added`, `Changed`, `Fixed`, `Security`, `Removed`, `Deprecated`. Write for operators, not implementation internals.
+
+At release time: move `[Unreleased]` to `## [0.x.y] - YYYY-MM-DD` and update the comparison links at the bottom. Full checklist: [VERSIONING.md](VERSIONING.md).
+
+---
+
+## 8. Tests
+
+Run the full suite before committing:
+
+```bash
+npm test
+```
+
+If tests fail, fix them — do not leave a broken suite with a TODO. If a fix is out of scope for the current PR, say so explicitly in "What stays / known limitations".
+
+Integration tests need a live Postgres instance. Run `npm run db:test-setup` once per environment.
+
+---
+
+## 9. Pull Requests
+
+Every PR must follow `.github/pull_request_template.md` — keep its four sections exactly:  
+`Description` · `How to test` · `What stays / known limitations` · `Checklist`
+
+Required labels before handoff:
+- one `type:*` label
+- at least one `area:*` label
+- `prio:*` when priority is clear from roadmap or security scope
+- `security` for auth, secrets, access control, or personal data handling
+
+Assign to the current milestone when it exists. Assign to @solarssk.

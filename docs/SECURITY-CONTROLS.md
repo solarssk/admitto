@@ -38,6 +38,16 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 
 ## Authentication and access
 
+### Role hierarchy
+
+```mermaid
+flowchart TB
+    SA["superadmin @ instance\nAll events · All config · Break-glass CLI"]
+    A["admin @ organization\nOrg events · Mail config · Guest list · Export"]
+    O["operator @ event\nAssigned event only · Check-in · Item fulfilment"]
+    SA --> A --> O
+```
+
 **Staff surfaces** (administration, check-in) require authentication. Deployments may use:
 
 - **Local accounts** with password and optional MFA for privileged roles.

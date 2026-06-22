@@ -26,6 +26,17 @@ Admitto ships as **one product** with git tags like `v0.4.0`. That is **not** in
 
 This is the current product roadmap — details live in milestone descriptions and `CHANGELOG.md`:
 
+```mermaid
+flowchart LR
+    v04["v0.4 ✓\nStaff UI · check-in\nadmin · mail"]
+    v045["v0.4.5 ▶\nSettings · sessions"]
+    v05["v0.5\nWallet passes\nPassCreator"]
+    v06["v0.6\nIngest · RSVP\nMS Forms"]
+    v079["v0.7–0.9\nHardening\ndry run"]
+    v10(["v1.0\nFirst event\ngo-live"])
+    v04 --> v045 --> v05 --> v06 --> v079 --> v10
+```
+
 | Version | Focus |
 |---------|--------|
 | **v0.4** | Operator UI + event-day ops + staff SPA foundation (`v0.4.0`–`v0.4.1` tagged). Next: admin event screens → `v0.4.2+`, wallet → `v0.5`. |
@@ -55,18 +66,19 @@ Do not bump per-package versions unless we start publishing libraries separately
 
 ## Cutting a release
 
-1. Move `CHANGELOG.md` items from `Unreleased` → `## v0.x.y — date`
-2. Set root `package.json` `"version"` to `0.x.y` (no `v` prefix)
-3. Commit on `main`, then create a **signed** annotated tag and push it:
+1. Move `CHANGELOG.md` entries from `[Unreleased]` to a new `## [0.x.y] - YYYY-MM-DD` section following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format
+2. Update the `[Unreleased]` comparison link at the bottom of `CHANGELOG.md` to point to the new tag
+3. Add the new comparison link for the release (e.g. `[0.x.y]: https://github.com/solarssk/admitto/compare/v0.x.z...v0.x.y`)
+4. Set root `package.json` `"version"` to `0.x.y` (no `v` prefix)
+5. Commit on `main`, then create a **signed** annotated tag and push it:
    ```bash
    ./scripts/release-tag.sh 0.x.y -m "v0.x.y — one-line summary" --push
    ```
    (`git tag -s` — never lightweight or unsigned `git tag -a`.)
-4. Create the GitHub Release: `gh release create v0.x.y --title "…" --notes-file …`  
-   Use the **v0.3.x release notes template** (see e.g. GitHub Release `v0.3.7`): milestone + merged PR links, summary blockquote, `### ✨ Included`, deploy/docker section, `### 🗄️ Database`, checklist, `### ⏳ Not in this release`, `### ➡️ Next`, `### 📦 Release scope`.  
-   **`### 🗄️ Database`:** migrations apply automatically on container start (entrypoint, fail-fast, with a pre-migration backup when pending migrations exist). No manual `migrate deploy` step for operators.  
-   Do **not** paste raw `CHANGELOG.md` into the GitHub Release body — CHANGELOG is the engineering log; the Release is the operator/maintainer-facing summary.
-5. Close the matching GitHub milestone
+6. Create the GitHub Release: `gh release create v0.x.y --title "…" --notes-file …`  
+   The GitHub Release body is the **operator-facing summary** — not a copy of `CHANGELOG.md`. Include: milestone + merged PR links, short summary paragraph, deploy checklist with checkboxes, database migrations note (migrations apply automatically on container start; no manual `migrate deploy`), "Not in this release", "Next".  
+   See release `v0.4.4` as the current reference template.
+7. Close the matching GitHub milestone
 
 ### Tag signing (one-time maintainer setup)
 

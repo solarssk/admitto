@@ -5,6 +5,19 @@ Assign names and contacts in your internal runbook.
 
 ---
 
+## Triage
+
+```mermaid
+flowchart TD
+    A([Incident detected]) --> B{Personal data\npossibly exposed?}
+    B -- Yes --> C[P1 — Customer security\n+ platform owner]
+    C --> D[GDPR Art. 33/34:\n72h authority clock starts]
+    B -- No --> E{Event-day outage?}
+    E -- Yes --> F[P2 — Platform owner\n+ event operator]
+    E -- No --> G[P3 — Follow\nSECURITY.md disclosure]
+    C & F & G --> H[Contain → Assess → Preserve → Notify]
+```
+
 ## Severity
 
 | Level | Examples | Lead |
