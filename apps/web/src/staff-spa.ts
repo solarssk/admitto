@@ -51,14 +51,21 @@ export function getStaffSpaSecurityHeaders(): Record<string, string> {
 }
 
 function defaultAdminDistRoot(): string {
-  const fromCwd = normalize(join(process.cwd(), "apps/admin/dist"));
-  try {
-    readFileSync(join(fromCwd, "index.html"));
-    return fromCwd;
-  } catch {
-    const here = dirname(fileURLToPath(import.meta.url));
-    return normalize(join(here, "../../../../admin/dist"));
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    normalize(join(here, "../../admin/dist")),
+    normalize(join(process.cwd(), "apps/admin/dist")),
+    normalize(join(process.cwd(), "../admin/dist")),
+  ];
+  for (const root of candidates) {
+    try {
+      readFileSync(join(root, "index.html"));
+      return root;
+    } catch {
+      // try next candidate
+    }
   }
+  return candidates[0]!;
 }
 
 function safeJoin(root: string, relative: string): string | null {

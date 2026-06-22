@@ -13,7 +13,8 @@ export function getLoginPageSecurityHeaders(): Record<string, string> {
     "Cache-Control": "private, no-store, max-age=0",
     "Content-Security-Policy":
       "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
-    "Referrer-Policy": "no-referrer",
+    // same-origin: send Referer on same-origin form POST (Safari); omit on cross-origin navigations.
+    "Referrer-Policy": "same-origin",
     "X-Content-Type-Options": "nosniff",
   };
 }

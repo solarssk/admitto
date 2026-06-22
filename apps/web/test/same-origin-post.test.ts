@@ -75,9 +75,27 @@ describe("rejectCrossSitePost", () => {
     expect(res.status).toBe(403);
   });
 
-  it("rejects POST when both Origin and Referer are absent", async () => {
+  it("rejects POST when Origin, Referer, and Sec-Fetch-Site are absent", async () => {
     const app = makeApp();
     const res = await app.request("https://tickets.example.com/login", { method: "POST" });
+    expect(res.status).toBe(403);
+  });
+
+  it("accepts same-origin Sec-Fetch-Site when Origin and Referer are absent", async () => {
+    const app = makeApp();
+    const res = await app.request("https://tickets.example.com/login", {
+      method: "POST",
+      headers: { "Sec-Fetch-Site": "same-origin" },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects cross-site Sec-Fetch-Site when Origin and Referer are absent", async () => {
+    const app = makeApp();
+    const res = await app.request("https://tickets.example.com/login", {
+      method: "POST",
+      headers: { "Sec-Fetch-Site": "cross-site" },
+    });
     expect(res.status).toBe(403);
   });
 

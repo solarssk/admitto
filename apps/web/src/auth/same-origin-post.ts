@@ -38,10 +38,16 @@ function headerOriginMatches(expectedOrigin: string, headerValue: string): boole
   }
 }
 
+/** Browser-set Fetch Metadata; not spoofable from cross-origin pages in modern UAs. */
+function isSameSiteFetch(c: Context): boolean {
+  const site = c.req.header("sec-fetch-site")?.toLowerCase();
+  return site === "same-origin" || site === "same-site";
+}
+
 /**
  * Reject cross-site POST when `Origin`/`Referer` do not match the request origin.
- * POSTs with neither header are rejected (403) by design — tools like curl/Postman need both absent
- * headers to be expected failures, not a CSRF bypass.
+ * When both are absent (e.g. Safari + `Referrer-Policy: no-referrer` on HTML forms), accept
+ * `Sec-Fetch-Site: same-origin|same-site`. Tools like curl/Postman without those headers still fail.
  */
 export function rejectCrossSitePost(
   c: Context,
@@ -66,6 +72,10 @@ export function rejectCrossSitePost(
   const referer = c.req.header("referer");
   if (referer) {
     return headerOriginMatches(expectedOrigin, referer) ? null : forbidden();
+  }
+
+  if (isSameSiteFetch(c)) {
+    return null;
   }
 
   return forbidden();
