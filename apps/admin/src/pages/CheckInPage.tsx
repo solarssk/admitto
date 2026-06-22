@@ -341,6 +341,7 @@ export function CheckInPage() {
 
         {card && (
           <AttendeeCard
+            key={card.id}
             card={card}
             scanStatus={scanResult?.status}
             confirmed={scanResult?.confirmed}
@@ -352,7 +353,7 @@ export function CheckInPage() {
                 : undefined
             }
             onItemAction={(key: string, state: string) => void onItemAction(key, state)}
-            onAddNote={(body: string) => void onAddNote(body)}
+            onAddNote={onAddNote}
             onUndo={() => void onUndo()}
             showUndo={showUndo}
           />

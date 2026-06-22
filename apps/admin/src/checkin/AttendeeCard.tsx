@@ -11,7 +11,7 @@ type Props = {
   canAct: boolean;
   onCheckIn?: () => void;
   onItemAction?: (itemKey: string, targetState: string) => void;
-  onAddNote?: (body: string) => void;
+  onAddNote?: (body: string) => Promise<void>;
   onUndo?: () => void;
   showUndo?: boolean;
 };
