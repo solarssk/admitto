@@ -248,11 +248,11 @@
   padding-left: 1rem;
 }
 
-.checkin-card--valid           { border-left: 4px solid var(--status-ok); }
+.checkin-card--valid           { box-shadow: inset 4px 0 0 var(--status-ok); }
 .checkin-card--revoked,
-.checkin-card--invalid         { border-left: 4px solid var(--status-error); }
-.checkin-card--already_checked_in { border-left: 4px solid var(--status-warn); }
-.checkin-card--preview         { border-left: 4px solid var(--status-info); }
+.checkin-card--invalid         { box-shadow: inset 4px 0 0 var(--status-error); }
+.checkin-card--already_checked_in { box-shadow: inset 4px 0 0 var(--status-warn); }
+.checkin-card--preview         { box-shadow: inset 4px 0 0 var(--status-info); }
 
 .checkin-lookup {
   display: flex;
