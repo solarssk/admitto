@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { listAdminEvents } from "@admitto/auth";
 
+/** Map an auth EventSummary row to the admin picker JSON shape. */
 function serializeEvent(event: Awaited<ReturnType<typeof listAdminEvents>>[number], count?: number) {
   return {
     id: event.id,
@@ -15,7 +16,7 @@ function serializeEvent(event: Awaited<ReturnType<typeof listAdminEvents>>[numbe
   };
 }
 
-/** GET /api/admin/events — admin picker (session gate applied upstream). */
+/** GET /api/admin/events — admin picker (session gate applied upstream). Query: includeArchived=true. */
 export async function handleGetAdminEvents(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   const includeArchived = c.req.query("includeArchived") === "true";

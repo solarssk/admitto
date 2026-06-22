@@ -1,15 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Card } from "@admitto/ui";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { ApiError, archiveEvent, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
-import { ConfirmDialog } from "../components/ConfirmDialog.js";
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
-}
+import { formatEventDate, formatEventDateTime } from "../utils/event-dates.js";
 
 type ConfirmAction = { type: "archive" | "unarchive"; event: EventDto };
 
@@ -94,9 +88,9 @@ export function EventArchivingPanel() {
                   <div>{event.title}</div>
                   <div className="archiving-subdued">{event.slug}</div>
                 </td>
-                <td>{formatDate(event.date)}</td>
+                <td>{formatEventDate(event.date)}</td>
                 {mode === "archived" && (
-                  <td>{event.archived_at ? formatDate(event.archived_at) : "—"}</td>
+                  <td>{event.archived_at ? formatEventDateTime(event.archived_at) : "—"}</td>
                 )}
                 <td>
                   {mode === "active" ? (
@@ -157,7 +151,6 @@ export function EventArchivingPanel() {
           </>
         )}
 
-        {actionError && <p className="archiving-error">{actionError}</p>}
       </Card>
 
       <ConfirmDialog
@@ -173,9 +166,13 @@ export function EventArchivingPanel() {
         confirmLabel={confirmAction?.type === "archive" ? "Archive" : "Unarchive"}
         confirmVariant={confirmAction?.type === "archive" ? "danger" : "primary"}
         loading={acting}
+        errorMessage={actionError}
         onConfirm={() => void handleConfirm()}
         onCancel={() => {
-          if (!acting) setConfirmAction(null);
+          if (!acting) {
+            setConfirmAction(null);
+            setActionError(null);
+          }
         }}
       />
     </>

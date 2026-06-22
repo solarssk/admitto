@@ -173,6 +173,7 @@ export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {
   return parseJson<MeResponse>(res);
 }
 
+/** Load admin picker events; pass includeArchived to list archived rows. */
 export async function fetchAdminEvents(
   opts?: { includeArchived?: boolean; signal?: AbortSignal },
 ): Promise<EventDto[]> {
@@ -185,11 +186,13 @@ export async function fetchAdminEvents(
   return data.events;
 }
 
+/** Archive an event (superadmin-only POST). */
 export async function archiveEvent(eventId: string): Promise<void> {
   const res = await fetch(`/api/admin/events/${eventId}/archive`, jsonPostInit({}));
   await parseJson(res);
 }
 
+/** Restore an archived event to active (superadmin-only POST). */
 export async function unarchiveEvent(eventId: string): Promise<void> {
   const res = await fetch(`/api/admin/events/${eventId}/unarchive`, jsonPostInit({}));
   await parseJson(res);

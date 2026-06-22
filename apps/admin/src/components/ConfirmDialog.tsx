@@ -7,6 +7,7 @@ export type ConfirmDialogProps = {
   open: boolean;
   title: string;
   message: string;
+  errorMessage?: string | null;
   confirmLabel?: string;
   cancelLabel?: string;
   confirmVariant?: "primary" | "danger";
@@ -20,6 +21,7 @@ export function ConfirmDialog({
   open,
   title,
   message,
+  errorMessage,
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   confirmVariant = "primary",
@@ -41,6 +43,11 @@ export function ConfirmDialog({
           {title}
         </h3>
         <p className="confirm-dialog__message">{message}</p>
+        {errorMessage && (
+          <p className="confirm-dialog__error" role="alert">
+            {errorMessage}
+          </p>
+        )}
         <div className="confirm-dialog__actions">
           <Button type="button" variant="secondary" disabled={loading} onClick={onCancel}>
             {cancelLabel}

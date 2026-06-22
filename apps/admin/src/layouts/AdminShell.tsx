@@ -114,7 +114,7 @@ export function AdminShell({ event, showArchiveButton, onArchiveRequest }: Admin
               <Badge variant="neutral">Archived</Badge>
             )}
             {showArchiveButton && onArchiveRequest && (
-              <Button type="button" variant="danger" onClick={onArchiveRequest}>
+              <Button type="button" variant="secondary" onClick={onArchiveRequest}>
                 Archive event
               </Button>
             )}

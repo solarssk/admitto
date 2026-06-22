@@ -220,6 +220,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const requirePartialSessionHtml = createRequirePartialSession(db, { redirectTo: "/login" });
   const requireAdminAccess = createAdminAccessMiddleware(db);
   const staffAdminGate = createStaffAdminGate(db);
+  /** Middleware: event manage access, then archived read-only guard, then route handler. */
   const guardArchivedEvent = (handler: (c: Context) => Response | Promise<Response>) =>
     withEventArchiveGuard(db, handler);
   const adminResendRateLimit = createAdminResendRateLimit(rateLimitStore);

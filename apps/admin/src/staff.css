@@ -987,3 +987,22 @@
   font-size: var(--fs-sm);
 }
 
+.event-card__actions {
+  margin: var(--space-3) 0 0;
+}
+
+.picker-inline-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--brand-600, var(--primary));
+  font: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.picker-inline-link:hover {
+  color: var(--brand-700, var(--primary));
+}
+

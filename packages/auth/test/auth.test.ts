@@ -276,18 +276,19 @@ describe("authorization", () => {
       where: { id: EVENT_A },
       data: { archived_at: new Date() },
     });
+    try {
+      const activeOnly = await listAdminEvents(prisma, USER_SUPER);
+      expect(activeOnly.some((e) => e.id === EVENT_A)).toBe(false);
 
-    const activeOnly = await listAdminEvents(prisma, USER_SUPER);
-    expect(activeOnly.some((e) => e.id === EVENT_A)).toBe(false);
-
-    const withArchived = await listAdminEvents(prisma, USER_SUPER, { includeArchived: true });
-    const archived = withArchived.find((e) => e.id === EVENT_A);
-    expect(archived?.archived_at).not.toBeNull();
-
-    await prisma.event.update({
-      where: { id: EVENT_A },
-      data: { archived_at: null },
-    });
+      const withArchived = await listAdminEvents(prisma, USER_SUPER, { includeArchived: true });
+      const archived = withArchived.find((e) => e.id === EVENT_A);
+      expect(archived?.archived_at).not.toBeNull();
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_A },
+        data: { archived_at: null },
+      });
+    }
   });
 });
 

@@ -36,6 +36,7 @@ const PLACEHOLDER_ROUTES = [
   { path: "reports", title: "Reports" },
 ] as const;
 
+/** Event-scoped layout: resolves event (incl. archived), archive dialog, and AdminShell. */
 function EventLayout() {
   const { eventId } = useParams();
   const navigate = useNavigate();
@@ -98,25 +99,27 @@ function EventLayout() {
       <AdminShell
         event={event}
         showArchiveButton={showArchiveButton}
-        onArchiveRequest={() => setArchiveDialogOpen(true)}
+        onArchiveRequest={() => {
+          setArchiveError(null);
+          setArchiveDialogOpen(true);
+        }}
       />
       <ConfirmDialog
         open={archiveDialogOpen}
         title="Archive event"
         message="Archived events are hidden and read-only. Data is preserved. A superadmin can unarchive later."
+        errorMessage={archiveError}
         confirmLabel="Archive"
         confirmVariant="danger"
         loading={archiving}
         onConfirm={() => void handleArchive()}
         onCancel={() => {
-          if (!archiving) setArchiveDialogOpen(false);
+          if (!archiving) {
+            setArchiveDialogOpen(false);
+            setArchiveError(null);
+          }
         }}
       />
-      {archiveError && (
-        <p className="archiving-error archiving-error--toast" role="alert">
-          {archiveError}
-        </p>
-      )}
     </>
   );
 }

@@ -143,7 +143,7 @@ const eventSelect = {
   archived_at: true,
 } as const;
 
-/** Events where user has check-in capability (matches canPerformCheckIn). */
+/** Events where user has check-in capability (matches canPerformCheckIn). Archived events remain visible for late check-in after admin archive (ADR 0022). */
 export async function listCheckInEvents(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
@@ -186,7 +186,7 @@ export async function listCheckInEvents(
   });
 }
 
-/** Events visible on admin picker (superadmin: all; org admin: org events). */
+/** Events visible on admin picker (superadmin: all; org admin: org events). Set includeArchived to list archived rows. */
 export async function listAdminEvents(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
