@@ -202,3 +202,18 @@ export async function handlePostTestConnection(c: Context, db: PrismaClient): Pr
   const flash = result.ok ? "Connection test OK." : `Connection test failed: ${result.error}`;
   return c.redirect(`/admin/auth/providers/${id}?flash=${encodeURIComponent(flash)}`, 302);
 }
+
+/** POST /admin/auth/providers/:id/toggle */
+export async function handleToggleProvider(c: Context, db: PrismaClient): Promise<Response> {
+  const id = c.req.param("id") ?? "";
+  const provider = await findOidcProviderById(db, id);
+  if (!provider) {
+    return c.redirect(
+      `/admin/auth/providers?flash=${encodeURIComponent("Provider not found.")}`,
+      302,
+    );
+  }
+  await db.identityProvider.update({ where: { id }, data: { enabled: !provider.enabled } });
+  const msg = provider.enabled ? "Provider disabled." : "Provider enabled.";
+  return c.redirect(`/admin/auth/providers?flash=${encodeURIComponent(msg)}`, 302);
+}

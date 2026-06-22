@@ -4,6 +4,7 @@ import {
   SETTING_CF_ACCESS_PROTECTED_PREFIXES,
   SETTING_CF_ACCESS_TEAM_DOMAIN,
 } from "@admitto/auth";
+import { ADMIN_PAGE_CSS } from "../shared-auth-styles.js";
 
 function esc(s: string): string {
   return s
@@ -43,9 +44,28 @@ export function renderCfAccessForm(options: {
 
   const disabled = (locked: boolean) => (locked ? " disabled" : "");
 
+  const statusBadge = f.enabled
+    ? '<span class="badge-ok">Active</span>'
+    : '<span class="badge-neutral">Inactive</span>';
+
+  const enabledWarning =
+    f.enabled && !f.locks.enabled
+      ? `<div class="warn-block" role="alert"><strong>Warning:</strong> Cloudflare Access is enabled. If your CF configuration is incorrect, users may be locked out. Use &quot;Test JWKS&quot; before saving changes.</div>`
+      : "";
+
+  const envLockedWarning = f.enabled && f.locks.enabled
+    ? `<div class="info-block">Cloudflare Access is enabled and locked by environment configuration.</div>`
+    : "";
+
+  const fallthroughInfo = `<div class="info-block"><strong>How it works:</strong> When a Cloudflare JWT is present in the request, Admitto validates it against your Access policy. If no JWT is present (e.g. direct access), Admitto falls through to the standard local login. This means local accounts always work as a break-glass fallback.</div>`;
+
   return pageShell(
-    "Cloudflare Access",
+    "Admitto — Cloudflare Access",
     `${flashBlock}${errorBlock}
+    <p class="status-line">CF Access: ${statusBadge}</p>
+    ${fallthroughInfo}
+    ${enabledWarning}
+    ${envLockedWarning}
     <form method="post" action="/admin/auth/cf-access">
       <label>
         <input type="checkbox" name="enabled" value="1"${f.enabled ? " checked" : ""}${disabled(f.locks.enabled)}>
@@ -69,7 +89,7 @@ export function renderCfAccessForm(options: {
       <button type="submit" formaction="/admin/auth/cf-access/test" formmethod="post" formnovalidate>Test JWKS</button>
       <button type="submit">Save</button>
     </form>
-    <p><a href="/admin/auth/providers">Identity providers</a></p>`,
+    <p class="admin-nav"><a href="/admin/auth/providers">Identity providers</a></p>`,
   );
 }
 
@@ -79,16 +99,8 @@ function pageShell(title: string, body: string): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${esc(title)} — Admitto</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #111; }
-    label { display: block; margin-top: 0.75rem; font-size: 0.9rem; }
-    input[type=text], input[type=url] { width: 100%; box-sizing: border-box; padding: 0.4rem; margin-top: 0.2rem; }
-    .error { color: #991b1b; background: #fee2e2; padding: 0.5rem; border-radius: 4px; }
-    .flash { color: #065f46; background: #d1fae5; padding: 0.5rem; border-radius: 4px; }
-    .muted { color: #666; font-size: 0.85rem; }
-    button { margin-top: 1rem; margin-right: 0.5rem; padding: 0.5rem 1rem; }
-  </style>
+  <title>${esc(title)}</title>
+  <style>${ADMIN_PAGE_CSS}</style>
 </head>
 <body>
   <h1>${esc(title)}</h1>

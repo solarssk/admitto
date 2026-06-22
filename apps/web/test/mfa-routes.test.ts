@@ -324,6 +324,55 @@ describe("HTML MFA enroll", () => {
     expect(html).toContain("otpauth://totp/");
     expect(await prisma.userMfaMethod.count({ where: { user_id: admin!.id, type: "totp" } })).toBe(1);
   });
+
+  it("POST /mfa/enroll/download-codes returns attachment when enrollment pending", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const startRes = await app.request("/mfa/enroll/start", {
+      method: "POST",
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(startRes.status).toBe(200);
+    const enrollHtml = await startRes.text();
+    const codeMatches = [...enrollHtml.matchAll(/class="backup-code">([^<]+)</g)].map((m) => m[1]);
+    expect(codeMatches.length).toBeGreaterThan(0);
+
+    const downloadRes = await app.request("/mfa/enroll/download-codes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...sameOrigin,
+        ...cookieHeader(loginRes),
+      },
+      body: new URLSearchParams(
+        codeMatches.map((code) => ["code", code] as [string, string]),
+      ).toString(),
+    });
+    expect(downloadRes.status).toBe(200);
+    expect(downloadRes.headers.get("content-disposition")).toContain("admitto-backup-codes.txt");
+    const body = await downloadRes.text();
+    for (const code of codeMatches) {
+      expect(body).toContain(code);
+    }
+  });
+
+  it("POST /mfa/enroll/download-codes redirects without enrollment session", async () => {
+    const res = await app.request("/mfa/enroll/download-codes", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin },
+      body: "code=abc123",
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login");
+  });
 });
 
 describe("logout revokes trusted device", () => {

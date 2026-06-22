@@ -42,6 +42,18 @@ async function parseForm(c: Context): Promise<Record<string, string>> {
   return {};
 }
 
+async function parseFormCodes(c: Context): Promise<string[]> {
+  const body = await c.req.parseBody();
+  const raw = body["code"];
+  if (Array.isArray(raw)) {
+    return raw.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean);
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    return [raw.trim()];
+  }
+  return [];
+}
+
 
 const MFA_ERROR = "Invalid code. Try again.";
 
@@ -217,4 +229,35 @@ export async function handlePostMfaEnroll(
     return c.redirect("/login", 302);
   }
   return c.redirect(landing, 302);
+}
+
+const MIN_BACKUP_DOWNLOAD_CODES = 1;
+const MAX_BACKUP_DOWNLOAD_CODES = 20;
+
+/** POST /mfa/enroll/download-codes — download backup codes as plain text (no inline JS). */
+export async function handlePostMfaEnrollDownloadCodes(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const partial = c.get("partialAuth");
+  if (partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED) {
+    return c.redirect("/login", 302);
+  }
+
+  const pending = await resumePendingTotpEnrollment(db, partial.userId);
+  if (pending?.backupCodesAlreadyShown) {
+    return c.text("Backup codes are no longer available for download.", 400);
+  }
+
+  const codes = await parseFormCodes(c);
+  if (codes.length < MIN_BACKUP_DOWNLOAD_CODES || codes.length > MAX_BACKUP_DOWNLOAD_CODES) {
+    return c.text("Invalid backup codes.", 400);
+  }
+
+  for (const [name, value] of Object.entries(getMfaPageSecurityHeaders())) {
+    c.header(name, value);
+  }
+  c.header("Content-Type", "text/plain; charset=utf-8");
+  c.header("Content-Disposition", 'attachment; filename="admitto-backup-codes.txt"');
+  return c.body(codes.join("\n") + "\n", 200);
 }

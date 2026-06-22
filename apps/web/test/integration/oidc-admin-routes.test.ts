@@ -147,4 +147,40 @@ describe("oidc admin routes", () => {
     const after = await prisma.identityProvider.findUniqueOrThrow({ where: { id: PROVIDER_ID } });
     expect(after.client_secret_enc).toBe(before.client_secret_enc);
   });
+
+  it("toggle enables and disables provider without full form save", async () => {
+    await prisma.identityProvider.update({
+      where: { id: PROVIDER_ID },
+      data: { enabled: false },
+    });
+
+    const enableRes = await app.request(`/admin/auth/providers/${PROVIDER_ID}/toggle`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      redirect: "manual",
+    });
+    expect(enableRes.status).toBe(302);
+    let row = await prisma.identityProvider.findUniqueOrThrow({ where: { id: PROVIDER_ID } });
+    expect(row.enabled).toBe(true);
+
+    const disableRes = await app.request(`/admin/auth/providers/${PROVIDER_ID}/toggle`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      redirect: "manual",
+    });
+    expect(disableRes.status).toBe(302);
+    row = await prisma.identityProvider.findUniqueOrThrow({ where: { id: PROVIDER_ID } });
+    expect(row.enabled).toBe(false);
+  });
+
+  it("provider list shows role select on edit form", async () => {
+    const res = await app.request(`/admin/auth/providers/${PROVIDER_ID}`, {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('name="mapping_role_');
+    expect(html).toContain("<select");
+    expect(html).toContain("superadmin");
+  });
 });
