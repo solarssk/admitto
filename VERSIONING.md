@@ -26,6 +26,17 @@ Admitto ships as **one product** with git tags like `v0.4.0`. That is **not** in
 
 This is the current product roadmap — details live in milestone descriptions and `CHANGELOG.md`:
 
+```mermaid
+flowchart LR
+    v04["v0.4 ✓\nStaff UI · check-in\nadmin · mail"]
+    v045["v0.4.5 ▶\nSettings · sessions"]
+    v05["v0.5\nWallet passes\nPassCreator"]
+    v06["v0.6\nIngest · RSVP\nMS Forms"]
+    v079["v0.7–0.9\nHardening\ndry run"]
+    v10(["v1.0\nFirst event\ngo-live"])
+    v04 --> v045 --> v05 --> v06 --> v079 --> v10
+```
+
 | Version | Focus |
 |---------|--------|
 | **v0.4** | Operator UI + event-day ops + staff SPA foundation (`v0.4.0`–`v0.4.1` tagged). Next: admin event screens → `v0.4.2+`, wallet → `v0.5`. |
