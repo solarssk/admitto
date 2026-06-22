@@ -73,16 +73,14 @@ export function SecurityPanel() {
     let hasChanges = false;
 
     if (!fieldLocked(settings.session_ttl_ms.source)) {
-      const newVal = draft.sessionTtlH * MS_PER_HOUR;
-      if (newVal !== settings.session_ttl_ms.value) {
-        body.session_ttl_ms = newVal;
+      if (draft.sessionTtlH !== Math.round(settings.session_ttl_ms.value / MS_PER_HOUR)) {
+        body.session_ttl_ms = draft.sessionTtlH * MS_PER_HOUR;
         hasChanges = true;
       }
     }
     if (!fieldLocked(settings.operator_session_ttl_ms.source)) {
-      const newVal = draft.opTtlH * MS_PER_HOUR;
-      if (newVal !== settings.operator_session_ttl_ms.value) {
-        body.operator_session_ttl_ms = newVal;
+      if (draft.opTtlH !== Math.round(settings.operator_session_ttl_ms.value / MS_PER_HOUR)) {
+        body.operator_session_ttl_ms = draft.opTtlH * MS_PER_HOUR;
         hasChanges = true;
       }
     }

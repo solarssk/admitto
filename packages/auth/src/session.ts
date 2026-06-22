@@ -247,12 +247,14 @@ export async function revokeAllOperatorSessionsForEvent(
   const userIds = operatorUserIds.filter((id) => !elevatedUserIds.has(id));
   if (userIds.length === 0) return 0;
 
+  const now = new Date();
   const result = await prisma.session.updateMany({
     where: {
       user_id: { in: userIds },
       revoked_at: null,
+      expires_at: { gt: now },
     },
-    data: { revoked_at: new Date() },
+    data: { revoked_at: now },
   });
 
   return result.count;
