@@ -31,15 +31,18 @@ export interface ProviderListItem {
 
 function renderRoleSelect(name: string, currentRole: string): string {
   const isKnown = ALLOWED_MAPPING_ROLES.includes(currentRole as (typeof ALLOWED_MAPPING_ROLES)[number]);
-  const invalidOption =
-    currentRole && !isKnown
-      ? `<option value="${esc(currentRole)}" selected disabled>${esc(currentRole)} (invalid — pick a role)</option>`
-      : "";
+  if (currentRole && !isKnown) {
+    const options = ALLOWED_MAPPING_ROLES.map((role) => `<option value="${role}">${role}</option>`).join("");
+    return `<p class="error" role="alert">Invalid role &quot;${esc(currentRole)}&quot; — choose a replacement before saving.</p>
+    <select name="${esc(name)}" required>
+      <option value="" selected disabled>Select role…</option>
+      ${options}
+    </select>`;
+  }
   const options = ALLOWED_MAPPING_ROLES.map(
-    (role) =>
-      `<option value="${role}"${role === currentRole ? " selected" : ""}>${role}</option>`,
+    (role) => `<option value="${role}"${role === currentRole ? " selected" : ""}>${role}</option>`,
   ).join("");
-  return `<select name="${esc(name)}">${invalidOption}${options}</select>`;
+  return `<select name="${esc(name)}" required>${options}</select>`;
 }
 
 export function renderProviderList(providers: ProviderListItem[], flash?: string): string {
@@ -146,7 +149,7 @@ export function renderProviderForm(options: {
         <tbody>${mappingRows}
         <tr>
           <td><input name="mapping_group_new" placeholder="admin-group"></td>
-          <td>${renderRoleSelect("mapping_role_new", "admin")}</td>
+          <td>${renderRoleSelect("mapping_role_new", "operator")}</td>
           <td><input name="mapping_scope_type_new" placeholder="instance"></td>
           <td><input name="mapping_scope_id_new" placeholder=""></td>
         </tr>

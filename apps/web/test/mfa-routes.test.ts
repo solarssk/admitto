@@ -18,6 +18,14 @@ const DB_ROOT = path.resolve(__dirname, "..", "..", "..", "packages", "db");
 const CHECKIN_TOKEN = "test-checkin-mfa-token-32chars!!";
 const EVENT_ID = "event-mfa-web";
 const ORG_ID = "org_mfa_web";
+function extractBackupCodes(html: string): string[] {
+  const section = html.match(/<div class="auth-backup">([\s\S]*?)<\/div>/);
+  if (!section?.[1]) return [];
+  return [...section[1].matchAll(/<code>([^<]+)<\/code>/g)]
+    .map((m) => m[1])
+    .filter((code): code is string => Boolean(code));
+}
+
 const sameOrigin = { Origin: "http://localhost" };
 
 let prisma: PrismaClient;
@@ -341,7 +349,7 @@ describe("HTML MFA enroll", () => {
     });
     expect(startRes.status).toBe(200);
     const enrollHtml = await startRes.text();
-    const codeMatches = [...enrollHtml.matchAll(/class="backup-code">([^<]+)</g)].map((m) => m[1]);
+    const codeMatches = extractBackupCodes(enrollHtml);
     expect(codeMatches.length).toBeGreaterThan(0);
 
     const downloadRes = await app.request("/mfa/enroll/download-codes", {
@@ -372,6 +380,68 @@ describe("HTML MFA enroll", () => {
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login");
+  });
+
+  it("POST /mfa/enroll/download-codes rejects tampered codes", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    await app.request("/mfa/enroll/start", {
+      method: "POST",
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+
+    const downloadRes = await app.request("/mfa/enroll/download-codes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...sameOrigin,
+        ...cookieHeader(loginRes),
+      },
+      body: new URLSearchParams([["code", "FAKE-CODE-0001"]]).toString(),
+    });
+    expect(downloadRes.status).toBe(400);
+  });
+
+  it("POST /mfa/enroll keeps backup codes visible after invalid confirmation code", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const startRes = await app.request("/mfa/enroll/start", {
+      method: "POST",
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(startRes.status).toBe(200);
+    const initialCodes = extractBackupCodes(await startRes.text());
+    expect(initialCodes.length).toBeGreaterThan(0);
+
+    const failRes = await app.request("/mfa/enroll", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...sameOrigin,
+        ...cookieHeader(loginRes),
+      },
+      body: new URLSearchParams({ code: "000000" }).toString(),
+    });
+    expect(failRes.status).toBe(401);
+    const retryHtml = await failRes.text();
+    expect(retryHtml).toContain("Invalid code");
+    expect(retryHtml).toContain("Download backup codes");
+    const retryCodes = extractBackupCodes(retryHtml);
+    expect(retryCodes).toEqual(initialCodes);
   });
 });
 

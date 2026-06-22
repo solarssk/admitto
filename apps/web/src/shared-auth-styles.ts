@@ -7,7 +7,6 @@ export const AUTH_PAGE_CSS = `
   --at-gray-100: #f1f5f9;
   --at-gray-200: #e2e8f0;
   --at-gray-500: #64748b;
-  --at-gray-800: #1e293b;
   --at-ink: #1d273b;
   --at-red: #d63939;
   --at-red-050: #fbeaea;

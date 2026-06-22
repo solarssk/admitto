@@ -125,7 +125,7 @@ export {
   resetUserMfa,
   type StartTotpEnrollmentResult,
 } from "./mfa/enrollment.js";
-export { regenerateBackupRecoveryCodes } from "./mfa/backup-recovery.js";
+export { regenerateBackupRecoveryCodes, findBackupRecoveryRowId } from "./mfa/backup-recovery.js";
 export { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
 export { validateTrustedDevice, revokeTrustedDeviceByToken, revokeAllTrustedDevicesForUser } from "./mfa/trusted-device.js";
 

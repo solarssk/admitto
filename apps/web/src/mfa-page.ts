@@ -31,7 +31,7 @@ export function renderMfaVerifyForm(error?: string, next?: string): string {
       <button class="auth-btn-primary" type="submit">Continue</button>
     </form>
   </div>`;
-  return renderAuthDocument("Two-factor authentication — Admitto", body, AUTH_PAGE_CSS);
+  return renderAuthDocument("Admitto — Two-factor authentication", body, AUTH_PAGE_CSS);
 }
 
 /**
@@ -61,7 +61,7 @@ export function renderMfaEnrollPage(
     ? `<div class="auth-backup"><strong>Backup codes</strong> were already shown — use the codes you saved earlier.</div>`
     : `<div class="auth-backup">
     <strong>Backup codes</strong> — save these now; they will not be shown again:
-    <ul>${backupCodes.map((c) => `<li><code class="backup-code">${escapeHtml(c)}</code></li>`).join("")}</ul>
+    <ul>${backupCodes.map((c) => `<li><code>${escapeHtml(c)}</code></li>`).join("")}</ul>
     ${downloadForm}
   </div>`;
 
@@ -75,6 +75,7 @@ export function renderMfaEnrollPage(
     </div>
     ${backupSection}
     ${err}
+    <p class="auth-muted">Save or download your backup codes before confirming — they cannot be recovered from Admitto after setup completes.</p>
     <form method="post" action="/mfa/enroll">
       ${nextField}
       <div class="auth-field">
@@ -85,7 +86,7 @@ export function renderMfaEnrollPage(
     </form>
   </div>`;
 
-  return renderAuthDocument("Set up two-factor authentication — Admitto", body, AUTH_PAGE_CSS);
+  return renderAuthDocument("Admitto — Set up two-factor authentication", body, AUTH_PAGE_CSS);
 }
 
 /** Render enrollment landing — start setup via CSRF-protected POST only. */
@@ -101,7 +102,7 @@ export function renderMfaEnrollStartPage(next?: string): string {
       <button class="auth-btn-primary" type="submit">Begin setup</button>
     </form>
   </div>`;
-  return renderAuthDocument("Set up two-factor authentication — Admitto", body, AUTH_PAGE_CSS);
+  return renderAuthDocument("Admitto — Set up two-factor authentication", body, AUTH_PAGE_CSS);
 }
 
 function escapeHtml(s: string): string {

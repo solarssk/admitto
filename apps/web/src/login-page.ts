@@ -97,7 +97,7 @@ export function renderLoginForm(
     <p class="auth-footer">Admitto is an internal tool. Access is managed by your IT administrator.</p>
   </div>`;
 
-  return renderAuthDocument("Sign in to Admitto", body, AUTH_PAGE_CSS);
+  return renderAuthDocument("Admitto — Sign in", body, AUTH_PAGE_CSS);
 }
 
 /** Event row shown on the temporary `/operator` landing page. */
