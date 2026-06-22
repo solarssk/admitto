@@ -13,7 +13,8 @@ export function getLoginPageSecurityHeaders(): Record<string, string> {
     "Cache-Control": "private, no-store, max-age=0",
     "Content-Security-Policy":
       "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
-    // same-origin: send Referer on same-origin form POST (Safari); omit on cross-origin navigations.
+    // Primary CSRF signal for HTML form POSTs: Referer on same-origin submits (Safari).
+    // Sec-Fetch-Site in same-origin-post.ts is a legacy-UA fallback only.
     "Referrer-Policy": "same-origin",
     "X-Content-Type-Options": "nosniff",
   };

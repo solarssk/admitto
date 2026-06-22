@@ -38,16 +38,19 @@ function headerOriginMatches(expectedOrigin: string, headerValue: string): boole
   }
 }
 
-/** Browser-set Fetch Metadata; not spoofable from cross-origin pages in modern UAs. */
-function isSameSiteFetch(c: Context): boolean {
-  const site = c.req.header("sec-fetch-site")?.toLowerCase();
-  return site === "same-origin" || site === "same-site";
+/**
+ * Browser-set Fetch Metadata fallback when `Origin`/`Referer` are absent.
+ * Login/MFA pages use `Referrer-Policy: same-origin` so modern UAs send Referer on same-origin
+ * POSTs — this path is only for very old browsers without that header. Accept `same-origin` only;
+ * not `same-site` (sibling subdomains are a wider trust boundary than we need).
+ */
+function isSameOriginFetch(c: Context): boolean {
+  return c.req.header("sec-fetch-site")?.toLowerCase() === "same-origin";
 }
 
 /**
  * Reject cross-site POST when `Origin`/`Referer` do not match the request origin.
- * When both are absent (e.g. Safari + `Referrer-Policy: no-referrer` on HTML forms), accept
- * `Sec-Fetch-Site: same-origin|same-site`. Tools like curl/Postman without those headers still fail.
+ * Tools like curl/Postman without those headers (or Fetch Metadata) still fail.
  */
 export function rejectCrossSitePost(
   c: Context,
@@ -74,7 +77,7 @@ export function rejectCrossSitePost(
     return headerOriginMatches(expectedOrigin, referer) ? null : forbidden();
   }
 
-  if (isSameSiteFetch(c)) {
+  if (isSameOriginFetch(c)) {
     return null;
   }
 

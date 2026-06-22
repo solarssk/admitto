@@ -99,6 +99,15 @@ describe("rejectCrossSitePost", () => {
     expect(res.status).toBe(403);
   });
 
+  it("rejects same-site Sec-Fetch-Site when Origin and Referer are absent", async () => {
+    const app = makeApp();
+    const res = await app.request("https://tickets.example.com/login", {
+      method: "POST",
+      headers: { "Sec-Fetch-Site": "same-site" },
+    });
+    expect(res.status).toBe(403);
+  });
+
   it("uses X-Forwarded-Proto/Host when TRUST_PROXY=true", async () => {
     vi.stubEnv("TRUST_PROXY", "true");
     const app = makeApp();
