@@ -43,15 +43,15 @@ async function parseForm(c: Context): Promise<Record<string, string>> {
 }
 
 async function parseFormCodes(c: Context): Promise<string[]> {
-  const body = await c.req.parseBody();
-  const raw = body["code"];
-  if (Array.isArray(raw)) {
-    return raw.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean);
+  const contentType = c.req.header("content-type") ?? "";
+  if (!contentType.includes("application/x-www-form-urlencoded")) {
+    return [];
   }
-  if (typeof raw === "string" && raw.trim()) {
-    return [raw.trim()];
-  }
-  return [];
+  const raw = await c.req.text();
+  return new URLSearchParams(raw)
+    .getAll("code")
+    .map((v) => v.trim())
+    .filter(Boolean);
 }
 
 
@@ -245,8 +245,8 @@ export async function handlePostMfaEnrollDownloadCodes(
   }
 
   const pending = await resumePendingTotpEnrollment(db, partial.userId);
-  if (pending?.backupCodesAlreadyShown) {
-    return c.text("Backup codes are no longer available for download.", 400);
+  if (!pending) {
+    return c.text("No pending enrollment.", 400);
   }
 
   const codes = await parseFormCodes(c);
