@@ -270,6 +270,25 @@ describe("authorization", () => {
     expect(adminEvents.every((e) => e.id === EVENT_A)).toBe(true);
     expect(await listAdminEvents(prisma, USER_OP_A)).toEqual([]);
   });
+
+  it("listAdminEvents — excludes archived by default", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_A },
+      data: { archived_at: new Date() },
+    });
+
+    const activeOnly = await listAdminEvents(prisma, USER_SUPER);
+    expect(activeOnly.some((e) => e.id === EVENT_A)).toBe(false);
+
+    const withArchived = await listAdminEvents(prisma, USER_SUPER, { includeArchived: true });
+    const archived = withArchived.find((e) => e.id === EVENT_A);
+    expect(archived?.archived_at).not.toBeNull();
+
+    await prisma.event.update({
+      where: { id: EVENT_A },
+      data: { archived_at: null },
+    });
+  });
 });
 
 describe("bootstrap", () => {

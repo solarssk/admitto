@@ -3,6 +3,7 @@ import { Badge, Card, PageHeader } from "@admitto/ui";
 import { BrandingPanel } from "../settings/BrandingPanel.js";
 import { MailTransportPanel } from "../settings/MailTransportPanel.js";
 import { SessionsPanel } from "../settings/SessionsPanel.js";
+import { EventArchivingPanel } from "../settings/EventArchivingPanel.js";
 import { SecurityPanel } from "../settings/SecurityPanel.js";
 
 interface SettingsPlaceholderProps {
@@ -62,11 +63,7 @@ export function SettingsPage() {
         <MailTransportPanel />
         <SessionsPanel />
         <SecurityPanel />
-        <SettingsPlaceholderCard
-          title="Event archiving"
-          description="Archive completed events and control post-event data retention."
-          badge="Coming in v0.4.5d"
-        />
+        <EventArchivingPanel />
         <IdentityProvidersCard />
       </div>
     </>

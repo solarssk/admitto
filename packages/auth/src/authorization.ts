@@ -130,6 +130,7 @@ export interface EventSummary {
   date: Date;
   location: string | null;
   organization_id: string;
+  archived_at: Date | null;
 }
 
 const eventSelect = {
@@ -139,6 +140,7 @@ const eventSelect = {
   date: true,
   location: true,
   organization_id: true,
+  archived_at: true,
 } as const;
 
 /** Events where user has check-in capability (matches canPerformCheckIn). */
@@ -188,11 +190,18 @@ export async function listCheckInEvents(
 export async function listAdminEvents(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
+  options?: { includeArchived?: boolean },
 ): Promise<EventSummary[]> {
   if (!(await canAccessAdminPanel(prisma, userId))) return [];
 
+  const archivedWhere = options?.includeArchived ? undefined : { archived_at: null };
+
   if (await hasScope(prisma, userId, "superadmin", "instance")) {
-    return prisma.event.findMany({ select: eventSelect, orderBy: { date: "asc" } });
+    return prisma.event.findMany({
+      ...(archivedWhere ? { where: archivedWhere } : {}),
+      select: eventSelect,
+      orderBy: { date: "asc" },
+    });
   }
 
   const orgAssignments = await prisma.roleAssignment.findMany({
@@ -203,7 +212,10 @@ export async function listAdminEvents(
   if (orgIds.length === 0) return [];
 
   return prisma.event.findMany({
-    where: { organization_id: { in: orgIds } },
+    where: {
+      organization_id: { in: orgIds },
+      ...(archivedWhere ?? {}),
+    },
     select: eventSelect,
     orderBy: { date: "asc" },
   });

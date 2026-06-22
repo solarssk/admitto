@@ -175,6 +175,35 @@ describe("GET /api/admin/events", () => {
     expect(ids).toContain(EVENT_A);
     expect(ids).toContain(EVENT_B);
   });
+
+  it("excludes archived events unless includeArchived=true", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_A },
+      data: { archived_at: new Date() },
+    });
+
+    const hidden = await app.request("/api/admin/events", {
+      headers: { Cookie: await sessionCookieFor(superId) },
+    });
+    expect(hidden.status).toBe(200);
+    const hiddenBody = (await hidden.json()) as { events: Array<{ id: string }> };
+    expect(hiddenBody.events.some((e) => e.id === EVENT_A)).toBe(false);
+
+    const included = await app.request("/api/admin/events?includeArchived=true", {
+      headers: { Cookie: await sessionCookieFor(superId) },
+    });
+    expect(included.status).toBe(200);
+    const includedBody = (await included.json()) as {
+      events: Array<{ id: string; archived_at: string | null }>;
+    };
+    const archived = includedBody.events.find((e) => e.id === EVENT_A);
+    expect(archived?.archived_at).not.toBeNull();
+
+    await prisma.event.update({
+      where: { id: EVENT_A },
+      data: { archived_at: null },
+    });
+  });
 });
 
 describe("GET /api/checkin/events", () => {

@@ -10,6 +10,7 @@ function serializeEvent(event: Awaited<ReturnType<typeof listAdminEvents>>[numbe
     date: event.date.toISOString(),
     location: event.location,
     organization_id: event.organization_id,
+    archived_at: event.archived_at?.toISOString() ?? null,
     ...(count !== undefined ? { attendee_count: count } : {}),
   };
 }
@@ -17,7 +18,8 @@ function serializeEvent(event: Awaited<ReturnType<typeof listAdminEvents>>[numbe
 /** GET /api/admin/events — admin picker (session gate applied upstream). */
 export async function handleGetAdminEvents(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
-  const events = await listAdminEvents(db, auth.userId);
+  const includeArchived = c.req.query("includeArchived") === "true";
+  const events = await listAdminEvents(db, auth.userId, { includeArchived });
 
   const counts = await db.attendee.groupBy({
     by: ["event_id"],

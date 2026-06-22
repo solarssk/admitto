@@ -35,6 +35,7 @@ model Event {
   logo_url         String?
   header_image_url String?
   created_at       DateTime        @default(now())
+  archived_at      DateTime?
   // Event-day ops (ADR 0010): require_confirm_on_scan, badge_at_entry, etc.
   ops_config       Json?
   attendees        Attendee[]
@@ -45,6 +46,7 @@ model Event {
   action_logs      AttendeeActionLog[]
 
   @@index([organization_id])
+  @@index([organization_id, archived_at])
 }
 
 model Attendee {

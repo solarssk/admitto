@@ -173,10 +173,26 @@ export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {
   return parseJson<MeResponse>(res);
 }
 
-export async function fetchAdminEvents(signal?: AbortSignal): Promise<EventDto[]> {
-  const res = await fetch("/api/admin/events", { credentials: "same-origin", signal });
+export async function fetchAdminEvents(
+  opts?: { includeArchived?: boolean; signal?: AbortSignal },
+): Promise<EventDto[]> {
+  const params = opts?.includeArchived ? "?includeArchived=true" : "";
+  const res = await fetch(`/api/admin/events${params}`, {
+    credentials: "same-origin",
+    signal: opts?.signal,
+  });
   const data = await parseJson<{ events: EventDto[] }>(res);
   return data.events;
+}
+
+export async function archiveEvent(eventId: string): Promise<void> {
+  const res = await fetch(`/api/admin/events/${eventId}/archive`, jsonPostInit({}));
+  await parseJson(res);
+}
+
+export async function unarchiveEvent(eventId: string): Promise<void> {
+  const res = await fetch(`/api/admin/events/${eventId}/unarchive`, jsonPostInit({}));
+  await parseJson(res);
 }
 
 export async function fetchCheckInEvents(signal?: AbortSignal): Promise<EventDto[]> {
