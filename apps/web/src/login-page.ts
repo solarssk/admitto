@@ -61,7 +61,7 @@ export function renderLoginForm(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Operator sign in — Admitto</title>
+  <title>Sign in to Admitto</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 400px; margin: 2rem auto; padding: 0 1rem; color: #111; }
     h1 { font-size: 1.25rem; }
@@ -73,7 +73,7 @@ export function renderLoginForm(
   </style>
 </head>
 <body>
-  <h1>Operator sign in</h1>
+  <h1>Sign in to Admitto</h1>
   ${errorBlock}
   <form method="post" action="/login">
     ${nextField}
