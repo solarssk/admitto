@@ -226,6 +226,7 @@ export function CheckInPage() {
       setCard(updated);
     } catch (err) {
       handleApiFailure(err);
+      throw err;
     } finally {
       setBusy(false);
     }

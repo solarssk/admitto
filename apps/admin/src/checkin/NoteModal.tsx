@@ -6,11 +6,12 @@ import "./note-modal.css";
 type NoteModalProps = {
   open: boolean;
   onClose: () => void;
-  onSubmit: (body: string) => void;
+  onSubmit: (body: string) => Promise<void>;
 };
 
 export function NoteModal({ open, onClose, onSubmit }: NoteModalProps) {
   const [value, setValue] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
   const handleClose = () => { setValue(""); onClose(); };
@@ -19,10 +20,19 @@ export function NoteModal({ open, onClose, onSubmit }: NoteModalProps) {
 
   if (!open) return null;
 
-  const handleSubmit = () => {
-    onSubmit(value.trim());
-    setValue("");
-    onClose();
+  const handleSubmit = async () => {
+    const body = value.trim();
+    if (!body || submitting) return;
+    setSubmitting(true);
+    try {
+      await onSubmit(body);
+      setValue("");
+      onClose();
+    } catch {
+      // onSubmit already surfaced the error; keep modal open so operator can retry
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -36,14 +46,15 @@ export function NoteModal({ open, onClose, onSubmit }: NoteModalProps) {
           maxLength={2000}
           rows={4}
           placeholder="Add a note…"
+          disabled={submitting}
         />
         <span className="note-modal__counter">{value.length} / 2000</span>
         <div className="note-modal__actions">
-          <Button type="button" variant="secondary" onClick={handleClose}>
+          <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" disabled={!value.trim()} onClick={handleSubmit}>
-            Add note
+          <Button type="button" variant="primary" disabled={!value.trim() || submitting} onClick={handleSubmit}>
+            {submitting ? "Saving…" : "Add note"}
           </Button>
         </div>
       </div>
