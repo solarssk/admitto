@@ -17,7 +17,7 @@ const LIFECYCLE_NAV = [
   { segment: "reports", icon: "chart-bar", label: "Reports" },
 ] as const;
 
-const LIVE_SEGMENTS = new Set(["overview", "attendees", "requirements", "communication", "checkin"]);
+const LIVE_SEGMENTS = new Set(["attendees", "requirements", "communication", "checkin"]);
 
 /** Format event date and optional location for the sidebar event switcher. */
 function formatEventMeta(event: EventDto): string {

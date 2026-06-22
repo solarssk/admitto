@@ -8,10 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Check-in: `NoteModal` replaces `window.prompt` for adding attendee notes — textarea with 2000-char limit and live counter, Cancel/Add note buttons, ESC support, touch-friendly
 - Settings → Sessions panel: superadmin can list all active staff sessions with role, device, IP, and last-seen; revoke individual sessions or bulk-revoke all operator sessions scoped to an event
 - Settings → Security panel: configure admin/operator session TTL, remember-device duration (`0` = disabled), and which roles require MFA; env-locked settings shown as read-only with badge
 - `GET /api/admin/sessions`, `POST /api/admin/sessions/:id/revoke`, `POST /api/admin/events/:eventId/revoke-all-operator-sessions`, `GET /api/admin/system-settings`, `PATCH /api/admin/system-settings` API endpoints (superadmin)
 - Session revoke and bulk-revoke actions write to `AdminAuditLog`
+
+### Fixed
+- Check-in card now shows a coloured left border per scan status (green = valid, red = revoked/invalid, yellow = already checked in, blue = preview) — previously all cards looked identical regardless of result
+- Login page title and heading changed from "Operator sign in" to "Sign in to Admitto" — admins and operators share the same login screen
+- Sidebar no longer marks the Overview section as live; it shows "Soon" until Overview is built (v1.0)
 
 ### Security
 - `trusted_device_days = 0` now fully disables remember-device: existing trusted-device cookies are rejected immediately at `validateTrustedDevice()` call time, not only after natural row expiry; new cookies and `createTrustedDevice` calls are also blocked

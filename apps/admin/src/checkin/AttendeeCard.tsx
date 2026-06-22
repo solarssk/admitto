@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Button, Card, StatusBadge } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInStatus } from "../api/types.js";
+import { NoteModal } from "./NoteModal.js";
 
 type Props = {
   card: AttendeeCardDto;
@@ -9,7 +11,7 @@ type Props = {
   canAct: boolean;
   onCheckIn?: () => void;
   onItemAction?: (itemKey: string, targetState: string) => void;
-  onAddNote?: (body: string) => void;
+  onAddNote?: (body: string) => Promise<void>;
   onUndo?: () => void;
   showUndo?: boolean;
 };
@@ -41,7 +43,10 @@ export function AttendeeCard({
     scanStatus ??
     (card.check_in_status === "admitted" ? "ALREADY_CHECKED_IN" : "INVALID");
 
+  const [noteOpen, setNoteOpen] = useState(false);
+
   return (
+    <>
     <Card className={`checkin-card checkin-card--${statusForBadge.toLowerCase()}`} aria-live="polite">
       <div className="checkin-card__header">
         <StatusBadge status={pending ? "INVALID" : statusForBadge} />
@@ -129,10 +134,7 @@ export function AttendeeCard({
             type="button"
             className="checkin-action-btn"
             disabled={!canAct || pending}
-            onClick={() => {
-              const body = window.prompt("Add note (max 2000 chars):");
-              if (body?.trim()) onAddNote(body.trim());
-            }}
+            onClick={() => setNoteOpen(true)}
           >
             Add note
           </button>
@@ -145,5 +147,9 @@ export function AttendeeCard({
         )}
       </div>
     </Card>
+    {onAddNote && (
+      <NoteModal open={noteOpen} onClose={() => setNoteOpen(false)} onSubmit={onAddNote} />
+    )}
+    </>
   );
 }
