@@ -12,7 +12,10 @@ type NoteModalProps = {
 export function NoteModal({ open, onClose, onSubmit }: NoteModalProps) {
   const [value, setValue] = useState("");
   const panelRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(panelRef, open, onClose);
+
+  const handleClose = () => { setValue(""); onClose(); };
+
+  useModalFocusTrap(panelRef, open, handleClose);
 
   if (!open) return null;
 
@@ -24,7 +27,7 @@ export function NoteModal({ open, onClose, onSubmit }: NoteModalProps) {
 
   return (
     <div className="note-modal" role="dialog" aria-modal="true" aria-label="Add note">
-      <div className="note-modal__backdrop" role="presentation" onClick={onClose} />
+      <div className="note-modal__backdrop" role="presentation" onClick={handleClose} />
       <div ref={panelRef} className="note-modal__panel">
         <textarea
           className="note-modal__textarea"
@@ -36,7 +39,7 @@ export function NoteModal({ open, onClose, onSubmit }: NoteModalProps) {
         />
         <span className="note-modal__counter">{value.length} / 2000</span>
         <div className="note-modal__actions">
-          <Button type="button" variant="secondary" onClick={onClose}>
+          <Button type="button" variant="secondary" onClick={handleClose}>
             Cancel
           </Button>
           <Button type="button" variant="primary" disabled={!value.trim()} onClick={handleSubmit}>

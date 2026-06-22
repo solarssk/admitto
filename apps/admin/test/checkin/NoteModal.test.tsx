@@ -52,4 +52,14 @@ describe("NoteModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("resets draft on cancel so next attendee sees empty textarea", () => {
+    const onClose = vi.fn();
+    const { rerender } = render(<NoteModal open onClose={onClose} onSubmit={() => {}} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "leftover draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    // simulate modal re-opening (next attendee)
+    rerender(<NoteModal open onClose={onClose} onSubmit={() => {}} />);
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
+  });
 });
