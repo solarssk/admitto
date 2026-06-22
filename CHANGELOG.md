@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Event archiving: `Event.archived_at` flag hides completed events from default lists while preserving data; superadmin can archive/unarchive via Settings panel or event header; archived events are read-only on admin mutating APIs; Active/Archived tabs on event picker; check-in remains available after archive for late admits (ADR 0022)
+- `POST /api/admin/events/:eventId/archive`, `POST /api/admin/events/:eventId/unarchive` (superadmin, audited via `AdminAuditLog`)
+- `GET /api/admin/events?includeArchived=true` returns archived events with `archived_at` timestamp
 - `POST /mfa/enroll/download-codes` — download one-time MFA backup codes as a `.txt` file during enrollment
 - Check-in: `NoteModal` replaces `window.prompt` for adding attendee notes — textarea with 2000-char limit and live counter, Cancel/Add note buttons, ESC support, touch-friendly
 - Settings → Sessions panel: superadmin can list all active staff sessions with role, device, IP, and last-seen; revoke individual sessions or bulk-revoke all operator sessions scoped to an event

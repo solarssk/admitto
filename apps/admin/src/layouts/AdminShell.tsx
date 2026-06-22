@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
-import { Avatar, Badge } from "@admitto/ui";
+import { Avatar, Badge, Button } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import type { EventDto } from "../api/types.js";
@@ -31,10 +31,12 @@ function formatEventMeta(event: EventDto): string {
 
 export interface AdminShellProps {
   event: EventDto;
+  showArchiveButton?: boolean;
+  onArchiveRequest?: () => void;
 }
 
 /** Event-scoped admin layout: lifecycle sidebar, top bar, and nested route outlet. */
-export function AdminShell({ event }: AdminShellProps) {
+export function AdminShell({ event, showArchiveButton, onArchiveRequest }: AdminShellProps) {
   const { eventId } = useParams();
   const navigate = useNavigate();
   const { user, assignments } = useAuth();
@@ -70,11 +72,17 @@ export function AdminShell({ event }: AdminShellProps) {
                 <span>{item.label}</span>
               </NavLink>
             ) : (
-              <span key={item.segment} className="nav-item nav-item--soon" aria-disabled="true">
+              <button
+                key={item.segment}
+                type="button"
+                disabled
+                className="nav-item nav-item--soon"
+                title="Coming soon"
+              >
                 <i className={`ti ti-${item.icon}`} aria-hidden="true" />
                 <span>{item.label}</span>
                 <span className="nav-item__badge">Soon</span>
-              </span>
+              </button>
             );
           })}
         </nav>
@@ -108,6 +116,14 @@ export function AdminShell({ event }: AdminShellProps) {
         <header className="topbar">
           <div className="topbar__title">{event.title}</div>
           <div className="topbar__right">
+            {event.archived_at && (
+              <Badge variant="neutral">Archived</Badge>
+            )}
+            {showArchiveButton && onArchiveRequest && (
+              <Button type="button" variant="secondary" onClick={onArchiveRequest}>
+                Archive event
+              </Button>
+            )}
             <Badge variant="neutral">Foundation</Badge>
             <div className="topbar__user">
               <Avatar name={displayName} size="sm" />

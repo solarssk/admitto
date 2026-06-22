@@ -27,6 +27,7 @@ export interface EventDto {
   location: string | null;
   organization_id: string;
   attendee_count?: number;
+  archived_at: string | null;
 }
 
 export interface BrandingThemeDto {
