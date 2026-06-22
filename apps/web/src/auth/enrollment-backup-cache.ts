@@ -6,11 +6,35 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>();
+const expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function cancelExpiryTimer(sessionId: string): void {
+  const timer = expiryTimers.get(sessionId);
+  if (!timer) return;
+  clearTimeout(timer);
+  expiryTimers.delete(sessionId);
+}
+
+function removeCacheEntry(sessionId: string): void {
+  cancelExpiryTimer(sessionId);
+  cache.delete(sessionId);
+}
+
+function scheduleExpiry(sessionId: string, expiresAt: number): void {
+  cancelExpiryTimer(sessionId);
+  const delay = Math.max(0, expiresAt - Date.now());
+  const timer = setTimeout(() => {
+    expiryTimers.delete(sessionId);
+    cache.delete(sessionId);
+  }, delay);
+  timer.unref?.();
+  expiryTimers.set(sessionId, timer);
+}
 
 function sweepExpired(): void {
   const now = Date.now();
   for (const [sessionId, entry] of cache) {
-    if (entry.expiresAt <= now) cache.delete(sessionId);
+    if (entry.expiresAt <= now) removeCacheEntry(sessionId);
   }
 }
 
@@ -18,17 +42,19 @@ function sweepExpired(): void {
 export function stashEnrollmentBackupCodes(sessionId: string, codes: string[]): void {
   if (codes.length === 0) return;
   sweepExpired();
+  const expiresAt = Date.now() + MFA_PENDING_SESSION_TTL_MS;
   cache.set(sessionId, {
     codes: [...codes],
-    expiresAt: Date.now() + MFA_PENDING_SESSION_TTL_MS,
+    expiresAt,
   });
+  scheduleExpiry(sessionId, expiresAt);
 }
 
 export function getStashedEnrollmentBackupCodes(sessionId: string): string[] | undefined {
   sweepExpired();
   const entry = cache.get(sessionId);
   if (!entry || entry.expiresAt <= Date.now()) {
-    cache.delete(sessionId);
+    removeCacheEntry(sessionId);
     return undefined;
   }
   return [...entry.codes];
@@ -51,10 +77,13 @@ export function submittedCodesMatchStashedEnrollmentBackup(
 }
 
 export function clearEnrollmentBackupCodes(sessionId: string): void {
-  cache.delete(sessionId);
+  removeCacheEntry(sessionId);
 }
 
 /** @internal test helper — drop all stashed enrollment codes between tests. */
 export function clearEnrollmentBackupCacheForTests(): void {
+  for (const sessionId of expiryTimers.keys()) {
+    cancelExpiryTimer(sessionId);
+  }
   cache.clear();
 }
