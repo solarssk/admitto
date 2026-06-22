@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { Badge, Card, PageHeader } from "@admitto/ui";
 import { BrandingPanel } from "../settings/BrandingPanel.js";
 import { MailTransportPanel } from "../settings/MailTransportPanel.js";
+import { SessionsPanel } from "../settings/SessionsPanel.js";
+import { SecurityPanel } from "../settings/SecurityPanel.js";
 
 interface SettingsPlaceholderProps {
   title: string;
@@ -53,16 +55,13 @@ export function SettingsPage() {
     <>
       <PageHeader
         title="Settings"
-        subtitle="Instance branding, mail transport, sessions, and identity providers."
+        subtitle="Instance branding, mail transport, sessions, security policies, and identity providers."
       />
       <div className="settings-sections">
         <BrandingPanel />
         <MailTransportPanel />
-        <SettingsPlaceholderCard
-          title="Sessions"
-          description="Review and revoke active staff sessions across admin and operator surfaces."
-          badge="Coming in v0.4.5c"
-        />
+        <SessionsPanel />
+        <SecurityPanel />
         <SettingsPlaceholderCard
           title="Event archiving"
           description="Archive completed events and control post-event data retention."

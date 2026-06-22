@@ -13,8 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GET /api/admin/sessions`, `POST /api/admin/sessions/:id/revoke`, `POST /api/admin/events/:eventId/revoke-all-operator-sessions`, `GET /api/admin/system-settings`, `PATCH /api/admin/system-settings` API endpoints (superadmin)
 - Session revoke and bulk-revoke actions write to `AdminAuditLog`
 
-### Fixed
-- `trusted_device_days = 0` (remember-device disabled) was silently ignored and fell back to the 30-day default; setting 0 now correctly skips cookie creation and `createTrustedDevice`
+### Security
+- `trusted_device_days = 0` now fully disables remember-device: existing trusted-device cookies are rejected immediately at `validateTrustedDevice()` call time, not only after natural row expiry; new cookies and `createTrustedDevice` calls are also blocked
 
 ## [0.4.4] - 2026-06-19
 

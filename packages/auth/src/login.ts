@@ -14,12 +14,12 @@ import {
   type SessionStage,
 } from "./constants.js";
 import { userRequiresMfa, userHasConfirmedTotp } from "./mfa/policy.js";
-import { validateTrustedDevice } from "./mfa/trusted-device.js";
+import { validateTrustedDevice, createTrustedDevice } from "./mfa/trusted-device.js";
 import { findBackupRecoveryRowId } from "./mfa/backup-recovery.js";
 import { findEmergencyRecoveryRowId } from "./mfa/emergency-recovery.js";
 import { consumeRecoveryRow } from "./mfa/recovery-consume.js";
 import { verifyUserTotpCode } from "./mfa/enrollment.js";
-import { createTrustedDevice } from "./mfa/trusted-device.js";
+import { getTrustedDeviceDays } from "./settings/resolver.js";
 
 /** Credentials and request metadata for `login()`. */
 export interface LoginInput {
@@ -145,13 +145,16 @@ async function completeMfaInTransaction(
   }
 
   if (input.rememberDevice) {
-    const { rawToken } = await createTrustedDevice(tx, {
-      userId,
-      ip: input.ip,
-      userAgent: input.userAgent,
-      label: input.deviceLabel,
-    });
-    return { ok: true, trustedDeviceRawToken: rawToken };
+    const days = await getTrustedDeviceDays(tx);
+    if (days > 0) {
+      const { rawToken } = await createTrustedDevice(tx, {
+        userId,
+        ip: input.ip,
+        userAgent: input.userAgent,
+        label: input.deviceLabel,
+      });
+      return { ok: true, trustedDeviceRawToken: rawToken };
+    }
   }
 
   return { ok: true };

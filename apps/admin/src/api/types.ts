@@ -381,3 +381,46 @@ export interface EventDeliveriesListResponse {
   page: number;
   pageSize: number;
 }
+
+export type SessionRole = "superadmin" | "admin" | "operator";
+export type SettingSource = "env" | "db" | "default";
+
+export interface SessionListDto {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userDisplayName: string | null;
+  role: SessionRole;
+  deviceLabel: string | null;
+  ip: string | null;
+  userAgent: string | null;
+  loginAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  authMethod: string;
+  stage: string;
+  isCurrent: boolean;
+}
+
+export interface SessionsResponse {
+  sessions: SessionListDto[];
+}
+
+export interface SecuritySettingField<T> {
+  value: T;
+  source: SettingSource;
+}
+
+export interface SecuritySettingsDto {
+  session_ttl_ms: SecuritySettingField<number>;
+  operator_session_ttl_ms: SecuritySettingField<number>;
+  trusted_device_days: SecuritySettingField<number>;
+  mfa_required_roles: SecuritySettingField<string[]>;
+}
+
+export interface PatchSecuritySettingsBody {
+  session_ttl_ms?: number | null;
+  operator_session_ttl_ms?: number | null;
+  trusted_device_days?: number | null;
+  mfa_required_roles?: string[] | null;
+}

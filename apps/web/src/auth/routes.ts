@@ -50,6 +50,7 @@ export async function setTrustedDeviceCookie(
   rawToken: string,
 ): Promise<void> {
   const days = await getTrustedDeviceDays(db);
+  if (days === 0) return;
   setCookie(c, TRUSTED_DEVICE_COOKIE_NAME, rawToken, {
     ...sessionCookieOptions(),
     maxAge: days * 24 * 60 * 60,
