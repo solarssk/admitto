@@ -6,6 +6,7 @@ import {
 } from "@admitto/auth";
 import { ADMIN_PAGE_CSS } from "../shared-auth-styles.js";
 
+/** Escape HTML special characters for server-rendered admin pages. */
 function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -30,6 +31,7 @@ export interface CfAccessFormView {
   locks: CfAccessFormFieldLocks;
 }
 
+/** Render the Cloudflare Access settings page (`GET /admin/auth/cf-access`). */
 export function renderCfAccessForm(options: {
   form: CfAccessFormView;
   flash?: string;
@@ -93,6 +95,7 @@ export function renderCfAccessForm(options: {
   );
 }
 
+/** Wrap admin page body in a shared HTML shell; tab title uses the `Admitto —` prefix. */
 function pageShell(heading: string, body: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -109,6 +112,7 @@ function pageShell(heading: string, body: string): string {
 </html>`;
 }
 
+/** Parse Cloudflare Access settings from a submitted admin form. */
 export function parseCfAccessForm(form: Record<string, string>): {
   enabled: boolean;
   teamDomain: string;

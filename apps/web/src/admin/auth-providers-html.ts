@@ -3,6 +3,7 @@ import { ADMIN_PAGE_CSS } from "../shared-auth-styles.js";
 
 const ALLOWED_MAPPING_ROLES = ["superadmin", "admin", "operator"] as const;
 
+/** Escape HTML special characters for server-rendered admin pages. */
 function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -12,6 +13,7 @@ function esc(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/** Security headers for server-rendered IdP admin HTML pages. */
 export function getAdminPageSecurityHeaders(): Record<string, string> {
   return {
     "Cache-Control": "private, no-store, max-age=0",
@@ -29,6 +31,7 @@ export interface ProviderListItem {
   enabled: boolean;
 }
 
+/** Render a role `<select>`; invalid legacy roles require explicit replacement. */
 function renderRoleSelect(name: string, currentRole: string): string {
   const isKnown = ALLOWED_MAPPING_ROLES.includes(currentRole as (typeof ALLOWED_MAPPING_ROLES)[number]);
   if (currentRole && !isKnown) {
@@ -45,6 +48,7 @@ function renderRoleSelect(name: string, currentRole: string): string {
   return `<select name="${esc(name)}" required>${options}</select>`;
 }
 
+/** Render the identity provider list page (`GET /admin/auth/providers`). */
 export function renderProviderList(providers: ProviderListItem[], flash?: string): string {
   const rows =
     providers.length === 0
@@ -83,6 +87,7 @@ export interface MappingRow {
   scope_id: string;
 }
 
+/** Render the create/edit identity provider form HTML. */
 export function renderProviderForm(options: {
   provider?: IdentityProviderFormView;
   mappings: MappingRow[];
@@ -162,6 +167,7 @@ export function renderProviderForm(options: {
   );
 }
 
+/** Wrap admin page body in a shared HTML shell; tab title uses the `Admitto —` prefix. */
 function pageShell(heading: string, body: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -178,6 +184,7 @@ function pageShell(heading: string, body: string): string {
 </html>`;
 }
 
+/** Parse group→role mapping rows from a submitted provider form. */
 export function parseMappingsFromForm(form: Record<string, string>): GroupRoleMappingInput[] {
   const mappings: GroupRoleMappingInput[] = [];
   const indices = new Set<number>();
@@ -204,6 +211,7 @@ export function parseMappingsFromForm(form: Record<string, string>): GroupRoleMa
   return mappings;
 }
 
+/** Parse provider metadata fields from a submitted create/edit form. */
 export function parseProviderInput(form: Record<string, string>): {
   display_name: string;
   issuer: string;
