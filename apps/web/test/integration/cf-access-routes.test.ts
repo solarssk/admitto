@@ -265,6 +265,9 @@ describe("CF Access config UI", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Cloudflare Access");
+    expect(html).toContain("<title>Admitto — Cloudflare Access</title>");
+    expect(html).toContain("<h1>Cloudflare Access</h1>");
+    expect(html).not.toMatch(/<h1>Admitto —/);
   });
 
   it("test JWKS endpoint via form", async () => {

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { parseMappingsFromForm, renderProviderForm } from "../src/admin/auth-providers-html.js";
-import { renderCfAccessForm } from "../src/admin/cf-access-html.js";
 
 describe("parseMappingsFromForm", () => {
   it("parses role values from select fields", () => {
@@ -82,26 +81,6 @@ describe("admin pageShell headings", () => {
     const html = renderProviderForm({ isNew: true, mappings: [] });
     expect(html).toContain("<title>Admitto — Add identity provider</title>");
     expect(html).toContain("<h1>Add identity provider</h1>");
-    expect(html).not.toMatch(/<h1>Admitto —/);
-  });
-
-  it("prefixes document title but not visible h1 on CF Access page", () => {
-    const html = renderCfAccessForm({
-      form: {
-        enabled: false,
-        teamDomain: "",
-        audience: "",
-        protectedPrefixes: "",
-        locks: {
-          enabled: false,
-          teamDomain: false,
-          audience: false,
-          protectedPrefixes: false,
-        },
-      },
-    });
-    expect(html).toContain("<title>Admitto — Cloudflare Access</title>");
-    expect(html).toContain("<h1>Cloudflare Access</h1>");
     expect(html).not.toMatch(/<h1>Admitto —/);
   });
 });
