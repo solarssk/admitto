@@ -35,12 +35,15 @@ export async function createTrustedDevice(
   return { trustedDevice, rawToken };
 }
 
-/** Validate trusted-device cookie token for a user. */
+/** Validate trusted-device cookie token for a user. Returns false immediately when trusted_device_days = 0 (feature disabled). */
 export async function validateTrustedDevice(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
   rawToken: string,
 ): Promise<boolean> {
+  const days = await getTrustedDeviceDays(prisma);
+  if (days === 0) return false;
+
   const token_hash = hashToken(rawToken);
   const row = await prisma.trustedDevice.findUnique({
     where: { token_hash },
