@@ -68,7 +68,7 @@ export function renderProviderList(providers: ProviderListItem[], flash?: string
   const flashBlock = flash ? `<p class="flash" role="status">${esc(flash)}</p>` : "";
 
   return pageShell(
-    "Admitto — Identity providers",
+    "Identity providers",
     `${flashBlock}
     <p class="admin-nav"><a href="/admin/auth/providers/new">Add provider</a> · <a href="/admin/auth/cf-access">Cloudflare Access</a></p>
     ${rows}
@@ -91,9 +91,9 @@ export function renderProviderForm(options: {
   isNew: boolean;
 }): string {
   const p = options.provider;
-  const title = options.isNew
-    ? "Admitto — Add identity provider"
-    : `Admitto — Edit: ${p?.display_name ?? ""}`;
+  const heading = options.isNew
+    ? "Add identity provider"
+    : `Edit: ${p?.display_name ?? ""}`;
   const action = options.isNew ? "/admin/auth/providers/new" : `/admin/auth/providers/${esc(p!.id)}`;
   const secretHint = p?.has_client_secret
     ? '<p class="muted">Client secret is stored (••••). Leave blank to keep existing.</p>'
@@ -124,7 +124,7 @@ export function renderProviderForm(options: {
       : "";
 
   return pageShell(
-    title,
+    heading,
     `${flashBlock}${errorBlock}
     <form method="post" action="${action}">
       <label>Display name <input name="display_name" required value="${esc(p?.display_name ?? "")}"></label>
@@ -162,17 +162,17 @@ export function renderProviderForm(options: {
   );
 }
 
-function pageShell(title: string, body: string): string {
+function pageShell(heading: string, body: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${esc(title)}</title>
+  <title>Admitto — ${esc(heading)}</title>
   <style>${ADMIN_PAGE_CSS}</style>
 </head>
 <body>
-  <h1>${esc(title)}</h1>
+  <h1>${esc(heading)}</h1>
   ${body}
 </body>
 </html>`;
