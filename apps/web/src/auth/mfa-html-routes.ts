@@ -10,7 +10,7 @@ import {
   completeMfa,
   revokeSession,
   BACKUP_RECOVERY_CODE_COUNT,
-  findBackupRecoveryRowId,
+  verifyBackupRecoveryCodesSet,
 } from "@admitto/auth";
 import {
   getMfaPageSecurityHeaders,
@@ -23,6 +23,7 @@ import {
   clearEnrollmentBackupCodes,
   getStashedEnrollmentBackupCodes,
   stashEnrollmentBackupCodes,
+  submittedCodesMatchStashedEnrollmentBackup,
 } from "./enrollment-backup-cache.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
@@ -286,13 +287,13 @@ export async function handlePostMfaEnrollDownloadCodes(
     return c.text("Invalid backup codes.", 400);
   }
 
-  const matchedRowIds = new Set<string>();
-  for (const code of codes) {
-    const rowId = await findBackupRecoveryRowId(db, partial.userId, code);
-    if (!rowId || matchedRowIds.has(rowId)) {
+  const stashed = getStashedEnrollmentBackupCodes(partial.sessionId);
+  if (stashed) {
+    if (!submittedCodesMatchStashedEnrollmentBackup(partial.sessionId, codes)) {
       return c.text("Invalid backup codes.", 400);
     }
-    matchedRowIds.add(rowId);
+  } else if (!(await verifyBackupRecoveryCodesSet(db, partial.userId, codes))) {
+    return c.text("Invalid backup codes.", 400);
   }
 
   for (const [name, value] of Object.entries(getMfaPageSecurityHeaders())) {

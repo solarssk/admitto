@@ -79,13 +79,43 @@ export async function findBackupRecoveryRowId(
   plaintext: string,
 ): Promise<string | null> {
   const normalized = normalizeRecoveryCode(plaintext);
-  const candidates = await prisma.userMfaMethod.findMany({
+  const candidates = await loadUnusedBackupRecoveryRows(prisma, userId);
+  return findMatchingRecoveryRowId(candidates, normalized);
+}
+
+/** Verify a full backup-code set for download without consuming rows (single DB read). */
+export async function verifyBackupRecoveryCodesSet(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+  plaintexts: string[],
+  expectedCount = BACKUP_RECOVERY_CODE_COUNT,
+): Promise<boolean> {
+  if (plaintexts.length !== expectedCount) return false;
+
+  const candidates = await loadUnusedBackupRecoveryRows(prisma, userId);
+  const matchedRowIds = new Set<string>();
+
+  for (const plaintext of plaintexts) {
+    const normalized = normalizeRecoveryCode(plaintext);
+    const rowId = await findMatchingRecoveryRowId(candidates, normalized);
+    if (!rowId || matchedRowIds.has(rowId)) return false;
+    matchedRowIds.add(rowId);
+  }
+
+  return matchedRowIds.size === expectedCount;
+}
+
+async function loadUnusedBackupRecoveryRows(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<{ id: string; credential_hash: string | null }[]> {
+  return prisma.userMfaMethod.findMany({
     where: {
       user_id: userId,
       type: "recovery",
       last_used_at: null,
       OR: [{ label: null }, { label: { not: EMERGENCY_RECOVERY_LABEL } }],
     },
+    select: { id: true, credential_hash: true },
   });
-  return findMatchingRecoveryRowId(candidates, normalized);
 }

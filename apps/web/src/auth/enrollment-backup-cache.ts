@@ -34,6 +34,22 @@ export function getStashedEnrollmentBackupCodes(sessionId: string): string[] | u
   return [...entry.codes];
 }
 
+function normalizeCodeSet(codes: string[]): string[] {
+  return codes.map((code) => code.replace(/[\s-]/g, "").toUpperCase()).sort();
+}
+
+/** True when submitted codes exactly match the server-stashed enrollment set (no hash work). */
+export function submittedCodesMatchStashedEnrollmentBackup(
+  sessionId: string,
+  submitted: string[],
+): boolean {
+  const stashed = getStashedEnrollmentBackupCodes(sessionId);
+  if (!stashed || stashed.length !== submitted.length) return false;
+  const expected = normalizeCodeSet(stashed);
+  const actual = normalizeCodeSet(submitted);
+  return expected.length === actual.length && expected.every((code, i) => code === actual[i]);
+}
+
 export function clearEnrollmentBackupCodes(sessionId: string): void {
   cache.delete(sessionId);
 }
