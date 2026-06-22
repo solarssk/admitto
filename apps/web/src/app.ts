@@ -65,6 +65,11 @@ import { createStaffAdminGate } from "./auth/staff-admin-gate.js";
 import { createCheckInPanelCapabilityGuard } from "./auth/checkin-panel-gate.js";
 import { handleGetAdminEvents } from "./admin/admin-api-routes.js";
 import {
+  handlePostArchiveEvent,
+  handlePostUnarchiveEvent,
+  withEventArchiveGuard,
+} from "./admin/event-archiving.js";
+import {
   handleListEventAttendees,
   handleGetEventAttendee,
   handlePatchEventAttendee,
@@ -215,6 +220,9 @@ export function createApp(options: CreateAppOptions = {}) {
   const requirePartialSessionHtml = createRequirePartialSession(db, { redirectTo: "/login" });
   const requireAdminAccess = createAdminAccessMiddleware(db);
   const staffAdminGate = createStaffAdminGate(db);
+  /** Middleware: event manage access, then archived read-only guard, then route handler. */
+  const guardArchivedEvent = (handler: (c: Context) => Response | Promise<Response>) =>
+    withEventArchiveGuard(db, handler);
   const adminResendRateLimit = createAdminResendRateLimit(rateLimitStore);
   const adminCommunicationRateLimit = createAdminCommunicationRateLimit(rateLimitStore);
   const adminMailSettingsRateLimit = createAdminMailSettingsRateLimit(rateLimitStore);
@@ -325,6 +333,12 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get("/api/admin/me", staffAdminGate, (c) => handleMe(c, db));
   app.get("/api/admin/events", staffAdminGate, (c) => handleGetAdminEvents(c, db));
+  app.post("/api/admin/events/:eventId/archive", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePostArchiveEvent(c, db),
+  );
+  app.post("/api/admin/events/:eventId/unarchive", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePostUnarchiveEvent(c, db),
+  );
   app.get("/api/admin/events/:eventId/attendees/ticket-types", staffAdminGate, (c) =>
     handleListTicketTypes(c, db),
   );
@@ -337,56 +351,56 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/attendees/:id", staffAdminGate, (c) =>
     handleGetEventAttendee(c, db),
   );
-  app.patch("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, (c) =>
+  app.patch("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
     handlePatchEventAttendee(c, db),
-  );
+  ));
   app.post(
     "/api/admin/events/:eventId/attendees/:id/resend",
     jsonPostCsrf,
     staffAdminGate,
     adminResendRateLimit,
-    (c) => handleResendEventAttendeeTicket(c, db, mailDeliveryDeps),
+    guardArchivedEvent((c) => handleResendEventAttendeeTicket(c, db, mailDeliveryDeps)),
   );
   app.get("/api/admin/events/:eventId/template", staffAdminGate, (c) =>
     handleGetEventTemplate(c, db),
   );
-  app.put("/api/admin/events/:eventId/template", jsonPostCsrf, staffAdminGate, templateBodyLimit, (c) =>
+  app.put("/api/admin/events/:eventId/template", jsonPostCsrf, staffAdminGate, templateBodyLimit, guardArchivedEvent((c) =>
     handlePutEventTemplate(c, db),
-  );
-  app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, templateBodyLimit, (c) =>
+  ));
+  app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, templateBodyLimit, guardArchivedEvent((c) =>
     handlePreviewEventTemplate(c, db),
-  );
+  ));
   app.post(
     "/api/admin/events/:eventId/template/test-send",
     jsonPostCsrf,
     staffAdminGate,
     templateTestSendBodyLimit,
     adminCommunicationRateLimit,
-    (c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps),
+    guardArchivedEvent((c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps)),
   );
   app.get("/api/admin/events/:eventId/deliveries", staffAdminGate, (c) =>
     handleListEventDeliveries(c, db),
   );
-  app.post("/api/admin/events/:eventId/import/preview", jsonPostCsrf, staffAdminGate, importBodyLimit, (c) =>
+  app.post("/api/admin/events/:eventId/import/preview", jsonPostCsrf, staffAdminGate, importBodyLimit, guardArchivedEvent((c) =>
     handleImportPreview(c, db),
-  );
-  app.post("/api/admin/events/:eventId/import/commit", jsonPostCsrf, staffAdminGate, importBodyLimit, (c) =>
+  ));
+  app.post("/api/admin/events/:eventId/import/commit", jsonPostCsrf, staffAdminGate, importBodyLimit, guardArchivedEvent((c) =>
     handleImportCommit(c, db),
-  );
+  ));
   app.get("/api/admin/events/:eventId/items", staffAdminGate, (c) => handleListEventItems(c, db));
-  app.post("/api/admin/events/:eventId/items", jsonPostCsrf, staffAdminGate, (c) =>
+  app.post("/api/admin/events/:eventId/items", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
     handleCreateEventItem(c, db),
-  );
-  app.patch("/api/admin/events/:eventId/items/:itemId", jsonPostCsrf, staffAdminGate, (c) =>
+  ));
+  app.patch("/api/admin/events/:eventId/items/:itemId", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
     handlePatchEventItem(c, db),
-  );
-  app.delete("/api/admin/events/:eventId/items/:itemId", jsonPostCsrf, staffAdminGate, (c) =>
+  ));
+  app.delete("/api/admin/events/:eventId/items/:itemId", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
     handleDeleteEventItem(c, db),
-  );
+  ));
   app.get("/api/admin/events/:eventId/ops-config", staffAdminGate, (c) => handleGetEventOpsConfig(c, db));
-  app.patch("/api/admin/events/:eventId/ops-config", jsonPostCsrf, staffAdminGate, (c) =>
+  app.patch("/api/admin/events/:eventId/ops-config", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
     handlePatchEventOpsConfig(c, db),
-  );
+  ));
   app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
   app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));
   app.get("/api/admin/mail-settings", staffAdminGate, (c) => handleGetMailSettings(c, db));
