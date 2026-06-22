@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { ToastProvider } from "@admitto/ui";
 import { AdminGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
 import { AuthProvider, useAuth } from "./auth/AuthProvider.js";
 import { isSuperadmin } from "./auth/capabilities.js";
@@ -128,9 +129,10 @@ function EventLayout() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <ConnectionStateProvider>
-          <Routes>
+      <ToastProvider>
+        <AuthProvider>
+          <ConnectionStateProvider>
+            <Routes>
           <Route path="/admin" element={<AdminGuard />}>
           <Route element={<EventsListShell />}>
             <Route index element={<EventsPickerPage />} />
@@ -172,9 +174,10 @@ export default function App() {
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/admin" replace />} />
-        </Routes>
-        </ConnectionStateProvider>
-      </AuthProvider>
+            </Routes>
+          </ConnectionStateProvider>
+        </AuthProvider>
+      </ToastProvider>
     </ErrorBoundary>
   );
 }
