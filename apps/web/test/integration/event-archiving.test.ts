@@ -236,8 +236,37 @@ describe("POST /api/admin/events/:eventId/unarchive", () => {
       where: { organization_id: ORG_ARCH, action_type: "event_unarchived" },
     });
     expect(audit).not.toBeNull();
+    expect(audit!.actor_user_id).toBe(superId);
     const meta = audit!.metadata as { eventId?: string };
     expect(meta.eventId).toBe(EVENT_ARCH);
+  });
+
+  it("rejects org admin", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_ARCH },
+      data: { archived_at: new Date() },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_ARCH}/unarchive`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects missing CSRF origin", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_ARCH },
+      data: { archived_at: new Date() },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_ARCH}/unarchive`, {
+      method: "POST",
+      headers: { Cookie: superCookie, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(res.status).toBe(403);
   });
 
   it("returns 409 not_archived without audit when event is already active", async () => {
@@ -317,18 +346,22 @@ describe("read-only guard on archived events", () => {
   });
 
   it("blocks PATCH attendee with event_archived", async () => {
-    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_ARCH } });
+    const before = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_ARCH } });
     const res = await app.request(`/api/admin/events/${EVENT_ARCH}/attendees/${ATT_ARCH}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         name: "Blocked",
-        expected_updated_at: row.updated_at.toISOString(),
+        expected_updated_at: before.updated_at.toISOString(),
       }),
     });
     expect(res.status).toBe(403);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("event_archived");
+
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_ARCH } });
+    expect(after.name).toBe(before.name);
+    expect(after.updated_at.getTime()).toBe(before.updated_at.getTime());
   });
 
   it("blocks POST items with event_archived", async () => {

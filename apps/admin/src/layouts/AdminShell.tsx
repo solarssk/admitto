@@ -72,11 +72,17 @@ export function AdminShell({ event, showArchiveButton, onArchiveRequest }: Admin
                 <span>{item.label}</span>
               </NavLink>
             ) : (
-              <span key={item.segment} className="nav-item nav-item--soon" aria-disabled="true">
+              <button
+                key={item.segment}
+                type="button"
+                disabled
+                className="nav-item nav-item--soon"
+                title="Coming soon"
+              >
                 <i className={`ti ti-${item.icon}`} aria-hidden="true" />
                 <span>{item.label}</span>
                 <span className="nav-item__badge">Soon</span>
-              </span>
+              </button>
             );
           })}
         </nav>

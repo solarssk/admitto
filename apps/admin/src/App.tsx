@@ -62,7 +62,8 @@ function EventLayout() {
         }
         setEvent(found);
       } catch (err) {
-        if (!cancelled) setError(true);
+        if (cancelled) return;
+        setError(true);
         if (err instanceof ApiError && err.status === 401) {
           const next = encodeURIComponent(window.location.pathname);
           window.location.assign(`/login?next=${next}`);

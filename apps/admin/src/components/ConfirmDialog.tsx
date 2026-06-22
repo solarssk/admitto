@@ -30,19 +30,28 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const titleId = useId();
+  const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, open, onCancel);
 
   if (!open) return null;
 
   return (
-    <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <div
+      className="confirm-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+    >
       <div className="confirm-dialog__backdrop" role="presentation" onClick={onCancel} />
       <div ref={panelRef} className="confirm-dialog__panel">
         <h3 id={titleId} className="confirm-dialog__title">
           {title}
         </h3>
-        <p className="confirm-dialog__message">{message}</p>
+        <p id={descriptionId} className="confirm-dialog__message">
+          {message}
+        </p>
         {errorMessage && (
           <p className="confirm-dialog__error" role="alert">
             {errorMessage}

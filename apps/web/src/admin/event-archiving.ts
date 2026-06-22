@@ -9,6 +9,7 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
+import type { OpsAuditContext } from "@admitto/tickets";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 
 /** Return 403 when the session user is not a superadmin; otherwise null. */
@@ -20,15 +21,28 @@ async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response
   return null;
 }
 
+/** Require authenticated actor for audit writes; 401 when session has no user id. */
+function requireAuditActor(c: Context): OpsAuditContext & { operator: string } | Response {
+  const audit = adminAuditFromContext(c);
+  if (!audit.operator) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  return { ...audit, operator: audit.operator };
+}
+
 /** Result of attempting to archive an event (domain layer, no HTTP). */
-export type ArchiveDomainResult = { ok: true } | { code: "already_archived" | "not_found" };
+export type ArchiveDomainResult =
+  | { ok: true }
+  | { code: "already_archived" | "not_found" | "audit_failed" };
 
 /** Result of attempting to unarchive an event (domain layer, no HTTP). */
-export type UnarchiveDomainResult = { ok: true } | { code: "not_found" | "not_archived" };
+export type UnarchiveDomainResult =
+  | { ok: true }
+  | { code: "not_found" | "not_archived" | "audit_failed" };
 
 type ArchiveActor = { userId: string };
 
-/** Set archived_at on an active event; audit on success (conditional update, no TOCTOU). */
+/** Set archived_at on an active event; state change and audit log are one transaction. */
 export async function archiveEvent(
   db: PrismaClient,
   eventId: string,
@@ -36,42 +50,44 @@ export async function archiveEvent(
   ip: string | null | undefined,
   sessionId: string | null | undefined,
 ): Promise<ArchiveDomainResult> {
-  const updated = await db.event.updateMany({
-    where: { id: eventId, archived_at: null },
-    data: { archived_at: new Date() },
-  });
+  try {
+    const outcome = await db.$transaction(async (tx) => {
+      const updated = await tx.event.updateMany({
+        where: { id: eventId, archived_at: null },
+        data: { archived_at: new Date() },
+      });
+      if (updated.count !== 1) return { kind: "no_transition" as const };
 
-  if (updated.count === 1) {
-    const event = await db.event.findUnique({
-      where: { id: eventId },
-      select: { organization_id: true },
+      const event = await tx.event.findUnique({
+        where: { id: eventId },
+        select: { organization_id: true },
+      });
+      if (!event) throw new Error("event missing after archive update");
+
+      await writeAdminAuditLog(tx, {
+        organizationId: event.organization_id,
+        actorUserId: actor.userId,
+        sessionId,
+        ip,
+        actionType: "event_archived",
+        metadata: { eventId },
+      });
+      return { kind: "ok" as const };
     });
-    if (event) {
-      try {
-        await writeAdminAuditLog(db, {
-          organizationId: event.organization_id,
-          actorUserId: actor.userId,
-          sessionId,
-          ip,
-          actionType: "event_archived",
-          metadata: { eventId },
-        });
-      } catch (auditErr) {
-        console.error("[audit] event_archived log failed", auditErr);
-      }
+
+    if (outcome.kind === "no_transition") {
+      const exists = await db.event.findUnique({ where: { id: eventId }, select: { id: true } });
+      if (!exists) return { code: "not_found" };
+      return { code: "already_archived" };
     }
     return { ok: true };
+  } catch (err) {
+    console.error("[audit] event_archived transaction failed", err);
+    return { code: "audit_failed" };
   }
-
-  const exists = await db.event.findUnique({
-    where: { id: eventId },
-    select: { id: true },
-  });
-  if (!exists) return { code: "not_found" };
-  return { code: "already_archived" };
 }
 
-/** Clear archived_at when currently archived; audit only on successful transition. */
+/** Clear archived_at when currently archived; state change and audit log are one transaction. */
 export async function unarchiveEvent(
   db: PrismaClient,
   eventId: string,
@@ -79,39 +95,41 @@ export async function unarchiveEvent(
   ip: string | null | undefined,
   sessionId: string | null | undefined,
 ): Promise<UnarchiveDomainResult> {
-  const updated = await db.event.updateMany({
-    where: { id: eventId, archived_at: { not: null } },
-    data: { archived_at: null },
-  });
+  try {
+    const outcome = await db.$transaction(async (tx) => {
+      const updated = await tx.event.updateMany({
+        where: { id: eventId, archived_at: { not: null } },
+        data: { archived_at: null },
+      });
+      if (updated.count !== 1) return { kind: "no_transition" as const };
 
-  if (updated.count === 1) {
-    const event = await db.event.findUnique({
-      where: { id: eventId },
-      select: { organization_id: true },
+      const event = await tx.event.findUnique({
+        where: { id: eventId },
+        select: { organization_id: true },
+      });
+      if (!event) throw new Error("event missing after unarchive update");
+
+      await writeAdminAuditLog(tx, {
+        organizationId: event.organization_id,
+        actorUserId: actor.userId,
+        sessionId,
+        ip,
+        actionType: "event_unarchived",
+        metadata: { eventId },
+      });
+      return { kind: "ok" as const };
     });
-    if (event) {
-      try {
-        await writeAdminAuditLog(db, {
-          organizationId: event.organization_id,
-          actorUserId: actor.userId,
-          sessionId,
-          ip,
-          actionType: "event_unarchived",
-          metadata: { eventId },
-        });
-      } catch (auditErr) {
-        console.error("[audit] event_unarchived log failed", auditErr);
-      }
+
+    if (outcome.kind === "no_transition") {
+      const exists = await db.event.findUnique({ where: { id: eventId }, select: { id: true } });
+      if (!exists) return { code: "not_found" };
+      return { code: "not_archived" };
     }
     return { ok: true };
+  } catch (err) {
+    console.error("[audit] event_unarchived transaction failed", err);
+    return { code: "audit_failed" };
   }
-
-  const exists = await db.event.findUnique({
-    where: { id: eventId },
-    select: { id: true },
-  });
-  if (!exists) return { code: "not_found" };
-  return { code: "not_archived" };
 }
 
 /** Return 403 when the event is archived; otherwise null. Caller must run manage-access first. */
@@ -158,12 +176,15 @@ export async function handlePostArchiveEvent(c: Context, db: PrismaClient): Prom
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
 
-  const audit = adminAuditFromContext(c);
-  const result = await archiveEvent(db, eventId, { userId: audit.operator! }, audit.ip, audit.sessionId);
+  const audit = requireAuditActor(c);
+  if (audit instanceof Response) return audit;
+
+  const result = await archiveEvent(db, eventId, { userId: audit.operator }, audit.ip, audit.sessionId);
 
   if ("code" in result) {
     if (result.code === "not_found") return c.json({ error: "not_found" }, 404);
     if (result.code === "already_archived") return c.json({ code: "already_archived" }, 409);
+    if (result.code === "audit_failed") return c.json({ code: "audit_failed" }, 500);
   }
 
   return c.json({ ok: true });
@@ -178,12 +199,15 @@ export async function handlePostUnarchiveEvent(c: Context, db: PrismaClient): Pr
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
 
-  const audit = adminAuditFromContext(c);
-  const result = await unarchiveEvent(db, eventId, { userId: audit.operator! }, audit.ip, audit.sessionId);
+  const audit = requireAuditActor(c);
+  if (audit instanceof Response) return audit;
+
+  const result = await unarchiveEvent(db, eventId, { userId: audit.operator }, audit.ip, audit.sessionId);
 
   if ("code" in result) {
     if (result.code === "not_found") return c.json({ error: "not_found" }, 404);
     if (result.code === "not_archived") return c.json({ code: "not_archived" }, 409);
+    if (result.code === "audit_failed") return c.json({ code: "audit_failed" }, 500);
   }
 
   return c.json({ ok: true });

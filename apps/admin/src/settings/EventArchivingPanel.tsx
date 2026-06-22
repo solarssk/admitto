@@ -16,21 +16,25 @@ export function EventArchivingPanel() {
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
-      const list = await fetchAdminEvents({ includeArchived: true });
+      const list = await fetchAdminEvents({ includeArchived: true, signal });
+      if (signal?.aborted) return;
       setEvents(list);
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof ApiError ? err.message : "Failed to load events.");
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
   }, [load]);
 
   const activeEvents = useMemo(
