@@ -309,6 +309,40 @@ describe("MFA rate limit", () => {
   });
 });
 
+describe("MFA enroll rate limit", () => {
+  it("returns 429 after repeated enroll API calls", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+
+    const isolatedStore = new InMemoryRateLimitStore();
+    const limitedApp = createApp({
+      prisma,
+      checkinToken: CHECKIN_TOKEN,
+      allowCheckinBearer: false,
+      baseUrl: "https://tickets.example.com",
+      rateLimitStore: isolatedStore,
+      skipCheckinBootValidation: true,
+    });
+
+    const loginRes = await limitedApp.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    let lastStatus = 0;
+    for (let i = 0; i < 12; i++) {
+      const res = await limitedApp.request("/api/auth/mfa/totp/enroll", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      });
+      lastStatus = res.status;
+      if (lastStatus === 429) break;
+    }
+    expect(lastStatus).toBe(429);
+  });
+});
+
 describe("HTML MFA enroll", () => {
   it("GET /mfa/enroll does not create pending enrollment", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });

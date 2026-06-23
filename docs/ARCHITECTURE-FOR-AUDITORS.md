@@ -80,9 +80,11 @@ customer process.
 |------|------------------|---------------------|
 | Public ticket links | Internet | Opaque tokens; throttling; minimal data on page |
 | Staff UIs | Restricted by customer network and/or app auth | RBAC; optional MFA; optional perimeter gateway |
-| Admin APIs | Authenticated staff only | Scope checks on event/org |
+| Admin APIs | Authenticated staff only | Scope checks on event/org; per-user throttling on heavy ops (import, template preview) |
+| Superadmin OIDC config | Authenticated superadmin only | Outbound fetch SSRF guards + rate limits on discover/test |
 | Database | Internal network | Not published to internet |
 | Container image | Pulled by customer | Signed tags; CI scanning documented in SECURITY.md |
+| Ops probes | Often internal/monitoring | `/healthz` rate-limited liveness; `/readyz` token-gated readiness |
 
 Specific paths and headers are defined in deployment runbooks — not repeated here to avoid
 coupling public docs to one customer's perimeter design.
@@ -107,7 +109,7 @@ Privacy detail: [DATA-PROTECTION.md](../DATA-PROTECTION.md), [GDPR-ONE-PAGER.md]
 
 | Topic | Document |
 |-------|----------|
-| Configurable security capabilities | [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md) |
+| Configurable security capabilities | [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md) — includes rate-limit matrix, `TRUST_PROXY` trust model, SSRF controls, PEN retest checklist |
 | CI / image provenance | [SECURITY.md](../SECURITY.md) |
 | Hosting | [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md) |
 | Incidents | [INCIDENT-RESPONSE.md](INCIDENT-RESPONSE.md) |

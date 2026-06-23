@@ -27,7 +27,8 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 | Edge access | Restrict staff URLs at the perimeter | Optional zero-trust / access gateway in front of staff paths | Operator |
 | Session security | HttpOnly cookies, TLS, rotation | Configurable lifetime; server-side revocation | App · Config |
 | CSRF | Protect state-changing browser requests | Same-origin checks on mutating requests (behind standard reverse proxy) | App |
-| Abuse prevention | Rate limits on login and public pages | Per-route throttling (shared store recommended in production) | App · Config |
+| Abuse prevention | Rate limits on auth, public, ops, and admin surfaces | Per-route throttling (see **Rate limiting** below; shared Redis store recommended in production) | App · Config |
+| Outbound fetch safety | Block SSRF from OIDC / JWKS admin actions | Hostname blocklist + DNS resolve-before-connect on outbound HTTP | App |
 | Secrets | No credentials in source code | Env / secret manager; integration secrets encrypted in DB | App · Operator |
 | Data at rest | Protect tickets and integration secrets | Field-level encryption for sensitive data; **disk encryption** | App · Operator |
 | Transport | TLS to users | Terminated at customer **reverse proxy, load balancer, or CDN** | Operator |
@@ -101,7 +102,108 @@ Organizations with stricter policies often add controls **outside** the applicat
 | Mail | Microsoft 365 / Graph, corporate SMTP relay |
 
 Admitto is designed to sit **behind** a trusted reverse proxy (`TRUST_PROXY` and forwarded headers
-documented in `deploy/README.md`). The proxy should set client IP and scheme headers consistently.
+documented in [`deploy/README.md`](../deploy/README.md)). The proxy must **overwrite**
+`X-Forwarded-For` with the real client IP — never append to a browser-supplied value.
+
+---
+
+## Rate limiting
+
+Application throttles use a sliding window (default **60 seconds** unless noted). Limits apply per
+bucket key; HTTP **429** when exceeded. Structured audit events: `auth.rate_limit.exceeded` (see
+`packages/auth` audit helpers).
+
+**Store:** in-memory per process when `REDIS_URL` is unset; **Redis recommended in production** so
+limits are shared across replicas and survive restarts.
+
+### Public and authentication
+
+| Surface | Bucket | Limit / window | Auth required |
+|---------|--------|----------------|---------------|
+| `POST /login`, `POST /api/auth/login` | client IP | 10 / 60 s | no |
+| same | normalized email | 10 / 60 s | no (defense-in-depth inside handler) |
+| `POST /api/auth/mfa/verify`, `POST /mfa/verify`, TOTP confirm | session + IP | 10 TOTP or 30 recovery / 15 min | partial session |
+| `POST /api/auth/mfa/totp/enroll`, `POST /mfa/enroll/start` | session + IP | 10 / 15 min | partial session (`enrollment_required`) |
+| `GET /api/auth/oidc/*/start`, `*/callback` | client IP | 20 / 60 s | no |
+| `/t/*`, `/q/*` | client IP | 60 / 60 s | no |
+
+### Operations probes
+
+| Surface | Bucket | Limit / window | Auth |
+|---------|--------|----------------|------|
+| `GET /healthz` | replica + client IP | 120 / 60 s | none (liveness; runs `SELECT 1`) |
+| `GET /readyz` | client IP | 10 / 60 s | `OPS_HEALTH_TOKEN` (disabled when unset) |
+
+Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scoped per process
+(`hostname`) so replica probes are not summed into one bucket. External monitors should not poll
+`/healthz` faster than a few requests per minute per source IP, or they may hit 429.
+
+### Staff admin (authenticated)
+
+| Surface | Bucket | Limit / window | Role |
+|---------|--------|----------------|------|
+| `POST …/import/preview` | user + event | 10 / 60 s | event admin |
+| `POST …/import/commit` | user + event | 5 / 60 s | event admin |
+| `POST …/template/preview` | user + event | 20 / 60 s | event admin |
+| `POST …/template/test-send` | user + event | 5 / 60 s | event admin |
+| `POST /api/admin/mail-settings/test` | user | 5 / 60 s | admin |
+| attendee resend, check-in scan/history | per-route keys | see `apps/web/src/*-rate-limit.ts` | operator / admin |
+
+### Superadmin (identity provider UI)
+
+| Surface | Bucket | Limit / window |
+|---------|--------|----------------|
+| `POST /admin/auth/providers/:id/discover` | user + provider | 10 / 60 s |
+| `POST /admin/auth/providers/:id/test` | user + provider | 10 / 60 s |
+
+**Body size caps** (separate from rate limits): import uploads ≤ 5 MB; template JSON sized for
+≤ 200k character body field — see `apps/web/src/admin/import-api-routes.ts` and
+`communication-api-routes.ts`.
+
+---
+
+## Reverse proxy and client IP (`TRUST_PROXY`)
+
+When `TRUST_PROXY=true` (default in [`deploy/.env.example`](../deploy/.env.example)):
+
+| Header | Used for |
+|--------|----------|
+| `X-Forwarded-For` (first hop) | Rate limits, audit IP, login throttling |
+| `X-Forwarded-Proto`, `X-Forwarded-Host` | CSRF origin check on mutating POSTs |
+
+Implementation: [`apps/web/src/rate-limit/client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts),
+[`apps/web/src/auth/same-origin-post.ts`](../apps/web/src/auth/same-origin-post.ts).
+
+**Operator requirement:** the edge proxy must set a **single** trusted client IP (e.g. nginx
+`proxy_set_header X-Forwarded-For $remote_addr`). If the proxy **appends** to a client-sent
+`X-Forwarded-For` chain, an attacker can pick the rate-limit bucket. This is a **deployment**
+misconfiguration risk, not bypassable from the app alone.
+
+**Hardening (v0.4.5+):** malformed or non-IP first hops fall back to the TCP remote address instead
+of a shared `"unknown"` bucket (which previously allowed cross-client rate-limit interference).
+
+When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP and CSRF origin (direct
+socket / request URL used).
+
+---
+
+## Outbound HTTP (SSRF mitigation)
+
+Superadmin OIDC provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches use
+[`assertSafeOidcFetchUrl`](../packages/auth/src/oidc/safe-url.ts) plus
+[`safeOidcFetch`](../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
+
+- HTTPS required in production (HTTP loopback allowed in development for mock IdPs).
+- Literal private, link-local, and metadata hostnames rejected.
+- **DNS resolve-and-pin**: hostname is resolved once (5 min TTL), validated, then the outbound
+  connection uses a custom undici `lookup` to the validated address while the request URL keeps
+  the original hostname (correct Host/SNI). All validated A/AAAA records are cached; on
+  network-unreachable failures, the client retries the next record. Redirects are handled manually
+  with SSRF re-check on every hop.
+
+Requires **superadmin** session (or Cloudflare Access JWT with instance admin role) for admin UI
+discover/test. Residual risk: compromised superadmin account can still trigger outbound fetches to
+**public** URLs the instance can reach — perimeter egress filtering remains an operator control.
 
 ---
 
@@ -111,8 +213,9 @@ documented in `deploy/README.md`). The proxy should set client IP and scheme hea
 - **Integration credentials** (mail, OIDC): stored encrypted in the application database; key
   supplied at deploy time via environment variable.
 - **Logs:** intended for operations, not analytics — avoid logging full email addresses or secrets.
-- **Health endpoints:** public liveness probe; separate token-gated readiness probe for monitoring
-  (no personal data in responses).
+- **Health endpoints:** `/healthz` — liveness + DB ping, rate-limited, no PII; `/readyz` —
+  token-gated detailed readiness (disabled when `OPS_HEALTH_TOKEN` unset). Both return baseline
+  security headers; neither exposes secrets or attendee data.
 
 ---
 
@@ -124,6 +227,28 @@ Be explicit with auditors about what is **out of product scope** today:
 - No HA / multi-region failover in the default compose topology.
 - No automated long-term PII purge job yet (retention **policy** documented; job planned for v1.0).
 - Disk/volume encryption for PostgreSQL and Redis is an **infrastructure** control.
+- No automated entropy check on `CHECKIN_OPERATOR_TOKEN` / `OPS_HEALTH_TOKEN` at boot — minimum
+  length only; operators should generate with `openssl rand -hex 32` (documented in `.env.example`).
+- Rate limits are application-layer; high-volume DoS may still require edge WAF/CDN or network
+  controls in front of the origin.
+
+### Penetration test verification (operator checklist)
+
+Useful when repeating internal or vendor PEN tests against a staging instance:
+
+1. **Proxy trust:** confirm NPM/nginx uses `$remote_addr` for `X-Forwarded-For`, not
+   `$proxy_add_x_forwarded_for`, when `TRUST_PROXY=true`.
+2. **Rate limits:** unauthenticated login → 429 on 11th attempt/minute; `/healthz` → 429 after
+   sustained flood; MFA enroll requires partial session and throttles repeated secret fetches.
+3. **CSRF:** cross-origin `POST /api/auth/login` without matching `Origin` → 403.
+4. **AuthZ:** `GET /api/admin/events` without session → 401.
+5. **SSRF:** OIDC discover to private IP literal blocked; hostname resolving to RFC1918 blocked
+   after DNS check (superadmin action).
+6. **Residual:** misconfigured proxy append on `X-Forwarded-For` can still spoof rate-limit IP —
+   verify deploy runbook, not app-only config.
+
+Source constants: `apps/web/src/**/*-rate-limit*.ts`, `packages/auth/src/oidc/safe-url.ts`,
+`packages/auth/src/oidc/safe-oidc-fetch.ts`.
 
 ---
 

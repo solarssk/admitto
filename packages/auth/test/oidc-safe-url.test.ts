@@ -1,9 +1,19 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { assertSafeOidcFetchUrl } from "../src/oidc/safe-url.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { lookup } from "node:dns/promises";
+import { assertSafeOidcFetchUrl, assertSafeOidcFetchUrlResolved } from "../src/oidc/safe-url.js";
 import { fetchOidcDiscovery } from "../src/oidc/discovery.js";
+
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(),
+}));
+
+const mockedLookup = vi.mocked(lookup);
 
 beforeEach(() => {
   process.env["NODE_ENV"] = "test";
+  mockedLookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as Awaited<
+    ReturnType<typeof lookup>
+  >);
 });
 
 describe("assertSafeOidcFetchUrl", () => {
@@ -56,10 +66,48 @@ describe("assertSafeOidcFetchUrl", () => {
     );
     expect(() => assertSafeOidcFetchUrl("https://[::ffff:7f00:1]/")).toThrow(/private or link-local/);
   });
+
+  it("rejects unspecified IPv4 and IPv6 addresses", () => {
+    expect(() => assertSafeOidcFetchUrl("https://0.0.0.0/")).toThrow(/private or link-local/);
+    expect(() => assertSafeOidcFetchUrl("https://[::]/")).toThrow(/private or link-local/);
+  });
 });
 
 describe("fetchOidcDiscovery SSRF guard", () => {
   it("rejects metadata issuer before fetch", async () => {
     await expect(fetchOidcDiscovery("https://169.254.169.254/")).rejects.toThrow(/private or link-local/);
+  });
+});
+
+describe("assertSafeOidcFetchUrlResolved", () => {
+  it("rejects hostnames that resolve to private addresses", async () => {
+    mockedLookup.mockResolvedValue([{ address: "10.0.0.5", family: 4 }] as Awaited<
+      ReturnType<typeof lookup>
+    >);
+    await expect(assertSafeOidcFetchUrlResolved("https://evil.example.com/")).rejects.toThrow(
+      /private or link-local/,
+    );
+  });
+
+  it("allows hostnames that resolve to public addresses", async () => {
+    mockedLookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as Awaited<
+      ReturnType<typeof lookup>
+    >);
+    await expect(assertSafeOidcFetchUrlResolved("https://login.example.com/")).resolves.toBeUndefined();
+  });
+
+  it("rejects hostnames that resolve to unspecified addresses", async () => {
+    mockedLookup.mockResolvedValue([{ address: "0.0.0.0", family: 4 }] as Awaited<
+      ReturnType<typeof lookup>
+    >);
+    await expect(assertSafeOidcFetchUrlResolved("https://evil.example.com/")).rejects.toThrow(
+      /private or link-local/,
+    );
+  });
+
+  it("skips DNS for http localhost mock IdPs in non-production", async () => {
+    mockedLookup.mockClear();
+    await expect(assertSafeOidcFetchUrlResolved("http://localhost:9999/")).resolves.toBeUndefined();
+    expect(mockedLookup).not.toHaveBeenCalled();
   });
 });

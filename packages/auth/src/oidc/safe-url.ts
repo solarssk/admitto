@@ -1,4 +1,6 @@
-import { BlockList, isIPv6 } from "node:net";
+import { lookup } from "node:dns/promises";
+import type { LookupAddress } from "node:dns";
+import { BlockList, isIP, isIPv6 } from "node:net";
 
 /** Block server-side fetches to private/link-local targets (SSRF mitigation). */
 
@@ -6,12 +8,17 @@ const privateIpv6 = new BlockList();
 privateIpv6.addSubnet("fe80::", 10, "ipv6");
 privateIpv6.addSubnet("fc00::", 7, "ipv6");
 
-/** URL.hostname keeps brackets around IPv6 literals — strip before parsing. */
-function unbracketHostname(hostname: string): string {
+/** Strip bracket wrapping from IPv6 literals in URL.hostname. */
+export function unbracketHostname(hostname: string): string {
   if (hostname.startsWith("[") && hostname.endsWith("]")) {
     return hostname.slice(1, -1);
   }
   return hostname;
+}
+
+/** Whether the hostname is loopback (localhost / 127.0.0.1 / ::1) — for dev mock IdP tests. */
+export function isLoopbackHostForTests(hostname: string): boolean {
+  return isLoopbackHost(hostname);
 }
 
 function isLoopbackHost(hostname: string): boolean {
@@ -48,7 +55,8 @@ function extractIpv4FromMappedIpv6(host: string): string | null {
 function isBlockedPrivateIpv4Dotted(host: string): boolean {
   const ip = parseIpv4(host);
   if (!ip) return false;
-  const [a, b] = ip;
+  const [a, b, c, d] = ip;
+  if (a === 0 && b === 0 && c === 0 && d === 0) return true;
   if (a === 10) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
@@ -60,7 +68,8 @@ function isBlockedPrivateIpv4Dotted(host: string): boolean {
 function isBlockedPrivateIpv6(hostname: string): boolean {
   const host = unbracketHostname(hostname);
   if (!isIPv6(host)) return false;
-  if (host.toLowerCase() === "::1") return true;
+  const lower = host.toLowerCase();
+  if (lower === "::" || lower === "::1") return true;
   return privateIpv6.check(host, "ipv6");
 }
 
@@ -100,4 +109,51 @@ export function assertSafeOidcFetchUrl(urlString: string): void {
   if (loopback || isBlockedPrivateOrMetadataHost(url.hostname)) {
     throw new Error("OIDC URL must not target private or link-local addresses");
   }
+}
+
+function assertResolvedIpSafe(address: string): void {
+  const host = unbracketHostname(address).toLowerCase();
+  if (isLoopbackHost(host) || isBlockedPrivateOrMetadataHost(host)) {
+    throw new Error("OIDC URL must not target private or link-local addresses");
+  }
+}
+
+/** Resolve hostname and reject private/link-local/unspecified targets (used before pinned outbound fetch). */
+export async function resolveSafeOidcHostname(hostname: string): Promise<LookupAddress[]> {
+  const host = unbracketHostname(hostname);
+  if (isIP(host)) {
+    assertResolvedIpSafe(host);
+    return [{ address: host, family: isIP(host) === 6 ? 6 : 4 }];
+  }
+
+  let records: LookupAddress[];
+  try {
+    records = await lookup(host, { all: true, verbatim: true });
+  } catch {
+    throw new Error("OIDC URL hostname could not be resolved");
+  }
+
+  if (records.length === 0) {
+    throw new Error("OIDC URL hostname could not be resolved");
+  }
+
+  for (const record of records) {
+    assertResolvedIpSafe(record.address);
+  }
+  return records;
+}
+
+/**
+ * Validation-only SSRF DNS check (does not pin or fetch).
+ * For outbound requests use `safeOidcFetch` / `createPinnedRemoteJWKSet` instead —
+ * a separate fetch after this call can still rebind DNS (TOCTOU).
+ */
+export async function assertSafeOidcFetchUrlResolved(urlString: string): Promise<void> {
+  assertSafeOidcFetchUrl(urlString);
+
+  const hostname = unbracketHostname(new URL(urlString).hostname);
+  const allowHttpLoopback = process.env["NODE_ENV"] !== "production";
+  if (allowHttpLoopback && isLoopbackHost(hostname)) return;
+
+  await resolveSafeOidcHostname(hostname);
 }

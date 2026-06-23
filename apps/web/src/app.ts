@@ -50,11 +50,18 @@ import {
 import { createRequireSession, createRequirePartialSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
 import { createOidcAuthRateLimitMiddleware } from "./auth/oidc-rate-limit.js";
+import { createMfaEnrollRateLimitMiddleware } from "./auth/mfa-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
 import { createAdminResendRateLimit } from "./admin-resend-rate-limit.js";
 import { createAdminCommunicationRateLimit } from "./admin-communication-rate-limit.js";
 import { createAdminMailSettingsRateLimit } from "./admin-mail-settings-rate-limit.js";
+import {
+  createAdminImportPreviewRateLimit,
+  createAdminImportCommitRateLimit,
+  createAdminTemplatePreviewRateLimit,
+} from "./admin-heavy-ops-rate-limit.js";
+import { createAdminAuthProviderOpsRateLimit } from "./admin-auth-providers-rate-limit.js";
 import { handleLogin, handleLogout, handleMe, handleMfaVerify, handleTotpEnroll, handleTotpConfirm } from "./auth/routes.js";
 import {
   handleGetMfaEnroll,
@@ -156,6 +163,7 @@ import {
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
 import { handleReadyz } from "./ops/readyz.js";
 import { createReadyzRateLimitMiddleware } from "./ops/readyz-rate-limit.js";
+import { createHealthzRateLimitMiddleware } from "./ops/healthz-rate-limit.js";
 
 /** Parse check-in history `limit` query param: default 10, clamped to 1–100. */
 function parseCheckinHistoryLimit(raw: string | undefined): number {
@@ -224,10 +232,13 @@ export function createApp(options: CreateAppOptions = {}) {
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const opsHealthToken = resolveOpsHealthTokenOption(options.opsHealthToken);
   const readyzRateLimit = createReadyzRateLimitMiddleware(rateLimitStore);
+  const healthzRateLimit = createHealthzRateLimitMiddleware(rateLimitStore);
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
   const loginRateLimitHtml = createLoginRateLimitMiddleware(rateLimitStore, { format: "text" });
   const oidcAuthRateLimit = createOidcAuthRateLimitMiddleware(rateLimitStore);
+  const mfaEnrollRateLimitJson = createMfaEnrollRateLimitMiddleware(rateLimitStore, { format: "json" });
+  const mfaEnrollRateLimitHtml = createMfaEnrollRateLimitMiddleware(rateLimitStore, { format: "text" });
   const htmlPostCsrf = createCrossSitePostGuard({ format: "text" });
   const jsonPostCsrf = createCrossSitePostGuard({ format: "json" });
   const requireSession = createRequireSession(db);
@@ -242,6 +253,10 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminResendRateLimit = createAdminResendRateLimit(rateLimitStore);
   const adminCommunicationRateLimit = createAdminCommunicationRateLimit(rateLimitStore);
   const adminMailSettingsRateLimit = createAdminMailSettingsRateLimit(rateLimitStore);
+  const adminImportPreviewRateLimit = createAdminImportPreviewRateLimit(rateLimitStore);
+  const adminImportCommitRateLimit = createAdminImportCommitRateLimit(rateLimitStore);
+  const adminTemplatePreviewRateLimit = createAdminTemplatePreviewRateLimit(rateLimitStore);
+  const adminAuthProviderOpsRateLimit = createAdminAuthProviderOpsRateLimit(rateLimitStore);
   const importBodyLimit = bodyLimit({
     maxSize: MAX_IMPORT_BODY_BYTES,
     onError: (c) => c.json({ error: "file too large" }, 400),
@@ -331,7 +346,7 @@ export function createApp(options: CreateAppOptions = {}) {
     return htmlWithSecurityHeaders(c, renderTicket(resolved, qrDataUrl, theme), 200, theme);
   }
 
-  app.get("/healthz", (c) => handleHealthz(c, db));
+  app.get("/healthz", healthzRateLimit, (c) => handleHealthz(c, db));
   app.get("/readyz", readyzRateLimit, (c) =>
     handleReadyz(c, {
       db,
@@ -383,7 +398,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.put("/api/admin/events/:eventId/template", jsonPostCsrf, staffAdminGate, templateBodyLimit, guardArchivedEvent((c) =>
     handlePutEventTemplate(c, db),
   ));
-  app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, templateBodyLimit, guardArchivedEvent((c) =>
+  app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, adminTemplatePreviewRateLimit, templateBodyLimit, guardArchivedEvent((c) =>
     handlePreviewEventTemplate(c, db),
   ));
   app.post(
@@ -400,10 +415,10 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/import/template", staffAdminGate, (c) =>
     handleGetImportTemplate(c, db),
   );
-  app.post("/api/admin/events/:eventId/import/preview", jsonPostCsrf, staffAdminGate, importBodyLimit, guardArchivedEvent((c) =>
+  app.post("/api/admin/events/:eventId/import/preview", jsonPostCsrf, staffAdminGate, adminImportPreviewRateLimit, importBodyLimit, guardArchivedEvent((c) =>
     handleImportPreview(c, db),
   ));
-  app.post("/api/admin/events/:eventId/import/commit", jsonPostCsrf, staffAdminGate, importBodyLimit, guardArchivedEvent((c) =>
+  app.post("/api/admin/events/:eventId/import/commit", jsonPostCsrf, staffAdminGate, adminImportCommitRateLimit, importBodyLimit, guardArchivedEvent((c) =>
     handleImportCommit(c, db),
   ));
   app.get("/api/admin/events/:eventId/items", staffAdminGate, (c) => handleListEventItems(c, db));
@@ -456,7 +471,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/auth/mfa/verify", jsonPostCsrf, requirePartialSession, (c) =>
     handleMfaVerify(c, db, rateLimitStore),
   );
-  app.post("/api/auth/mfa/totp/enroll", jsonPostCsrf, requirePartialSession, (c) =>
+  app.post("/api/auth/mfa/totp/enroll", jsonPostCsrf, requirePartialSession, mfaEnrollRateLimitJson, (c) =>
     handleTotpEnroll(c, db),
   );
   app.post("/api/auth/mfa/totp/confirm", jsonPostCsrf, requirePartialSession, (c) =>
@@ -482,10 +497,10 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/admin/auth/providers/:id", htmlPostCsrf, requireAdminAccess, (c) =>
     handlePostEditProvider(c, db),
   );
-  app.post("/admin/auth/providers/:id/discover", htmlPostCsrf, requireAdminAccess, (c) =>
+  app.post("/admin/auth/providers/:id/discover", htmlPostCsrf, requireAdminAccess, adminAuthProviderOpsRateLimit, (c) =>
     handlePostDiscover(c, db),
   );
-  app.post("/admin/auth/providers/:id/test", htmlPostCsrf, requireAdminAccess, (c) =>
+  app.post("/admin/auth/providers/:id/test", htmlPostCsrf, requireAdminAccess, adminAuthProviderOpsRateLimit, (c) =>
     handlePostTestConnection(c, db),
   );
   app.post("/admin/auth/providers/:id/toggle", htmlPostCsrf, requireAdminAccess, (c) =>
@@ -507,7 +522,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostMfaVerify(c, db, rateLimitStore),
   );
   app.get("/mfa/enroll", requirePartialSessionHtml, (c) => handleGetMfaEnroll(c, db));
-  app.post("/mfa/enroll/start", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+  app.post("/mfa/enroll/start", htmlPostCsrf, requirePartialSessionHtml, mfaEnrollRateLimitHtml, (c) =>
     handlePostMfaEnrollStart(c, db),
   );
   app.post("/mfa/enroll", htmlPostCsrf, requirePartialSessionHtml, (c) =>

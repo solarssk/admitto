@@ -1,3 +1,4 @@
+import { safeOidcFetch } from "../oidc/safe-oidc-fetch.js";
 import { assertSafeOidcFetchUrl } from "../oidc/safe-url.js";
 
 /** Verify team certs/JWKS endpoint responds (no secrets in result). */
@@ -8,7 +9,7 @@ export async function testCfAccessConnection(input: {
     const base = input.teamDomain.replace(/\/$/, "");
     const jwksUrl = `${base}/cdn-cgi/access/certs`;
     assertSafeOidcFetchUrl(jwksUrl);
-    const res = await fetch(jwksUrl, { signal: AbortSignal.timeout(15_000) });
+    const res = await safeOidcFetch(jwksUrl, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
       return { ok: false, error: `JWKS endpoint returned HTTP ${res.status}` };
     }

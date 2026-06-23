@@ -1,18 +1,10 @@
 import * as jose from "jose";
 import type { JWTPayload } from "jose";
+import { createPinnedRemoteJWKSet } from "../oidc/safe-oidc-fetch.js";
 import { assertSafeOidcFetchUrl } from "../oidc/safe-url.js";
 import type { CfAccessConfig } from "./config.js";
 
 const jwksVerifiers = new Map<string, jose.JWTVerifyGetKey>();
-
-function getJwksVerifier(jwksUri: string): jose.JWTVerifyGetKey {
-  let verifier = jwksVerifiers.get(jwksUri);
-  if (!verifier) {
-    verifier = jose.createRemoteJWKSet(new URL(jwksUri));
-    jwksVerifiers.set(jwksUri, verifier);
-  }
-  return verifier;
-}
 
 /** For tests — reset JWKS verifiers between cases. */
 export function clearCfAccessJwksCacheForTests(): void {
@@ -55,7 +47,12 @@ export async function validateAccessJwt(
   }
 
   assertSafeOidcFetchUrl(config.jwksUri);
-  const verifier = getJwksVerifier(config.jwksUri);
+
+  let verifier = jwksVerifiers.get(config.jwksUri);
+  if (!verifier) {
+    verifier = createPinnedRemoteJWKSet(config.jwksUri);
+    jwksVerifiers.set(config.jwksUri, verifier);
+  }
 
   let payload: JWTPayload;
   try {

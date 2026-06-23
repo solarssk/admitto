@@ -1,7 +1,7 @@
+import type { Context, Next } from "hono";
 import { logRateLimitExceeded } from "@admitto/auth";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
-import type { Context } from "hono";
 
 const MFA_VERIFY_WINDOW_MS = 15 * 60_000;
 /** Brute-force guard for 6-digit TOTP. */
@@ -63,4 +63,41 @@ export async function checkMfaVerifyRateLimit(
 /** Client IP for MFA rate limiting (honours TRUST_PROXY). */
 export function resolveMfaClientIp(c: Context): string {
   return resolveClientIp(c);
+}
+
+const MFA_ENROLL_WINDOW_MS = 15 * 60_000;
+const MFA_ENROLL_MAX_REQUESTS = 10;
+
+/** Rate-limit TOTP enrollment start per partial session and IP. */
+export function createMfaEnrollRateLimitMiddleware(
+  store: RateLimitStore,
+  options: { format?: "json" | "text" } = {},
+) {
+  const format = options.format ?? "json";
+  return async (c: Context, next: Next): Promise<Response | void> => {
+    const partial = c.get("partialAuth");
+    const ip = resolveClientIp(c);
+
+    const sessionResult = await store.hit(
+      `mfa:enroll:session:${partial.sessionId}`,
+      MFA_ENROLL_WINDOW_MS,
+      MFA_ENROLL_MAX_REQUESTS,
+    );
+    if (!sessionResult.allowed) {
+      logRateLimitExceeded({ scope: "mfa_enroll", ip, keyHint: "session" });
+      return format === "text"
+        ? c.text("Too many requests", 429)
+        : c.json({ error: "too many requests" }, 429);
+    }
+
+    const ipResult = await store.hit(`mfa:enroll:ip:${ip}`, MFA_ENROLL_WINDOW_MS, MFA_ENROLL_MAX_REQUESTS);
+    if (!ipResult.allowed) {
+      logRateLimitExceeded({ scope: "mfa_enroll", ip, keyHint: "ip" });
+      return format === "text"
+        ? c.text("Too many requests", 429)
+        : c.json({ error: "too many requests" }, 429);
+    }
+
+    await next();
+  };
 }

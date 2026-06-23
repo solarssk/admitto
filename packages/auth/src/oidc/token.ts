@@ -2,6 +2,7 @@ import * as jose from "jose";
 import type { IdentityProvider } from "@prisma/client";
 import type { JWTPayload } from "jose";
 import { decryptClientSecret } from "./provider-secret.js";
+import { createPinnedRemoteJWKSet, safeOidcFetch } from "./safe-oidc-fetch.js";
 import { assertSafeOidcFetchUrl } from "./safe-url.js";
 
 export interface TokenExchangeResult {
@@ -23,7 +24,7 @@ function getJwksVerifier(jwksUri: string): jose.JWTVerifyGetKey {
   if (cached && Date.now() - cached.fetchedAt < JWKS_CACHE_MS) {
     return cached.keys;
   }
-  const keys = jose.createRemoteJWKSet(new URL(jwksUri));
+  const keys = createPinnedRemoteJWKSet(jwksUri);
   jwksCache.set(jwksUri, { keys, fetchedAt: Date.now() });
   return keys;
 }
@@ -52,7 +53,7 @@ export async function exchangeAuthorizationCode(
     body.set("client_secret", decryptClientSecret(provider.client_secret_enc));
   }
 
-  const res = await fetch(provider.token_endpoint, {
+  const res = await safeOidcFetch(provider.token_endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
