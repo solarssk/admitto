@@ -14,6 +14,7 @@ import {
   SETTING_CF_ACCESS_TEAM_DOMAIN,
   SETTING_CF_ACCESS_AUD,
   SETTING_CF_ACCESS_PROTECTED_PREFIXES,
+  logAuthSettingsChanged,
 } from "@admitto/auth";
 import { getAdminPageSecurityHeaders } from "./auth-providers-html.js";
 import {
@@ -40,6 +41,10 @@ async function parseForm(c: Context): Promise<Record<string, string>> {
 
 function flashFromQuery(c: Context): string | undefined {
   return c.req.query("flash") ?? undefined;
+}
+
+function actorUserId(c: Context): string {
+  return c.get("auth").userId;
 }
 
 async function buildFormView(prisma: PrismaClient): Promise<CfAccessFormView> {
@@ -111,6 +116,8 @@ export async function handlePostCfAccess(c: Context, db: PrismaClient): Promise<
     return htmlResponse(c, renderCfAccessForm({ form, error: message }));
   }
 
+  const wasEnabled = (await getCfAccessConfig(db)).enabled;
+
   try {
     await db.$transaction(async (tx) => {
       if (!isSettingEnvLocked(SETTING_CF_ACCESS_ENABLED)) {
@@ -134,6 +141,15 @@ export async function handlePostCfAccess(c: Context, db: PrismaClient): Promise<
   }
 
   clearCfAccessRuntimeConfigCache();
+
+  const settingsAction =
+    wasEnabled === resolved.enabled ? "update" : resolved.enabled ? "enable" : "disable";
+
+  logAuthSettingsChanged({
+    actorUserId: actorUserId(c),
+    resource: "cf_access",
+    action: settingsAction,
+  });
 
   return c.redirect("/admin/auth/cf-access?flash=Settings+saved", 302);
 }

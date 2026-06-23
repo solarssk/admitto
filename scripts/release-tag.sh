@@ -104,7 +104,7 @@ git tag -s "$TAG" -m "$MESSAGE"
 if [[ "$PUSH" == true ]]; then
   echo "Pushing $TAG to origin"
   git push origin "$TAG"
-  echo "Done. Next: gh release create $TAG (if not created yet)."
+  echo "Done. Next: gh release create $TAG --prerelease (v0.x) or without --prerelease (v1.0+)."
 else
   echo "Created locally. Push with: git push origin $TAG"
 fi

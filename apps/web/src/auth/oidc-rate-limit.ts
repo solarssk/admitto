@@ -1,4 +1,5 @@
 import type { Context, Next } from "hono";
+import { logRateLimitExceeded } from "@admitto/auth";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
@@ -15,7 +16,10 @@ export function createOidcAuthRateLimitMiddleware(store: RateLimitStore) {
       OIDC_AUTH_WINDOW_MS,
       OIDC_AUTH_MAX_REQUESTS,
     );
-    if (!allowed) return c.text("Too many requests", 429);
+    if (!allowed) {
+      logRateLimitExceeded({ scope: "oidc_auth", ip });
+      return c.text("Too many requests", 429);
+    }
     await next();
   };
 }
@@ -31,11 +35,18 @@ export async function checkOidcLinkStepUpRateLimit(
     OIDC_AUTH_WINDOW_MS,
     OIDC_LINK_STEPUP_MAX_REQUESTS,
   );
-  if (!userResult.allowed) return false;
+  if (!userResult.allowed) {
+    logRateLimitExceeded({ scope: "oidc_link_stepup", ip, keyHint: "user" });
+    return false;
+  }
   const ipResult = await store.hit(
     `oidc:link:stepup:ip:${ip}`,
     OIDC_AUTH_WINDOW_MS,
     OIDC_LINK_STEPUP_MAX_REQUESTS,
   );
-  return ipResult.allowed;
+  if (!ipResult.allowed) {
+    logRateLimitExceeded({ scope: "oidc_link_stepup", ip, keyHint: "ip" });
+    return false;
+  }
+  return true;
 }

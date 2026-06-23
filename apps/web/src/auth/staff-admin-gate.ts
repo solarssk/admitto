@@ -1,7 +1,8 @@
 import type { Context, Next } from "hono";
 import type { PrismaClient } from "@prisma/client";
-import { canAccessAdminPanel, canAccessCheckInPanel, logCfAccessAuth } from "@admitto/auth";
+import { canAccessAdminPanel, canAccessCheckInPanel, logAccessDenied, logCfAccessAuth } from "@admitto/auth";
 import { resolveStaffAuthFromRequest } from "./resolve-staff-auth.js";
+import { resolveClientIp } from "../rate-limit/client-ip.js";
 
 function isAdminSpaPath(path: string): boolean {
   return path === "/admin" || (path.startsWith("/admin/") && !path.startsWith("/admin/auth/"));
@@ -33,6 +34,13 @@ async function forbiddenNoAdminAccess(
   prisma: PrismaClient,
   userId: string,
 ): Promise<Response> {
+  logAccessDenied({
+    path: c.req.path,
+    reason: "no_admin_access",
+    authSource: "session",
+    userId,
+    ip: resolveClientIp(c),
+  });
   if (await canAccessCheckInPanel(prisma, userId)) {
     if (isAdminApiPath(c.req.path)) {
       return c.json({ error: "forbidden" }, 403);

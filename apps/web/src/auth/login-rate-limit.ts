@@ -1,5 +1,5 @@
 import type { Context, Next } from "hono";
-import { normalizeEmail } from "@admitto/auth";
+import { logRateLimitExceeded, normalizeEmail } from "@admitto/auth";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
@@ -16,6 +16,7 @@ export function createLoginRateLimitMiddleware(
     const ip = resolveClientIp(c);
     const { allowed } = await store.hit(`auth:login:ip:${ip}`, LOGIN_WINDOW_MS, LOGIN_MAX_REQUESTS);
     if (!allowed) {
+      logRateLimitExceeded({ scope: "login_ip", ip });
       return format === "text"
         ? c.text("Too many requests", 429)
         : c.json({ error: "too many requests" }, 429);
@@ -28,8 +29,12 @@ export function createLoginRateLimitMiddleware(
 export async function checkLoginEmailRateLimit(
   store: RateLimitStore,
   email: string,
+  ip?: string,
 ): Promise<boolean> {
   const key = `auth:login:email:${normalizeEmail(email)}`;
   const { allowed } = await store.hit(key, LOGIN_WINDOW_MS, LOGIN_MAX_REQUESTS);
+  if (!allowed) {
+    logRateLimitExceeded({ scope: "login_email", ip, keyHint: "email" });
+  }
   return allowed;
 }

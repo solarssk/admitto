@@ -21,6 +21,8 @@ prepare_env() {
     node -e "if (Buffer.from(process.argv[1], 'base64').length !== 32) process.exit(1)" "$ENCRYPTION_KEY"
     sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" "$SMOKE_ENV"
     sed -i 's|^BASE_URL=.*|BASE_URL=http://127.0.0.1:8080|' "$SMOKE_ENV"
+    sed -i 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=smoke-redis-secret/' "$SMOKE_ENV"
+    sed -i 's|^REDIS_URL=.*|REDIS_URL=redis://:smoke-redis-secret@redis:6379|' "$SMOKE_ENV"
   else
     sed -i.bak 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=smoke-test-secret/' "$SMOKE_ENV"
     sed -i.bak 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://admitto_app:smoke-test-secret@db:5432/admitto|' "$SMOKE_ENV"
@@ -28,6 +30,8 @@ prepare_env() {
     node -e "if (Buffer.from(process.argv[1], 'base64').length !== 32) process.exit(1)" "$ENCRYPTION_KEY"
     sed -i.bak "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" "$SMOKE_ENV"
     sed -i.bak 's|^BASE_URL=.*|BASE_URL=http://127.0.0.1:8080|' "$SMOKE_ENV"
+    sed -i.bak 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=smoke-redis-secret/' "$SMOKE_ENV"
+    sed -i.bak 's|^REDIS_URL=.*|REDIS_URL=redis://:smoke-redis-secret@redis:6379|' "$SMOKE_ENV"
     rm -f "${SMOKE_ENV}.bak"
   fi
 }

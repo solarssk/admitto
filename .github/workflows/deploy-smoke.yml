@@ -25,6 +25,8 @@ jobs:
           node -e "if (Buffer.from(process.argv[1], 'base64').length !== 32) { console.error('ENCRYPTION_KEY must decode to 32 bytes'); process.exit(1); }" "$ENCRYPTION_KEY"
           sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" .env
           sed -i 's|^BASE_URL=.*|BASE_URL=http://127.0.0.1:8080|' .env
+          sed -i 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=smoke-redis-secret/' .env
+          sed -i 's|^REDIS_URL=.*|REDIS_URL=redis://:smoke-redis-secret@redis:6379|' .env
 
       - name: Build and start stack
         working-directory: deploy

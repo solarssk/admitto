@@ -1,4 +1,5 @@
 import type { Context, Next } from "hono";
+import { logRateLimitExceeded } from "@admitto/auth";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
@@ -11,6 +12,7 @@ export function createReadyzRateLimitMiddleware(store: RateLimitStore) {
     const ip = resolveClientIp(c);
     const { allowed } = await store.hit(`ops:readyz:ip:${ip}`, READYZ_WINDOW_MS, READYZ_MAX_REQUESTS);
     if (!allowed) {
+      logRateLimitExceeded({ scope: "readyz", ip });
       return c.body(null, 429);
     }
     await next();

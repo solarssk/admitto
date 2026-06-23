@@ -107,7 +107,27 @@ export {
   type BrandingTheme,
 } from "./settings/branding.js";
 export { SETTING_BRANDING_THEME } from "./settings/keys.js";
-export { redactEmail, logLoginSuccess, logLoginFailure, logMfaBreakGlass } from "./audit.js";
+export {
+  redactEmail,
+  fingerprint,
+  emitAuditEvent,
+  logLoginSuccess,
+  logLoginFailure,
+  logMfaBreakGlass,
+  logMfaSuccess,
+  logMfaFailure,
+  logMfaRecoveryConsumed,
+  logLogout,
+  logRateLimitExceeded,
+  logOidcLoginSuccess,
+  logAccessDenied,
+  logAuthSettingsChanged,
+  type LoginAuditContext,
+  type MfaAuditContext,
+  type MfaMethod,
+  type RateLimitScope,
+  type AuthSettingsResource,
+} from "./audit.js";
 export { login, logout, completeMfa, type LoginInput, type LoginResult, type CompleteMfaInput } from "./login.js";
 export {
   bootstrapSuperadmin,

@@ -1,3 +1,4 @@
+import { logRateLimitExceeded } from "@admitto/auth";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { Context } from "hono";
@@ -47,9 +48,16 @@ export async function checkMfaVerifyRateLimit(
   const limit = totpAttempt ? MFA_TOTP_VERIFY_LIMIT : MFA_RECOVERY_VERIFY_LIMIT;
 
   const sessionResult = await store.hit(sessionKey, MFA_VERIFY_WINDOW_MS, limit);
-  if (!sessionResult.allowed) return false;
+  if (!sessionResult.allowed) {
+    logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: totpAttempt ? "session_totp" : "session_recovery" });
+    return false;
+  }
   const ipResult = await store.hit(ipKey, MFA_VERIFY_WINDOW_MS, limit);
-  return ipResult.allowed;
+  if (!ipResult.allowed) {
+    logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: totpAttempt ? "ip_totp" : "ip_recovery" });
+    return false;
+  }
+  return true;
 }
 
 /** Client IP for MFA rate limiting (honours TRUST_PROXY). */

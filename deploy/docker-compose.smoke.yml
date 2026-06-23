@@ -7,3 +7,6 @@ services:
   db:
     env_file: !override
       - .env.smoke
+  redis:
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}

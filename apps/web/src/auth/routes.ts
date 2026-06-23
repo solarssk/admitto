@@ -104,7 +104,7 @@ export async function handleLogin(
   );
 
   if (!result.ok) {
-    if (!(await checkLoginEmailRateLimit(rateLimitStore, email))) {
+    if (!(await checkLoginEmailRateLimit(rateLimitStore, email, resolveClientIp(c)))) {
       return c.json({ error: "too many requests" }, 429);
     }
     return c.json(AUTH_ERROR, 401);
@@ -122,7 +122,7 @@ export async function handleLogout(c: Context, db: PrismaClient): Promise<Respon
   if (validated) {
     await revokeTrustedDeviceByToken(db, validated.userId, trustedRaw);
   }
-  await logout(db, validated);
+  await logout(db, validated, { ip: resolveClientIp(c) });
   clearSessionCookie(c);
   clearTrustedDeviceCookie(c);
   return c.json({ ok: true }, 200);
@@ -199,14 +199,18 @@ export async function handleMfaVerify(
     return c.json({ error: "too many requests" }, 429);
   }
 
-  const result = await completeMfa(db, {
-    userId: partial.userId,
-    sessionId: partial.sessionId,
-    code,
-    rememberDevice: rememberDevice === true || rememberDevice === "1",
-    ip,
-    userAgent: c.req.header("user-agent"),
-  });
+  const result = await completeMfa(
+    db,
+    {
+      userId: partial.userId,
+      sessionId: partial.sessionId,
+      code,
+      rememberDevice: rememberDevice === true || rememberDevice === "1",
+      ip,
+      userAgent: c.req.header("user-agent"),
+    },
+    { userId: partial.userId, sessionId: partial.sessionId, ip, userAgent: c.req.header("user-agent") },
+  );
 
   if (!result.ok) {
     return c.json(AUTH_ERROR, 401);

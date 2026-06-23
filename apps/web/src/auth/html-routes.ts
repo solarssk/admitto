@@ -91,7 +91,7 @@ export async function handlePostLogin(
   );
 
   if (!result.ok) {
-    if (!(await checkLoginEmailRateLimit(rateLimitStore, email))) {
+    if (!(await checkLoginEmailRateLimit(rateLimitStore, email, resolveClientIp(c)))) {
       return c.text("Too many requests", 429);
     }
     return htmlResponse(c, renderLoginForm(LOGIN_ERROR, next, sso), 401);
@@ -126,7 +126,7 @@ export async function handlePostLogout(c: Context, db: PrismaClient): Promise<Re
   if (validated) {
     await revokeTrustedDeviceByToken(db, validated.userId, trustedRaw);
   }
-  await logout(db, validated);
+  await logout(db, validated, { ip: resolveClientIp(c) });
   clearSessionCookie(c);
   clearTrustedDeviceCookie(c);
   return c.redirect("/login", 302);
