@@ -9,7 +9,7 @@
 }
 
 .import-back a:hover {
-  color: var(--text);
+  color: var(--text-primary);
   text-decoration: underline;
 }
 
@@ -38,7 +38,7 @@
 .import-columns-info summary {
   cursor: pointer;
   font-weight: 600;
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .import-columns-table {

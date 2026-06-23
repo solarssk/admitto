@@ -14,6 +14,6 @@ if (!root) throw new Error("Missing #root");
 
 createRoot(root).render(
   <StrictMode>
-    <RouterProvider router={ router} />
+    <RouterProvider router={router} />
   </StrictMode>,
 );

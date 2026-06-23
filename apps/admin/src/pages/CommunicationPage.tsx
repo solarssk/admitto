@@ -87,7 +87,7 @@ export function CommunicationPage() {
     { subject: savedSubject, body: savedBody, format: savedFormat },
   );
   const blocker = useBlocker(
-    ({ currentLocation, nextLocation}) =>
+    ({ currentLocation, nextLocation }) =>
       isDirty && currentLocation.pathname !== nextLocation.pathname,
   );
 
