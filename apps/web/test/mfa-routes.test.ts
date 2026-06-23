@@ -8,6 +8,7 @@ import {
   LOGIN_NEXT,
   TRUSTED_DEVICE_COOKIE_NAME,
   validateTrustedDevice,
+  parseTotpSecretFromOtpauthUri,
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret, generateTotpCode } from "@admitto/auth/testing";
 import { createApp } from "../src/app.js";
@@ -25,6 +26,40 @@ function extractBackupCodes(html: string): string[] {
   return [...section[1].matchAll(/<code>([^<]+)<\/code>/g)]
     .map((m) => m[1])
     .filter((code): code is string => Boolean(code));
+}
+
+function extractOtpauthUri(html: string): string | null {
+  const match = html.match(/href="(otpauth:\/\/totp\/[^"]+)"/);
+  return match?.[1] ?? null;
+}
+
+async function confirmHtmlEnrollAndReachBackupCodes(
+  loginRes: Response,
+  startHtml: string,
+): Promise<{ backupCodesRes: Response; backupHtml: string }> {
+  const otpauth = extractOtpauthUri(startHtml);
+  expect(otpauth).toBeTruthy();
+  const secret = parseTotpSecretFromOtpauthUri(otpauth!);
+  expect(secret).toBeTruthy();
+
+  const confirmRes = await app.request("/mfa/enroll", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      ...sameOrigin,
+      ...cookieHeader(loginRes),
+    },
+    body: new URLSearchParams({ code: generateTotpCode(secret!) }).toString(),
+    redirect: "manual",
+  });
+  expect(confirmRes.status).toBe(302);
+  expect(confirmRes.headers.get("location")).toBe("/mfa/enroll/backup-codes");
+
+  const backupCodesRes = await app.request("/mfa/enroll/backup-codes", {
+    headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+  });
+  expect(backupCodesRes.status).toBe(200);
+  return { backupCodesRes, backupHtml: await backupCodesRes.text() };
 }
 
 const sameOrigin = { Origin: "http://localhost" };
@@ -381,10 +416,16 @@ describe("HTML MFA enroll", () => {
     expect(startRes.status).toBe(200);
     const html = await startRes.text();
     expect(html).toContain("otpauth://totp/");
+    expect(html).toContain('class="auth-qr"');
+    expect(html).toContain("Copy setup key");
+    expect(html).toContain("Open in password manager");
+    expect(html).toContain('id="enroll-secret"');
+    expect(html).not.toContain("Save your backup codes");
+    expect(extractBackupCodes(html)).toEqual([]);
     expect(await prisma.userMfaMethod.count({ where: { user_id: admin!.id, type: "totp" } })).toBe(1);
   });
 
-  it("POST /mfa/enroll/download-codes returns attachment when enrollment pending", async () => {
+  it("POST /mfa/enroll/download-codes returns attachment on backup-codes step", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
     await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
 
@@ -399,8 +440,10 @@ describe("HTML MFA enroll", () => {
       headers: { ...sameOrigin, ...cookieHeader(loginRes) },
     });
     expect(startRes.status).toBe(200);
-    const enrollHtml = await startRes.text();
-    const codeMatches = extractBackupCodes(enrollHtml);
+    const startHtml = await startRes.text();
+
+    const { backupHtml } = await confirmHtmlEnrollAndReachBackupCodes(loginRes, startHtml);
+    const codeMatches = extractBackupCodes(backupHtml);
     expect(codeMatches.length).toBeGreaterThan(0);
 
     const downloadRes = await app.request("/mfa/enroll/download-codes", {
@@ -460,7 +503,7 @@ describe("HTML MFA enroll", () => {
     expect(downloadRes.status).toBe(400);
   });
 
-  it("POST /mfa/enroll keeps backup codes visible after invalid confirmation code", async () => {
+  it("POST /mfa/enroll keeps QR step after invalid confirmation code (no backup codes yet)", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
     await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
 
@@ -475,8 +518,8 @@ describe("HTML MFA enroll", () => {
       headers: { ...sameOrigin, ...cookieHeader(loginRes) },
     });
     expect(startRes.status).toBe(200);
-    const initialCodes = extractBackupCodes(await startRes.text());
-    expect(initialCodes.length).toBeGreaterThan(0);
+    const startHtml = await startRes.text();
+    expect(extractBackupCodes(startHtml)).toEqual([]);
 
     const failRes = await app.request("/mfa/enroll", {
       method: "POST",
@@ -490,9 +533,45 @@ describe("HTML MFA enroll", () => {
     expect(failRes.status).toBe(401);
     const retryHtml = await failRes.text();
     expect(retryHtml).toContain("Invalid code");
-    expect(retryHtml).toContain("Download backup codes");
-    const retryCodes = extractBackupCodes(retryHtml);
-    expect(retryCodes).toEqual(initialCodes);
+    expect(retryHtml).toContain('class="auth-qr"');
+    expect(retryHtml).not.toContain("Download backup codes");
+    expect(extractBackupCodes(retryHtml)).toEqual([]);
+  });
+
+  it("HTML enroll flow reaches app after backup-codes acknowledgment", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+    expect(loginRes.status).toBe(200);
+
+    const startRes = await app.request("/mfa/enroll/start", {
+      method: "POST",
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(startRes.status).toBe(200);
+    const startHtml = await startRes.text();
+    await confirmHtmlEnrollAndReachBackupCodes(loginRes, startHtml);
+
+    const finishRes = await app.request("/mfa/enroll/backup-codes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...sameOrigin,
+        ...cookieHeader(loginRes),
+      },
+      redirect: "manual",
+    });
+    expect(finishRes.status).toBe(302);
+
+    const me = await app.request("/api/auth/me", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(me.status).toBe(200);
   });
 });
 

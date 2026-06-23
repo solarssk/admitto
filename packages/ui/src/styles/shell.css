@@ -33,6 +33,7 @@ body {
   letter-spacing: -0.3px;
   color: var(--text-primary);
   padding: 6px 6px 12px;
+  text-decoration: none;
 }
 
 .sidebar__event {

@@ -12,6 +12,8 @@ export const SESSION_TTL_ADMIN_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** TTL for mfa_pending / enrollment_required sessions (15 minutes). */
 export const MFA_PENDING_SESSION_TTL_MS = 15 * 60 * 1000;
+/** Fresh TTL granted when advancing to the backup-codes acknowledgment step. */
+export const BACKUP_CODES_STEP_TTL_MS = 10 * 60 * 1000;
 
 /** Default trusted-device validity (days). */
 export const DEFAULT_TRUSTED_DEVICE_DAYS = 30;
@@ -33,6 +35,8 @@ export const SESSION_STAGE = {
   FULL: "full",
   MFA_PENDING: "mfa_pending",
   ENROLLMENT_REQUIRED: "enrollment_required",
+  /** TOTP confirmed; user must save backup recovery codes before app access. */
+  BACKUP_CODES_REQUIRED: "backup_codes_required",
 } as const;
 
 export type SessionStage = (typeof SESSION_STAGE)[keyof typeof SESSION_STAGE];
@@ -42,6 +46,7 @@ export const LOGIN_NEXT = {
   COMPLETE: "complete",
   MFA_REQUIRED: "mfa_required",
   ENROLLMENT_REQUIRED: "enrollment_required",
+  BACKUP_CODES_REQUIRED: "backup_codes_required",
 } as const;
 
 export type LoginNext = (typeof LOGIN_NEXT)[keyof typeof LOGIN_NEXT];

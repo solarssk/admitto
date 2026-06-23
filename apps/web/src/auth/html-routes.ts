@@ -68,7 +68,6 @@ export async function handlePostLogin(
   const form = await parseLoginForm(c);
   const email = form["email"]?.trim() ?? "";
   const password = form["password"] ?? "";
-  const deviceLabel = form["device_label"]?.trim();
   const rawNext = form["next"] ?? c.req.query("next");
   const next = resolveOptionalSafeRedirectPath(rawNext);
   const sso = await loadLoginSsoProviders(db);
@@ -84,7 +83,6 @@ export async function handlePostLogin(
       password,
       ip: resolveClientIp(c),
       userAgent: c.req.header("user-agent"),
-      deviceLabel: deviceLabel || undefined,
       trustedDeviceToken: getCookie(c, TRUSTED_DEVICE_COOKIE_NAME),
     },
     { email },

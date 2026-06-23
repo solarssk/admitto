@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseMappingsFromForm, renderProviderForm } from "../src/admin/auth-providers-html.js";
+import {
+  parseMappingsFromForm,
+  parseProviderInput,
+  renderProviderForm,
+} from "../src/admin/auth-providers-html.js";
 
 describe("parseMappingsFromForm", () => {
   it("parses role values from select fields", () => {
@@ -67,6 +71,7 @@ describe("parseMappingsFromForm", () => {
         claim_email: "email",
         claim_name: "name",
         claim_groups: "groups",
+        login_button_label: null,
       },
       mappings: [{ group: "legacy", role: "god", scope_type: "instance", scope_id: "" }],
     });
@@ -82,5 +87,48 @@ describe("admin pageShell headings", () => {
     expect(html).toContain("<title>Admitto — Add identity provider</title>");
     expect(html).toContain("<h1>Add identity provider</h1>");
     expect(html).not.toMatch(/<h1>Admitto —/);
+  });
+});
+
+describe("OIDC provider form — SSO button label", () => {
+  it("renders editable SSO button text on create and edit forms", () => {
+    const createHtml = renderProviderForm({ isNew: true, mappings: [] });
+    expect(createHtml).toContain('name="login_button_label"');
+    expect(createHtml).toContain("Sign-in page (/login)");
+    expect(createHtml).toContain('placeholder="Continue with SSO"');
+
+    const editHtml = renderProviderForm({
+      isNew: false,
+      provider: {
+        id: "p1",
+        provider_type: "oidc",
+        display_name: "Microsoft Entra",
+        issuer: "https://login.microsoftonline.com/tenant/v2.0",
+        client_id: "client",
+        has_client_secret: true,
+        enabled: true,
+        authorization_endpoint: "",
+        token_endpoint: "",
+        jwks_uri: "",
+        userinfo_endpoint: "",
+        claim_email: "email",
+        claim_name: "name",
+        claim_groups: "groups",
+        login_button_label: "Continue with Microsoft SSO",
+      },
+      mappings: [],
+    });
+    expect(editHtml).toContain('value="Continue with Microsoft SSO"');
+  });
+
+  it("parseProviderInput includes login_button_label", () => {
+    expect(
+      parseProviderInput({
+        display_name: "Google",
+        login_button_label: "  Sign in with Google  ",
+        issuer: "https://accounts.google.com",
+        client_id: "x",
+      }).login_button_label,
+    ).toBe("Sign in with Google");
   });
 });

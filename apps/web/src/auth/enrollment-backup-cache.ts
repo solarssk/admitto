@@ -1,4 +1,4 @@
-import { MFA_PENDING_SESSION_TTL_MS } from "@admitto/auth";
+import { MFA_PENDING_SESSION_TTL_MS, BACKUP_CODES_STEP_TTL_MS } from "@admitto/auth";
 
 interface CacheEntry {
   codes: string[];
@@ -74,6 +74,27 @@ export function submittedCodesMatchStashedEnrollmentBackup(
   const expected = normalizeCodeSet(stashed);
   const actual = normalizeCodeSet(submitted);
   return expected.length === actual.length && expected.every((code, i) => code === actual[i]);
+}
+
+/**
+ * Extend the stash TTL to `BACKUP_CODES_STEP_TTL_MS` from now.
+ * Called when the session is promoted to backup_codes_required so the stash
+ * lifetime matches the fresh session window.  Returns false when no stash
+ * exists for this session (nothing to extend).
+ */
+export function extendEnrollmentBackupCodes(sessionId: string): boolean {
+  sweepExpired();
+  const entry = cache.get(sessionId);
+  if (!entry || entry.expiresAt <= Date.now()) {
+    removeCacheEntry(sessionId);
+    return false;
+  }
+  const newExpiry = Date.now() + BACKUP_CODES_STEP_TTL_MS;
+  if (newExpiry > entry.expiresAt) {
+    entry.expiresAt = newExpiry;
+    scheduleExpiry(sessionId, newExpiry);
+  }
+  return true;
 }
 
 export function clearEnrollmentBackupCodes(sessionId: string): void {

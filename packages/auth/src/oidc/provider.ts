@@ -1,6 +1,7 @@
 import type { IdentityProvider, Prisma, PrismaClient } from "@prisma/client";
 import { encryptClientSecret, hasClientSecret } from "./provider-secret.js";
 import { PROVIDER_TYPE_OIDC } from "./constants.js";
+import { normalizeSsoLoginButtonLabelInput } from "./login-button-label.js";
 import { fetchOidcDiscovery, testOidcConnection } from "./discovery.js";
 import { assertSafeOidcFetchUrl } from "./safe-url.js";
 
@@ -19,6 +20,7 @@ export interface IdentityProviderInput {
   claim_groups?: string;
   enabled?: boolean;
   provider_type?: string;
+  login_button_label?: string | null;
 }
 
 /** Serializable provider fields for admin HTML forms (secrets as boolean flags only). */
@@ -37,6 +39,7 @@ export interface IdentityProviderFormView {
   claim_name: string;
   claim_groups: string;
   enabled: boolean;
+  login_button_label: string | null;
 }
 
 /** Map a DB provider row to admin form view (no decrypted secrets). */
@@ -56,6 +59,7 @@ export function toProviderFormView(provider: IdentityProvider): IdentityProvider
     claim_name: provider.claim_name,
     claim_groups: provider.claim_groups,
     enabled: provider.enabled,
+    login_button_label: provider.login_button_label,
   };
 }
 
@@ -155,6 +159,10 @@ export async function createIdentityProviderWithEndpoints(
       claim_name: input.claim_name ?? "name",
       claim_groups: input.claim_groups ?? "groups",
       enabled: input.enabled ?? false,
+      login_button_label:
+        input.login_button_label === undefined
+          ? null
+          : normalizeSsoLoginButtonLabelInput(input.login_button_label ?? undefined),
     },
   });
 }
@@ -193,6 +201,10 @@ export async function updateIdentityProviderWithEndpoints(
       claim_name: input.claim_name ?? existing.claim_name,
       claim_groups: input.claim_groups ?? existing.claim_groups,
       enabled: input.enabled ?? existing.enabled,
+      login_button_label:
+        input.login_button_label === undefined
+          ? existing.login_button_label
+          : normalizeSsoLoginButtonLabelInput(input.login_button_label ?? undefined),
     },
   });
 }

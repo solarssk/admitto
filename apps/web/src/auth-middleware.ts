@@ -67,6 +67,7 @@ export function createRequirePartialSession(
   const allowedStages = options?.allowedStages ?? [
     SESSION_STAGE.MFA_PENDING,
     SESSION_STAGE.ENROLLMENT_REQUIRED,
+    SESSION_STAGE.BACKUP_CODES_REQUIRED,
   ];
 
   return async (c: Context, next: Next): Promise<Response | void> => {

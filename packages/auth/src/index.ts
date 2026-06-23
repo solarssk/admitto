@@ -7,6 +7,7 @@ export {
   SESSION_TTL_ADMIN_MS,
   SESSION_TTL_OPERATOR_MS,
   MFA_PENDING_SESSION_TTL_MS,
+  BACKUP_CODES_STEP_TTL_MS,
   SESSION_STAGE,
   LOGIN_NEXT,
   AUTH_METHOD,
@@ -24,8 +25,11 @@ export {
   validateSession,
   validatePartialSession,
   promoteSessionToFull,
+  promoteSessionToBackupCodesStep,
   revokeSession,
   revokeAllOperatorSessionsForEvent,
+  updateSessionDeviceLabel,
+  DEVICE_LABEL_MAX_LEN,
   listSessions,
   type CreateSessionInput,
   type ValidatedSession,
@@ -145,6 +149,7 @@ export {
   resetUserMfa,
   type StartTotpEnrollmentResult,
 } from "./mfa/enrollment.js";
+export { parseTotpSecretFromOtpauthUri } from "./mfa/totp.js";
 export { regenerateBackupRecoveryCodes, findBackupRecoveryRowId, verifyBackupRecoveryCodesSet } from "./mfa/backup-recovery.js";
 export { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
 export { validateTrustedDevice, revokeTrustedDeviceByToken, revokeAllTrustedDevicesForUser } from "./mfa/trusted-device.js";
@@ -158,11 +163,17 @@ export {
 } from "./external-identity/resolve-user.js";
 
 export {
+  resolveSsoLoginButtonLabel,
+  normalizeSsoLoginButtonLabelInput,
+} from "./oidc/login-button-label.js";
+export {
   PROVIDER_TYPE_OIDC,
   PROVIDER_TYPE_CLOUDFLARE_ACCESS,
   OIDC_AUTH_STATE_TTL_MS,
   OIDC_FLOW_COOKIE_NAME,
   OIDC_LINK_STEP_UP_MAX_AGE_MS,
+  DEFAULT_SSO_LOGIN_BUTTON_LABEL,
+  SSO_LOGIN_BUTTON_LABEL_MAX_LEN,
 } from "./oidc/constants.js";
 export { generateCodeVerifier, codeChallengeS256, generateOauthSecret } from "./oidc/pkce.js";
 export { assertSafeOidcFetchUrl } from "./oidc/safe-url.js";

@@ -335,7 +335,7 @@ model Session {
   user_id      String
   user         User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
   token_hash   String    @unique
-  // full | mfa_pending | enrollment_required — only full grants protected routes (ADR 0011).
+  // full | mfa_pending | enrollment_required | backup_codes_required — only full grants protected routes (ADR 0011).
   stage        String    @default("full")
   // local | oidc — IdP-authenticated sessions skip local TOTP policy (prompt 16b).
   auth_method  String    @default("local")
@@ -428,6 +428,7 @@ model IdentityProvider {
   claim_groups          String   @default("groups")
   enabled               Boolean  @default(false)
   display_name          String
+  login_button_label    String?
   created_at            DateTime @default(now())
   updated_at            DateTime @updatedAt
 

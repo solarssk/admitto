@@ -13,12 +13,22 @@ import {
   getOrStartTotpEnrollment,
   confirmTotpEnrollment,
   promoteSessionToFull,
+  promoteSessionToBackupCodesStep,
   getTrustedDeviceDays,
   revokeTrustedDeviceByToken,
   SESSION_STAGE,
+  updateSessionDeviceLabel,
+  DEVICE_LABEL_MAX_LEN,
+  regenerateBackupRecoveryCodes,
 } from "@admitto/auth";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
+import {
+  getStashedEnrollmentBackupCodes,
+  stashEnrollmentBackupCodes,
+  extendEnrollmentBackupCodes,
+  clearEnrollmentBackupCodes,
+} from "./enrollment-backup-cache.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
@@ -167,6 +177,47 @@ export async function handleMe(c: Context, db: PrismaClient): Promise<Response> 
   return c.json({ user, assignments, device_label, session_active: !!auth.sessionId }, 200);
 }
 
+/** POST /api/auth/session/device-label — set optional tablet label on the current session. */
+export async function handlePostSessionDeviceLabel(c: Context, db: PrismaClient): Promise<Response> {
+  const auth = c.get("auth");
+  if (!auth?.sessionId) {
+    return c.json(AUTH_ERROR, 401);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+
+  const raw =
+    body && typeof body === "object" && "device_label" in body
+      ? (body as { device_label?: unknown }).device_label
+      : undefined;
+
+  if (raw !== undefined && raw !== null && typeof raw !== "string") {
+    return c.json({ error: "invalid_device_label" }, 400);
+  }
+
+  const label = typeof raw === "string" ? raw.trim() : "";
+  if (label.length > DEVICE_LABEL_MAX_LEN) {
+    return c.json({ error: "device_label_too_long" }, 400);
+  }
+
+  const ok = await updateSessionDeviceLabel(
+    db,
+    auth.sessionId,
+    auth.userId,
+    label.length > 0 ? label : null,
+  );
+  if (!ok) {
+    return c.json(AUTH_ERROR, 401);
+  }
+
+  return c.json({ device_label: label.length > 0 ? label : null }, 200);
+}
+
 /** POST /api/auth/mfa/verify — complete MFA step (partial session). */
 export async function handleMfaVerify(
   c: Context,
@@ -235,12 +286,14 @@ export async function handleTotpEnroll(c: Context, db: PrismaClient): Promise<Re
     return c.json(AUTH_ERROR, 401);
   }
 
+  if (enrollment.backupCodes.length > 0) {
+    stashEnrollmentBackupCodes(partial.sessionId, enrollment.backupCodes);
+  }
+
   return c.json(
     {
       ok: true,
       otpauth_uri: enrollment.otpauthUri,
-      backup_codes: enrollment.backupCodes,
-      backup_codes_already_shown: enrollment.backupCodesAlreadyShown === true,
     },
     200,
   );
@@ -283,12 +336,55 @@ export async function handleTotpConfirm(
     return c.json(AUTH_ERROR, 401);
   }
 
-  if (partial.stage === SESSION_STAGE.ENROLLMENT_REQUIRED) {
-    const promoted = await promoteSessionToFull(db, partial.sessionId, partial.userId);
-    if (!promoted) {
-      return c.json(AUTH_ERROR, 401);
-    }
+  // Ensure backup codes are in the stash before promoting. They may be absent
+  // when the QR step ran on a different instance or the original stash expired.
+  if (!getStashedEnrollmentBackupCodes(partial.sessionId)) {
+    const { codes } = await regenerateBackupRecoveryCodes(db, partial.userId);
+    stashEnrollmentBackupCodes(partial.sessionId, codes);
   }
 
+  const promoted = await promoteSessionToBackupCodesStep(db, partial.sessionId, partial.userId);
+  if (!promoted) {
+    return c.json(AUTH_ERROR, 401);
+  }
+
+  // Extend stash TTL to match the fresh backup-codes session window.
+  extendEnrollmentBackupCodes(partial.sessionId);
+
+  const backupCodes = getStashedEnrollmentBackupCodes(partial.sessionId) ?? [];
+
+  return c.json(
+    {
+      ok: true,
+      next: LOGIN_NEXT.BACKUP_CODES_REQUIRED,
+      backup_codes: backupCodes,
+    },
+    200,
+  );
+}
+
+/** POST /api/auth/mfa/totp/backup-codes/complete — finish enrollment after saving backup codes. */
+export async function handleTotpBackupCodesComplete(c: Context, db: PrismaClient): Promise<Response> {
+  const partial = c.get("partialAuth");
+  if (partial.stage !== SESSION_STAGE.BACKUP_CODES_REQUIRED) {
+    return c.json(AUTH_ERROR, 401);
+  }
+
+  // Refuse completion when backup codes are not in the stash — completing here
+  // would silently enter the app without the user ever seeing their recovery codes.
+  const stashed = getStashedEnrollmentBackupCodes(partial.sessionId);
+  if (!stashed?.length) {
+    return c.json(
+      { error: "Backup codes are no longer available. Log in again to restart enrollment." },
+      401,
+    );
+  }
+
+  const promoted = await promoteSessionToFull(db, partial.sessionId, partial.userId);
+  if (!promoted) {
+    return c.json(AUTH_ERROR, 401);
+  }
+
+  clearEnrollmentBackupCodes(partial.sessionId);
   return c.json({ ok: true, next: LOGIN_NEXT.COMPLETE }, 200);
 }

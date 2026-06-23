@@ -187,6 +187,7 @@ export async function handlePostDiscover(c: Context, db: PrismaClient): Promise<
     const discovery = await fetchOidcDiscovery(provider.issuer);
     await updateIdentityProvider(db, id, {
       display_name: provider.display_name,
+      login_button_label: provider.login_button_label,
       issuer: discovery.issuer,
       client_id: provider.client_id,
       authorization_endpoint: discovery.authorization_endpoint,

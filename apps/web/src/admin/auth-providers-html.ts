@@ -1,5 +1,6 @@
 import type { GroupRoleMappingInput, IdentityProviderFormView } from "@admitto/auth";
-import { ADMIN_PAGE_CSS } from "../shared-auth-styles.js";
+import { AUTH_PAGE_ICON_CSP, renderAdmittoFaviconLink } from "../favicon.js";
+import { renderAdminShell } from "../shared-auth-styles.js";
 
 const ALLOWED_MAPPING_ROLES = ["superadmin", "admin", "operator"] as const;
 
@@ -17,8 +18,16 @@ function esc(s: string): string {
 export function getAdminPageSecurityHeaders(): Record<string, string> {
   return {
     "Cache-Control": "private, no-store, max-age=0",
-    "Content-Security-Policy":
-      "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+    "Content-Security-Policy": [
+      "default-src 'none'",
+      AUTH_PAGE_ICON_CSP,
+      "style-src 'unsafe-inline' 'self'",
+      "font-src 'self'",
+      "img-src 'self' data:",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      "connect-src 'self'",
+    ].join("; "),
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
   };
@@ -133,6 +142,11 @@ export function renderProviderForm(options: {
     `${flashBlock}${errorBlock}
     <form method="post" action="${action}">
       <label>Display name <input name="display_name" required value="${esc(p?.display_name ?? "")}"></label>
+      <fieldset>
+        <legend>Sign-in page (/login)</legend>
+        <label>SSO button text <input name="login_button_label" maxlength="120" placeholder="Continue with SSO" value="${esc(p?.login_button_label ?? "")}"></label>
+        <p class="muted">Label on the SSO button for this provider. Leave blank for the default &quot;Continue with SSO&quot;.</p>
+      </fieldset>
       <label>Issuer URL <input name="issuer" required value="${esc(p?.issuer ?? "")}"></label>
       ${discoverAction}${testAction}
       <label>Client ID <input name="client_id" required value="${esc(p?.client_id ?? "")}"></label>
@@ -167,21 +181,15 @@ export function renderProviderForm(options: {
   );
 }
 
-/** Wrap admin page body in a shared HTML shell; tab title uses the `Admitto —` prefix. */
+/** Wrap admin page body in a shared HTML shell with full sidebar. */
 function pageShell(heading: string, body: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Admitto — ${esc(heading)}</title>
-  <style>${ADMIN_PAGE_CSS}</style>
-</head>
-<body>
-  <h1>${esc(heading)}</h1>
-  ${body}
-</body>
-</html>`;
+  return renderAdminShell({
+    title: heading,
+    body: `<h1>${esc(heading)}</h1>
+${body}`,
+    activeItem: "providers",
+    favicon: renderAdmittoFaviconLink(),
+  });
 }
 
 /** Parse group→role mapping rows from a submitted provider form. */
@@ -225,9 +233,11 @@ export function parseProviderInput(form: Record<string, string>): {
   claim_name?: string;
   claim_groups?: string;
   enabled: boolean;
+  login_button_label?: string;
 } {
   return {
     display_name: form["display_name"]?.trim() ?? "",
+    login_button_label: form["login_button_label"]?.trim() ?? "",
     issuer: form["issuer"]?.trim() ?? "",
     client_id: form["client_id"]?.trim() ?? "",
     client_secret: form["client_secret"]?.trim() || undefined,

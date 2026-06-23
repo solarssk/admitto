@@ -173,6 +173,12 @@ export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {
   return parseJson<MeResponse>(res);
 }
 
+/** Set optional device label on the current operator session (post-login step). */
+export async function submitSessionDeviceLabel(deviceLabel: string): Promise<{ device_label: string | null }> {
+  const res = await fetch("/api/auth/session/device-label", jsonPostInit({ device_label: deviceLabel }));
+  return parseJson<{ device_label: string | null }>(res);
+}
+
 /** Load admin picker events; pass includeArchived to list archived rows. */
 export async function fetchAdminEvents(
   opts?: { includeArchived?: boolean; signal?: AbortSignal },

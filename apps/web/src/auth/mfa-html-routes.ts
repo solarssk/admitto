@@ -1,26 +1,33 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import type { StartTotpEnrollmentResult } from "@admitto/auth";
+import { parseTotpSecretFromOtpauthUri } from "@admitto/auth";
+import { generateQrPng } from "@admitto/tickets";
 import {
   SESSION_STAGE,
   resumePendingTotpEnrollment,
   startTotpEnrollment,
   confirmTotpEnrollment,
   promoteSessionToFull,
+  promoteSessionToBackupCodesStep,
   completeMfa,
   revokeSession,
   BACKUP_RECOVERY_CODE_COUNT,
   verifyBackupRecoveryCodesSet,
+  regenerateBackupRecoveryCodes,
 } from "@admitto/auth";
 import {
+  getMfaEnrollPageSecurityHeaders,
   getMfaPageSecurityHeaders,
   renderMfaVerifyForm,
-  renderMfaEnrollPage,
+  renderMfaEnrollQrPage,
+  renderMfaEnrollBackupCodesPage,
   renderMfaEnrollStartPage,
 } from "../mfa-page.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
 import {
   clearEnrollmentBackupCodes,
+  extendEnrollmentBackupCodes,
   getStashedEnrollmentBackupCodes,
   stashEnrollmentBackupCodes,
   submittedCodesMatchStashedEnrollmentBackup,
@@ -32,6 +39,13 @@ import type { RateLimitStore } from "../rate-limit/types.js";
 
 function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Response {
   for (const [name, value] of Object.entries(getMfaPageSecurityHeaders())) {
+    c.header(name, value);
+  }
+  return c.html(html, status);
+}
+
+function htmlEnrollResponse(c: Context, html: string, status: 200 | 401 = 200): Response {
+  for (const [name, value] of Object.entries(getMfaEnrollPageSecurityHeaders())) {
     c.header(name, value);
   }
   return c.html(html, status);
@@ -62,51 +76,81 @@ async function parseFormCodes(c: Context): Promise<string[]> {
     .filter(Boolean);
 }
 
-
 const MFA_ERROR = "Invalid code. Try again.";
 
-/** Re-show stashed backup codes while enrollment is still pending on this session. */
-function enrichEnrollmentForSession(
+/** Stash backup codes at enrollment start; QR step never displays them. */
+function stashFreshEnrollmentBackupCodes(
   sessionId: string,
-  enrollment: StartTotpEnrollmentResult | null,
-): StartTotpEnrollmentResult | null {
-  if (!enrollment) return null;
-
+  enrollment: StartTotpEnrollmentResult,
+): void {
   if (enrollment.backupCodes.length > 0) {
     stashEnrollmentBackupCodes(sessionId, enrollment.backupCodes);
-    return enrollment;
   }
-
-  const stashed = getStashedEnrollmentBackupCodes(sessionId);
-  if (stashed?.length && enrollment.backupCodesAlreadyShown) {
-    return {
-      ...enrollment,
-      backupCodes: stashed,
-      backupCodesAlreadyShown: false,
-    };
-  }
-
-  return enrollment;
 }
 
-/** Build enrollment HTML from current DB enrollment state. */
-function renderEnrollFromState(
+/** Build QR enrollment HTML from current DB enrollment state (no backup codes). */
+async function renderEnrollQrFromState(
   sessionId: string,
   enrollment: StartTotpEnrollmentResult | null,
   error?: string,
   next?: string,
-): string {
-  const state = enrichEnrollmentForSession(sessionId, enrollment);
-  if (!state) {
-    return renderMfaEnrollPage("", [], error, undefined, next);
+): Promise<string> {
+  if (!enrollment?.otpauthUri) {
+    return renderMfaEnrollQrPage({
+      otpauthUri: "",
+      setupKey: "",
+      qrDataUri: "",
+      error,
+      next,
+    });
   }
-  return renderMfaEnrollPage(
-    state.otpauthUri,
-    state.backupCodes,
+
+  const setupKey = parseTotpSecretFromOtpauthUri(enrollment.otpauthUri) ?? "";
+  const png = await generateQrPng(enrollment.otpauthUri);
+  const qrDataUri = `data:image/png;base64,${png.toString("base64")}`;
+
+  return renderMfaEnrollQrPage({
+    otpauthUri: enrollment.otpauthUri,
+    setupKey,
+    qrDataUri,
     error,
-    state.backupCodesAlreadyShown,
     next,
-  );
+  });
+}
+
+function renderBackupCodesPageForSession(
+  sessionId: string,
+  error?: string,
+  next?: string,
+): string {
+  const stashed = getStashedEnrollmentBackupCodes(sessionId);
+  return renderMfaEnrollBackupCodesPage({
+    backupCodes: stashed ?? [],
+    codesUnavailable: !stashed?.length,
+    error,
+    next,
+  });
+}
+
+async function redirectAfterFullEnrollment(
+  c: Context,
+  db: PrismaClient,
+  userId: string,
+  sessionId: string,
+  nextRaw?: string,
+): Promise<Response> {
+  clearEnrollmentBackupCodes(sessionId);
+
+  let landing: string;
+  try {
+    landing = await resolvePostLoginRedirectForUser(db, userId, nextRaw);
+  } catch (err) {
+    await revokeSession(db, sessionId);
+    clearSessionCookie(c);
+    console.error("post-login redirect:", err instanceof Error ? err.message : "unknown");
+    return c.redirect("/login", 302);
+  }
+  return c.redirect(landing, 302);
 }
 
 /** GET /mfa/verify */
@@ -166,21 +210,18 @@ export async function handlePostMfaVerify(
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
 
-  let landing: string;
-  try {
-    landing = await resolvePostLoginRedirectForUser(db, partial.userId, form["next"]);
-  } catch (err) {
-    await revokeSession(db, partial.sessionId);
-    clearSessionCookie(c);
-    console.error("post-login redirect:", err instanceof Error ? err.message : "unknown");
-    return c.redirect("/login", 302);
-  }
-  return c.redirect(landing, 302);
+  return redirectAfterFullEnrollment(c, db, partial.userId, partial.sessionId, form["next"]);
 }
 
 /** GET /mfa/enroll — read-only; does not create enrollment (CSRF-safe). */
 export async function handleGetMfaEnroll(c: Context, db: PrismaClient): Promise<Response> {
   const partial = c.get("partialAuth");
+
+  if (partial.stage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {
+    const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
+    return c.redirect(next ? `/mfa/enroll/backup-codes?next=${encodeURIComponent(next)}` : "/mfa/enroll/backup-codes", 302);
+  }
+
   if (partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED) {
     return c.redirect("/login", 302);
   }
@@ -188,10 +229,10 @@ export async function handleGetMfaEnroll(c: Context, db: PrismaClient): Promise<
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
   const pending = await resumePendingTotpEnrollment(db, partial.userId);
   if (!pending) {
-    return htmlResponse(c, renderMfaEnrollStartPage(next));
+    return htmlEnrollResponse(c, renderMfaEnrollStartPage(next));
   }
 
-  return htmlResponse(c, renderEnrollFromState(partial.sessionId, pending, undefined, next));
+  return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, pending, undefined, next));
 }
 
 /** POST /mfa/enroll/start — create pending TOTP + backup codes (CSRF-protected). */
@@ -206,7 +247,7 @@ export async function handlePostMfaEnrollStart(c: Context, db: PrismaClient): Pr
 
   const existing = await resumePendingTotpEnrollment(db, partial.userId);
   if (existing) {
-    return htmlResponse(c, renderEnrollFromState(partial.sessionId, existing, undefined, next));
+    return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, existing, undefined, next));
   }
 
   const enrollment = await startTotpEnrollment(db, partial.userId);
@@ -214,10 +255,11 @@ export async function handlePostMfaEnrollStart(c: Context, db: PrismaClient): Pr
     return c.redirect("/login", 302);
   }
 
-  return htmlResponse(c, renderEnrollFromState(partial.sessionId, enrollment, undefined, next));
+  stashFreshEnrollmentBackupCodes(partial.sessionId, enrollment);
+  return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, enrollment, undefined, next));
 }
 
-/** POST /mfa/enroll — confirm TOTP setup. */
+/** POST /mfa/enroll — confirm TOTP setup, then advance to backup-codes step. */
 export async function handlePostMfaEnroll(
   c: Context,
   db: PrismaClient,
@@ -231,12 +273,14 @@ export async function handlePostMfaEnroll(
   const form = await parseForm(c);
   const code = form["code"]?.trim() ?? "";
   const next = resolveOptionalSafeRedirectPath(form["next"] ?? c.req.query("next"));
+  const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
+
   if (!code) {
     const pending = await resumePendingTotpEnrollment(db, partial.userId);
     if (!pending) {
-      return htmlResponse(c, renderMfaEnrollStartPage(next), 401);
+      return htmlEnrollResponse(c, renderMfaEnrollStartPage(next), 401);
     }
-    return htmlResponse(c, renderEnrollFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
+    return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
   }
 
   const ip = resolveMfaClientIp(c);
@@ -248,32 +292,80 @@ export async function handlePostMfaEnroll(
   if (!ok) {
     const pending = await resumePendingTotpEnrollment(db, partial.userId);
     if (!pending) {
-      return htmlResponse(c, renderMfaEnrollStartPage(next), 401);
+      return htmlEnrollResponse(c, renderMfaEnrollStartPage(next), 401);
     }
-    return htmlResponse(c, renderEnrollFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
+    return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
+  }
+
+  // Ensure backup codes are in the stash. They may be missing when the enrollment
+  // was started on a different instance or the original stash expired. Regenerate
+  // before promoting so the backup-codes page always has codes to display.
+  if (!getStashedEnrollmentBackupCodes(partial.sessionId)) {
+    const { codes } = await regenerateBackupRecoveryCodes(db, partial.userId);
+    stashEnrollmentBackupCodes(partial.sessionId, codes);
+  }
+
+  const promoted = await promoteSessionToBackupCodesStep(db, partial.sessionId, partial.userId);
+  if (!promoted) {
+    const pending = await resumePendingTotpEnrollment(db, partial.userId);
+    if (!pending) {
+      return htmlEnrollResponse(c, renderMfaEnrollStartPage(next), 401);
+    }
+    return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
+  }
+
+  // Extend stash TTL to match the fresh backup-codes session window.
+  extendEnrollmentBackupCodes(partial.sessionId);
+
+  return c.redirect(`/mfa/enroll/backup-codes${nextQuery}`, 302);
+}
+
+/** GET /mfa/enroll/backup-codes — show one-time backup recovery codes. */
+export function handleGetMfaEnrollBackupCodes(c: Context): Response {
+  const partial = c.get("partialAuth");
+  if (partial.stage !== SESSION_STAGE.BACKUP_CODES_REQUIRED) {
+    return c.redirect("/login", 302);
+  }
+
+  const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
+  return htmlEnrollResponse(c, renderBackupCodesPageForSession(partial.sessionId, undefined, next));
+}
+
+/** POST /mfa/enroll/backup-codes — acknowledge backup codes and enter the app. */
+export async function handlePostMfaEnrollBackupCodes(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const partial = c.get("partialAuth");
+  if (partial.stage !== SESSION_STAGE.BACKUP_CODES_REQUIRED) {
+    return c.redirect("/login", 302);
+  }
+
+  const form = await parseForm(c);
+  const next = resolveOptionalSafeRedirectPath(form["next"] ?? c.req.query("next"));
+
+  // Refuse to complete enrollment if backup codes are unavailable in the stash
+  // (e.g. app restart or second instance handled the QR step). Completing without
+  // displaying the codes would silently leave the user with no recovery path.
+  const stashed = getStashedEnrollmentBackupCodes(partial.sessionId);
+  if (!stashed?.length) {
+    return htmlEnrollResponse(
+      c,
+      renderBackupCodesPageForSession(partial.sessionId, "Backup codes are no longer available — please log in again to restart enrollment.", next),
+      401,
+    );
   }
 
   const promoted = await promoteSessionToFull(db, partial.sessionId, partial.userId);
   if (!promoted) {
-    const pending = await resumePendingTotpEnrollment(db, partial.userId);
-    if (!pending) {
-      return htmlResponse(c, renderMfaEnrollStartPage(next), 401);
-    }
-    return htmlResponse(c, renderEnrollFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
+    return htmlEnrollResponse(
+      c,
+      renderBackupCodesPageForSession(partial.sessionId, "Could not complete setup. Try again.", next),
+      401,
+    );
   }
 
-  clearEnrollmentBackupCodes(partial.sessionId);
-
-  let landing: string;
-  try {
-    landing = await resolvePostLoginRedirectForUser(db, partial.userId, form["next"]);
-  } catch (err) {
-    await revokeSession(db, partial.sessionId);
-    clearSessionCookie(c);
-    console.error("post-login redirect:", err instanceof Error ? err.message : "unknown");
-    return c.redirect("/login", 302);
-  }
-  return c.redirect(landing, 302);
+  return redirectAfterFullEnrollment(c, db, partial.userId, partial.sessionId, form["next"]);
 }
 
 /** POST /mfa/enroll/download-codes — download backup codes as plain text (no inline JS). */
@@ -282,13 +374,11 @@ export async function handlePostMfaEnrollDownloadCodes(
   db: PrismaClient,
 ): Promise<Response> {
   const partial = c.get("partialAuth");
-  if (partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED) {
+  if (
+    partial.stage !== SESSION_STAGE.BACKUP_CODES_REQUIRED &&
+    partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED
+  ) {
     return c.redirect("/login", 302);
-  }
-
-  const pending = await resumePendingTotpEnrollment(db, partial.userId);
-  if (!pending) {
-    return c.text("No pending enrollment.", 400);
   }
 
   const codes = await parseFormCodes(c);
@@ -305,7 +395,7 @@ export async function handlePostMfaEnrollDownloadCodes(
     return c.text("Invalid backup codes.", 400);
   }
 
-  for (const [name, value] of Object.entries(getMfaPageSecurityHeaders())) {
+  for (const [name, value] of Object.entries(getMfaEnrollPageSecurityHeaders())) {
     c.header(name, value);
   }
   c.header("Content-Type", "text/plain; charset=utf-8");

@@ -11,6 +11,11 @@ export const DEFAULT_CLAIM_EMAIL = "email";
 export const DEFAULT_CLAIM_NAME = "name";
 export const DEFAULT_CLAIM_GROUPS = "groups";
 
+/** Shown on GET /login when no per-provider override is stored. */
+export const DEFAULT_SSO_LOGIN_BUTTON_LABEL = "Continue with SSO";
+
+export const SSO_LOGIN_BUTTON_LABEL_MAX_LEN = 120;
+
 /** Binds OIDC callback to the browser that started the flow (CSRF / session fixation). */
 export const OIDC_FLOW_COOKIE_NAME = "admitto_oidc_flow";
 
