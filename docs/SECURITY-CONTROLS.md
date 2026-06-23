@@ -196,7 +196,8 @@ Superadmin OIDC provider **Discover** / **Test connection** and runtime OIDC tok
 - Literal private, link-local, and metadata hostnames rejected.
 - **DNS resolve-and-pin**: hostname is resolved once (5 min TTL), validated, then the outbound
   connection uses the resolved IP with correct `Host` / SNI so DNS rebinding cannot swap targets
-  between check and connect.
+  between check and connect. All validated A/AAAA records are cached; connect failures fall back
+  to the next record. Redirects are handled manually with SSRF re-check on every hop.
 
 Requires **superadmin** session (or Cloudflare Access JWT with instance admin role) for admin UI
 discover/test. Residual risk: compromised superadmin account can still trigger outbound fetches to

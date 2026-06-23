@@ -51,6 +51,7 @@ describe("safeOidcFetch", () => {
     expect(mockedUndiciFetch).toHaveBeenCalledWith(
       "https://93.184.216.34/jwks",
       expect.objectContaining({
+        redirect: "manual",
         headers: expect.any(Headers),
         dispatcher: expect.any(Object),
       }),
@@ -73,10 +74,58 @@ describe("safeOidcFetch", () => {
     await safeOidcFetch("http://localhost:9999/jwks");
 
     expect(mockedLookup).not.toHaveBeenCalled();
-    expect(globalFetch).toHaveBeenCalledWith("http://localhost:9999/jwks", undefined);
+    expect(globalFetch).toHaveBeenCalledWith("http://localhost:9999/jwks", { redirect: "manual" });
     expect(mockedUndiciFetch).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
+  });
+
+  it("follows redirects only after re-validating the Location URL", async () => {
+    mockedUndiciFetch
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { Location: "https://login.example.com/jwks-final" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }));
+
+    const res = await safeOidcFetch("https://login.example.com/jwks");
+
+    expect(res.status).toBe(200);
+    expect(mockedUndiciFetch).toHaveBeenCalledTimes(2);
+    expect(mockedUndiciFetch.mock.calls[0]?.[0]).toBe("https://93.184.216.34/jwks");
+    expect(mockedUndiciFetch.mock.calls[1]?.[0]).toBe("https://93.184.216.34/jwks-final");
+  });
+
+  it("rejects redirects to private targets", async () => {
+    mockedUndiciFetch.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { Location: "https://169.254.169.254/latest/meta-data/" },
+      }),
+    );
+
+    await expect(safeOidcFetch("https://login.example.com/jwks")).rejects.toThrow(
+      /private or link-local/,
+    );
+  });
+
+  it("tries the next validated DNS record after connect failure", async () => {
+    mockedLookup.mockResolvedValue([
+      { address: "2001:db8::1", family: 6 },
+      { address: "93.184.216.34", family: 4 },
+    ] as Awaited<ReturnType<typeof lookup>>);
+    mockedUndiciFetch
+      .mockRejectedValueOnce(Object.assign(new Error("fetch failed"), { code: "ENETUNREACH" }))
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }));
+
+    const res = await safeOidcFetch("https://login.example.com/jwks");
+
+    expect(res.status).toBe(200);
+    expect(MockedAgent).toHaveBeenCalledTimes(2);
+    expect(mockedUndiciFetch.mock.calls[0]?.[0]).toBe("https://[2001:db8::1]/jwks");
+    expect(mockedUndiciFetch.mock.calls[1]?.[0]).toBe("https://93.184.216.34/jwks");
   });
 });
 

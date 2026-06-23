@@ -10,17 +10,26 @@ import {
 } from "./safe-url.js";
 
 const RESOLVED_HOST_TTL_MS = 5 * 60 * 1000;
+const MAX_REDIRECTS = 5;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+interface ResolvedHostRecord {
+  address: string;
+  family: 4 | 6;
+}
 
 interface ResolvedHost {
   host: string;
   hostname: string;
-  address: string;
-  family: 4 | 6;
+  records: ResolvedHostRecord[];
   useDefaultFetch: boolean;
 }
 
-interface PinnedOidcTarget extends ResolvedHost {
+interface PinnedOidcTarget {
+  host: string;
+  hostname: string;
   pinnedHref: string;
+  record: ResolvedHostRecord;
 }
 
 const resolvedHostCache = new Map<string, { resolved: ResolvedHost; expiresAt: number }>();
@@ -38,6 +47,15 @@ function formatPinnedHostname(address: string): string {
   return address.includes(":") ? `[${address}]` : address;
 }
 
+function toResolvedRecords(
+  records: Awaited<ReturnType<typeof resolveSafeOidcHostname>>,
+): ResolvedHostRecord[] {
+  return records.map((record) => ({
+    address: record.address,
+    family: record.family === 6 ? 6 : 4,
+  }));
+}
+
 async function resolveHostForUrl(url: URL): Promise<ResolvedHost> {
   const hostname = unbracketHostname(url.hostname);
 
@@ -45,8 +63,7 @@ async function resolveHostForUrl(url: URL): Promise<ResolvedHost> {
     return {
       host: url.host,
       hostname,
-      address: hostname,
-      family: hostname.includes(":") ? 6 : 4,
+      records: [{ address: hostname, family: hostname.includes(":") ? 6 : 4 }],
       useDefaultFetch: true,
     };
   }
@@ -56,23 +73,20 @@ async function resolveHostForUrl(url: URL): Promise<ResolvedHost> {
     return {
       host: url.host,
       hostname,
-      address: hostname,
-      family: isIP(hostname) === 6 ? 6 : 4,
+      records: [{ address: hostname, family: isIP(hostname) === 6 ? 6 : 4 }],
       useDefaultFetch: true,
     };
   }
 
   const records = await resolveSafeOidcHostname(hostname);
-  const record = records[0];
-  if (!record) {
+  if (records.length === 0) {
     throw new Error("OIDC URL hostname could not be resolved");
   }
 
   return {
     host: url.host,
     hostname,
-    address: record.address,
-    family: record.family === 6 ? 6 : 4,
+    records: toResolvedRecords(records),
     useDefaultFetch: false,
   };
 }
@@ -89,28 +103,23 @@ async function getResolvedHost(url: URL): Promise<ResolvedHost> {
   return resolved;
 }
 
-function toPinnedTarget(url: URL, resolved: ResolvedHost): PinnedOidcTarget {
-  if (resolved.useDefaultFetch) {
-    return { ...resolved, pinnedHref: url.href };
-  }
+function toPinnedTarget(url: URL, resolved: ResolvedHost, record: ResolvedHostRecord): PinnedOidcTarget {
   const pinned = new URL(url.href);
-  pinned.hostname = formatPinnedHostname(resolved.address);
-  return { ...resolved, pinnedHref: pinned.href };
+  pinned.hostname = formatPinnedHostname(record.address);
+  return {
+    host: resolved.host,
+    hostname: resolved.hostname,
+    pinnedHref: pinned.href,
+    record,
+  };
 }
 
-async function getPinnedOidcTarget(urlString: string): Promise<PinnedOidcTarget> {
-  assertSafeOidcFetchUrl(urlString);
-  const url = new URL(urlString);
-  const resolved = await getResolvedHost(url);
-  return toPinnedTarget(url, resolved);
-}
-
-function createPinnedDispatcher(hostname: string, address: string, family: 4 | 6): Agent {
+function createPinnedDispatcher(hostname: string, record: ResolvedHostRecord): Agent {
   return new Agent({
     connect: {
       servername: hostname,
       lookup: (_host, _options, callback) => {
-        callback(null, address, family);
+        callback(null, record.address, record.family);
       },
     },
   });
@@ -124,63 +133,120 @@ function withHostHeader(headers: unknown, host: string): Headers {
   return merged;
 }
 
+function isConnectFailure(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as NodeJS.ErrnoException).code;
+  if (
+    code === "ECONNREFUSED" ||
+    code === "ETIMEDOUT" ||
+    code === "ENETUNREACH" ||
+    code === "EHOSTUNREACH" ||
+    code === "EPERM"
+  ) {
+    return true;
+  }
+  const cause = (err as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    return isConnectFailure(cause);
+  }
+  return err.message.toLowerCase().includes("fetch failed");
+}
+
 async function pinnedUndiciFetch(
   pinnedHref: string,
   init: {
     method?: OidcFetchInit["method"];
     body?: OidcFetchInit["body"];
     signal?: OidcFetchInit["signal"];
-    redirect?: OidcFetchInit["redirect"];
     headers?: unknown;
     dispatcher: Agent;
   },
 ): Promise<Response> {
-  return (await undiciFetch(pinnedHref, init as Parameters<typeof undiciFetch>[1])) as unknown as Response;
+  return (await undiciFetch(pinnedHref, {
+    ...init,
+    redirect: "manual",
+  } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
+}
+
+async function fetchPinnedNoFollow(urlString: string, init?: OidcFetchInit): Promise<Response> {
+  assertSafeOidcFetchUrl(urlString);
+  const url = new URL(urlString);
+  const resolved = await getResolvedHost(url);
+
+  if (resolved.useDefaultFetch) {
+    return fetch(urlString, { ...init, redirect: "manual" });
+  }
+
+  let lastError: unknown;
+  for (const record of resolved.records) {
+    const target = toPinnedTarget(url, resolved, record);
+    const dispatcher = createPinnedDispatcher(target.hostname, record);
+    try {
+      return await pinnedUndiciFetch(target.pinnedHref, {
+        method: init?.method,
+        body: init?.body,
+        signal: init?.signal,
+        headers: withHostHeader(init?.headers, target.host),
+        dispatcher,
+      });
+    } catch (err) {
+      if (!isConnectFailure(err)) throw err;
+      lastError = err;
+    } finally {
+      await dispatcher.close();
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("OIDC URL hostname could not be reached");
+}
+
+function resolveRedirectUrl(response: Response, baseUrl: string): string {
+  const location = response.headers.get("location");
+  if (!location) {
+    throw new Error("Redirect response missing Location header");
+  }
+  return new URL(location, baseUrl).href;
+}
+
+function redirectFollowInit(status: number, init?: OidcFetchInit): OidcFetchInit | undefined {
+  if (status === 307 || status === 308) {
+    return init;
+  }
+  if (!init) return { method: "GET" };
+  const { body: _body, ...rest } = init;
+  return { ...rest, method: "GET" };
 }
 
 /** Outbound OIDC/CF Access fetch with DNS pinning (blocks rebinding between check and connect). */
 export async function safeOidcFetch(urlString: string, init?: OidcFetchInit): Promise<Response> {
-  const target = await getPinnedOidcTarget(urlString);
-  if (target.useDefaultFetch) {
-    return fetch(urlString, init);
+  let currentUrl = urlString;
+  let requestInit: OidcFetchInit | undefined = init;
+
+  for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
+    const response = await fetchPinnedNoFollow(currentUrl, requestInit);
+    if (!REDIRECT_STATUSES.has(response.status)) {
+      return response;
+    }
+    if (redirects === MAX_REDIRECTS) {
+      throw new Error("Too many OIDC redirects");
+    }
+    currentUrl = resolveRedirectUrl(response, currentUrl);
+    assertSafeOidcFetchUrl(currentUrl);
+    requestInit = redirectFollowInit(response.status, requestInit);
   }
 
-  const dispatcher = createPinnedDispatcher(target.hostname, target.address, target.family);
-  try {
-    return await pinnedUndiciFetch(target.pinnedHref, {
-      method: init?.method,
-      body: init?.body,
-      signal: init?.signal,
-      redirect: init?.redirect,
-      headers: withHostHeader(init?.headers, target.host),
-      dispatcher,
-    });
-  } finally {
-    await dispatcher.close();
-  }
+  throw new Error("Too many OIDC redirects");
 }
 
-/** jose `customFetch` that reuses the same pinned address for JWKS reloads. */
+/** jose `customFetch` with pinned outbound fetch and manual redirect validation. */
 export function createSafeOidcCustomFetch(urlString: string): FetchImplementation {
-  return async (url, options) => {
-    const target = await getPinnedOidcTarget(urlString);
-    if (target.useDefaultFetch) {
-      return fetch(url, options);
-    }
-
-    const dispatcher = createPinnedDispatcher(target.hostname, target.address, target.family);
-    try {
-      return await pinnedUndiciFetch(target.pinnedHref, {
-        method: options.method,
-        signal: options.signal,
-        redirect: options.redirect,
-        headers: withHostHeader(options.headers, target.host),
-        dispatcher,
-      });
-    } finally {
-      await dispatcher.close();
-    }
-  };
+  assertSafeOidcFetchUrl(urlString);
+  return async (url, options) =>
+    safeOidcFetch(url, {
+      method: options.method,
+      signal: options.signal,
+      headers: options.headers,
+    });
 }
 
 /** Remote JWKS verifier with pinned outbound fetch. */
