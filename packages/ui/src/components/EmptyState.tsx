@@ -8,6 +8,7 @@ export interface EmptyStateProps {
   className?: string;
 }
 
+/** Centered empty-list placeholder with optional icon, description, and action slot. */
 export function EmptyState({ icon, title, description, action, className }: EmptyStateProps) {
   const cls = ["at-empty-state", className].filter(Boolean).join(" ");
   return (
@@ -17,7 +18,7 @@ export function EmptyState({ icon, title, description, action, className }: Empt
           {icon}
         </div>
       )}
-      <p className="at-empty-state__title">{title}</p>
+      <h2 className="at-empty-state__title">{title}</h2>
       {description && <p className="at-empty-state__desc">{description}</p>}
       {action && <div className="at-empty-state__action">{action}</div>}
     </div>

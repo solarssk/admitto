@@ -25,5 +25,6 @@ describe("EmptyState", () => {
   it("has role=status on root element", () => {
     render(<EmptyState title="Empty" />);
     expect(screen.getByRole("status").className).toContain("at-empty-state");
+    expect(screen.getByRole("heading", { level: 2, name: "Empty" })).toBeTruthy();
   });
 });

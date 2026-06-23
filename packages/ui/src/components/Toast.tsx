@@ -4,6 +4,7 @@ import {
   useContext,
   useRef,
   useState,
+  type MutableRefObject,
   type ReactNode,
 } from "react";
 
@@ -22,23 +23,41 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+/** Clears and removes a pending auto-dismiss timer for the given toast id. */
+function clearToastTimer(
+  timerRefs: MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>,
+  id: string,
+) {
+  const timer = timerRefs.current.get(id);
+  if (timer) {
+    clearTimeout(timer);
+    timerRefs.current.delete(id);
+  }
+}
+
+/** Provides toast state and renders a fixed notification stack (max 5, auto-dismiss). */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const timerRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const dismiss = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
-    const timer = timerRefs.current.get(id);
-    if (timer) {
-      clearTimeout(timer);
-      timerRefs.current.delete(id);
-    }
+    clearToastTimer(timerRefs, id);
   }, []);
 
   const addToast = useCallback(
     (message: string, variant: ToastVariant = "info", duration = 4000) => {
       const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      setToasts((prev) => [...prev.slice(-4), { id, message, variant, duration }]);
+      setToasts((prev) => {
+        const kept = prev.slice(-4);
+        const keptIds = new Set(kept.map((t) => t.id));
+        for (const toast of prev) {
+          if (!keptIds.has(toast.id)) {
+            clearToastTimer(timerRefs, toast.id);
+          }
+        }
+        return [...kept, { id, message, variant, duration }];
+      });
       if (duration > 0) {
         const timer = setTimeout(() => dismiss(id), duration);
         timerRefs.current.set(id, timer);
@@ -69,6 +88,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** Returns `addToast` from the nearest `ToastProvider`; throws when used outside the provider. */
 export function useToast(): ToastContextValue {
   const ctx = useContext(ToastContext);
   if (!ctx) throw new Error("useToast must be used within <ToastProvider>");

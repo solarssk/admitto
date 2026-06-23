@@ -10,6 +10,7 @@ export interface SkeletonProps {
   className?: string;
 }
 
+/** Shimmer placeholder for loading content; supports text lines, rectangles, and circles. */
 export function Skeleton({
   variant = "text",
   width,
@@ -28,7 +29,7 @@ export function Skeleton({
       <div className="at-skeleton-stack">
         {Array.from({ length: lines }, (_, i) => (
           <span
-            key={i}
+            key={`skeleton-${i}`}
             className={cls}
             style={i === lines - 1 ? { ...style, width: "60%" } : style}
             aria-hidden="true"

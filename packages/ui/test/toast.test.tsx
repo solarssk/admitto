@@ -7,15 +7,17 @@ function ToastHarness({
   message = "Message",
   variant = "success" as const,
   duration = 4000,
+  label = "Show toast",
 }: {
   message?: string;
   variant?: "success" | "error" | "info" | "warning";
   duration?: number;
+  label?: string;
 }) {
   const { addToast } = useToast();
   return (
     <button type="button" onClick={() => addToast(message, variant, duration)}>
-      Show toast
+      {label}
     </button>
   );
 }
@@ -64,6 +66,25 @@ describe("Toast / useToast", () => {
     for (let i = 0; i < 6; i++) {
       fireEvent.click(trigger);
     }
+    expect(screen.getAllByRole("alert")).toHaveLength(5);
+  });
+
+  it("clears auto-dismiss timer for toast evicted by the 5-toast cap", async () => {
+    renderWithToast(
+      <>
+        <ToastHarness message="First toast" duration={5000} label="Show first toast" />
+        <ToastHarness message="Later toast" duration={0} label="Show later toast" />
+      </>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Show first toast" }));
+    for (let i = 0; i < 5; i++) {
+      fireEvent.click(screen.getByRole("button", { name: "Show later toast" }));
+    }
+    expect(screen.getAllByRole("alert")).toHaveLength(5);
+    expect(screen.queryByText("First toast")).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
     expect(screen.getAllByRole("alert")).toHaveLength(5);
   });
 

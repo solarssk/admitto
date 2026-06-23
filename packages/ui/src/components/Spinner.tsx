@@ -7,6 +7,7 @@ export interface SpinnerProps extends HTMLAttributes<HTMLSpanElement> {
   label?: string;
 }
 
+/** Inline loading indicator with size variants and an accessible status label. */
 export function Spinner({ size = "md", label = "Loading", className, ...rest }: SpinnerProps) {
   const cls = ["at-spinner", `at-spinner--${size}`, className].filter(Boolean).join(" ");
   return (
