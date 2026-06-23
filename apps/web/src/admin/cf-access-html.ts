@@ -6,6 +6,7 @@ import {
 } from "@admitto/auth";
 import { ADMIN_PAGE_CSS } from "../shared-auth-styles.js";
 
+/** Escape HTML special characters for server-rendered admin pages. */
 function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -30,6 +31,7 @@ export interface CfAccessFormView {
   locks: CfAccessFormFieldLocks;
 }
 
+/** Render the Cloudflare Access settings page (`GET /admin/auth/cf-access`). */
 export function renderCfAccessForm(options: {
   form: CfAccessFormView;
   flash?: string;
@@ -60,7 +62,7 @@ export function renderCfAccessForm(options: {
   const fallthroughInfo = `<div class="info-block"><strong>How it works:</strong> When a Cloudflare JWT is present in the request, Admitto validates it against your Access policy. If no JWT is present (e.g. direct access), Admitto falls through to the standard local login. This means local accounts always work as a break-glass fallback.</div>`;
 
   return pageShell(
-    "Admitto — Cloudflare Access",
+    "Cloudflare Access",
     `${flashBlock}${errorBlock}
     <p class="status-line">CF Access: ${statusBadge}</p>
     ${fallthroughInfo}
@@ -93,22 +95,24 @@ export function renderCfAccessForm(options: {
   );
 }
 
-function pageShell(title: string, body: string): string {
+/** Wrap admin page body in a shared HTML shell; tab title uses the `Admitto —` prefix. */
+function pageShell(heading: string, body: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${esc(title)}</title>
+  <title>Admitto — ${esc(heading)}</title>
   <style>${ADMIN_PAGE_CSS}</style>
 </head>
 <body>
-  <h1>${esc(title)}</h1>
+  <h1>${esc(heading)}</h1>
   ${body}
 </body>
 </html>`;
 }
 
+/** Parse Cloudflare Access settings from a submitted admin form. */
 export function parseCfAccessForm(form: Record<string, string>): {
   enabled: boolean;
   teamDomain: string;

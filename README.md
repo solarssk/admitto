@@ -13,6 +13,8 @@ No secrets, no real personal data are ever committed here.**
 **Release version:** git tags and root `package.json` are the source of truth (see [VERSIONING.md](VERSIONING.md)). [CHANGELOG.md](CHANGELOG.md) is the human-readable release history, not the version number itself.
 Workspace packages stay at `0.0.1` — only the product version is bumped per release.
 
+**AI agents:** start from [AGENTS.md](AGENTS.md) (all tools) and [CLAUDE.md](CLAUDE.md) (Claude Code).
+
 ## Prerequisites
 
 - Node.js `>=22.13.0 <23` (LTS 22 line)

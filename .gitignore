@@ -20,4 +20,7 @@ coverage/
 .DS_Store
 *.db
 *.db-journal
-.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
+CLAUDE.local.md

@@ -3,6 +3,7 @@ import { ADMIN_PAGE_CSS } from "../shared-auth-styles.js";
 
 const ALLOWED_MAPPING_ROLES = ["superadmin", "admin", "operator"] as const;
 
+/** Escape HTML special characters for server-rendered admin pages. */
 function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -12,6 +13,7 @@ function esc(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/** Security headers for server-rendered IdP admin HTML pages. */
 export function getAdminPageSecurityHeaders(): Record<string, string> {
   return {
     "Cache-Control": "private, no-store, max-age=0",
@@ -29,6 +31,7 @@ export interface ProviderListItem {
   enabled: boolean;
 }
 
+/** Render a role `<select>`; invalid legacy roles require explicit replacement. */
 function renderRoleSelect(name: string, currentRole: string): string {
   const isKnown = ALLOWED_MAPPING_ROLES.includes(currentRole as (typeof ALLOWED_MAPPING_ROLES)[number]);
   if (currentRole && !isKnown) {
@@ -45,6 +48,7 @@ function renderRoleSelect(name: string, currentRole: string): string {
   return `<select name="${esc(name)}" required>${options}</select>`;
 }
 
+/** Render the identity provider list page (`GET /admin/auth/providers`). */
 export function renderProviderList(providers: ProviderListItem[], flash?: string): string {
   const rows =
     providers.length === 0
@@ -68,7 +72,7 @@ export function renderProviderList(providers: ProviderListItem[], flash?: string
   const flashBlock = flash ? `<p class="flash" role="status">${esc(flash)}</p>` : "";
 
   return pageShell(
-    "Admitto — Identity providers",
+    "Identity providers",
     `${flashBlock}
     <p class="admin-nav"><a href="/admin/auth/providers/new">Add provider</a> · <a href="/admin/auth/cf-access">Cloudflare Access</a></p>
     ${rows}
@@ -83,6 +87,7 @@ export interface MappingRow {
   scope_id: string;
 }
 
+/** Render the create/edit identity provider form HTML. */
 export function renderProviderForm(options: {
   provider?: IdentityProviderFormView;
   mappings: MappingRow[];
@@ -91,9 +96,9 @@ export function renderProviderForm(options: {
   isNew: boolean;
 }): string {
   const p = options.provider;
-  const title = options.isNew
-    ? "Admitto — Add identity provider"
-    : `Admitto — Edit: ${p?.display_name ?? ""}`;
+  const heading = options.isNew
+    ? "Add identity provider"
+    : `Edit: ${p?.display_name ?? ""}`;
   const action = options.isNew ? "/admin/auth/providers/new" : `/admin/auth/providers/${esc(p!.id)}`;
   const secretHint = p?.has_client_secret
     ? '<p class="muted">Client secret is stored (••••). Leave blank to keep existing.</p>'
@@ -124,7 +129,7 @@ export function renderProviderForm(options: {
       : "";
 
   return pageShell(
-    title,
+    heading,
     `${flashBlock}${errorBlock}
     <form method="post" action="${action}">
       <label>Display name <input name="display_name" required value="${esc(p?.display_name ?? "")}"></label>
@@ -162,22 +167,24 @@ export function renderProviderForm(options: {
   );
 }
 
-function pageShell(title: string, body: string): string {
+/** Wrap admin page body in a shared HTML shell; tab title uses the `Admitto —` prefix. */
+function pageShell(heading: string, body: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${esc(title)}</title>
+  <title>Admitto — ${esc(heading)}</title>
   <style>${ADMIN_PAGE_CSS}</style>
 </head>
 <body>
-  <h1>${esc(title)}</h1>
+  <h1>${esc(heading)}</h1>
   ${body}
 </body>
 </html>`;
 }
 
+/** Parse group→role mapping rows from a submitted provider form. */
 export function parseMappingsFromForm(form: Record<string, string>): GroupRoleMappingInput[] {
   const mappings: GroupRoleMappingInput[] = [];
   const indices = new Set<number>();
@@ -204,6 +211,7 @@ export function parseMappingsFromForm(form: Record<string, string>): GroupRoleMa
   return mappings;
 }
 
+/** Parse provider metadata fields from a submitted create/edit form. */
 export function parseProviderInput(form: Record<string, string>): {
   display_name: string;
   issuer: string;
