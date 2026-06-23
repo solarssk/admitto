@@ -18,8 +18,8 @@ Admitto ships as **one product** with git tags like `v0.4.0`. That is **not** in
 
 | Line | Meaning |
 |------|---------|
-| **`v0.x`** | **Path to MVP.** Everything required for the **first event** is built across `v0.4` → `v0.9`. Pre-1.0 tags are expected to iterate and refactor. |
-| **`v1.0`** | **First-event go-live gate.** MVP is complete and event-ready. After this tag, the product can run a real event end-to-end. |
+| **`v0.x`** | **Path to MVP.** Everything required for the **first event** is built across `v0.4` → `v0.9`. Pre-1.0 tags are expected to iterate and refactor. **GitHub Releases for `v0.x.y` are marked pre-release** until `v1.0.0` — the product is not operator-ready for a real event. |
+| **`v1.0`** | **First-event go-live gate.** MVP is complete and event-ready. First **non–pre-release** GitHub Release. After this tag, the product can run a real event end-to-end. |
 | **`v1.1+`** | **Post-first-event feature waves.** Capabilities that are useful but **not** required for the first go-live (see examples below). |
 
 ### Planned sequence (high level)
@@ -83,9 +83,17 @@ Do not bump per-package versions unless we start publishing libraries separately
    (`git tag -s` — never lightweight or unsigned `git tag -a`.)
 8. Publish the GitHub Release from the committed notes file:
    ```bash
-   gh release create v0.x.y --title "v0.x.y — one-line summary" --notes-file .github/release-notes/v0.x.y.md
+   # v0.x.y → pre-release (product not go-live ready until v1.0.0)
+   gh release create v0.x.y --title "v0.x.y — one-line summary" \
+     --notes-file .github/release-notes/v0.x.y.md --prerelease
    ```
-   If CI already created a release on tag push (`publish-container.yml`), edit it instead: `gh release edit v0.x.y --notes-file .github/release-notes/v0.x.y.md`
+   For **`v1.0.0` and later**, omit `--prerelease`.
+
+   If CI already created a release on tag push (`publish-container.yml`), edit it instead:
+   ```bash
+   gh release edit v0.x.y --notes-file .github/release-notes/v0.x.y.md --prerelease
+   ```
+   (`publish-container.yml` sets `--prerelease` automatically when the major version is `0`.)
 9. Close the matching GitHub milestone
 
 ### Tag signing (one-time maintainer setup)

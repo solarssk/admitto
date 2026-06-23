@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deploy Redis requires `REDIS_PASSWORD`; compose wires authenticated `REDIS_URL`
 - Nginx proxy emits baseline security headers (HSTS, nosniff, frame deny); trusts Docker bridge gateway (`172.17.0.1`) for per-IP rate limiting behind NPM-in-Docker
 - `/healthz` and `/readyz` responses include baseline security headers
+- GitHub Releases for `v0.x.y` are **pre-release** until `v1.0.0` (product not event-go-live ready); `publish-container` workflow sets the flag automatically
 
 ## [0.4.4] - 2026-06-19
 
