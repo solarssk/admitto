@@ -93,13 +93,20 @@ chore/<short-slug>      docs/<short-slug>
 
 ---
 
-## 7. Changelog
+## 7. Changelog and releases
 
 `CHANGELOG.md` follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 
 Add entries to `[Unreleased]` **as you implement** — not as a final step. Use typed sections: `Added`, `Changed`, `Fixed`, `Security`, `Removed`, `Deprecated`. Write for operators, not implementation internals.
 
-At release time: move `[Unreleased]` to `## [0.x.y] - YYYY-MM-DD` and update the comparison links at the bottom. Full checklist: [VERSIONING.md](VERSIONING.md).
+**Closing a milestone** (cutting `v0.x.y`): follow the full checklist in [VERSIONING.md](VERSIONING.md). In short:
+
+1. Move `[Unreleased]` → `## [0.x.y] - YYYY-MM-DD` and update comparison links at the bottom of `CHANGELOG.md`.
+2. Bump root `package.json` `"version"`.
+3. Run `python3 scripts/generate-release-notes.py 0.x.y` **before** the release commit — include `.github/release-notes/v0.x.y.md` in that same commit (not after tagging).
+4. Tag with `./scripts/release-tag.sh`, then `gh release create` / `gh release edit` using the committed notes file.
+
+GitHub Release bodies use the same KAC sections as `CHANGELOG.md` (plus a short **Deploy** footer) — not the deprecated v0.3.x emoji template. Do not paste raw changelog into release notes by hand; use the generator.
 
 ---
 
