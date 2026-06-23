@@ -1,7 +1,7 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { generateToken, hashToken } from "@admitto/tickets";
 import { SESSION_LAST_SEEN_THROTTLE_MS, SESSION_STAGE, AUTH_METHOD, type SessionStage, type AuthMethod } from "./constants.js";
-import { MFA_PENDING_SESSION_TTL_MS } from "./constants.js";
+import { MFA_PENDING_SESSION_TTL_MS, BACKUP_CODES_STEP_TTL_MS } from "./constants.js";
 import {
   getSessionTtlAdminMs,
   getSessionTtlOperatorMs,
@@ -179,7 +179,11 @@ export async function validatePartialSession(
   return lookupSessionByToken(prisma, rawToken);
 }
 
-/** Promote partial session to backup-codes step after TOTP enrollment confirm. */
+/**
+ * Promote partial session to backup-codes step after TOTP enrollment confirm.
+ * Grants a fresh TTL so users who spent most of the QR-scan window do not hit
+ * an expired session immediately upon reaching the backup-codes page.
+ */
 export async function promoteSessionToBackupCodesStep(
   prisma: PrismaClient | Prisma.TransactionClient,
   sessionId: string,
@@ -196,6 +200,7 @@ export async function promoteSessionToBackupCodesStep(
     },
     data: {
       stage: SESSION_STAGE.BACKUP_CODES_REQUIRED,
+      expires_at: new Date(now.getTime() + BACKUP_CODES_STEP_TTL_MS),
       last_seen_at: now,
     },
   });

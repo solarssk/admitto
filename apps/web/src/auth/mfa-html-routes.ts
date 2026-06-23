@@ -331,6 +331,18 @@ export async function handlePostMfaEnrollBackupCodes(
   const form = await parseForm(c);
   const next = resolveOptionalSafeRedirectPath(form["next"] ?? c.req.query("next"));
 
+  // Refuse to complete enrollment if backup codes are unavailable in the stash
+  // (e.g. app restart or second instance handled the QR step). Completing without
+  // displaying the codes would silently leave the user with no recovery path.
+  const stashed = getStashedEnrollmentBackupCodes(partial.sessionId);
+  if (!stashed?.length) {
+    return htmlEnrollResponse(
+      c,
+      renderBackupCodesPageForSession(partial.sessionId, "Backup codes are no longer available — please log in again to restart enrollment.", next),
+      401,
+    );
+  }
+
   const promoted = await promoteSessionToFull(db, partial.sessionId, partial.userId);
   if (!promoted) {
     return htmlEnrollResponse(

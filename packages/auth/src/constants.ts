@@ -12,6 +12,8 @@ export const SESSION_TTL_ADMIN_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** TTL for mfa_pending / enrollment_required sessions (15 minutes). */
 export const MFA_PENDING_SESSION_TTL_MS = 15 * 60 * 1000;
+/** Fresh TTL granted when advancing to the backup-codes acknowledgment step. */
+export const BACKUP_CODES_STEP_TTL_MS = 10 * 60 * 1000;
 
 /** Default trusted-device validity (days). */
 export const DEFAULT_TRUSTED_DEVICE_DAYS = 30;
