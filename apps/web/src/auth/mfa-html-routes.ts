@@ -14,6 +14,7 @@ import {
   revokeSession,
   BACKUP_RECOVERY_CODE_COUNT,
   verifyBackupRecoveryCodesSet,
+  regenerateBackupRecoveryCodes,
 } from "@admitto/auth";
 import {
   getMfaEnrollPageSecurityHeaders,
@@ -26,6 +27,7 @@ import {
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
 import {
   clearEnrollmentBackupCodes,
+  extendEnrollmentBackupCodes,
   getStashedEnrollmentBackupCodes,
   stashEnrollmentBackupCodes,
   submittedCodesMatchStashedEnrollmentBackup,
@@ -295,6 +297,14 @@ export async function handlePostMfaEnroll(
     return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
   }
 
+  // Ensure backup codes are in the stash. They may be missing when the enrollment
+  // was started on a different instance or the original stash expired. Regenerate
+  // before promoting so the backup-codes page always has codes to display.
+  if (!getStashedEnrollmentBackupCodes(partial.sessionId)) {
+    const { codes } = await regenerateBackupRecoveryCodes(db, partial.userId);
+    stashEnrollmentBackupCodes(partial.sessionId, codes);
+  }
+
   const promoted = await promoteSessionToBackupCodesStep(db, partial.sessionId, partial.userId);
   if (!promoted) {
     const pending = await resumePendingTotpEnrollment(db, partial.userId);
@@ -303,6 +313,9 @@ export async function handlePostMfaEnroll(
     }
     return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
   }
+
+  // Extend stash TTL to match the fresh backup-codes session window.
+  extendEnrollmentBackupCodes(partial.sessionId);
 
   return c.redirect(`/mfa/enroll/backup-codes${nextQuery}`, 302);
 }

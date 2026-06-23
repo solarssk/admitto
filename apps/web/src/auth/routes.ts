@@ -19,12 +19,14 @@ import {
   SESSION_STAGE,
   updateSessionDeviceLabel,
   DEVICE_LABEL_MAX_LEN,
+  regenerateBackupRecoveryCodes,
 } from "@admitto/auth";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
 import {
   getStashedEnrollmentBackupCodes,
   stashEnrollmentBackupCodes,
+  extendEnrollmentBackupCodes,
   clearEnrollmentBackupCodes,
 } from "./enrollment-backup-cache.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
@@ -334,10 +336,20 @@ export async function handleTotpConfirm(
     return c.json(AUTH_ERROR, 401);
   }
 
+  // Ensure backup codes are in the stash before promoting. They may be absent
+  // when the QR step ran on a different instance or the original stash expired.
+  if (!getStashedEnrollmentBackupCodes(partial.sessionId)) {
+    const { codes } = await regenerateBackupRecoveryCodes(db, partial.userId);
+    stashEnrollmentBackupCodes(partial.sessionId, codes);
+  }
+
   const promoted = await promoteSessionToBackupCodesStep(db, partial.sessionId, partial.userId);
   if (!promoted) {
     return c.json(AUTH_ERROR, 401);
   }
+
+  // Extend stash TTL to match the fresh backup-codes session window.
+  extendEnrollmentBackupCodes(partial.sessionId);
 
   const backupCodes = getStashedEnrollmentBackupCodes(partial.sessionId) ?? [];
 
@@ -356,6 +368,16 @@ export async function handleTotpBackupCodesComplete(c: Context, db: PrismaClient
   const partial = c.get("partialAuth");
   if (partial.stage !== SESSION_STAGE.BACKUP_CODES_REQUIRED) {
     return c.json(AUTH_ERROR, 401);
+  }
+
+  // Refuse completion when backup codes are not in the stash — completing here
+  // would silently enter the app without the user ever seeing their recovery codes.
+  const stashed = getStashedEnrollmentBackupCodes(partial.sessionId);
+  if (!stashed?.length) {
+    return c.json(
+      { error: "Backup codes are no longer available. Log in again to restart enrollment." },
+      401,
+    );
   }
 
   const promoted = await promoteSessionToFull(db, partial.sessionId, partial.userId);
