@@ -1,27 +1,8 @@
 ---
-description: Changelog and GitHub Release notes when closing a milestone (KAC format)
+description: Changelog and GitHub Release notes when closing a milestone
 alwaysApply: true
 ---
 
-# Release changelog (Admitto)
+# Changelog and releases
 
-Canonical checklist: [VERSIONING.md](VERSIONING.md). Agent summary:
-
-## During feature PRs
-
-- Add bullets to `CHANGELOG.md` under `[Unreleased]` as you implement — Keep a Changelog 1.1.0 (`Added`, `Changed`, `Fixed`, `Security`, …).
-- Write for operators, not file-level implementation detail.
-
-## When closing a milestone (`v0.x.y`)
-
-1. Move `[Unreleased]` → `## [0.x.y] - YYYY-MM-DD`; update comparison links at the bottom of `CHANGELOG.md`.
-2. Bump root `package.json` `"version"`.
-3. **Before** the release commit: `python3 scripts/generate-release-notes.py 0.x.y`
-4. One release commit includes `CHANGELOG.md`, `package.json`, and `.github/release-notes/v0.x.y.md` (no second commit after the tag).
-5. `./scripts/release-tag.sh 0.x.y … --push`, then `gh release create` or `gh release edit` with `--notes-file .github/release-notes/v0.x.y.md`.
-
-## Do not
-
-- Use the deprecated v0.3.x emoji GitHub Release template.
-- Hand-write release bodies that diverge from `CHANGELOG.md` — use the generator.
-- Generate release notes after tagging (they would be missing from the tagged commit).
+Follow [AGENTS.md](AGENTS.md) (Changelog and releases). Full checklist: [VERSIONING.md](VERSIONING.md).
