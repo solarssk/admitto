@@ -70,18 +70,23 @@ Do not bump per-package versions unless we start publishing libraries separately
 2. Update the `[Unreleased]` comparison link at the bottom of `CHANGELOG.md` to point to the new tag
 3. Add the new comparison link for the release (e.g. `[0.x.y]: https://github.com/solarssk/admitto/compare/v0.x.z...v0.x.y`)
 4. Set root `package.json` `"version"` to `0.x.y` (no `v` prefix)
-5. Commit on `main`, then create a **signed** annotated tag and push it:
+5. Generate the release notes file and add it to the **same release commit** as `CHANGELOG.md` and `package.json` — do this before tagging (`release-tag.sh` refuses to run when the working tree has uncommitted changes):
+   ```bash
+   python3 scripts/generate-release-notes.py 0.x.y
+   ```
+   Release notes follow the same [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) typed sections as `CHANGELOG.md` for that version, plus a short **Deploy** footer (container image, migration policy). Do not use the deprecated v0.3.x emoji template. See [`.github/release-notes/v0.4.4.md`](.github/release-notes/v0.4.4.md) as reference.
+6. Commit on `main` — include `CHANGELOG.md`, `package.json`, and `.github/release-notes/v0.x.y.md` in one release commit (no second commit after the tag)
+7. Create a **signed** annotated tag and push it:
    ```bash
    ./scripts/release-tag.sh 0.x.y -m "v0.x.y — one-line summary" --push
    ```
    (`git tag -s` — never lightweight or unsigned `git tag -a`.)
-6. Generate the GitHub Release notes file and publish:
+8. Publish the GitHub Release from the committed notes file:
    ```bash
-   python3 scripts/generate-release-notes.py 0.x.y
    gh release create v0.x.y --title "v0.x.y — one-line summary" --notes-file .github/release-notes/v0.x.y.md
    ```
-   Release notes follow the same [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) typed sections as `CHANGELOG.md` for that version, plus a short **Deploy** footer (container image, migration policy). Do not use the deprecated v0.3.x emoji template. See [`.github/release-notes/v0.4.4.md`](.github/release-notes/v0.4.4.md) as reference.
-7. Close the matching GitHub milestone
+   If CI already created a release on tag push (`publish-container.yml`), edit it instead: `gh release edit v0.x.y --notes-file .github/release-notes/v0.x.y.md`
+9. Close the matching GitHub milestone
 
 ### Tag signing (one-time maintainer setup)
 
