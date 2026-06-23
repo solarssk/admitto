@@ -296,7 +296,9 @@ export function MailTransportPanel() {
     { value: "graph", label: "Microsoft Graph" },
     { value: "powerautomate", label: "Power Automate" },
   ];
-  if (apiData && !apiData.isProduction) {
+  const showExportOnly =
+    apiData && (!apiData.isProduction || (fieldLocked("provider") && draft.provider === "export_only"));
+  if (showExportOnly) {
     providerOptions.push({
       value: "export_only",
       label: "Export only (dev/test)",
@@ -360,6 +362,11 @@ export function MailTransportPanel() {
           {hasUnsavedChanges && (
             <p id="mail-transport-unsaved" className="mail-transport__unsaved-hint">
               Unsaved changes — save before leaving this page.
+            </p>
+          )}
+          {fieldLocked("provider") && (
+            <p className="mail-transport__env-note">
+              Transport is managed by an environment variable (<code>MAIL_PROVIDER</code>). To change it, update your <code>.env</code> / Docker Compose config and restart the service.
             </p>
           )}
           <p className="mail-transport__desc">

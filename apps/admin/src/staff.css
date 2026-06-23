@@ -729,10 +729,27 @@
 }
 
 .mail-transport__desc,
-.mail-transport__unsaved-hint {
+.mail-transport__unsaved-hint,
+.mail-transport__env-note {
   margin: 0 0 var(--space-3);
   font-size: var(--fs-sm);
   color: var(--text-muted);
+}
+
+.mail-transport__env-note {
+  color: var(--text-secondary);
+  background: var(--surface-2, #f6f6f7);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 6px);
+  padding: var(--space-2) var(--space-3);
+}
+
+.mail-transport__env-note code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+  background: rgba(0 0 0 / .06);
+  padding: 1px 4px;
+  border-radius: 3px;
 }
 
 .mail-transport__unsaved-hint {

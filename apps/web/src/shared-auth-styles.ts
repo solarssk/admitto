@@ -1,5 +1,6 @@
 /** Product name for auth HTML (browser tab, password managers, TOTP issuer). */
 import { renderAdmittoFaviconLink } from "./favicon.js";
+import { TABLER_ICONS_CSS_PATH } from "./vendor-assets.js";
 
 export const AUTH_PRODUCT_NAME = "Admitto";
 
@@ -584,10 +585,7 @@ export function renderAdminShell(options: AdminShellOptions): string {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   ${favicon}
   <title>Admitto — ${esc(title)}</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="${TABLER_ICONS_CSS_PATH}">
   <style>${ADMIN_PAGE_CSS}</style>
 </head>
 <body>

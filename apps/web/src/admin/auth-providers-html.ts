@@ -21,8 +21,8 @@ export function getAdminPageSecurityHeaders(): Record<string, string> {
     "Content-Security-Policy": [
       "default-src 'none'",
       AUTH_PAGE_ICON_CSP,
-      "style-src 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
-      "font-src https://cdn.jsdelivr.net https://fonts.gstatic.com",
+      "style-src 'unsafe-inline' 'self'",
+      "font-src 'self'",
       "img-src 'self' data:",
       "form-action 'self'",
       "frame-ancestors 'none'",

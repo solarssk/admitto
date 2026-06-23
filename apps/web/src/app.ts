@@ -153,6 +153,7 @@ import {
 } from "./admin/system-settings-routes.js";
 import { handlePostClientError } from "./admin/client-error-routes.js";
 import { createStaffSpaHandlers } from "./staff-spa.js";
+import { serveTablerIcons } from "./vendor-assets.js";
 import { sweepExpiredOidcAuthStates } from "@admitto/auth";
 import {
   handleListProviders,
@@ -565,6 +566,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/logout", htmlPostCsrf, (c) => handlePostLogout(c, db));
 
   app.get("/assets/*", staffSpa.serveAsset);
+  app.get("/vendor/tabler-icons/*", serveTablerIcons);
   app.get("/admin", staffAdminGate, staffSpa.serveSpaIndex);
   app.get("/admin/*", staffAdminGate, staffSpa.serveSpaIndex);
   app.get("/operator", requireSessionHtml, checkInPanelGuard, staffSpa.serveSpaIndex);
