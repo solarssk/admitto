@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
   type MutableRefObject,
@@ -35,10 +36,20 @@ function clearToastTimer(
   }
 }
 
+/** Clears and removes all pending auto-dismiss timers. */
+function clearAllToastTimers(timerRefs: MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>) {
+  for (const timer of timerRefs.current.values()) {
+    clearTimeout(timer);
+  }
+  timerRefs.current.clear();
+}
+
 /** Provides toast state and renders a fixed notification stack (max 5, auto-dismiss). */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const timerRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  useEffect(() => () => clearAllToastTimers(timerRefs), []);
 
   const dismiss = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));

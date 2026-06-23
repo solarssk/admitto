@@ -88,6 +88,18 @@ describe("Toast / useToast", () => {
     expect(screen.getAllByRole("alert")).toHaveLength(5);
   });
 
+  it("clears pending timers on unmount", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { unmount } = renderWithToast(<ToastHarness duration={5000} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show toast" }));
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
   it("throws when useToast is used outside ToastProvider", () => {
     function Outside() {
       useToast();
