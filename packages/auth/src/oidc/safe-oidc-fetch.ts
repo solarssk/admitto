@@ -93,8 +93,15 @@ function createPinnedDispatcher(hostname: string, record: ResolvedHostRecord): A
   return new Agent({
     connect: {
       servername: hostname,
-      lookup: (_host, _options, callback) => {
-        callback(null, record.address, record.family);
+      lookup: (_host, options, callback) => {
+        if (options.all) {
+          (callback as (err: null, addresses: { address: string; family: number }[]) => void)(
+            null,
+            [{ address: record.address, family: record.family }],
+          );
+        } else {
+          callback(null, record.address, record.family);
+        }
       },
     },
   });
