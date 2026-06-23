@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useBlocker, useParams } from "react-router-dom";
 import { Badge, Button, Card, Input, PageHeader, Select, StatusBadge, Tabs } from "@admitto/ui";
 import {
   ApiError,
@@ -14,6 +14,7 @@ import type { DeliveryDto, EventDeliveriesListParams, EventTemplateDto } from ".
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import "../communication/communication.css";
+import { isTemplateDirty } from "../communication/templateDirty.js";
 
 type ActiveField = "subject" | "body";
 type TemplateFormat = "mjml" | "html";
@@ -51,6 +52,9 @@ export function CommunicationPage() {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [format, setFormat] = useState<TemplateFormat>("mjml");
+  const [savedSubject, setSavedSubject] = useState("");
+  const [savedBody, setSavedBody] = useState("");
+  const [savedFormat, setSavedFormat] = useState<TemplateFormat>("mjml");
   const [activeField, setActiveField] = useState<ActiveField>("body");
 
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -71,11 +75,21 @@ export function CommunicationPage() {
   const [deliveryTotal, setDeliveryTotal] = useState(0);
   const [deliveryPage, setDeliveryPage] = useState(1);
   const [deliveryStatus, setDeliveryStatus] = useState<EventDeliveriesListParams["status"]>("all");
+  const [deliveryPurpose, setDeliveryPurpose] = useState<EventDeliveriesListParams["purpose"]>("all");
   const [deliveriesLoading, setDeliveriesLoading] = useState(false);
   const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
+
+  const isDirty = isTemplateDirty(
+    { subject, body, format },
+    { subject: savedSubject, body: savedBody, format: savedFormat },
+  );
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      isDirty && currentLocation.pathname !== nextLocation.pathname,
+  );
 
   const templatePayload = useCallback(
     () => ({
@@ -85,39 +99,6 @@ export function CommunicationPage() {
     }),
     [subject, body, format],
   );
-
-  const loadTemplate = useCallback(async () => {
-    if (!eventId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchEventTemplate(eventId);
-      setSource(data.source);
-      setAllowedPlaceholders(data.allowed_placeholders);
-      setRequiredPlaceholders(data.required_url_placeholders);
-      setSubject(data.subject_template);
-      setBody(data.body_template);
-      setFormat(data.template_format);
-      setValidationErrors([]);
-      setSaveStatus(null);
-      setPreviewSubject(null);
-      setPreviewHtml(null);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-        setError(err.status === 403 ? "You do not have access to this event." : "Failed to load template.");
-      } else {
-        setError("Failed to load template.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [eventId, reportApiError]);
 
   const loadDeliveries = useCallback(async (signal?: AbortSignal) => {
     if (!eventId) return;
@@ -130,6 +111,7 @@ export function CommunicationPage() {
           page: deliveryPage,
           pageSize: DELIVERY_PAGE_SIZE,
           status: deliveryStatus,
+          purpose: deliveryPurpose,
         },
         signal,
       );
@@ -155,11 +137,51 @@ export function CommunicationPage() {
         setDeliveriesLoading(false);
       }
     }
-  }, [eventId, deliveryPage, deliveryStatus, reportApiError]);
+  }, [eventId, deliveryPage, deliveryStatus, deliveryPurpose, reportApiError]);
 
   useEffect(() => {
-    void loadTemplate();
-  }, [loadTemplate]);
+    let cancelled = false;
+    void (async () => {
+      if (!eventId) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await fetchEventTemplate(eventId);
+        if (cancelled) return;
+        setSource(data.source);
+        setAllowedPlaceholders(data.allowed_placeholders);
+        setRequiredPlaceholders(data.required_url_placeholders);
+        setSubject(data.subject_template);
+        setBody(data.body_template);
+        setFormat(data.template_format);
+        setSavedSubject(data.subject_template);
+        setSavedBody(data.body_template);
+        setSavedFormat(data.template_format);
+        setValidationErrors([]);
+        setSaveStatus(null);
+        setPreviewSubject(null);
+        setPreviewHtml(null);
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError) {
+          reportApiError(err.status);
+          if (err.status === 401) {
+            const next = encodeURIComponent(window.location.pathname);
+            window.location.assign(`/login?next=${next}`);
+            return;
+          }
+          setError(err.status === 403 ? "You do not have access to this event." : "Failed to load template.");
+        } else {
+          setError("Failed to load template.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, reportApiError]);
 
   useEffect(() => {
     if (tab !== "log") return;
@@ -176,6 +198,16 @@ export function CommunicationPage() {
       setDeliveryPage(maxPage);
     }
   }, [deliveryTotal, deliveryPage]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   const insertPlaceholder = (name: string) => {
     const token = `{{${name}}}`;
@@ -232,6 +264,9 @@ export function CommunicationPage() {
     try {
       await saveEventTemplate(eventId, templatePayload());
       setSource("event");
+      setSavedSubject(subject);
+      setSavedBody(body);
+      setSavedFormat(format);
       setSaveStatus("Template saved.");
       setPreviewSubject(null);
       setPreviewHtml(null);
@@ -311,7 +346,7 @@ export function CommunicationPage() {
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "compose", label: "Compose" },
+          { id: "compose", label: isDirty ? "Compose *" : "Compose" },
           { id: "log", label: "Delivery log", count: deliveryTotal || undefined },
         ]}
       />
@@ -423,8 +458,8 @@ export function CommunicationPage() {
                 <Button variant="secondary" onClick={() => void handlePreview()} disabled={previewLoading}>
                   {previewLoading ? "Previewing…" : "Preview"}
                 </Button>
-                <Button variant="primary" onClick={handleSave} disabled={saving}>
-                  {saving ? "Saving…" : "Save"}
+                <Button variant="primary" onClick={handleSave} disabled={saving || !isDirty}>
+                  {saving ? "Saving…" : isDirty ? "Save *" : "Saved"}
                 </Button>
               </div>
             </Card>
@@ -500,6 +535,18 @@ export function CommunicationPage() {
               <option value="bounced">Bounced</option>
               <option value="rejected">Rejected</option>
             </Select>
+            <Select
+              label="Purpose"
+              value={deliveryPurpose}
+              onChange={(e) => {
+                setDeliveryPurpose(e.target.value as EventDeliveriesListParams["purpose"]);
+                setDeliveryPage(1);
+              }}
+            >
+              <option value="all">All purposes</option>
+              <option value="initial">Initial send</option>
+              <option value="resend">Resend</option>
+            </Select>
           </div>
 
           <Card padded={false}>
@@ -515,6 +562,7 @@ export function CommunicationPage() {
                   <tr>
                     <th>Recipient</th>
                     <th>Subject</th>
+                    <th>Purpose</th>
                     <th>Status</th>
                     <th>Queued</th>
                     <th>Sent / Failed</th>
@@ -526,6 +574,7 @@ export function CommunicationPage() {
                     <tr key={row.id}>
                       <td className="mono">{row.recipient_email ?? "—"}</td>
                       <td>{row.rendered_subject ?? "—"}</td>
+                      <td>{row.purpose === "resend" ? "Resend" : "Initial"}</td>
                       <td>
                         <StatusBadge status={row.status} />
                       </td>
@@ -573,6 +622,16 @@ export function CommunicationPage() {
         loading={saving}
         onCancel={() => setOverrideConfirmOpen(false)}
         onConfirm={() => void performSave()}
+      />
+      <ConfirmDialog
+        open={blocker.state === "blocked"}
+        title="Discard unsaved changes?"
+        message="You have unsaved template changes. They will be lost if you leave this page."
+        confirmLabel="Discard"
+        confirmVariant="danger"
+        cancelLabel="Keep editing"
+        onConfirm={() => blocker.proceed?.()}
+        onCancel={() => blocker.reset?.()}
       />
     </div>
   );

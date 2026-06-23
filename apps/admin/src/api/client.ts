@@ -517,6 +517,7 @@ function deliveriesListQuery(eventId: string, params: EventDeliveriesListParams 
   if (params.page != null) q.set("page", String(params.page));
   if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
   if (params.status && params.status !== "all") q.set("status", params.status);
+  if (params.purpose && params.purpose !== "all") q.set("purpose", params.purpose);
   const qs = q.toString();
   return `/api/admin/events/${encodeURIComponent(eventId)}/deliveries${qs ? `?${qs}` : ""}`;
 }

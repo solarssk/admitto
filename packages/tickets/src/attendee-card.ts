@@ -180,9 +180,10 @@ export async function getAttendeeCard(
 export async function getCheckInStats(
   eventId: string,
   prisma: PrismaClient,
-): Promise<{ admitted_count: number }> {
-  const admitted_count = await prisma.attendee.count({
-    where: { event_id: eventId, admitted_at: { not: null } },
-  });
-  return { admitted_count };
+): Promise<{ admitted_count: number; total_count: number }> {
+  const [admitted_count, total_count] = await Promise.all([
+    prisma.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
+    prisma.attendee.count({ where: { event_id: eventId } }),
+  ]);
+  return { admitted_count, total_count };
 }

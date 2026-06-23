@@ -434,3 +434,24 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
     return c.json({ error: "server error", importId }, 500);
   }
 }
+
+
+const IMPORT_TEMPLATE_COLUMNS = [
+  "first_name", "last_name", "email", "ticket_type", "company", "department", "external_uuid", "qr_payload",
+] as const;
+
+/** GET /api/admin/events/:eventId/import/template */
+export async function handleGetImportTemplate(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+  const csv = IMPORT_TEMPLATE_COLUMNS.join(",") + "\n";
+  return new Response(csv, {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": 'attachment; filename="admitto-import-template.csv"',
+    },
+  });
+}

@@ -8,14 +8,18 @@ function formatTime(iso: string): string {
 
 type ScanHistoryListProps = {
   admittedCount: number;
+  totalCount: number;
   history: CheckInHistoryEntry[];
 };
 
-export function ScanHistoryList({ admittedCount, history }: ScanHistoryListProps) {
+export function ScanHistoryList({ admittedCount, totalCount, history }: ScanHistoryListProps) {
   return (
     <>
       <p className="checkin-aside__count">
-        <strong>{admittedCount}</strong> checked in
+        <strong>
+          {admittedCount} / {totalCount}
+        </strong>{" "}
+        admitted
       </p>
       <h3 className="checkin-aside__title">Recent scans</h3>
       <ul className="checkin-history">
