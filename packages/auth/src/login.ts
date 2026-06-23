@@ -162,7 +162,14 @@ async function completeMfaInTransaction(
   const promoted = await promoteSessionToFull(tx, sessionId, userId);
   if (!promoted) return { ok: false };
 
-  const method: MfaMethod = totpOk ? "totp" : recoveryMethod!;
+  let method: MfaMethod;
+  if (totpOk) {
+    method = "totp";
+  } else if (recoveryMethod) {
+    method = recoveryMethod;
+  } else {
+    return { ok: false };
+  }
 
   if (recoveryRowId) {
     const consumed = await consumeRecoveryRow(tx, recoveryRowId);

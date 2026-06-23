@@ -94,20 +94,23 @@ export async function handlePostNewProvider(c: Context, db: PrismaClient): Promi
       }),
     );
   }
+  let providerId: string;
   try {
     const mappings = parseMappingsFromForm(form);
     const provider = await createIdentityProviderWithMappings(db, input, mappings);
-    logAuthSettingsChanged({
-      actorUserId: actorUserId(c),
-      resource: "oidc_provider",
-      action: "create",
-      targetId: provider.id,
-    });
-    return c.redirect(`/admin/auth/providers/${provider.id}?flash=${encodeURIComponent("Provider created.")}`, 302);
+    providerId = provider.id;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to create provider";
     return htmlResponse(c, renderProviderForm({ isNew: true, mappings: [], error: message }));
   }
+
+  logAuthSettingsChanged({
+    actorUserId: actorUserId(c),
+    resource: "oidc_provider",
+    action: "create",
+    targetId: providerId,
+  });
+  return c.redirect(`/admin/auth/providers/${providerId}?flash=${encodeURIComponent("Provider created.")}`, 302);
 }
 
 /** GET /admin/auth/providers/:id */
@@ -151,13 +154,6 @@ export async function handlePostEditProvider(c: Context, db: PrismaClient): Prom
   try {
     const mappings = parseMappingsFromForm(form);
     await updateIdentityProviderWithMappings(db, id, input, mappings);
-    logAuthSettingsChanged({
-      actorUserId: actorUserId(c),
-      resource: "oidc_provider",
-      action: "update",
-      targetId: id,
-    });
-    return c.redirect(`/admin/auth/providers/${id}?flash=${encodeURIComponent("Provider saved.")}`, 302);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to save provider";
     const mappings = await mappingsForProvider(db, id);
@@ -171,6 +167,14 @@ export async function handlePostEditProvider(c: Context, db: PrismaClient): Prom
       }),
     );
   }
+
+  logAuthSettingsChanged({
+    actorUserId: actorUserId(c),
+    resource: "oidc_provider",
+    action: "update",
+    targetId: id,
+  });
+  return c.redirect(`/admin/auth/providers/${id}?flash=${encodeURIComponent("Provider saved.")}`, 302);
 }
 
 /** POST /admin/auth/providers/:id/discover */
@@ -191,16 +195,6 @@ export async function handlePostDiscover(c: Context, db: PrismaClient): Promise<
       userinfo_endpoint: discovery.userinfo_endpoint ?? undefined,
       enabled: provider.enabled,
     });
-    logAuthSettingsChanged({
-      actorUserId: actorUserId(c),
-      resource: "oidc_provider",
-      action: "discover",
-      targetId: id,
-    });
-    return c.redirect(
-      `/admin/auth/providers/${id}?flash=${encodeURIComponent("Discovery completed — endpoints updated.")}`,
-      302,
-    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Discovery failed";
     return c.redirect(
@@ -208,6 +202,17 @@ export async function handlePostDiscover(c: Context, db: PrismaClient): Promise<
       302,
     );
   }
+
+  logAuthSettingsChanged({
+    actorUserId: actorUserId(c),
+    resource: "oidc_provider",
+    action: "discover",
+    targetId: id,
+  });
+  return c.redirect(
+    `/admin/auth/providers/${id}?flash=${encodeURIComponent("Discovery completed — endpoints updated.")}`,
+    302,
+  );
 }
 
 /** POST /admin/auth/providers/:id/test */
