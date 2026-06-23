@@ -159,6 +159,7 @@ export function EventsPickerPage() {
             {event.archived_at && (
               <p className="event-card__archived">
                 <Badge variant="neutral">Archived · read-only</Badge>
+                <span>{formatEventDateTime(event.archived_at)}</span>
               </p>
             )}
             {tab === "archived" && canUnarchive && (

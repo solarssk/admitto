@@ -23,7 +23,7 @@ export function EventsListShell() {
           <div className="overline">Admin</div>
           <div className="sidebar__context-meta">Select an event to manage</div>
         </div>
-        <nav className="sidebar__nav" aria-label="Main" />
+        <div className="sidebar__nav" aria-hidden="true" />
         <div className="sidebar__foot">
           <NavLink to="/admin" className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`} end>
             <i className="ti ti-calendar-event" aria-hidden="true" />

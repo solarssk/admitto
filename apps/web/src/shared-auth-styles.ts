@@ -8,6 +8,8 @@ export interface AuthDocumentOptions {
   step?: string;
   body: string;
   css?: string;
+  /** Optional inline scripts placed just before </body> (no <script> wrapper needed). */
+  scripts?: string;
 }
 
 /** Inline mark — CSP on auth pages blocks external images; must not use &lt;img src&gt;. Source: packages/ui/src/assets/admitto-mark.svg */
@@ -73,7 +75,6 @@ body {
   margin: 0;
   line-height: inherit;
 }
-.auth-card h1,
 .auth-page-action {
   font-size: 1.375rem;
   font-weight: 700;
@@ -409,14 +410,6 @@ body {
   gap: 2px;
 }
 
-/* settings collapsible */
-.adm-settings-group { width: 100%; }
-.adm-settings-group summary { list-style: none; cursor: pointer; user-select: none; }
-.adm-settings-group summary::-webkit-details-marker { display: none; }
-.adm-settings-chevron { margin-left: auto; font-size: 13px; transition: transform 0.15s; }
-.adm-settings-group[open] .adm-settings-chevron { transform: rotate(90deg); }
-.adm-settings-items { padding-left: 6px; display: flex; flex-direction: column; gap: 2px; }
-
 /* ---------- main ---------- */
 .adm-main {
   grid-row: 1;
@@ -508,11 +501,10 @@ button[type=submit]:not(.toggle-btn):hover { background: var(--at-blue-dark); bo
 .badge-neutral { display: inline-block; background: var(--at-gray-100); color: var(--at-gray-500); border-radius: 4px; padding: 2px 8px; font-size: 0.8125rem; }
 .status-line { margin: 0 0 1rem; font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
 
-/* secondary (horizontal) subnav */
+/* secondary (horizontal) subnav — padding matches SPA .settings-subnav */
 .adm-subnav {
   display: flex;
-  gap: 0;
-  padding: 0 32px;
+  padding: 0 24px;
   background: #fff;
   border-bottom: 1px solid var(--at-gray-200);
 }
@@ -520,7 +512,7 @@ button[type=submit]:not(.toggle-btn):hover { background: var(--at-blue-dark); bo
 .adm-subnav-item {
   display: inline-flex;
   align-items: center;
-  padding: 11px 14px;
+  padding: 12px 16px;
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--at-gray-500);
@@ -538,9 +530,6 @@ button[type=submit]:not(.toggle-btn):hover { background: var(--at-blue-dark); bo
   border-bottom-color: var(--at-blue);
   font-weight: 600;
 }
-
-/* remove old settings group */
-.adm-settings-group, .adm-settings-items, .adm-settings-chevron { display: none; }
 
 @media (max-width: 768px) {
   body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
@@ -605,8 +594,8 @@ export function renderAdminShell(options: AdminShellOptions): string {
 ${sidebar}
 <div class="adm-main">
   <header class="adm-topbar">
-    <a class="adm-topbar__back" href="/admin"><i class="ti ti-chevron-left"></i>Events</a>
-    <span>Settings</span>
+    <a class="adm-topbar__back" href="/admin"><i class="ti ti-chevron-left"></i>All events</a>
+    <span>${esc(title)}</span>
   </header>
   <nav class="adm-subnav" aria-label="Settings sections">${subnav}</nav>
   <div class="adm-content">
@@ -618,7 +607,7 @@ ${sidebar}
 }
 
 export function renderAuthDocument(options: AuthDocumentOptions): string {
-  const { step, body, css = AUTH_PAGE_CSS } = options;
+  const { step, body, css = AUTH_PAGE_CSS, scripts } = options;
   const esc = (s: string) =>
     s
       .replace(/&/g, "&amp;")
@@ -642,7 +631,7 @@ export function renderAuthDocument(options: AuthDocumentOptions): string {
   <style>${css}</style>
 </head>
 <body>
-${body}
+${body}${scripts ? `\n${scripts}` : ""}
 </body>
 </html>`;
 }

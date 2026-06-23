@@ -74,7 +74,7 @@ export function renderLoginForm(
   const ssoBlock = renderSsoBlock(ssoProviders, next);
 
   const card = `${renderAuthBrand()}
-    <p class="auth-page-action">Sign in</p>
+    <h2 class="auth-page-action">Sign in</h2>
     <p class="subtitle">Internal event access gateway</p>
     ${ssoFallbackBlock}
     ${errorBlock}

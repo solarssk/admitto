@@ -9,7 +9,6 @@
 /* Settings secondary (horizontal) nav */
 .settings-subnav {
   display: flex;
-  gap: 0;
   padding: 0 24px;
   background: var(--surface-card);
   border-bottom: 1px solid var(--border);
@@ -70,14 +69,6 @@
   transform: translateY(-1px);
 }
 
-.event-card__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
 .event-card__title {
   margin: 0 0 6px;
   font-size: var(--fs-body);
@@ -133,12 +124,6 @@
 .event-card__stat strong {
   font-weight: 600;
   color: var(--text-primary);
-}
-
-.event-card__count {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
 }
 
 .event-card--touch {

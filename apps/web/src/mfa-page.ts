@@ -62,7 +62,7 @@ export function renderMfaVerifyForm(error?: string, next?: string): string {
   const err = error ? `<div class="auth-error" role="alert">${escapeHtml(error)}</div>` : "";
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
   const card = `${renderAuthBrand()}
-    <p class="auth-page-action">Two-factor authentication</p>
+    <h2 class="auth-page-action">Two-factor authentication</h2>
     <p class="subtitle">Enter the 6-digit code from your authenticator app.</p>
     ${err}
     <form method="post" action="/mfa/verify">
@@ -76,12 +76,12 @@ export function renderMfaVerifyForm(error?: string, next?: string): string {
         <input type="checkbox" name="remember_device" value="1"> Remember this device
       </label>
       <button class="auth-btn-primary" type="submit">Continue</button>
-    </form>
-    ${MFA_OTP_DIGITS_SCRIPT}`;
+    </form>`;
   return renderAuthDocument({
     step: "Two-factor authentication",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
+    scripts: MFA_OTP_DIGITS_SCRIPT,
   });
 }
 
@@ -123,7 +123,7 @@ export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
       : "";
 
   const card = `${renderAuthBrand()}
-    <p class="auth-page-action">Set up two-factor authentication</p>
+    <h2 class="auth-page-action">Set up two-factor authentication</h2>
     <p class="subtitle">Scan the QR code in your authenticator app, then confirm with a code.</p>
     ${setupSection}
     ${err}
@@ -134,13 +134,13 @@ export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
         labelId: "enroll-code-label",
       })}
       <button class="auth-btn-primary" type="submit">Confirm and continue</button>
-    </form>
-    ${MFA_OTP_DIGITS_SCRIPT}`;
+    </form>`;
 
   return renderAuthDocument({
     step: "Set up two-factor authentication",
     body: renderAuthPage(card, true),
     css: AUTH_PAGE_CSS,
+    scripts: MFA_OTP_DIGITS_SCRIPT,
   });
 }
 
@@ -178,7 +178,7 @@ export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPage
   </div>`;
 
   const card = `${renderAuthBrand()}
-    <p class="auth-page-action">Save your backup codes</p>
+    <h2 class="auth-page-action">Save your backup codes</h2>
     <p class="subtitle">Store these recovery codes somewhere safe — you will need them if you lose access to your authenticator.</p>
     ${codesUnavailable ? `<p class="auth-muted">This server session no longer has your codes in memory. If you did not save them, contact an administrator for MFA reset.</p>` : ""}
     ${codesBlock}
@@ -199,7 +199,7 @@ export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPage
 export function renderMfaEnrollStartPage(next?: string): string {
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
   const card = `${renderAuthBrand()}
-    <p class="auth-page-action">Set up two-factor authentication</p>
+    <h2 class="auth-page-action">Set up two-factor authentication</h2>
     <p class="subtitle">Two-factor authentication is required for your account.</p>
     <p class="auth-muted">You will scan a QR code in your authenticator app, then save one-time backup codes before continuing.</p>
     <form method="post" action="/mfa/enroll/start">
