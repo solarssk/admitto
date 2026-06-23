@@ -17,7 +17,8 @@ export function fingerprint(value: string): string {
 
 /** Emit a structured audit event to stdout (container log collectors add transport metadata). */
 export function emitAuditEvent(event: string, fields: Record<string, unknown>): void {
-  console.info(JSON.stringify({ ts: new Date().toISOString(), event, ...fields }));
+  const { event: _ignoredEvent, ts: _ignoredTs, ...safeFields } = fields;
+  console.info(JSON.stringify({ ...safeFields, ts: new Date().toISOString(), event }));
 }
 
 /** Context for structured login audit events (email is redacted in logs). */
@@ -35,8 +36,10 @@ export interface MfaAuditContext {
   userAgent?: string;
 }
 
+/** MFA verification method recorded in `auth.mfa.success`. */
 export type MfaMethod = "totp" | "backup" | "emergency";
 
+/** Rate-limit bucket identifiers for `auth.rate_limit.exceeded` audit events. */
 export type RateLimitScope =
   | "login_ip"
   | "login_email"
@@ -158,6 +161,7 @@ export function logAccessDenied(input: {
   });
 }
 
+/** Superadmin identity settings resources tracked in `auth.settings.changed`. */
 export type AuthSettingsResource = "oidc_provider" | "cf_access";
 
 /** Emit `auth.settings.changed` when superadmin mutates identity-provider configuration. */

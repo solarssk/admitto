@@ -129,7 +129,7 @@ export interface CompleteMfaResult {
 }
 
 type CompleteMfaTxResult =
-  | { ok: false }
+  | { ok: false; reason: "invalid_code" | "session_not_promoted" | "recovery_consume_conflict" }
   | {
       ok: true;
       method: MfaMethod;
@@ -157,10 +157,10 @@ async function completeMfaInTransaction(
     }
   }
 
-  if (!totpOk && !recoveryRowId) return { ok: false };
+  if (!totpOk && !recoveryRowId) return { ok: false, reason: "invalid_code" };
 
   const promoted = await promoteSessionToFull(tx, sessionId, userId);
-  if (!promoted) return { ok: false };
+  if (!promoted) return { ok: false, reason: "session_not_promoted" };
 
   let method: MfaMethod;
   if (totpOk) {
@@ -168,12 +168,12 @@ async function completeMfaInTransaction(
   } else if (recoveryMethod) {
     method = recoveryMethod;
   } else {
-    return { ok: false };
+    return { ok: false, reason: "invalid_code" };
   }
 
   if (recoveryRowId) {
     const consumed = await consumeRecoveryRow(tx, recoveryRowId);
-    if (!consumed) return { ok: false };
+    if (!consumed) return { ok: false, reason: "recovery_consume_conflict" };
   }
 
   if (input.rememberDevice) {
@@ -192,6 +192,7 @@ async function completeMfaInTransaction(
   return { ok: true, method, recoveryMethod: recoveryMethod ?? undefined };
 }
 
+/** Emit MFA audit events after the DB transaction commits (success paths only). */
 function emitMfaAudit(
   audit: MfaAuditContext | undefined,
   input: CompleteMfaInput,
@@ -204,7 +205,9 @@ function emitMfaAudit(
     userAgent: input.userAgent,
   };
   if (!result.ok) {
-    logMfaFailure(auditCtx);
+    if (result.reason === "invalid_code") {
+      logMfaFailure(auditCtx);
+    }
     return;
   }
   if (result.recoveryMethod) {

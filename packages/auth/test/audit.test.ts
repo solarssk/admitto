@@ -32,6 +32,19 @@ describe("audit", () => {
     expect(payload.ts).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
+  it("emitAuditEvent preserves canonical event and ts when fields collide", () => {
+    const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+    emitAuditEvent("auth.real.event", {
+      event: "auth.spoofed",
+      ts: "1970-01-01T00:00:00.000Z",
+      scope: "login_ip",
+    });
+    const payload = JSON.parse(String(spy.mock.calls[0]?.[0]));
+    expect(payload.event).toBe("auth.real.event");
+    expect(payload.ts).not.toBe("1970-01-01T00:00:00.000Z");
+    expect(payload.scope).toBe("login_ip");
+  });
+
   it("logLoginSuccess redacts email and includes ts", () => {
     const spy = vi.spyOn(console, "info").mockImplementation(() => {});
     logLoginSuccess({ email: "bob@example.com", ip: "1.2.3.4" });

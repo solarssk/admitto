@@ -6,6 +6,8 @@ describe("getBaselineSecurityHeaders", () => {
     const headers = getBaselineSecurityHeaders();
     expect(headers["X-Content-Type-Options"]).toBe("nosniff");
     expect(headers["Strict-Transport-Security"]).toContain("max-age=31536000");
+    expect(headers["Strict-Transport-Security"]).toContain("includeSubDomains");
     expect(headers["X-Frame-Options"]).toBe("DENY");
+    expect(headers["Referrer-Policy"]).toBe("same-origin");
   });
 });
