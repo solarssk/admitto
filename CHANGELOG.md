@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Check-in invalid/revoked scans show dedicated feedback card instead of silent failure
 - Requirements: `@admitto/ui` Switch missing thumb restored; item table uses name + auto-generated key; drawer layout cleanup
 - Event picker cards: removed hover lift/underline noise
+- Vercel Git deploys disabled via root `vercel.json` (self-hosted Docker only)
 
 ### Security
 - Branding `font_family_name` allowlist on save and ticket-page render (blocks CSS/HTML injection via custom fonts) (#96)
