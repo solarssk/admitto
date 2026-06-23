@@ -59,12 +59,22 @@ export function CameraScanner({ enabled, wedgeActive, onScan }: CameraScannerPro
   const toggleFullscreen = () => {
     const el = containerRef.current;
     if (!el) return;
-    if (!document.fullscreenElement) {
+
+    if (isFullscreen) {
+      if (document.fullscreenElement && typeof document.exitFullscreen === "function") {
+        void document.exitFullscreen();
+      } else {
+        setIsFullscreen(false);
+      }
+      return;
+    }
+
+    if (typeof el.requestFullscreen === "function") {
       el.requestFullscreen()
         .then(() => setIsFullscreen(true))
         .catch(() => setIsFullscreen(true));
     } else {
-      void document.exitFullscreen();
+      setIsFullscreen(true);
     }
   };
 

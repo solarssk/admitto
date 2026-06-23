@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { cleanup, render, waitFor, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor, screen } from "@testing-library/react";
 import { CameraScanner } from "../../src/checkin/CameraScanner.js";
 
 const { decodeFromVideoDevice, stop } = vi.hoisted(() => {
@@ -54,5 +54,22 @@ describe("CameraScanner", () => {
     render(<CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />);
     await waitFor(() => expect(decodeFromVideoDevice).toHaveBeenCalled());
     expect(screen.getByRole("button", { name: "Enter fullscreen" })).toBeTruthy();
+  });
+
+  it("uses CSS fallback when requestFullscreen is unavailable", async () => {
+    const { container } = render(
+      <CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />,
+    );
+    await waitFor(() => expect(decodeFromVideoDevice).toHaveBeenCalled());
+
+    const video = container.querySelector("video");
+    expect(video).toBeTruthy();
+    Object.defineProperty(video!.parentElement, "requestFullscreen", {
+      configurable: true,
+      value: undefined,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
+    expect(container.querySelector(".checkin-camera--fullscreen")).toBeTruthy();
   });
 });
