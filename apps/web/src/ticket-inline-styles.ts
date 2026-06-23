@@ -26,6 +26,57 @@ body.ticket-page { margin: 0; background: var(--surface-page); min-height: 100vh
 .at-badge--warn { background: #fdf3e1; color: #9a6400; }
 .at-badge--error { background: #fbeaea; color: #b32525; }
 .at-badge--confirmed { background: #e6f6f1; color: #097a59; }
+
+@media print {
+  body.ticket-page {
+    background: white;
+    min-height: unset;
+    padding: 0;
+    display: block;
+  }
+  .ticket {
+    width: 100%;
+    max-width: 100%;
+    background: #fff;
+    box-shadow: none;
+    border: 1px solid #ccc;
+    border-radius: 0;
+    overflow: visible;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .ticket__top {
+    border-bottom: 1px solid #ccc;
+  }
+  .ticket__brand-mark {
+    background: #066fd1;
+  }
+  .ticket__foot {
+    background: #f5f5f5;
+    border-top: 1px solid #ccc;
+    color: #555;
+  }
+  .ticket__qr {
+    border: 1px solid #ccc;
+    border-radius: 0;
+  }
+  .ticket__wallets {
+    display: none;
+  }
+  .ticket__perf {
+    border-top: 2px dashed #aaa;
+  }
+  .ticket__event-name,
+  .ticket__attendee-name {
+    color: #000;
+  }
+  .ticket__meta {
+    color: #555;
+  }
+  .ticket__foot a::after {
+    content: none;
+  }
+}
 `;
 
 export function buildTicketPageStyles(theme?: BrandingThemeInput | null): string {

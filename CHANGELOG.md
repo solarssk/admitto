@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Requirements and Communication panels use `ConfirmDialog` instead of native `window.confirm` (#97)
 
 ### Fixed
+- Guest ticket page now prints correctly (white background, no wallet buttons, no shadows)
 - Export: sanitize dynamic attribute column headers against formula injection (#97)
 - Local dev: login/MFA CSRF when `Origin`/`Referer` absent (Safari); admin SPA dist path after `npm run build -w @admitto/admin` (#115)
 - Admin page shell document title uses event name prefix without regressing the visible `h1` (#118)
