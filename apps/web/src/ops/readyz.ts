@@ -5,6 +5,7 @@ import type { PrismaClient } from "@prisma/client";
 import { configFromEnv } from "@admitto/mailer";
 import type { MailerProvider } from "@admitto/mailer";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
+import { applyBaselineSecurityHeaders } from "../security-headers.js";
 import { InMemoryRateLimitStore } from "../rate-limit/in-memory.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { logger } from "../logger.js";
@@ -179,6 +180,7 @@ export async function buildReadyzPayload(deps: ReadyzDeps): Promise<ReadyzRespon
 
 /** Token-gated `GET /readyz` handler (404 disabled, 401 bad token, 503 on hard failure). */
 export async function handleReadyz(c: Context, deps: ReadyzDeps) {
+  applyBaselineSecurityHeaders((name, value) => c.header(name, value));
   const token = deps.opsHealthToken;
   if (!token) {
     return c.body(null, 404);

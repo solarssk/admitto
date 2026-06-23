@@ -27,6 +27,18 @@ describe("resolveBaseUrl", () => {
       "BASE_URL is required in non-development environments",
     );
   });
+
+  it("rejects http BASE_URL in production (non-localhost)", () => {
+    expect(() =>
+      resolveBaseUrl({ NODE_ENV: "production", BASE_URL: "http://tickets.example.com" }),
+    ).toThrow("BASE_URL must use https:// in non-development environments");
+  });
+
+  it("allows http localhost in production for smoke tests", () => {
+    expect(resolveBaseUrl({ NODE_ENV: "production", BASE_URL: "http://127.0.0.1:3000" })).toBe(
+      "http://127.0.0.1:3000",
+    );
+  });
 });
 
 describe("resolveAllowCheckinBearer", () => {

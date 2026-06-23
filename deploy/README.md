@@ -86,7 +86,7 @@ We have not tested or documented Synology ARM vs Intel paths separately — pick
 ```bash
 cd deploy
 cp .env.example .env
-# Edit .env: POSTGRES_PASSWORD, ENCRYPTION_KEY (openssl rand -base64 32), BASE_URL
+# Edit .env: POSTGRES_PASSWORD, REDIS_PASSWORD (openssl rand -hex 32), ENCRYPTION_KEY (openssl rand -base64 32), BASE_URL
 # Set EMAIL_PROVIDER to one of: smtp, graph, powerautomate (production paths)
 # export_only is dev/test dry-run only — requires a runtime exportSink; npm run dev wires one
 # automatically; production deploy must use a real provider (default in .env.example: smtp).

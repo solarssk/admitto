@@ -82,6 +82,7 @@ export async function validateIdToken(input: ValidateIdTokenInput): Promise<JWTP
   const { payload } = await jose.jwtVerify(input.idToken, verifier, {
     issuer: input.provider.issuer,
     audience: input.provider.client_id,
+    algorithms: ["RS256", "ES256", "PS256"],
   });
 
   if (payload.nonce !== input.expectedNonce) {

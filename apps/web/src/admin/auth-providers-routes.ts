@@ -10,6 +10,7 @@ import {
   listProviderGroupMappings,
   fetchOidcDiscovery,
   testOidcConnection,
+  logAuthSettingsChanged,
 } from "@admitto/auth";
 import {
   getAdminPageSecurityHeaders,
@@ -38,6 +39,10 @@ async function parseForm(c: Context): Promise<Record<string, string>> {
 
 function flashFromQuery(c: Context): string | undefined {
   return c.req.query("flash") ?? undefined;
+}
+
+function actorUserId(c: Context): string {
+  return c.get("auth").userId;
 }
 
 async function mappingsForProvider(db: PrismaClient, providerId: string): Promise<MappingRow[]> {
@@ -92,6 +97,12 @@ export async function handlePostNewProvider(c: Context, db: PrismaClient): Promi
   try {
     const mappings = parseMappingsFromForm(form);
     const provider = await createIdentityProviderWithMappings(db, input, mappings);
+    logAuthSettingsChanged({
+      actorUserId: actorUserId(c),
+      resource: "oidc_provider",
+      action: "create",
+      targetId: provider.id,
+    });
     return c.redirect(`/admin/auth/providers/${provider.id}?flash=${encodeURIComponent("Provider created.")}`, 302);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to create provider";
@@ -140,6 +151,12 @@ export async function handlePostEditProvider(c: Context, db: PrismaClient): Prom
   try {
     const mappings = parseMappingsFromForm(form);
     await updateIdentityProviderWithMappings(db, id, input, mappings);
+    logAuthSettingsChanged({
+      actorUserId: actorUserId(c),
+      resource: "oidc_provider",
+      action: "update",
+      targetId: id,
+    });
     return c.redirect(`/admin/auth/providers/${id}?flash=${encodeURIComponent("Provider saved.")}`, 302);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to save provider";
@@ -173,6 +190,12 @@ export async function handlePostDiscover(c: Context, db: PrismaClient): Promise<
       jwks_uri: discovery.jwks_uri,
       userinfo_endpoint: discovery.userinfo_endpoint ?? undefined,
       enabled: provider.enabled,
+    });
+    logAuthSettingsChanged({
+      actorUserId: actorUserId(c),
+      resource: "oidc_provider",
+      action: "discover",
+      targetId: id,
     });
     return c.redirect(
       `/admin/auth/providers/${id}?flash=${encodeURIComponent("Discovery completed — endpoints updated.")}`,
@@ -214,6 +237,12 @@ export async function handleToggleProvider(c: Context, db: PrismaClient): Promis
     );
   }
   await db.identityProvider.update({ where: { id }, data: { enabled: !provider.enabled } });
+  logAuthSettingsChanged({
+    actorUserId: actorUserId(c),
+    resource: "oidc_provider",
+    action: provider.enabled ? "disable" : "enable",
+    targetId: id,
+  });
   const msg = provider.enabled ? "Provider disabled." : "Provider enabled.";
   return c.redirect(`/admin/auth/providers?flash=${encodeURIComponent(msg)}`, 302);
 }

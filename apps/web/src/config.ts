@@ -20,15 +20,21 @@ function normalizeCheckinOperatorToken(raw: string | undefined): string | null {
   return trimmed;
 }
 
-function normalizeBaseUrl(raw: string): string {
+function normalizeBaseUrl(raw: string, env: EnvLike = process.env): string {
   const trimmed = raw.replace(/\/$/, "");
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       throw new Error("BASE_URL must use http:// or https://");
     }
+    if (env["NODE_ENV"] !== "development" && parsed.protocol === "http:") {
+      const host = parsed.hostname;
+      if (host !== "localhost" && host !== "127.0.0.1") {
+        throw new Error("BASE_URL must use https:// in non-development environments");
+      }
+    }
   } catch (err) {
-    if (err instanceof Error && err.message.includes("http")) throw err;
+    if (err instanceof Error && err.message.includes("BASE_URL")) throw err;
     throw new Error("BASE_URL must be a valid http:// or https:// URL");
   }
   return trimmed;
@@ -40,7 +46,7 @@ function normalizeBaseUrl(raw: string): string {
  */
 export function resolveBaseUrl(env: EnvLike = process.env): string {
   const url = env["BASE_URL"];
-  if (url) return normalizeBaseUrl(url);
+  if (url) return normalizeBaseUrl(url, env);
   if (env["NODE_ENV"] !== "development") {
     throw new Error("BASE_URL is required in non-development environments");
   }

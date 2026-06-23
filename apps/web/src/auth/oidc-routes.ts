@@ -15,6 +15,7 @@ import {
   validatePartialSession,
   OIDC_LINK_STEP_UP_MAX_AGE_MS,
   revokeSession,
+  logOidcLoginSuccess,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { SESSION_COOKIE_NAME } from "@admitto/auth";
@@ -182,6 +183,12 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
     }
 
     setSessionCookie(c, rawToken);
+    logOidcLoginSuccess({
+      providerId: provider.id,
+      userId,
+      subject,
+      ip: resolveClientIp(c),
+    });
     return c.redirect(next, 302);
   } catch (err) {
     logOidcError("session create", err);

@@ -143,6 +143,7 @@ import {
   handlePostCfAccess,
   handlePostCfAccessTest,
 } from "./admin/cf-access-routes.js";
+import { applyBaselineSecurityHeaders } from "./security-headers.js";
 import { handleReadyz } from "./ops/readyz.js";
 import { createReadyzRateLimitMiddleware } from "./ops/readyz-rate-limit.js";
 
@@ -171,6 +172,7 @@ export interface CreateAppOptions {
  * Runs `SELECT 1` against Postgres; no auth; does not expose app version or secrets.
  */
 async function handleHealthz(c: Context, db: PrismaClient) {
+  applyBaselineSecurityHeaders((name, value) => c.header(name, value));
   try {
     await db.$queryRaw(Prisma.sql`SELECT 1`);
     return c.json({ status: "ok" }, 200);

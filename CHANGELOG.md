@@ -34,7 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sidebar no longer marks the Overview section as live; it shows "Soon" until Overview is built (v1.0)
 
 ### Security
-- `trusted_device_days = 0` now fully disables remember-device: existing trusted-device cookies are rejected immediately at `validateTrustedDevice()` call time, not only after natural row expiry; new cookies and `createTrustedDevice` calls are also blocked
+- PENtest hardening: structured audit events for rate-limit hits, MFA completion (success/fail/recovery consumed), OIDC login success, session logout, admin access denied (403), and OIDC/CF Access settings changes — all events include ISO `ts` timestamp
+- Production `BASE_URL` must use `https://` (except `localhost` / `127.0.0.1` smoke)
+- OIDC ID token verification restricts allowed JWT algorithms (`RS256`, `ES256`, `PS256`)
+- Deploy Redis requires `REDIS_PASSWORD`; compose wires authenticated `REDIS_URL`
+- Nginx proxy emits baseline security headers (HSTS, nosniff, frame deny); trusts Docker bridge gateway (`172.17.0.1`) for per-IP rate limiting behind NPM-in-Docker
+- `/healthz` and `/readyz` responses include baseline security headers
 
 ## [0.4.4] - 2026-06-19
 

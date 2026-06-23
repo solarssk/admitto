@@ -15,7 +15,9 @@ import {
   extractClaims,
   applyOidcGroupRoleMappings,
   logCfAccessAuth,
+  logAccessDenied,
 } from "@admitto/auth";
+import { resolveClientIp } from "../rate-limit/client-ip.js";
 
 const CF_ACCESS_FORBIDDEN_MESSAGE =
   "authenticated via Cloudflare Access, but this account has no admin access";
@@ -135,6 +137,13 @@ async function sessionSuperadminGate(
     return loginBoundaryResponse(c);
   }
   if (!(await canManageInstance(prisma, validated.userId))) {
+    logAccessDenied({
+      path: c.req.path,
+      reason: "no_superadmin_role",
+      authSource: "session",
+      userId: validated.userId,
+      ip: resolveClientIp(c),
+    });
     if (isApiAdminPath(c.req.path)) {
       return c.json({ error: "forbidden" }, 403);
     }

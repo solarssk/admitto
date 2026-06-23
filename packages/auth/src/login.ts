@@ -6,7 +6,17 @@ import {
   promoteSessionToFull,
   type ValidatedPartialSession,
 } from "./session.js";
-import { logLoginFailure, logLoginSuccess, type LoginAuditContext } from "./audit.js";
+import {
+  logLoginFailure,
+  logLoginSuccess,
+  logLogout,
+  logMfaFailure,
+  logMfaRecoveryConsumed,
+  logMfaSuccess,
+  type LoginAuditContext,
+  type MfaAuditContext,
+  type MfaMethod,
+} from "./audit.js";
 import {
   LOGIN_NEXT,
   SESSION_STAGE,
@@ -121,28 +131,53 @@ export interface CompleteMfaResult {
 async function completeMfaInTransaction(
   tx: Prisma.TransactionClient,
   input: CompleteMfaInput,
+  audit?: MfaAuditContext,
 ): Promise<CompleteMfaResult> {
   const { userId, sessionId, code } = input;
+  const auditCtx: MfaAuditContext = audit ?? {
+    userId,
+    sessionId,
+    ip: input.ip,
+    userAgent: input.userAgent,
+  };
 
   const totpOk = await verifyUserTotpCode(tx, userId, code);
   let recoveryRowId: string | null = null;
+  let recoveryMethod: "backup" | "emergency" | null = null;
 
   if (!totpOk) {
     recoveryRowId = await findBackupRecoveryRowId(tx, userId, code);
-    if (!recoveryRowId) {
+    if (recoveryRowId) {
+      recoveryMethod = "backup";
+    } else {
       recoveryRowId = await findEmergencyRecoveryRowId(tx, userId, code);
+      if (recoveryRowId) recoveryMethod = "emergency";
     }
   }
 
-  if (!totpOk && !recoveryRowId) return { ok: false };
+  if (!totpOk && !recoveryRowId) {
+    logMfaFailure(auditCtx);
+    return { ok: false };
+  }
 
   const promoted = await promoteSessionToFull(tx, sessionId, userId);
-  if (!promoted) return { ok: false };
+  if (!promoted) {
+    logMfaFailure(auditCtx);
+    return { ok: false };
+  }
+
+  const method: MfaMethod = totpOk ? "totp" : recoveryMethod!;
 
   if (recoveryRowId) {
     const consumed = await consumeRecoveryRow(tx, recoveryRowId);
-    if (!consumed) return { ok: false };
+    if (!consumed) {
+      logMfaFailure(auditCtx);
+      return { ok: false };
+    }
+    logMfaRecoveryConsumed(auditCtx, recoveryMethod!);
   }
+
+  logMfaSuccess(auditCtx, method);
 
   if (input.rememberDevice) {
     const days = await getTrustedDeviceDays(tx);
@@ -167,21 +202,28 @@ async function completeMfaInTransaction(
 export async function completeMfa(
   prisma: PrismaClient | Prisma.TransactionClient,
   input: CompleteMfaInput,
+  audit?: MfaAuditContext,
 ): Promise<CompleteMfaResult> {
   if ("$transaction" in prisma && typeof prisma.$transaction === "function") {
-    return prisma.$transaction((tx) => completeMfaInTransaction(tx, input));
+    return prisma.$transaction((tx) => completeMfaInTransaction(tx, input, audit));
   }
-  return completeMfaInTransaction(prisma, input);
+  return completeMfaInTransaction(prisma, input, audit);
 }
 
 /** Revoke the validated session row (idempotent when already revoked). */
 export async function logout(
   prisma: PrismaClient | Prisma.TransactionClient,
   validated: ValidatedPartialSession | import("./session.js").ValidatedSession | null,
+  audit?: { ip?: string },
 ): Promise<void> {
   if (!validated) return;
   await prisma.session.updateMany({
     where: { id: validated.session.id, revoked_at: null },
     data: { revoked_at: new Date() },
+  });
+  logLogout({
+    userId: validated.userId,
+    sessionId: validated.session.id,
+    ip: audit?.ip,
   });
 }

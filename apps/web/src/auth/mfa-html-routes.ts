@@ -140,14 +140,23 @@ export async function handlePostMfaVerify(
     return c.text("Too many requests", 429);
   }
 
-  const result = await completeMfa(db, {
-    userId: partial.userId,
-    sessionId: partial.sessionId,
-    code,
-    rememberDevice,
-    ip,
-    userAgent: c.req.header("user-agent"),
-  });
+  const result = await completeMfa(
+    db,
+    {
+      userId: partial.userId,
+      sessionId: partial.sessionId,
+      code,
+      rememberDevice,
+      ip,
+      userAgent: c.req.header("user-agent"),
+    },
+    {
+      userId: partial.userId,
+      sessionId: partial.sessionId,
+      ip,
+      userAgent: c.req.header("user-agent"),
+    },
+  );
 
   if (!result.ok) {
     return htmlResponse(c, renderMfaVerifyForm(MFA_ERROR, next), 401);
