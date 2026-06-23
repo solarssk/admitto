@@ -40,7 +40,9 @@ describe("clientIpFromHeaders", () => {
 
 describe("resolveClientIp", () => {
   beforeEach(() => {
-    mockedGetConnInfo.mockReturnValue({ remote: { address: "198.51.100.7", family: "IPv4", port: 1234 } });
+    mockedGetConnInfo.mockReturnValue({
+      remote: { address: "198.51.100.7", port: 1234 },
+    } as ReturnType<typeof getConnInfo>);
     mockedResolveTrustProxy.mockReturnValue(false);
   });
 

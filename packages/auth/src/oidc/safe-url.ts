@@ -119,7 +119,13 @@ export async function assertSafeOidcFetchUrlResolved(urlString: string): Promise
   assertSafeOidcFetchUrl(urlString);
 
   const hostname = unbracketHostname(new URL(urlString).hostname);
-  if (isIP(hostname)) return;
+  const allowHttpLoopback = process.env["NODE_ENV"] !== "production";
+  if (allowHttpLoopback && isLoopbackHost(hostname)) return;
+
+  if (isIP(hostname)) {
+    assertResolvedIpSafe(hostname);
+    return;
+  }
 
   let records: LookupAddress[];
   try {

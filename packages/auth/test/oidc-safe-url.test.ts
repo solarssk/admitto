@@ -90,4 +90,10 @@ describe("assertSafeOidcFetchUrlResolved", () => {
     >);
     await expect(assertSafeOidcFetchUrlResolved("https://login.example.com/")).resolves.toBeUndefined();
   });
+
+  it("skips DNS for http localhost mock IdPs in non-production", async () => {
+    mockedLookup.mockClear();
+    await expect(assertSafeOidcFetchUrlResolved("http://localhost:9999/")).resolves.toBeUndefined();
+    expect(mockedLookup).not.toHaveBeenCalled();
+  });
 });

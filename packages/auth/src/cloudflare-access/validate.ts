@@ -5,15 +5,6 @@ import type { CfAccessConfig } from "./config.js";
 
 const jwksVerifiers = new Map<string, jose.JWTVerifyGetKey>();
 
-function getJwksVerifier(jwksUri: string): jose.JWTVerifyGetKey {
-  let verifier = jwksVerifiers.get(jwksUri);
-  if (!verifier) {
-    verifier = jose.createRemoteJWKSet(new URL(jwksUri));
-    jwksVerifiers.set(jwksUri, verifier);
-  }
-  return verifier;
-}
-
 /** For tests — reset JWKS verifiers between cases. */
 export function clearCfAccessJwksCacheForTests(): void {
   jwksVerifiers.clear();
@@ -55,8 +46,13 @@ export async function validateAccessJwt(
   }
 
   assertSafeOidcFetchUrl(config.jwksUri);
-  await assertSafeOidcFetchUrlResolved(config.jwksUri);
-  const verifier = getJwksVerifier(config.jwksUri);
+
+  let verifier = jwksVerifiers.get(config.jwksUri);
+  if (!verifier) {
+    await assertSafeOidcFetchUrlResolved(config.jwksUri);
+    verifier = jose.createRemoteJWKSet(new URL(config.jwksUri));
+    jwksVerifiers.set(config.jwksUri, verifier);
+  }
 
   let payload: JWTPayload;
   try {
