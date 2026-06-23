@@ -128,18 +128,20 @@ export interface CompleteMfaResult {
   trustedDeviceRawToken?: string;
 }
 
+type CompleteMfaTxResult =
+  | { ok: false }
+  | {
+      ok: true;
+      method: MfaMethod;
+      recoveryMethod?: "backup" | "emergency";
+      trustedDeviceRawToken?: string;
+    };
+
 async function completeMfaInTransaction(
   tx: Prisma.TransactionClient,
   input: CompleteMfaInput,
-  audit?: MfaAuditContext,
-): Promise<CompleteMfaResult> {
+): Promise<CompleteMfaTxResult> {
   const { userId, sessionId, code } = input;
-  const auditCtx: MfaAuditContext = audit ?? {
-    userId,
-    sessionId,
-    ip: input.ip,
-    userAgent: input.userAgent,
-  };
 
   const totpOk = await verifyUserTotpCode(tx, userId, code);
   let recoveryRowId: string | null = null;
@@ -155,29 +157,17 @@ async function completeMfaInTransaction(
     }
   }
 
-  if (!totpOk && !recoveryRowId) {
-    logMfaFailure(auditCtx);
-    return { ok: false };
-  }
+  if (!totpOk && !recoveryRowId) return { ok: false };
 
   const promoted = await promoteSessionToFull(tx, sessionId, userId);
-  if (!promoted) {
-    logMfaFailure(auditCtx);
-    return { ok: false };
-  }
+  if (!promoted) return { ok: false };
 
   const method: MfaMethod = totpOk ? "totp" : recoveryMethod!;
 
   if (recoveryRowId) {
     const consumed = await consumeRecoveryRow(tx, recoveryRowId);
-    if (!consumed) {
-      logMfaFailure(auditCtx);
-      return { ok: false };
-    }
-    logMfaRecoveryConsumed(auditCtx, recoveryMethod!);
+    if (!consumed) return { ok: false };
   }
-
-  logMfaSuccess(auditCtx, method);
 
   if (input.rememberDevice) {
     const days = await getTrustedDeviceDays(tx);
@@ -188,11 +178,32 @@ async function completeMfaInTransaction(
         userAgent: input.userAgent,
         label: input.deviceLabel,
       });
-      return { ok: true, trustedDeviceRawToken: rawToken };
+      return { ok: true, method, recoveryMethod: recoveryMethod ?? undefined, trustedDeviceRawToken: rawToken };
     }
   }
 
-  return { ok: true };
+  return { ok: true, method, recoveryMethod: recoveryMethod ?? undefined };
+}
+
+function emitMfaAudit(
+  audit: MfaAuditContext | undefined,
+  input: CompleteMfaInput,
+  result: CompleteMfaTxResult,
+): void {
+  const auditCtx: MfaAuditContext = audit ?? {
+    userId: input.userId,
+    sessionId: input.sessionId,
+    ip: input.ip,
+    userAgent: input.userAgent,
+  };
+  if (!result.ok) {
+    logMfaFailure(auditCtx);
+    return;
+  }
+  if (result.recoveryMethod) {
+    logMfaRecoveryConsumed(auditCtx, result.recoveryMethod);
+  }
+  logMfaSuccess(auditCtx, result.method);
 }
 
 /**
@@ -204,10 +215,17 @@ export async function completeMfa(
   input: CompleteMfaInput,
   audit?: MfaAuditContext,
 ): Promise<CompleteMfaResult> {
+  let txResult: CompleteMfaTxResult;
   if ("$transaction" in prisma && typeof prisma.$transaction === "function") {
-    return prisma.$transaction((tx) => completeMfaInTransaction(tx, input, audit));
+    txResult = await prisma.$transaction((tx) => completeMfaInTransaction(tx, input));
+  } else {
+    txResult = await completeMfaInTransaction(prisma, input);
   }
-  return completeMfaInTransaction(prisma, input, audit);
+
+  emitMfaAudit(audit, input, txResult);
+
+  if (!txResult.ok) return { ok: false };
+  return { ok: true, trustedDeviceRawToken: txResult.trustedDeviceRawToken };
 }
 
 /** Revoke the validated session row (idempotent when already revoked). */
@@ -217,13 +235,15 @@ export async function logout(
   audit?: { ip?: string },
 ): Promise<void> {
   if (!validated) return;
-  await prisma.session.updateMany({
+  const { count } = await prisma.session.updateMany({
     where: { id: validated.session.id, revoked_at: null },
     data: { revoked_at: new Date() },
   });
-  logLogout({
-    userId: validated.userId,
-    sessionId: validated.session.id,
-    ip: audit?.ip,
-  });
+  if (count > 0) {
+    logLogout({
+      userId: validated.userId,
+      sessionId: validated.session.id,
+      ip: audit?.ip,
+    });
+  }
 }

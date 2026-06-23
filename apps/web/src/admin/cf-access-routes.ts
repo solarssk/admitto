@@ -116,6 +116,8 @@ export async function handlePostCfAccess(c: Context, db: PrismaClient): Promise<
     return htmlResponse(c, renderCfAccessForm({ form, error: message }));
   }
 
+  const wasEnabled = (await getCfAccessConfig(db)).enabled;
+
   try {
     await db.$transaction(async (tx) => {
       if (!isSettingEnvLocked(SETTING_CF_ACCESS_ENABLED)) {
@@ -140,10 +142,13 @@ export async function handlePostCfAccess(c: Context, db: PrismaClient): Promise<
 
   clearCfAccessRuntimeConfigCache();
 
+  const settingsAction =
+    wasEnabled === resolved.enabled ? "update" : resolved.enabled ? "enable" : "disable";
+
   logAuthSettingsChanged({
     actorUserId: actorUserId(c),
     resource: "cf_access",
-    action: resolved.enabled ? "enable" : "update",
+    action: settingsAction,
   });
 
   return c.redirect("/admin/auth/cf-access?flash=Settings+saved", 302);
