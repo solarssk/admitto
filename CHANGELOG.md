@@ -8,39 +8,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Admin UX micro-fixes: import column reference table and CSV template download; delivery log purpose filter; compose dirty-state guard with SPA navigation blocker; attendee drawer discard confirmation; check-in stats show admitted/total; camera fullscreen toggle
-- `@admitto/ui` design system: `Spinner`, `EmptyState`, `Skeleton`, and `ToastProvider` / `useToast` for consistent loading, empty, placeholder, and notification patterns across admin screens
-- Admin app root wrapped with `ToastProvider` so future panels can dispatch toasts without per-screen wiring
-- Event archiving: `Event.archived_at` flag hides completed events from default lists while preserving data; superadmin can archive/unarchive via Settings panel or event header; archived events are read-only on admin mutating APIs; Active/Archived tabs on event picker; check-in remains available after archive for late admits (ADR 0022)
-- `POST /api/admin/events/:eventId/archive`, `POST /api/admin/events/:eventId/unarchive` (superadmin, audited via `AdminAuditLog`)
-- `GET /api/admin/events?includeArchived=true` returns archived events with `archived_at` timestamp
-- `POST /mfa/enroll/download-codes` — download one-time MFA backup codes as a `.txt` file during enrollment
-- Check-in: `NoteModal` replaces `window.prompt` for adding attendee notes — textarea with 2000-char limit and live counter, Cancel/Add note buttons, ESC support, touch-friendly
-- Settings → Sessions panel: superadmin can list all active staff sessions with role, device, IP, and last-seen; revoke individual sessions or bulk-revoke all operator sessions scoped to an event
-- Settings → Security panel: configure admin/operator session TTL, remember-device duration (`0` = disabled), and which roles require MFA; env-locked settings shown as read-only with badge
-- `GET /api/admin/sessions`, `POST /api/admin/sessions/:id/revoke`, `POST /api/admin/events/:eventId/revoke-all-operator-sessions`, `GET /api/admin/system-settings`, `PATCH /api/admin/system-settings` API endpoints (superadmin)
-- Session revoke and bulk-revoke actions write to `AdminAuditLog`
+- Superadmin instance settings at `/admin/settings` with branding panel — live theme preview, anti-lockout guards, roadmap placeholders, and links to OIDC / Cloudflare Access admin pages (#96)
+- Settings → Mail transport panel: `GET` / `PUT` / `POST …/test` on `/api/admin/mail-settings` with masked secrets, env-locked fields, and `AdminAuditLog` for config changes and test sends (#99)
+- Settings → Sessions panel: superadmin can list all active staff sessions with role, device, IP, and last-seen; revoke individual sessions or bulk-revoke all operator sessions scoped to an event (#112)
+- Settings → Security panel: configure admin/operator session TTL, remember-device duration (`0` = disabled), and which roles require MFA; env-locked settings shown as read-only with badge (#112)
+- `GET /api/admin/sessions`, `POST /api/admin/sessions/:id/revoke`, `POST /api/admin/events/:eventId/revoke-all-operator-sessions`, `GET /api/admin/system-settings`, `PATCH /api/admin/system-settings` API endpoints (superadmin) (#112)
+- Session revoke and bulk-revoke actions write to `AdminAuditLog` (#112)
+- Event archiving: `Event.archived_at` flag hides completed events from default lists while preserving data; superadmin can archive/unarchive via Settings panel or event header; archived events are read-only on admin mutating APIs; Active/Archived tabs on event picker; check-in remains available after archive for late admits (ADR 0022) (#116)
+- `POST /api/admin/events/:eventId/archive`, `POST /api/admin/events/:eventId/unarchive` (superadmin, audited via `AdminAuditLog`) (#116)
+- `GET /api/admin/events?includeArchived=true` returns archived events with `archived_at` timestamp (#116)
+- `@admitto/ui` design system: `Spinner`, `EmptyState`, `Skeleton`, and `ToastProvider` / `useToast` for consistent loading, empty, placeholder, and notification patterns across admin screens (#120)
+- Admin app root wrapped with `ToastProvider` so future panels can dispatch toasts without per-screen wiring (#120)
+- Admin root `ErrorBoundary` — recoverable fallback instead of a blank screen on render errors (#97)
+- Admin UX micro-fixes: import column reference table and CSV template download; delivery log purpose filter; compose dirty-state guard with SPA navigation blocker; attendee drawer discard confirmation; check-in stats show admitted/total; camera fullscreen toggle (#121)
+- `POST /mfa/enroll/download-codes` — download one-time MFA backup codes as a `.txt` file during enrollment (#117)
+- Check-in: `NoteModal` replaces `window.prompt` for adding attendee notes — textarea with 2000-char limit and live counter, Cancel/Add note buttons, ESC support, touch-friendly (#114)
 
 ### Changed
-- Login, MFA, and superadmin identity-provider HTML pages aligned with Admitto design tokens (card layout, branded auth shell)
-- OIDC group mapping role picker uses a select (`superadmin` / `admin` / `operator`) instead of free text
-- OIDC provider list supports inline enable/disable toggle without re-saving the full form
-- Cloudflare Access admin form shows status badge, fall-through explanation, and enable warning
+- Runtime upgraded to Node 24 LTS; React 18 → 19 across admin and web (#111, #110)
+- Login, MFA, and superadmin identity-provider HTML pages aligned with Admitto design tokens (card layout, branded auth shell) (#117)
+- OIDC group mapping role picker uses a select (`superadmin` / `admin` / `operator`) instead of free text (#117)
+- OIDC provider list supports inline enable/disable toggle without re-saving the full form (#117)
+- Cloudflare Access admin form shows status badge, fall-through explanation, and enable warning (#117)
+- Requirements and Communication panels use `ConfirmDialog` instead of native `window.confirm` (#97)
 
 ### Fixed
-- SSO failure on `/login` shows a dedicated fallback banner; removed placeholder “SSO coming soon” when no IdP is configured
-- Check-in card now shows a coloured left border per scan status (green = valid, red = revoked/invalid, yellow = already checked in, blue = preview) — previously all cards looked identical regardless of result
-- Login page title and heading changed from "Operator sign in" to "Sign in to Admitto" — admins and operators share the same login screen
-- Sidebar no longer marks the Overview section as live; it shows "Soon" until Overview is built (v1.0)
+- CSV export: formula-injection sanitization on dynamic attribute column headers (#97)
+- Local dev: login/MFA CSRF when `Origin`/`Referer` absent (Safari); admin SPA dist path after `npm run build -w @admitto/admin` (#115)
+- Admin page shell document title uses event name prefix without regressing the visible `h1` (#118)
+- SSO failure on `/login` shows a dedicated fallback banner; removed placeholder “SSO coming soon” when no IdP is configured (#117)
+- Check-in card now shows a coloured left border per scan status (green = valid, red = revoked/invalid, yellow = already checked in, blue = preview) — previously all cards looked identical regardless of result (#114)
+- Login page title and heading changed from "Operator sign in" to "Sign in to Admitto" — admins and operators share the same login screen (#114)
+- Sidebar no longer marks the Overview section as live; it shows "Soon" until Overview is built (v1.0) (#114)
 
 ### Security
-- PENtest hardening: structured audit events for rate-limit hits, MFA completion (success/fail/recovery consumed), OIDC login success, session logout, admin access denied (403), and OIDC/CF Access settings changes — all events include ISO `ts` timestamp
-- Production `BASE_URL` must use `https://` (except `localhost` / `127.0.0.1` smoke)
-- OIDC ID token verification restricts allowed JWT algorithms (`RS256`, `ES256`, `PS256`)
-- Deploy Redis requires `REDIS_PASSWORD`; compose wires authenticated `REDIS_URL`
-- Nginx proxy emits baseline security headers (HSTS, nosniff, frame deny); trusts Docker bridge gateway (`172.17.0.1`) for per-IP rate limiting behind NPM-in-Docker
-- `/healthz` and `/readyz` responses include baseline security headers
-- GitHub Releases for `v0.x.y` are **pre-release** until `v1.0.0` (product not event-go-live ready); `publish-container` workflow sets the flag automatically
+- PENtest hardening: structured audit events for rate-limit hits, MFA completion (success/fail/recovery consumed), OIDC login success, session logout, admin access denied (403), and OIDC/CF Access settings changes — all events include ISO `ts` timestamp (#123)
+- Production `BASE_URL` must use `https://` (except `localhost` / `127.0.0.1` smoke) (#123)
+- OIDC ID token verification restricts allowed JWT algorithms to RS/ES/PS family (`RS256`, `RS384`, `RS512`, `ES256`, `ES384`, `ES512`, `PS256`; no `none`) (#123)
+- Deploy Redis requires `REDIS_PASSWORD`; compose wires authenticated `REDIS_URL` (#123)
+- Nginx proxy emits baseline security headers (HSTS, nosniff, frame deny); trusts Docker bridge gateway (`172.17.0.1`) for per-IP rate limiting behind NPM-in-Docker (#123)
+- `/healthz` and `/readyz` responses include baseline security headers (#123)
+- GitHub Releases for `v0.x.y` are **pre-release** until `v1.0.0` (product not event-go-live ready); `publish-container` workflow sets the flag automatically (#123)
 
 ## [0.4.4] - 2026-06-19
 
