@@ -27,6 +27,7 @@ jobs:
           sed -i 's|^BASE_URL=.*|BASE_URL=http://127.0.0.1:8080|' .env
           sed -i 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=smoke-redis-secret/' .env
           sed -i 's|^REDIS_URL=.*|REDIS_URL=redis://:smoke-redis-secret@redis:6379|' .env
+          node validate-env.mjs .env
 
       - name: Build and start stack
         working-directory: deploy

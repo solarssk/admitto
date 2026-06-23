@@ -94,11 +94,30 @@ cp .env.example .env
 # exit — mail sends fail at runtime until a real provider is configured.
 # Populate only the mail section for that provider
 
+./validate-env.sh
 docker compose up -d --build
 curl -sf http://127.0.0.1:8080/healthz
 ```
 
 The app listens on port 3000 **inside** the compose network only. Use the proxy on `127.0.0.1:8080`.
+
+## Upgrading from v0.4.4 or earlier
+
+Releases before authenticated Redis require a one-time `deploy/.env` update:
+
+```bash
+cd deploy
+# Generate a strong Redis password (keep it secret):
+openssl rand -hex 32
+# Add or replace in .env:
+#   REDIS_PASSWORD=<generated>
+# Ensure DATABASE_URL password still matches POSTGRES_PASSWORD.
+./validate-env.sh
+docker compose pull app   # or set ADMITTO_IMAGE to the new tag
+docker compose up -d
+```
+
+`validate-env.sh` checks placeholders, secret lengths, `BASE_URL` (`https://` on production hosts), and `DATABASE_URL` / `POSTGRES_PASSWORD` consistency. The app container also fails fast at boot if `REDIS_URL`, `ENCRYPTION_KEY`, or `BASE_URL` are misconfigured.
 
 ## Container startup (entrypoint)
 

@@ -21,7 +21,17 @@ import {
   renderRevoked,
   renderServerError,
 } from "./ticket-page.js";
-import { resolveBaseUrl, resolveCheckinToken, resolveAllowCheckinBearer, validateCheckinBootConfig, validateCfAccessBootConfig, resolveOpsHealthTokenOption, validateOpsHealthBootConfig } from "./config.js";
+import {
+  resolveBaseUrl,
+  resolveCheckinToken,
+  resolveAllowCheckinBearer,
+  validateCheckinBootConfig,
+  validateCfAccessBootConfig,
+  resolveOpsHealthTokenOption,
+  validateOpsHealthBootConfig,
+  validateRedisBootConfig,
+  validateEncryptionKeyBootConfig,
+} from "./config.js";
 import {
   createCheckinPreAuth,
   createCheckinSessionCsrfGuard,
@@ -199,6 +209,8 @@ export function createApp(options: CreateAppOptions = {}) {
       CHECKIN_OPERATOR_TOKEN: checkinToken ?? "",
     });
     validateOpsHealthBootConfig(process.env);
+    validateRedisBootConfig(process.env);
+    validateEncryptionKeyBootConfig(process.env);
   }
 
   const checkinGateConfig: CheckinGateConfig = {

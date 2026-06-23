@@ -34,6 +34,7 @@ prepare_env() {
     sed -i.bak 's|^REDIS_URL=.*|REDIS_URL=redis://:smoke-redis-secret@redis:6379|' "$SMOKE_ENV"
     rm -f "${SMOKE_ENV}.bak"
   fi
+  node validate-env.mjs "$SMOKE_ENV"
 }
 
 on_fail() {

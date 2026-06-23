@@ -5,6 +5,8 @@ import {
   resolveAllowCheckinBearer,
   resolveTrustProxy,
   validateCheckinBootConfig,
+  validateRedisBootConfig,
+  validateEncryptionKeyBootConfig,
 } from "../src/config.js";
 
 describe("resolveBaseUrl", () => {
@@ -114,6 +116,58 @@ describe("validateCheckinBootConfig", () => {
         ALLOW_CHECKIN_BEARER: "true",
         CHECKIN_OPERATOR_TOKEN: validToken,
       }),
+    ).not.toThrow();
+  });
+});
+
+describe("validateRedisBootConfig", () => {
+  it("skips in development and test", () => {
+    expect(() => validateRedisBootConfig({ NODE_ENV: "development" })).not.toThrow();
+    expect(() => validateRedisBootConfig({ NODE_ENV: "test" })).not.toThrow();
+  });
+
+  it("requires authenticated REDIS_URL in production", () => {
+    expect(() => validateRedisBootConfig({ NODE_ENV: "production" })).toThrow("REDIS_URL is required");
+    expect(() =>
+      validateRedisBootConfig({ NODE_ENV: "production", REDIS_URL: "redis://redis:6379" }),
+    ).toThrow("password");
+    expect(() =>
+      validateRedisBootConfig({
+        NODE_ENV: "production",
+        REDIS_URL: "redis://:short@redis:6379",
+      }),
+    ).toThrow("password");
+    expect(() =>
+      validateRedisBootConfig({
+        NODE_ENV: "production",
+        REDIS_URL: "redis://:smoke-redis-secret@redis:6379",
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("validateEncryptionKeyBootConfig", () => {
+  const validKey = Buffer.alloc(32).toString("base64");
+
+  it("skips in development and test", () => {
+    expect(() => validateEncryptionKeyBootConfig({ NODE_ENV: "development" })).not.toThrow();
+  });
+
+  it("requires 32-byte base64 key in production", () => {
+    expect(() => validateEncryptionKeyBootConfig({ NODE_ENV: "production" })).toThrow(
+      "ENCRYPTION_KEY is required",
+    );
+    expect(() =>
+      validateEncryptionKeyBootConfig({ NODE_ENV: "production", ENCRYPTION_KEY: "CHANGE_ME" }),
+    ).toThrow("ENCRYPTION_KEY is required");
+    expect(() =>
+      validateEncryptionKeyBootConfig({
+        NODE_ENV: "production",
+        ENCRYPTION_KEY: Buffer.alloc(16).toString("base64"),
+      }),
+    ).toThrow("32 bytes");
+    expect(() =>
+      validateEncryptionKeyBootConfig({ NODE_ENV: "production", ENCRYPTION_KEY: validKey }),
     ).not.toThrow();
   });
 });
