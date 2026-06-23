@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Admin UX micro-fixes: import column reference table and CSV template download; delivery log purpose filter; compose dirty-state guard with SPA navigation blocker; attendee drawer discard confirmation; check-in stats show admitted/total; camera fullscreen toggle (#121)
 - `POST /mfa/enroll/download-codes` — download one-time MFA backup codes as a `.txt` file during enrollment (#117)
 - Check-in: `NoteModal` replaces `window.prompt` for adding attendee notes — textarea with 2000-char limit and live counter, Cancel/Add note buttons, ESC support, touch-friendly (#114)
+- `deploy/validate-env.sh` — operator pre-flight for `deploy/.env` (secret placeholders, lengths, `BASE_URL`, `DATABASE_URL` / `POSTGRES_PASSWORD` sync); upgrade runbook for Redis auth in `deploy/README.md`
 
 ### Changed
 - Runtime upgraded to Node 24 LTS; React 18 → 19 across admin and web (#111, #110)
@@ -42,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sidebar no longer marks the Overview section as live; it shows "Soon" until Overview is built (v1.0) (#114)
 
 ### Security
+- Deploy pre-flight: `deploy/validate-env.sh` checks `REDIS_PASSWORD`, `POSTGRES_PASSWORD`, `ENCRYPTION_KEY`, `BASE_URL`, and `DATABASE_URL` consistency before `docker compose up`
+- Production app boot fails fast when `REDIS_URL` is missing or unauthenticated, or when `ENCRYPTION_KEY` is missing or wrong size
 - PENtest hardening: structured audit events for rate-limit hits, MFA completion (success/fail/recovery consumed), OIDC login success, session logout, admin access denied (403), and OIDC/CF Access settings changes — all events include ISO `ts` timestamp (#123)
 - Production `BASE_URL` must use `https://` (except `localhost` / `127.0.0.1` smoke) (#123)
 - OIDC ID token verification restricts allowed JWT algorithms to RS/ES/PS family (`RS256`, `RS384`, `RS512`, `ES256`, `ES384`, `ES512`, `PS256`; no `none`) (#123)

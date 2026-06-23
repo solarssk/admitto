@@ -13,6 +13,9 @@ export const MIN_CHECKIN_OPERATOR_TOKEN_LENGTH = 32;
 /** Minimum length for ops readiness token (`OPS_HEALTH_TOKEN`). */
 export const MIN_OPS_HEALTH_TOKEN_LENGTH = 32;
 
+/** Minimum length for Redis password in production deploy. */
+export const MIN_REDIS_PASSWORD_LENGTH = 16;
+
 function normalizeCheckinOperatorToken(raw: string | undefined): string | null {
   if (!raw) return null;
   const trimmed = raw.trim();
@@ -123,6 +126,48 @@ export function resolveOpsHealthTokenOption(
 ): string | null {
   if (explicit !== undefined) return normalizeOpsHealthToken(explicit);
   return resolveOpsHealthToken(env);
+}
+
+/** Fail fast when production Redis is missing or unauthenticated. */
+export function validateRedisBootConfig(env: EnvLike = process.env): void {
+  if (env["NODE_ENV"] === "development" || env["NODE_ENV"] === "test") return;
+  const url = env["REDIS_URL"]?.trim();
+  if (!url) {
+    throw new Error(
+      "REDIS_URL is required in non-development environments (set REDIS_PASSWORD in deploy/.env — compose wires redis://:password@redis:6379)",
+    );
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("REDIS_URL must be a valid URL");
+  }
+  if (!parsed.password || parsed.password.length < MIN_REDIS_PASSWORD_LENGTH) {
+    throw new Error(
+      `REDIS_URL must include a password of at least ${MIN_REDIS_PASSWORD_LENGTH} characters in non-development environments`,
+    );
+  }
+}
+
+/** Fail fast when production encryption key is missing or wrong size. */
+export function validateEncryptionKeyBootConfig(env: EnvLike = process.env): void {
+  if (env["NODE_ENV"] === "development" || env["NODE_ENV"] === "test") return;
+  const raw = env["ENCRYPTION_KEY"]?.trim();
+  if (!raw || raw === "CHANGE_ME") {
+    throw new Error(
+      "ENCRYPTION_KEY is required in non-development environments (generate: openssl rand -base64 32)",
+    );
+  }
+  let buf: Buffer;
+  try {
+    buf = Buffer.from(raw, "base64");
+  } catch {
+    throw new Error("ENCRYPTION_KEY must be valid base64 (generate: openssl rand -base64 32)");
+  }
+  if (buf.length !== 32) {
+    throw new Error("ENCRYPTION_KEY must decode to 32 bytes (generate: openssl rand -base64 32)");
+  }
 }
 
 /** Warn when a too-short token is configured — `/readyz` stays disabled (404). */
