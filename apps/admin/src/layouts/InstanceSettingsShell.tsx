@@ -28,10 +28,6 @@ export function InstanceSettingsShell() {
         {BRAND_MARK}
         <span>Admitto</span>
       </NavLink>
-      <div className="sidebar__event">
-        <div className="overline">Instance</div>
-        <div className="sidebar__context-meta">System-wide configuration</div>
-      </div>
       <div className="sidebar__nav" aria-hidden="true" />
       <div className="sidebar__foot">
         <NavLink to="/admin" className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`} end>

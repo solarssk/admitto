@@ -92,16 +92,9 @@ export function EventsPickerPage() {
         title="Events"
         subtitle="Select an event to manage its lifecycle."
         actions={
-          <>
-            {showInstanceSettings && (
-              <Link to="/admin/settings" className="at-btn at-btn--secondary">
-                <span>Instance settings</span>
-              </Link>
-            )}
-            <Button variant="secondary" disabled title="Coming in a future release">
-              Create event
-            </Button>
-          </>
+          <Button variant="secondary" disabled title="Coming in a future release">
+            Create event
+          </Button>
         }
       />
 
@@ -129,7 +122,7 @@ export function EventsPickerPage() {
           {tab === "active" && events.length === 0 && showInstanceSettings && (
             <p className="at-hint">
               Configure branding and mail transport in{" "}
-              <Link to="/admin/settings">Instance settings</Link> while you wait for the first event.
+              <Link to="/admin/settings">Settings</Link> while you wait for the first event.
             </p>
           )}
           {tab === "active" && allEventsArchived && (
@@ -138,16 +131,8 @@ export function EventsPickerPage() {
               <button type="button" className="picker-inline-link" onClick={() => setTab("archived")}>
                 Archived events
               </button>{" "}
-              tab
-              {showInstanceSettings ? (
-                <>
-                  {" "}
-                  or unarchive from{" "}
-                  <Link to="/admin/settings">Instance settings</Link>.
-                </>
-              ) : (
-                <> or contact your administrator.</>
-              )}
+              tab to unarchive.
+              {!showInstanceSettings && <> Contact your administrator if you need help.</>}
             </p>
           )}
         </Card>

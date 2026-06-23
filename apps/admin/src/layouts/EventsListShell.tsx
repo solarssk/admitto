@@ -21,10 +21,6 @@ export function EventsListShell() {
         {BRAND_MARK}
         <span>Admitto</span>
       </NavLink>
-      <div className="sidebar__event">
-        <div className="overline">Admin</div>
-        <div className="sidebar__context-meta">Select an event to manage</div>
-      </div>
       <div className="sidebar__nav" aria-hidden="true" />
       <div className="sidebar__foot">
         <NavLink to="/admin" className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`} end>

@@ -52,6 +52,10 @@ body {
   text-decoration: none;
 }
 
+.sidebar__brand:hover {
+  text-decoration: none;
+}
+
 .sidebar__event {
   padding: 10px 6px 12px;
   border-top: 1px solid var(--border);
@@ -130,6 +134,7 @@ body {
 .nav-item:hover:not(:disabled) {
   background: var(--surface-hover);
   color: var(--text-primary);
+  text-decoration: none;
 }
 
 .nav-item--active {
@@ -265,6 +270,7 @@ body {
 
 .adm-subnav-item:hover {
   color: var(--text-primary);
+  text-decoration: none;
 }
 
 .adm-subnav-item--active {

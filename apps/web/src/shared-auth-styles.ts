@@ -416,7 +416,11 @@ body {
 
 .adm-nav-item i { font-size: 17px; color: var(--at-gray-500); }
 
-.adm-nav-item:hover { background: var(--at-gray-100); color: var(--at-ink); }
+.adm-brand:hover {
+  text-decoration: none;
+}
+
+.adm-nav-item:hover { background: var(--at-gray-100); color: var(--at-ink); text-decoration: none; }
 .adm-nav-item:hover i { color: var(--at-ink); }
 
 .adm-nav-item--active {
@@ -541,7 +545,7 @@ button[type=submit]:not(.toggle-btn):hover { background: var(--at-blue-dark); bo
   white-space: nowrap;
 }
 
-.adm-subnav-item:hover { color: var(--at-ink); }
+.adm-subnav-item:hover { color: var(--at-ink); text-decoration: none; }
 
 .adm-subnav-item--active {
   color: var(--at-blue);
@@ -580,10 +584,6 @@ export function renderAdminShell(options: AdminShellOptions): string {
 
   const sidebar = `<aside class="adm-sidebar">
   <a class="adm-brand" href="/admin">${ADMIN_MARK_SVG}<span>Admitto</span></a>
-  <div class="adm-context">
-    <div class="adm-overline">Instance</div>
-    <div class="adm-context-meta">System-wide configuration</div>
-  </div>
   <div class="adm-nav-spacer" aria-hidden="true"></div>
   <div class="adm-foot">
     <a class="adm-nav-item" href="/admin"><i class="ti ti-calendar-event"></i><span>All events</span></a>
