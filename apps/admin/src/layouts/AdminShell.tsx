@@ -1,5 +1,4 @@
 import { NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
-import { Badge, Button } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import type { EventDto } from "../api/types.js";
@@ -32,8 +31,6 @@ function formatEventMeta(event: EventDto): string {
 
 export interface AdminShellProps {
   event: EventDto;
-  showArchiveButton?: boolean;
-  onArchiveRequest?: () => void;
 }
 
 const BRAND_MARK = (
@@ -45,7 +42,7 @@ const BRAND_MARK = (
 );
 
 /** Event-scoped admin layout: lifecycle sidebar, top bar, and nested route outlet. */
-export function AdminShell({ event, showArchiveButton, onArchiveRequest }: AdminShellProps) {
+export function AdminShell({ event }: AdminShellProps) {
   const { eventId } = useParams();
   const navigate = useNavigate();
   const { assignments } = useAuth();
@@ -113,16 +110,6 @@ export function AdminShell({ event, showArchiveButton, onArchiveRequest }: Admin
 
   return (
     <StaffShell sidebar={sidebar}>
-      {(showArchiveButton && onArchiveRequest) || event.archived_at ? (
-        <div className="event-archive-bar">
-          {event.archived_at && <Badge variant="neutral">Archived</Badge>}
-          {showArchiveButton && onArchiveRequest && (
-            <Button type="button" variant="secondary" onClick={onArchiveRequest}>
-              Archive event
-            </Button>
-          )}
-        </div>
-      ) : null}
       <Outlet context={{ event }} />
     </StaffShell>
   );

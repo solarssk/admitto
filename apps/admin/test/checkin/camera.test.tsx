@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { cleanup, fireEvent, render, waitFor, screen } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import { CameraScanner } from "../../src/checkin/CameraScanner.js";
 
 const { decodeFromVideoDevice, stop } = vi.hoisted(() => {
@@ -50,26 +50,27 @@ describe("CameraScanner", () => {
     await waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
   });
 
-  it("shows fullscreen toggle button", async () => {
-    render(<CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />);
-    await waitFor(() => expect(decodeFromVideoDevice).toHaveBeenCalled());
-    expect(screen.getByRole("button", { name: "Enter fullscreen" })).toBeTruthy();
-  });
+  it("debounces repeated decodes of the same QR", async () => {
+    const onScan = vi.fn();
+    let decodeCallback: ((result: { getText: () => string } | undefined) => void) | undefined;
 
-  it("uses CSS fallback when requestFullscreen is unavailable", async () => {
-    const { container } = render(
-      <CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />,
-    );
-    await waitFor(() => expect(decodeFromVideoDevice).toHaveBeenCalled());
-
-    const video = container.querySelector("video");
-    expect(video).toBeTruthy();
-    Object.defineProperty(video!.parentElement, "requestFullscreen", {
-      configurable: true,
-      value: undefined,
+    decodeFromVideoDevice.mockImplementation(async (_device, _video, callback) => {
+      decodeCallback = callback;
+      return { stop };
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Enter fullscreen" }));
-    expect(container.querySelector(".checkin-camera--fullscreen")).toBeTruthy();
+    render(<CameraScanner enabled={true} wedgeActive={false} onScan={onScan} />);
+    await waitFor(() => expect(decodeCallback).toBeTypeOf("function"));
+
+    vi.useFakeTimers();
+    const result = { getText: () => "https://example.com/t/abc" };
+    decodeCallback?.(result);
+    decodeCallback?.(result);
+    expect(onScan).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(2500);
+    decodeCallback?.(result);
+    expect(onScan).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 });

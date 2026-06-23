@@ -9,7 +9,9 @@ export function Switch({ label, id, className, ...rest }: SwitchProps) {
   return (
     <label className="at-switch">
       <input id={autoId} type="checkbox" role="switch" className={["at-switch__input", className].filter(Boolean).join(" ")} {...rest} />
-      <span className="at-switch__track" aria-hidden="true" />
+      <span className="at-switch__track" aria-hidden="true">
+        <span className="at-switch__thumb" />
+      </span>
       {label && <span className="at-switch__label">{label}</span>}
     </label>
   );

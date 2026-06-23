@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Admin sidebar chrome trimmed: redundant context labels and duplicate Instance settings header action removed
 - `@admitto/ui` design system: `Spinner`, `EmptyState`, `Skeleton`, and `ToastProvider` / `useToast` (#120)
 - Admin app root wrapped with `ToastProvider`; recoverable `ErrorBoundary` on render errors (#97, #120)
-- Admin UX micro-fixes: import column reference table and CSV template download; delivery log purpose filter; compose dirty-state guard; attendee drawer discard confirmation; check-in stats admitted/total; camera fullscreen toggle (#121)
+- Admin UX micro-fixes: import column reference table and CSV template download; delivery log purpose filter; compose dirty-state guard; attendee drawer discard confirmation; check-in stats admitted/total (#121)
 - `POST /mfa/enroll/download-codes` — backup codes as `.txt` during enrollment (#117)
 - Check-in: `NoteModal` replaces `window.prompt` for attendee notes (#114)
 
@@ -58,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings subnav active tab uses path prefix matching instead of exact pathname equality
 - Sidebar “Soon” badges render with correct styling (`.nav-item--soon`, `.nav-item__badge`)
 - Global link hover underline no longer appears on sidebar brand, navigation items, or button-styled links (SPA and SSR settings shell)
+- Check-in camera: removed fullscreen toggle (browser instability); debounce repeated ZXing decodes; extract ticket token from QR URLs with trailing slash or query (`packages/tickets`)
+- Check-in invalid/revoked scans show dedicated feedback card instead of silent failure
+- Requirements: `@admitto/ui` Switch missing thumb restored; item table uses name + auto-generated key; drawer layout cleanup
+- Event picker cards: removed hover lift/underline noise
 
 ### Security
 - Branding `font_family_name` allowlist on save and ticket-page render (blocks CSS/HTML injection via custom fonts) (#96)

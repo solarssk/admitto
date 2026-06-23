@@ -6,19 +6,15 @@ type CameraScannerProps = {
   onScan: (raw: string) => void;
 };
 
+/** Ignore repeated ZXing decodes of the same QR while it stays in frame. */
+const CAMERA_SCAN_COOLDOWN_MS = 2500;
+
 export function CameraScanner({ enabled, wedgeActive, onScan }: CameraScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const onScanRef = useRef(onScan);
+  const lastEmitRef = useRef<{ text: string; at: number } | null>(null);
   onScanRef.current = onScan;
-
-  useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", handler);
-    return () => document.removeEventListener("fullscreenchange", handler);
-  }, []);
 
   useEffect(() => {
     if (!enabled || wedgeActive) return;
@@ -37,7 +33,15 @@ export function CameraScanner({ enabled, wedgeActive, onScan }: CameraScannerPro
 
         const reader = new BrowserQRCodeReader();
         const nextControls = await reader.decodeFromVideoDevice(undefined, video, (result) => {
-          if (result && !stopped) onScanRef.current(result.getText());
+          if (!result || stopped) return;
+
+          const text = result.getText();
+          const now = Date.now();
+          const last = lastEmitRef.current;
+          if (last && last.text === text && now - last.at < CAMERA_SCAN_COOLDOWN_MS) return;
+
+          lastEmitRef.current = { text, at: now };
+          onScanRef.current(text);
         });
         if (stopped) {
           nextControls.stop();
@@ -56,44 +60,18 @@ export function CameraScanner({ enabled, wedgeActive, onScan }: CameraScannerPro
     };
   }, [enabled, wedgeActive]);
 
-  const toggleFullscreen = () => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    if (isFullscreen) {
-      if (document.fullscreenElement && typeof document.exitFullscreen === "function") {
-        void document.exitFullscreen();
-      } else {
-        setIsFullscreen(false);
-      }
-      return;
-    }
-
-    if (typeof el.requestFullscreen === "function") {
-      el.requestFullscreen()
-        .then(() => setIsFullscreen(true))
-        .catch(() => setIsFullscreen(true));
-    } else {
-      setIsFullscreen(true);
-    }
-  };
-
   if (!enabled) return null;
 
   return (
-    <div
-      ref={containerRef}
-      className={`checkin-camera${isFullscreen ? " checkin-camera--fullscreen" : ""}`}
-    >
-      <video ref={videoRef} className="checkin-camera__video" muted playsInline />
-      <button
-        type="button"
-        className="checkin-camera__fullscreen-btn"
-        onClick={toggleFullscreen}
-        aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-      >
-        <i className={isFullscreen ? "ti ti-minimize" : "ti ti-maximize"} aria-hidden="true" />
-      </button>
+    <div className="checkin-camera">
+      <video
+        ref={videoRef}
+        className="checkin-camera__video"
+        muted
+        playsInline
+        autoPlay
+        aria-label="Live camera preview for QR scanning"
+      />
       {wedgeActive && (
         <p className="at-hint">Camera paused — scan field has input (wedge priority).</p>
       )}

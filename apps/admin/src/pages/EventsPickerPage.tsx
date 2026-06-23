@@ -172,16 +172,10 @@ export function EventsPickerPage() {
             </>
           );
 
-          return (
-            <Card key={event.id} className={`event-card${showUnarchive ? " event-card--static" : ""}`}>
-              {showUnarchive ? (
-                cardBody
-              ) : (
-                <Link to={`/admin/events/${event.id}/overview`} className="event-card--link">
-                  {cardBody}
-                </Link>
-              )}
-              {showUnarchive && (
+          if (showUnarchive) {
+            return (
+              <Card key={event.id} className="event-card event-card--static">
+                {cardBody}
                 <p className="event-card__actions">
                   <Button
                     type="button"
@@ -194,8 +188,14 @@ export function EventsPickerPage() {
                     Unarchive
                   </Button>
                 </p>
-              )}
-            </Card>
+              </Card>
+            );
+          }
+
+          return (
+            <Link key={event.id} to={`/admin/events/${event.id}/overview`} className="event-card-link">
+              <Card className="event-card">{cardBody}</Card>
+            </Link>
           );
         })}
       </div>
