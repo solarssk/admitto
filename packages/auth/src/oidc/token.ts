@@ -2,7 +2,8 @@ import * as jose from "jose";
 import type { IdentityProvider } from "@prisma/client";
 import type { JWTPayload } from "jose";
 import { decryptClientSecret } from "./provider-secret.js";
-import { assertSafeOidcFetchUrl, assertSafeOidcFetchUrlResolved } from "./safe-url.js";
+import { createPinnedRemoteJWKSet, safeOidcFetch } from "./safe-oidc-fetch.js";
+import { assertSafeOidcFetchUrl } from "./safe-url.js";
 
 export interface TokenExchangeResult {
   idToken: string;
@@ -23,7 +24,7 @@ function getJwksVerifier(jwksUri: string): jose.JWTVerifyGetKey {
   if (cached && Date.now() - cached.fetchedAt < JWKS_CACHE_MS) {
     return cached.keys;
   }
-  const keys = jose.createRemoteJWKSet(new URL(jwksUri));
+  const keys = createPinnedRemoteJWKSet(jwksUri);
   jwksCache.set(jwksUri, { keys, fetchedAt: Date.now() });
   return keys;
 }
@@ -41,7 +42,6 @@ export async function exchangeAuthorizationCode(
   redirectUri: string,
 ): Promise<{ id_token: string; access_token?: string }> {
   assertSafeOidcFetchUrl(provider.token_endpoint);
-  await assertSafeOidcFetchUrlResolved(provider.token_endpoint);
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
@@ -53,7 +53,7 @@ export async function exchangeAuthorizationCode(
     body.set("client_secret", decryptClientSecret(provider.client_secret_enc));
   }
 
-  const res = await fetch(provider.token_endpoint, {
+  const res = await safeOidcFetch(provider.token_endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
@@ -79,7 +79,6 @@ export async function exchangeAuthorizationCode(
 /** Validate ID token signature and standard claims including nonce. */
 export async function validateIdToken(input: ValidateIdTokenInput): Promise<JWTPayload> {
   assertSafeOidcFetchUrl(input.provider.jwks_uri);
-  await assertSafeOidcFetchUrlResolved(input.provider.jwks_uri);
   const verifier = getJwksVerifier(input.provider.jwks_uri);
   const { payload } = await jose.jwtVerify(input.idToken, verifier, {
     issuer: input.provider.issuer,

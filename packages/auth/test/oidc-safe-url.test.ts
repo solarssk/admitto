@@ -66,6 +66,11 @@ describe("assertSafeOidcFetchUrl", () => {
     );
     expect(() => assertSafeOidcFetchUrl("https://[::ffff:7f00:1]/")).toThrow(/private or link-local/);
   });
+
+  it("rejects unspecified IPv4 and IPv6 addresses", () => {
+    expect(() => assertSafeOidcFetchUrl("https://0.0.0.0/")).toThrow(/private or link-local/);
+    expect(() => assertSafeOidcFetchUrl("https://[::]/")).toThrow(/private or link-local/);
+  });
 });
 
 describe("fetchOidcDiscovery SSRF guard", () => {
@@ -89,6 +94,15 @@ describe("assertSafeOidcFetchUrlResolved", () => {
       ReturnType<typeof lookup>
     >);
     await expect(assertSafeOidcFetchUrlResolved("https://login.example.com/")).resolves.toBeUndefined();
+  });
+
+  it("rejects hostnames that resolve to unspecified addresses", async () => {
+    mockedLookup.mockResolvedValue([{ address: "0.0.0.0", family: 4 }] as Awaited<
+      ReturnType<typeof lookup>
+    >);
+    await expect(assertSafeOidcFetchUrlResolved("https://evil.example.com/")).rejects.toThrow(
+      /private or link-local/,
+    );
   });
 
   it("skips DNS for http localhost mock IdPs in non-production", async () => {

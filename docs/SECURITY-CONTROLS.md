@@ -189,12 +189,14 @@ socket / request URL used).
 ## Outbound HTTP (SSRF mitigation)
 
 Superadmin OIDC provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches use
-[`assertSafeOidcFetchUrl`](../packages/auth/src/oidc/safe-url.ts):
+[`assertSafeOidcFetchUrl`](../packages/auth/src/oidc/safe-url.ts) plus
+[`safeOidcFetch`](../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
 
 - HTTPS required in production (HTTP loopback allowed in development for mock IdPs).
 - Literal private, link-local, and metadata hostnames rejected.
-- **DNS resolve-before-connect** (`assertSafeOidcFetchUrlResolved`): hostname must not resolve to
-  private/link-local addresses at request time (mitigates DNS rebinding).
+- **DNS resolve-and-pin**: hostname is resolved once (5 min TTL), validated, then the outbound
+  connection uses the resolved IP with correct `Host` / SNI so DNS rebinding cannot swap targets
+  between check and connect.
 
 Requires **superadmin** session (or Cloudflare Access JWT with instance admin role) for admin UI
 discover/test. Residual risk: compromised superadmin account can still trigger outbound fetches to
@@ -242,7 +244,8 @@ Useful when repeating internal or vendor PEN tests against a staging instance:
 6. **Residual:** misconfigured proxy append on `X-Forwarded-For` can still spoof rate-limit IP —
    verify deploy runbook, not app-only config.
 
-Source constants: `apps/web/src/**/*-rate-limit*.ts`, `packages/auth/src/oidc/safe-url.ts`.
+Source constants: `apps/web/src/**/*-rate-limit*.ts`, `packages/auth/src/oidc/safe-url.ts`,
+`packages/auth/src/oidc/safe-oidc-fetch.ts`.
 
 ---
 

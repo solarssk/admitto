@@ -1,6 +1,7 @@
 import * as jose from "jose";
 import type { JWTPayload } from "jose";
-import { assertSafeOidcFetchUrl, assertSafeOidcFetchUrlResolved } from "../oidc/safe-url.js";
+import { createPinnedRemoteJWKSet } from "../oidc/safe-oidc-fetch.js";
+import { assertSafeOidcFetchUrl } from "../oidc/safe-url.js";
 import type { CfAccessConfig } from "./config.js";
 
 const jwksVerifiers = new Map<string, jose.JWTVerifyGetKey>();
@@ -49,8 +50,7 @@ export async function validateAccessJwt(
 
   let verifier = jwksVerifiers.get(config.jwksUri);
   if (!verifier) {
-    await assertSafeOidcFetchUrlResolved(config.jwksUri);
-    verifier = jose.createRemoteJWKSet(new URL(config.jwksUri));
+    verifier = createPinnedRemoteJWKSet(config.jwksUri);
     jwksVerifiers.set(config.jwksUri, verifier);
   }
 

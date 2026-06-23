@@ -1,4 +1,5 @@
-import { assertSafeOidcFetchUrl, assertSafeOidcFetchUrlResolved } from "./safe-url.js";
+import { safeOidcFetch } from "./safe-oidc-fetch.js";
+import { assertSafeOidcFetchUrl } from "./safe-url.js";
 
 export interface OidcDiscoveryDocument {
   issuer: string;
@@ -18,8 +19,7 @@ export async function fetchOidcDiscovery(issuer: string): Promise<OidcDiscoveryD
   assertSafeOidcFetchUrl(base);
   const url = new URL(".well-known/openid-configuration", base).toString();
   assertSafeOidcFetchUrl(url);
-  await assertSafeOidcFetchUrlResolved(url);
-  const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  const res = await safeOidcFetch(url, { signal: AbortSignal.timeout(15_000) });
   if (!res.ok) {
     throw new Error(`OIDC discovery failed: HTTP ${res.status}`);
   }
@@ -73,8 +73,7 @@ export async function testOidcConnection(input: {
       return { ok: false, error: "JWKS URI is required" };
     }
     assertSafeOidcFetchUrl(jwksUri);
-    await assertSafeOidcFetchUrlResolved(jwksUri);
-    const res = await fetch(jwksUri, { signal: AbortSignal.timeout(15_000) });
+    const res = await safeOidcFetch(jwksUri, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
       return { ok: false, error: `JWKS endpoint returned HTTP ${res.status}` };
     }
