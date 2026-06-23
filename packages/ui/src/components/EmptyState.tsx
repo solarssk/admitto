@@ -18,7 +18,7 @@ export function EmptyState({ icon, title, description, action, className }: Empt
           {icon}
         </div>
       )}
-      <h2 className="at-empty-state__title">{title}</h2>
+      <p className="at-empty-state__title">{title}</p>
       {description && <p className="at-empty-state__desc">{description}</p>}
       {action && <div className="at-empty-state__action">{action}</div>}
     </div>
