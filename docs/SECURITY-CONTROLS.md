@@ -131,11 +131,12 @@ limits are shared across replicas and survive restarts.
 
 | Surface | Bucket | Limit / window | Auth |
 |---------|--------|----------------|------|
-| `GET /healthz` | client IP | 120 / 60 s | none (liveness; runs `SELECT 1`) |
+| `GET /healthz` | replica + client IP | 120 / 60 s | none (liveness; runs `SELECT 1`) |
 | `GET /readyz` | client IP | 10 / 60 s | `OPS_HEALTH_TOKEN` (disabled when unset) |
 
-Docker `HEALTHCHECK` uses `/healthz` only. External monitors should not poll `/healthz` faster than
-a few requests per minute per source IP, or they may hit 429.
+Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scoped per process
+(`hostname`) so replica probes are not summed into one bucket. External monitors should not poll
+`/healthz` faster than a few requests per minute per source IP, or they may hit 429.
 
 ### Staff admin (authenticated)
 
