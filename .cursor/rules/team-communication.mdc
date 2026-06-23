@@ -1,0 +1,32 @@
+---
+description: Admitto team communication — Polish chat, English GitHub, sprint reports
+alwaysApply: true
+---
+
+# Team communication (Admitto)
+
+## Language
+
+- **With Filip / product owner:** Polish — clear, direct, no unnecessary jargon.
+- **Published on GitHub:** English — PR titles and descriptions, review comments intended for the repo, commit messages, ADRs, prompts, and any docs others must read without Polish context.
+- **Clarity:** Whatever the language, write so a reviewer who was not in the chat can follow decisions and test steps.
+
+## Sprint / stage reports (Cursor)
+
+After each completed stage or sprint, write **my own** report in `reports/` (e.g. `reports/sprint-v0.3-cursor.md`).
+
+Each agent (Claude Code, Codex, Cursor) writes a **separate** report — do not copy or paraphrase the others’ reports; the architect compares independent perspectives.
+
+Include:
+
+- What we were tackling (context / scope)
+- What was delivered
+- What had to be fixed after review (architect, CodeRabbit, Codex, CI)
+- Problems and blockers encountered
+- Open doubts or deferred decisions
+
+Reports are for architect review; match the tone and structure of existing `reports/sprint-*-claudecode.md` / `codex.md` files unless Filip asks otherwise.
+
+## Reviews
+
+When asked for PR or security review: substantive findings in English on GitHub; summary to Filip can be in Polish.

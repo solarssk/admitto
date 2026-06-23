@@ -2,7 +2,9 @@ import {
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
+  renderAuthPage,
 } from "./shared-auth-styles.js";
+import { AUTH_PAGE_ICON_CSP } from "./favicon.js";
 
 function esc(s: string): string {
   return s
@@ -18,7 +20,7 @@ export function getLoginPageSecurityHeaders(): Record<string, string> {
   return {
     "Cache-Control": "private, no-store, max-age=0",
     "Content-Security-Policy":
-      "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+      `default-src 'none'; ${AUTH_PAGE_ICON_CSP}; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'`,
     // Primary CSRF signal for HTML form POSTs: Referer on same-origin submits (Safari).
     // Sec-Fetch-Site in same-origin-post.ts is a legacy-UA fallback only.
     "Referrer-Policy": "same-origin",
@@ -29,7 +31,7 @@ export function getLoginPageSecurityHeaders(): Record<string, string> {
 /** SSO provider link for login footer. */
 export interface LoginSsoProvider {
   id: string;
-  display_name: string;
+  button_label: string;
 }
 
 /** Uniform login failure copy (POST /login). */
@@ -50,7 +52,7 @@ function renderSsoBlock(ssoProviders: LoginSsoProvider[], next?: string): string
   const buttons = ssoProviders
     .map((p) => {
       const startUrl = `/api/auth/oidc/${encodeURIComponent(p.id)}/start${next ? `?next=${encodeURIComponent(next)}` : ""}`;
-      return `<a href="${esc(startUrl)}" class="auth-btn-secondary">${SSO_ICON_SVG} Continue with ${esc(p.display_name)}</a>`;
+      return `<a href="${esc(startUrl)}" class="auth-btn-secondary auth-btn-sso">${SSO_ICON_SVG}${esc(p.button_label)}</a>`;
     })
     .join("");
   return `<div class="auth-sso-list">${buttons}</div><div class="auth-divider">or</div>`;
@@ -71,14 +73,13 @@ export function renderLoginForm(
   const nextField = next ? `<input type="hidden" name="next" value="${esc(next)}">` : "";
   const ssoBlock = renderSsoBlock(ssoProviders, next);
 
-  const body = `${renderAuthBrand()}
-  <div class="auth-card">
-    <h1>Sign in</h1>
+  const card = `${renderAuthBrand()}
+    <p class="auth-page-action">Sign in</p>
     <p class="subtitle">Internal event access gateway</p>
     ${ssoFallbackBlock}
     ${errorBlock}
     ${ssoBlock}
-    <form method="post" action="/login">
+    <form method="post" action="/login" aria-label="Admitto sign in">
       ${nextField}
       <div class="auth-field">
         <label class="auth-label" for="email">Email</label>
@@ -88,16 +89,11 @@ export function renderLoginForm(
         <label class="auth-label" for="password">Password</label>
         <input class="auth-input" id="password" type="password" name="password" required autocomplete="current-password">
       </div>
-      <div class="auth-field">
-        <label class="auth-label" for="device_label">Device label <span style="font-weight:400;color:var(--at-gray-500)">(optional)</span></label>
-        <input class="auth-input" id="device_label" type="text" name="device_label" placeholder="Tablet 1 — main entrance" maxlength="120">
-      </div>
       <button class="auth-btn-primary" type="submit">Sign in</button>
     </form>
-    <p class="auth-footer">Admitto is an internal tool. Access is managed by your IT administrator.</p>
-  </div>`;
+    <p class="auth-footer">Admitto is an internal tool.<br>Access is managed by your IT administrator.</p>`;
 
-  return renderAuthDocument("Admitto — Sign in", body, AUTH_PAGE_CSS);
+  return renderAuthDocument({ step: "Sign in", body: renderAuthPage(card), css: AUTH_PAGE_CSS });
 }
 
 /** Event row shown on the temporary `/operator` landing page. */

@@ -87,10 +87,23 @@ describe("GET /login", () => {
     const html = await res.text();
     expect(html).toContain('name="email"');
     expect(html).toContain('name="password"');
-    expect(html).toContain("device_label");
-    expect(html).not.toContain("coming soon");
+    expect(html).not.toContain("device_label");
+    expect(html).not.toContain("auth-brand-mark");
+    expect(html).toContain("auth-page");
     expect(html).toContain("auth-card");
+    expect(html).toContain('viewBox="0 0 32 32"');
     expect(html).toContain("Sign in");
+    expect(html).toContain("<title>Admitto</title>");
+    expect(html).toContain('name="application-name" content="Admitto"');
+    expect(html).toContain('property="og:site_name" content="Admitto"');
+    expect(html).toContain('<h1 class="auth-product-name">Admitto</h1>');
+    expect(html).toContain('aria-label="Admitto sign in"');
+    expect(html).not.toContain("<h1>Sign in</h1>");
+    expect(html).toContain("auth-footer");
+    expect(html).toContain("Admitto is an internal tool.<br>Access is managed by your IT administrator.");
+    expect(html).toContain('rel="icon"');
+    expect(html).toContain("/favicon.svg");
+    expect(html).toContain("/apple-touch-icon.png");
   });
 
   it("renders SSO fallback banner for error=oidc_failed", async () => {
@@ -128,7 +141,6 @@ describe("POST /login", () => {
       body: new URLSearchParams({
         email: "operator@example.com",
         password: "op-pass-123",
-        device_label: "Tablet 1",
       }).toString(),
     });
     expect(res.status).toBe(302);
@@ -151,7 +163,7 @@ describe("POST /login", () => {
     expect(sessionCookie(res)).toBeUndefined();
   });
 
-  it("persists device_label on session", async () => {
+  it("persists device_label via session API", async () => {
     const email = "device@example.com";
     const password_hash = await hashPassword("x");
     const user = await prisma.user.create({
@@ -161,19 +173,24 @@ describe("POST /login", () => {
       data: { user_id: user.id, role: "operator", scope_type: "event", scope_id: EVENT_ID },
     });
 
-    const res = await app.request("/login", {
+    const loginRes = await app.request("/login", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin },
-      body: new URLSearchParams({
-        email,
-        password: "x",
-        device_label: "Tablet 2 — side entrance",
-      }).toString(),
+      body: new URLSearchParams({ email, password: "x" }).toString(),
     });
-    expect(res.status).toBe(302);
-    const cookie = sessionCookie(res)!;
-    const meRes = await app.request("/api/auth/me", { headers: { Cookie: cookie } });
-    expect(meRes.status).toBe(200);
+    expect(loginRes.status).toBe(302);
+    const cookie = sessionCookie(loginRes)!;
+
+    const setRes = await app.request("/api/auth/session/device-label", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookie,
+        Origin: "http://localhost",
+      },
+      body: JSON.stringify({ device_label: "Tablet 2 — side entrance" }),
+    });
+    expect(setRes.status).toBe(200);
 
     const sessions = await prisma.session.findMany({
       where: { user_id: user.id },

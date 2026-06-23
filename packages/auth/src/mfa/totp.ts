@@ -22,6 +22,18 @@ export function buildTotpOtpauthUri(secret: string, email: string, issuer = "Adm
   return generateURI({ issuer, label: email, secret });
 }
 
+/** Extract base32 setup key from an otpauth://totp URI (manual entry / copy). */
+export function parseTotpSecretFromOtpauthUri(uri: string): string | null {
+  try {
+    const parsed = new URL(uri);
+    if (parsed.protocol !== "otpauth:") return null;
+    const secret = parsed.searchParams.get("secret")?.trim();
+    return secret || null;
+  } catch {
+    return null;
+  }
+}
+
 /** Encrypt TOTP secret for DB storage. */
 export function encryptTotpSecret(secret: string): string {
   return encryptToString(secret);

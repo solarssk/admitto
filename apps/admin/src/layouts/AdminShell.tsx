@@ -46,7 +46,11 @@ export function AdminShell({ event, showArchiveButton, onArchiveRequest }: Admin
     <div className="shell">
       <aside className="sidebar">
         <div className="sidebar__brand">
-          <span className="sidebar__brand-mark" aria-hidden="true" />
+          <svg className="sidebar__brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+            <rect x="1" y="1" width="30" height="30" rx="7.5" fill="#066fd1"/>
+            <path d="M9.5 16.5l4.2 4.2 7.5-9" stroke="#ffffff" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/>
+            <rect x="22.5" y="6" width="4" height="4" rx="1" fill="#ffffff" fillOpacity="0.55"/>
+          </svg>
           <span>Admitto</span>
         </div>
         <div className="sidebar__event">
@@ -92,23 +96,13 @@ export function AdminShell({ event, showArchiveButton, onArchiveRequest }: Admin
             <span>All events</span>
           </NavLink>
           {isSuperadmin(assignments) && (
-            <>
-              <NavLink
-                to="/admin/settings"
-                className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
-              >
-                <i className="ti ti-settings" aria-hidden="true" />
-                <span>Instance settings</span>
-              </NavLink>
-              <a className="nav-item" href="/admin/auth/providers">
-                <i className="ti ti-key" aria-hidden="true" />
-                <span>Identity providers</span>
-              </a>
-              <a className="nav-item" href="/admin/auth/cf-access">
-                <i className="ti ti-shield-lock" aria-hidden="true" />
-                <span>Cloudflare Access</span>
-              </a>
-            </>
+            <NavLink
+              to="/admin/settings"
+              className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
+            >
+              <i className="ti ti-settings" aria-hidden="true" />
+              <span>Settings</span>
+            </NavLink>
           )}
         </div>
       </aside>

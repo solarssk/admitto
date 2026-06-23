@@ -4,7 +4,8 @@ import {
   SETTING_CF_ACCESS_PROTECTED_PREFIXES,
   SETTING_CF_ACCESS_TEAM_DOMAIN,
 } from "@admitto/auth";
-import { ADMIN_PAGE_CSS } from "../shared-auth-styles.js";
+import { renderAdmittoFaviconLink } from "../favicon.js";
+import { renderAdminShell } from "../shared-auth-styles.js";
 
 /** Escape HTML special characters for server-rendered admin pages. */
 function esc(s: string): string {
@@ -95,21 +96,14 @@ export function renderCfAccessForm(options: {
   );
 }
 
-/** Wrap admin page body in a shared HTML shell; tab title uses the `Admitto —` prefix. */
+/** Wrap admin page body in a shared HTML shell with full sidebar. */
 function pageShell(heading: string, body: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Admitto — ${esc(heading)}</title>
-  <style>${ADMIN_PAGE_CSS}</style>
-</head>
-<body>
-  <h1>${esc(heading)}</h1>
-  ${body}
-</body>
-</html>`;
+  return renderAdminShell({
+    title: heading,
+    body: `<h1>${esc(heading)}</h1>${body}`,
+    activeItem: "cf-access",
+    favicon: renderAdmittoFaviconLink(),
+  });
 }
 
 /** Parse Cloudflare Access settings from a submitted admin form. */

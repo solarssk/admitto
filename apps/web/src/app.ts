@@ -33,6 +33,13 @@ import {
   validateEncryptionKeyBootConfig,
 } from "./config.js";
 import {
+  handleGetAppleTouchIcon,
+  handleGetAppleTouchIconPrecomposed,
+  handleGetFavicon32Png,
+  handleGetFaviconIco,
+  handleGetFaviconSvg,
+} from "./favicon.js";
+import {
   createCheckinPreAuth,
   createCheckinSessionCsrfGuard,
   createCheckinEventScope,
@@ -62,11 +69,13 @@ import {
   createAdminTemplatePreviewRateLimit,
 } from "./admin-heavy-ops-rate-limit.js";
 import { createAdminAuthProviderOpsRateLimit } from "./admin-auth-providers-rate-limit.js";
-import { handleLogin, handleLogout, handleMe, handleMfaVerify, handleTotpEnroll, handleTotpConfirm } from "./auth/routes.js";
+import { handleLogin, handleLogout, handleMe, handlePostSessionDeviceLabel, handleMfaVerify, handleTotpEnroll, handleTotpConfirm, handleTotpBackupCodesComplete } from "./auth/routes.js";
 import {
   handleGetMfaEnroll,
+  handleGetMfaEnrollBackupCodes,
   handleGetMfaVerify,
   handlePostMfaEnroll,
+  handlePostMfaEnrollBackupCodes,
   handlePostMfaEnrollDownloadCodes,
   handlePostMfaEnrollStart,
   handlePostMfaVerify,
@@ -161,6 +170,7 @@ import {
   handlePostCfAccessTest,
 } from "./admin/cf-access-routes.js";
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
+import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
 import { handleReadyz } from "./ops/readyz.js";
 import { createReadyzRateLimitMiddleware } from "./ops/readyz-rate-limit.js";
 import { createHealthzRateLimitMiddleware } from "./ops/healthz-rate-limit.js";
@@ -347,6 +357,11 @@ export function createApp(options: CreateAppOptions = {}) {
   }
 
   app.get("/healthz", healthzRateLimit, (c) => handleHealthz(c, db));
+  app.get("/favicon.svg", handleGetFaviconSvg);
+  app.get("/favicon-32.png", handleGetFavicon32Png);
+  app.get("/favicon.ico", handleGetFaviconIco);
+  app.get("/apple-touch-icon.png", handleGetAppleTouchIcon);
+  app.get("/apple-touch-icon-precomposed.png", handleGetAppleTouchIconPrecomposed);
   app.get("/readyz", readyzRateLimit, (c) =>
     handleReadyz(c, {
       db,
@@ -361,6 +376,9 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/api/auth/logout", jsonPostCsrf, (c) => handleLogout(c, db));
   app.get("/api/auth/me", requireSession, (c) => handleMe(c, db));
+  app.post("/api/auth/session/device-label", jsonPostCsrf, requireSession, (c) =>
+    handlePostSessionDeviceLabel(c, db),
+  );
 
   app.get("/api/admin/me", staffAdminGate, (c) => handleMe(c, db));
   app.get("/api/admin/events", staffAdminGate, (c) => handleGetAdminEvents(c, db));
@@ -477,6 +495,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/auth/mfa/totp/confirm", jsonPostCsrf, requirePartialSession, (c) =>
     handleTotpConfirm(c, db, rateLimitStore),
   );
+  app.post("/api/auth/mfa/totp/backup-codes/complete", jsonPostCsrf, requirePartialSession, (c) =>
+    handleTotpBackupCodesComplete(c, db),
+  );
 
   app.get("/api/auth/oidc/:providerId/start", oidcAuthRateLimit, (c) => handleOidcStart(c, db, baseUrl));
   app.get("/api/auth/oidc/:providerId/callback", oidcAuthRateLimit, (c) => handleOidcCallback(c, db, baseUrl));
@@ -486,7 +507,11 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostOidcLink(c, db, baseUrl, rateLimitStore),
   );
 
-  app.get("/", (c) => c.redirect("/login", 302));
+  app.get("/", requireSessionHtml, async (c) => {
+    const auth = c.get("auth");
+    const landing = await resolvePostLoginRedirectForUser(db, auth.userId);
+    return c.redirect(landing, 302);
+  });
 
   app.get("/admin/auth/providers", requireAdminAccess, (c) => handleListProviders(c, db));
   app.get("/admin/auth/providers/new", requireAdminAccess, (c) => handleGetNewProvider(c));
@@ -527,6 +552,12 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/mfa/enroll", htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnroll(c, db, rateLimitStore),
+  );
+  app.get("/mfa/enroll/backup-codes", requirePartialSessionHtml, (c) =>
+    handleGetMfaEnrollBackupCodes(c),
+  );
+  app.post("/mfa/enroll/backup-codes", htmlPostCsrf, requirePartialSessionHtml, (c) =>
+    handlePostMfaEnrollBackupCodes(c, db),
   );
   app.post("/mfa/enroll/download-codes", htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnrollDownloadCodes(c, db),

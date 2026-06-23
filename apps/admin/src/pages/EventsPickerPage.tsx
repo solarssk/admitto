@@ -137,17 +137,29 @@ export function EventsPickerPage() {
               <Link to={`/admin/events/${event.id}/overview`}>{event.title}</Link>
             </h2>
             <p className="event-card__meta">
-              {formatEventDate(event.date)}
-              {event.location ? ` · ${event.location}` : ""}
+              <i className="ti ti-calendar" aria-hidden="true" />
+              <span>{formatEventDate(event.date)}</span>
+              {event.location && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <i className="ti ti-map-pin" aria-hidden="true" />
+                  <span>{event.location}</span>
+                </>
+              )}
             </p>
+            {event.attendee_count != null && (
+              <div className="event-card__stats">
+                <div className="event-card__stat">
+                  <i className="ti ti-users" aria-hidden="true" />
+                  <strong>{event.attendee_count}</strong>
+                  <span>attendees</span>
+                </div>
+              </div>
+            )}
             {event.archived_at && (
               <p className="event-card__archived">
                 <Badge variant="neutral">Archived · read-only</Badge>
-                <span> {formatEventDateTime(event.archived_at)}</span>
               </p>
-            )}
-            {event.attendee_count != null && (
-              <p className="event-card__count">{event.attendee_count} attendees</p>
             )}
             {tab === "archived" && canUnarchive && (
               <p className="event-card__actions">

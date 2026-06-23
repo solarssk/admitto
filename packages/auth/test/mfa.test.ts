@@ -21,6 +21,8 @@ import {
   verifyTotpCode,
   verifyTotpCodeDetailed,
   decryptTotpSecret,
+  buildTotpOtpauthUri,
+  parseTotpSecretFromOtpauthUri,
 } from "../src/mfa/totp.js";
 import {
   verifyBackupRecoveryCode,
@@ -88,6 +90,13 @@ afterAll(async () => {
 });
 
 describe("TOTP enrollment", () => {
+  it("parseTotpSecretFromOtpauthUri extracts setup key from otpauth URI", () => {
+    const secret = generateTotpSecret();
+    const uri = buildTotpOtpauthUri(secret, "user@example.com");
+    expect(parseTotpSecretFromOtpauthUri(uri)).toBe(secret);
+    expect(parseTotpSecretFromOtpauthUri("not-a-uri")).toBeNull();
+  });
+
   it("stores secret_enc encrypted and confirms with valid code", async () => {
     const userId = "user-totp-enroll";
     const password_hash = await hashPassword(PASSWORD);

@@ -86,7 +86,12 @@ We have not tested or documented Synology ARM vs Intel paths separately — pick
 ```bash
 cd deploy
 cp .env.example .env
-# Edit .env: POSTGRES_PASSWORD, REDIS_PASSWORD (openssl rand -hex 32), ENCRYPTION_KEY (openssl rand -base64 32), BASE_URL
+# Edit .env:
+#   POSTGRES_PASSWORD (openssl rand -hex 32)
+#   REDIS_PASSWORD (openssl rand -hex 32) — keep REDIS_URL password in sync
+#   ENCRYPTION_KEY (openssl rand -base64 32)
+#   DATABASE_URL — same password as POSTGRES_PASSWORD
+#   BASE_URL — production: https://tickets.example.com; local smoke: http://127.0.0.1:8080
 # Set EMAIL_PROVIDER to one of: smtp, graph, powerautomate (production paths)
 # export_only is dev/test dry-run only — requires a runtime exportSink; npm run dev wires one
 # automatically; production deploy must use a real provider (default in .env.example: smtp).
@@ -166,9 +171,12 @@ In NPM **Advanced** (or custom snippet), use:
 
 ```nginx
 proxy_set_header Host $host;
+proxy_set_header X-Forwarded-Host $host;
 proxy_set_header X-Forwarded-For $remote_addr;
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
+
+Use `$http_host` instead of `$host` when the public URL uses a non-default port (e.g. local smoke on `:8080`) so the CSRF origin check matches the browser `Origin` header.
 
 Do **not** use `$proxy_add_x_forwarded_for` on the NPM vhost that faces the public internet. With `TRUST_PROXY=true`, Admitto reads the **first** `X-Forwarded-For` hop ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)); an appended chain would let clients pick the rate-limit bucket and pollute audit logs. The first hop must be a **valid IP**; otherwise the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/SECURITY-CONTROLS.md)).
 
@@ -309,7 +317,12 @@ Set `OPS_HEALTH_TOKEN` in `deploy/.env` (see `.env.example`). `/readyz` is **dis
 ```bash
 curl -sf http://127.0.0.1:8080/healthz    # expect {"status":"ok"}
 curl -sf http://127.0.0.1:8080/login -o /dev/null -w '%{http_code}\n'  # expect 200
-# Port 3000 must NOT respond on the host:
+# POST /login through the proxy must not return 403 (CSRF); wrong credentials → 401 + error copy
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8080/login \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -H 'Origin: http://127.0.0.1:8080' \
+  -d 'email=nobody@example.com&password=wrong'   # expect 401, not 403
+# Port 3000 must NOT respond on the host (stop local `npm run dev` first if it binds :3000):
 curl --connect-timeout 2 http://127.0.0.1:3000/healthz && echo unexpected || echo ok
 ```
 

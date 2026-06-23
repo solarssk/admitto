@@ -33,6 +33,8 @@ export const SESSION_STAGE = {
   FULL: "full",
   MFA_PENDING: "mfa_pending",
   ENROLLMENT_REQUIRED: "enrollment_required",
+  /** TOTP confirmed; user must save backup recovery codes before app access. */
+  BACKUP_CODES_REQUIRED: "backup_codes_required",
 } as const;
 
 export type SessionStage = (typeof SESSION_STAGE)[keyof typeof SESSION_STAGE];
@@ -42,6 +44,7 @@ export const LOGIN_NEXT = {
   COMPLETE: "complete",
   MFA_REQUIRED: "mfa_required",
   ENROLLMENT_REQUIRED: "enrollment_required",
+  BACKUP_CODES_REQUIRED: "backup_codes_required",
 } as const;
 
 export type LoginNext = (typeof LOGIN_NEXT)[keyof typeof LOGIN_NEXT];

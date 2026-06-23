@@ -9,8 +9,8 @@ import {
 } from "./settings/resolver.js";
 import { userRequiresMfa, userHasConfirmedTotp } from "./mfa/policy.js";
 
-/** Max length for optional device label on sessions (matches login form). */
-const DEVICE_LABEL_MAX_LEN = 120;
+/** Max length for optional device label on sessions (operator check-in step). */
+export const DEVICE_LABEL_MAX_LEN = 120;
 
 export interface CreateSessionInput {
   userId: string;
@@ -179,6 +179,29 @@ export async function validatePartialSession(
   return lookupSessionByToken(prisma, rawToken);
 }
 
+/** Promote partial session to backup-codes step after TOTP enrollment confirm. */
+export async function promoteSessionToBackupCodesStep(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  sessionId: string,
+  userId: string,
+): Promise<boolean> {
+  const now = new Date();
+  const result = await prisma.session.updateMany({
+    where: {
+      id: sessionId,
+      user_id: userId,
+      revoked_at: null,
+      expires_at: { gt: now },
+      stage: SESSION_STAGE.ENROLLMENT_REQUIRED,
+    },
+    data: {
+      stage: SESSION_STAGE.BACKUP_CODES_REQUIRED,
+      last_seen_at: now,
+    },
+  });
+  return result.count === 1;
+}
+
 /** Promote partial session to full after successful MFA; false if session ineligible or already full. */
 export async function promoteSessionToFull(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -194,13 +217,43 @@ export async function promoteSessionToFull(
       user_id: userId,
       revoked_at: null,
       expires_at: { gt: now },
-      stage: { in: [SESSION_STAGE.MFA_PENDING, SESSION_STAGE.ENROLLMENT_REQUIRED] },
+      stage: {
+        in: [
+          SESSION_STAGE.MFA_PENDING,
+          SESSION_STAGE.ENROLLMENT_REQUIRED,
+          SESSION_STAGE.BACKUP_CODES_REQUIRED,
+        ],
+      },
     },
     data: {
       stage: SESSION_STAGE.FULL,
       expires_at: new Date(now.getTime() + ttlMs),
       last_seen_at: now,
     },
+  });
+  return result.count === 1;
+}
+
+/** Set or clear device label on the active session (operator check-in step). */
+export async function updateSessionDeviceLabel(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  sessionId: string,
+  userId: string,
+  deviceLabel: string | null | undefined,
+): Promise<boolean> {
+  const trimmed = deviceLabel?.trim();
+  const normalized =
+    trimmed && trimmed.length > 0 ? trimmed.slice(0, DEVICE_LABEL_MAX_LEN) : null;
+  const now = new Date();
+  const result = await prisma.session.updateMany({
+    where: {
+      id: sessionId,
+      user_id: userId,
+      revoked_at: null,
+      expires_at: { gt: now },
+      stage: SESSION_STAGE.FULL,
+    },
+    data: { device_label: normalized },
   });
   return result.count === 1;
 }

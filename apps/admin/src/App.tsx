@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { ToastProvider } from "@admitto/ui";
 import { AdminGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
+import { OperatorDeviceGate } from "./auth/OperatorDeviceGate.js";
 import { AuthProvider, useAuth } from "./auth/AuthProvider.js";
 import { isSuperadmin } from "./auth/capabilities.js";
 import { ConnectionStateProvider } from "./connection/ConnectionStateProvider.js";
@@ -168,9 +169,11 @@ export default function App() {
                 </Route>
               </Route>
               <Route path="/operator" element={<OperatorGuard />}>
-                <Route element={<OperatorShell />}>
-                  <Route index element={<CheckInEntryPage />} />
-                  <Route path="events/:eventId/checkin" element={<CheckInPage />} />
+                <Route element={<OperatorDeviceGate />}>
+                  <Route element={<OperatorShell />}>
+                    <Route index element={<CheckInEntryPage />} />
+                    <Route path="events/:eventId/checkin" element={<CheckInPage />} />
+                  </Route>
                 </Route>
               </Route>
               <Route path="*" element={<Navigate to="/admin" replace />} />

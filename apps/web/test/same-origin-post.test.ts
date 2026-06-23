@@ -108,6 +108,20 @@ describe("rejectCrossSitePost", () => {
     expect(res.status).toBe(403);
   });
 
+  it("accepts Origin with non-default port when X-Forwarded-Host matches and TRUST_PROXY=true", async () => {
+    vi.stubEnv("TRUST_PROXY", "true");
+    const app = makeApp();
+    const res = await app.request("http://127.0.0.1/login", {
+      method: "POST",
+      headers: {
+        Origin: "http://127.0.0.1:8080",
+        "X-Forwarded-Proto": "http",
+        "X-Forwarded-Host": "127.0.0.1:8080",
+      },
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("uses X-Forwarded-Proto/Host when TRUST_PROXY=true", async () => {
     vi.stubEnv("TRUST_PROXY", "true");
     const app = makeApp();

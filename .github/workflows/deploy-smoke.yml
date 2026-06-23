@@ -49,6 +49,21 @@ jobs:
         run: |
           curl -sf http://127.0.0.1:8080/healthz | grep -q '"status":"ok"'
           curl -sf http://127.0.0.1:8080/login -o /dev/null -w '%{http_code}\n' | grep -q 200
+          login_code=$(curl -s -o /tmp/login-post-body -w '%{http_code}' -X POST http://127.0.0.1:8080/login \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            -H 'Origin: http://127.0.0.1:8080' \
+            -d 'email=smoke@example.com&password=wrong')
+          if [ "$login_code" = "403" ]; then
+            echo "POST /login blocked by CSRF (403) — check proxy X-Forwarded-Host"
+            cat /tmp/login-post-body
+            exit 1
+          fi
+          if [ "$login_code" != "401" ]; then
+            echo "POST /login expected 401 invalid credentials, got $login_code"
+            cat /tmp/login-post-body
+            exit 1
+          fi
+          grep -q 'Invalid email or password' /tmp/login-post-body
           if curl --connect-timeout 2 -sf http://127.0.0.1:3000/healthz >/dev/null 2>&1; then
             echo "app port 3000 must not be published on host"
             exit 1
