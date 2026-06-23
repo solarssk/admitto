@@ -53,16 +53,38 @@ function renderDrawer(onClose = vi.fn()) {
 }
 
 describe("AttendeeDetailDrawer discard guard", () => {
-  it("shows confirm dialog when closing with unsaved changes", async () => {
+  async function openDrawerWithEdit() {
     vi.mocked(fetchAttendeeDetail).mockResolvedValue(mockDetail);
     vi.mocked(fetchEventItems).mockResolvedValue([]);
-
-    renderDrawer();
+    const onClose = renderDrawer();
     await waitFor(() => expect(screen.getByLabelText("Name")).toBeTruthy());
-
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna Beta" } });
+    return onClose;
+  }
+
+  it("shows confirm dialog when closing with unsaved changes", async () => {
+    const onClose = await openDrawerWithEdit();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
+    expect(onClose).not.toHaveBeenCalled();
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.getByText("Discard changes?")).toBeTruthy();
+  });
+
+  it("shows confirm dialog when pressing Escape with unsaved changes", async () => {
+    const onClose = await openDrawerWithEdit();
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.getByText("Discard changes?")).toBeTruthy();
+  });
+
+  it("shows confirm dialog when clicking backdrop with unsaved changes", async () => {
+    const onClose = await openDrawerWithEdit();
+    fireEvent.click(document.querySelector(".attendee-drawer-backdrop")!);
+
+    expect(onClose).not.toHaveBeenCalled();
     expect(await screen.findByRole("dialog")).toBeTruthy();
     expect(screen.getByText("Discard changes?")).toBeTruthy();
   });
