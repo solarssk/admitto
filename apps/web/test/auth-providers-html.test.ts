@@ -75,3 +75,12 @@ describe("parseMappingsFromForm", () => {
     expect(html).not.toContain('value="superadmin" selected');
   });
 });
+
+describe("admin pageShell headings", () => {
+  it("prefixes document title but not visible h1 on provider form", () => {
+    const html = renderProviderForm({ isNew: true, mappings: [] });
+    expect(html).toContain("<title>Admitto — Add identity provider</title>");
+    expect(html).toContain("<h1>Add identity provider</h1>");
+    expect(html).not.toMatch(/<h1>Admitto —/);
+  });
+});
