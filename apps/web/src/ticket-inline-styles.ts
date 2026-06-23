@@ -37,11 +37,19 @@ body.ticket-page { margin: 0; background: var(--surface-page); min-height: 100vh
   .ticket {
     width: 100%;
     max-width: 100%;
+    background: #fff;
     box-shadow: none;
     border: 1px solid #ccc;
     border-radius: 0;
+    overflow: visible;
     page-break-inside: avoid;
     break-inside: avoid;
+  }
+  .ticket__top {
+    border-bottom: 1px solid #ccc;
+  }
+  .ticket__brand-mark {
+    background: #066fd1;
   }
   .ticket__foot {
     background: #f5f5f5;
