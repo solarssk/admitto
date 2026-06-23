@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Spinner } from "@admitto/ui";
 import { ToastProvider } from "@admitto/ui";
 import { AdminGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
 import { OperatorDeviceGate } from "./auth/OperatorDeviceGate.js";
@@ -21,6 +22,7 @@ import { AttendeesPage } from "./pages/AttendeesPage.js";
 import { ImportPage } from "./pages/ImportPage.js";
 import { RequirementsPage } from "./pages/RequirementsPage.js";
 import { CommunicationPage } from "./pages/CommunicationPage.js";
+import { EventOverviewPage } from "./pages/EventOverviewPage.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
 import { ApiError, archiveEvent, fetchAdminEvents } from "./api/client.js";
 import type { EventDto } from "./api/types.js";
@@ -93,7 +95,13 @@ function EventLayout() {
   };
 
   if (error) return <Navigate to="/admin" replace />;
-  if (!event) return <p>Loading event…</p>;
+  if (!event) {
+    return (
+      <div className="shell-loading" role="status">
+        <Spinner label="Loading event" />
+      </div>
+    );
+  }
 
   const showArchiveButton = isSuperadmin(assignments) && !event.archived_at;
 
@@ -150,7 +158,9 @@ export default function App() {
                       key={r.path}
                       path={r.path}
                       element={
-                        r.path === "checkin" ? (
+                        r.path === "overview" ? (
+                          <EventOverviewPage />
+                        ) : r.path === "checkin" ? (
                           <AdminCheckInRoute />
                         ) : r.path === "attendees" ? (
                           <AttendeesPage />

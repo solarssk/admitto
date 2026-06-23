@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Badge, Button, Card, PageHeader, Tabs } from "@admitto/ui";
+import { Badge, Button, Card, PageHeader, Spinner, Tabs } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ApiError, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
@@ -19,6 +19,7 @@ export function EventsPickerPage() {
   const showInstanceSettings = isSuperadmin(assignments);
   const canUnarchive = showInstanceSettings;
   const [tab, setTab] = useState<PickerTab>("active");
+  const [tabTouched, setTabTouched] = useState(false);
   const [events, setEvents] = useState<EventDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,6 +65,12 @@ export function EventsPickerPage() {
   const displayedEvents = tab === "archived" ? archivedEvents : activeEvents;
   const allEventsArchived = events.length > 0 && activeEvents.length === 0;
 
+  useEffect(() => {
+    if (!loading && !tabTouched && events.length > 0 && activeEvents.length === 0) {
+      setTab("archived");
+    }
+  }, [loading, tabTouched, events.length, activeEvents.length]);
+
   const handleUnarchive = async () => {
     if (!unarchiveTarget) return;
     setUnarchiving(true);
@@ -100,14 +107,21 @@ export function EventsPickerPage() {
 
       <Tabs
         value={tab}
-        onChange={(id) => setTab(id as PickerTab)}
+        onChange={(id) => {
+          setTabTouched(true);
+          setTab(id as PickerTab);
+        }}
         tabs={[
           { id: "active", label: "Active events", count: activeEvents.length || undefined },
           { id: "archived", label: "Archived events", count: archivedEvents.length || undefined },
         ]}
       />
 
-      {loading && <p className="picker-status">Loading events…</p>}
+      {loading && (
+        <div className="picker-loading" role="status">
+          <Spinner label="Loading events" />
+        </div>
+      )}
       {error && <p className="text-error">{error}</p>}
       {!loading && !error && displayedEvents.length === 0 && (
         <Card>
@@ -124,60 +138,81 @@ export function EventsPickerPage() {
               <button type="button" className="picker-inline-link" onClick={() => setTab("archived")}>
                 Archived events
               </button>{" "}
-              tab or unarchive via{" "}
-              <Link to="/admin/settings">Instance settings</Link>.
+              tab
+              {showInstanceSettings ? (
+                <>
+                  {" "}
+                  or unarchive from{" "}
+                  <Link to="/admin/settings">Instance settings</Link>.
+                </>
+              ) : (
+                <> or contact your administrator.</>
+              )}
             </p>
           )}
         </Card>
       )}
       <div className="event-grid">
-        {displayedEvents.map((event) => (
-          <Card key={event.id} className="event-card">
-            <h2 className="event-card__title">
-              <Link to={`/admin/events/${event.id}/overview`}>{event.title}</Link>
-            </h2>
-            <p className="event-card__meta">
-              <i className="ti ti-calendar" aria-hidden="true" />
-              <span>{formatEventDate(event.date)}</span>
-              {event.location && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <i className="ti ti-map-pin" aria-hidden="true" />
-                  <span>{event.location}</span>
-                </>
-              )}
-            </p>
-            {event.attendee_count != null && (
-              <div className="event-card__stats">
-                <div className="event-card__stat">
-                  <i className="ti ti-users" aria-hidden="true" />
-                  <strong>{event.attendee_count}</strong>
-                  <span>attendees</span>
+        {displayedEvents.map((event) => {
+          const showUnarchive = tab === "archived" && canUnarchive;
+          const cardBody = (
+            <>
+              <h2 className="event-card__title">{event.title}</h2>
+              <p className="event-card__meta">
+                <i className="ti ti-calendar" aria-hidden="true" />
+                <span>{formatEventDate(event.date)}</span>
+                {event.location && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <i className="ti ti-map-pin" aria-hidden="true" />
+                    <span>{event.location}</span>
+                  </>
+                )}
+              </p>
+              {event.attendee_count != null && (
+                <div className="event-card__stats">
+                  <div className="event-card__stat">
+                    <i className="ti ti-users" aria-hidden="true" />
+                    <strong>{event.attendee_count}</strong>
+                    <span>attendees</span>
+                  </div>
                 </div>
-              </div>
-            )}
-            {event.archived_at && (
-              <p className="event-card__archived">
-                <Badge variant="neutral">Archived · read-only</Badge>
-                <span>{formatEventDateTime(event.archived_at)}</span>
-              </p>
-            )}
-            {tab === "archived" && canUnarchive && (
-              <p className="event-card__actions">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => {
-                    setUnarchiveError(null);
-                    setUnarchiveTarget({ event });
-                  }}
-                >
-                  Unarchive
-                </Button>
-              </p>
-            )}
-          </Card>
-        ))}
+              )}
+              {event.archived_at && (
+                <p className="event-card__archived">
+                  <Badge variant="neutral">Archived · read-only</Badge>
+                  <span>{formatEventDateTime(event.archived_at)}</span>
+                </p>
+              )}
+            </>
+          );
+
+          return (
+            <Card key={event.id} className={`event-card${showUnarchive ? " event-card--static" : ""}`}>
+              {showUnarchive ? (
+                cardBody
+              ) : (
+                <Link to={`/admin/events/${event.id}/overview`} className="event-card--link">
+                  {cardBody}
+                </Link>
+              )}
+              {showUnarchive && (
+                <p className="event-card__actions">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setUnarchiveError(null);
+                      setUnarchiveTarget({ event });
+                    }}
+                  >
+                    Unarchive
+                  </Button>
+                </p>
+              )}
+            </Card>
+          );
+        })}
       </div>
 
       <ConfirmDialog

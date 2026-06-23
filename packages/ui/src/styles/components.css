@@ -141,3 +141,41 @@
 .at-tab { appearance: none; background: none; border: 0; cursor: pointer; font-family: var(--font-sans); font-size: var(--fs-body); font-weight: var(--fw-medium); color: var(--text-muted); padding: var(--space-3) var(--space-3); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color var(--dur-fast), border-color var(--dur-fast); }
 .at-tab:hover { color: var(--text-primary); }
 .at-tab--active { color: var(--primary); border-bottom-color: var(--primary); }
+
+/* ---------------- Page header ---------------- */
+.at-pageheader {
+  margin-bottom: var(--space-5);
+}
+
+.at-pageheader__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.at-pageheader__title {
+  margin: 0;
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-tight);
+  color: var(--text-primary);
+  line-height: var(--lh-tight);
+}
+
+.at-pageheader__subtitle {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  line-height: var(--lh-normal);
+  max-width: 42rem;
+}
+
+.at-pageheader__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}

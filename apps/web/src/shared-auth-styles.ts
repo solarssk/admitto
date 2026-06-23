@@ -82,6 +82,16 @@ body {
   margin: 0 0 0.25rem;
   text-wrap: balance;
 }
+.auth-step-indicator {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--at-gray-500);
+}
+.auth-step-indicator__meta {
+  font-weight: 600;
+  color: var(--at-blue);
+}
 .auth-card .subtitle {
   font-size: 0.875rem;
   color: var(--at-gray-500);
@@ -612,6 +622,21 @@ ${sidebar}
 </body>
 </html>`;
 }
+
+export const AUTH_FORM_SUBMIT_SCRIPT = `<script>
+(function () {
+  document.querySelectorAll(".auth-page form").forEach(function (form) {
+    form.addEventListener("submit", function () {
+      var btn = form.querySelector('button[type="submit"]');
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      if (!btn.dataset.originalLabel) btn.dataset.originalLabel = btn.textContent || "";
+      btn.textContent = btn.dataset.loadingLabel || "Please wait…";
+    });
+  });
+})();
+</script>`;
 
 export function renderAuthDocument(options: AuthDocumentOptions): string {
   const { step, body, css = AUTH_PAGE_CSS, scripts } = options;
