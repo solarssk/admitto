@@ -165,7 +165,7 @@ export {
   OIDC_LINK_STEP_UP_MAX_AGE_MS,
 } from "./oidc/constants.js";
 export { generateCodeVerifier, codeChallengeS256, generateOauthSecret } from "./oidc/pkce.js";
-export { assertSafeOidcFetchUrl, assertSafeOidcFetchUrlResolved } from "./oidc/safe-url.js";
+export { assertSafeOidcFetchUrl } from "./oidc/safe-url.js";
 export { fetchOidcDiscovery, testOidcConnection } from "./oidc/discovery.js";
 export {
   createOidcAuthState,

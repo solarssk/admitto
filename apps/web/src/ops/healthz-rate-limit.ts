@@ -12,18 +12,28 @@ function healthzRateLimitKey(ip: string, instanceId: string): string {
   return `ops:healthz:${instanceId}:ip:${ip}`;
 }
 
-/** Rate-limit `/healthz` per replica and client IP (shared Redis must not merge probe traffic). */
+/**
+ * Rate-limit `/healthz` per replica and client IP (shared Redis must not merge probe traffic).
+ * Fails open when the rate-limit backend throws so liveness is not coupled to Redis incidents.
+ */
 export function createHealthzRateLimitMiddleware(
   store: RateLimitStore,
   instanceId: string = hostname(),
 ) {
   return async (c: Context, next: Next): Promise<Response | void> => {
     const ip = resolveClientIp(c);
-    const { allowed } = await store.hit(
-      healthzRateLimitKey(ip, instanceId),
-      HEALTHZ_WINDOW_MS,
-      HEALTHZ_MAX_REQUESTS,
-    );
+    let allowed = true;
+    try {
+      ({ allowed } = await store.hit(
+        healthzRateLimitKey(ip, instanceId),
+        HEALTHZ_WINDOW_MS,
+        HEALTHZ_MAX_REQUESTS,
+      ));
+    } catch (err) {
+      console.error("healthz rate-limit store hit failed:", err);
+      await next();
+      return;
+    }
     if (!allowed) {
       logRateLimitExceeded({ scope: "healthz", ip });
       return c.json({ error: "too many requests" }, 429);

@@ -38,7 +38,7 @@ beforeEach(() => {
 });
 
 describe("safeOidcFetch", () => {
-  it("pins resolved IP into undici connect lookup", async () => {
+  it("pins DNS via undici lookup while keeping the original URL hostname", async () => {
     await safeOidcFetch("https://login.example.com/jwks");
 
     expect(mockedLookup).toHaveBeenCalledTimes(1);
@@ -49,15 +49,12 @@ describe("safeOidcFetch", () => {
       },
     });
     expect(mockedUndiciFetch).toHaveBeenCalledWith(
-      "https://93.184.216.34/jwks",
+      "https://login.example.com/jwks",
       expect.objectContaining({
         redirect: "manual",
-        headers: expect.any(Headers),
         dispatcher: expect.any(Object),
       }),
     );
-    const headers = mockedUndiciFetch.mock.calls[0]?.[1]?.headers as Headers;
-    expect(headers.get("host")).toBe("login.example.com");
   });
 
   it("caches DNS resolution for repeated fetches", async () => {
@@ -71,13 +68,15 @@ describe("safeOidcFetch", () => {
     const globalFetch = vi.fn().mockResolvedValue(new Response("ok"));
     vi.stubGlobal("fetch", globalFetch);
 
-    await safeOidcFetch("http://localhost:9999/jwks");
+    try {
+      await safeOidcFetch("http://localhost:9999/jwks");
 
-    expect(mockedLookup).not.toHaveBeenCalled();
-    expect(globalFetch).toHaveBeenCalledWith("http://localhost:9999/jwks", { redirect: "manual" });
-    expect(mockedUndiciFetch).not.toHaveBeenCalled();
-
-    vi.unstubAllGlobals();
+      expect(mockedLookup).not.toHaveBeenCalled();
+      expect(globalFetch).toHaveBeenCalledWith("http://localhost:9999/jwks", { redirect: "manual" });
+      expect(mockedUndiciFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("follows redirects only after re-validating the Location URL", async () => {
@@ -94,8 +93,8 @@ describe("safeOidcFetch", () => {
 
     expect(res.status).toBe(200);
     expect(mockedUndiciFetch).toHaveBeenCalledTimes(2);
-    expect(mockedUndiciFetch.mock.calls[0]?.[0]).toBe("https://93.184.216.34/jwks");
-    expect(mockedUndiciFetch.mock.calls[1]?.[0]).toBe("https://93.184.216.34/jwks-final");
+    expect(mockedUndiciFetch.mock.calls[0]?.[0]).toBe("https://login.example.com/jwks");
+    expect(mockedUndiciFetch.mock.calls[1]?.[0]).toBe("https://login.example.com/jwks-final");
   });
 
   it("rejects redirects to private targets", async () => {
@@ -124,8 +123,8 @@ describe("safeOidcFetch", () => {
 
     expect(res.status).toBe(200);
     expect(MockedAgent).toHaveBeenCalledTimes(2);
-    expect(mockedUndiciFetch.mock.calls[0]?.[0]).toBe("https://[2001:db8::1]/jwks");
-    expect(mockedUndiciFetch.mock.calls[1]?.[0]).toBe("https://93.184.216.34/jwks");
+    expect(mockedUndiciFetch.mock.calls[0]?.[0]).toBe("https://login.example.com/jwks");
+    expect(mockedUndiciFetch.mock.calls[1]?.[0]).toBe("https://login.example.com/jwks");
   });
 });
 

@@ -19,17 +19,9 @@ interface ResolvedHostRecord {
 }
 
 interface ResolvedHost {
-  host: string;
   hostname: string;
   records: ResolvedHostRecord[];
   useDefaultFetch: boolean;
-}
-
-interface PinnedOidcTarget {
-  host: string;
-  hostname: string;
-  pinnedHref: string;
-  record: ResolvedHostRecord;
 }
 
 const resolvedHostCache = new Map<string, { resolved: ResolvedHost; expiresAt: number }>();
@@ -41,10 +33,6 @@ export function clearPinnedOidcCacheForTests(): void {
 
 function isDevLoopbackAllowed(): boolean {
   return process.env["NODE_ENV"] !== "production";
-}
-
-function formatPinnedHostname(address: string): string {
-  return address.includes(":") ? `[${address}]` : address;
 }
 
 function toResolvedRecords(
@@ -61,7 +49,6 @@ async function resolveHostForUrl(url: URL): Promise<ResolvedHost> {
 
   if (isDevLoopbackAllowed() && isLoopbackHostForTests(hostname)) {
     return {
-      host: url.host,
       hostname,
       records: [{ address: hostname, family: hostname.includes(":") ? 6 : 4 }],
       useDefaultFetch: true,
@@ -71,7 +58,6 @@ async function resolveHostForUrl(url: URL): Promise<ResolvedHost> {
   if (isIP(hostname)) {
     await resolveSafeOidcHostname(hostname);
     return {
-      host: url.host,
       hostname,
       records: [{ address: hostname, family: isIP(hostname) === 6 ? 6 : 4 }],
       useDefaultFetch: true,
@@ -84,7 +70,6 @@ async function resolveHostForUrl(url: URL): Promise<ResolvedHost> {
   }
 
   return {
-    host: url.host,
     hostname,
     records: toResolvedRecords(records),
     useDefaultFetch: false,
@@ -103,17 +88,7 @@ async function getResolvedHost(url: URL): Promise<ResolvedHost> {
   return resolved;
 }
 
-function toPinnedTarget(url: URL, resolved: ResolvedHost, record: ResolvedHostRecord): PinnedOidcTarget {
-  const pinned = new URL(url.href);
-  pinned.hostname = formatPinnedHostname(record.address);
-  return {
-    host: resolved.host,
-    hostname: resolved.hostname,
-    pinnedHref: pinned.href,
-    record,
-  };
-}
-
+/** Pin connect-time DNS to a validated address while keeping the original URL hostname (Host/SNI). */
 function createPinnedDispatcher(hostname: string, record: ResolvedHostRecord): Agent {
   return new Agent({
     connect: {
@@ -126,12 +101,6 @@ function createPinnedDispatcher(hostname: string, record: ResolvedHostRecord): A
 }
 
 type OidcFetchInit = NonNullable<Parameters<typeof fetch>[1]>;
-
-function withHostHeader(headers: unknown, host: string): Headers {
-  const merged = new Headers(headers as ConstructorParameters<typeof Headers>[0]);
-  merged.set("host", host);
-  return merged;
-}
 
 function isConnectFailure(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
@@ -153,16 +122,16 @@ function isConnectFailure(err: unknown): boolean {
 }
 
 async function pinnedUndiciFetch(
-  pinnedHref: string,
+  urlString: string,
   init: {
     method?: OidcFetchInit["method"];
     body?: OidcFetchInit["body"];
     signal?: OidcFetchInit["signal"];
-    headers?: unknown;
+    headers?: OidcFetchInit["headers"];
     dispatcher: Agent;
   },
 ): Promise<Response> {
-  return (await undiciFetch(pinnedHref, {
+  return (await undiciFetch(urlString, {
     ...init,
     redirect: "manual",
   } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
@@ -179,14 +148,13 @@ async function fetchPinnedNoFollow(urlString: string, init?: OidcFetchInit): Pro
 
   let lastError: unknown;
   for (const record of resolved.records) {
-    const target = toPinnedTarget(url, resolved, record);
-    const dispatcher = createPinnedDispatcher(target.hostname, record);
+    const dispatcher = createPinnedDispatcher(resolved.hostname, record);
     try {
-      return await pinnedUndiciFetch(target.pinnedHref, {
+      return await pinnedUndiciFetch(urlString, {
         method: init?.method,
         body: init?.body,
         signal: init?.signal,
-        headers: withHostHeader(init?.headers, target.host),
+        headers: init?.headers,
         dispatcher,
       });
     } catch (err) {
@@ -217,7 +185,10 @@ function redirectFollowInit(status: number, init?: OidcFetchInit): OidcFetchInit
   return { ...rest, method: "GET" };
 }
 
-/** Outbound OIDC/CF Access fetch with DNS pinning (blocks rebinding between check and connect). */
+/**
+ * Outbound OIDC/CF Access fetch with DNS pinning at connect time.
+ * Uses the original URL hostname for Host/SNI; undici connects via a validated pinned address.
+ */
 export async function safeOidcFetch(urlString: string, init?: OidcFetchInit): Promise<Response> {
   let currentUrl = urlString;
   let requestInit: OidcFetchInit | undefined = init;

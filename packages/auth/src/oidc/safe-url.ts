@@ -8,7 +8,7 @@ const privateIpv6 = new BlockList();
 privateIpv6.addSubnet("fe80::", 10, "ipv6");
 privateIpv6.addSubnet("fc00::", 7, "ipv6");
 
-/** URL.hostname keeps brackets around IPv6 literals — strip before parsing. */
+/** Strip bracket wrapping from IPv6 literals in URL.hostname. */
 export function unbracketHostname(hostname: string): string {
   if (hostname.startsWith("[") && hostname.endsWith("]")) {
     return hostname.slice(1, -1);
@@ -16,6 +16,7 @@ export function unbracketHostname(hostname: string): string {
   return hostname;
 }
 
+/** Whether the hostname is loopback (localhost / 127.0.0.1 / ::1) — for dev mock IdP tests. */
 export function isLoopbackHostForTests(hostname: string): boolean {
   return isLoopbackHost(hostname);
 }
@@ -117,7 +118,7 @@ function assertResolvedIpSafe(address: string): void {
   }
 }
 
-/** Resolve hostname and reject private/link-local targets (used before pinned outbound fetch). */
+/** Resolve hostname and reject private/link-local/unspecified targets (used before pinned outbound fetch). */
 export async function resolveSafeOidcHostname(hostname: string): Promise<LookupAddress[]> {
   const host = unbracketHostname(hostname);
   if (isIP(host)) {
@@ -143,8 +144,9 @@ export async function resolveSafeOidcHostname(hostname: string): Promise<LookupA
 }
 
 /**
- * SSRF guard before outbound fetch: synchronous URL checks plus DNS resolution
- * so hostnames cannot pass validation then rebind to metadata/private targets.
+ * Validation-only SSRF DNS check (does not pin or fetch).
+ * For outbound requests use `safeOidcFetch` / `createPinnedRemoteJWKSet` instead —
+ * a separate fetch after this call can still rebind DNS (TOCTOU).
  */
 export async function assertSafeOidcFetchUrlResolved(urlString: string): Promise<void> {
   assertSafeOidcFetchUrl(urlString);

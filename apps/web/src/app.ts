@@ -398,7 +398,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.put("/api/admin/events/:eventId/template", jsonPostCsrf, staffAdminGate, templateBodyLimit, guardArchivedEvent((c) =>
     handlePutEventTemplate(c, db),
   ));
-  app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, templateBodyLimit, adminTemplatePreviewRateLimit, guardArchivedEvent((c) =>
+  app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, adminTemplatePreviewRateLimit, templateBodyLimit, guardArchivedEvent((c) =>
     handlePreviewEventTemplate(c, db),
   ));
   app.post(
@@ -415,10 +415,10 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/import/template", staffAdminGate, (c) =>
     handleGetImportTemplate(c, db),
   );
-  app.post("/api/admin/events/:eventId/import/preview", jsonPostCsrf, staffAdminGate, importBodyLimit, adminImportPreviewRateLimit, guardArchivedEvent((c) =>
+  app.post("/api/admin/events/:eventId/import/preview", jsonPostCsrf, staffAdminGate, adminImportPreviewRateLimit, importBodyLimit, guardArchivedEvent((c) =>
     handleImportPreview(c, db),
   ));
-  app.post("/api/admin/events/:eventId/import/commit", jsonPostCsrf, staffAdminGate, importBodyLimit, adminImportCommitRateLimit, guardArchivedEvent((c) =>
+  app.post("/api/admin/events/:eventId/import/commit", jsonPostCsrf, staffAdminGate, adminImportCommitRateLimit, importBodyLimit, guardArchivedEvent((c) =>
     handleImportCommit(c, db),
   ));
   app.get("/api/admin/events/:eventId/items", staffAdminGate, (c) => handleListEventItems(c, db));
