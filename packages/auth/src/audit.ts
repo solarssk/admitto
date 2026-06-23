@@ -44,10 +44,16 @@ export type RateLimitScope =
   | "login_ip"
   | "login_email"
   | "mfa_verify"
+  | "mfa_enroll"
   | "oidc_auth"
   | "oidc_link_stepup"
   | "public"
-  | "readyz";
+  | "readyz"
+  | "healthz"
+  | "admin_import_preview"
+  | "admin_import_commit"
+  | "admin_template_preview"
+  | "admin_oidc_provider_ops";
 
 /** Emit `auth.login.success` as JSON to stdout (no password/token fields). */
 export function logLoginSuccess(ctx: LoginAuditContext): void {

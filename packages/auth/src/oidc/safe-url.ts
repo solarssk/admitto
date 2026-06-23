@@ -1,4 +1,6 @@
-import { BlockList, isIPv6 } from "node:net";
+import { lookup } from "node:dns/promises";
+import type { LookupAddress } from "node:dns";
+import { BlockList, isIP, isIPv6 } from "node:net";
 
 /** Block server-side fetches to private/link-local targets (SSRF mitigation). */
 
@@ -99,5 +101,38 @@ export function assertSafeOidcFetchUrl(urlString: string): void {
 
   if (loopback || isBlockedPrivateOrMetadataHost(url.hostname)) {
     throw new Error("OIDC URL must not target private or link-local addresses");
+  }
+}
+
+function assertResolvedIpSafe(address: string): void {
+  const host = unbracketHostname(address).toLowerCase();
+  if (isLoopbackHost(host) || isBlockedPrivateOrMetadataHost(host)) {
+    throw new Error("OIDC URL must not target private or link-local addresses");
+  }
+}
+
+/**
+ * SSRF guard before outbound fetch: synchronous URL checks plus DNS resolution
+ * so hostnames cannot pass validation then rebind to metadata/private targets.
+ */
+export async function assertSafeOidcFetchUrlResolved(urlString: string): Promise<void> {
+  assertSafeOidcFetchUrl(urlString);
+
+  const hostname = unbracketHostname(new URL(urlString).hostname);
+  if (isIP(hostname)) return;
+
+  let records: LookupAddress[];
+  try {
+    records = await lookup(hostname, { all: true, verbatim: true });
+  } catch {
+    throw new Error("OIDC URL hostname could not be resolved");
+  }
+
+  if (records.length === 0) {
+    throw new Error("OIDC URL hostname could not be resolved");
+  }
+
+  for (const record of records) {
+    assertResolvedIpSafe(record.address);
   }
 }

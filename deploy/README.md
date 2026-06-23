@@ -170,7 +170,7 @@ proxy_set_header X-Forwarded-For $remote_addr;
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
 
-Do **not** use `$proxy_add_x_forwarded_for` on the NPM vhost that faces the public internet. With `TRUST_PROXY=true`, Admitto reads the **first** `X-Forwarded-For` hop ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)); an appended chain would let clients pick the rate-limit bucket and pollute audit logs.
+Do **not** use `$proxy_add_x_forwarded_for` on the NPM vhost that faces the public internet. With `TRUST_PROXY=true`, Admitto reads the **first** `X-Forwarded-For` hop ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)); an appended chain would let clients pick the rate-limit bucket and pollute audit logs. The first hop must be a **valid IP**; otherwise the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/SECURITY-CONTROLS.md)).
 
 Compose nginx trusts **only `127.0.0.1`** as the RealIP peer (NPM on the host → `127.0.0.1:8080`). If NPM runs in Docker and hits the host via the bridge gateway (often `172.17.0.1`), add that single address to `deploy/nginx/default.conf` — do not widen to whole RFC1918 ranges.
 
@@ -290,7 +290,7 @@ Set `OPS_HEALTH_TOKEN` in `deploy/.env` (see `.env.example`). `/readyz` is **dis
 
 | Monitor | URL | Notes |
 |---------|-----|-------|
-| Basic up/down | `GET /healthz` | Expect HTTP 200 and body keyword `ok` (no auth) |
+| Basic up/down | `GET /healthz` | Expect HTTP 200 and body keyword `ok` (no auth). Rate-limited (120/min per IP) — do not poll faster from a single monitor source. |
 | Critical readiness | `GET /readyz` | Header `Authorization: Bearer $OPS_HEALTH_TOKEN` or `X-Ops-Token: $OPS_HEALTH_TOKEN`; HTTP **503** = critical failure |
 | DB | same `/readyz` | JSON-query: `$.checks.database.status == "ok"` |
 | Redis | same `/readyz` | JSON-query: `$.checks.redis.status == "ok"` (or `disabled` when Redis not configured) |

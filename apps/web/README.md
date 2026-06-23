@@ -29,8 +29,8 @@ npm run start -w @admitto/web
 
 | Prefix | Auth | Purpose |
 |--------|------|---------|
-| `/healthz` | none | Liveness + DB ping (for Docker healthcheck) |
-| `/readyz` | `OPS_HEALTH_TOKEN` (Bearer or `X-Ops-Token`) | Detailed readiness + gauges (Uptime Kuma; disabled when token unset) |
+| `/healthz` | none | Liveness + DB ping (rate-limited; Docker healthcheck) |
+| `/readyz` | `OPS_HEALTH_TOKEN` (Bearer or `X-Ops-Token`) | Detailed readiness + gauges (rate-limited; disabled when token unset) |
 | `/t/*`, `/q/*` | none | Attendee ticket page + hosted QR PNG (rate-limited) |
 | `/login`, `/mfa/*`, `/logout` | session / partial | Staff local login + TOTP |
 | `/api/auth/*` | varies | JSON auth API |
@@ -42,6 +42,8 @@ npm run start -w @admitto/web
 Path classification for Cloudflare Access: [`_ops/design/deployment-cloudflare-access.md`](../../_ops/design/deployment-cloudflare-access.md).
 
 Staff entry smoke matrix (manual QA): [`deploy/staff-entry-smoke-matrix.md`](../../deploy/staff-entry-smoke-matrix.md).
+
+**Rate limits and abuse controls** (full matrix for auditors): [`docs/SECURITY-CONTROLS.md`](../../docs/SECURITY-CONTROLS.md#rate-limiting).
 
 ## Tests
 

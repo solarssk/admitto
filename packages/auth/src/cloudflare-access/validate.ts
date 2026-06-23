@@ -1,6 +1,6 @@
 import * as jose from "jose";
 import type { JWTPayload } from "jose";
-import { assertSafeOidcFetchUrl } from "../oidc/safe-url.js";
+import { assertSafeOidcFetchUrl, assertSafeOidcFetchUrlResolved } from "../oidc/safe-url.js";
 import type { CfAccessConfig } from "./config.js";
 
 const jwksVerifiers = new Map<string, jose.JWTVerifyGetKey>();
@@ -55,6 +55,7 @@ export async function validateAccessJwt(
   }
 
   assertSafeOidcFetchUrl(config.jwksUri);
+  await assertSafeOidcFetchUrlResolved(config.jwksUri);
   const verifier = getJwksVerifier(config.jwksUri);
 
   let payload: JWTPayload;

@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IdentityProvider } from "@prisma/client";
 import { exchangeAuthorizationCode } from "../src/oidc/token.js";
 
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]),
+}));
+
 const baseProvider: IdentityProvider = {
   id: "prov",
   provider_type: "oidc",

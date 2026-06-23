@@ -2,7 +2,7 @@ import * as jose from "jose";
 import type { IdentityProvider } from "@prisma/client";
 import type { JWTPayload } from "jose";
 import { decryptClientSecret } from "./provider-secret.js";
-import { assertSafeOidcFetchUrl } from "./safe-url.js";
+import { assertSafeOidcFetchUrl, assertSafeOidcFetchUrlResolved } from "./safe-url.js";
 
 export interface TokenExchangeResult {
   idToken: string;
@@ -41,6 +41,7 @@ export async function exchangeAuthorizationCode(
   redirectUri: string,
 ): Promise<{ id_token: string; access_token?: string }> {
   assertSafeOidcFetchUrl(provider.token_endpoint);
+  await assertSafeOidcFetchUrlResolved(provider.token_endpoint);
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
@@ -78,6 +79,7 @@ export async function exchangeAuthorizationCode(
 /** Validate ID token signature and standard claims including nonce. */
 export async function validateIdToken(input: ValidateIdTokenInput): Promise<JWTPayload> {
   assertSafeOidcFetchUrl(input.provider.jwks_uri);
+  await assertSafeOidcFetchUrlResolved(input.provider.jwks_uri);
   const verifier = getJwksVerifier(input.provider.jwks_uri);
   const { payload } = await jose.jwtVerify(input.idToken, verifier, {
     issuer: input.provider.issuer,
