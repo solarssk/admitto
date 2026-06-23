@@ -100,13 +100,38 @@ export function ImportPage() {
       {step !== "done" && (
         <Card className="import-card">
           <div className="import-form">
-            <p className="import-hint">
-              <strong>Required columns:</strong> first_name, last_name, email.{" "}
-              <strong>Optional:</strong> ticket_type, company, department, external_uuid, qr_payload.
-            </p>
+            <details className="import-columns-info">
+              <summary>Required CSV columns</summary>
+              <table className="import-columns-table">
+                <thead>
+                  <tr>
+                    <th>Column</th>
+                    <th>Required</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td><code>first_name</code></td><td>Yes</td><td>Attendee&apos;s first name</td></tr>
+                  <tr><td><code>last_name</code></td><td>Yes</td><td>Attendee&apos;s last name</td></tr>
+                  <tr><td><code>email</code></td><td>Yes</td><td>Valid email address (used as unique key)</td></tr>
+                  <tr><td><code>ticket_type</code></td><td>No</td><td>Ticket category (free text)</td></tr>
+                  <tr><td><code>company</code></td><td>No</td><td>Attendee&apos;s company</td></tr>
+                  <tr><td><code>department</code></td><td>No</td><td>Department or team</td></tr>
+                  <tr><td><code>external_uuid</code></td><td>No</td><td>External ID for deduplication</td></tr>
+                  <tr><td><code>qr_payload</code></td><td>No</td><td>Custom QR code payload (auto-generated if empty)</td></tr>
+                </tbody>
+              </table>
+            </details>
             <p className="import-hint import-hint--limits">
               <strong>Limits:</strong> max 5 MB · max 50 000 data rows · .csv or .xlsx only.
             </p>
+            <a
+              href={`/api/admin/events/${eventId}/import/template`}
+              download="admitto-import-template.csv"
+              className="at-btn at-btn--secondary import-template-btn"
+            >
+              Download CSV template
+            </a>
 
             <div className="import-field">
               <label className="import-label" htmlFor="import-file">

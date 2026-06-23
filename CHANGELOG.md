@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Admin UX micro-fixes: import column reference table and CSV template download; delivery log purpose filter; compose dirty-state guard with SPA navigation blocker; attendee drawer discard confirmation; check-in stats show admitted/total; camera fullscreen toggle
 - `@admitto/ui` design system: `Spinner`, `EmptyState`, `Skeleton`, and `ToastProvider` / `useToast` for consistent loading, empty, placeholder, and notification patterns across admin screens
 - Admin app root wrapped with `ToastProvider` so future panels can dispatch toasts without per-screen wiring
 - Event archiving: `Event.archived_at` flag hides completed events from default lists while preserving data; superadmin can archive/unarchive via Settings panel or event header; archived events are read-only on admin mutating APIs; Active/Archived tabs on event picker; check-in remains available after archive for late admits (ADR 0022)

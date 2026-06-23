@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, IconButton, Input, StatusBadge } from "@admitto/ui";
 import {
   ApiError,
@@ -14,6 +14,7 @@ import {
   type CustomDataFieldDef,
 } from "./customData.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 
 export interface AttendeeDetailDrawerProps {
   eventId: string;
@@ -149,6 +150,7 @@ export function AttendeeDetailDrawer({
   const [resending, setResending] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
   const [resendSuccess, setResendSuccess] = useState<string | null>(null);
+  const [discardOpen, setDiscardOpen] = useState(false);
 
   /** Tracks the row currently selected in the parent list (guards async save/reload). */
   const selectionRef = useRef({ eventId, attendeeId });
@@ -191,13 +193,29 @@ export function AttendeeDetailDrawer({
     };
   }, [eventId, attendeeId]);
 
+  const baseline = detail != null ? toForm(detail, attributeFields) : null;
+  const isDirty =
+    form !== null &&
+    baseline !== null &&
+    (form.name !== baseline.name ||
+      form.email !== baseline.email ||
+      form.company !== baseline.company ||
+      form.department !== baseline.department ||
+      form.ticket_type !== baseline.ticket_type ||
+      JSON.stringify(form.customFields) !== JSON.stringify(baseline.customFields));
+
+  const handleCloseGuard = useCallback(() => {
+    if (isDirty) setDiscardOpen(true);
+    else onClose();
+  }, [isDirty, onClose]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !resendOpen) onClose();
+      if (e.key === "Escape" && !resendOpen && !discardOpen) handleCloseGuard();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, resendOpen]);
+  }, [handleCloseGuard, resendOpen, discardOpen]);
 
   const emailChanged = form != null && form.email !== initialEmail;
 
@@ -335,7 +353,7 @@ export function AttendeeDetailDrawer({
       <div
         className="attendee-drawer-backdrop"
         role="presentation"
-        onClick={onClose}
+        onClick={handleCloseGuard}
         aria-hidden="true"
       />
       <aside className="attendee-drawer" aria-label="Attendee details">
@@ -344,7 +362,7 @@ export function AttendeeDetailDrawer({
             <h2 className="attendee-drawer__title">{detail?.name ?? "Attendee"}</h2>
             {detail && <TicketTypeBadge ticketType={detail.ticket_type} />}
           </div>
-          <IconButton icon={<i className="ti ti-x" aria-hidden="true" />} label="Close" onClick={onClose} />
+          <IconButton icon={<i className="ti ti-x" aria-hidden="true" />} label="Close" onClick={handleCloseGuard} />
         </header>
 
         <div className="attendee-drawer__body">
@@ -534,6 +552,19 @@ export function AttendeeDetailDrawer({
           </form>
         </div>
       )}
+      <ConfirmDialog
+        open={discardOpen}
+        title="Discard changes?"
+        message="You have unsaved changes. They will be lost if you close this panel."
+        confirmLabel="Discard"
+        confirmVariant="danger"
+        cancelLabel="Keep editing"
+        onConfirm={() => {
+          setDiscardOpen(false);
+          onClose();
+        }}
+        onCancel={() => setDiscardOpen(false)}
+      />
     </>
   );
 }

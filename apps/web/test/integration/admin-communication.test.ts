@@ -145,6 +145,21 @@ async function seed(client: PrismaClient) {
       sent_at: new Date("2026-09-01T12:00:00Z"),
     },
   });
+
+  await client.emailDelivery.create({
+    data: {
+      organization_id: ORG_A,
+      event_id: EVENT_A,
+      attendee_id: ATT_A1,
+      purpose: "resend",
+      provider: "export_only",
+      status: "sent",
+      recipient_email: "anna@example.com",
+      rendered_subject: "Your ticket (resend)",
+      rendered_html: "<p>secret resend html</p>",
+      sent_at: new Date("2026-09-02T12:00:00Z"),
+    },
+  });
 }
 
 async function sessionCookieFor(userId: string): Promise<string> {
@@ -452,6 +467,25 @@ describe("GET /api/admin/events/:eventId/deliveries", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: { status: string }[] };
     expect(body.items.every((r) => r.status === "sent")).toBe(true);
+  });
+
+  it("filters by purpose", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries?purpose=resend`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { purpose: string }[]; total: number };
+    expect(body.total).toBe(1);
+    expect(body.items.every((r) => r.purpose === "resend")).toBe(true);
+  });
+
+  it("returns 400 for invalid purpose filter", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries?purpose=not-a-purpose`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(400);
   });
 
   it("returns 400 for invalid status filter", async () => {

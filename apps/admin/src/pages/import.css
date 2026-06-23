@@ -30,6 +30,43 @@
   line-height: 1.5;
 }
 
+.import-columns-info {
+  margin: 0.75rem 0;
+  font-size: var(--fs-sm);
+}
+
+.import-columns-info summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.import-columns-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: var(--space-2);
+  font-size: var(--fs-sm);
+}
+
+.import-columns-table th,
+.import-columns-table td {
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.import-columns-table code {
+  font-family: ui-monospace, monospace;
+  background: var(--surface-muted, var(--border));
+  padding: 0.1rem 0.3rem;
+  border-radius: var(--radius-sm, 3px);
+}
+
+.import-template-btn {
+  align-self: flex-start;
+  text-decoration: none;
+}
+
 .import-field {
   display: flex;
   flex-direction: column;

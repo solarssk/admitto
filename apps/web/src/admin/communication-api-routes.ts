@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
-import type { EmailDeliveryStatus } from "@admitto/db";
-import { EMAIL_DELIVERY_STATUS } from "@admitto/db/status";
+import type { EmailDeliveryStatus, EmailDeliveryPurpose } from "@admitto/db";
+import { EMAIL_DELIVERY_STATUS, EMAIL_DELIVERY_PURPOSE } from "@admitto/db/status";
 import { z } from "zod";
 import {
   ALLOWED_PLACEHOLDERS,
@@ -100,6 +100,7 @@ export type EventDeliveriesListDto = {
 const ALLOWED_PLACEHOLDER_LIST = [...ALLOWED_PLACEHOLDERS].sort();
 const REQUIRED_URL_PLACEHOLDER_LIST = [...REQUIRED_URL_PLACEHOLDERS].sort();
 const ALLOWED_DELIVERY_STATUSES = new Set<string>(EMAIL_DELIVERY_STATUS);
+const ALLOWED_DELIVERY_PURPOSES = new Set<string>(EMAIL_DELIVERY_PURPOSE);
 
 /** Collect template source validation errors for API 400 responses. */
 function collectTemplateSourceErrors(subject: string, body: string): string[] {
@@ -426,13 +427,20 @@ export async function handleListEventDeliveries(c: Context, db: PrismaClient): P
   const page = positiveIntQuery(c.req.query("page"), 1);
   const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
   const statusRaw = c.req.query("status")?.trim();
+  const purposeRaw = c.req.query("purpose")?.trim();
 
-  const filters: { status?: EmailDeliveryStatus } = {};
+  const filters: { status?: EmailDeliveryStatus; purpose?: EmailDeliveryPurpose } = {};
   if (statusRaw && statusRaw !== "all") {
     if (!ALLOWED_DELIVERY_STATUSES.has(statusRaw)) {
       return c.json({ error: "validation_failed" }, 400);
     }
     filters.status = statusRaw as EmailDeliveryStatus;
+  }
+  if (purposeRaw && purposeRaw !== "all") {
+    if (!ALLOWED_DELIVERY_PURPOSES.has(purposeRaw)) {
+      return c.json({ error: "validation_failed" }, 400);
+    }
+    filters.purpose = purposeRaw as EmailDeliveryPurpose;
   }
 
   const { items, total } = await listDeliveries(

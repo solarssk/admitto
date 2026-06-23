@@ -105,6 +105,7 @@ export interface CheckInHistoryEntry {
 
 export interface CheckInStatsResponse {
   admitted_count: number;
+  total_count: number;
 }
 
 export interface AttendeeRowDto {
@@ -374,6 +375,7 @@ export interface EventDeliveriesListParams {
   page?: number;
   pageSize?: number;
   status?: "all" | "queued" | "accepted" | "sent" | "delivered" | "failed" | "bounced" | "rejected";
+  purpose?: "all" | "initial" | "resend";
 }
 
 export interface EventDeliveriesListResponse {

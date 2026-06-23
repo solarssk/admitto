@@ -45,6 +45,7 @@ export function CheckInPage() {
   const [lookupResults, setLookupResults] = useState<Awaited<ReturnType<typeof lookupCheckInAttendees>>>([]);
   const [history, setHistory] = useState<CheckInHistoryEntry[]>([]);
   const [admittedCount, setAdmittedCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   const [useCamera, setUseCamera] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [admitOrigin, setAdmitOrigin] = useState<"scan" | "manual">("manual");
@@ -64,6 +65,7 @@ export function CheckInPage() {
       ]);
       setHistory(h);
       setAdmittedCount(stats.admitted_count);
+      setTotalCount(stats.total_count);
     } catch {
       /* read-only context */
     }
@@ -362,7 +364,7 @@ export function CheckInPage() {
 
       <aside className="checkin-surface__aside">
         <Card>
-          <ScanHistoryList admittedCount={admittedCount} history={history} />
+          <ScanHistoryList admittedCount={admittedCount} totalCount={totalCount} history={history} />
           <ManualLookupPanel
             open={manualOpen}
             query={lookupQ}

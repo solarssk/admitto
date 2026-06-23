@@ -522,3 +522,27 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     }
   });
 });
+
+describe("GET /api/admin/events/:eventId/import/template", () => {
+  it("returns CSV header row with attachment headers", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/import/template`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/text\/csv/);
+    expect(res.headers.get("content-disposition")).toMatch(/admitto-import-template\.csv/);
+    const body = await res.text();
+    expect(body).toBe(
+      "first_name,last_name,email,ticket_type,company,department,external_uuid,qr_payload\n",
+    );
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/import/template`,
+      { headers: { Cookie: opCookie } },
+    );
+    expect(res.status).toBe(403);
+  });
+});

@@ -11,6 +11,7 @@ import {
   eventIdFromScanBody,
   eventIdFromHistoryQuery,
 } from "../../src/checkin-gate.js";
+import { handleCheckinStats } from "../../src/admin/checkin-api-routes.js";
 import { createCheckinAuthenticatedRateLimit } from "../../src/checkin-rate-limit.js";
 import { InMemoryRateLimitStore, type RateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -353,5 +354,47 @@ describe("parseScanBodyMiddleware — single parse", () => {
     const json = (await res.json()) as { eventId: string; count: number };
     expect(json.eventId).toBe(EVENT_A);
     expect(json.count).toBe(1);
+  });
+});
+
+function buildStatsApp() {
+  const deps = gateDeps(false);
+  const app = new Hono();
+  app.get(
+    "/api/checkin/stats",
+    createCheckinPreAuth(deps),
+    createCheckinEventScope(deps, eventIdFromHistoryQuery),
+    (c) => handleCheckinStats(c, prisma),
+  );
+  return app;
+}
+
+describe("GET /api/checkin/stats", () => {
+  it("returns admitted_count and total_count", async () => {
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-dual-stats-1",
+          event_id: EVENT_A,
+          email: "one@example.com",
+          name: "One",
+          admitted_at: new Date("2026-09-01T10:00:00Z"),
+        },
+        {
+          id: "att-dual-stats-2",
+          event_id: EVENT_A,
+          email: "two@example.com",
+          name: "Two",
+        },
+      ],
+    });
+    const cookie = await sessionCookieFor(USER_OP_A);
+    const res = await buildStatsApp().request(`/api/checkin/stats?eventId=${EVENT_A}`, {
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { admitted_count: number; total_count: number };
+    expect(body.total_count).toBeGreaterThanOrEqual(body.admitted_count);
+    expect(body.admitted_count).toBeGreaterThanOrEqual(1);
   });
 });
