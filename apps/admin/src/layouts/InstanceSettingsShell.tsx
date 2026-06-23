@@ -59,12 +59,12 @@ export function InstanceSettingsShell() {
             </form>
           </div>
         </header>
-        <nav className="settings-subnav" aria-label="Settings sections">
+        <nav className="adm-subnav" aria-label="Settings sections">
           {SETTINGS_TABS.map((tab) => (
             <a
               key={tab.href}
               href={tab.href}
-              className={`settings-subnav__item${pathname === tab.href ? " settings-subnav__item--active" : ""}`}
+              className={`adm-subnav-item${pathname === tab.href ? " adm-subnav-item--active" : ""}`}
             >
               {tab.label}
             </a>

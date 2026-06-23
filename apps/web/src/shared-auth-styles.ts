@@ -315,8 +315,8 @@ export const ADMIN_PAGE_CSS = `
   --at-red: #d63939;
   --at-red-050: #fbeaea;
   --at-green-050: #e9f7ec;
-  --at-sidebar-w: 220px;
-  --at-topbar-h: 52px;
+  --at-sidebar-w: 240px;
+  --at-topbar-h: 56px;
   --at-radius: 6px;
 }
 
@@ -346,16 +346,18 @@ body {
   background: #fff;
   border-right: 1px solid var(--at-gray-200);
   overflow-y: auto;
-  padding: 0 8px 16px;
+  padding: 14px 12px;
+  gap: 6px;
 }
 
 .adm-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 16px 8px 12px;
-  font-size: 0.9375rem;
-  font-weight: 600;
+  gap: 9px;
+  padding: 6px 6px 12px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
   color: var(--at-ink);
   text-decoration: none;
 }
@@ -370,10 +372,23 @@ body {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--at-gray-500);
-  padding: 12px 8px 4px;
+  margin-bottom: 6px;
 }
 
-.adm-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.adm-context {
+  padding: 10px 6px 12px;
+  border-top: 1px solid var(--at-gray-200);
+  border-bottom: 1px solid var(--at-gray-200);
+}
+
+.adm-context-meta {
+  font-size: 0.8125rem;
+  color: var(--at-gray-500);
+}
+
+.adm-nav-spacer { flex: 1; }
+
+.adm-nav { display: flex; flex-direction: column; gap: 2px; }
 
 .adm-nav-item {
   display: flex;
@@ -404,7 +419,7 @@ body {
 
 .adm-foot {
   margin-top: auto;
-  padding-top: 8px;
+  padding-top: 6px;
   border-top: 1px solid var(--at-gray-200);
   display: flex;
   flex-direction: column;
@@ -426,7 +441,7 @@ body {
   height: var(--at-topbar-h);
   display: flex;
   align-items: center;
-  padding: 0 24px;
+  padding: 0 20px;
   background: #fff;
   border-bottom: 1px solid var(--at-gray-200);
   font-weight: 600;
@@ -437,22 +452,14 @@ body {
   z-index: 10;
 }
 
-.adm-topbar__back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--at-gray-500);
-  text-decoration: none;
-  font-size: 0.875rem;
-  font-weight: 400;
-  margin-right: auto;
+.adm-topbar__title {
+  font-weight: 600;
+  font-size: 1.125rem;
 }
 
-.adm-topbar__back:hover { color: var(--at-ink); }
-
 .adm-content {
-  padding: 28px 32px;
-  max-width: 800px;
+  padding: 24px;
+  max-width: none;
 }
 
 h1 { font-size: 1.25rem; font-weight: 700; margin: 0 0 1.25rem; color: var(--at-ink); }
@@ -502,7 +509,7 @@ button[type=submit]:not(.toggle-btn):hover { background: var(--at-blue-dark); bo
 .badge-neutral { display: inline-block; background: var(--at-gray-100); color: var(--at-gray-500); border-radius: 4px; padding: 2px 8px; font-size: 0.8125rem; }
 .status-line { margin: 0 0 1rem; font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
 
-/* secondary (horizontal) subnav — padding matches SPA .settings-subnav */
+/* secondary (horizontal) subnav — shared with SPA .adm-subnav */
 .adm-subnav {
   display: flex;
   padding: 0 24px;
@@ -563,10 +570,13 @@ export function renderAdminShell(options: AdminShellOptions): string {
 
   const sidebar = `<aside class="adm-sidebar">
   <a class="adm-brand" href="/admin">${ADMIN_MARK_SVG}<span>Admitto</span></a>
-  <nav class="adm-nav" aria-label="Main">
-    <a class="adm-nav-item" href="/admin"><i class="ti ti-calendar-event"></i><span>All events</span></a>
-  </nav>
+  <div class="adm-context">
+    <div class="adm-overline">Instance</div>
+    <div class="adm-context-meta">System-wide configuration</div>
+  </div>
+  <div class="adm-nav-spacer" aria-hidden="true"></div>
   <div class="adm-foot">
+    <a class="adm-nav-item" href="/admin"><i class="ti ti-calendar-event"></i><span>All events</span></a>
     <a class="adm-nav-item adm-nav-item--active" href="/admin/settings"><i class="ti ti-settings"></i><span>Settings</span></a>
   </div>
 </aside>`;
@@ -592,8 +602,7 @@ export function renderAdminShell(options: AdminShellOptions): string {
 ${sidebar}
 <div class="adm-main">
   <header class="adm-topbar">
-    <a class="adm-topbar__back" href="/admin"><i class="ti ti-chevron-left"></i>All events</a>
-    <span>${esc(title)}</span>
+    <div class="adm-topbar__title">${esc(title)}</div>
   </header>
   <nav class="adm-subnav" aria-label="Settings sections">${subnav}</nav>
   <div class="adm-content">
@@ -625,7 +634,7 @@ export function renderAuthDocument(options: AuthDocumentOptions): string {
   <meta property="og:site_name" content="${esc(AUTH_PRODUCT_NAME)}">
   <meta name="description" content="${esc(description)}">
   ${renderAdmittoFaviconLink()}
-  <title>${esc(AUTH_PRODUCT_NAME)}</title>
+  <title>${esc(AUTH_PRODUCT_NAME)}${step ? ` — ${esc(step)}` : ""}</title>
   <style>${css}</style>
 </head>
 <body>
@@ -635,7 +644,7 @@ ${body}${scripts ? `\n${scripts}` : ""}
 }
 
 export function renderAuthBrand(): string {
-  return `<header class="auth-brand" role="banner">${ADMITTO_MARK_SVG}<h1 class="auth-product-name">${AUTH_PRODUCT_NAME}</h1></header>`;
+  return `<div class="auth-brand">${ADMITTO_MARK_SVG}<h1 class="auth-product-name">${AUTH_PRODUCT_NAME}</h1></div>`;
 }
 
 /** Centered auth shell — brand lives inside the card (design: ui_kits/admin/LoginScreen.jsx). */

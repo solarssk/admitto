@@ -93,7 +93,7 @@ describe("GET /login", () => {
     expect(html).toContain("auth-card");
     expect(html).toContain('viewBox="0 0 32 32"');
     expect(html).toContain("Sign in");
-    expect(html).toContain("<title>Admitto</title>");
+    expect(html).toContain("<title>Admitto — Sign in</title>");
     expect(html).toContain('name="application-name" content="Admitto"');
     expect(html).toContain('property="og:site_name" content="Admitto"');
     expect(html).toContain('<h1 class="auth-product-name">Admitto</h1>');
