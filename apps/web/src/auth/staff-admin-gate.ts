@@ -76,6 +76,17 @@ export function createStaffAdminGate(prisma: PrismaClient) {
       return forbiddenNoAdminAccess(c, prisma, result.auth.userId);
     }
 
+    const user = await prisma.user.findUnique({
+      where: { id: result.auth.userId },
+      select: { must_change_password: true, is_active: true },
+    });
+    if (user?.is_active && user.must_change_password) {
+      if (isAdminSpaPath(c.req.path)) return c.redirect("/change-password", 302);
+      if (isAdminApiPath(c.req.path)) {
+        return c.json({ error: "password_change_required", code: "password_change_required" }, 403);
+      }
+    }
+
     c.set("auth", result.auth);
     await next();
   };

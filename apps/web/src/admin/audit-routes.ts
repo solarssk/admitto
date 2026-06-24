@@ -13,16 +13,30 @@ async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Reject impossible calendar dates such as 2026-02-30. */
+function isValidCalendarDate(value: string): boolean {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return false;
+  const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
 /**
  * Parse a query date bound. Date-only values (`YYYY-MM-DD`) use UTC day bounds:
  * start → 00:00:00.000, end → 23:59:59.999 (inclusive through the selected day).
- * Invalid values are ignored (returns undefined).
+ * Full ISO instants (with `T`) are used as-is — the UI sends local-day bounds this way.
+ * Invalid calendar dates and unparseable values are ignored (returns undefined).
  */
 function parseDateBound(raw: string | undefined, bound: "start" | "end"): Date | undefined {
   if (!raw) return undefined;
   const trimmed = raw.trim();
   if (DATE_ONLY.test(trimmed)) {
-    const [year, month, day] = trimmed.split("-").map(Number);
+    if (!isValidCalendarDate(trimmed)) return undefined;
+    const [year, month, day] = trimmed.split("-").map(Number) as [number, number, number];
     if (bound === "start") return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
     return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
   }

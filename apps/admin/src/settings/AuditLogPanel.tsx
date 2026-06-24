@@ -35,6 +35,16 @@ const ACTION_OPTIONS = Object.keys(ACTION_LABELS).sort((a, b) =>
 
 const PAGE_SIZE = 25;
 
+/** Local calendar-day start as an ISO instant for the audit log start filter. */
+function localDayStartIso(date: string): string {
+  return new Date(`${date}T00:00:00`).toISOString();
+}
+
+/** Local calendar-day end as an ISO instant for the audit log end filter. */
+function localDayEndIso(date: string): string {
+  return new Date(`${date}T23:59:59.999`).toISOString();
+}
+
 /** Format an ISO timestamp for the audit log table. */
 function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -90,12 +100,17 @@ export function AuditLogPanel() {
           page,
           pageSize: PAGE_SIZE,
           actionType: filters.actionType || undefined,
-          start: filters.start || undefined,
-          end: filters.end || undefined,
+          start: filters.start ? localDayStartIso(filters.start) : undefined,
+          end: filters.end ? localDayEndIso(filters.end) : undefined,
         },
         ac.signal,
       );
       if (ac.signal.aborted) return;
+      const maxPage = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
+      if (page > maxPage) {
+        setPage(maxPage);
+        return;
+      }
       setEntries(data.entries);
       setTotal(data.total);
     } catch (err) {
@@ -190,9 +205,11 @@ export function AuditLogPanel() {
         </p>
       ) : entries.length === 0 ? (
         <p className="audit-log-empty">
-          {hasActiveFilters
-            ? "No audit log entries match the filters."
-            : "No audit log entries found."}
+          {total > 0
+            ? "No entries on this page."
+            : hasActiveFilters
+              ? "No audit log entries match the filters."
+              : "No audit log entries found."}
         </p>
       ) : (
         <div className="sessions-table-wrap">
