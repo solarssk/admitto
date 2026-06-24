@@ -55,7 +55,13 @@ export {
   SETTING_CF_ACCESS_TEAM_DOMAIN,
   SETTING_CF_ACCESS_AUD,
   SETTING_CF_ACCESS_PROTECTED_PREFIXES,
+  SETTING_SETUP_COMPLETE,
 } from "./settings/keys.js";
+export {
+  resolveSetupComplete,
+  markSetupIncomplete,
+  markSetupComplete,
+} from "./settings/setup-complete.js";
 export {
   getCfAccessConfig,
   getCfAccessConfigCached,

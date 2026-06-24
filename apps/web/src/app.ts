@@ -148,6 +148,13 @@ import {
   handlePostMailSettingsTest,
   MAX_MAIL_SETTINGS_BODY_BYTES,
 } from "./admin/mail-settings-routes.js";
+import { handleGetSetupChecks } from "./admin/setup-checks-routes.js";
+import { handlePostSetupComplete } from "./admin/setup-complete-routes.js";
+import {
+  handleGetSetupOrgBranding,
+  handlePatchSetupOrgBranding,
+} from "./admin/setup-org-branding-routes.js";
+import { handleGetSetup, handlePostSetup } from "./setup-routes.js";
 import {
   handleGetSessions,
   handleRevokeSession,
@@ -388,7 +395,9 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostSessionDeviceLabel(c, db),
   );
 
-  app.get("/api/admin/me", staffAdminGate, (c) => handleMe(c, db, { includeMailerStatus: true }));
+  app.get("/api/admin/me", staffAdminGate, (c) =>
+    handleMe(c, db, { includeMailerStatus: true, includeSetupComplete: true }),
+  );
   app.get("/api/admin/events", staffAdminGate, (c) => handleGetAdminEvents(c, db));
   app.post("/api/admin/events", jsonPostCsrf, staffAdminGate, (c) => handleCreateEvent(c, db));
   app.post("/api/admin/events/:eventId/archive", jsonPostCsrf, staffAdminGate, (c) =>
@@ -491,6 +500,16 @@ export function createApp(options: CreateAppOptions = {}) {
     adminMailSettingsRateLimit,
     (c) => handlePostMailSettingsTest(c, db, mailDeliveryDeps),
   );
+  app.get("/api/admin/setup/checks", staffAdminGate, (c) =>
+    handleGetSetupChecks(c, db, rateLimitStore),
+  );
+  app.get("/api/admin/setup/org-branding", staffAdminGate, (c) => handleGetSetupOrgBranding(c, db));
+  app.patch("/api/admin/setup/org-branding", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePatchSetupOrgBranding(c, db),
+  );
+  app.post("/api/admin/setup/complete", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePostSetupComplete(c, db),
+  );
   app.get("/api/admin/audit-log", staffAdminGate, (c) => handleGetAuditLog(c, db));
   app.get("/api/admin/sessions", staffAdminGate, (c) => handleGetSessions(c, db));
   app.post("/api/admin/sessions/:id/revoke", jsonPostCsrf, staffAdminGate, (c) =>
@@ -566,6 +585,8 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostCfAccessTest(c, db),
   );
 
+  app.get("/setup", (c) => handleGetSetup(c, db));
+  app.post("/setup", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostSetup(c, db));
   app.get("/login", (c) => handleGetLogin(c, db));
   app.post("/login", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostLogin(c, db, rateLimitStore));
   app.get("/mfa/verify", requirePartialSessionHtml, (c) => handleGetMfaVerify(c));

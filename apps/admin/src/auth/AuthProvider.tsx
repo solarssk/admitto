@@ -16,6 +16,7 @@ export interface AuthContextValue {
   assignments: RoleAssignment[];
   deviceLabel: string | null;
   hasAdmittoSession: boolean;
+  setupComplete: boolean;
   loading: boolean;
   authError: string | null;
   refresh: () => Promise<void>;
@@ -28,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [assignments, setAssignments] = useState<RoleAssignment[]>([]);
   const [deviceLabel, setDeviceLabel] = useState<string | null>(null);
   const [hasAdmittoSession, setHasAdmittoSession] = useState(false);
+  const [setupComplete, setSetupComplete] = useState(true);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -40,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAssignments(me.assignments);
       setDeviceLabel(me.device_label ?? null);
       setHasAdmittoSession(me.session_active);
+      setSetupComplete(me.setup_complete !== false);
       try {
         const theme = await fetchStaffTheme();
         applyThemeVars(theme.theme);
@@ -57,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAssignments([]);
       setDeviceLabel(null);
       setHasAdmittoSession(false);
+      setSetupComplete(true);
     } finally {
       setLoading(false);
     }
@@ -68,8 +72,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => {
     if (!user) return null;
-    return { user, assignments, deviceLabel, hasAdmittoSession, loading, authError, refresh };
-  }, [user, assignments, deviceLabel, hasAdmittoSession, loading, authError, refresh]);
+    return {
+      user,
+      assignments,
+      deviceLabel,
+      hasAdmittoSession,
+      setupComplete,
+      loading,
+      authError,
+      refresh,
+    };
+  }, [user, assignments, deviceLabel, hasAdmittoSession, setupComplete, loading, authError, refresh]);
 
   if (loading) {
     return (

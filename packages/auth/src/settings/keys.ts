@@ -13,6 +13,9 @@ export const SETTING_CF_ACCESS_PROTECTED_PREFIXES = "cf_access_protected_prefixe
 /** Runtime UI branding (CSS vars) — ADR 0020 / v0.4 foundation. */
 export const SETTING_BRANDING_THEME = "branding_theme";
 
+/** First-run onboarding wizard completed (v0.4.6). */
+export const SETTING_SETUP_COMPLETE = "setup_complete";
+
 export const SYSTEM_SETTING_KEYS = [
   SETTING_SESSION_TTL,
   SETTING_OPERATOR_SESSION_TTL,
@@ -23,4 +26,5 @@ export const SYSTEM_SETTING_KEYS = [
   SETTING_CF_ACCESS_AUD,
   SETTING_CF_ACCESS_PROTECTED_PREFIXES,
   SETTING_BRANDING_THEME,
+  SETTING_SETUP_COMPLETE,
 ] as const;

@@ -26,6 +26,7 @@ export interface MeResponse {
   device_label?: string | null;
   session_active: boolean;
   mailer_status?: MailerStatus | null;
+  setup_complete?: boolean;
 }
 
 export interface EventDto {
@@ -467,6 +468,27 @@ export interface PatchSecuritySettingsBody {
   operator_session_ttl_ms?: number | null;
   trusted_device_days?: number | null;
   mfa_required_roles?: string[] | null;
+}
+
+export type SetupCheckKey = "database" | "migrations" | "redis" | "encryption" | "base_url";
+
+export interface SetupCheckResult {
+  ok: boolean;
+  detail: string;
+}
+
+export interface SetupChecksResponse {
+  checks: Record<SetupCheckKey, SetupCheckResult>;
+}
+
+export interface SetupOrgBrandingDto {
+  org_name: string | null;
+  logo_url: string | null;
+}
+
+export interface PatchSetupOrgBrandingBody {
+  org_name?: string;
+  logo_url?: string | null;
 }
 
 /** One row from GET /api/admin/audit-log. */
