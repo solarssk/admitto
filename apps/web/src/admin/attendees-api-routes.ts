@@ -762,6 +762,9 @@ function buildTicketRefPreview(row: {
   return null;
 }
 
+/** Shown in activity log when a human actor has no display_name (email is never exposed). */
+const ACTION_LOG_ACTOR_FALLBACK = "Admin";
+
 async function loadAttendeeActionLogEntries(
   db: PrismaClient,
   attendeeId: string,
@@ -786,7 +789,7 @@ async function loadAttendeeActionLogEntries(
     actorIds.length > 0
       ? await db.user.findMany({
           where: { id: { in: actorIds } },
-          select: { id: true, display_name: true, email: true },
+          select: { id: true, display_name: true },
         })
       : [];
   const userById = new Map(users.map((user) => [user.id, user]));
@@ -796,8 +799,8 @@ async function loadAttendeeActionLogEntries(
     return {
       id: log.id,
       action_type: log.action_type,
-      actor_display: actor
-        ? (actor.display_name ?? actor.email ?? "System")
+      actor_display: log.actor_user_id
+        ? (actor?.display_name ?? ACTION_LOG_ACTOR_FALLBACK)
         : "System",
       metadata:
         log.metadata && typeof log.metadata === "object" && !Array.isArray(log.metadata)

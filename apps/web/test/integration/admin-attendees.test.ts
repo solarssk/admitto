@@ -783,8 +783,15 @@ describe("Attendees v2 — RSVP and manual create", () => {
       }),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { rsvp_status: string };
+    const body = (await res.json()) as {
+      rsvp_status: string;
+      action_log: { action_type: string; actor_display: string | null }[];
+    };
     expect(body.rsvp_status).toBe("confirmed");
+
+    const rsvpEntry = body.action_log.find((e) => e.action_type === "rsvp_status_changed");
+    expect(rsvpEntry?.actor_display).toBe("Admin");
+    expect(rsvpEntry?.actor_display).not.toBe(EMAIL_ADMIN);
 
     const log = await prisma.attendeeActionLog.findFirst({
       where: { attendee_id: ATT_A2, action_type: "rsvp_status_changed" },
