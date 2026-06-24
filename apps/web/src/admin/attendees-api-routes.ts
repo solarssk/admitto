@@ -348,6 +348,7 @@ async function findFilteredAttendeesForExport(
     WHERE event_id = ${eventId}
       ${attendeeStatusSql(status)}
       ${attendeeTicketTypeSql(ticket_type)}
+      ${attendeeRsvpStatusSql(rsvp_status)}
       ${attendeeSearchOrSql(q)}
     ORDER BY name ASC
     LIMIT ${EXPORT_ROW_CAP}

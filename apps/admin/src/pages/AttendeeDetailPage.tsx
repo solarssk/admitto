@@ -15,10 +15,11 @@ import {
 } from "@admitto/ui";
 import {
   ApiError,
+  fetchAttendeeDetail,
   resendTicket,
   updateAttendee,
 } from "../api/client.js";
-import type { AttendeeDetailDto, DeliveryDto, RsvpStatus, UpdateAttendeePatch } from "../api/types.js";
+import type { AttendeeDetailDto, RsvpStatus, UpdateAttendeePatch } from "../api/types.js";
 import {
   formatDateTime,
   loadAttendeeDetailData,
@@ -218,10 +219,6 @@ export function AttendeeDetailPage() {
     }
   }
 
-  function prependDelivery(delivery: DeliveryDto) {
-    setDetail((prev) => (prev ? { ...prev, deliveries: [delivery, ...prev.deliveries] } : prev));
-  }
-
   async function handleResend(e: React.FormEvent) {
     e.preventDefault();
     if (!eventId || !attendeeId || !detail) return;
@@ -234,7 +231,8 @@ export function AttendeeDetailPage() {
     try {
       const body = resendMode === "other" ? { to: resendEmail.trim() } : {};
       const delivery = await resendTicket(eventId, attendeeId, body);
-      prependDelivery(delivery);
+      const refreshed = await fetchAttendeeDetail(eventId, attendeeId);
+      setDetail(refreshed);
       setResendOpen(false);
       addToast(
         delivery.status === "failed"
