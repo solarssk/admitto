@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { Badge, Button, Card, PageHeader, Spinner, Tabs } from "@admitto/ui";
+import { Link, useNavigate } from "react-router-dom";
+import { Badge, Button, Card, EmptyState, PageHeader, Spinner, Tabs } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ApiError, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { CreateEventModal } from "../events/CreateEventModal.js";
 import { formatEventDate, formatEventDateTime } from "../utils/event-dates.js";
 import { filterEventsBySearch } from "../utils/event-search.js";
 
@@ -18,6 +19,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 /** Event picker for org admins and superadmins at `/admin` (no event context). */
 export function EventsPickerPage() {
+  const navigate = useNavigate();
   const { assignments } = useAuth();
   const showInstanceSettings = isSuperadmin(assignments);
   const canUnarchive = showInstanceSettings;
@@ -26,6 +28,7 @@ export function EventsPickerPage() {
   const [events, setEvents] = useState<EventDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
   const [unarchiveTarget, setUnarchiveTarget] = useState<UnarchiveTarget | null>(null);
   const [unarchiving, setUnarchiving] = useState(false);
   const [unarchiveError, setUnarchiveError] = useState<string | null>(null);
@@ -84,11 +87,22 @@ export function EventsPickerPage() {
   );
   const allEventsArchived = events.length > 0 && activeEvents.length === 0;
 
+  const gridClass =
+    filteredEvents.length >= 4
+      ? "event-grid event-grid--cols-3"
+      : filteredEvents.length > 0
+        ? "event-grid event-grid--cols-2"
+        : "event-grid";
+
   useEffect(() => {
     if (!loading && !tabTouched && events.length > 0 && activeEvents.length === 0) {
       setTab("archived");
     }
   }, [loading, tabTouched, events.length, activeEvents.length]);
+
+  const handleCreated = (event: EventDto) => {
+    navigate(`/admin/events/${event.id}/attendees`);
+  };
 
   const handleUnarchive = async () => {
     if (!unarchiveTarget) return;
@@ -111,8 +125,8 @@ export function EventsPickerPage() {
         title="Events"
         subtitle="Select an event to manage its lifecycle."
         actions={
-          <Button variant="secondary" disabled title="Coming in a future release">
-            Create event
+          <Button type="button" variant="primary" onClick={() => setCreateOpen(true)}>
+            New event
           </Button>
         }
       />
@@ -174,15 +188,22 @@ export function EventsPickerPage() {
         </Card>
       )}
 
-      {!loading && !error && displayedEvents.length === 0 && (
+      {!loading && !error && tab === "active" && events.length === 0 && (
+        <EmptyState
+          icon={<i className="ti ti-calendar-off" />}
+          title="No events yet"
+          description="Create your first event to start managing attendees and check-in."
+          action={
+            <Button type="button" variant="primary" onClick={() => setCreateOpen(true)}>
+              Create event
+            </Button>
+          }
+        />
+      )}
+
+      {!loading && !error && displayedEvents.length === 0 && events.length > 0 && (
         <Card>
           <p>{tab === "archived" ? "No archived events." : "No active events in your scope."}</p>
-          {tab === "active" && events.length === 0 && showInstanceSettings && (
-            <p className="at-hint">
-              Configure branding and mail transport in{" "}
-              <Link to="/admin/settings">Settings</Link> while you wait for the first event.
-            </p>
-          )}
           {tab === "active" && allEventsArchived && (
             <p className="at-hint">
               All events are archived. Open the{" "}
@@ -195,11 +216,17 @@ export function EventsPickerPage() {
           )}
         </Card>
       )}
-      <div className="event-grid">
+
+      <div className={gridClass}>
         {filteredEvents.map((event) => {
           const showUnarchive = tab === "archived" && canUnarchive;
           const cardBody = (
             <>
+              {!event.archived_at && (
+                <Badge variant="ok" className="event-card__status">
+                  Active
+                </Badge>
+              )}
               <h2 className="event-card__title">{event.title}</h2>
               <p className="event-card__meta">
                 <i className="ti ti-calendar" aria-hidden="true" />
@@ -252,11 +279,17 @@ export function EventsPickerPage() {
 
           return (
             <Link key={event.id} to={`/admin/events/${event.id}/overview`} className="event-card-link">
-              <Card className="event-card">{cardBody}</Card>
+              <Card className="event-card event-card--active">{cardBody}</Card>
             </Link>
           );
         })}
       </div>
+
+      <CreateEventModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={handleCreated}
+      />
 
       <ConfirmDialog
         open={!!unarchiveTarget}
