@@ -43,9 +43,17 @@ function formatTimestamp(iso: string): string {
   });
 }
 
-/** Primary actor label: display name, email, or raw user id when the user was deleted. */
+/** Primary actor label; deleted users show a readable fallback (id in cell title). */
 function actorDisplay(entry: AuditLogEntryDto): string {
-  return entry.actor_display_name ?? entry.actor_email ?? entry.actor_user_id;
+  if (entry.actor_display_name) return entry.actor_display_name;
+  if (entry.actor_email) return entry.actor_email;
+  return "Deleted user";
+}
+
+/** Tooltip for actor cell when the backing user row no longer exists. */
+function actorTitle(entry: AuditLogEntryDto): string | undefined {
+  if (entry.actor_display_name || entry.actor_email) return undefined;
+  return entry.actor_user_id;
 }
 
 /** True when metadata is a non-empty object worth rendering in the Details column. */
@@ -181,7 +189,11 @@ export function AuditLogPanel() {
           </button>
         </p>
       ) : entries.length === 0 ? (
-        <p className="audit-log-empty">No audit log entries match the filters.</p>
+        <p className="audit-log-empty">
+          {hasActiveFilters
+            ? "No audit log entries match the filters."
+            : "No audit log entries found."}
+        </p>
       ) : (
         <div className="sessions-table-wrap">
           <table className="table audit-log-table">
@@ -199,7 +211,7 @@ export function AuditLogPanel() {
                 <tr key={entry.id}>
                   <td>{formatTimestamp(entry.created_at)}</td>
                   <td>{actionLabel(entry.action_type)}</td>
-                  <td>
+                  <td title={actorTitle(entry)}>
                     {actorDisplay(entry)}
                     {entry.actor_display_name && entry.actor_email && (
                       <div className="sessions-subdued">{entry.actor_email}</div>

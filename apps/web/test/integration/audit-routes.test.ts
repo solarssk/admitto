@@ -231,6 +231,16 @@ describe("GET /api/admin/audit-log", () => {
     expect(types).toEqual(["mail_settings_updated", "system_settings_updated"]);
   });
 
+  it("includes midday entry when end equals that calendar day", async () => {
+    const res = await app.request("/api/admin/audit-log?end=2026-06-20", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { entries: { action_type: string; created_at: string }[] };
+    const midday = body.entries.find((e) => e.action_type === "mail_settings_updated");
+    expect(midday?.created_at).toBe("2026-06-20T12:00:00.000Z");
+  });
+
   it("includes entries late on the inclusive end date", async () => {
     const res = await app.request("/api/admin/audit-log?end=2026-06-30", {
       headers: { Cookie: superCookie },
