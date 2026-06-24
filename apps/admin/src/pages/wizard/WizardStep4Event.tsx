@@ -34,7 +34,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const slug = slugFromTitle(title, 60);
+    const slug = slugFromTitle(title, 80);
     const canSubmit = Boolean(title.trim() && date && slug.length > 0);
 
     useEffect(() => {
