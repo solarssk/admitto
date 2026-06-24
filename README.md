@@ -47,9 +47,9 @@ npm test
 
 More detail: [infra/README.md](infra/README.md), [packages/db/README.md](packages/db/README.md).
 
-## Run locally (staff UI)
+## Run locally
 
-After the database steps above:
+After the database steps above, start the **staff UI** (login, admin SPA, SSR settings):
 
 ```bash
 # App env — dev defaults are fine; see apps/web/.env.example for production fields
