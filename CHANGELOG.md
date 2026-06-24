@@ -20,8 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Event card: date icon, location pin icon, attendee count stat with user icon; hover lift effect
 - Event overview landing page at `/admin/events/:id/overview` with quick stats and navigation links to live admin sections
 - Shared admin shell (`StaffShell`): sidebar with independent scroll, slim topbar, optional settings subnav, and mobile drawer navigation
+- Staff topbar: mailer status indicator (configured dot + provider label), role badge (SA/AD/OP), icon-only sign out
+- Sidebar footer: **Users & roles** link for org admins and superadmins (page ships in a follow-up PR)
+- Dev-only demo bar (`import.meta.env.DEV`) to trigger sample toasts from the admin shell
 
 ### Changed
+- `GET /api/admin/me` includes `mailer_status` (provider presence only — no credentials); `/api/auth/me` unchanged for operator sessions
+- Toast stack position: top-right below the staff topbar (`--topbar-h`) instead of bottom-right
 - README: local dev onboarding (`Run locally`), Node `engines` alignment, `infra/` vs `deploy/` distinction; new [`apps/admin/README.md`](apps/admin/README.md)
 - Admin Vite dev proxy: forward `/mfa` to `@admitto/web` so MFA enrollment works on `:5173`
 - Login page `<title>` fixed to "Admitto"; added `application-name`, `og:site_name`, and `description` meta tags for password-manager naming

@@ -1,6 +1,7 @@
 import { useCallback, useState, type ReactNode } from "react";
-import { Avatar } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
+import { MailerStatusBadge } from "../components/MailerStatusBadge.js";
+import { RoleBadge } from "../components/RoleBadge.js";
 
 export interface StaffShellProps {
   sidebar: ReactNode;
@@ -11,7 +12,7 @@ export interface StaffShellProps {
 
 /** App shell: fixed sidebar + topbar chrome, scrollable main content area. */
 export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
-  const { user } = useAuth();
+  const { user, assignments } = useAuth();
   const displayName = user.display_name || user.email.split("@")[0] || "Staff";
   const [navOpen, setNavOpen] = useState(false);
 
@@ -41,13 +42,19 @@ export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
             <i className="ti ti-menu-2" aria-hidden="true" />
           </button>
           <div className="topbar__right">
+            <MailerStatusBadge status={user.mailer_status} />
             <div className="topbar__user">
-              <Avatar name={displayName} size="sm" />
-              <span>{displayName}</span>
+              <RoleBadge assignments={assignments} />
+              <span className="topbar__user-name">{displayName}</span>
             </div>
             <form method="post" action="/logout">
-              <button type="submit" className="topbar__signout">
-                Sign out
+              <button
+                type="submit"
+                className="topbar__signout"
+                aria-label="Sign out"
+                title="Sign out"
+              >
+                <i className="ti ti-logout" aria-hidden="true" />
               </button>
             </form>
           </div>

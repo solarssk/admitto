@@ -1,7 +1,7 @@
 .at-toast-stack {
   position: fixed;
-  bottom: 1.5rem;
-  right: 1.5rem;
+  top: calc(var(--topbar-h, 3.5rem) + 0.75rem);
+  right: 1rem;
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
@@ -79,7 +79,7 @@
 
 @media (max-width: 480px) {
   .at-toast-stack {
-    bottom: 1rem;
+    top: calc(var(--topbar-h, 3.5rem) + 0.5rem);
     right: 1rem;
     left: 1rem;
     max-width: none;

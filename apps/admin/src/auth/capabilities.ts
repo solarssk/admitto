@@ -23,3 +23,10 @@ export function canAccessCheckInPanel(assignments: RoleAssignment[]): boolean {
 export function isSuperadmin(assignments: RoleAssignment[]): boolean {
   return assignments.some((a) => a.role === "superadmin" && a.scope_type === "instance");
 }
+
+export function isAdmin(assignments: RoleAssignment[]): boolean {
+  return (
+    isSuperadmin(assignments) ||
+    assignments.some((a) => a.role === "admin" && a.scope_type === "organization" && a.scope_id)
+  );
+}

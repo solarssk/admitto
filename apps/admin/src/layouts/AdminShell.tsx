@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider.js";
-import { isSuperadmin } from "../auth/capabilities.js";
+import { isSuperadmin, isAdmin } from "../auth/capabilities.js";
 import type { EventDto } from "../api/types.js";
 import { StaffShell } from "./StaffShell.js";
 
@@ -95,6 +95,15 @@ export function AdminShell({ event }: AdminShellProps) {
           <i className="ti ti-calendar-event" aria-hidden="true" />
           <span>All events</span>
         </NavLink>
+        {isAdmin(assignments) && (
+          <NavLink
+            to="/admin/users"
+            className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
+          >
+            <i className="ti ti-users-group" aria-hidden="true" />
+            <span>Users & roles</span>
+          </NavLink>
+        )}
         {isSuperadmin(assignments) && (
           <NavLink
             to="/admin/settings"

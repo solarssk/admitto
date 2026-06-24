@@ -381,7 +381,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostSessionDeviceLabel(c, db),
   );
 
-  app.get("/api/admin/me", staffAdminGate, (c) => handleMe(c, db));
+  app.get("/api/admin/me", staffAdminGate, (c) => handleMe(c, db, { includeMailerStatus: true }));
   app.get("/api/admin/events", staffAdminGate, (c) => handleGetAdminEvents(c, db));
   app.post("/api/admin/events/:eventId/archive", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostArchiveEvent(c, db),

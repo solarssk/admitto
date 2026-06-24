@@ -1,9 +1,17 @@
+export type MailerProvider = "smtp" | "graph" | "powerautomate" | "export_only";
+
+export interface MailerStatus {
+  configured: boolean;
+  provider: MailerProvider | null;
+}
+
 export interface AuthUser {
   id: string;
   email: string;
   display_name: string | null;
   is_active: boolean;
   created_at: string;
+  mailer_status?: MailerStatus | null;
 }
 
 export interface RoleAssignment {
@@ -17,6 +25,7 @@ export interface MeResponse {
   assignments: RoleAssignment[];
   device_label?: string | null;
   session_active: boolean;
+  mailer_status?: MailerStatus | null;
 }
 
 export interface EventDto {
