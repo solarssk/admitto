@@ -58,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings subnav active tab uses path prefix matching instead of exact pathname equality
 - Sidebar “Soon” badges render with correct styling (`.nav-item--soon`, `.nav-item__badge`)
 - Global link hover underline no longer appears on sidebar brand, navigation items, or button-styled links (SPA and SSR settings shell)
-- OIDC admin form: URL fields use `type="url"`; group→role mapping rows can be added/removed; scope type select; SSO button live preview on provider form
+- OIDC admin form: URL fields use `type="url"`; group→role mapping rows can be added/removed; scope type select; SSO button live preview on provider form; failed save re-renders submitted mapping drafts
 - Cloudflare Access settings: clearer operator copy and field hints; test action labeled “Test connection”
 - Events picker: search by title/location; content width capped at 1100px; grid capped at three columns on wide screens
 - Check-in camera: removed fullscreen toggle (browser instability); debounce repeated ZXing decodes; extract ticket token from QR URLs with trailing slash or query (`packages/tickets`)

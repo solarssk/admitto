@@ -182,6 +182,7 @@ export function renderProviderForm(options: {
   mappings: MappingRow[];
   flash?: string;
   error?: string;
+  warning?: string;
   isNew: boolean;
 }): string {
   const p = options.provider;
@@ -198,6 +199,9 @@ export function renderProviderForm(options: {
 
   const flashBlock = options.flash ? `<p class="flash">${esc(options.flash)}</p>` : "";
   const errorBlock = options.error ? `<p class="error" role="alert">${esc(options.error)}</p>` : "";
+  const warningBlock = options.warning
+    ? `<div class="warn-block" role="status">${esc(options.warning)}</div>`
+    : "";
 
   const discoverAction =
     !options.isNew && p
@@ -211,7 +215,7 @@ export function renderProviderForm(options: {
 
   return pageShell(
     heading,
-    `${flashBlock}${errorBlock}
+    `${flashBlock}${warningBlock}${errorBlock}
     <form method="post" action="${action}">
       <label>Display name <input name="display_name" required value="${esc(p?.display_name ?? "")}"></label>
       <fieldset>
@@ -267,15 +271,20 @@ ${body}`,
   });
 }
 
-/** Parse group→role mapping rows from a submitted provider form. */
-export function parseMappingsFromForm(form: Record<string, string>): GroupRoleMappingInput[] {
-  const mappings: GroupRoleMappingInput[] = [];
+/** Collect numeric indices present in submitted mapping row fields. */
+function mappingRowIndicesFromForm(form: Record<string, string>): number[] {
   const indices = new Set<number>();
   for (const key of Object.keys(form)) {
     const m = /^mapping_group_(\d+)$/.exec(key);
     if (m) indices.add(Number(m[1]));
   }
-  for (const i of [...indices].sort((a, b) => a - b)) {
+  return [...indices].sort((a, b) => a - b);
+}
+
+/** Parse group→role mapping rows from a submitted provider form. */
+export function parseMappingsFromForm(form: Record<string, string>): GroupRoleMappingInput[] {
+  const mappings: GroupRoleMappingInput[] = [];
+  for (const i of mappingRowIndicesFromForm(form)) {
     const group = form[`mapping_group_${i}`]?.trim();
     const role = form[`mapping_role_${i}`]?.trim();
     const scope_type = form[`mapping_scope_type_${i}`]?.trim();
@@ -285,6 +294,65 @@ export function parseMappingsFromForm(form: Record<string, string>): GroupRoleMa
     }
   }
   return mappings;
+}
+
+/** Rehydrate mapping table rows from a submitted form (includes incomplete drafts). */
+export function parseMappingRowsFromForm(form: Record<string, string>): MappingRow[] {
+  const rows: MappingRow[] = [];
+  for (const i of mappingRowIndicesFromForm(form)) {
+    const group = form[`mapping_group_${i}`]?.trim() ?? "";
+    const role = form[`mapping_role_${i}`]?.trim() ?? "";
+    const scope_type = form[`mapping_scope_type_${i}`]?.trim() ?? "";
+    const scope_id = form[`mapping_scope_id_${i}`]?.trim() ?? "";
+    if (!group && !role && !scope_type && !scope_id) continue;
+    rows.push({
+      group,
+      role: role || "operator",
+      scope_type: scope_type || "instance",
+      scope_id,
+    });
+  }
+  return rows;
+}
+
+/** Warn when a partially filled mapping row will not be persisted. */
+export function incompleteMappingRowsWarning(form: Record<string, string>): string | undefined {
+  const incomplete = mappingRowIndicesFromForm(form).filter((i) => {
+    const group = form[`mapping_group_${i}`]?.trim();
+    const role = form[`mapping_role_${i}`]?.trim();
+    const scope_type = form[`mapping_scope_type_${i}`]?.trim();
+    const scope_id = form[`mapping_scope_id_${i}`]?.trim();
+    const hasAny = Boolean(group || role || scope_type || scope_id);
+    const isComplete = Boolean(group && role && scope_type);
+    return hasAny && !isComplete;
+  });
+  if (incomplete.length === 0) return undefined;
+  return "Some mapping rows are incomplete (group, role, and scope are required) and will not be saved until filled in.";
+}
+
+/** Build admin form view from a failed POST so field values and drafts are preserved. */
+export function providerFormViewFromSubmitted(
+  form: Record<string, string>,
+  base?: IdentityProviderFormView,
+): IdentityProviderFormView {
+  const input = parseProviderInput(form);
+  return {
+    id: base?.id ?? "",
+    provider_type: base?.provider_type ?? "oidc",
+    display_name: input.display_name,
+    issuer: input.issuer,
+    client_id: input.client_id,
+    has_client_secret: base?.has_client_secret ?? Boolean(input.client_secret),
+    authorization_endpoint: input.authorization_endpoint ?? "",
+    token_endpoint: input.token_endpoint ?? "",
+    jwks_uri: input.jwks_uri ?? "",
+    userinfo_endpoint: input.userinfo_endpoint ?? null,
+    claim_email: input.claim_email ?? "email",
+    claim_name: input.claim_name ?? "name",
+    claim_groups: input.claim_groups ?? "groups",
+    enabled: input.enabled,
+    login_button_label: input.login_button_label || null,
+  };
 }
 
 /** Parse provider metadata fields from a submitted create/edit form. */

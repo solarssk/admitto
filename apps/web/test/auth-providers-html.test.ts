@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  incompleteMappingRowsWarning,
+  parseMappingRowsFromForm,
   parseMappingsFromForm,
   parseProviderInput,
+  providerFormViewFromSubmitted,
   renderProviderForm,
 } from "../src/admin/auth-providers-html.js";
 
@@ -42,6 +45,40 @@ describe("parseMappingsFromForm", () => {
     expect(mappings).toEqual([
       { group: "admins", role: "god", scope_type: "instance", scope_id: null },
     ]);
+  });
+
+  it("parseMappingRowsFromForm keeps incomplete draft rows", () => {
+    expect(
+      parseMappingRowsFromForm({
+        mapping_group_0: "draft-only",
+        mapping_role_0: "",
+        mapping_scope_type_0: "",
+        mapping_scope_id_0: "",
+      }),
+    ).toEqual([{ group: "draft-only", role: "operator", scope_type: "instance", scope_id: "" }]);
+  });
+
+  it("incompleteMappingRowsWarning describes partial rows", () => {
+    expect(
+      incompleteMappingRowsWarning({
+        mapping_group_0: "admins",
+        mapping_role_0: "",
+        mapping_scope_type_0: "",
+      }),
+    ).toContain("incomplete");
+  });
+
+  it("providerFormViewFromSubmitted preserves submitted OIDC fields", () => {
+    const view = providerFormViewFromSubmitted({
+      display_name: "Entra",
+      issuer: "https://login.example.com",
+      client_id: "abc",
+      login_button_label: "Sign in with Entra",
+      enabled: "1",
+    });
+    expect(view.display_name).toBe("Entra");
+    expect(view.login_button_label).toBe("Sign in with Entra");
+    expect(view.enabled).toBe(true);
   });
 
   it("renders add/remove mapping controls", () => {
