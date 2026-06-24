@@ -1,6 +1,8 @@
 import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { PrismaClient } from "@prisma/client";
+import { describeMailConfigForOrg } from "@admitto/mailer-config";
+import { resolveInstanceOrganizationId } from "../admin/instance-org.js";
 import {
   SESSION_COOKIE_NAME,
   TRUSTED_DEVICE_COOKIE_NAME,
@@ -138,8 +140,39 @@ export async function handleLogout(c: Context, db: PrismaClient): Promise<Respon
   return c.json({ ok: true }, 200);
 }
 
+export type MailerStatusPayload = {
+  configured: boolean;
+  provider: "smtp" | "graph" | "powerautomate" | "export_only" | null;
+};
+
+export interface HandleMeOptions {
+  /** When true (`/api/admin/me` only), resolve org mail transport presence — no credentials. */
+  includeMailerStatus?: boolean;
+}
+
+const MAILER_PROVIDERS = ["smtp", "graph", "powerautomate", "export_only"] as const;
+
+function toMailerProvider(value: string | null): MailerStatusPayload["provider"] {
+  if (!value) return null;
+  return (MAILER_PROVIDERS as readonly string[]).includes(value)
+    ? (value as MailerStatusPayload["provider"])
+    : null;
+}
+
+async function resolveMailerStatus(db: PrismaClient): Promise<MailerStatusPayload> {
+  const orgId = await resolveInstanceOrganizationId(db, process.env);
+  const desc = await describeMailConfigForOrg(orgId, db, process.env);
+  const provider = toMailerProvider(desc.provider.value);
+  const configured = provider !== null;
+  return { configured, provider };
+}
+
 /** GET /api/auth/me — current user profile (requires full session). */
-export async function handleMe(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleMe(
+  c: Context,
+  db: PrismaClient,
+  opts?: HandleMeOptions,
+): Promise<Response> {
   const auth = c.get("auth");
   const user = await db.user.findUnique({
     where: { id: auth.userId },
@@ -174,7 +207,24 @@ export async function handleMe(c: Context, db: PrismaClient): Promise<Response> 
     device_label = session?.device_label ?? null;
   }
 
-  return c.json({ user, assignments, device_label, session_active: !!auth.sessionId }, 200);
+  const body: {
+    user: NonNullable<typeof user>;
+    assignments: typeof assignments;
+    device_label: string | null;
+    session_active: boolean;
+    mailer_status?: MailerStatusPayload;
+  } = {
+    user,
+    assignments,
+    device_label,
+    session_active: !!auth.sessionId,
+  };
+
+  if (opts?.includeMailerStatus) {
+    body.mailer_status = await resolveMailerStatus(db);
+  }
+
+  return c.json(body, 200);
 }
 
 /** POST /api/auth/session/device-label — set optional tablet label on the current session. */

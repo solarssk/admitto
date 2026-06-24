@@ -7,6 +7,7 @@ import { OperatorDeviceGate } from "./auth/OperatorDeviceGate.js";
 import { AuthProvider } from "./auth/AuthProvider.js";
 import { ConnectionStateProvider } from "./connection/ConnectionStateProvider.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
+import { DemoBar } from "./components/DemoBar.js";
 import { AdminShell } from "./layouts/AdminShell.js";
 import { EventsListShell } from "./layouts/EventsListShell.js";
 import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
@@ -139,6 +140,7 @@ export default function App() {
             </Routes>
           </ConnectionStateProvider>
         </AuthProvider>
+        <DemoBar />
       </ToastProvider>
     </ErrorBoundary>
   );

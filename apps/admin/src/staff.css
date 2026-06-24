@@ -148,13 +148,125 @@
 }
 
 .topbar__signout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--border);
   background: var(--surface-card);
   border-radius: var(--radius);
-  padding: 6px 12px;
+  padding: 0;
   cursor: pointer;
   font-family: var(--font-sans);
-  font-size: var(--fs-sm);
+  font-size: 1rem;
+  color: var(--text-secondary);
+}
+
+.topbar__signout:hover {
+  background: var(--surface-subtle);
+}
+
+/* Mailer indicator */
+.topbar__mailer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  padding: 0 8px;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.topbar__mailer-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--status-neutral, #ccc);
+  flex-shrink: 0;
+}
+
+.topbar__mailer-dot--ok {
+  background: var(--status-ok);
+}
+
+.topbar__mailer-label {
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .topbar__mailer-label {
+    display: none;
+  }
+}
+
+/* Role badge */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 20px;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.role-badge--sa {
+  background: var(--primary);
+  color: #fff;
+}
+
+.role-badge--ad {
+  background: var(--primary-tint, #dbeafe);
+  color: var(--primary);
+}
+
+.role-badge--op {
+  background: var(--surface-subtle, #f1f5f9);
+  color: var(--text-secondary);
+}
+
+.topbar__user-name {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+/* Dev-only toast demo bar */
+.demo-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--surface-card);
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  z-index: var(--z-demo-bar, 200);
+}
+
+.demo-bar button {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.demo-bar button:hover:not(:disabled) {
+  background: var(--surface-subtle);
+}
+
+.demo-bar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .placeholder-note {

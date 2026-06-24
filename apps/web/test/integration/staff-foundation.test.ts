@@ -129,10 +129,17 @@ describe("GET /api/admin/me", () => {
       user: { email: string };
       assignments: unknown[];
       session_active: boolean;
+      mailer_status: { configured: boolean; provider: string | null };
     };
     expect(body.user.email).toBe(EMAIL_ADMIN);
     expect(body.assignments.length).toBeGreaterThan(0);
     expect(body.session_active).toBe(true);
+    expect(body.mailer_status).toEqual(
+      expect.objectContaining({
+        configured: expect.any(Boolean),
+        provider: expect.anything(),
+      }),
+    );
   });
 
   it("rejects operator session", async () => {

@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthError(null);
     try {
       const me = await fetchMe();
-      setUser(me.user);
+      setUser({ ...me.user, mailer_status: me.mailer_status ?? null });
       setAssignments(me.assignments);
       setDeviceLabel(me.device_label ?? null);
       setHasAdmittoSession(me.session_active);
