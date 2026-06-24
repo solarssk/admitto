@@ -599,6 +599,7 @@ export interface AdminShellOptions {
   body: string;
   activeItem?: "providers" | "cf-access" | "settings";
   favicon: string;
+  /** Trusted, server-generated `<script>` markup injected verbatim before `</body>`. Never pass request-derived content. */
   scripts?: string;
 }
 

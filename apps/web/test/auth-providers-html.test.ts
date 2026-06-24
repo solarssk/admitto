@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getAdminPageSecurityHeaders,
   incompleteMappingRowsWarning,
   parseMappingRowsFromForm,
   parseMappingsFromForm,
@@ -7,6 +8,8 @@ import {
   providerFormViewFromSubmitted,
   renderProviderForm,
 } from "../src/admin/auth-providers-html.js";
+
+const SCRIPT_NONCE = "test-script-nonce";
 
 describe("parseMappingsFromForm", () => {
   it("parses indexed mapping rows from select fields", () => {
@@ -85,6 +88,7 @@ describe("parseMappingsFromForm", () => {
     const html = renderProviderForm({
       isNew: true,
       mappings: [],
+      scriptNonce: SCRIPT_NONCE,
     });
     expect(html).toContain('id="mapping-add-btn"');
     expect(html).toContain("Add mapping");
@@ -114,6 +118,7 @@ describe("parseMappingsFromForm", () => {
         login_button_label: null,
       },
       mappings: [{ group: "admins", role: "admin", scope_type: "organization", scope_id: "org-1" }],
+      scriptNonce: SCRIPT_NONCE,
     });
     expect(html).toContain('name="mapping_scope_type_0"');
     expect(html).toContain('value="organization" selected');
@@ -140,16 +145,57 @@ describe("parseMappingsFromForm", () => {
         login_button_label: null,
       },
       mappings: [{ group: "legacy", role: "god", scope_type: "instance", scope_id: "" }],
+      scriptNonce: SCRIPT_NONCE,
     });
     expect(html).toContain("Invalid role");
     expect(html).toContain('value="" selected disabled');
     expect(html).not.toContain('value="superadmin" selected');
   });
+
+  it("invalid legacy scope requires explicit replacement select", () => {
+    const html = renderProviderForm({
+      isNew: false,
+      provider: {
+        id: "p1",
+        provider_type: "oidc",
+        display_name: "Test",
+        issuer: "https://idp.example.com",
+        client_id: "client",
+        has_client_secret: false,
+        enabled: true,
+        authorization_endpoint: "",
+        token_endpoint: "",
+        jwks_uri: "",
+        userinfo_endpoint: "",
+        claim_email: "email",
+        claim_name: "name",
+        claim_groups: "groups",
+        login_button_label: null,
+      },
+      mappings: [{ group: "legacy", role: "admin", scope_type: "global", scope_id: "" }],
+      scriptNonce: SCRIPT_NONCE,
+    });
+    expect(html).toContain("Invalid scope");
+    expect(html).toContain('name="mapping_scope_type_0"');
+    expect(html).toContain('value="" selected disabled');
+  });
+});
+
+describe("OIDC provider form — CSP", () => {
+  it("uses a per-response script nonce instead of unsafe-inline", () => {
+    const headers = getAdminPageSecurityHeaders(SCRIPT_NONCE);
+    const csp = headers["Content-Security-Policy"] ?? "";
+    expect(csp).toContain(`script-src 'nonce-${SCRIPT_NONCE}'`);
+    expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
+
+    const html = renderProviderForm({ isNew: true, mappings: [], scriptNonce: SCRIPT_NONCE });
+    expect(html).toContain(`<script nonce="${SCRIPT_NONCE}">`);
+  });
 });
 
 describe("admin pageShell headings", () => {
   it("prefixes document title but not visible h1 on provider form", () => {
-    const html = renderProviderForm({ isNew: true, mappings: [] });
+    const html = renderProviderForm({ isNew: true, mappings: [], scriptNonce: SCRIPT_NONCE });
     expect(html).toContain("<title>Admitto — Add identity provider</title>");
     expect(html).toContain("<h1>Add identity provider</h1>");
     expect(html).not.toMatch(/<h1>Admitto —/);
@@ -158,7 +204,7 @@ describe("admin pageShell headings", () => {
 
 describe("OIDC provider form — URL fields", () => {
   it("uses type=url for issuer and OIDC endpoint inputs", () => {
-    const html = renderProviderForm({ isNew: true, mappings: [] });
+    const html = renderProviderForm({ isNew: true, mappings: [], scriptNonce: SCRIPT_NONCE });
     expect(html).toContain('type="url" name="issuer"');
     expect(html).toContain('type="url" name="authorization_endpoint"');
     expect(html).toContain('type="url" name="token_endpoint"');
@@ -169,7 +215,7 @@ describe("OIDC provider form — URL fields", () => {
 
 describe("OIDC provider form — SSO button label", () => {
   it("renders editable SSO button text and live preview on create and edit forms", () => {
-    const createHtml = renderProviderForm({ isNew: true, mappings: [] });
+    const createHtml = renderProviderForm({ isNew: true, mappings: [], scriptNonce: SCRIPT_NONCE });
     expect(createHtml).toContain('name="login_button_label"');
     expect(createHtml).toContain("Sign-in page (/login)");
     expect(createHtml).toContain('placeholder="Continue with SSO"');
@@ -196,6 +242,7 @@ describe("OIDC provider form — SSO button label", () => {
         login_button_label: "Continue with Microsoft SSO",
       },
       mappings: [],
+      scriptNonce: SCRIPT_NONCE,
     });
     expect(editHtml).toContain('value="Continue with Microsoft SSO"');
     expect(editHtml).toContain("Continue with Microsoft SSO</span>");

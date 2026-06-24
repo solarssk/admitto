@@ -1,5 +1,6 @@
 import type { GroupRoleMappingInput, IdentityProviderFormView } from "@admitto/auth";
 import { DEFAULT_SSO_LOGIN_BUTTON_LABEL, resolveSsoLoginButtonLabel } from "@admitto/auth";
+import { randomBytes } from "node:crypto";
 import { AUTH_PAGE_ICON_CSP, renderAdmittoFaviconLink } from "../favicon.js";
 import { AUTH_SSO_BUTTON_ICON_SVG, renderAdminShell } from "../shared-auth-styles.js";
 
@@ -17,7 +18,10 @@ function esc(s: string): string {
 }
 
 /** Security headers for server-rendered IdP admin HTML pages. */
-export function getAdminPageSecurityHeaders(): Record<string, string> {
+export function getAdminPageSecurityHeaders(scriptNonce?: string): Record<string, string> {
+  const scriptSrc = scriptNonce
+    ? `script-src 'nonce-${scriptNonce}'`
+    : "script-src 'none'";
   return {
     "Cache-Control": "private, no-store, max-age=0",
     "Content-Security-Policy": [
@@ -29,11 +33,16 @@ export function getAdminPageSecurityHeaders(): Record<string, string> {
       "form-action 'self'",
       "frame-ancestors 'none'",
       "connect-src 'self'",
-      "script-src 'unsafe-inline'",
+      scriptSrc,
     ].join("; "),
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
   };
+}
+
+/** Per-response nonce for trusted inline scripts on the provider form page. */
+export function createProviderFormScriptNonce(): string {
+  return randomBytes(16).toString("base64");
 }
 
 export interface ProviderListItem {
@@ -61,11 +70,19 @@ function renderRoleSelect(name: string, currentRole: string): string {
 }
 
 function renderScopeTypeSelect(name: string, currentScope: string): string {
-  const scope = ALLOWED_SCOPE_TYPES.includes(currentScope as (typeof ALLOWED_SCOPE_TYPES)[number])
-    ? currentScope
-    : "instance";
+  const isKnown = ALLOWED_SCOPE_TYPES.includes(
+    currentScope as (typeof ALLOWED_SCOPE_TYPES)[number],
+  );
+  if (currentScope && !isKnown) {
+    const options = ALLOWED_SCOPE_TYPES.map((scope) => `<option value="${scope}">${scope}</option>`).join("");
+    return `<p class="error" role="alert">Invalid scope &quot;${esc(currentScope)}&quot; — choose a replacement before saving.</p>
+    <select name="${esc(name)}" required>
+      <option value="" selected disabled>Select scope…</option>
+      ${options}
+    </select>`;
+  }
   const options = ALLOWED_SCOPE_TYPES.map(
-    (t) => `<option value="${t}"${t === scope ? " selected" : ""}>${t}</option>`,
+    (t) => `<option value="${t}"${t === currentScope ? " selected" : ""}>${t}</option>`,
   ).join("");
   return `<select name="${esc(name)}" required>${options}</select>`;
 }
@@ -119,7 +136,8 @@ export interface MappingRow {
   scope_id: string;
 }
 
-const PROVIDER_FORM_SCRIPTS = `<script>
+function providerFormScripts(scriptNonce: string): string {
+  return `<script nonce="${scriptNonce}">
 (function () {
   var defaultSsoLabel = ${JSON.stringify(DEFAULT_SSO_LOGIN_BUTTON_LABEL)};
   var labelInput = document.querySelector('input[name="login_button_label"]');
@@ -175,6 +193,7 @@ const PROVIDER_FORM_SCRIPTS = `<script>
   });
 })();
 </script>`;
+}
 
 /** Render the create/edit identity provider form HTML. */
 export function renderProviderForm(options: {
@@ -184,6 +203,7 @@ export function renderProviderForm(options: {
   error?: string;
   warning?: string;
   isNew: boolean;
+  scriptNonce: string;
 }): string {
   const p = options.provider;
   const heading = options.isNew
@@ -255,7 +275,7 @@ export function renderProviderForm(options: {
       <button type="submit">Save</button>
     </form>
     <p class="admin-nav"><a href="/admin/auth/providers">Back to list</a></p>`,
-    PROVIDER_FORM_SCRIPTS,
+    providerFormScripts(options.scriptNonce),
   );
 }
 
