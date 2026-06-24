@@ -263,13 +263,22 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 404 for missing event", async () => {
+  it("returns 403 for missing event (no existence leak to org admins)", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_MISSING}/reports`, {
       headers: { Cookie: adminCookie },
     });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("not_found");
+    expect(body.error).toBe("forbidden");
+  });
+
+  it("returns 403 for cross-org admin on missing event (same as forbidden)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_MISSING}/reports`, {
+      headers: { Cookie: adminBCookie },
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
   });
 
   it("returns zero-admission summary for empty event", async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Button, Card, EmptyState, PageHeader, Skeleton, Stat, useToast } from "@admitto/ui";
 import {
@@ -14,9 +14,29 @@ import "./reports-page.css";
 
 const LOG_PAGE_SIZE = 50;
 
-function formatAdmittedTime(iso: string, timeZone: string): string {
+function calendarDateInZone(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+}
+
+function admissionLogSpansMultipleDates(
+  log: EventReportsResponse["admission_log"],
+  timeZone: string,
+): boolean {
+  const dates = new Set(log.map((row) => calendarDateInZone(row.admitted_at, timeZone)));
+  return dates.size > 1;
+}
+
+function formatAdmittedTime(iso: string, timeZone: string, includeDate: boolean): string {
   return new Intl.DateTimeFormat(undefined, {
     timeZone,
+    ...(includeDate
+      ? { year: "numeric", month: "short", day: "numeric" }
+      : {}),
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -106,6 +126,11 @@ function AdmissionLog({ log, byTicketType, timeZone, truncated, totalAdmitted }:
   const [typeFilter, setTypeFilter] = useState("all");
   const [page, setPage] = useState(1);
 
+  const includeAdmissionDate = useMemo(
+    () => admissionLogSpansMultipleDates(log, timeZone),
+    [log, timeZone],
+  );
+
   const filtered = typeFilter === "all" ? log : log.filter((row) => row.ticket_type === typeFilter);
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / LOG_PAGE_SIZE));
@@ -162,7 +187,9 @@ function AdmissionLog({ log, byTicketType, timeZone, truncated, totalAdmitted }:
                   </div>
                 </td>
                 <td>{row.ticket_type}</td>
-                <td className="reports-mono">{formatAdmittedTime(row.admitted_at, timeZone)}</td>
+                <td className="reports-mono">
+                  {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
+                </td>
                 <td className="reports-muted">{row.device_id ?? "—"}</td>
               </tr>
             ))}
@@ -359,7 +386,11 @@ export function ReportsPage() {
               <Stat
                 label="Total attendees"
                 value={data.summary.total_attendees.toString()}
-                sub={`of ${data.event.capacity ?? data.summary.total_attendees} capacity`}
+                sub={
+                  data.event.capacity != null
+                    ? `of ${data.event.capacity} capacity`
+                    : "No capacity set"
+                }
                 icon={<i className="ti ti-users" aria-hidden="true" />}
               />
             </Card>

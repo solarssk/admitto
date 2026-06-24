@@ -255,14 +255,14 @@ export async function handleGetReports(c: Context, db: PrismaClient): Promise<Re
   if (eventIdParam instanceof Response) return eventIdParam;
   const eventId = eventIdParam;
 
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
   const event = await db.event.findUnique({
     where: { id: eventId },
     select: { id: true, title: true, date: true, capacity: true },
   });
   if (!event) return c.json({ error: "not_found" }, 404);
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
 
   const timeZone = resolvePreviewEventTimeZone();
   const aggregates = await loadReportsAggregates(db, eventId, ADMISSION_LOG_LIMIT, timeZone);
@@ -304,14 +304,14 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
     return c.json({ error: "format must be csv or pdf" }, 400);
   }
 
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
   const event = await db.event.findUnique({
     where: { id: eventId },
     select: { id: true, title: true, date: true, slug: true, capacity: true },
   });
   if (!event) return c.json({ error: "not_found" }, 404);
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
 
   const timeZone = resolvePreviewEventTimeZone();
 
