@@ -468,3 +468,21 @@ export interface PatchSecuritySettingsBody {
   trusted_device_days?: number | null;
   mfa_required_roles?: string[] | null;
 }
+
+export interface AuditLogEntryDto {
+  id: string;
+  action_type: string;
+  actor_user_id: string;
+  actor_email: string | null;
+  actor_display_name: string | null;
+  ip: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface AuditLogResponse {
+  entries: AuditLogEntryDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
