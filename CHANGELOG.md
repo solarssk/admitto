@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- First-run setup (v0.4.6): server-rendered `/setup` for empty-database superadmin bootstrap (auto-login → MFA enroll), `setup_complete` system setting, and 5-step React onboarding wizard (system checks, mail transport, org branding HTTPS URL, first event, completion gate)
+- `/account` self-service page in the staff SPA: profile (display name), password change with re-auth, voluntary TOTP enrollment/reset, and own-session management
+- Account API under `/api/account/*` for any authenticated user (profile, password, MFA, sessions scoped to the current user)
+- `AuthenticatedGuard` route wrapper and account shell layout with topbar link from admin and operator surfaces
+
+### Changed
+- `User.password_hash` is nullable for OIDC-only accounts; OIDC link step-up and auth CLI break-glass commands reject users without a local password
+
+### Database
+- Migration `20260624210000_add_user_must_change_password`: adds `must_change_password`, makes `password_hash` optional
+
 ## [0.4.5] - 2026-06-24
 
 ### Added
