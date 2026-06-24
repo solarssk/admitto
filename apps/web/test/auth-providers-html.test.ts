@@ -58,7 +58,7 @@ describe("parseMappingsFromForm", () => {
         mapping_scope_type_0: "",
         mapping_scope_id_0: "",
       }),
-    ).toEqual([{ group: "draft-only", role: "operator", scope_type: "instance", scope_id: "" }]);
+    ).toEqual([{ group: "draft-only", role: "", scope_type: "", scope_id: "" }]);
   });
 
   it("incompleteMappingRowsWarning describes partial rows", () => {
@@ -218,6 +218,8 @@ describe("OIDC provider form — SSO button label", () => {
     const createHtml = renderProviderForm({ isNew: true, mappings: [], scriptNonce: SCRIPT_NONCE });
     expect(createHtml).toContain('name="login_button_label"');
     expect(createHtml).toContain("Sign-in page (/login)");
+    expect(createHtml.indexOf('name="userinfo_endpoint"')).toBeLessThan(createHtml.indexOf('name="login_button_label"'));
+    expect(createHtml.indexOf('name="login_button_label"')).toBeLessThan(createHtml.indexOf("<button type=\"submit\">Save</button>"));
     expect(createHtml).toContain('placeholder="Continue with SSO"');
     expect(createHtml).toContain('id="sso-button-preview-label"');
     expect(createHtml).toContain("Preview on /login");

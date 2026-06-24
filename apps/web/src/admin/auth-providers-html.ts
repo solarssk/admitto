@@ -66,7 +66,11 @@ function renderRoleSelect(name: string, currentRole: string): string {
   const options = ALLOWED_MAPPING_ROLES.map(
     (role) => `<option value="${role}"${role === currentRole ? " selected" : ""}>${role}</option>`,
   ).join("");
-  return `<select name="${esc(name)}" required>${options}</select>`;
+  const placeholder =
+    currentRole === ""
+      ? '<option value="" selected disabled>Select role…</option>'
+      : "";
+  return `<select name="${esc(name)}" required>${placeholder}${options}</select>`;
 }
 
 function renderScopeTypeSelect(name: string, currentScope: string): string {
@@ -84,7 +88,11 @@ function renderScopeTypeSelect(name: string, currentScope: string): string {
   const options = ALLOWED_SCOPE_TYPES.map(
     (t) => `<option value="${t}"${t === currentScope ? " selected" : ""}>${t}</option>`,
   ).join("");
-  return `<select name="${esc(name)}" required>${options}</select>`;
+  const placeholder =
+    currentScope === ""
+      ? '<option value="" selected disabled>Select scope…</option>'
+      : "";
+  return `<select name="${esc(name)}" required>${placeholder}${options}</select>`;
 }
 
 function renderMappingRow(m: MappingRow, index: number): string {
@@ -160,13 +168,15 @@ function providerFormScripts(scriptNonce: string): string {
   var scopes = ${JSON.stringify([...ALLOWED_SCOPE_TYPES])};
 
   function buildRoleSelect(name, selected) {
-    return '<select name="' + name + '" required>' + roles.map(function (role) {
+    var placeholder = '<option value=""' + (selected ? '' : ' selected') + ' disabled>Select role…</option>';
+    return '<select name="' + name + '" required>' + placeholder + roles.map(function (role) {
       return '<option value="' + role + '"' + (role === selected ? ' selected' : '') + '>' + role + '</option>';
     }).join('') + '</select>';
   }
 
   function buildScopeSelect(name, selected) {
-    return '<select name="' + name + '" required>' + scopes.map(function (scope) {
+    var placeholder = '<option value=""' + (selected ? '' : ' selected') + ' disabled>Select scope…</option>';
+    return '<select name="' + name + '" required>' + placeholder + scopes.map(function (scope) {
       return '<option value="' + scope + '"' + (scope === selected ? ' selected' : '') + '>' + scope + '</option>';
     }).join('') + '</select>';
   }
@@ -177,8 +187,8 @@ function providerFormScripts(scriptNonce: string): string {
     row.setAttribute('data-mapping-row', '');
     row.innerHTML =
       '<td><input name="mapping_group_' + index + '" placeholder="IdP group name"></td>' +
-      '<td>' + buildRoleSelect('mapping_role_' + index, 'operator') + '</td>' +
-      '<td>' + buildScopeSelect('mapping_scope_type_' + index, 'instance') + '</td>' +
+      '<td>' + buildRoleSelect('mapping_role_' + index, '') + '</td>' +
+      '<td>' + buildScopeSelect('mapping_scope_type_' + index, '') + '</td>' +
       '<td><input name="mapping_scope_id_' + index + '" placeholder="Org or event ID"></td>' +
       '<td class="mapping-actions"><button type="button" class="mapping-remove-btn" data-mapping-remove>Remove</button></td>';
     tbody.appendChild(row);
@@ -238,17 +248,6 @@ export function renderProviderForm(options: {
     `${flashBlock}${warningBlock}${errorBlock}
     <form method="post" action="${action}">
       <label>Display name <input name="display_name" required value="${esc(p?.display_name ?? "")}"></label>
-      <fieldset>
-        <legend>Sign-in page (/login)</legend>
-        <label>SSO button text <input name="login_button_label" maxlength="120" placeholder="Continue with SSO" value="${esc(p?.login_button_label ?? "")}"></label>
-        <p class="muted">Label on the SSO button for this provider. Leave blank for the default &quot;Continue with SSO&quot;.</p>
-        <div class="sso-preview" aria-live="polite">
-          <span class="muted">Preview on /login</span>
-          <span class="auth-btn-secondary auth-btn-sso sso-preview__btn" aria-hidden="true">
-            ${AUTH_SSO_BUTTON_ICON_SVG}<span id="sso-button-preview-label">${esc(previewLabel)}</span>
-          </span>
-        </div>
-      </fieldset>
       <label>Issuer URL <input type="url" name="issuer" required value="${esc(p?.issuer ?? "")}" placeholder="https://idp.example.com"></label>
       ${discoverAction}${testAction}
       <label>Client ID <input name="client_id" required value="${esc(p?.client_id ?? "")}"></label>
@@ -272,6 +271,17 @@ export function renderProviderForm(options: {
         <button type="button" id="mapping-add-btn" class="mapping-add-btn">Add mapping</button>
       </fieldset>
       <label><input type="checkbox" name="enabled" value="1" ${p?.enabled ? "checked" : ""}> Enabled</label>
+      <fieldset>
+        <legend>Sign-in page (/login)</legend>
+        <label>SSO button text <input name="login_button_label" maxlength="120" placeholder="Continue with SSO" value="${esc(p?.login_button_label ?? "")}"></label>
+        <p class="muted">Label on the SSO button for this provider. Leave blank for the default &quot;Continue with SSO&quot;.</p>
+        <div class="sso-preview" aria-live="polite">
+          <span class="muted">Preview on /login</span>
+          <span class="auth-btn-secondary auth-btn-sso sso-preview__btn" aria-hidden="true">
+            ${AUTH_SSO_BUTTON_ICON_SVG}<span id="sso-button-preview-label">${esc(previewLabel)}</span>
+          </span>
+        </div>
+      </fieldset>
       <button type="submit">Save</button>
     </form>
     <p class="admin-nav"><a href="/admin/auth/providers">Back to list</a></p>`,
@@ -327,8 +337,8 @@ export function parseMappingRowsFromForm(form: Record<string, string>): MappingR
     if (!group && !role && !scope_type && !scope_id) continue;
     rows.push({
       group,
-      role: role || "operator",
-      scope_type: scope_type || "instance",
+      role,
+      scope_type,
       scope_id,
     });
   }

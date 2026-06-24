@@ -514,8 +514,12 @@ button, .toggle-btn {
   cursor: pointer;
   color: var(--at-ink);
 }
-button[type=submit]:not(.toggle-btn) { background: var(--at-blue); color: #fff; border-color: var(--at-blue); }
-button[type=submit]:not(.toggle-btn):hover { background: var(--at-blue-dark); border-color: var(--at-blue-dark); }
+button[type=submit]:not(.toggle-btn):not(.adm-btn--secondary) { background: var(--at-blue); color: #fff; border-color: var(--at-blue); }
+button[type=submit]:not(.toggle-btn):not(.adm-btn--secondary):hover { background: var(--at-blue-dark); border-color: var(--at-blue-dark); }
+button[type=submit].adm-btn--secondary { background: #fff; color: var(--at-ink); border-color: var(--at-gray-200); }
+button[type=submit].adm-btn--secondary:hover { background: var(--at-gray-100); border-color: var(--at-gray-300); }
+.adm-form-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 1rem; }
+.adm-form-actions button { margin-top: 0; margin-right: 0; }
 .toggle-btn { margin-top: 0; }
 .warn-block { background: #fff8e1; border: 1px solid #f59f00; border-radius: var(--at-radius); padding: 0.75rem; margin: 0.75rem 0; font-size: 0.875rem; }
 .info-block { background: #e9f2fc; border: 1px solid #066fd1; border-radius: var(--at-radius); padding: 0.75rem; margin: 0.75rem 0; font-size: 0.875rem; }

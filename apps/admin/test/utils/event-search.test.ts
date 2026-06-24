@@ -20,4 +20,9 @@ describe("filterEventsBySearch", () => {
   it("filters by location", () => {
     expect(filterEventsBySearch(events, "krak")).toEqual([events[1]]);
   });
+
+  it("matches without diacritics in query or location", () => {
+    expect(filterEventsBySearch(events, "krakow")).toEqual([events[1]]);
+    expect(filterEventsBySearch([{ title: "Café Society", location: null }], "cafe")).toHaveLength(1);
+  });
 });

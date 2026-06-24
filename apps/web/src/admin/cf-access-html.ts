@@ -53,7 +53,7 @@ export function renderCfAccessForm(options: {
 
   const enabledWarning =
     f.enabled && !f.locks.enabled
-      ? `<div class="warn-block" role="alert"><strong>Before you enable:</strong> run <strong>Test connection</strong> with your team URL. A wrong Audience (AUD) or team URL can block staff sign-in until you fix the values or use a local break-glass account.</div>`
+      ? `<div class="warn-block" role="alert"><strong>Before you enable:</strong> run <strong>Test connection</strong> with your team URL. A wrong application token or team URL can block staff sign-in until you fix the values or use a local break-glass account.</div>`
       : "";
 
   const envLockedWarning = f.enabled && f.locks.enabled
@@ -81,7 +81,7 @@ export function renderCfAccessForm(options: {
         ${lockBadge(f.locks.teamDomain)}
       </label>
       <label>
-        Application Audience (AUD)
+        Application token (AUD)
         <input name="audience" placeholder="e.g. a1b2c3d4-e5f6-7890-abcd-ef1234567890" value="${esc(f.audience)}"${disabled(f.locks.audience)}>
         <span class="field-hint">Zero Trust → Access → Applications → your app → Overview → <strong>Application Audience (AUD) Tag</strong>. One value, or comma-separated / JSON array for multiple apps.</span>
         ${lockBadge(f.locks.audience)}
@@ -92,8 +92,10 @@ export function renderCfAccessForm(options: {
         <span class="field-hint">Paths that require a Cloudflare Access JWT. Default covers the admin UI and admin API. Comma-separated or JSON array (must start with <code>/</code>).</span>
         ${lockBadge(f.locks.protectedPrefixes)}
       </label>
-      <button type="submit" formaction="/admin/auth/cf-access/test" formmethod="post" formnovalidate>Test connection</button>
-      <button type="submit">Save</button>
+      <div class="adm-form-actions">
+        <button type="submit" class="adm-btn--secondary" formaction="/admin/auth/cf-access/test" formmethod="post" formnovalidate>Test connection</button>
+        <button type="submit">Save</button>
+      </div>
     </form>
     <p class="admin-nav"><a href="/admin/auth/providers">Identity providers</a></p>`,
   );

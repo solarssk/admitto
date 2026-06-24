@@ -278,7 +278,7 @@ describe("CF Access config UI", () => {
     });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("JWKS connection OK");
+    expect(html).toContain("Connection verified");
   });
 
   it("rejects enabling CF Access without team domain and AUD", async () => {

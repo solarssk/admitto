@@ -77,6 +77,11 @@ export function EventsPickerPage() {
     () => filterEventsBySearch(displayedEvents, searchQuery),
     [displayedEvents, searchQuery],
   );
+  const otherTabEvents = tab === "archived" ? activeEvents : archivedEvents;
+  const otherTabMatchCount = useMemo(
+    () => (searchQuery ? filterEventsBySearch(otherTabEvents, searchQuery).length : 0),
+    [otherTabEvents, searchQuery],
+  );
   const allEventsArchived = events.length > 0 && activeEvents.length === 0;
 
   useEffect(() => {
@@ -150,6 +155,22 @@ export function EventsPickerPage() {
       {!loading && !error && displayedEvents.length > 0 && filteredEvents.length === 0 && (
         <Card>
           <p>No events match &quot;{searchQuery}&quot;.</p>
+          {otherTabMatchCount > 0 && (
+            <p className="at-hint">
+              No results on this tab — try the{" "}
+              <button
+                type="button"
+                className="picker-inline-link"
+                onClick={() => {
+                  setTabTouched(true);
+                  setTab(tab === "archived" ? "active" : "archived");
+                }}
+              >
+                {tab === "archived" ? "Active events" : "Archived events"}
+              </button>{" "}
+              tab ({otherTabMatchCount} {otherTabMatchCount === 1 ? "match" : "matches"}).
+            </p>
+          )}
         </Card>
       )}
 
