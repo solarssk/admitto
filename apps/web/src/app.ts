@@ -90,7 +90,7 @@ import { handleGetOidcLink, handlePostOidcLink } from "./auth/oidc-link-routes.j
 import { createAdminAccessMiddleware } from "./auth/admin-access-middleware.js";
 import { createStaffAdminGate } from "./auth/staff-admin-gate.js";
 import { createCheckInPanelCapabilityGuard } from "./auth/checkin-panel-gate.js";
-import { handleGetAdminEvents } from "./admin/admin-api-routes.js";
+import { handleCreateEvent, handleGetAdminEvents } from "./admin/admin-api-routes.js";
 import {
   handlePostArchiveEvent,
   handlePostUnarchiveEvent,
@@ -383,6 +383,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get("/api/admin/me", staffAdminGate, (c) => handleMe(c, db, { includeMailerStatus: true }));
   app.get("/api/admin/events", staffAdminGate, (c) => handleGetAdminEvents(c, db));
+  app.post("/api/admin/events", jsonPostCsrf, staffAdminGate, (c) => handleCreateEvent(c, db));
   app.post("/api/admin/events/:eventId/archive", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostArchiveEvent(c, db),
   );

@@ -192,6 +192,18 @@ export async function fetchAdminEvents(
   return data.events;
 }
 
+/** Create a new event (superadmin or org admin). */
+export async function createEvent(body: {
+  title: string;
+  slug: string;
+  date: string;
+  location?: string;
+}): Promise<EventDto> {
+  const res = await fetch("/api/admin/events", jsonPostInit(body));
+  const data = await parseJson<{ event: EventDto }>(res);
+  return data.event;
+}
+
 /** Archive an event (superadmin-only POST). */
 export async function archiveEvent(eventId: string): Promise<void> {
   const res = await fetch(`/api/admin/events/${eventId}/archive`, jsonPostInit({}));

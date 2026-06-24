@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sidebar footer: **Users & roles** link for org admins and superadmins (page ships in a follow-up PR)
 - Dev-only demo bar (`import.meta.env.DEV`) to trigger sample toasts from the admin shell
 - Admin check-in v2: split layout with scan bar, connection banner, stats/progress sidebar, color-dot recent scans, and fullscreen camera overlay with QR viewfinder
+- Create event UI: `POST /api/admin/events`, New event modal (title, slug, date, location), redirect to attendees after create
+- Events picker visual polish: active status badge, responsive 2/3-column grid, empty state with Create event CTA
 
 ### Changed
 - `GET /api/admin/me` includes `mailer_status` (provider presence only — no credentials); `/api/auth/me` unchanged for operator sessions
