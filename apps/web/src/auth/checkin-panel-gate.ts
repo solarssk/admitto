@@ -26,6 +26,17 @@ export function createCheckInPanelCapabilityGuard(prisma: PrismaClient) {
       return c.text("Forbidden", 403);
     }
 
+    const passwordChange = await prisma.user.findUnique({
+      where: { id: auth.userId },
+      select: { must_change_password: true },
+    });
+    if (passwordChange?.must_change_password) {
+      if (c.req.path.startsWith("/api/")) {
+        return c.json({ error: "password_change_required" }, 403);
+      }
+      return c.redirect("/change-password", 302);
+    }
+
     await next();
   };
 }

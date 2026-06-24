@@ -12,6 +12,7 @@ import { AdminShell } from "./layouts/AdminShell.js";
 import { EventsListShell } from "./layouts/EventsListShell.js";
 import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
+import { UsersPage } from "./pages/UsersPage.js";
 import { OperatorShell } from "./layouts/OperatorShell.js";
 import { EventsPickerPage } from "./pages/EventsPickerPage.js";
 import { CheckInEntryPage } from "./pages/CheckInEntryPage.js";
@@ -97,6 +98,7 @@ export default function App() {
               <Route path="/admin" element={<AdminGuard />}>
                 <Route element={<EventsListShell />}>
                   <Route index element={<EventsPickerPage />} />
+                  <Route path="users" element={<UsersPage />} />
                 </Route>
                 <Route path="settings" element={<SuperadminGuard />}>
                   <Route element={<InstanceSettingsShell />}>

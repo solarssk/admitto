@@ -36,6 +36,13 @@ import type {
   SessionsResponse,
   SecuritySettingsDto,
   PatchSecuritySettingsBody,
+  UserListResponse,
+  CreateAdminUserBody,
+  PatchAdminUserBody,
+  GrantUserRoleBody,
+  ResetUserPasswordBody,
+  UserListItemDto,
+  RoleAssignmentsListResponse,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -725,4 +732,103 @@ export async function patchSecuritySettings(
 ): Promise<SecuritySettingsDto> {
   const res = await fetch("/api/admin/system-settings", jsonPatchInit(body));
   return parseJson<SecuritySettingsDto>(res);
+}
+
+function usersListQuery(
+  params: { q?: string; page?: number; pageSize?: number; organizationId?: string } = {},
+): string {
+  const q = new URLSearchParams();
+  if (params.q) q.set("q", params.q);
+  if (params.page != null) q.set("page", String(params.page));
+  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
+  if (params.organizationId) q.set("organizationId", params.organizationId);
+  const qs = q.toString();
+  return `/api/admin/users${qs ? `?${qs}` : ""}`;
+}
+
+export async function fetchAdminUsers(
+  params: { q?: string; page?: number; pageSize?: number; organizationId?: string } = {},
+  signal?: AbortSignal,
+): Promise<UserListResponse> {
+  const res = await fetch(usersListQuery(params), { credentials: "same-origin", signal });
+  return parseJson<UserListResponse>(res);
+}
+
+export async function createAdminUser(body: CreateAdminUserBody): Promise<{ user: UserListItemDto }> {
+  const res = await fetch("/api/admin/users", jsonPostInit(body));
+  return parseJson<{ user: UserListItemDto }>(res);
+}
+
+export async function patchAdminUser(
+  id: string,
+  body: PatchAdminUserBody,
+): Promise<{ user: UserListItemDto }> {
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}`, jsonPatchInit(body));
+  return parseJson<{ user: UserListItemDto }>(res);
+}
+
+export async function grantUserRole(
+  id: string,
+  body: GrantUserRoleBody,
+): Promise<{ assignment: { id: string; role: string; scope_type: string; scope_id: string | null } }> {
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}/roles`, jsonPostInit(body));
+  return parseJson(res);
+}
+
+export async function revokeUserRole(id: string, assignmentId: string): Promise<void> {
+  const res = await fetch(
+    `/api/admin/users/${encodeURIComponent(id)}/roles/${encodeURIComponent(assignmentId)}`,
+    jsonDeleteInit(),
+  );
+  if (!res.ok) {
+    let message = res.statusText || `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as ApiErrorBody;
+      message = messageFromApiErrorBody(body) ?? message;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+}
+
+export async function resetUserMfa(id: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}/reset-2fa`, jsonPostInit({}));
+  return parseJson<{ ok: boolean }>(res);
+}
+
+export async function resetUserPassword(
+  id: string,
+  body: ResetUserPasswordBody,
+): Promise<{ ok: boolean }> {
+  const res = await fetch(
+    `/api/admin/users/${encodeURIComponent(id)}/reset-password`,
+    jsonPostInit(body),
+  );
+  return parseJson<{ ok: boolean }>(res);
+}
+
+export async function revokeUserSessions(
+  id: string,
+): Promise<{ ok: boolean; sessionsRevoked: number }> {
+  const res = await fetch(
+    `/api/admin/users/${encodeURIComponent(id)}/revoke-sessions`,
+    jsonPostInit({}),
+  );
+  return parseJson<{ ok: boolean; sessionsRevoked: number }>(res);
+}
+
+export async function fetchRoleAssignments(
+  params: { page?: number; pageSize?: number } = {},
+  signal?: AbortSignal,
+): Promise<RoleAssignmentsListResponse> {
+  const q = new URLSearchParams();
+  if (params.page != null) q.set("page", String(params.page));
+  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
+  const qs = q.toString();
+  const res = await fetch(`/api/admin/role-assignments${qs ? `?${qs}` : ""}`, {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<RoleAssignmentsListResponse>(res);
 }

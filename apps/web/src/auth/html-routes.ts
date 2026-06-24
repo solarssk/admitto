@@ -103,6 +103,9 @@ export async function handlePostLogin(
   if (result.next === LOGIN_NEXT.ENROLLMENT_REQUIRED) {
     return c.redirect(mfaPathWithNext("/mfa/enroll", next), 302);
   }
+  if (result.next === LOGIN_NEXT.CHANGE_PASSWORD) {
+    return c.redirect("/change-password", 302);
+  }
 
   let landing: string;
   try {

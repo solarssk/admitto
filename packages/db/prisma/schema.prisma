@@ -325,6 +325,7 @@ model User {
   password_hash       String
   display_name        String?
   is_active           Boolean             @default(true)
+  must_change_password Boolean            @default(false)
   created_at          DateTime            @default(now())
   updated_at          DateTime            @updatedAt
   sessions            Session[]
