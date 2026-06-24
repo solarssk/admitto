@@ -18,6 +18,7 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { CHECKIN_DUPLICATE_DEBOUNCE_MS, normalizeScannedInput } from "../checkin/normalize.js";
 import { canMutateCheckin } from "../checkin/connection.js";
+import { ScanFeedback } from "../checkin/ScanFeedback.js";
 import { AttendeeCard } from "../checkin/AttendeeCard.js";
 import { CameraScanner } from "../checkin/CameraScanner.js";
 import { ManualLookupPanel } from "../checkin/ManualLookupPanel.js";
@@ -292,32 +293,37 @@ export function CheckInPage() {
 
         <Card className="checkin-surface__scan-card">
           <form className="checkin-surface__form" onSubmit={onSubmit}>
-            <div className="at-field">
-              <label className="at-label" htmlFor="checkin-scan-field">
-                Scan field
-              </label>
-              <input
-                ref={inputRef}
-                id="checkin-scan-field"
-                className="at-input checkin-surface__input"
-                value={buffer}
-                onChange={(e) => setBuffer(e.target.value)}
-                onKeyDown={onKeyDown}
-                autoComplete="off"
-                autoCorrect="off"
-                spellCheck={false}
-                disabled={busy || !canAct}
-                aria-busy={busy}
-              />
-              <span className="at-hint">Wedge / keyboard input. Refocuses after each scan.</span>
+            <div className="checkin-surface__scan-row">
+              <div className="at-field checkin-surface__field">
+                <label className="at-label" htmlFor="checkin-scan-field">
+                  Scan field
+                </label>
+                <input
+                  ref={inputRef}
+                  id="checkin-scan-field"
+                  className="at-input checkin-surface__input"
+                  value={buffer}
+                  onChange={(e) => setBuffer(e.target.value)}
+                  onKeyDown={onKeyDown}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  disabled={busy || !canAct}
+                  aria-busy={busy}
+                  aria-describedby="checkin-scan-hint"
+                />
+                <span id="checkin-scan-hint" className="at-hint">
+                  Wedge / keyboard input. Refocuses after each scan.
+                </span>
+              </div>
+              <button
+                type="submit"
+                className="checkin-surface__submit"
+                disabled={busy || !buffer.trim() || !canAct}
+              >
+                {busy ? "Working…" : "Submit scan"}
+              </button>
             </div>
-            <button
-              type="submit"
-              className="checkin-surface__submit"
-              disabled={busy || !buffer.trim() || !canAct}
-            >
-              {busy ? "Working…" : "Submit scan"}
-            </button>
           </form>
 
           <label className="checkin-surface__camera-toggle">
@@ -339,6 +345,13 @@ export function CheckInPage() {
           <p className="checkin-surface__transport-error" role="alert">
             {transportError}
           </p>
+        )}
+
+        {scanResult && (
+          <ScanFeedback
+            result={scanResult}
+            hidden={!!card && (scanResult.status === "PREVIEW" || scanResult.status === "VALID" || scanResult.status === "ALREADY_CHECKED_IN")}
+          />
         )}
 
         {card && (

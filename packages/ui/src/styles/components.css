@@ -12,8 +12,10 @@
   line-height: 1; white-space: nowrap; cursor: pointer; user-select: none;
   height: var(--control-h); padding: 0 var(--pad-control-x);
   border-radius: var(--radius); border: var(--border-width) solid transparent;
+  text-decoration: none;
   transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
+.at-btn:hover { text-decoration: none; }
 .at-btn:focus-visible { outline: none; box-shadow: var(--ring); }
 .at-btn:disabled, .at-btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
 .at-btn .at-btn__icon { font-size: 1.05em; line-height: 0; }
@@ -93,6 +95,7 @@
 .at-switch input:checked + .at-switch__track { background: var(--primary); }
 .at-switch input:checked + .at-switch__track .at-switch__thumb { transform: translateX(1rem); }
 .at-switch input:focus-visible + .at-switch__track { box-shadow: var(--ring); }
+.at-switch__label { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-secondary); white-space: nowrap; }
 
 /* ---------------- Badge / Tag ---------------- */
 .at-badge {
@@ -141,3 +144,41 @@
 .at-tab { appearance: none; background: none; border: 0; cursor: pointer; font-family: var(--font-sans); font-size: var(--fs-body); font-weight: var(--fw-medium); color: var(--text-muted); padding: var(--space-3) var(--space-3); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color var(--dur-fast), border-color var(--dur-fast); }
 .at-tab:hover { color: var(--text-primary); }
 .at-tab--active { color: var(--primary); border-bottom-color: var(--primary); }
+
+/* ---------------- Page header ---------------- */
+.at-pageheader {
+  margin-bottom: var(--space-5);
+}
+
+.at-pageheader__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.at-pageheader__title {
+  margin: 0;
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-tight);
+  color: var(--text-primary);
+  line-height: var(--lh-tight);
+}
+
+.at-pageheader__subtitle {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  line-height: var(--lh-normal);
+  max-width: 42rem;
+}
+
+.at-pageheader__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}

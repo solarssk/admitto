@@ -8,7 +8,7 @@ Dev/CI database stack remains in [`../infra/docker-compose.yml`](../infra/docker
 
 Admitto is **self-hosted**: you run it on infrastructure you control (VPS, on-prem server, NAS with Docker, etc.). We do **not** ship a managed cloud service.
 
-The **only supported production path** in this repo is a **Docker Compose stack** — not bare-metal installs (Node/Postgres directly on the host), not Kubernetes/Helm. You need **Docker Engine** (or Docker Desktop for local smoke tests) on the host; everything else runs inside containers.
+The **only supported production path** in this repo is a **Docker Compose stack** — not bare-metal installs (Node/Postgres directly on the host), not Kubernetes/Helm, and **not Vercel** (root [`vercel.json`](../vercel.json) disables Git-linked Vercel deploys; delete or disconnect the project in the Vercel dashboard if it still appears on PRs). You need **Docker Engine** (or Docker Desktop for local smoke tests) on the host; everything else runs inside containers.
 
 What you get in `deploy/`:
 

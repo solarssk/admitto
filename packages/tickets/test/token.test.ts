@@ -46,6 +46,12 @@ describe("extractTokenFromUrl", () => {
     expect(extractTokenFromUrl(`https://example.com/t/${token}`)).toBe(token);
   });
 
+  it("extracts token when URL has trailing slash or query", () => {
+    const token = generateToken();
+    expect(extractTokenFromUrl(`https://example.com/t/${token}/`)).toBe(token);
+    expect(extractTokenFromUrl(`https://example.com/t/${token}?utm=mail`)).toBe(token);
+  });
+
   it("returns null for agency payload (not a URL)", () => {
     expect(extractTokenFromUrl("AGENCY-QR-001")).toBeNull();
   });

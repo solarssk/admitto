@@ -1,5 +1,6 @@
 import { getLoginPageSecurityHeaders } from "./login-page.js";
 import {
+  AUTH_FORM_SUBMIT_SCRIPT,
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
@@ -31,6 +32,13 @@ interface AuthOtpCodeFieldOptions {
   labelId: string;
   /** Show link to enter a backup recovery code (MFA verify only). */
   allowBackupCode?: boolean;
+  /** Focus first digit on load (disable on QR enrollment step). */
+  autofocusOtp?: boolean;
+}
+
+/** Visible enrollment progress for multi-step MFA setup. */
+function renderAuthStepIndicator(step: number, total: number, label: string): string {
+  return `<p class="auth-step-indicator" aria-current="step"><span class="auth-step-indicator__meta">Step ${step} of ${total}</span> — ${escapeHtml(label)}</p>`;
 }
 
 /** Six centered digit boxes + hidden `code` field for form POST. */
@@ -49,7 +57,7 @@ function renderAuthOtpCodeField(options: AuthOtpCodeFieldOptions): string {
     </div>`
     : "";
 
-  return `<div class="auth-otp-wrap" data-auth-otp-digits${options.allowBackupCode ? ' data-backup-fallback' : ""}>
+  return `<div class="auth-otp-wrap" data-auth-otp-digits${options.allowBackupCode ? " data-backup-fallback" : ""}${options.autofocusOtp === false ? ' data-autofocus-otp="false"' : ""}>
     <label class="auth-label" id="${escapeHtml(options.labelId)}">${escapeHtml(options.label)}</label>
     <div class="auth-otp-digits" role="group" aria-labelledby="${escapeHtml(options.labelId)}">${digits}</div>
     <input type="hidden" name="code" id="code" required>
@@ -81,7 +89,7 @@ export function renderMfaVerifyForm(error?: string, next?: string): string {
     step: "Two-factor authentication",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: MFA_OTP_DIGITS_SCRIPT,
+    scripts: `${MFA_OTP_DIGITS_SCRIPT}\n${AUTH_FORM_SUBMIT_SCRIPT}`,
   });
 }
 
@@ -123,6 +131,7 @@ export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
       : "";
 
   const card = `${renderAuthBrand()}
+    ${renderAuthStepIndicator(2, 3, "Scan and confirm")}
     <h2 class="auth-page-action">Set up two-factor authentication</h2>
     <p class="subtitle">Scan the QR code in your authenticator app, then confirm with a code.</p>
     ${setupSection}
@@ -132,6 +141,7 @@ export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
       ${renderAuthOtpCodeField({
         label: "Confirmation code",
         labelId: "enroll-code-label",
+        autofocusOtp: false,
       })}
       <button class="auth-btn-primary" type="submit">Confirm and continue</button>
     </form>`;
@@ -140,7 +150,7 @@ export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
     step: "Set up two-factor authentication",
     body: renderAuthPage(card, true),
     css: AUTH_PAGE_CSS,
-    scripts: MFA_OTP_DIGITS_SCRIPT,
+    scripts: `${MFA_OTP_DIGITS_SCRIPT}\n${MFA_ENROLL_COPY_SCRIPT}\n${AUTH_FORM_SUBMIT_SCRIPT}`,
   });
 }
 
@@ -178,6 +188,7 @@ export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPage
   </div>`;
 
   const card = `${renderAuthBrand()}
+    ${renderAuthStepIndicator(3, 3, "Save backup codes")}
     <h2 class="auth-page-action">Save your backup codes</h2>
     <p class="subtitle">Store these recovery codes somewhere safe — you will need them if you lose access to your authenticator.</p>
     ${codesUnavailable ? `<p class="auth-muted">This server session no longer has your codes in memory. If you did not save them, contact an administrator for MFA reset.</p>` : ""}
@@ -192,6 +203,7 @@ export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPage
     step: "Save backup codes",
     body: renderAuthPage(card, true),
     css: AUTH_PAGE_CSS,
+    scripts: AUTH_FORM_SUBMIT_SCRIPT,
   });
 }
 
@@ -199,6 +211,7 @@ export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPage
 export function renderMfaEnrollStartPage(next?: string): string {
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
   const card = `${renderAuthBrand()}
+    ${renderAuthStepIndicator(1, 3, "Get started")}
     <h2 class="auth-page-action">Set up two-factor authentication</h2>
     <p class="subtitle">Two-factor authentication is required for your account.</p>
     <p class="auth-muted">You will scan a QR code in your authenticator app, then save one-time backup codes before continuing.</p>
@@ -210,6 +223,7 @@ export function renderMfaEnrollStartPage(next?: string): string {
     step: "Set up two-factor authentication",
     body: renderAuthPage(card, true),
     css: AUTH_PAGE_CSS,
+    scripts: AUTH_FORM_SUBMIT_SCRIPT,
   });
 }
 
@@ -241,12 +255,25 @@ const MFA_OTP_DIGITS_SCRIPT = `<script>
       if (i >= 0 && i < digits.length) digits[i].focus();
     }
 
+    var form = wrap.closest("form");
+    if (form) form.addEventListener("submit", syncHidden);
+
+    function maybeAutoSubmit() {
+      if (usingBackup) return;
+      var filled = digits.every(function (d) { return d.value.length === 1; });
+      if (!filled || !form) return;
+      syncHidden();
+      if (typeof form.requestSubmit === "function") form.requestSubmit();
+      else form.submit();
+    }
+
     digits.forEach(function (input, idx) {
       input.addEventListener("input", function () {
         var v = input.value.replace(/\\D/g, "");
         input.value = v.slice(-1);
         if (input.value && idx < digits.length - 1) focusDigit(idx + 1);
         syncHidden();
+        maybeAutoSubmit();
       });
       input.addEventListener("keydown", function (e) {
         if (e.key === "Backspace" && !input.value && idx > 0) {
@@ -262,6 +289,7 @@ const MFA_OTP_DIGITS_SCRIPT = `<script>
         for (var i = 0; i < digits.length; i++) digits[i].value = text[i] || "";
         syncHidden();
         focusDigit(Math.min(text.length, digits.length - 1));
+        maybeAutoSubmit();
       });
     });
 
@@ -284,9 +312,7 @@ const MFA_OTP_DIGITS_SCRIPT = `<script>
       });
     }
 
-    var form = wrap.closest("form");
-    if (form) form.addEventListener("submit", syncHidden);
-    focusDigit(0);
+    if (wrap.dataset.autofocusOtp !== "false") focusDigit(0);
   });
 })();
 </script>`;

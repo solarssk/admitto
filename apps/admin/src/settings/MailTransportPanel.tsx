@@ -366,7 +366,8 @@ export function MailTransportPanel() {
           )}
           {fieldLocked("provider") && (
             <p className="mail-transport__env-note">
-              Transport is managed by an environment variable (<code>MAIL_PROVIDER</code>). To change it, update your <code>.env</code> / Docker Compose config and restart the service.
+              Some transport settings are managed by your deployment configuration and cannot be changed
+              here. Contact your instance administrator if you need to update them.
             </p>
           )}
           <p className="mail-transport__desc">

@@ -82,6 +82,16 @@ body {
   margin: 0 0 0.25rem;
   text-wrap: balance;
 }
+.auth-step-indicator {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--at-gray-500);
+}
+.auth-step-indicator__meta {
+  font-weight: 600;
+  color: var(--at-blue);
+}
 .auth-card .subtitle {
   font-size: 0.875rem;
   color: var(--at-gray-500);
@@ -406,7 +416,11 @@ body {
 
 .adm-nav-item i { font-size: 17px; color: var(--at-gray-500); }
 
-.adm-nav-item:hover { background: var(--at-gray-100); color: var(--at-ink); }
+.adm-brand:hover {
+  text-decoration: none;
+}
+
+.adm-nav-item:hover { background: var(--at-gray-100); color: var(--at-ink); text-decoration: none; }
 .adm-nav-item:hover i { color: var(--at-ink); }
 
 .adm-nav-item--active {
@@ -531,7 +545,7 @@ button[type=submit]:not(.toggle-btn):hover { background: var(--at-blue-dark); bo
   white-space: nowrap;
 }
 
-.adm-subnav-item:hover { color: var(--at-ink); }
+.adm-subnav-item:hover { color: var(--at-ink); text-decoration: none; }
 
 .adm-subnav-item--active {
   color: var(--at-blue);
@@ -570,10 +584,6 @@ export function renderAdminShell(options: AdminShellOptions): string {
 
   const sidebar = `<aside class="adm-sidebar">
   <a class="adm-brand" href="/admin">${ADMIN_MARK_SVG}<span>Admitto</span></a>
-  <div class="adm-context">
-    <div class="adm-overline">Instance</div>
-    <div class="adm-context-meta">System-wide configuration</div>
-  </div>
   <div class="adm-nav-spacer" aria-hidden="true"></div>
   <div class="adm-foot">
     <a class="adm-nav-item" href="/admin"><i class="ti ti-calendar-event"></i><span>All events</span></a>
@@ -612,6 +622,21 @@ ${sidebar}
 </body>
 </html>`;
 }
+
+export const AUTH_FORM_SUBMIT_SCRIPT = `<script>
+(function () {
+  document.querySelectorAll(".auth-page form").forEach(function (form) {
+    form.addEventListener("submit", function () {
+      var btn = form.querySelector('button[type="submit"]');
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      if (!btn.dataset.originalLabel) btn.dataset.originalLabel = btn.textContent || "";
+      btn.textContent = btn.dataset.loadingLabel || "Please wait…";
+    });
+  });
+})();
+</script>`;
 
 export function renderAuthDocument(options: AuthDocumentOptions): string {
   const { step, body, css = AUTH_PAGE_CSS, scripts } = options;

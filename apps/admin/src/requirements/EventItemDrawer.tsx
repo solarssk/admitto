@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Checkbox, IconButton, Input, Switch } from "@admitto/ui";
+import { Button, IconButton, Input, Switch } from "@admitto/ui";
 import {
   ApiError,
   deleteEventItem,
@@ -7,6 +7,7 @@ import {
 } from "../api/client.js";
 import type { EventItemConfigDto, EventItemDto } from "../api/types.js";
 import { isValidSourceFieldSlug, validateContentsRows } from "./eventItemContentsForm.js";
+import { slugifyItemKey } from "./itemKey.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import "../attendees/attendees.css";
 
@@ -152,7 +153,15 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
   function updateContent(index: number, field: "label" | "source_field", value: string) {
     setForm((f) => {
       const contents = [...f.contents];
-      contents[index] = { ...contents[index], [field]: value };
+      const row = { ...contents[index], [field]: value };
+      if (field === "label") {
+        const prevSlug = slugifyItemKey(contents[index].label);
+        const currentField = contents[index].source_field.trim();
+        if (!currentField || currentField === prevSlug) {
+          row.source_field = slugifyItemKey(value);
+        }
+      }
+      contents[index] = row;
       return { ...f, contents };
     });
   }
@@ -164,9 +173,9 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
         <div className="attendee-drawer__header">
           <div>
             <h2 id="item-drawer-title" className="attendee-drawer__title">
-              Edit item
+              {item.label}
             </h2>
-            <p className="requirements-item-key">{item.key}</p>
+            <p className="requirements-item-id">Internal ID: {item.key}</p>
           </div>
           <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
         </div>
@@ -185,39 +194,45 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
 
           <div>
             <h3 className="attendee-drawer__section-title">Details</h3>
-            <div className="attendee-form">
+            <div className="requirements-field-stack">
               <Input
-                label="Label"
+                label="Display name"
                 value={form.label}
                 onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
                 required
               />
-              <Checkbox
-                label="Enabled"
-                checked={form.enabled}
-                onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
-              />
+              <div className="requirements-toggle-row">
+                <div className="requirements-toggle-row__text">
+                  <strong>Active</strong>
+                  <p>Inactive items are hidden from check-in operators.</p>
+                </div>
+                <Switch
+                  label={form.enabled ? "On" : "Off"}
+                  checked={form.enabled}
+                  onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+                  aria-label="Item active"
+                />
+              </div>
             </div>
           </div>
 
           <div>
-            <h3 className="attendee-drawer__section-title">Contents hints</h3>
-            <p className="requirements-behaviour-row__text">
-              <span style={{ fontSize: "var(--fs-sm)", color: "var(--text-muted)" }}>
-                Shown to operators on the attendee card for this item.
-              </span>
+            <h3 className="attendee-drawer__section-title">Operator hints</h3>
+            <p className="requirements-section-hint">
+              Optional fields shown on the attendee card for this item (e.g. shirt size from import
+              data).
             </p>
-            <div className="attendee-form">
+            <div className="requirements-field-stack">
               {form.contents.map((row, i) => (
                 <div key={i} className="requirements-contents-row">
                   <Input
-                    label="Label"
+                    label="Field label"
                     value={row.label}
                     onChange={(e) => updateContent(i, "label", e.target.value)}
                     placeholder="Shirt size"
                   />
                   <Input
-                    label="Source field"
+                    label="Import column"
                     value={row.source_field}
                     onChange={(e) => updateContent(i, "source_field", e.target.value)}
                     placeholder="shirt_size"
@@ -249,29 +264,43 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                   }))
                 }
               >
-                Add row
+                Add field hint
               </Button>
             </div>
           </div>
 
           <div>
             <h3 className="attendee-drawer__section-title">Item behaviour</h3>
-            <div className="attendee-form">
-              <Checkbox
-                label="Requires return"
-                checked={form.requires_return}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, requires_return: e.target.checked }))
-                }
-              />
-              {item.key === "badge" && (
-                <Checkbox
-                  label="Issue on check-in"
-                  checked={form.issue_on_checkin}
+            <div className="requirements-field-stack">
+              <div className="requirements-toggle-row">
+                <div className="requirements-toggle-row__text">
+                  <strong>Requires return</strong>
+                  <p>Track when this item must be returned (e.g. headset).</p>
+                </div>
+                <Switch
+                  label={form.requires_return ? "On" : "Off"}
+                  checked={form.requires_return}
                   onChange={(e) =>
-                    setForm((f) => ({ ...f, issue_on_checkin: e.target.checked }))
+                    setForm((f) => ({ ...f, requires_return: e.target.checked }))
                   }
+                  aria-label="Requires return"
                 />
+              </div>
+              {item.key === "badge" && (
+                <div className="requirements-toggle-row">
+                  <div className="requirements-toggle-row__text">
+                    <strong>Issue on check-in</strong>
+                    <p>Automatically mark badge as issued when attendee is admitted.</p>
+                  </div>
+                  <Switch
+                    label={form.issue_on_checkin ? "On" : "Off"}
+                    checked={form.issue_on_checkin}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, issue_on_checkin: e.target.checked }))
+                    }
+                    aria-label="Issue on check-in"
+                  />
+                </div>
               )}
             </div>
           </div>

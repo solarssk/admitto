@@ -1,4 +1,5 @@
 import {
+  AUTH_FORM_SUBMIT_SCRIPT,
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
@@ -83,7 +84,7 @@ export function renderLoginForm(
       ${nextField}
       <div class="auth-field">
         <label class="auth-label" for="email">Email</label>
-        <input class="auth-input" id="email" type="email" name="email" placeholder="operator@company.com" required autocomplete="username">
+        <input class="auth-input" id="email" type="email" name="email" placeholder="you@example.com" required autocomplete="username">
       </div>
       <div class="auth-field">
         <label class="auth-label" for="password">Password</label>
@@ -93,7 +94,12 @@ export function renderLoginForm(
     </form>
     <p class="auth-footer">Admitto is an internal tool.<br>Access is managed by your IT administrator.</p>`;
 
-  return renderAuthDocument({ step: "Sign in", body: renderAuthPage(card), css: AUTH_PAGE_CSS });
+  return renderAuthDocument({
+    step: "Sign in",
+    body: renderAuthPage(card),
+    css: AUTH_PAGE_CSS,
+    scripts: AUTH_FORM_SUBMIT_SCRIPT,
+  });
 }
 
 /** Event row shown on the temporary `/operator` landing page. */

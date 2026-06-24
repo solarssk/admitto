@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
-import { Navigate, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useParams } from "react-router-dom";
+import { Spinner } from "@admitto/ui";
 import { ToastProvider } from "@admitto/ui";
 import { AdminGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
 import { OperatorDeviceGate } from "./auth/OperatorDeviceGate.js";
-import { AuthProvider, useAuth } from "./auth/AuthProvider.js";
-import { isSuperadmin } from "./auth/capabilities.js";
+import { AuthProvider } from "./auth/AuthProvider.js";
 import { ConnectionStateProvider } from "./connection/ConnectionStateProvider.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
-import { ConfirmDialog } from "./components/ConfirmDialog.js";
 import { AdminShell } from "./layouts/AdminShell.js";
 import { EventsListShell } from "./layouts/EventsListShell.js";
 import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
@@ -21,8 +20,9 @@ import { AttendeesPage } from "./pages/AttendeesPage.js";
 import { ImportPage } from "./pages/ImportPage.js";
 import { RequirementsPage } from "./pages/RequirementsPage.js";
 import { CommunicationPage } from "./pages/CommunicationPage.js";
+import { EventOverviewPage } from "./pages/EventOverviewPage.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
-import { ApiError, archiveEvent, fetchAdminEvents } from "./api/client.js";
+import { ApiError, fetchAdminEvents } from "./api/client.js";
 import type { EventDto } from "./api/types.js";
 
 const PLACEHOLDER_ROUTES = [
@@ -38,16 +38,11 @@ const PLACEHOLDER_ROUTES = [
   { path: "reports", title: "Reports" },
 ] as const;
 
-/** Event-scoped layout: resolves event (incl. archived), archive dialog, and AdminShell. */
+/** Event-scoped layout: resolves event (incl. archived) and AdminShell. */
 function EventLayout() {
   const { eventId } = useParams();
-  const navigate = useNavigate();
-  const { assignments } = useAuth();
   const [event, setEvent] = useState<EventDto | null>(null);
   const [error, setError] = useState(false);
-  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
-  const [archiving, setArchiving] = useState(false);
-  const [archiveError, setArchiveError] = useState<string | null>(null);
 
   useEffect(() => {
     setEvent(null);
@@ -77,54 +72,16 @@ function EventLayout() {
     };
   }, [eventId]);
 
-  const handleArchive = async () => {
-    if (!eventId) return;
-    setArchiving(true);
-    setArchiveError(null);
-    try {
-      await archiveEvent(eventId);
-      setArchiveDialogOpen(false);
-      navigate("/admin");
-    } catch (err) {
-      setArchiveError(err instanceof ApiError ? err.message : "Failed to archive event.");
-    } finally {
-      setArchiving(false);
-    }
-  };
-
   if (error) return <Navigate to="/admin" replace />;
-  if (!event) return <p>Loading event…</p>;
+  if (!event) {
+    return (
+      <div className="shell-loading" role="status">
+        <Spinner label="Loading event" />
+      </div>
+    );
+  }
 
-  const showArchiveButton = isSuperadmin(assignments) && !event.archived_at;
-
-  return (
-    <>
-      <AdminShell
-        event={event}
-        showArchiveButton={showArchiveButton}
-        onArchiveRequest={() => {
-          setArchiveError(null);
-          setArchiveDialogOpen(true);
-        }}
-      />
-      <ConfirmDialog
-        open={archiveDialogOpen}
-        title="Archive event"
-        message="Archived events are hidden and read-only. Data is preserved. A superadmin can unarchive later."
-        errorMessage={archiveError}
-        confirmLabel="Archive"
-        confirmVariant="danger"
-        loading={archiving}
-        onConfirm={() => void handleArchive()}
-        onCancel={() => {
-          if (!archiving) {
-            setArchiveDialogOpen(false);
-            setArchiveError(null);
-          }
-        }}
-      />
-    </>
-  );
+  return <AdminShell event={event} />;
 }
 
 export default function App() {
@@ -150,7 +107,9 @@ export default function App() {
                       key={r.path}
                       path={r.path}
                       element={
-                        r.path === "checkin" ? (
+                        r.path === "overview" ? (
+                          <EventOverviewPage />
+                        ) : r.path === "checkin" ? (
                           <AdminCheckInRoute />
                         ) : r.path === "attendees" ? (
                           <AttendeesPage />

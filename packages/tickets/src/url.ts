@@ -8,7 +8,8 @@ export function buildTicketUrl(baseUrl: string, token: string): string {
  * Returns null if the input is not a recognised ticket URL.
  */
 export function extractTokenFromUrl(scanned: string): string | null {
-  const match = /\/t\/([A-Za-z0-9_-]{40,60})$/.exec(scanned);
+  const trimmed = scanned.trim();
+  const match = /\/t\/([A-Za-z0-9_-]{40,60})(?:\/)?(?:[?#].*)?$/.exec(trimmed);
   return match?.[1] ?? null;
 }
 

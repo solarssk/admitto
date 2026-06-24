@@ -12,6 +12,7 @@ import {
 import type { EventItemDto, OpsConfigDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
+import { slugifyItemKey, uniqueItemKey } from "../requirements/itemKey.js";
 import "../requirements/requirements.css";
 
 /** One-line summary of item config for the Requirements table. */
@@ -42,10 +43,11 @@ export function RequirementsPage() {
   const [reloadToken, setReloadToken] = useState(0);
 
   const [addOpen, setAddOpen] = useState(false);
-  const [addKey, setAddKey] = useState("");
   const [addLabel, setAddLabel] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+
+  const addKeyPreview = uniqueItemKey(addLabel, items.map((i) => i.key));
 
   const [opsSaving, setOpsSaving] = useState(false);
   const [opsError, setOpsError] = useState<string | null>(null);
@@ -127,20 +129,22 @@ export function RequirementsPage() {
   async function handleAddItem(e: React.FormEvent) {
     e.preventDefault();
     if (!eventId) return;
+    const label = addLabel.trim();
+    const key = uniqueItemKey(label, items.map((i) => i.key));
+    if (!label || !key) {
+      setAddError("Enter a name using letters or numbers.");
+      return;
+    }
     setAdding(true);
     setAddError(null);
     try {
-      await createEventItem(eventId, {
-        key: addKey.trim(),
-        label: addLabel.trim(),
-      });
-      setAddKey("");
+      await createEventItem(eventId, { key, label });
       setAddLabel("");
       setAddOpen(false);
       setReloadToken((n) => n + 1);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setAddError("An item with this key already exists for this event.");
+        setAddError("An item with this name already exists.");
       } else {
         setAddError(err instanceof ApiError ? err.message : "Failed to create item.");
       }
@@ -181,13 +185,14 @@ export function RequirementsPage() {
 
       <section className="requirements-section">
         <div className="requirements-section__header">
-          <h2 className="attendee-drawer__section-title" style={{ margin: 0 }}>
-            Event items
-          </h2>
+          <h2 className="requirements-section__title">Event items</h2>
           <Button
-            variant="primary"
+            variant="secondary"
             icon={<i className="ti ti-plus" />}
-            onClick={() => setAddOpen((o) => !o)}
+            onClick={() => {
+              setAddOpen((o) => !o);
+              setAddError(null);
+            }}
           >
             Add item
           </Button>
@@ -196,29 +201,42 @@ export function RequirementsPage() {
         <Card padded={false}>
           {addOpen && (
             <form className="requirements-add-form" onSubmit={(e) => void handleAddItem(e)}>
-              <div className="requirements-add-form__field">
+              <div className="requirements-add-form__main">
                 <Input
-                  label="Key"
-                  value={addKey}
-                  onChange={(e) => setAddKey(e.target.value)}
-                  placeholder="socks"
-                  pattern="[a-z0-9_]+"
-                  required
-                />
-              </div>
-              <div className="requirements-add-form__field">
-                <Input
-                  label="Label"
+                  label="Item name"
                   value={addLabel}
                   onChange={(e) => setAddLabel(e.target.value)}
-                  placeholder="Socks"
+                  placeholder="Gift bag"
                   required
+                  autoFocus
                 />
+                {addLabel.trim() && (
+                  <p className="requirements-add-form__hint">
+                    Internal ID:{" "}
+                    <code>{addKeyPreview || slugifyItemKey(addLabel) || "—"}</code>
+                    {addKeyPreview && addKeyPreview !== slugifyItemKey(addLabel) && (
+                      <> (name already taken — using unique suffix)</>
+                    )}
+                  </p>
+                )}
               </div>
-              <Button type="submit" variant="primary" disabled={adding}>
-                {adding ? "Creating…" : "Create"}
-              </Button>
-              {addError && <p className="text-error">{addError}</p>}
+              <div className="requirements-add-form__actions">
+                <Button type="submit" variant="primary" disabled={adding || !addLabel.trim()}>
+                  {adding ? "Creating…" : "Create item"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setAddOpen(false);
+                    setAddLabel("");
+                    setAddError(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+              {addError && <p className="text-error requirements-add-form__error">{addError}</p>}
             </form>
           )}
 
@@ -226,38 +244,38 @@ export function RequirementsPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Label</th>
-                  <th>Key</th>
-                  <th>Enabled</th>
-                  <th>Config</th>
+                  <th>Item</th>
+                  <th>Active</th>
+                  <th>Rules</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="attendees-empty">
+                    <td colSpan={4} className="attendees-empty">
                       Loading…
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="attendees-empty">
-                      No items configured yet.
+                    <td colSpan={4} className="attendees-empty">
+                      No items yet. Add one to configure what operators issue at check-in.
                     </td>
                   </tr>
                 ) : (
                   items.map((item) => (
                     <tr key={item.id}>
-                      <td>{item.label}</td>
                       <td>
-                        <span className="requirements-item-key">{item.key}</span>
+                        <div className="requirements-item-name">{item.label}</div>
+                        <div className="requirements-item-id">{item.key}</div>
                       </td>
                       <td>
                         <Switch
+                          label={item.enabled ? "On" : "Off"}
                           checked={item.enabled}
                           onChange={() => void handleToggleEnabled(item)}
-                          aria-label={`Toggle ${item.label}`}
+                          aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
                         />
                       </td>
                       <td>
@@ -280,7 +298,7 @@ export function RequirementsPage() {
       </section>
 
       <section className="requirements-section">
-        <h2 className="attendee-drawer__section-title">Event behaviour</h2>
+        <h2 className="requirements-section__title">Event behaviour</h2>
         {opsError && <p className="text-error">{opsError}</p>}
         <Card>
           {opsConfig == null && loading ? (
