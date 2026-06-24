@@ -510,3 +510,35 @@ export interface AuditLogResponse {
   page: number;
   pageSize: number;
 }
+
+export interface EventReportsResponse {
+  event: {
+    id: string;
+    title: string;
+    date: string;
+    capacity: number | null;
+  };
+  summary: {
+    total_attendees: number;
+    admitted: number;
+    no_shows: number;
+    admission_rate_pct: number;
+    peak_hour: string | null;
+    peak_hour_count: number;
+  };
+  by_hour: Array<{ hour: string; count: number }>;
+  by_ticket_type: Array<{
+    type: string;
+    total: number;
+    admitted: number;
+    admission_pct: number;
+  }>;
+  admission_log: Array<{
+    attendee_id: string;
+    name: string;
+    email: string;
+    ticket_type: string;
+    admitted_at: string;
+    device_id: string | null;
+  }>;
+}
