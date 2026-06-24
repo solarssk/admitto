@@ -15,9 +15,17 @@ const LIFECYCLE_NAV = [
   { segment: "fulfilment", icon: "package", label: "Fulfilment" },
   { segment: "thank-you", icon: "heart", label: "Thank you" },
   { segment: "reports", icon: "chart-bar", label: "Reports" },
+  { segment: "settings", icon: "adjustments", label: "Event settings" },
 ] as const;
 
-const LIVE_SEGMENTS = new Set(["overview", "attendees", "requirements", "communication", "checkin"]);
+const LIVE_SEGMENTS = new Set([
+  "overview",
+  "attendees",
+  "requirements",
+  "communication",
+  "checkin",
+  "settings",
+]);
 
 /** Format event date and optional location for the sidebar event switcher. */
 function formatEventMeta(event: EventDto): string {
