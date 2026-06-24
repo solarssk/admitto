@@ -317,6 +317,8 @@ describe("GET /api/admin/events/:eventId/reports", () => {
         name: string;
         device_id: string | null;
       }>;
+      admission_log_truncated: boolean;
+      admission_log_total: number;
     };
 
     expect(body.event.id).toBe(EVENT_REP);
@@ -344,6 +346,8 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     expect(body.by_ticket_type[0]!.type).toBe("Standard");
 
     expect(body.admission_log).toHaveLength(5);
+    expect(body.admission_log_truncated).toBe(false);
+    expect(body.admission_log_total).toBe(5);
     expect(body.admission_log[0]!.attendee_id).toBe(ATT_VIP_1);
     expect(body.admission_log[0]!.device_id).toBe("scanner-01");
     expect(body.admission_log[1]!.device_id).toBe("desk-01");
@@ -373,8 +377,12 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(res.headers.get("Content-Type")).toContain("text/csv");
     expect(res.headers.get("Content-Disposition")).toContain('filename="admissions-reports-event-');
 
-    const text = await res.text();
-    expect(text.charCodeAt(0)).toBe(0xfeff);
+    const buf = await res.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    expect(bytes[0]).toBe(0xef);
+    expect(bytes[1]).toBe(0xbb);
+    expect(bytes[2]).toBe(0xbf);
+    const text = new TextDecoder().decode(buf);
     const lines = text.replace(/^\uFEFF/, "").split("\r\n");
     expect(lines[0]).toBe('"Name","Email","Ticket type","Admitted at","Device"');
     expect(lines.length).toBe(6);

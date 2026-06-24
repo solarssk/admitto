@@ -512,6 +512,7 @@ export interface AuditLogResponse {
 }
 
 export interface EventReportsResponse {
+  timezone: string;
   event: {
     id: string;
     title: string;
@@ -541,4 +542,6 @@ export interface EventReportsResponse {
     admitted_at: string;
     device_id: string | null;
   }>;
+  admission_log_truncated: boolean;
+  admission_log_total: number;
 }

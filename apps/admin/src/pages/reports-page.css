@@ -103,6 +103,15 @@
   transition: width 0.4s ease;
 }
 
+.reports-log-truncated {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--surface-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
 .reports-log-toolbar {
   display: flex;
   align-items: center;

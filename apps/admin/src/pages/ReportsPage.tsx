@@ -14,6 +14,16 @@ import "./reports-page.css";
 
 const LOG_PAGE_SIZE = 50;
 
+function formatAdmittedTime(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
+}
+
 function visibleHourRange(byHour: EventReportsResponse["by_hour"]): EventReportsResponse["by_hour"] {
   const nonZero = byHour.filter((row) => row.count > 0);
   if (nonZero.length === 0) return byHour;
@@ -87,9 +97,12 @@ function ByTicketType({ rows }: { rows: EventReportsResponse["by_ticket_type"] }
 interface AdmissionLogProps {
   log: EventReportsResponse["admission_log"];
   byTicketType: EventReportsResponse["by_ticket_type"];
+  timeZone: string;
+  truncated: boolean;
+  totalAdmitted: number;
 }
 
-function AdmissionLog({ log, byTicketType }: AdmissionLogProps) {
+function AdmissionLog({ log, byTicketType, timeZone, truncated, totalAdmitted }: AdmissionLogProps) {
   const [typeFilter, setTypeFilter] = useState("all");
   const [page, setPage] = useState(1);
 
@@ -100,6 +113,12 @@ function AdmissionLog({ log, byTicketType }: AdmissionLogProps) {
 
   return (
     <Card title="Admission log" padded={false}>
+      {truncated && (
+        <p className="reports-log-truncated">
+          Showing the first {log.length} of {totalAdmitted} admissions. Export CSV for the full log
+          (up to 10,000 rows).
+        </p>
+      )}
       <div className="reports-log-toolbar">
         <label className="reports-log-filter">
           <span className="reports-log-filter__label">Ticket type</span>
@@ -143,14 +162,7 @@ function AdmissionLog({ log, byTicketType }: AdmissionLogProps) {
                   </div>
                 </td>
                 <td>{row.ticket_type}</td>
-                <td className="reports-mono">
-                  {new Date(row.admitted_at).toLocaleTimeString(undefined, {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                    hour12: false,
-                  })}
-                </td>
+                <td className="reports-mono">{formatAdmittedTime(row.admitted_at, timeZone)}</td>
                 <td className="reports-muted">{row.device_id ?? "—"}</td>
               </tr>
             ))}
@@ -381,7 +393,7 @@ export function ReportsPage() {
           </div>
 
           <div className="reports-panels">
-            <Card title="Hourly admissions">
+            <Card title={`Hourly admissions (${data.timezone})`}>
               <HourlyChart byHour={data.by_hour} />
             </Card>
             <Card title="By ticket type">
@@ -389,7 +401,13 @@ export function ReportsPage() {
             </Card>
           </div>
 
-          <AdmissionLog log={data.admission_log} byTicketType={data.by_ticket_type} />
+          <AdmissionLog
+            log={data.admission_log}
+            byTicketType={data.by_ticket_type}
+            timeZone={data.timezone}
+            truncated={data.admission_log_truncated}
+            totalAdmitted={data.admission_log_total}
+          />
         </>
       )}
     </div>

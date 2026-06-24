@@ -1,12 +1,15 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
+import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 
 const HOUR_LABELS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
 const CSV_EXPORT_MAX = 10_000;
 const PDF_LOG_MAX = 100;
+export const ADMISSION_LOG_LIMIT = 500;
 
 export interface EventReportsResponse {
+  timezone: string;
   event: {
     id: string;
     title: string;
@@ -36,6 +39,8 @@ export interface EventReportsResponse {
     admitted_at: string;
     device_id: string | null;
   }>;
+  admission_log_truncated: boolean;
+  admission_log_total: number;
 }
 
 function ticketTypeLabel(raw: string | null): string {
@@ -45,6 +50,17 @@ function ticketTypeLabel(raw: string | null): string {
 function oneDecimalPct(numerator: number, denominator: number): number {
   if (denominator <= 0) return 0;
   return Math.round((numerator / denominator) * 1000) / 10;
+}
+
+function mergeTicketTypeCounts(
+  rows: Array<{ ticket_type: string | null; _count: { _all: number } }>,
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    const type = ticketTypeLabel(row.ticket_type);
+    map.set(type, (map.get(type) ?? 0) + row._count._all);
+  }
+  return map;
 }
 
 function buildByHour(raw: Array<{ hour: string; count: bigint | number }>): EventReportsResponse["by_hour"] {
@@ -123,6 +139,7 @@ async function loadReportsAggregates(
   db: PrismaClient,
   eventId: string,
   logLimit: number,
+  timeZone: string,
 ): Promise<{
   totalAttendees: number;
   admittedCount: number;
@@ -138,7 +155,7 @@ async function loadReportsAggregates(
       db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
       db.$queryRaw<Array<{ hour: string; count: bigint }>>`
         SELECT
-          TO_CHAR(DATE_TRUNC('hour', admitted_at), 'HH24:00') AS hour,
+          TO_CHAR(DATE_TRUNC('hour', admitted_at AT TIME ZONE ${timeZone}), 'HH24:00') AS hour,
           COUNT(*)::bigint AS count
         FROM "Attendee"
         WHERE event_id = ${eventId} AND admitted_at IS NOT NULL
@@ -172,14 +189,11 @@ async function loadReportsAggregates(
   const byHour = buildByHour(byHourRaw);
   const { peak_hour, peak_hour_count } = resolvePeakHour(byHour, admittedCount);
 
-  const admittedByType = new Map(
-    byTypeAdmitted.map((row) => [ticketTypeLabel(row.ticket_type), row._count._all]),
-  );
+  const totalByType = mergeTicketTypeCounts(byTypeTotal);
+  const admittedByType = mergeTicketTypeCounts(byTypeAdmitted);
 
-  const by_ticket_type: EventReportsResponse["by_ticket_type"] = byTypeTotal
-    .map((row) => {
-      const type = ticketTypeLabel(row.ticket_type);
-      const total = row._count._all;
+  const by_ticket_type: EventReportsResponse["by_ticket_type"] = [...totalByType.entries()]
+    .map(([type, total]) => {
       const admitted = admittedByType.get(type) ?? 0;
       return {
         type,
@@ -241,18 +255,20 @@ export async function handleGetReports(c: Context, db: PrismaClient): Promise<Re
   if (eventIdParam instanceof Response) return eventIdParam;
   const eventId = eventIdParam;
 
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
   const event = await db.event.findUnique({
     where: { id: eventId },
     select: { id: true, title: true, date: true, capacity: true },
   });
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const aggregates = await loadReportsAggregates(db, eventId, 500);
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const timeZone = resolvePreviewEventTimeZone();
+  const aggregates = await loadReportsAggregates(db, eventId, ADMISSION_LOG_LIMIT, timeZone);
 
   const body: EventReportsResponse = {
+    timezone: timeZone,
     event: {
       id: event.id,
       title: event.title,
@@ -270,6 +286,8 @@ export async function handleGetReports(c: Context, db: PrismaClient): Promise<Re
     by_hour: aggregates.byHour,
     by_ticket_type: aggregates.by_ticket_type,
     admission_log: aggregates.admission_log,
+    admission_log_truncated: aggregates.admittedCount > ADMISSION_LOG_LIMIT,
+    admission_log_total: aggregates.admittedCount,
   };
 
   return c.json(body);
@@ -281,9 +299,6 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   if (eventIdParam instanceof Response) return eventIdParam;
   const eventId = eventIdParam;
 
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
   const formatRaw = c.req.query("format") ?? "csv";
   if (formatRaw !== "csv" && formatRaw !== "pdf") {
     return c.json({ error: "format must be csv or pdf" }, 400);
@@ -294,6 +309,11 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
     select: { id: true, title: true, date: true, slug: true, capacity: true },
   });
   if (!event) return c.json({ error: "not_found" }, 404);
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const timeZone = resolvePreviewEventTimeZone();
 
   const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
@@ -348,7 +368,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
     });
   }
 
-  const aggregates = await loadReportsAggregates(db, eventId, PDF_LOG_MAX);
+  const aggregates = await loadReportsAggregates(db, eventId, PDF_LOG_MAX, timeZone);
   const eventDate = event.date.toISOString().slice(0, 10);
 
   const typeRows = aggregates.by_ticket_type
