@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useParams } from "react-router-dom";
-import { Card, PageHeader } from "@admitto/ui";
+import { Card } from "@admitto/ui";
 import {
   ApiError,
   fetchAttendeeCard,
@@ -20,21 +20,40 @@ import { CHECKIN_DUPLICATE_DEBOUNCE_MS, normalizeScannedInput } from "../checkin
 import { canMutateCheckin } from "../checkin/connection.js";
 import { ScanFeedback } from "../checkin/ScanFeedback.js";
 import { AttendeeCard } from "../checkin/AttendeeCard.js";
+import { CameraOverlay } from "../checkin/CameraOverlay.js";
 import { CameraScanner } from "../checkin/CameraScanner.js";
+import { CheckinConnectionBanner } from "../checkin/ConnectionBanner.js";
+import { CkEmptyState } from "../checkin/CkEmptyState.js";
 import { ManualLookupPanel } from "../checkin/ManualLookupPanel.js";
 import { ScanHistoryList } from "../checkin/ScanHistoryList.js";
 
 const PENDING_MS = 5000;
+const WEDGE_AUTO_SUBMIT_LEN = 20;
+const WEDGE_DEBOUNCE_MS = 50;
 
-export function CheckInPage() {
+export interface CheckInPageProps {
+  eventTitle?: string;
+  useCamera?: boolean;
+  onUseCameraChange?: (open: boolean) => void;
+}
+
+export function CheckInPage({
+  eventTitle = "Event",
+  useCamera = false,
+  onUseCameraChange,
+}: CheckInPageProps) {
   const { eventId } = useParams();
   const { deviceLabel } = useAuth();
   const { state: connectionState, reportApiError } = useConnectionState();
   const canAct = canMutateCheckin(connectionState);
+  const isOperatorShell = onUseCameraChange === undefined;
+  const [operatorCamera, setOperatorCamera] = useState(false);
+  const cameraActive = isOperatorShell ? operatorCamera : useCamera;
 
   const inputRef = useRef<HTMLInputElement>(null);
   const lastScanRef = useRef<{ value: string; at: number } | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
+  const wedgeTimerRef = useRef<number | null>(null);
 
   const [buffer, setBuffer] = useState("");
   const [busy, setBusy] = useState(false);
@@ -47,15 +66,16 @@ export function CheckInPage() {
   const [history, setHistory] = useState<CheckInHistoryEntry[]>([]);
   const [admittedCount, setAdmittedCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
-  const [useCamera, setUseCamera] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [admitOrigin, setAdmitOrigin] = useState<"scan" | "manual">("manual");
+  const [overlayManualError, setOverlayManualError] = useState<string | null>(null);
 
   const deviceId = deviceLabel ?? undefined;
 
   const focusScan = useCallback(() => {
+    if (cameraActive) return;
     requestAnimationFrame(() => inputRef.current?.focus());
-  }, []);
+  }, [cameraActive]);
 
   const refreshSidebar = useCallback(async () => {
     if (!eventId) return;
@@ -76,6 +96,13 @@ export function CheckInPage() {
     focusScan();
     void refreshSidebar();
   }, [focusScan, eventId, refreshSidebar]);
+
+  useEffect(() => {
+    return () => {
+      if (wedgeTimerRef.current != null) window.clearTimeout(wedgeTimerRef.current);
+      if (pendingTimerRef.current != null) window.clearTimeout(pendingTimerRef.current);
+    };
+  }, []);
 
   const clearPendingTimer = () => {
     if (pendingTimerRef.current != null) {
@@ -158,6 +185,23 @@ export function CheckInPage() {
     [canAct, deviceId, eventId, focusScan, refreshSidebar, reportApiError],
   );
 
+  const resetScan = useCallback(() => {
+    if (wedgeTimerRef.current != null) {
+      window.clearTimeout(wedgeTimerRef.current);
+      wedgeTimerRef.current = null;
+    }
+    setScanResult(null);
+    setCard(null);
+    setTransportError(null);
+    setOverlayManualError(null);
+    setBuffer("");
+    focusScan();
+  }, [focusScan]);
+
+  const closeCameraOverlay = useCallback(() => {
+    onUseCameraChange?.(false);
+  }, [onUseCameraChange]);
+
   const admitCurrent = async (attendeeId: string, method: "scan" | "manual" = "manual") => {
     if (!eventId || !canAct) return;
     setBusy(true);
@@ -206,6 +250,57 @@ export function CheckInPage() {
     }
   };
 
+  const submitScanOrLookup = useCallback(
+    async (query: string): Promise<boolean> => {
+      const trimmed = query.trim();
+      if (!trimmed) return false;
+
+      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN) {
+        void runScan(trimmed);
+        return true;
+      }
+
+      if (!eventId || !canAct) return false;
+
+      setBusy(true);
+      setTransportError(null);
+      setOverlayManualError(null);
+      try {
+        const results = await lookupCheckInAttendees(eventId, trimmed);
+        if (results.length === 1) {
+          await openLookupResult(results[0].id);
+          setBuffer("");
+          return true;
+        }
+        const message =
+          results.length === 0
+            ? "No attendees matched that search."
+            : "Multiple matches — narrow your search or use manual lookup.";
+        if (cameraActive) setOverlayManualError(message);
+        else setTransportError(message);
+        return false;
+      } catch (err) {
+        if (err instanceof ApiError) {
+          reportApiError(err.status);
+          const message =
+            err.status === 401
+              ? "Session expired — sign in again."
+              : err.message || "Request failed.";
+          if (cameraActive) setOverlayManualError(message);
+          else setTransportError(message);
+        } else if (cameraActive) {
+          setOverlayManualError("Request failed. Try again.");
+        } else {
+          setTransportError("Request failed. Try again.");
+        }
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [cameraActive, canAct, eventId, reportApiError, runScan],
+  );
+
   const onItemAction = async (itemKey: string, targetState: string) => {
     if (!eventId || !card || !canAct) return;
     setBusy(true);
@@ -253,20 +348,45 @@ export function CheckInPage() {
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    void runScan(buffer);
+    void submitScanOrLookup(buffer);
+  };
+
+  const handleBufferChange = (value: string) => {
+    if (value.includes("\r") || value.includes("\n")) {
+      const cleaned = value.replace(/[\r\n]+/g, "").trim();
+      setBuffer("");
+      if (cleaned && canAct) void submitScanOrLookup(cleaned);
+      return;
+    }
+
+    setBuffer(value);
+    if (wedgeTimerRef.current != null) window.clearTimeout(wedgeTimerRef.current);
+
+    if (value.length > WEDGE_AUTO_SUBMIT_LEN && canAct) {
+      wedgeTimerRef.current = window.setTimeout(() => {
+        void runScan(value);
+      }, WEDGE_DEBOUNCE_MS);
+    }
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      resetScan();
+      if (isOperatorShell) setOperatorCamera(false);
+      else if (useCamera) onUseCameraChange(false);
+      return;
+    }
     if (event.key === "Enter") {
       event.preventDefault();
-      void runScan(buffer);
+      void submitScanOrLookup(buffer);
     }
   };
 
   if (!eventId) {
     return (
       <Card>
-        <PageHeader title="Check-in" subtitle="Open an event check-in route to start scanning." />
+        <p className="placeholder-note">Open an event check-in route to start scanning.</p>
       </Card>
     );
   }
@@ -277,120 +397,161 @@ export function CheckInPage() {
     scanResult.confirmed &&
     card?.check_in_status === "admitted";
 
+  const showResultCard =
+    card &&
+    scanResult &&
+    (scanResult.status === "PREVIEW" ||
+      scanResult.status === "VALID" ||
+      scanResult.status === "ALREADY_CHECKED_IN");
+
+  const showCompactFeedback =
+    scanResult &&
+    (!card ||
+      scanResult.status === "INVALID" ||
+      scanResult.status === "REVOKED");
+
   return (
-    <div className="checkin-surface checkin-surface--split">
-      <div className="checkin-surface__main">
-        <PageHeader
-          title="Check-in"
-          subtitle="Scan QR or search manually. Camera is opt-in only."
-        />
+    <>
+      {!isOperatorShell && <CheckinConnectionBanner />}
 
-        {!canAct && (
-          <p className="checkin-surface__transport-error" role="status">
-            Not connected — new check-ins and actions are blocked until the server responds.
-          </p>
-        )}
+      {!canAct && (
+        <p className="checkin-surface__transport-error" role="status">
+          Not connected — new check-ins and actions are blocked until the server responds.
+        </p>
+      )}
 
-        <Card className="checkin-surface__scan-card">
-          <form className="checkin-surface__form" onSubmit={onSubmit}>
-            <div className="checkin-surface__scan-row">
-              <div className="at-field checkin-surface__field">
-                <label className="at-label" htmlFor="checkin-scan-field">
-                  Scan field
-                </label>
-                <input
-                  ref={inputRef}
-                  id="checkin-scan-field"
-                  className="at-input checkin-surface__input"
-                  value={buffer}
-                  onChange={(e) => setBuffer(e.target.value)}
-                  onKeyDown={onKeyDown}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  disabled={busy || !canAct}
-                  aria-busy={busy}
-                  aria-describedby="checkin-scan-hint"
-                />
-                <span id="checkin-scan-hint" className="at-hint">
-                  Wedge / keyboard input. Refocuses after each scan.
-                </span>
-              </div>
-              <button
-                type="submit"
-                className="checkin-surface__submit"
-                disabled={busy || !buffer.trim() || !canAct}
-              >
-                {busy ? "Working…" : "Submit scan"}
-              </button>
-            </div>
-          </form>
-
-          <label className="checkin-surface__camera-toggle">
+      <div className="ck-layout">
+        <div className="ck-main">
+          <form className="ck-scan-bar" onSubmit={onSubmit}>
+            <i className="ti ti-scan ck-scan-bar__icon" aria-hidden="true" />
             <input
-              type="checkbox"
-              checked={useCamera}
-              onChange={(e) => setUseCamera(e.target.checked)}
+              ref={inputRef}
+              id="checkin-scan-field"
+              className="ck-scan-bar__input"
+              value={buffer}
+              onChange={(e) => handleBufferChange(e.target.value)}
+              onKeyDown={onKeyDown}
+              autoFocus
+              autoComplete="off"
+              spellCheck={false}
+              inputMode="none"
+              placeholder="Scan QR · type name, email or company…"
+              aria-label="QR scan or search"
+              aria-describedby="ck-scan-hint"
+              disabled={busy || !canAct}
+              aria-busy={busy}
             />
-            Use camera to scan (opt-in)
-          </label>
-          <CameraScanner
-            enabled={useCamera}
-            wedgeActive={buffer.trim().length > 0}
-            onScan={(raw) => void runScan(raw)}
-          />
-        </Card>
-
-        {transportError && (
-          <p className="checkin-surface__transport-error" role="alert">
-            {transportError}
+            <button
+              type="submit"
+              className="ck-scan-bar__submit"
+              aria-label="Search"
+              disabled={busy || !buffer.trim() || !canAct}
+            >
+              <i className="ti ti-arrow-right" aria-hidden="true" />
+            </button>
+          </form>
+          <p id="ck-scan-hint" className="ck-hint">
+            Keyboard wedge auto-submits · Enter to confirm · Esc to clear
           </p>
-        )}
 
-        {scanResult && (
-          <ScanFeedback
-            result={scanResult}
-            hidden={!!card && (scanResult.status === "PREVIEW" || scanResult.status === "VALID" || scanResult.status === "ALREADY_CHECKED_IN")}
-          />
-        )}
+          {isOperatorShell && (
+            <label className="checkin-surface__camera-toggle">
+              <input
+                type="checkbox"
+                checked={operatorCamera}
+                onChange={(e) => setOperatorCamera(e.target.checked)}
+              />
+              Use camera to scan (opt-in)
+            </label>
+          )}
+          {isOperatorShell && operatorCamera && (
+            <CameraScanner
+              enabled={!scanResult && !pending}
+              wedgeActive={buffer.trim().length > 0}
+              onScan={(raw) => void runScan(raw)}
+            />
+          )}
 
-        {card && (
-          <AttendeeCard
-            key={card.id}
-            card={card}
-            scanStatus={scanResult?.status}
-            confirmed={scanResult?.confirmed}
-            pending={pending}
-            canAct={canAct && !busy}
-            onCheckIn={
-              card.check_in_status === "not_admitted"
-                ? () => void admitCurrent(card.id, admitOrigin)
-                : undefined
-            }
-            onItemAction={(key: string, state: string) => void onItemAction(key, state)}
-            onAddNote={onAddNote}
-            onUndo={() => void onUndo()}
-            showUndo={showUndo}
-          />
-        )}
+          {transportError && (
+            <p className="checkin-surface__transport-error" role="alert">
+              {transportError}
+            </p>
+          )}
+
+          {showCompactFeedback && scanResult && (
+            <ScanFeedback result={scanResult} hidden={false} />
+          )}
+
+          {showResultCard && card ? (
+            <AttendeeCard
+              key={card.id}
+              card={card}
+              scanStatus={scanResult?.status}
+              confirmed={scanResult?.confirmed}
+              pending={pending}
+              canAct={canAct && !busy}
+              onCheckIn={
+                card.check_in_status === "not_admitted"
+                  ? () => void admitCurrent(card.id, admitOrigin)
+                  : undefined
+              }
+              onItemAction={(key: string, state: string) => void onItemAction(key, state)}
+              onAddNote={onAddNote}
+              onUndo={() => void onUndo()}
+              showUndo={showUndo}
+              onCancel={resetScan}
+            />
+          ) : (
+            !scanResult && <CkEmptyState />
+          )}
+        </div>
+
+        <aside className="ck-side">
+          <Card>
+            <ScanHistoryList
+              admittedCount={admittedCount}
+              totalCount={totalCount}
+              history={history}
+            />
+            <ManualLookupPanel
+              open={manualOpen}
+              query={lookupQ}
+              results={lookupResults}
+              busy={busy}
+              canAct={canAct}
+              onToggle={() => setManualOpen((v) => !v)}
+              onQueryChange={setLookupQ}
+              onSearch={() => void runLookup()}
+              onSelect={(id) => void openLookupResult(id)}
+            />
+          </Card>
+        </aside>
       </div>
 
-      <aside className="checkin-surface__aside">
-        <Card>
-          <ScanHistoryList admittedCount={admittedCount} totalCount={totalCount} history={history} />
-          <ManualLookupPanel
-            open={manualOpen}
-            query={lookupQ}
-            results={lookupResults}
-            busy={busy}
-            canAct={canAct}
-            onToggle={() => setManualOpen((v) => !v)}
-            onQueryChange={setLookupQ}
-            onSearch={() => void runLookup()}
-            onSelect={(id) => void openLookupResult(id)}
-          />
-        </Card>
-      </aside>
-    </div>
+      {!isOperatorShell && (
+        <CameraOverlay
+          open={useCamera}
+          eventTitle={eventTitle}
+          admittedCount={admittedCount}
+          history={history}
+          wedgeActive={buffer.trim().length > 0}
+          onClose={closeCameraOverlay}
+          onScan={(raw) => void runScan(raw)}
+          onManualEntry={submitScanOrLookup}
+          manualError={overlayManualError}
+          onClearManualError={() => setOverlayManualError(null)}
+          scanResult={scanResult}
+          card={card}
+          pending={pending}
+          canAct={canAct && !busy}
+          onConfirm={
+            card && scanResult?.status === "PREVIEW"
+              ? () => void admitCurrent(card.id, admitOrigin)
+              : undefined
+          }
+          onReset={resetScan}
+        />
+      )}
+    </>
   );
 }

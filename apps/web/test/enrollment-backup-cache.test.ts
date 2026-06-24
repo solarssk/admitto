@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MFA_PENDING_SESSION_TTL_MS } from "@admitto/auth";
+import { MFA_PENDING_SESSION_TTL_MS } from "@admitto/auth/constants";
 import {
   clearEnrollmentBackupCacheForTests,
   getStashedEnrollmentBackupCodes,

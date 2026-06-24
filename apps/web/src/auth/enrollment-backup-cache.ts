@@ -1,4 +1,4 @@
-import { MFA_PENDING_SESSION_TTL_MS, BACKUP_CODES_STEP_TTL_MS } from "@admitto/auth";
+import { MFA_PENDING_SESSION_TTL_MS, BACKUP_CODES_STEP_TTL_MS } from "@admitto/auth/constants";
 
 interface CacheEntry {
   codes: string[];

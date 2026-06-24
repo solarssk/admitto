@@ -1,10 +1,28 @@
-import { Card, PageHeader } from "@admitto/ui";
+import { useState } from "react";
+import { useOutletContext } from "react-router-dom";
+import { Button, Card, PageHeader } from "@admitto/ui";
+import type { EventDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { CheckInPage } from "./CheckInPage.js";
+
+function formatEventDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatEventSubtitle(event: EventDto): string {
+  const date = formatEventDate(event.date);
+  return event.location ? `${event.title} · ${date} · ${event.location}` : `${event.title} · ${date}`;
+}
 
 /** Admin check-in: live scanner only when an Admitto session exists (CF-only cannot call scan API). */
 export function AdminCheckInRoute() {
   const { hasAdmittoSession } = useAuth();
+  const { event } = useOutletContext<{ event: EventDto }>();
+  const [useCamera, setUseCamera] = useState(false);
 
   if (!hasAdmittoSession) {
     const next = encodeURIComponent(window.location.pathname + window.location.search);
@@ -22,5 +40,28 @@ export function AdminCheckInRoute() {
     );
   }
 
-  return <CheckInPage />;
+  return (
+    <>
+      <PageHeader
+        title="Check-in"
+        subtitle={formatEventSubtitle(event)}
+        actions={
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            icon={<i className="ti ti-camera" />}
+            onClick={() => setUseCamera(true)}
+          >
+            Use camera
+          </Button>
+        }
+      />
+      <CheckInPage
+        eventTitle={event.title}
+        useCamera={useCamera}
+        onUseCameraChange={setUseCamera}
+      />
+    </>
+  );
 }
