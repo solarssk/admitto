@@ -8,7 +8,7 @@ Dev/CI database stack remains in [`../infra/docker-compose.yml`](../infra/docker
 
 Admitto is **self-hosted**: you run it on infrastructure you control (VPS, on-prem server, NAS with Docker, etc.). We do **not** ship a managed cloud service.
 
-The **only supported production path** in this repo is a **Docker Compose stack** — not bare-metal installs (Node/Postgres directly on the host), not Kubernetes/Helm, and **not Vercel**. Root [`vercel.json`](../vercel.json) disables Git-linked Vercel deploys; for a clean PR list, also disconnect the project under Vercel → Settings → Git or disable **deployment_status** events there. You need **Docker Engine** (or Docker Desktop for local smoke tests) on the host; everything else runs inside containers.
+The **only supported production path** in this repo is a **Docker Compose stack** — not bare-metal installs (Node/Postgres directly on the host), not Kubernetes/Helm, and **not Vercel** (root [`vercel.json`](../vercel.json) disables Git-linked Vercel deploys; delete or disconnect the project in the Vercel dashboard if it still appears on PRs). You need **Docker Engine** (or Docker Desktop for local smoke tests) on the host; everything else runs inside containers.
 
 What you get in `deploy/`:
 
@@ -17,13 +17,13 @@ What you get in `deploy/`:
 | `Dockerfile` | Builds the `app` image (Node monorepo → production runtime) |
 | `docker-compose.yml` | Orchestrates `app`, Postgres, Redis, and an internal nginx proxy |
 | `.env` (from `.env.example`) | Secrets and config — never committed |
-| **ghcr.io image** | `ghcr.io/solarssk/admitto:X.Y.Z` — publish via manual **Publish container** workflow (auto tag publish paused) |
+| **ghcr.io image** | `ghcr.io/solarssk/admitto:X.Y.Z` — published automatically on each git tag `vX.Y.Z` |
 
 TLS termination and public DNS usually sit **in front** of this stack (e.g. Nginx Proxy Manager, Cloudflare) forwarding to `http://<docker-host>:8080` — see below.
 
 ## GitHub Container Registry (ghcr.io)
 
-Each release tag `vX.Y.Z` can publish via the manual [**Publish container**](../.github/workflows/publish-container.yml) workflow (`workflow_dispatch`). Automatic publish on tag push is **paused** for now.
+Each release tag `vX.Y.Z` triggers [`.github/workflows/publish-container.yml`](../.github/workflows/publish-container.yml) and pushes:
 
 ```text
 ghcr.io/solarssk/admitto:X.Y.Z

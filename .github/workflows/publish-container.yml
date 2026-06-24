@@ -1,8 +1,9 @@
 name: Publish container
 
-# Automated GHCR publish on git tags is paused — use workflow_dispatch when you need an image.
-# CI still validates Dockerfile via the docker-build job in ci.yml.
 on:
+  push:
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       ref:

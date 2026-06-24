@@ -61,7 +61,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OIDC admin form: URL fields use `type="url"`; group→role mapping rows can be added/removed; scope type select; SSO button live preview on provider form
 - Cloudflare Access settings: clearer operator copy and field hints; test action labeled “Test connection”
 - Events picker: search by title/location; content width capped at 1100px; grid capped at three columns on wide screens
-- Repo deployments paused: Vercel Git (`vercel.json` + silent GitHub comments); GHCR publish only via manual workflow; deploy-smoke gated behind `confirm=run`
 - Check-in camera: removed fullscreen toggle (browser instability); debounce repeated ZXing decodes; extract ticket token from QR URLs with trailing slash or query (`packages/tickets`)
 - Check-in invalid/revoked scans show dedicated feedback card instead of silent failure
 - Requirements: `@admitto/ui` Switch missing thumb restored; item table uses name + auto-generated key; drawer layout cleanup
