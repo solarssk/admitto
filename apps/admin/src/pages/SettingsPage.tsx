@@ -5,6 +5,7 @@ import { MailTransportPanel } from "../settings/MailTransportPanel.js";
 import { SessionsPanel } from "../settings/SessionsPanel.js";
 import { EventArchivingPanel } from "../settings/EventArchivingPanel.js";
 import { SecurityPanel } from "../settings/SecurityPanel.js";
+import { AuditLogPanel } from "../settings/AuditLogPanel.js";
 
 interface SettingsPlaceholderProps {
   title: string;
@@ -63,6 +64,7 @@ export function SettingsPage() {
         <MailTransportPanel />
         <SessionsPanel />
         <SecurityPanel />
+        <AuditLogPanel />
         <EventArchivingPanel />
         <IdentityProvidersCard />
       </div>
