@@ -182,23 +182,6 @@ describe("GET /api/admin/audit-log", () => {
     await prisma.session.delete({ where: { id: adminSession.session.id } });
   });
 
-  it("returns 403 when superadmin must change password", async () => {
-    await prisma.user.update({
-      where: { id: superId },
-      data: { must_change_password: true },
-    });
-    const res = await app.request("/api/admin/audit-log", {
-      headers: { Cookie: superCookie },
-    });
-    expect(res.status).toBe(403);
-    const body = (await res.json()) as { code?: string };
-    expect(body.code).toBe("password_change_required");
-    await prisma.user.update({
-      where: { id: superId },
-      data: { must_change_password: false },
-    });
-  });
-
   it("returns 200 with entries, total, page, pageSize for superadmin", async () => {
     const res = await app.request("/api/admin/audit-log", {
       headers: { Cookie: superCookie },

@@ -15,7 +15,9 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Reject impossible calendar dates such as 2026-02-30. */
 function isValidCalendarDate(value: string): boolean {
-  const [year, month, day] = value.split("-").map(Number);
+  const parts = value.split("-").map(Number);
+  if (parts.length !== 3) return false;
+  const [year, month, day] = parts as [number, number, number];
   if (!year || !month || !day) return false;
   const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
   return (
