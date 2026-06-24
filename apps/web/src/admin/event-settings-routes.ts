@@ -252,6 +252,9 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
   const audit = adminAuditFromContext(c);
   if (!audit.operator) return c.json({ error: "unauthorized" }, 401);
 
+  const totalCount = await db.attendee.count({ where: { event_id: eventId } });
+  const truncated = totalCount > PII_EXPORT_MAX_ROWS;
+
   const attendees = await db.attendee.findMany({
     where: { event_id: eventId },
     take: PII_EXPORT_MAX_ROWS,
@@ -313,7 +316,7 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
     sessionId: audit.sessionId,
     ip: audit.ip,
     actionType: "event_pii_exported",
-    metadata: { eventId, rowCount: attendees.length },
+    metadata: { eventId, rowCount: attendees.length, totalCount, truncated },
   });
 
   return new Response(bom + csvBody, {
@@ -321,6 +324,13 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": exportContentDisposition(filename),
+      ...(truncated
+        ? {
+            "X-Export-Truncated": "true",
+            "X-Export-Total-Rows": String(totalCount),
+            "X-Export-Returned-Rows": String(attendees.length),
+          }
+        : {}),
     },
   });
 }

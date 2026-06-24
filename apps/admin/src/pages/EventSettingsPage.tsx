@@ -31,6 +31,35 @@ function toForm(data: EventSettingsDto): SettingsForm {
   };
 }
 
+/** Parse capacity input; null = unlimited. Throws on invalid non-empty input. */
+function parseCapacityInput(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const n = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(n) || n < 1) {
+    throw new Error("invalid_capacity");
+  }
+  return n;
+}
+
+function buildSettingsPatch(
+  form: SettingsForm,
+  original: SettingsForm,
+): Partial<{ title: string; date: string; location: string | null; capacity: number | null }> {
+  const patch: Partial<{ title: string; date: string; location: string | null; capacity: number | null }> =
+    {};
+  const title = form.title.trim();
+  if (title !== original.title.trim()) patch.title = title;
+  if (form.date !== original.date) patch.date = form.date;
+  const location = form.location.trim() || null;
+  const originalLocation = original.location.trim() || null;
+  if (location !== originalLocation) patch.location = location;
+  if (form.capacity.trim() !== original.capacity.trim()) {
+    patch.capacity = parseCapacityInput(form.capacity);
+  }
+  return patch;
+}
+
 /** Event-scoped settings: basic info, status, items summary, danger zone. */
 export function EventSettingsPage() {
   const { eventId } = useParams();
@@ -94,22 +123,22 @@ export function EventSettingsPage() {
   };
 
   async function handleSave() {
-    if (!eventId || !form || !dirty) return;
+    if (!eventId || !form || !original || !dirty) return;
     setSaving(true);
     try {
-      const { event: updated } = await patchEvent(eventId, {
-        title: form.title.trim(),
-        date: new Date(form.date).toISOString(),
-        location: form.location.trim() || null,
-        capacity: form.capacity.trim() ? parseInt(form.capacity, 10) : null,
-      });
+      const patch = buildSettingsPatch(form, original);
+      if (Object.keys(patch).length === 0) return;
+
+      const { event: updated } = await patchEvent(eventId, patch);
       setEvent(updated);
       const f = toForm(updated);
       setForm(f);
       setOriginal(f);
       addToast("Event settings saved", "success");
     } catch (err) {
-      if (err instanceof ApiError && err.message === "event_archived") {
+      if (err instanceof Error && err.message === "invalid_capacity") {
+        addToast("Capacity must be a positive whole number", "error");
+      } else if (err instanceof ApiError && err.message === "event_archived") {
         addToast("Cannot edit archived event", "error");
       } else {
         addToast(err instanceof ApiError ? err.message : "Failed to save settings", "error");
@@ -156,7 +185,14 @@ export function EventSettingsPage() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      addToast("PII export downloaded", "success");
+      const truncated = res.headers.get("X-Export-Truncated") === "true";
+      const total = res.headers.get("X-Export-Total-Rows");
+      addToast(
+        truncated
+          ? `PII export downloaded (first 10,000 of ${total ?? "many"} attendees)`
+          : "PII export downloaded",
+        truncated ? "warning" : "success",
+      );
     } catch (err) {
       addToast(err instanceof ApiError ? err.message : "Export failed", "error");
     } finally {

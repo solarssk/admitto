@@ -325,8 +325,10 @@ describe("GET /api/admin/events/:eventId/export-pii", () => {
       where: { organization_id: ORG_SET, action_type: "event_pii_exported" },
     });
     expect(audit).not.toBeNull();
-    const meta = audit!.metadata as { eventId?: string; rowCount?: number };
+    const meta = audit!.metadata as { eventId?: string; rowCount?: number; totalCount?: number; truncated?: boolean };
     expect(meta.eventId).toBe(EVENT_SET);
     expect(meta.rowCount).toBeGreaterThan(0);
+    expect(meta.totalCount).toBe(meta.rowCount);
+    expect(meta.truncated).toBe(false);
   });
 });
