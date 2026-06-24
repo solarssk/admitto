@@ -797,10 +797,8 @@ async function loadAttendeeActionLogEntries(
       id: log.id,
       action_type: log.action_type,
       actor_display: actor
-        ? actor.display_name ?? actor.email
-        : log.actor_user_id
-          ? "System"
-          : "System",
+        ? (actor.display_name ?? actor.email ?? "System")
+        : "System",
       metadata:
         log.metadata && typeof log.metadata === "object" && !Array.isArray(log.metadata)
           ? (log.metadata as Record<string, unknown>)

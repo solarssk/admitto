@@ -371,7 +371,7 @@ export function AttendeeDetailPage() {
                 )}
               </div>
               <div className="attendee-form__actions">
-                <Button type="submit" variant="primary" disabled={saving || reloading || staleWrite}>
+                <Button type="submit" variant="primary" disabled={saving || reloading || staleWrite || rsvpSaving}>
                   {saving ? "Saving…" : "Save changes"}
                 </Button>
               </div>

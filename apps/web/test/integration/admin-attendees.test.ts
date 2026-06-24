@@ -730,6 +730,10 @@ describe("Attendees v2 — RSVP and manual create", () => {
     const anna = body.items.find((i) => i.id === ATT_A1);
     expect(anna?.rsvp_status).toBe("none");
     expect(anna?.admitted_at).not.toBeNull();
+    if (body.items[0]) {
+      expect(body.items[0]).not.toHaveProperty("token_enc");
+      expect(body.items[0]).not.toHaveProperty("ticket_ref");
+    }
   });
 
   it("filters list by rsvp_status", async () => {
@@ -837,5 +841,16 @@ describe("Attendees v2 — RSVP and manual create", () => {
       body: JSON.stringify({ email: "op-blocked@example.com", name: "Blocked" }),
     });
     expect(res.status).toBe(403);
+  });
+
+  it("export CSV does not expose token fields in response body", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/export?format=csv`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).not.toContain("token_enc");
+    expect(text).not.toContain("token_hash");
+    expect(text).not.toContain("ticket_ref");
   });
 });

@@ -39,6 +39,12 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
       return "Ingested via API";
     case "rsvp_status_changed":
       return `Status changed to ${String(meta.to ?? "updated")}`;
+    case "ticket_sent":
+      return "Ticket sent";
+    case "mail_delivered":
+      return "Email delivered";
+    case "mail_bounced":
+      return "Email bounced";
     case "ticket_resent":
     case "resend_ticket":
       return "Ticket resent";
