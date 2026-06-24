@@ -17,22 +17,26 @@ Workspace packages stay at `0.0.1` — only the product version is bumped per re
 
 ## Prerequisites
 
-- Node.js `>=22.13.0 <23` (LTS 22 line)
-- [Docker](https://docs.docker.com/get-docker/) — required to run PostgreSQL locally
+- Node.js `>=24.17.0 <25` (see root `package.json` `engines`)
+- [Docker](https://docs.docker.com/get-docker/) — required to run PostgreSQL locally (and optional Redis)
 
-## Setup
+## Setup (database and tests)
+
+Local **development** uses [`infra/docker-compose.yml`](infra/docker-compose.yml) (loopback Postgres/Redis).
+**Production** uses a separate stack in [`deploy/`](deploy/README.md) — do not reuse dev credentials there.
 
 ```bash
-# 1. Start Postgres
-docker compose -f infra/docker-compose.yml up -d db
+# 1. Start Postgres (+ optional Redis for shared rate limits)
+docker compose -f infra/docker-compose.yml up -d db redis
 
-# 2. Configure database connection (already matches Docker Compose defaults)
+# 2. Database connection (matches compose defaults)
 cp packages/db/.env.example packages/db/.env
+# Recommended before MFA/OIDC: set ENCRYPTION_KEY (openssl rand -base64 32)
 
 # 3. Install dependencies
 npm install
 
-# 4. Migrate, seed, and create test databases
+# 4. Migrate, seed sample event data, and create isolated test databases
 npm run db:migrate
 npm run db:seed
 npm run db:test-setup
@@ -41,17 +45,44 @@ npm run db:test-setup
 npm test
 ```
 
+More detail: [infra/README.md](infra/README.md), [packages/db/README.md](packages/db/README.md).
+
+## Run locally (staff UI)
+
+After the database steps above:
+
+```bash
+# App env — dev defaults are fine; see apps/web/.env.example for production fields
+cp apps/web/.env.example apps/web/.env
+
+# First platform superadmin (password read from stdin — never pass on argv)
+npm run auth:bootstrap -- --email admin@example.com
+```
+
+Then choose how to run the staff UI:
+
+| Mode | Commands | Open |
+|------|----------|------|
+| **SPA hot reload** (UI work) | Terminal 1: `npm run dev -w @admitto/web`<br>Terminal 2: `npm run dev -w @admitto/admin` | http://localhost:5173 |
+| **Single server** (prod-like) | `npm run build -w @admitto/admin` then `npm run dev -w @admitto/web` | http://localhost:3000/login |
+
+Sign in with the bootstrapped account. MFA enrollment is required for admin/superadmin roles on first login.
+SSR settings (Identity providers, Cloudflare Access) live under `/admin/auth/*` on the web server port.
+
+See [apps/web/README.md](apps/web/README.md) and [apps/admin/README.md](apps/admin/README.md).
+
 ## Production deployment
 
 Self-hosted **Docker Compose** only (not bare metal, not Kubernetes). See [deploy/README.md](deploy/README.md).
 
-Local dev database stack: [infra/README.md](infra/README.md).
+Images are published to `ghcr.io/solarssk/admitto` on each git tag `vX.Y.Z`. Vercel Git deploys are disabled (`vercel.json`); disconnect the project in the Vercel dashboard if PR checks still appear.
 
 ## Packages
 
 | Package | Description |
 |---------|-------------|
 | [`apps/web`](apps/web/README.md) | HTTP server — Hono routes, HTML, rate limits |
+| [`apps/admin`](apps/admin/README.md) | Staff React SPA — events picker, check-in, event admin |
 | [`packages/auth`](packages/auth/README.md) | Sessions, MFA, OIDC, Cloudflare Access, RBAC |
 | [`packages/crypto`](packages/crypto/README.md) | AES-256-GCM at-rest encryption (`ENCRYPTION_KEY`) |
 | [`packages/db`](packages/db/README.md) | Prisma schema + client (PostgreSQL) |

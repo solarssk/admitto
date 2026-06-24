@@ -13,7 +13,7 @@ Both services use **loopback-only** ports — not reachable from the LAN.
 
 ## Quick start
 
-From the monorepo root:
+From the monorepo root — full “run the app” steps (bootstrap, dev servers) are in [README.md](../README.md#run-locally).
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d db redis
