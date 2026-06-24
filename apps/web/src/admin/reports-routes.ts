@@ -1,7 +1,8 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
-import { assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import { writeBulkActionLog } from "@admitto/tickets";
+import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 
 const HOUR_LABELS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
 const CSV_EXPORT_MAX = 10_000;
@@ -249,6 +250,25 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** Append bulk audit row after a successful reports export (CSV or printable HTML). */
+async function auditReportsExported(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  format: "csv" | "pdf",
+  count: number,
+  truncated: boolean,
+): Promise<void> {
+  await db.$transaction(async (tx) => {
+    await writeBulkActionLog(tx, {
+      event_id: eventId,
+      action_type: "reports_exported",
+      audit: adminAuditFromContext(c),
+      metadata: { format, count, truncated },
+    });
+  });
+}
+
 /** GET /api/admin/events/:eventId/reports — aggregated admission stats (read-only, no audit). */
 export async function handleGetReports(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdParam = requireEventId(c);
@@ -356,6 +376,11 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
     const bom = "\uFEFF";
     const filename = `admissions-${event.slug}-${dateStamp}.csv`;
 
+    const totalAdmitted = await db.attendee.count({
+      where: { event_id: eventId, admitted_at: { not: null } },
+    });
+    await auditReportsExported(db, c, eventId, "csv", rows.length, totalAdmitted > CSV_EXPORT_MAX);
+
     return new Response(bom + csvBody, {
       status: 200,
       headers: {
@@ -429,6 +454,15 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   </table>
 </body>
 </html>`;
+
+  await auditReportsExported(
+    db,
+    c,
+    eventId,
+    "pdf",
+    aggregates.admittedCount,
+    aggregates.admittedCount > PDF_LOG_MAX,
+  );
 
   return new Response(html, {
     status: 200,

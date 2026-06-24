@@ -420,4 +420,26 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(html).toContain("By ticket type");
     expect(html).toContain("VIP One");
   });
+
+  it("audit: reports_exported with format and count after CSV export", async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: EVENT_REP, action_type: "reports_exported" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/export?format=csv`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_REP, action_type: "reports_exported" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    expect(log!.attendee_id).toBeNull();
+    const meta = log!.metadata as Record<string, unknown>;
+    expect(meta.format).toBe("csv");
+    expect(meta.count).toBe(5);
+    expect(meta.truncated).toBe(false);
+  });
 });
