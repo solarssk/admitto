@@ -18,6 +18,7 @@ import { CheckInEntryPage } from "./pages/CheckInEntryPage.js";
 import { CheckInPage } from "./pages/CheckInPage.js";
 import { AdminCheckInRoute } from "./pages/AdminCheckInRoute.js";
 import { AttendeesPage } from "./pages/AttendeesPage.js";
+import { AttendeeDetailPage } from "./pages/AttendeeDetailPage.js";
 import { ImportPage } from "./pages/ImportPage.js";
 import { RequirementsPage } from "./pages/RequirementsPage.js";
 import { CommunicationPage } from "./pages/CommunicationPage.js";
@@ -125,6 +126,7 @@ export default function App() {
                     />
                   ))}
                   <Route path="attendees/import" element={<ImportPage />} />
+                  <Route path="attendees/:attendeeId" element={<AttendeeDetailPage />} />
                   <Route path="*" element={<Navigate to="overview" replace />} />
                 </Route>
               </Route>

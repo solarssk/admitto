@@ -1,0 +1,51 @@
+.add-attendee-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.add-attendee-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.add-attendee-modal__panel {
+  position: relative;
+  width: min(100%, 480px);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 20px;
+}
+
+.add-attendee-modal__title {
+  margin: 0 0 16px;
+  font-size: var(--fs-h3);
+}
+
+.add-attendee-modal__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.add-attendee-modal__error {
+  margin: 0 0 12px;
+  color: var(--status-error);
+  font-size: 0.875rem;
+}
+
+.add-attendee-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}

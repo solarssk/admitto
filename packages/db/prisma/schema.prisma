@@ -72,6 +72,10 @@ model Attendee {
   // Descriptive import/form fields (company, department, shirt_size) — ADR 0010.
   custom_data      Json?
   status           String          @default("registered")
+  // RSVP lifecycle (ADR 0033) — distinct from check-in and Attendee.status.
+  rsvp_status      String          @default("none")
+  rsvp_updated_at  DateTime?
+  rsvp_source      String?
   // Set atomically on first VALID check-in (CAS WHERE admitted_at IS NULL).
   // Null = not yet admitted. Reset only by explicit admin revert action.
   admitted_at      DateTime?

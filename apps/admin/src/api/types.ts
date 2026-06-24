@@ -117,14 +117,19 @@ export interface CheckInStatsResponse {
   total_count: number;
 }
 
+export type RsvpStatus = "none" | "confirmed" | "declined" | "tentative" | "cancelled";
+
 export interface AttendeeRowDto {
   id: string;
   name: string;
   email: string;
   company: string | null;
+  department: string | null;
   ticket_type: string | null;
   check_in_status: "admitted" | "not_admitted";
+  admitted_at: string | null;
   last_mail_status: string | null;
+  rsvp_status: RsvpStatus;
 }
 
 export interface DeliveryDto {
@@ -139,6 +144,14 @@ export interface DeliveryDto {
   error_code: string | null;
 }
 
+export interface AttendeeActionLogEntryDto {
+  id: string;
+  action_type: string;
+  actor_display: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export interface AttendeeDetailDto {
   id: string;
   name: string;
@@ -150,8 +163,13 @@ export interface AttendeeDetailDto {
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
   updated_at: string;
+  rsvp_status: RsvpStatus;
+  rsvp_updated_at: string | null;
+  rsvp_source: string | null;
+  ticket_ref: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
+  action_log: AttendeeActionLogEntryDto[];
 }
 
 export interface AttendeesListResponse {
@@ -167,6 +185,7 @@ export interface AttendeesListParams {
   q?: string;
   status?: "all" | "admitted" | "not_admitted";
   ticket_type?: string;
+  rsvp_status?: RsvpStatus;
 }
 
 export interface UpdateAttendeePatch {
@@ -176,6 +195,7 @@ export interface UpdateAttendeePatch {
   department?: string | null;
   ticket_type?: string | null;
   custom_data_fields?: Record<string, string | null>;
+  rsvp_status?: RsvpStatus;
   expected_updated_at?: string;
 }
 

@@ -98,6 +98,7 @@ import {
 } from "./admin/event-archiving.js";
 import {
   handleListEventAttendees,
+  handleCreateEventAttendee,
   handleGetEventAttendee,
   handlePatchEventAttendee,
   handleResendEventAttendeeTicket,
@@ -398,6 +399,12 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/attendees", staffAdminGate, (c) =>
     handleListEventAttendees(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleCreateEventAttendee(c, db)),
   );
   app.get("/api/admin/events/:eventId/attendees/:id", staffAdminGate, (c) =>
     handleGetEventAttendee(c, db),

@@ -709,3 +709,133 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
     expect(body.error).toBe("too many requests");
   });
 });
+
+describe("Attendees v2 — RSVP and manual create", () => {
+  async function currentUpdatedAt(attendeeId: string): Promise<string> {
+    const row = await prisma.attendee.findUniqueOrThrow({
+      where: { id: attendeeId },
+      select: { updated_at: true },
+    });
+    return row.updated_at.toISOString();
+  }
+
+  it("list rows include rsvp_status and admitted_at", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: { id: string; rsvp_status: string; admitted_at: string | null }[];
+    };
+    const anna = body.items.find((i) => i.id === ATT_A1);
+    expect(anna?.rsvp_status).toBe("none");
+    expect(anna?.admitted_at).not.toBeNull();
+  });
+
+  it("filters list by rsvp_status", async () => {
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { rsvp_status: "confirmed" },
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees?rsvp_status=confirmed`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { id: string }[] };
+    expect(body.items.every((i) => i.id === ATT_A2)).toBe(true);
+
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { rsvp_status: "none" },
+    });
+  });
+
+  it("detail includes rsvp fields, action_log, and ticket_ref without raw token", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A1}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      rsvp_status: string;
+      ticket_ref: string | null;
+      action_log: unknown[];
+    };
+    expect(body.rsvp_status).toBe("none");
+    expect(body.ticket_ref).toBeTruthy();
+    expect(body).not.toHaveProperty("token_enc");
+    expect(Array.isArray(body.action_log)).toBe(true);
+  });
+
+  it("PATCH rsvp_status writes rsvp_status_changed audit log", async () => {
+    const expectedUpdatedAt = await currentUpdatedAt(ATT_A2);
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rsvp_status: "confirmed",
+        expected_updated_at: expectedUpdatedAt,
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { rsvp_status: string };
+    expect(body.rsvp_status).toBe("confirmed");
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_A2, action_type: "rsvp_status_changed" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    const meta = log!.metadata as { from?: string; to?: string };
+    expect(meta.to).toBe("confirmed");
+
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { rsvp_status: "none", rsvp_updated_at: null, rsvp_source: null },
+    });
+  });
+
+  it("POST create attendee returns 201 with audit log", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "manual@example.com",
+        name: "Manual Guest",
+        company: "Manual Co",
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { email: string; rsvp_status: string; id: string };
+    expect(body.email).toBe("manual@example.com");
+    expect(body.rsvp_status).toBe("none");
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: body.id, action_type: "attendee_created_manual" },
+    });
+    expect(log).not.toBeNull();
+
+    await prisma.attendee.delete({ where: { id: body.id } });
+  });
+
+  it("POST create duplicate email returns 409 email_taken", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "anna@example.com", name: "Duplicate" }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("email_taken");
+  });
+
+  it("POST create rejects operator", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "op-blocked@example.com", name: "Blocked" }),
+    });
+    expect(res.status).toBe(403);
+  });
+});
