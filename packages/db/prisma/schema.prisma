@@ -32,6 +32,7 @@ model Event {
   slug             String          @unique
   date             DateTime
   location         String?
+  capacity         Int?
   logo_url         String?
   header_image_url String?
   created_at       DateTime        @default(now())

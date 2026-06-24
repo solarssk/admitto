@@ -9,6 +9,7 @@ import type {
   CheckInStatsResponse,
   DeliveryDto,
   EventDto,
+  EventSettingsDto,
   LookupAttendeeResult,
   MeResponse,
   ResendTicketBody,
@@ -47,13 +48,15 @@ export class ApiError extends Error {
   }
 }
 
-type ApiErrorBody = { error?: string; detail?: string };
+type ApiErrorBody = { error?: string; detail?: string; code?: string };
 
 function messageFromApiErrorBody(body: ApiErrorBody): string | undefined {
   const detail = body.detail?.trim();
   if (detail) return detail;
   const error = body.error?.trim();
   if (error) return error;
+  const code = body.code?.trim();
+  if (code) return code;
   return undefined;
 }
 
@@ -215,6 +218,46 @@ export async function archiveEvent(eventId: string): Promise<void> {
 export async function unarchiveEvent(eventId: string): Promise<void> {
   const res = await fetch(`/api/admin/events/${eventId}/unarchive`, jsonPostInit({}));
   await parseJson(res);
+}
+
+/** Load event settings for the settings page. */
+export async function fetchEventSettings(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventSettingsDto> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/settings`, {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<EventSettingsDto>(res);
+}
+
+/** Patch basic event fields (title, date, location, capacity). */
+export async function patchEvent(
+  eventId: string,
+  body: Partial<{ title: string; date: string; location: string | null; capacity: number | null }>,
+): Promise<{ event: EventSettingsDto }> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}`, jsonPatchInit(body));
+  return parseJson<{ event: EventSettingsDto }>(res);
+}
+
+/** Download PII export CSV (superadmin only). Caller handles blob save. */
+export async function exportEventPii(eventId: string, signal?: AbortSignal): Promise<Response> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/export-pii`, {
+    credentials: "same-origin",
+    signal,
+  });
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as ApiErrorBody;
+      message = messageFromApiErrorBody(body) ?? message;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res;
 }
 
 export async function fetchCheckInEvents(signal?: AbortSignal): Promise<EventDto[]> {

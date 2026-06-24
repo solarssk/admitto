@@ -97,6 +97,11 @@ import {
   withEventArchiveGuard,
 } from "./admin/event-archiving.js";
 import {
+  handleGetEventSettings,
+  handlePatchEvent,
+  handleExportEventPii,
+} from "./admin/event-settings-routes.js";
+import {
   handleListEventAttendees,
   handleCreateEventAttendee,
   handleGetEventAttendee,
@@ -391,6 +396,16 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/admin/events/:eventId/unarchive", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostUnarchiveEvent(c, db),
   );
+  // PATCH /events/:eventId is the bare event id (no trailing segment). Hono matches the
+  // full path, so this does not shadow /attendees/:id, /items/:itemId, or /ops-config.
+  app.get("/api/admin/events/:eventId/settings", staffAdminGate, (c) => handleGetEventSettings(c, db));
+  app.patch(
+    "/api/admin/events/:eventId",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handlePatchEvent(c, db)),
+  );
+  app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, (c) => handleExportEventPii(c, db));
   app.get("/api/admin/events/:eventId/attendees/ticket-types", staffAdminGate, (c) =>
     handleListTicketTypes(c, db),
   );

@@ -39,6 +39,18 @@ export interface EventDto {
   archived_at: string | null;
 }
 
+export interface EventSettingsDto {
+  id: string;
+  title: string;
+  slug: string;
+  date: string;
+  location: string | null;
+  capacity: number | null;
+  status: "active" | "archived";
+  organization_name: string;
+  active_items: Array<{ id: string; name: string; enabled: boolean }>;
+}
+
 export interface BrandingThemeDto {
   primary?: string;
   font_family_url?: string;
