@@ -53,14 +53,14 @@ export function renderCfAccessForm(options: {
 
   const enabledWarning =
     f.enabled && !f.locks.enabled
-      ? `<div class="warn-block" role="alert"><strong>Warning:</strong> Cloudflare Access is enabled. If your CF configuration is incorrect, users may be locked out. Use &quot;Test JWKS&quot; before saving changes.</div>`
+      ? `<div class="warn-block" role="alert"><strong>Before you enable:</strong> run <strong>Test connection</strong> with your team URL. A wrong Audience (AUD) or team URL can block staff sign-in until you fix the values or use a local break-glass account.</div>`
       : "";
 
   const envLockedWarning = f.enabled && f.locks.enabled
     ? `<div class="info-block">Cloudflare Access is enabled and locked by environment configuration.</div>`
     : "";
 
-  const fallthroughInfo = `<div class="info-block"><strong>How it works:</strong> When a Cloudflare JWT is present in the request, Admitto validates it against your Access policy. If no JWT is present (e.g. direct access), Admitto falls through to the standard local login. This means local accounts always work as a break-glass fallback.</div>`;
+  const fallthroughInfo = `<div class="info-block"><strong>How staff sign-in works:</strong> When Cloudflare sends a valid Access JWT, Admitto trusts it for protected admin paths. When no JWT is present (direct URL, local network, or break-glass), Admitto shows the normal email/password login. Local superadmin accounts always remain available as a fallback.</div>`;
 
   return pageShell(
     "Cloudflare Access",
@@ -72,24 +72,27 @@ export function renderCfAccessForm(options: {
     <form method="post" action="/admin/auth/cf-access">
       <label>
         <input type="checkbox" name="enabled" value="1"${f.enabled ? " checked" : ""}${disabled(f.locks.enabled)}>
-        Enabled${lockBadge(f.locks.enabled)}
+        Enable Cloudflare Access for protected admin paths${lockBadge(f.locks.enabled)}
       </label>
       <label>
-        Team domain (issuer URL)
-        <input name="team_domain" type="url" placeholder="https://team.cloudflareaccess.com" value="${esc(f.teamDomain)}"${disabled(f.locks.teamDomain)}>
+        Cloudflare team URL
+        <input name="team_domain" type="url" placeholder="https://yourteam.cloudflareaccess.com" value="${esc(f.teamDomain)}"${disabled(f.locks.teamDomain)}>
+        <span class="field-hint">Zero Trust → Settings → Custom Pages. Paste the team URL (issuer), not the application hostname.</span>
         ${lockBadge(f.locks.teamDomain)}
       </label>
       <label>
-        Application audience (AUD) tags
-        <input name="audience" placeholder="comma-separated or JSON array" value="${esc(f.audience)}"${disabled(f.locks.audience)}>
+        Application Audience (AUD)
+        <input name="audience" placeholder="e.g. a1b2c3d4-e5f6-7890-abcd-ef1234567890" value="${esc(f.audience)}"${disabled(f.locks.audience)}>
+        <span class="field-hint">Zero Trust → Access → Applications → your app → Overview → <strong>Application Audience (AUD) Tag</strong>. One value, or comma-separated / JSON array for multiple apps.</span>
         ${lockBadge(f.locks.audience)}
       </label>
       <label>
-        Protected path prefixes
-        <input name="protected_prefixes" placeholder='["/admin","/api/admin"]' value="${esc(f.protectedPrefixes)}"${disabled(f.locks.protectedPrefixes)}>
+        Protected URL paths
+        <input name="protected_prefixes" placeholder="/admin, /api/admin" value="${esc(f.protectedPrefixes)}"${disabled(f.locks.protectedPrefixes)}>
+        <span class="field-hint">Paths that require a Cloudflare Access JWT. Default covers the admin UI and admin API. Comma-separated or JSON array (must start with <code>/</code>).</span>
         ${lockBadge(f.locks.protectedPrefixes)}
       </label>
-      <button type="submit" formaction="/admin/auth/cf-access/test" formmethod="post" formnovalidate>Test JWKS</button>
+      <button type="submit" formaction="/admin/auth/cf-access/test" formmethod="post" formnovalidate>Test connection</button>
       <button type="submit">Save</button>
     </form>
     <p class="admin-nav"><a href="/admin/auth/providers">Identity providers</a></p>`,

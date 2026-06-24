@@ -6,16 +6,16 @@ import {
 } from "../src/admin/auth-providers-html.js";
 
 describe("parseMappingsFromForm", () => {
-  it("parses role values from select fields", () => {
+  it("parses indexed mapping rows from select fields", () => {
     const mappings = parseMappingsFromForm({
       mapping_group_0: "admins",
       mapping_role_0: "superadmin",
       mapping_scope_type_0: "instance",
       mapping_scope_id_0: "",
-      mapping_group_new: "ops",
-      mapping_role_new: "operator",
-      mapping_scope_type_new: "event",
-      mapping_scope_id_new: "evt-1",
+      mapping_group_1: "ops",
+      mapping_role_1: "operator",
+      mapping_scope_type_1: "event",
+      mapping_scope_id_1: "evt-1",
     });
     expect(mappings).toEqual([
       { group: "admins", role: "superadmin", scope_type: "instance", scope_id: null },
@@ -44,13 +44,42 @@ describe("parseMappingsFromForm", () => {
     ]);
   });
 
-  it("defaults new mapping role select to operator", () => {
+  it("renders add/remove mapping controls", () => {
     const html = renderProviderForm({
       isNew: true,
       mappings: [],
     });
-    expect(html).toContain('name="mapping_role_new"');
-    expect(html).toMatch(/name="mapping_role_new"[\s\S]*?value="operator" selected/);
+    expect(html).toContain('id="mapping-add-btn"');
+    expect(html).toContain("Add mapping");
+    expect(html).toContain('data-mapping-remove');
+    expect(html).not.toContain('name="mapping_scope_type_0"');
+    expect(html).not.toContain('name="mapping_group_new"');
+  });
+
+  it("renders scope type as select on existing rows", () => {
+    const html = renderProviderForm({
+      isNew: false,
+      provider: {
+        id: "p1",
+        provider_type: "oidc",
+        display_name: "Test",
+        issuer: "https://idp.example.com",
+        client_id: "client",
+        has_client_secret: false,
+        enabled: true,
+        authorization_endpoint: "",
+        token_endpoint: "",
+        jwks_uri: "",
+        userinfo_endpoint: "",
+        claim_email: "email",
+        claim_name: "name",
+        claim_groups: "groups",
+        login_button_label: null,
+      },
+      mappings: [{ group: "admins", role: "admin", scope_type: "organization", scope_id: "org-1" }],
+    });
+    expect(html).toContain('name="mapping_scope_type_0"');
+    expect(html).toContain('value="organization" selected');
   });
 
   it("invalid legacy role requires explicit replacement select", () => {
@@ -90,12 +119,25 @@ describe("admin pageShell headings", () => {
   });
 });
 
+describe("OIDC provider form — URL fields", () => {
+  it("uses type=url for issuer and OIDC endpoint inputs", () => {
+    const html = renderProviderForm({ isNew: true, mappings: [] });
+    expect(html).toContain('type="url" name="issuer"');
+    expect(html).toContain('type="url" name="authorization_endpoint"');
+    expect(html).toContain('type="url" name="token_endpoint"');
+    expect(html).toContain('type="url" name="jwks_uri"');
+    expect(html).toContain('type="url" name="userinfo_endpoint"');
+  });
+});
+
 describe("OIDC provider form — SSO button label", () => {
-  it("renders editable SSO button text on create and edit forms", () => {
+  it("renders editable SSO button text and live preview on create and edit forms", () => {
     const createHtml = renderProviderForm({ isNew: true, mappings: [] });
     expect(createHtml).toContain('name="login_button_label"');
     expect(createHtml).toContain("Sign-in page (/login)");
     expect(createHtml).toContain('placeholder="Continue with SSO"');
+    expect(createHtml).toContain('id="sso-button-preview-label"');
+    expect(createHtml).toContain("Preview on /login");
 
     const editHtml = renderProviderForm({
       isNew: false,
@@ -119,6 +161,7 @@ describe("OIDC provider form — SSO button label", () => {
       mappings: [],
     });
     expect(editHtml).toContain('value="Continue with Microsoft SSO"');
+    expect(editHtml).toContain("Continue with Microsoft SSO</span>");
   });
 
   it("parseProviderInput includes login_button_label", () => {

@@ -1,8 +1,10 @@
 import type { GroupRoleMappingInput, IdentityProviderFormView } from "@admitto/auth";
+import { DEFAULT_SSO_LOGIN_BUTTON_LABEL, resolveSsoLoginButtonLabel } from "@admitto/auth";
 import { AUTH_PAGE_ICON_CSP, renderAdmittoFaviconLink } from "../favicon.js";
-import { renderAdminShell } from "../shared-auth-styles.js";
+import { AUTH_SSO_BUTTON_ICON_SVG, renderAdminShell } from "../shared-auth-styles.js";
 
 const ALLOWED_MAPPING_ROLES = ["superadmin", "admin", "operator"] as const;
+const ALLOWED_SCOPE_TYPES = ["instance", "organization", "event"] as const;
 
 /** Escape HTML special characters for server-rendered admin pages. */
 function esc(s: string): string {
@@ -27,6 +29,7 @@ export function getAdminPageSecurityHeaders(): Record<string, string> {
       "form-action 'self'",
       "frame-ancestors 'none'",
       "connect-src 'self'",
+      "script-src 'unsafe-inline'",
     ].join("; "),
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
@@ -55,6 +58,26 @@ function renderRoleSelect(name: string, currentRole: string): string {
     (role) => `<option value="${role}"${role === currentRole ? " selected" : ""}>${role}</option>`,
   ).join("");
   return `<select name="${esc(name)}" required>${options}</select>`;
+}
+
+function renderScopeTypeSelect(name: string, currentScope: string): string {
+  const scope = ALLOWED_SCOPE_TYPES.includes(currentScope as (typeof ALLOWED_SCOPE_TYPES)[number])
+    ? currentScope
+    : "instance";
+  const options = ALLOWED_SCOPE_TYPES.map(
+    (t) => `<option value="${t}"${t === scope ? " selected" : ""}>${t}</option>`,
+  ).join("");
+  return `<select name="${esc(name)}" required>${options}</select>`;
+}
+
+function renderMappingRow(m: MappingRow, index: number): string {
+  return `<tr data-mapping-row>
+        <td><input name="mapping_group_${index}" value="${esc(m.group)}" placeholder="IdP group name"></td>
+        <td>${renderRoleSelect(`mapping_role_${index}`, m.role)}</td>
+        <td>${renderScopeTypeSelect(`mapping_scope_type_${index}`, m.scope_type)}</td>
+        <td><input name="mapping_scope_id_${index}" value="${esc(m.scope_id)}" placeholder="Org or event ID"></td>
+        <td class="mapping-actions"><button type="button" class="mapping-remove-btn" data-mapping-remove>Remove</button></td>
+      </tr>`;
 }
 
 /** Render the identity provider list page (`GET /admin/auth/providers`). */
@@ -96,6 +119,63 @@ export interface MappingRow {
   scope_id: string;
 }
 
+const PROVIDER_FORM_SCRIPTS = `<script>
+(function () {
+  var defaultSsoLabel = ${JSON.stringify(DEFAULT_SSO_LOGIN_BUTTON_LABEL)};
+  var labelInput = document.querySelector('input[name="login_button_label"]');
+  var previewLabel = document.getElementById('sso-button-preview-label');
+  if (labelInput && previewLabel) {
+    function updateSsoPreview() {
+      var value = labelInput.value.trim();
+      previewLabel.textContent = value || defaultSsoLabel;
+    }
+    labelInput.addEventListener('input', updateSsoPreview);
+    updateSsoPreview();
+  }
+
+  var tbody = document.getElementById('mapping-tbody');
+  var addBtn = document.getElementById('mapping-add-btn');
+  if (!tbody || !addBtn) return;
+
+  var nextIndex = tbody.querySelectorAll('[data-mapping-row]').length;
+  var roles = ${JSON.stringify([...ALLOWED_MAPPING_ROLES])};
+  var scopes = ${JSON.stringify([...ALLOWED_SCOPE_TYPES])};
+
+  function buildRoleSelect(name, selected) {
+    return '<select name="' + name + '" required>' + roles.map(function (role) {
+      return '<option value="' + role + '"' + (role === selected ? ' selected' : '') + '>' + role + '</option>';
+    }).join('') + '</select>';
+  }
+
+  function buildScopeSelect(name, selected) {
+    return '<select name="' + name + '" required>' + scopes.map(function (scope) {
+      return '<option value="' + scope + '"' + (scope === selected ? ' selected' : '') + '>' + scope + '</option>';
+    }).join('') + '</select>';
+  }
+
+  addBtn.addEventListener('click', function () {
+    var index = nextIndex++;
+    var row = document.createElement('tr');
+    row.setAttribute('data-mapping-row', '');
+    row.innerHTML =
+      '<td><input name="mapping_group_' + index + '" placeholder="IdP group name"></td>' +
+      '<td>' + buildRoleSelect('mapping_role_' + index, 'operator') + '</td>' +
+      '<td>' + buildScopeSelect('mapping_scope_type_' + index, 'instance') + '</td>' +
+      '<td><input name="mapping_scope_id_' + index + '" placeholder="Org or event ID"></td>' +
+      '<td class="mapping-actions"><button type="button" class="mapping-remove-btn" data-mapping-remove>Remove</button></td>';
+    tbody.appendChild(row);
+  });
+
+  tbody.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!(target instanceof Element)) return;
+    var removeBtn = target.closest('[data-mapping-remove]');
+    if (!removeBtn) return;
+    removeBtn.closest('tr')?.remove();
+  });
+})();
+</script>`;
+
 /** Render the create/edit identity provider form HTML. */
 export function renderProviderForm(options: {
   provider?: IdentityProviderFormView;
@@ -113,16 +193,8 @@ export function renderProviderForm(options: {
     ? '<p class="muted">Client secret is stored (••••). Leave blank to keep existing.</p>'
     : "";
 
-  const mappingRows = options.mappings
-    .map(
-      (m, i) => `<tr>
-        <td><input name="mapping_group_${i}" value="${esc(m.group)}"></td>
-        <td>${renderRoleSelect(`mapping_role_${i}`, m.role)}</td>
-        <td><input name="mapping_scope_type_${i}" value="${esc(m.scope_type)}"></td>
-        <td><input name="mapping_scope_id_${i}" value="${esc(m.scope_id)}"></td>
-      </tr>`,
-    )
-    .join("");
+  const mappingRows = options.mappings.map((m, i) => renderMappingRow(m, i)).join("");
+  const previewLabel = resolveSsoLoginButtonLabel(p?.login_button_label);
 
   const flashBlock = options.flash ? `<p class="flash">${esc(options.flash)}</p>` : "";
   const errorBlock = options.error ? `<p class="error" role="alert">${esc(options.error)}</p>` : "";
@@ -146,16 +218,22 @@ export function renderProviderForm(options: {
         <legend>Sign-in page (/login)</legend>
         <label>SSO button text <input name="login_button_label" maxlength="120" placeholder="Continue with SSO" value="${esc(p?.login_button_label ?? "")}"></label>
         <p class="muted">Label on the SSO button for this provider. Leave blank for the default &quot;Continue with SSO&quot;.</p>
+        <div class="sso-preview" aria-live="polite">
+          <span class="muted">Preview on /login</span>
+          <span class="auth-btn-secondary auth-btn-sso sso-preview__btn" aria-hidden="true">
+            ${AUTH_SSO_BUTTON_ICON_SVG}<span id="sso-button-preview-label">${esc(previewLabel)}</span>
+          </span>
+        </div>
       </fieldset>
-      <label>Issuer URL <input name="issuer" required value="${esc(p?.issuer ?? "")}"></label>
+      <label>Issuer URL <input type="url" name="issuer" required value="${esc(p?.issuer ?? "")}" placeholder="https://idp.example.com"></label>
       ${discoverAction}${testAction}
       <label>Client ID <input name="client_id" required value="${esc(p?.client_id ?? "")}"></label>
       <label>Client secret <input type="password" name="client_secret" autocomplete="new-password" placeholder="Write-only"></label>
       ${secretHint}
-      <label>Authorization endpoint <input name="authorization_endpoint" value="${esc(p?.authorization_endpoint ?? "")}"></label>
-      <label>Token endpoint <input name="token_endpoint" value="${esc(p?.token_endpoint ?? "")}"></label>
-      <label>JWKS URI <input name="jwks_uri" value="${esc(p?.jwks_uri ?? "")}"></label>
-      <label>Userinfo endpoint <input name="userinfo_endpoint" value="${esc(p?.userinfo_endpoint ?? "")}"></label>
+      <label>Authorization endpoint <input type="url" name="authorization_endpoint" value="${esc(p?.authorization_endpoint ?? "")}" placeholder="https://idp.example.com/oauth2/authorize"></label>
+      <label>Token endpoint <input type="url" name="token_endpoint" value="${esc(p?.token_endpoint ?? "")}" placeholder="https://idp.example.com/oauth2/token"></label>
+      <label>JWKS URI <input type="url" name="jwks_uri" value="${esc(p?.jwks_uri ?? "")}" placeholder="https://idp.example.com/.well-known/jwks.json"></label>
+      <label>Userinfo endpoint <input type="url" name="userinfo_endpoint" value="${esc(p?.userinfo_endpoint ?? "")}" placeholder="https://idp.example.com/oauth2/userinfo"></label>
       <fieldset>
         <legend>Claim mapping</legend>
         <label>Email claim <input name="claim_email" value="${esc(p?.claim_email ?? "email")}"></label>
@@ -164,31 +242,28 @@ export function renderProviderForm(options: {
       </fieldset>
       <fieldset>
         <legend>Group → role mapping</legend>
-        <table class="mapping"><thead><tr><th>Group</th><th>Role</th><th>Scope type</th><th>Scope ID</th></tr></thead>
-        <tbody>${mappingRows}
-        <tr>
-          <td><input name="mapping_group_new" placeholder="admin-group"></td>
-          <td>${renderRoleSelect("mapping_role_new", "operator")}</td>
-          <td><input name="mapping_scope_type_new" placeholder="instance"></td>
-          <td><input name="mapping_scope_id_new" placeholder=""></td>
-        </tr>
-        </tbody></table>
+        <p class="mapping-hint">Map an identity-provider group to an Admitto role. Use <code>instance</code> for superadmin, <code>organization</code> with an org ID, or <code>event</code> with an event ID.</p>
+        <table class="mapping-table"><thead><tr><th>IdP group</th><th>Admitto role</th><th>Scope</th><th>Scope ID</th><th class="mapping-actions">Actions</th></tr></thead>
+        <tbody id="mapping-tbody">${mappingRows}</tbody></table>
+        <button type="button" id="mapping-add-btn" class="mapping-add-btn">Add mapping</button>
       </fieldset>
       <label><input type="checkbox" name="enabled" value="1" ${p?.enabled ? "checked" : ""}> Enabled</label>
       <button type="submit">Save</button>
     </form>
     <p class="admin-nav"><a href="/admin/auth/providers">Back to list</a></p>`,
+    PROVIDER_FORM_SCRIPTS,
   );
 }
 
 /** Wrap admin page body in a shared HTML shell with full sidebar. */
-function pageShell(heading: string, body: string): string {
+function pageShell(heading: string, body: string, scripts = ""): string {
   return renderAdminShell({
     title: heading,
     body: `<h1>${esc(heading)}</h1>
 ${body}`,
     activeItem: "providers",
     favicon: renderAdmittoFaviconLink(),
+    scripts,
   });
 }
 
@@ -200,7 +275,7 @@ export function parseMappingsFromForm(form: Record<string, string>): GroupRoleMa
     const m = /^mapping_group_(\d+)$/.exec(key);
     if (m) indices.add(Number(m[1]));
   }
-  for (const i of indices) {
+  for (const i of [...indices].sort((a, b) => a - b)) {
     const group = form[`mapping_group_${i}`]?.trim();
     const role = form[`mapping_role_${i}`]?.trim();
     const scope_type = form[`mapping_scope_type_${i}`]?.trim();
@@ -208,13 +283,6 @@ export function parseMappingsFromForm(form: Record<string, string>): GroupRoleMa
     if (group && role && scope_type) {
       mappings.push({ group, role, scope_type, scope_id: scope_id || null });
     }
-  }
-  const ng = form["mapping_group_new"]?.trim();
-  const nr = form["mapping_role_new"]?.trim();
-  const nst = form["mapping_scope_type_new"]?.trim();
-  const nsid = form["mapping_scope_id_new"]?.trim();
-  if (ng && nr && nst) {
-    mappings.push({ group: ng, role: nr, scope_type: nst, scope_id: nsid || null });
   }
   return mappings;
 }
