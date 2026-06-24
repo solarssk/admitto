@@ -215,7 +215,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
   it("returns 401 without auth", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({ title: "Hack" }),
     });
     expect(res.status).toBe(401);
@@ -311,8 +311,13 @@ describe("GET /api/admin/events/:eventId/export-pii", () => {
     expect(res.headers.get("Content-Disposition")).toContain("attachment");
     expect(res.headers.get("Content-Disposition")).toContain("pii-export-event-settings");
 
-    const text = await res.text();
-    expect(text.charCodeAt(0)).toBe(0xfeff);
+    const buf = await res.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    expect(bytes[0]).toBe(0xef);
+    expect(bytes[1]).toBe(0xbb);
+    expect(bytes[2]).toBe(0xbf);
+
+    const text = new TextDecoder("utf-8").decode(buf);
     expect(text).toContain("pii-guest@example.com");
     expect(text).toContain("PII Guest");
 
