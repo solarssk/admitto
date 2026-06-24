@@ -22,6 +22,7 @@ import {
   updateSessionDeviceLabel,
   DEVICE_LABEL_MAX_LEN,
   regenerateBackupRecoveryCodes,
+  resolveSetupComplete,
 } from "@admitto/auth";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
@@ -148,6 +149,8 @@ export type MailerStatusPayload = {
 export interface HandleMeOptions {
   /** When true (`/api/admin/me` only), resolve org mail transport presence — no credentials. */
   includeMailerStatus?: boolean;
+  /** When true (`/api/admin/me` only), include first-run onboarding completion flag. */
+  includeSetupComplete?: boolean;
 }
 
 const MAILER_PROVIDERS = ["smtp", "graph", "powerautomate", "export_only"] as const;
@@ -213,6 +216,7 @@ export async function handleMe(
     device_label: string | null;
     session_active: boolean;
     mailer_status?: MailerStatusPayload;
+    setup_complete?: boolean;
   } = {
     user,
     assignments,
@@ -222,6 +226,10 @@ export async function handleMe(
 
   if (opts?.includeMailerStatus) {
     body.mailer_status = await resolveMailerStatus(db);
+  }
+
+  if (opts?.includeSetupComplete) {
+    body.setup_complete = await resolveSetupComplete(db);
   }
 
   return c.json(body, 200);

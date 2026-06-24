@@ -4,7 +4,8 @@ import { Spinner } from "@admitto/ui";
 import { ToastProvider } from "@admitto/ui";
 import { AdminGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
 import { OperatorDeviceGate } from "./auth/OperatorDeviceGate.js";
-import { AuthProvider } from "./auth/AuthProvider.js";
+import { AuthProvider, useAuth } from "./auth/AuthProvider.js";
+import { isSuperadmin } from "./auth/capabilities.js";
 import { ConnectionStateProvider } from "./connection/ConnectionStateProvider.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { DemoBar } from "./components/DemoBar.js";
@@ -25,6 +26,7 @@ import { RequirementsPage } from "./pages/RequirementsPage.js";
 import { CommunicationPage } from "./pages/CommunicationPage.js";
 import { EventOverviewPage } from "./pages/EventOverviewPage.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
+import { SetupWizardPage } from "./pages/SetupWizardPage.js";
 import { ApiError, fetchAdminEvents } from "./api/client.js";
 import type { EventDto } from "./api/types.js";
 
@@ -87,61 +89,73 @@ function EventLayout() {
   return <AdminShell event={event} />;
 }
 
+function StaffRoutes() {
+  const { assignments, setupComplete, refresh } = useAuth();
+
+  if (isSuperadmin(assignments) && !setupComplete) {
+    return <SetupWizardPage onComplete={refresh} />;
+  }
+
+  return (
+    <Routes>
+      <Route path="/admin" element={<AdminGuard />}>
+        <Route element={<EventsListShell />}>
+          <Route index element={<EventsPickerPage />} />
+        </Route>
+        <Route path="settings" element={<SuperadminGuard />}>
+          <Route element={<InstanceSettingsShell />}>
+            <Route index element={<SettingsPage />} />
+          </Route>
+        </Route>
+        <Route path="events/:eventId" element={<EventLayout />}>
+          <Route index element={<Navigate to="overview" replace />} />
+          {PLACEHOLDER_ROUTES.map((r) => (
+            <Route
+              key={r.path}
+              path={r.path}
+              element={
+                r.path === "overview" ? (
+                  <EventOverviewPage />
+                ) : r.path === "checkin" ? (
+                  <AdminCheckInRoute />
+                ) : r.path === "attendees" ? (
+                  <AttendeesPage />
+                ) : r.path === "requirements" ? (
+                  <RequirementsPage />
+                ) : r.path === "communication" ? (
+                  <CommunicationPage />
+                ) : (
+                  <PlaceholderPage title={r.title} />
+                )
+              }
+            />
+          ))}
+          <Route path="attendees/import" element={<ImportPage />} />
+          <Route path="attendees/:attendeeId" element={<AttendeeDetailPage />} />
+          <Route path="settings" element={<EventSettingsPage />} />
+          <Route path="*" element={<Navigate to="overview" replace />} />
+        </Route>
+      </Route>
+      <Route path="/operator" element={<OperatorGuard />}>
+        <Route element={<OperatorDeviceGate />}>
+          <Route element={<OperatorShell />}>
+            <Route index element={<CheckInEntryPage />} />
+            <Route path="events/:eventId/checkin" element={<CheckInPage />} />
+          </Route>
+        </Route>
+      </Route>
+      <Route path="*" element={<Navigate to="/admin" replace />} />
+    </Routes>
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
       <ToastProvider>
         <AuthProvider>
           <ConnectionStateProvider>
-            <Routes>
-              <Route path="/admin" element={<AdminGuard />}>
-                <Route element={<EventsListShell />}>
-                  <Route index element={<EventsPickerPage />} />
-                </Route>
-                <Route path="settings" element={<SuperadminGuard />}>
-                  <Route element={<InstanceSettingsShell />}>
-                    <Route index element={<SettingsPage />} />
-                  </Route>
-                </Route>
-                <Route path="events/:eventId" element={<EventLayout />}>
-                  <Route index element={<Navigate to="overview" replace />} />
-                  {PLACEHOLDER_ROUTES.map((r) => (
-                    <Route
-                      key={r.path}
-                      path={r.path}
-                      element={
-                        r.path === "overview" ? (
-                          <EventOverviewPage />
-                        ) : r.path === "checkin" ? (
-                          <AdminCheckInRoute />
-                        ) : r.path === "attendees" ? (
-                          <AttendeesPage />
-                        ) : r.path === "requirements" ? (
-                          <RequirementsPage />
-                        ) : r.path === "communication" ? (
-                          <CommunicationPage />
-                        ) : (
-                          <PlaceholderPage title={r.title} />
-                        )
-                      }
-                    />
-                  ))}
-                  <Route path="attendees/import" element={<ImportPage />} />
-                  <Route path="attendees/:attendeeId" element={<AttendeeDetailPage />} />
-                  <Route path="settings" element={<EventSettingsPage />} />
-                  <Route path="*" element={<Navigate to="overview" replace />} />
-                </Route>
-              </Route>
-              <Route path="/operator" element={<OperatorGuard />}>
-                <Route element={<OperatorDeviceGate />}>
-                  <Route element={<OperatorShell />}>
-                    <Route index element={<CheckInEntryPage />} />
-                    <Route path="events/:eventId/checkin" element={<CheckInPage />} />
-                  </Route>
-                </Route>
-              </Route>
-              <Route path="*" element={<Navigate to="/admin" replace />} />
-            </Routes>
+            <StaffRoutes />
           </ConnectionStateProvider>
         </AuthProvider>
         <DemoBar />
