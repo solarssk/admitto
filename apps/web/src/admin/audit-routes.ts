@@ -4,17 +4,31 @@ import { canManageInstance } from "@admitto/auth";
 import { positiveIntQuery } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
+/** Return 403 when the session user is not a superadmin; otherwise null. */
 async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response | null> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) return c.json({ error: "forbidden" }, 403);
   return null;
 }
 
-function parseOptionalDate(raw: string | undefined): Date | undefined {
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Parse a query date bound. Date-only values (`YYYY-MM-DD`) use UTC day bounds:
+ * start → 00:00:00.000, end → 23:59:59.999 (inclusive through the selected day).
+ * Invalid values are ignored (returns undefined).
+ */
+function parseDateBound(raw: string | undefined, bound: "start" | "end"): Date | undefined {
   if (!raw) return undefined;
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return undefined;
-  return d;
+  const trimmed = raw.trim();
+  if (DATE_ONLY.test(trimmed)) {
+    const [year, month, day] = trimmed.split("-").map(Number);
+    if (bound === "start") return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed;
 }
 
 /** GET /api/admin/audit-log — paginated org-scoped admin audit entries. Superadmin only. */
@@ -27,8 +41,8 @@ export async function handleGetAuditLog(c: Context, db: PrismaClient): Promise<R
   const page = positiveIntQuery(c.req.query("page"), 1);
   const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
   const actionType = c.req.query("action_type")?.trim() || undefined;
-  const start = parseOptionalDate(c.req.query("start"));
-  const end = parseOptionalDate(c.req.query("end"));
+  const start = parseDateBound(c.req.query("start"), "start");
+  const end = parseDateBound(c.req.query("end"), "end");
 
   const where: Prisma.AdminAuditLogWhereInput = {
     organization_id: orgId,

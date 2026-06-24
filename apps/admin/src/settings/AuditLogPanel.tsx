@@ -3,42 +3,28 @@ import { Button, Card } from "@admitto/ui";
 import { ApiError, fetchAuditLog } from "../api/client.js";
 import type { AuditLogEntryDto } from "../api/types.js";
 
+/** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
-  attendee_edited: "Attendee edited",
-  attendees_exported: "Attendees exported",
-  attendees_imported: "Attendees imported",
-  check_in: "Check-in",
-  check_in_undo: "Check-in undone",
   event_archived: "Event archived",
   event_created: "Event created",
-  event_item_created: "Item created",
-  event_item_deleted: "Item deleted",
-  event_item_updated: "Item updated",
   event_pii_exported: "Event PII exported",
   event_unarchived: "Event unarchived",
   event_updated: "Event updated",
-  item_issued: "Item issued",
-  item_returned: "Item returned",
   mail_settings_updated: "Mail settings updated",
-  mail_template_updated: "Mail template updated",
-  mail_test_sent: "Test mail sent",
   mail_transport_tested: "Mail transport tested",
-  note_added: "Note added",
   operator_sessions_bulk_revoked: "Operator sessions revoked",
-  ops_config_updated: "Ops config updated",
-  scan_preview: "Scan preview",
-  session_revoked: "Session revoked",
-  system_settings_updated: "System settings updated",
-  ticket_resent: "Ticket resent",
-  user_created: "User created",
-  user_deactivated: "User deactivated",
-  user_reactivated: "User reactivated",
-  user_mfa_reset: "2FA reset",
-  user_password_reset: "Password reset",
   role_granted: "Role granted",
   role_revoked: "Role revoked",
+  session_revoked: "Session revoked",
+  system_settings_updated: "System settings updated",
+  user_created: "User created",
+  user_deactivated: "User deactivated",
+  user_mfa_reset: "2FA reset",
+  user_password_reset: "Password reset",
+  user_reactivated: "User reactivated",
 };
 
+/** Map a raw action_type to a display label, falling back to the raw value. */
 function actionLabel(type: string): string {
   return ACTION_LABELS[type] ?? type;
 }
@@ -49,6 +35,7 @@ const ACTION_OPTIONS = Object.keys(ACTION_LABELS).sort((a, b) =>
 
 const PAGE_SIZE = 25;
 
+/** Format an ISO timestamp for the audit log table. */
 function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
     dateStyle: "short",
@@ -56,14 +43,17 @@ function formatTimestamp(iso: string): string {
   });
 }
 
+/** Primary actor label: display name, email, or raw user id when the user was deleted. */
 function actorDisplay(entry: AuditLogEntryDto): string {
   return entry.actor_display_name ?? entry.actor_email ?? entry.actor_user_id;
 }
 
+/** True when metadata is a non-empty object worth rendering in the Details column. */
 function hasMetadata(metadata: Record<string, unknown> | null): boolean {
   return !!metadata && Object.keys(metadata).length > 0;
 }
 
+/** Pretty-print audit metadata JSON for the expandable Details cell. */
 function metadataPreview(metadata: Record<string, unknown>): string {
   return JSON.stringify(metadata, null, 2);
 }

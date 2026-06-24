@@ -26,6 +26,7 @@ let prevInstanceOrgId: string | undefined;
 
 const PII_FORBIDDEN = ["password", "secret", "hash"] as const;
 
+/** Assert audit metadata keys do not contain PII-like field names. */
 function assertNoPiiKeys(metadata: Record<string, unknown> | null): void {
   if (!metadata) return;
   for (const key of Object.keys(metadata)) {
@@ -35,6 +36,7 @@ function assertNoPiiKeys(metadata: Record<string, unknown> | null): void {
   }
 }
 
+/** Seed orgs, users, and AdminAuditLog fixtures for audit-log route tests. */
 async function seed(client: PrismaClient) {
   await client.adminAuditLog.deleteMany({
     where: { organization_id: { in: [ORG_AUDIT, ORG_OTHER] } },
@@ -110,6 +112,14 @@ async function seed(client: PrismaClient) {
         ip: null,
         metadata: { event_id: "evt-1" },
         created_at: new Date("2026-07-01T12:00:00.000Z"),
+      },
+      {
+        organization_id: ORG_AUDIT,
+        actor_user_id: superId,
+        action_type: "system_settings_updated",
+        ip: "1.2.3.6",
+        metadata: { fields: ["session_ttl_ms"] },
+        created_at: new Date("2026-06-30T23:45:00.000Z"),
       },
       {
         organization_id: ORG_OTHER,
@@ -191,8 +201,8 @@ describe("GET /api/admin/audit-log", () => {
     };
     expect(body.page).toBe(1);
     expect(body.pageSize).toBe(25);
-    expect(body.total).toBe(3);
-    expect(body.entries).toHaveLength(3);
+    expect(body.total).toBe(4);
+    expect(body.entries).toHaveLength(4);
     expect(body.entries[0]?.actor_email).toBe(EMAIL_SUPER);
     for (const entry of body.entries) {
       assertNoPiiKeys(entry.metadata);
@@ -216,8 +226,19 @@ describe("GET /api/admin/audit-log", () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { entries: { action_type: string }[]; total: number };
-    expect(body.total).toBe(1);
-    expect(body.entries[0]?.action_type).toBe("mail_settings_updated");
+    expect(body.total).toBe(2);
+    const types = body.entries.map((e) => e.action_type).sort();
+    expect(types).toEqual(["mail_settings_updated", "system_settings_updated"]);
+  });
+
+  it("includes entries late on the inclusive end date", async () => {
+    const res = await app.request("/api/admin/audit-log?end=2026-06-30", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { entries: { action_type: string; created_at: string }[] };
+    const lateEndDay = body.entries.find((e) => e.action_type === "system_settings_updated");
+    expect(lateEndDay?.created_at).toBe("2026-06-30T23:45:00.000Z");
   });
 
   it("does not expose audit entries from other organizations", async () => {

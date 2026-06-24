@@ -1820,7 +1820,7 @@
   background: var(--surface-muted, #f4f4f5);
   border-radius: var(--radius-sm);
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .audit-log-footer {

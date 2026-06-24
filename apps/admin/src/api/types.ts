@@ -469,6 +469,7 @@ export interface PatchSecuritySettingsBody {
   mfa_required_roles?: string[] | null;
 }
 
+/** One row from GET /api/admin/audit-log. */
 export interface AuditLogEntryDto {
   id: string;
   action_type: string;
@@ -480,6 +481,7 @@ export interface AuditLogEntryDto {
   created_at: string;
 }
 
+/** Paginated admin audit log list response. */
 export interface AuditLogResponse {
   entries: AuditLogEntryDto[];
   total: number;

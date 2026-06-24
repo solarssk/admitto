@@ -728,7 +728,7 @@ export async function patchSecuritySettings(
   return parseJson<SecuritySettingsDto>(res);
 }
 
-/** Load paginated instance admin audit log (superadmin). */
+/** Load paginated instance admin audit log (superadmin). Date-only `start`/`end` use inclusive day bounds server-side. */
 export async function fetchAuditLog(
   params: {
     page?: number;
