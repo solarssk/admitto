@@ -91,7 +91,9 @@ export async function handleGetAuditLog(c: Context, db: PrismaClient): Promise<R
           select: { id: true, email: true, display_name: true },
         })
       : [];
-  const actorMap = Object.fromEntries(actors.map((a) => [a.id, a]));
+  type ActorRow = { id: string; email: string; display_name: string | null };
+  const actorMap: Record<string, ActorRow> = Object.create(null);
+  for (const a of actors) actorMap[a.id] = a;
 
   const entries = rows.map((r) => ({
     id: r.id,

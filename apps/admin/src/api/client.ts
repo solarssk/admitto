@@ -740,8 +740,8 @@ export async function fetchAuditLog(
   signal?: AbortSignal,
 ): Promise<AuditLogResponse> {
   const q = new URLSearchParams();
-  if (params.page) q.set("page", String(params.page));
-  if (params.pageSize) q.set("pageSize", String(params.pageSize));
+  if (params.page != null) q.set("page", String(params.page));
+  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
   if (params.actionType) q.set("action_type", params.actionType);
   if (params.start) q.set("start", params.start);
   if (params.end) q.set("end", params.end);

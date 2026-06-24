@@ -108,6 +108,7 @@ export function AuditLogPanel() {
       if (ac.signal.aborted) return;
       const maxPage = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
       if (page > maxPage) {
+        setEntries([]);
         setPage(maxPage);
         return;
       }
