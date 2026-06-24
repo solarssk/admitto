@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-06-24
+
 ### Added
 - MFA enrollment split into three steps: TOTP QR/setup-key confirm → dedicated backup-codes page → full session; new `backup_codes_required` session stage and DB migration
 - `POST /mfa/enroll/backup-codes` route and `handleTotpBackupCodesComplete` API endpoint; session promoted to `FULL` only after backup-codes acknowledgment
@@ -51,8 +53,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Admin UX micro-fixes: import column reference table and CSV template download; delivery log purpose filter; compose dirty-state guard; attendee drawer discard confirmation; check-in stats admitted/total (#121)
 - `POST /mfa/enroll/download-codes` — backup codes as `.txt` during enrollment (#117)
 - Check-in: `NoteModal` replaces `window.prompt` for attendee notes (#114)
-
-### Changed
 - Runtime upgraded to Node 24 LTS; React 18 → 19 across admin and web (#111, #110)
 - Login, MFA, and superadmin identity-provider HTML pages aligned with Admitto design tokens (#117)
 - OIDC group mapping role picker uses a select; provider list supports inline enable/disable (#117)
@@ -368,7 +368,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.4...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/solarssk/admitto/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/solarssk/admitto/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/solarssk/admitto/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/solarssk/admitto/compare/v0.4.1...v0.4.2
