@@ -1,6 +1,17 @@
-import { Button, Card, Input, Select, StatusBadge } from "@admitto/ui";
-import type { AttendeeRowDto } from "../api/types.js";
+import { Button, Card, IconButton, Input, Select } from "@admitto/ui";
+import type { AttendeeRowDto, RsvpStatus } from "../api/types.js";
+import { MailStatusBadge } from "./mailStatusBadge.js";
+import { RsvpStatusBadge } from "./rsvpStatusBadge.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
+
+function formatCheckInTime(admittedAt: string | null): string {
+  if (!admittedAt) return "—";
+  return new Date(admittedAt).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
 
 export interface AttendeesTableProps {
   items: AttendeeRowDto[];
@@ -12,11 +23,13 @@ export interface AttendeesTableProps {
   searchInput: string;
   statusFilter: "all" | "admitted" | "not_admitted";
   ticketTypeFilter: string;
+  rsvpStatusFilter: "" | RsvpStatus;
   availableTypes: string[];
   onSearchChange: (value: string) => void;
   onStatusFilterChange: (value: "all" | "admitted" | "not_admitted") => void;
   onTicketTypeFilterChange: (value: string) => void;
-  onRowClick: (id: string) => void;
+  onRsvpStatusFilterChange: (value: "" | RsvpStatus) => void;
+  onViewAttendee: (id: string) => void;
   onPageChange: (page: number) => void;
 }
 
@@ -30,11 +43,13 @@ export function AttendeesTable({
   searchInput,
   statusFilter,
   ticketTypeFilter,
+  rsvpStatusFilter,
   availableTypes,
   onSearchChange,
   onStatusFilterChange,
   onTicketTypeFilterChange,
-  onRowClick,
+  onRsvpStatusFilterChange,
+  onViewAttendee,
   onPageChange,
 }: AttendeesTableProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -68,6 +83,20 @@ export function AttendeesTable({
         </div>
         <div className="attendees-toolbar__filter">
           <Select
+            label="RSVP status"
+            value={rsvpStatusFilter}
+            onChange={(e) => onRsvpStatusFilterChange(e.target.value as "" | RsvpStatus)}
+          >
+            <option value="">All statuses</option>
+            <option value="none">Registered</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="declined">Declined</option>
+            <option value="tentative">Tentative</option>
+            <option value="cancelled">Cancelled</option>
+          </Select>
+        </div>
+        <div className="attendees-toolbar__filter">
+          <Select
             label="Type"
             value={ticketTypeFilter}
             onChange={(e) => onTicketTypeFilterChange(e.target.value)}
@@ -89,43 +118,69 @@ export function AttendeesTable({
         </div>
       ) : (
         <div className="attendees-table-wrap">
-          <table className="table">
+          <table className="table attendees-table-v2">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Email</th>
+                <th>Attendee</th>
+                <th>Ticket</th>
                 <th>Company</th>
-                <th>Type</th>
+                <th>Status</th>
+                <th>Mail</th>
                 <th>Check-in</th>
-                <th>Last mail</th>
+                <th className="attendees-table-v2__actions-col" aria-label="Actions">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {items.map((row) => (
-                <tr key={row.id}>
+                <tr key={row.id} className="attendees-table-v2__row">
                   <td>
                     <button
                       type="button"
-                      className="attendees-row-btn"
-                      onClick={() => onRowClick(row.id)}
+                      className="attendees-row-btn attendees-table-v2__attendee"
+                      onClick={() => onViewAttendee(row.id)}
                     >
-                      {row.name}
+                      <span className="attendees-table-v2__name">{row.name}</span>
+                      <span className="attendees-table-v2__email">{row.email}</span>
                     </button>
                   </td>
-                  <td>{row.email}</td>
-                  <td>{row.company ?? "—"}</td>
                   <td>
                     <TicketTypeBadge ticketType={row.ticket_type} />
                   </td>
                   <td>
-                    <StatusBadge status={row.check_in_status} />
+                    <div className="attendees-table-v2__company">
+                      <span>{row.company ?? "—"}</span>
+                      {row.department ? (
+                        <span className="attendees-table-v2__department">{row.department}</span>
+                      ) : null}
+                    </div>
                   </td>
                   <td>
-                    {row.last_mail_status ? (
-                      <StatusBadge status={row.last_mail_status} />
+                    <RsvpStatusBadge status={row.rsvp_status} />
+                  </td>
+                  <td>
+                    <MailStatusBadge status={row.last_mail_status} />
+                  </td>
+                  <td>
+                    {row.admitted_at ? (
+                      <span className="attendees-table-v2__checkin">✓ {formatCheckInTime(row.admitted_at)}</span>
                     ) : (
                       <span className="attendee-readonly">—</span>
                     )}
+                  </td>
+                  <td className="attendees-table-v2__actions">
+                    <IconButton
+                      label="View attendee"
+                      icon={<i className="ti ti-eye" aria-hidden="true" />}
+                      onClick={() => onViewAttendee(row.id)}
+                    />
+                    <IconButton
+                      label="Revoke pass"
+                      icon={<i className="ti ti-ban" aria-hidden="true" />}
+                      disabled
+                      title="Wallet passes — coming soon"
+                    />
                   </td>
                 </tr>
               ))}
@@ -134,9 +189,7 @@ export function AttendeesTable({
         </div>
       )}
       <div className="attendees-table-foot">
-        <span>
-          {total === 0 ? "0 attendees" : `Showing ${from}–${to} of ${total}`}
-        </span>
+        <span>{total === 0 ? "0 attendees" : `Showing ${from}–${to} of ${total}`}</span>
         <div className="attendees-table-foot__pager">
           <Button
             variant="secondary"

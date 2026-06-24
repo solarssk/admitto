@@ -247,3 +247,173 @@
 .attendee-readonly dd {
   margin: var(--space-1) 0 0;
 }
+
+
+/* Attendees v2 table */
+.attendees-table-v2__attendee {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  gap: 2px;
+}
+
+.attendees-table-v2__name {
+  font-weight: 600;
+}
+
+.attendees-table-v2__email {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.attendees-table-v2__company {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attendees-table-v2__department {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.attendees-table-v2__checkin {
+  color: var(--status-ok);
+  font-weight: 600;
+}
+
+.attendees-table-v2__actions {
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.attendees-table-v2__actions-col {
+  width: 88px;
+}
+
+/* Detail page */
+.attendee-detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.attendee-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 16px;
+  align-items: start;
+  margin-top: 16px;
+}
+
+@media (max-width: 900px) {
+  .attendee-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.attendee-detail-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.status-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.status-stats-grid__label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.attendee-detail-mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.875rem;
+}
+
+.attendee-detail-readonly-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.attendee-detail-readonly-row__label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  min-width: 88px;
+}
+
+.attendee-detail-checkin {
+  color: var(--status-ok);
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.attendee-detail-skeleton {
+  margin-top: 16px;
+}
+
+.attendee-wallet-placeholder p {
+  margin: 0 0 8px;
+  font-size: 0.875rem;
+}
+
+.at-timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.at-tl-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.at-tl-item:last-child {
+  border-bottom: none;
+}
+
+.at-tl-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.875rem;
+}
+
+.at-tl-body {
+  flex: 1;
+}
+
+.at-tl-body b {
+  display: block;
+  font-size: 0.875rem;
+}
+
+.at-tl-body span {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.at-tl-time {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin-top: 2px;
+}

@@ -1,3 +1,4 @@
+/** @deprecated Use AttendeeDetailPage — kept for reference until cleanup PR. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, IconButton, Input, StatusBadge } from "@admitto/ui";
 import {

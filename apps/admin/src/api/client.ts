@@ -25,6 +25,7 @@ import type {
   EventTemplateDto,
   SaveTemplateBody,
   PreviewTemplateResponse,
+  RsvpStatus,
   TestSendBody,
   TestSendResponse,
   MailSettingsResponse,
@@ -336,6 +337,7 @@ function attendeesListQuery(eventId: string, params: AttendeesListParams = {}): 
   if (params.q) q.set("q", params.q);
   if (params.status && params.status !== "all") q.set("status", params.status);
   if (params.ticket_type) q.set("ticket_type", params.ticket_type);
+  if (params.rsvp_status) q.set("rsvp_status", params.rsvp_status);
   const qs = q.toString();
   return `/api/admin/events/${encodeURIComponent(eventId)}/attendees${qs ? `?${qs}` : ""}`;
 }
@@ -360,6 +362,25 @@ export async function fetchAttendeeDetail(
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}`,
     { credentials: "same-origin", signal },
+  );
+  return parseJson<AttendeeDetailDto>(res);
+}
+
+
+export async function createAttendee(
+  eventId: string,
+  body: {
+    email: string;
+    name: string;
+    company?: string;
+    department?: string;
+    ticket_type?: string;
+    custom_data?: Record<string, unknown>;
+  },
+): Promise<AttendeeDetailDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees`,
+    jsonPostInit(body),
   );
   return parseJson<AttendeeDetailDto>(res);
 }
@@ -569,7 +590,7 @@ export async function fetchTicketTypes(
 /** Download a filtered attendee export and trigger browser save. */
 export async function exportAttendees(
   eventId: string,
-  params: { q?: string; status?: string; ticket_type?: string },
+  params: { q?: string; status?: string; ticket_type?: string; rsvp_status?: RsvpStatus },
   format: "xlsx" | "csv" | "pdf",
   signal?: AbortSignal,
 ): Promise<void> {
@@ -577,6 +598,7 @@ export async function exportAttendees(
   if (params.q) urlParams.set("q", params.q);
   if (params.status && params.status !== "all") urlParams.set("status", params.status);
   if (params.ticket_type) urlParams.set("ticket_type", params.ticket_type);
+  if (params.rsvp_status) urlParams.set("rsvp_status", params.rsvp_status);
 
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${urlParams.toString()}`,

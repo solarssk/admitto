@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { Button, PageHeader } from "@admitto/ui";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { Button, PageHeader, useToast } from "@admitto/ui";
 import { ApiError, exportAttendees, fetchEventAttendees, fetchTicketTypes } from "../api/client.js";
-import type { AttendeeRowDto } from "../api/types.js";
-import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { AttendeeDetailDrawer } from "../attendees/AttendeeDetailDrawer.js";
+import type { AttendeeDetailDto, AttendeeRowDto, RsvpStatus } from "../api/types.js";
+import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
+import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import "../attendees/attendees.css";
 
 const DEBOUNCE_MS = 300;
 
 export function AttendeesPage() {
   const { eventId } = useParams();
+  const navigate = useNavigate();
+  const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
   const listAbortRef = useRef<AbortController | null>(null);
   const exportAbortRef = useRef<AbortController | null>(null);
@@ -23,13 +25,14 @@ export function AttendeesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "admitted" | "not_admitted">("all");
+  const [rsvpStatusFilter, setRsvpStatusFilter] = useState<"" | RsvpStatus>("");
   const [ticketTypeFilter, setTicketTypeFilter] = useState("");
   const [availableTypes, setAvailableTypes] = useState<string[]>([]);
   const [exportingFormat, setExportingFormat] = useState<"xlsx" | "csv" | "pdf" | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
@@ -50,9 +53,8 @@ export function AttendeesPage() {
         if (ac.signal.aborted) return;
         setAvailableTypes(types);
       })
-      .catch((err) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setAvailableTypes([]);
+      .catch(() => {
+        if (!ac.signal.aborted) setAvailableTypes([]);
       });
     return () => ac.abort();
   }, [eventId]);
@@ -75,6 +77,7 @@ export function AttendeesPage() {
           q: searchQuery || undefined,
           status: statusFilter,
           ticket_type: ticketTypeFilter || undefined,
+          rsvp_status: rsvpStatusFilter || undefined,
         },
         ac.signal,
       );
@@ -85,7 +88,6 @@ export function AttendeesPage() {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setItems([]);
       setTotal(0);
-      setSelectedId(null);
       if (err instanceof ApiError) {
         reportApiError(err.status);
         if (err.status === 401) {
@@ -100,7 +102,16 @@ export function AttendeesPage() {
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [eventId, page, pageSize, searchQuery, statusFilter, ticketTypeFilter, reportApiError]);
+  }, [
+    eventId,
+    page,
+    pageSize,
+    searchQuery,
+    statusFilter,
+    ticketTypeFilter,
+    rsvpStatusFilter,
+    reportApiError,
+  ]);
 
   useEffect(() => {
     void loadList();
@@ -126,6 +137,7 @@ export function AttendeesPage() {
             q: searchQuery || undefined,
             status: statusFilter,
             ticket_type: ticketTypeFilter || undefined,
+            rsvp_status: rsvpStatusFilter || undefined,
           },
           format,
           ac.signal,
@@ -147,11 +159,17 @@ export function AttendeesPage() {
         if (!ac.signal.aborted) setExportingFormat(null);
       }
     },
-    [eventId, searchQuery, statusFilter, ticketTypeFilter, reportApiError],
+    [eventId, searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, reportApiError],
   );
 
+  const handleCreated = (attendee: AttendeeDetailDto) => {
+    addToast(`${attendee.name} added`, "success");
+    setPage(1);
+    setReloadToken((n) => n + 1);
+  };
+
   const emptyMessage =
-    total === 0 && !searchQuery && statusFilter === "all" && !ticketTypeFilter
+    total === 0 && !searchQuery && statusFilter === "all" && !ticketTypeFilter && !rsvpStatusFilter
       ? "No attendees yet. Import a CSV or XLSX file to get started."
       : "No matches";
 
@@ -189,8 +207,14 @@ export function AttendeesPage() {
               {exportingFormat === "pdf" ? "Exporting…" : "Export PDF"}
             </Button>
             <Link to={`/admin/events/${eventId}/attendees/import`}>
-              <Button variant="primary">Import attendees</Button>
+              <Button variant="secondary">Import</Button>
             </Link>
+            <Button variant="primary" onClick={() => setAddOpen(true)}>
+              + Add attendee
+            </Button>
+            <Button variant="secondary" disabled title="Coming soon">
+              Send tickets
+            </Button>
           </>
         }
       />
@@ -207,6 +231,7 @@ export function AttendeesPage() {
         searchInput={searchInput}
         statusFilter={statusFilter}
         ticketTypeFilter={ticketTypeFilter}
+        rsvpStatusFilter={rsvpStatusFilter}
         availableTypes={availableTypes}
         onSearchChange={setSearchInput}
         onStatusFilterChange={(v) => {
@@ -217,18 +242,20 @@ export function AttendeesPage() {
           setTicketTypeFilter(v);
           setPage(1);
         }}
-        onRowClick={setSelectedId}
+        onRsvpStatusFilterChange={(v) => {
+          setRsvpStatusFilter(v);
+          setPage(1);
+        }}
+        onViewAttendee={(id) => navigate(`/admin/events/${eventId}/attendees/${id}`)}
         onPageChange={setPage}
       />
 
-      {selectedId && (
-        <AttendeeDetailDrawer
-          eventId={eventId}
-          attendeeId={selectedId}
-          onClose={() => setSelectedId(null)}
-          onUpdated={() => setReloadToken((n) => n + 1)}
-        />
-      )}
+      <AddAttendeeModal
+        eventId={eventId}
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onCreated={handleCreated}
+      />
     </>
   );
 }
