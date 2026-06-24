@@ -1,13 +1,20 @@
 name: Deploy smoke
 
+# Paused — manual Docker stack smoke was optional ops QA, not required for merge.
+# Re-enable workflow_dispatch when you want CI to exercise deploy/ again.
 on:
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type "run" to execute (deploy smoke is paused by default policy)
+        required: true
 
 permissions:
   contents: read
 
 jobs:
   deploy-smoke:
+    if: ${{ github.event.inputs.confirm == 'run' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
