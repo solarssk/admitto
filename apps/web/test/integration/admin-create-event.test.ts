@@ -27,6 +27,7 @@ let opId: string;
 let superCookie = "";
 let adminCookie = "";
 let opCookie = "";
+let prevInstanceOrgId: string | undefined;
 
 async function seed(client: PrismaClient) {
   await client.adminAuditLog.deleteMany({
@@ -92,6 +93,9 @@ async function seed(client: PrismaClient) {
 }
 
 beforeAll(async () => {
+  prevInstanceOrgId = process.env.INSTANCE_ORG_ID;
+  process.env.INSTANCE_ORG_ID = ORG_CREATE;
+
   prisma = new PrismaClient();
   await seed(prisma);
   app = createApp({
@@ -109,6 +113,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (prevInstanceOrgId !== undefined) process.env.INSTANCE_ORG_ID = prevInstanceOrgId;
+  else delete process.env.INSTANCE_ORG_ID;
   await prisma?.$disconnect();
 });
 
