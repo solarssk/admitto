@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Account self-service at `/account` for all signed-in staff: profile, password change (re-auth), TOTP enrollment/reset, and session management (`/api/account/*`)
+- Additive migration: `User.must_change_password` (default false) and nullable `User.password_hash` for OIDC-only accounts (existing rows unchanged)
+
 ## [0.4.5] - 2026-06-24
 
 ### Added

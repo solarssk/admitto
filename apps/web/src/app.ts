@@ -154,6 +154,16 @@ import {
   handleRevokeAllOperatorSessions,
 } from "./admin/sessions-routes.js";
 import {
+  handleGetAccount,
+  handlePatchAccountProfile,
+  handlePatchAccountPassword,
+  handleGetAccountSessions,
+  handleDeleteAccountSession,
+  handlePostMfaEnroll as handlePostAccountMfaEnroll,
+  handlePostMfaConfirm as handlePostAccountMfaConfirm,
+  handlePostMfaReset as handlePostAccountMfaReset,
+} from "./admin/account-routes.js";
+import {
   handleGetSystemSettings,
   handlePatchSystemSettings,
 } from "./admin/system-settings-routes.js";
@@ -506,6 +516,27 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/api/admin/client-errors", jsonPostCsrf, staffAdminGate, (c) => handlePostClientError(c));
 
+  app.get("/api/account", requireSession, (c) => handleGetAccount(c, db));
+  app.patch("/api/account/profile", jsonPostCsrf, requireSession, (c) =>
+    handlePatchAccountProfile(c, db),
+  );
+  app.patch("/api/account/password", jsonPostCsrf, requireSession, (c) =>
+    handlePatchAccountPassword(c, db),
+  );
+  app.get("/api/account/sessions", requireSession, (c) => handleGetAccountSessions(c, db));
+  app.delete("/api/account/sessions/:sessionId", jsonPostCsrf, requireSession, (c) =>
+    handleDeleteAccountSession(c, db),
+  );
+  app.post("/api/account/mfa/totp/enroll", jsonPostCsrf, requireSession, (c) =>
+    handlePostAccountMfaEnroll(c, db),
+  );
+  app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, requireSession, (c) =>
+    handlePostAccountMfaConfirm(c, db),
+  );
+  app.post("/api/account/mfa/reset", jsonPostCsrf, requireSession, (c) =>
+    handlePostAccountMfaReset(c, db),
+  );
+
   app.get("/api/checkin/events", requireSession, (c) => handleGetCheckinEvents(c, db));
   app.get("/api/staff/theme", requireSession, (c) => handleGetStaffTheme(c, db));
   app.put("/api/staff/theme", jsonPostCsrf, requireSession, (c) => handlePutStaffTheme(c, db));
@@ -592,6 +623,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/vendor/tabler-icons/*", serveTablerIcons);
   app.get("/admin", staffAdminGate, staffSpa.serveSpaIndex);
   app.get("/admin/*", staffAdminGate, staffSpa.serveSpaIndex);
+  app.get("/account", requireSessionHtml, staffSpa.serveSpaIndex);
   app.get("/operator", requireSessionHtml, checkInPanelGuard, staffSpa.serveSpaIndex);
   app.get("/operator/*", requireSessionHtml, checkInPanelGuard, staffSpa.serveSpaIndex);
 

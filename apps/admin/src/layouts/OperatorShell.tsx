@@ -60,8 +60,10 @@ export function OperatorShell() {
         </div>
         <OperatorContextBar deviceLabel={deviceLabel} />
         <div className="operator-shell__user">
-          <Avatar name={displayName} size="sm" />
-          <span>{displayName}</span>
+          <a href="/account" className="operator-shell__user-link">
+            <Avatar name={displayName} size="sm" />
+            <span>{displayName}</span>
+          </a>
           <form method="post" action="/logout">
             <button type="submit" className="topbar__signout">
               Sign out

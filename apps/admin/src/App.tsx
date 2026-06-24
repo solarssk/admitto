@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useParams } from "react-router-dom";
 import { Spinner } from "@admitto/ui";
 import { ToastProvider } from "@admitto/ui";
-import { AdminGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
+import { AdminGuard, AuthenticatedGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
 import { OperatorDeviceGate } from "./auth/OperatorDeviceGate.js";
 import { AuthProvider } from "./auth/AuthProvider.js";
 import { ConnectionStateProvider } from "./connection/ConnectionStateProvider.js";
@@ -13,6 +13,8 @@ import { EventsListShell } from "./layouts/EventsListShell.js";
 import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
 import { OperatorShell } from "./layouts/OperatorShell.js";
+import { AccountShell } from "./layouts/AccountShell.js";
+import { AccountLayout } from "./account/AccountLayout.js";
 import { EventsPickerPage } from "./pages/EventsPickerPage.js";
 import { CheckInEntryPage } from "./pages/CheckInEntryPage.js";
 import { CheckInPage } from "./pages/CheckInPage.js";
@@ -138,6 +140,11 @@ export default function App() {
                     <Route index element={<CheckInEntryPage />} />
                     <Route path="events/:eventId/checkin" element={<CheckInPage />} />
                   </Route>
+                </Route>
+              </Route>
+              <Route path="/account" element={<AuthenticatedGuard />}>
+                <Route element={<AccountShell />}>
+                  <Route index element={<AccountLayout />} />
                 </Route>
               </Route>
               <Route path="*" element={<Navigate to="/admin" replace />} />

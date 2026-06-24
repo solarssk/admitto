@@ -257,6 +257,30 @@
   color: var(--text-primary);
 }
 
+.topbar__user-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  text-decoration: none;
+  color: inherit;
+}
+
+.topbar__user-link:hover .topbar__user-name {
+  color: var(--primary);
+}
+
+.operator-shell__user-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  text-decoration: none;
+  color: inherit;
+}
+
+.operator-shell__user-link:hover {
+  color: var(--primary);
+}
+
 /* Dev-only toast demo bar */
 .demo-bar {
   position: fixed;

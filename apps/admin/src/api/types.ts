@@ -488,3 +488,56 @@ export interface AuditLogResponse {
   page: number;
   pageSize: number;
 }
+
+export interface AccountRoleDto {
+  id: string;
+  role: string;
+  scope_type: string;
+  scope_id: string | null;
+  is_oidc: boolean;
+}
+
+export interface AccountMfaMethodDto {
+  type: string;
+  confirmed: boolean;
+  last_used_at: string | null;
+}
+
+export interface AccountDto {
+  id: string;
+  email: string;
+  display_name: string | null;
+  is_active: boolean;
+  must_change_password: boolean;
+  has_local_password: boolean;
+  roles: AccountRoleDto[];
+  mfa_methods: AccountMfaMethodDto[];
+}
+
+export interface PatchAccountProfileBody {
+  display_name: string;
+}
+
+export interface PatchAccountPasswordBody {
+  current_password: string;
+  new_password: string;
+  new_password_confirm: string;
+}
+
+export interface PatchAccountPasswordResponse {
+  sessions_revoked: number;
+}
+
+export interface MfaEnrollResponse {
+  otpauthUri: string;
+  backupCodes: string[];
+  backupCodesAlreadyShown: boolean;
+}
+
+export interface ConfirmMfaTotpBody {
+  code: string;
+}
+
+export interface ResetMfaBody {
+  password: string;
+}
