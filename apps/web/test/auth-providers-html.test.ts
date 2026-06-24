@@ -84,6 +84,41 @@ describe("parseMappingsFromForm", () => {
     expect(view.enabled).toBe(true);
   });
 
+  it("providerFormViewFromSubmitted does not mark secret as stored on failed create", () => {
+    const view = providerFormViewFromSubmitted({
+      display_name: "New IdP",
+      issuer: "https://login.example.com",
+      client_id: "abc",
+      client_secret: "typed-but-not-saved",
+    });
+    expect(view.has_client_secret).toBe(false);
+  });
+
+  it("providerFormViewFromSubmitted keeps stored secret state on failed edit", () => {
+    const view = providerFormViewFromSubmitted(
+      { display_name: "Renamed" },
+      {
+        id: "p1",
+        provider_type: "oidc",
+        display_name: "Old",
+        issuer: "https://idp.example.com",
+        client_id: "client",
+        has_client_secret: true,
+        enabled: true,
+        authorization_endpoint: "",
+        token_endpoint: "",
+        jwks_uri: "",
+        userinfo_endpoint: "",
+        claim_email: "email",
+        claim_name: "name",
+        claim_groups: "groups",
+        login_button_label: null,
+      },
+    );
+    expect(view.has_client_secret).toBe(true);
+    expect(view.display_name).toBe("Renamed");
+  });
+
   it("renders add/remove mapping controls", () => {
     const html = renderProviderForm({
       isNew: true,

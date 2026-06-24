@@ -372,7 +372,7 @@ export function providerFormViewFromSubmitted(
     display_name: input.display_name,
     issuer: input.issuer,
     client_id: input.client_id,
-    has_client_secret: base?.has_client_secret ?? Boolean(input.client_secret),
+    has_client_secret: base?.has_client_secret ?? false,
     authorization_endpoint: input.authorization_endpoint ?? "",
     token_endpoint: input.token_endpoint ?? "",
     jwks_uri: input.jwks_uri ?? "",
