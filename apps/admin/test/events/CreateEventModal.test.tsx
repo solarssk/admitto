@@ -24,7 +24,7 @@ describe("CreateEventModal", () => {
       target: { value: "Autumn Summit 2026" },
     });
 
-    expect((screen.getByLabelText(/URL slug/) as HTMLInputElement).value).toBe("autumn_summit_2026");
+    expect((screen.getByLabelText(/URL slug/) as HTMLInputElement).value).toBe("autumn-summit-2026");
   });
 
   it("keeps submit disabled until date is set", () => {

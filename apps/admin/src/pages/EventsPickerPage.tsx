@@ -88,9 +88,9 @@ export function EventsPickerPage() {
   const allEventsArchived = events.length > 0 && activeEvents.length === 0;
 
   const gridClass =
-    filteredEvents.length >= 4
+    displayedEvents.length >= 4
       ? "event-grid event-grid--cols-3"
-      : filteredEvents.length > 0
+      : displayedEvents.length > 0
         ? "event-grid event-grid--cols-2"
         : "event-grid";
 

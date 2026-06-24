@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { canManageInstance, listAdminEvents } from "@admitto/auth";
@@ -10,14 +11,19 @@ const slugField = z
   .string()
   .trim()
   .min(1)
-  .max(60)
-  .regex(/^[a-z0-9_]+$/, "Slug: lowercase letters, numbers, underscores only");
+  .max(80)
+  .regex(/^[a-z0-9_-]+$/, "Slug: lowercase letters, numbers, hyphens, and underscores only");
+
+const dateOnlyField = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => isValidCalendarDate(value), "Invalid date");
 
 const createEventSchema = z.object({
-  title: z.string().trim().min(1).max(100),
+  title: z.string().trim().min(1).max(200),
   slug: slugField,
-  date: z.union([z.string().datetime({ offset: true }), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]),
-  location: z.string().trim().max(200).optional(),
+  date: z.union([z.string().datetime({ offset: true }), dateOnlyField]),
+  location: z.string().trim().max(300).optional(),
 });
 
 type EventJsonRow = {
@@ -29,6 +35,22 @@ type EventJsonRow = {
   organization_id: string;
   archived_at: Date | null;
 };
+
+function isValidCalendarDate(value: string): boolean {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return false;
+  const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
+}
+
+/** Parse date-only values at UTC noon to avoid locale off-by-one in date pickers. */
+function parseEventDateInput(date: string): Date {
+  return new Date(date.includes("T") ? date : `${date}T12:00:00.000Z`);
+}
 
 /** Map an event row to the admin picker JSON shape. */
 function serializeEventDto(event: EventJsonRow, count?: number) {
@@ -42,6 +64,39 @@ function serializeEventDto(event: EventJsonRow, count?: number) {
     archived_at: event.archived_at?.toISOString() ?? null,
     ...(count !== undefined ? { attendee_count: count } : {}),
   };
+}
+
+async function resolveCreateEventOrgId(
+  db: PrismaClient,
+  userId: string,
+  isSuperadmin: boolean,
+): Promise<string | Response> {
+  if (isSuperadmin) {
+    return resolveInstanceOrganizationId(db);
+  }
+
+  const adminRoles = await db.roleAssignment.findMany({
+    where: { user_id: userId, role: "admin", scope_type: "organization" },
+    select: { scope_id: true },
+    orderBy: { scope_id: "asc" },
+  });
+  const orgIds = adminRoles
+    .map((role) => role.scope_id)
+    .filter((scopeId): scopeId is string => scopeId != null);
+
+  if (orgIds.length === 0) {
+    return new Response(JSON.stringify({ error: "forbidden" }), { status: 403 });
+  }
+  if (orgIds.length > 1) {
+    return new Response(
+      JSON.stringify({
+        error:
+          "Multiple organization admin assignments — organization selection is not supported yet.",
+      }),
+      { status: 422 },
+    );
+  }
+  return orgIds[0]!;
 }
 
 /** GET /api/admin/events — admin picker (session gate applied upstream). Query: includeArchived=true. */
@@ -80,45 +135,50 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
   }
 
   const { title, slug, date, location } = parsed.data;
+  const dateValue = parseEventDateInput(date);
 
   const isSuperadmin = await canManageInstance(db, auth.userId);
-  let orgId: string;
-  if (isSuperadmin) {
-    orgId = await resolveInstanceOrganizationId(db);
-  } else {
-    const adminRole = await db.roleAssignment.findFirst({
-      where: { user_id: auth.userId, role: "admin", scope_type: "organization" },
-    });
-    if (!adminRole?.scope_id) return c.json({ error: "forbidden" }, 403);
-    orgId = adminRole.scope_id;
-  }
+  const orgIdOrRes = await resolveCreateEventOrgId(db, auth.userId, isSuperadmin);
+  if (orgIdOrRes instanceof Response) return orgIdOrRes;
+  const orgId = orgIdOrRes;
 
   const existing = await db.event.findUnique({ where: { slug } });
   if (existing) {
     return c.json({ code: "slug_taken", error: "Slug is already in use." }, 409);
   }
 
-  const dateValue = new Date(date.includes("T") ? date : `${date}T00:00:00.000Z`);
-
-  const event = await db.event.create({
-    data: {
-      title,
-      slug,
-      date: dateValue,
-      location: location?.trim() ? location.trim() : null,
-      organization_id: orgId,
-    },
-  });
-
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId: audit.operator ?? auth.userId,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    actionType: "event_created",
-    metadata: { eventId: event.id, title: event.title, slug: event.slug },
-  });
 
-  return c.json(serializeEventDto(event), 201);
+  try {
+    const event = await db.$transaction(async (tx) => {
+      const created = await tx.event.create({
+        data: {
+          title,
+          slug,
+          date: dateValue,
+          location: location?.trim() ? location.trim() : null,
+          organization_id: orgId,
+        },
+      });
+
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId: audit.operator ?? auth.userId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        actionType: "event_created",
+        metadata: { eventId: created.id, title: created.title, slug: created.slug },
+      });
+
+      return created;
+    });
+
+    return c.json({ event: serializeEventDto(event) }, 201);
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return c.json({ code: "slug_taken", error: "Slug is already in use." }, 409);
+    }
+    console.error("[audit] event_created transaction failed", err);
+    return c.json({ code: "audit_failed" }, 500);
+  }
 }

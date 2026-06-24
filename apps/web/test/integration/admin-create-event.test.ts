@@ -158,23 +158,25 @@ describe("POST /api/admin/events", () => {
 
     const res = await postCreateEvent(superCookie, {
       title: "Autumn Summit 2026",
-      slug: "autumn_summit_2026",
+      slug: "autumn-summit-2026",
       date: "2026-09-29",
       location: "Convention Center, Warsaw",
     });
 
     expect(res.status).toBe(201);
     const body = (await res.json()) as {
-      id: string;
-      title: string;
-      slug: string;
-      organization_id: string;
+      event: {
+        id: string;
+        title: string;
+        slug: string;
+        organization_id: string;
+      };
     };
-    expect(body.title).toBe("Autumn Summit 2026");
-    expect(body.slug).toBe("autumn_summit_2026");
-    expect(body.organization_id).toBe(ORG_CREATE);
+    expect(body.event.title).toBe("Autumn Summit 2026");
+    expect(body.event.slug).toBe("autumn-summit-2026");
+    expect(body.event.organization_id).toBe(ORG_CREATE);
 
-    const row = await prisma.event.findUnique({ where: { id: body.id } });
+    const row = await prisma.event.findUnique({ where: { id: body.event.id } });
     expect(row?.location).toBe("Convention Center, Warsaw");
 
     const afterAudit = await prisma.adminAuditLog.count({
@@ -186,20 +188,20 @@ describe("POST /api/admin/events", () => {
   it("creates event as org admin in own organization", async () => {
     const res = await postCreateEvent(adminCookie, {
       title: "Admin Created",
-      slug: "admin_created_event",
+      slug: "admin-created-event",
       date: "2026-10-15",
     });
 
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { organization_id: string; slug: string };
-    expect(body.organization_id).toBe(ORG_CREATE);
-    expect(body.slug).toBe("admin_created_event");
+    const body = (await res.json()) as { event: { organization_id: string; slug: string } };
+    expect(body.event.organization_id).toBe(ORG_CREATE);
+    expect(body.event.slug).toBe("admin-created-event");
   });
 
   it("returns 403 for operator", async () => {
     const res = await postCreateEvent(opCookie, {
       title: "Blocked",
-      slug: "blocked_event",
+      slug: "blocked-event",
       date: "2026-10-15",
     });
     expect(res.status).toBe(403);
@@ -229,8 +231,17 @@ describe("POST /api/admin/events", () => {
   it("returns 400 for empty title", async () => {
     const res = await postCreateEvent(superCookie, {
       title: "   ",
-      slug: "valid_slug",
+      slug: "valid-slug",
       date: "2026-10-15",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for impossible calendar date", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Bad Date",
+      slug: "bad-date",
+      date: "2026-02-30",
     });
     expect(res.status).toBe(400);
   });

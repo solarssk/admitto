@@ -14,9 +14,11 @@ type CreateEventModalProps = {
 function slugFromTitle(title: string): string {
   return title
     .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_]/g, "")
-    .slice(0, 60);
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9_-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80);
 }
 
 export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalProps) {
@@ -106,7 +108,7 @@ export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalP
               className="create-event-modal__input"
               type="text"
               value={title}
-              maxLength={100}
+              maxLength={200}
               required
               disabled={submitting}
               onChange={(e) => setTitle(e.target.value)}
@@ -126,8 +128,8 @@ export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalP
                 className="create-event-modal__input"
                 type="text"
                 value={slug}
-                maxLength={60}
-                pattern="[a-z0-9_]+"
+                maxLength={80}
+                pattern="[a-z0-9_-]+"
                 required
                 disabled={submitting}
                 onChange={(e) => {
@@ -160,7 +162,7 @@ export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalP
               className="create-event-modal__input"
               type="text"
               value={location}
-              maxLength={200}
+              maxLength={300}
               disabled={submitting}
               onChange={(e) => setLocation(e.target.value)}
             />

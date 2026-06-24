@@ -200,7 +200,8 @@ export async function createEvent(body: {
   location?: string;
 }): Promise<EventDto> {
   const res = await fetch("/api/admin/events", jsonPostInit(body));
-  return parseJson<EventDto>(res);
+  const data = await parseJson<{ event: EventDto }>(res);
+  return data.event;
 }
 
 /** Archive an event (superadmin-only POST). */
