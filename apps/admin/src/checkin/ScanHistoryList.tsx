@@ -1,41 +1,24 @@
 import type { CheckInHistoryEntry } from "../api/types.js";
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
+import { CkRecentScans } from "./CkRecentScans.js";
+import { CkStats } from "./CkStats.js";
 
 type ScanHistoryListProps = {
   admittedCount: number;
   totalCount: number;
   history: CheckInHistoryEntry[];
+  compact?: boolean;
 };
 
-export function ScanHistoryList({ admittedCount, totalCount, history }: ScanHistoryListProps) {
+export function ScanHistoryList({
+  admittedCount,
+  totalCount,
+  history,
+  compact = false,
+}: ScanHistoryListProps) {
   return (
     <>
-      <p className="checkin-aside__count">
-        <strong>
-          {admittedCount} / {totalCount}
-        </strong>{" "}
-        admitted
-      </p>
-      <h3 className="checkin-aside__title">Recent scans</h3>
-      <ul className="checkin-history">
-        {history.map((row) => (
-          <li
-            key={row.id}
-            className={`checkin-history__row checkin-history__row--${row.status.toLowerCase()}`}
-          >
-            <div>
-              <strong>{row.attendee.name}</strong>
-              <span>{row.status}</span>
-            </div>
-            <time>{formatTime(row.checked_in_at)}</time>
-          </li>
-        ))}
-      </ul>
+      <CkStats admitted={admittedCount} total={totalCount} />
+      <CkRecentScans history={history} compact={compact} limit={compact ? 3 : undefined} />
     </>
   );
 }

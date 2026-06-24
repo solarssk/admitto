@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Card, StatusBadge } from "@admitto/ui";
+import { Button, Card } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInStatus } from "../api/types.js";
 import { NoteModal } from "./NoteModal.js";
 
@@ -14,7 +14,48 @@ type Props = {
   onAddNote?: (body: string) => Promise<void>;
   onUndo?: () => void;
   showUndo?: boolean;
+  onCancel?: () => void;
 };
+
+function statusForCard(
+  scanStatus: CheckInStatus | undefined,
+  checkInStatus: AttendeeCardDto["check_in_status"],
+): CheckInStatus {
+  if (scanStatus) return scanStatus;
+  return checkInStatus === "admitted" ? "ALREADY_CHECKED_IN" : "INVALID";
+}
+
+function statusTitle(status: CheckInStatus): string {
+  switch (status) {
+    case "VALID":
+      return "Valid";
+    case "ALREADY_CHECKED_IN":
+      return "Already checked in";
+    case "INVALID":
+      return "Invalid ticket";
+    case "REVOKED":
+      return "Revoked";
+    case "PREVIEW":
+      return "Ready to check in";
+    default:
+      return status;
+  }
+}
+
+function statusIcon(status: CheckInStatus): string {
+  switch (status) {
+    case "VALID":
+    case "PREVIEW":
+      return "ti-circle-check";
+    case "ALREADY_CHECKED_IN":
+      return "ti-clock-exclamation";
+    case "REVOKED":
+      return "ti-ban";
+    case "INVALID":
+    default:
+      return "ti-circle-x";
+  }
+}
 
 function itemActionLabel(key: string, action: string): string {
   if (action === "issued") {
@@ -25,6 +66,13 @@ function itemActionLabel(key: string, action: string): string {
   }
   if (action === "returned" && key === "headset") return "Return headset";
   return `${action} ${key}`;
+}
+
+function itemStripClass(state: string): string {
+  const normalized = state.toLowerCase();
+  if (normalized === "issued") return "ck-item-strip--issued";
+  if (normalized === "returned") return "ck-item-strip--returned";
+  return "ck-item-strip--pending";
 }
 
 export function AttendeeCard({
@@ -38,118 +86,140 @@ export function AttendeeCard({
   onAddNote,
   onUndo,
   showUndo,
+  onCancel,
 }: Props) {
-  const statusForBadge =
-    scanStatus ??
-    (card.check_in_status === "admitted" ? "ALREADY_CHECKED_IN" : "INVALID");
-
+  const resolvedStatus = statusForCard(scanStatus, card.check_in_status);
+  const cardClass = `checkin-card checkin-card--${resolvedStatus.toLowerCase()}`;
+  const isPreview = resolvedStatus === "PREVIEW";
   const [noteOpen, setNoteOpen] = useState(false);
 
   return (
     <>
-    <Card className={`checkin-card checkin-card--${statusForBadge.toLowerCase()}`} aria-live="polite">
-      <div className="checkin-card__header">
-        <StatusBadge status={pending ? "INVALID" : statusForBadge} />
-        {pending && <span className="checkin-card__pending">Pending — not confirmed</span>}
-        {scanStatus === "PREVIEW" && !pending && (
-          <span className="checkin-card__pending">Confirm check-in required</span>
+      <Card className={cardClass} aria-live="polite">
+        <div className="checkin-card__header">
+          <i className={`ti ${statusIcon(resolvedStatus)} checkin-card__status-icon`} aria-hidden="true" />
+          <span className="checkin-card__status-title">{statusTitle(resolvedStatus)}</span>
+          {pending && <span className="checkin-card__pending">Pending — not confirmed</span>}
+          {card.ticket_type && <span className="checkin-card__ticket">{card.ticket_type}</span>}
+        </div>
+
+        {(card.company || card.department) && (
+          <p className="checkin-card__meta">
+            {[card.company, card.department].filter(Boolean).join(" · ")}
+          </p>
         )}
-        {card.ticket_type && <span className="checkin-card__ticket">{card.ticket_type}</span>}
-      </div>
 
-      <h2 className="checkin-card__name">{card.name}</h2>
+        <h2 className="checkin-card__name">{card.name}</h2>
 
-      {(card.company || card.department) && (
-        <p className="checkin-card__meta">
-          {[card.company, card.department].filter(Boolean).join(" · ")}
-        </p>
-      )}
-
-      {card.warnings.map((w) => (
-        <p key={w} className="checkin-card__warning" role="alert">
-          {w}
-        </p>
-      ))}
-
-      <div className="checkin-card__items">
-        {card.items.map((item) => (
-          <div key={item.key} className="checkin-card__item-row">
-            <span className="checkin-card__item-label">
-              {item.label}: <strong>{item.state}</strong>
-              {item.detail && (
-                <span className="checkin-card__item-detail"> ({item.detail})</span>
-              )}
-            </span>
-            <div className="checkin-card__item-actions">
-              {item.actions.map((action) => (
-                <button
-                  key={`${item.key}-${action}`}
-                  type="button"
-                  className="checkin-action-btn"
-                  disabled={!canAct || pending}
-                  onClick={() => onItemAction?.(item.key, action)}
-                >
-                  {itemActionLabel(item.key, action)}
-                </button>
-              ))}
-            </div>
-          </div>
+        {card.warnings.map((w) => (
+          <p key={w} className="checkin-card__warning" role="alert">
+            {w}
+          </p>
         ))}
-      </div>
 
-      {card.notes.length > 0 && (
-        <div className="checkin-card__notes">
-          <h3 className="checkin-card__notes-title">Notes</h3>
-          <ul>
-            {card.notes.map((n, i) => (
-              <li key={`${n.created_at}-${i}`}>
-                <span className="checkin-card__note-meta">
-                  {n.author_display} · {new Date(n.created_at).toLocaleTimeString()}
-                </span>
-                <p>{n.body}</p>
-              </li>
-            ))}
-          </ul>
+        <div className="checkin-card__items">
+          {card.items.map((item) => (
+            <div key={item.key} className="checkin-card__item-row">
+              <span className="checkin-card__item-label">{item.label}</span>
+              {item.actions.length > 0 ? (
+                <div className="checkin-card__item-actions">
+                  {item.actions.map((action) => (
+                    <button
+                      key={`${item.key}-${action}`}
+                      type="button"
+                      className="checkin-action-btn checkin-action-btn--sm"
+                      disabled={!canAct || pending}
+                      onClick={() => onItemAction?.(item.key, action)}
+                    >
+                      {itemActionLabel(item.key, action)}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className={`ck-item-strip ${itemStripClass(item.state)}`}>
+                  <span>{item.state}</span>
+                  {item.detail && <span className="checkin-card__item-detail"> ({item.detail})</span>}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {card.notes.length > 0 && (
+          <div className="checkin-card__notes">
+            <h3 className="checkin-card__notes-title">Notes</h3>
+            <ul>
+              {card.notes.map((n, i) => (
+                <li key={`${n.created_at}-${i}`}>
+                  <span className="checkin-card__note-meta">
+                    {n.author_display} · {new Date(n.created_at).toLocaleTimeString()}
+                  </span>
+                  <p>{n.body}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {isPreview && onCheckIn && card.check_in_status === "not_admitted" && (
+          <div className="checkin-card__preview-actions">
+            <Button
+              type="button"
+              variant="primary"
+              size="lg"
+              disabled={!canAct || pending}
+              onClick={onCheckIn}
+              className="checkin-action-btn--block"
+            >
+              Confirm check-in
+            </Button>
+            <button
+              type="button"
+              className="link-btn"
+              disabled={!canAct || pending}
+              onClick={() => onCancel?.()}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {confirmed === false &&
+          !isPreview &&
+          resolvedStatus !== "INVALID" &&
+          resolvedStatus !== "REVOKED" && (
+            <span className="checkin-card__meta">Awaiting server confirmation</span>
+          )}
+      </Card>
+
+      {(showUndo || onAddNote) && (
+        <div className="ck-result-actions">
+          {showUndo && onUndo && (
+            <button
+              type="button"
+              className="link-btn"
+              disabled={!canAct || pending}
+              onClick={onUndo}
+            >
+              ↩ Undo last check-in
+            </button>
+          )}
+          {onAddNote && (
+            <button
+              type="button"
+              className="link-btn"
+              disabled={!canAct || pending}
+              onClick={() => setNoteOpen(true)}
+            >
+              ✏ Add note
+            </button>
+          )}
         </div>
       )}
 
-      <div className="checkin-card__footer">
-        {onCheckIn && card.check_in_status === "not_admitted" && (
-          <Button
-            type="button"
-            disabled={!canAct || pending}
-            onClick={onCheckIn}
-            className="checkin-action-btn checkin-action-btn--primary"
-          >
-            Check in
-          </Button>
-        )}
-        {showUndo && onUndo && (
-          <button type="button" className="checkin-action-btn" disabled={!canAct || pending} onClick={onUndo}>
-            Undo last check-in
-          </button>
-        )}
-        {onAddNote && (
-          <button
-            type="button"
-            className="checkin-action-btn"
-            disabled={!canAct || pending}
-            onClick={() => setNoteOpen(true)}
-          >
-            Add note
-          </button>
-        )}
-        {confirmed === false &&
-          scanStatus !== "PREVIEW" &&
-          scanStatus !== "INVALID" &&
-          scanStatus !== "REVOKED" && (
-          <span className="checkin-card__meta">Awaiting server confirmation</span>
-        )}
-      </div>
-    </Card>
-    {onAddNote && (
-      <NoteModal open={noteOpen} onClose={() => setNoteOpen(false)} onSubmit={onAddNote} />
-    )}
+      {onAddNote && (
+        <NoteModal open={noteOpen} onClose={() => setNoteOpen(false)} onSubmit={onAddNote} />
+      )}
     </>
   );
 }
