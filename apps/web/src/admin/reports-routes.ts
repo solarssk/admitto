@@ -229,8 +229,23 @@ async function loadReportsAggregates(
 function sanitizeCsvCell(value: string | null | undefined): string {
   if (value == null) return "";
   const s = String(value);
-  if (/^[=+\-@\t\r\n]/.test(s)) return `'${s}`;
+  if (/^[\t\r\n]/.test(s) || /^[ \t\r\n]*[=+\-@]/.test(s)) return `'${s}`;
   return s;
+}
+
+/** Format admitted_at for CSV/PDF export in the event timezone (YYYY-MM-DD HH:mm). */
+function formatAdmittedAtExport(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+    .format(date)
+    .replace(",", "");
 }
 
 function quoteCsvCell(value: string): string {
@@ -338,18 +353,23 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
   if (formatRaw === "csv") {
-    const rows = await db.attendee.findMany({
-      where: { event_id: eventId, admitted_at: { not: null } },
-      orderBy: { admitted_at: "asc" },
-      take: CSV_EXPORT_MAX,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        ticket_type: true,
-        admitted_at: true,
-      },
-    });
+    const [totalAdmitted, rows] = await Promise.all([
+      db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
+      db.attendee.findMany({
+        where: { event_id: eventId, admitted_at: { not: null } },
+        orderBy: { admitted_at: "asc" },
+        take: CSV_EXPORT_MAX,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          ticket_type: true,
+          admitted_at: true,
+        },
+      }),
+    ]);
+
+    const truncated = totalAdmitted > CSV_EXPORT_MAX;
 
     const deviceByAttendee = await loadDeviceIdsByAttendee(
       db,
@@ -357,7 +377,8 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
       rows.map((row) => row.id),
     );
 
-    const header = ["Name", "Email", "Ticket type", "Admitted at", "Device"]
+    const admittedAtHeader = `Admitted at (${timeZone})`;
+    const header = ["Name", "Email", "Ticket type", admittedAtHeader, "Device"]
       .map((col) => quoteCsvCell(col))
       .join(",");
     const dataRows = rows.map((row) =>
@@ -365,21 +386,34 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
         row.name,
         row.email,
         ticketTypeLabel(row.ticket_type),
-        row.admitted_at!.toISOString(),
+        formatAdmittedAtExport(row.admitted_at!, timeZone),
         deviceByAttendee.get(row.id) ?? "",
       ]
         .map((cell) => quoteCsvCell(sanitizeCsvCell(String(cell))))
         .join(","),
     );
 
-    const csvBody = [header, ...dataRows].join("\r\n");
+    const truncationNotice = truncated
+      ? [
+          quoteCsvCell(
+            sanitizeCsvCell(
+              `Export truncated: first ${CSV_EXPORT_MAX} of ${totalAdmitted} admissions.`,
+            ),
+          ),
+          quoteCsvCell(""),
+          quoteCsvCell(""),
+          quoteCsvCell(""),
+          quoteCsvCell(""),
+        ].join(",")
+      : null;
+
+    const csvBody = [header, ...(truncationNotice ? [truncationNotice] : []), ...dataRows].join(
+      "\r\n",
+    );
     const bom = "\uFEFF";
     const filename = `admissions-${event.slug}-${dateStamp}.csv`;
 
-    const totalAdmitted = await db.attendee.count({
-      where: { event_id: eventId, admitted_at: { not: null } },
-    });
-    await auditReportsExported(db, c, eventId, "csv", rows.length, totalAdmitted > CSV_EXPORT_MAX);
+    await auditReportsExported(db, c, eventId, "csv", rows.length, truncated);
 
     return new Response(bom + csvBody, {
       status: 200,
@@ -389,6 +423,8 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
         "Cache-Control": "no-store",
         "Pragma": "no-cache",
         "X-Content-Type-Options": "nosniff",
+        "X-Admission-Log-Total": String(totalAdmitted),
+        "X-Admission-Log-Truncated": String(truncated),
       },
     });
   }
@@ -406,7 +442,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   const logRows = aggregates.admission_log
     .map(
       (r) =>
-        `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.ticket_type)}</td><td>${escapeHtml(r.admitted_at)}</td><td>${escapeHtml(r.device_id ?? "—")}</td></tr>`,
+        `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.ticket_type)}</td><td>${escapeHtml(formatAdmittedAtExport(new Date(r.admitted_at), timeZone))}</td><td>${escapeHtml(r.device_id ?? "—")}</td></tr>`,
     )
     .join("");
 
@@ -435,7 +471,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
 <body>
   <p class="print-hint no-print">Use your browser&rsquo;s <strong>Print</strong> dialog and choose &ldquo;Save as PDF&rdquo; to export this report.</p>
   <h1>${escapeHtml(event.title)}</h1>
-  <p class="meta">Event date: ${escapeHtml(eventDate)} · Generated ${escapeHtml(new Date().toISOString())}</p>
+  <p class="meta">Event date: ${escapeHtml(eventDate)} · Times in ${escapeHtml(timeZone)} · Generated ${escapeHtml(new Date().toISOString())}</p>
   <div class="stats">
     <div class="stat"><span>Total attendees</span><strong>${aggregates.totalAttendees}</strong></div>
     <div class="stat"><span>Admitted</span><strong>${aggregates.admittedCount}</strong></div>
@@ -447,7 +483,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
     <thead><tr><th>Type</th><th>Admitted</th><th>Total</th><th>Rate</th></tr></thead>
     <tbody>${typeRows || '<tr><td colspan="4">No attendees</td></tr>'}</tbody>
   </table>
-  <h2>Admission log${aggregates.admittedCount > PDF_LOG_MAX ? ` (first ${PDF_LOG_MAX})` : ""}</h2>
+  <h2>Admission log${aggregates.admittedCount > PDF_LOG_MAX ? ` (first ${PDF_LOG_MAX} of ${aggregates.admittedCount})` : ""}</h2>
   <table>
     <thead><tr><th>Name</th><th>Email</th><th>Ticket type</th><th>Admitted at</th><th>Device</th></tr></thead>
     <tbody>${logRows || '<tr><td colspan="5">No admissions yet</td></tr>'}</tbody>

@@ -827,7 +827,7 @@ export async function exportEventReportsCsv(
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /** Same-origin URL for printable HTML report (open in new tab for Save as PDF). */

@@ -433,6 +433,7 @@ export function ReportsPage() {
           </div>
 
           <AdmissionLog
+            key={data.event.id}
             log={data.admission_log}
             byTicketType={data.by_ticket_type}
             timeZone={data.timezone}

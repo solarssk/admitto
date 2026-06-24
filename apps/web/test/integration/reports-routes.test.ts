@@ -378,6 +378,20 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(body.error).toBe("format must be csv or pdf");
   });
 
+  it("returns 403 for operator on CSV export", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/export?format=csv`, {
+      headers: { Cookie: opCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for cross-org admin on PDF export", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/export?format=pdf`, {
+      headers: { Cookie: adminBCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
   it("returns CSV with BOM, headers, and admitted rows", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/export?format=csv`, {
       headers: { Cookie: adminCookie },
@@ -385,6 +399,8 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/csv");
     expect(res.headers.get("Content-Disposition")).toContain('filename="admissions-reports-event-');
+    expect(res.headers.get("X-Admission-Log-Total")).toBe("5");
+    expect(res.headers.get("X-Admission-Log-Truncated")).toBe("false");
 
     const buf = await res.arrayBuffer();
     const bytes = new Uint8Array(buf);
@@ -393,10 +409,11 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(bytes[2]).toBe(0xbf);
     const text = new TextDecoder().decode(buf);
     const lines = text.replace(/^\uFEFF/, "").split("\r\n");
-    expect(lines[0]).toBe('"Name","Email","Ticket type","Admitted at","Device"');
+    expect(lines[0]).toContain('"Admitted at (');
     expect(lines.length).toBe(6);
     expect(lines[1]).toContain('"VIP One"');
     expect(lines[1]).toContain('"scanner-01"');
+    expect(lines[1]).not.toMatch(/T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
   });
 
   it("returns CSV headers only when no admissions", async () => {
@@ -404,9 +421,12 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(200);
+    expect(res.headers.get("X-Admission-Log-Total")).toBe("0");
+    expect(res.headers.get("X-Admission-Log-Truncated")).toBe("false");
     const text = await res.text();
     const lines = text.replace(/^\uFEFF/, "").split("\r\n");
-    expect(lines).toEqual(['"Name","Email","Ticket type","Admitted at","Device"']);
+    expect(lines[0]).toContain('"Admitted at (');
+    expect(lines.length).toBe(1);
   });
 
   it("returns printable HTML for pdf format", async () => {
