@@ -748,6 +748,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: { id: string }[] };
+    expect(body.items.map((i) => i.id)).toContain(ATT_A2);
     expect(body.items.every((i) => i.id === ATT_A2)).toBe(true);
 
     await prisma.attendee.update({

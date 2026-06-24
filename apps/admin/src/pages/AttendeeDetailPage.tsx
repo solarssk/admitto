@@ -65,14 +65,25 @@ export function AttendeeDetailPage() {
   const [resendError, setResendError] = useState<string | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
 
+  /** Guards async handlers when route params change before a request completes. */
+  const selectionRef = useRef({ eventId, attendeeId });
+  selectionRef.current = { eventId, attendeeId };
+
+  function isStillSelected(target: { eventId: string; attendeeId: string }): boolean {
+    const current = selectionRef.current;
+    return current.eventId === target.eventId && current.attendeeId === target.attendeeId;
+  }
+
   const loadDetail = useCallback(async () => {
     if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
     setLoading(true);
     setError(null);
     setNotFound(false);
     try {
       const { detail: d, attributeFields: fields, itemsWarning: warn } =
         await loadAttendeeDetailData(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
       setDetail(d);
       setAttributeFields(fields);
       setForm(toAttendeeForm(d, fields));
@@ -81,13 +92,14 @@ export function AttendeeDetailPage() {
       setStaleWrite(false);
       setEmailConflict(false);
     } catch (err) {
+      if (!isStillSelected(target)) return;
       if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
         setNotFound(true);
       } else {
         setError(err instanceof ApiError ? err.message : "Failed to load attendee.");
       }
     } finally {
-      setLoading(false);
+      if (isStillSelected(target)) setLoading(false);
     }
   }, [eventId, attendeeId]);
 
@@ -120,12 +132,14 @@ export function AttendeeDetailPage() {
 
   async function handleReload() {
     if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
     const previousDetail = detail;
     setReloading(true);
     setError(null);
     try {
       const { detail: d, attributeFields: fields, itemsWarning: warn } =
         await loadAttendeeDetailData(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
       setAttributeFields(fields);
       setForm((currentForm) => {
         if (!currentForm || !previousDetail) return toAttendeeForm(d, fields);
@@ -136,9 +150,10 @@ export function AttendeeDetailPage() {
       setStaleWrite(false);
       setItemsWarning(warn);
     } catch (err) {
+      if (!isStillSelected(target)) return;
       setError(err instanceof ApiError ? err.message : "Failed to reload — please try again.");
     } finally {
-      setReloading(false);
+      if (isStillSelected(target)) setReloading(false);
     }
   }
 
@@ -164,17 +179,20 @@ export function AttendeeDetailPage() {
     if (Object.keys(patch).length === 0) return;
 
     patch.expected_updated_at = detail.updated_at;
+    const target = { eventId, attendeeId };
     setSaving(true);
     setEmailConflict(false);
     setError(null);
     try {
       const updated = await updateAttendee(eventId, attendeeId, patch);
+      if (!isStillSelected(target)) return;
       setDetail(updated);
       setForm(toAttendeeForm(updated, attributeFields));
       setInitialEmail(updated.email);
       setStaleWrite(false);
       addToast("Profile saved", "success");
     } catch (err) {
+      if (!isStillSelected(target)) return;
       if (err instanceof ApiError && err.status === 409) {
         if (err.message === "email_conflict") setEmailConflict(true);
         else if (err.message === "stale_write") {
@@ -188,12 +206,13 @@ export function AttendeeDetailPage() {
         setError(err instanceof ApiError ? err.message : "Failed to save changes.");
       }
     } finally {
-      setSaving(false);
+      if (isStillSelected(target)) setSaving(false);
     }
   }
 
   async function handleRsvpChange(next: RsvpStatus) {
     if (!eventId || !attendeeId || !detail || next === detail.rsvp_status || rsvpSaving) return;
+    const target = { eventId, attendeeId };
     const previous = detail;
     const expectedUpdatedAt = detail.updated_at;
     setDetail({ ...detail, rsvp_status: next });
@@ -203,10 +222,12 @@ export function AttendeeDetailPage() {
         rsvp_status: next,
         expected_updated_at: expectedUpdatedAt,
       });
+      if (!isStillSelected(target)) return;
       setDetail(updated);
       setForm((f) => (f ? f : null));
       addToast("Status updated", "success");
     } catch (err) {
+      if (!isStillSelected(target)) return;
       setDetail(previous);
       if (err instanceof ApiError && err.message === "stale_write") {
         addToast("Someone else updated this attendee — page will reload", "warning");
@@ -215,13 +236,14 @@ export function AttendeeDetailPage() {
         addToast(err instanceof ApiError ? err.message : "Failed to update status", "error");
       }
     } finally {
-      setRsvpSaving(false);
+      if (isStillSelected(target)) setRsvpSaving(false);
     }
   }
 
   async function handleResend(e: React.FormEvent) {
     e.preventDefault();
     if (!eventId || !attendeeId || !detail) return;
+    const target = { eventId, attendeeId };
     if (resendMode === "other" && !resendEmail.trim()) {
       setResendError("Enter an email address for the alternate recipient.");
       return;
@@ -231,7 +253,9 @@ export function AttendeeDetailPage() {
     try {
       const body = resendMode === "other" ? { to: resendEmail.trim() } : {};
       const delivery = await resendTicket(eventId, attendeeId, body);
+      if (!isStillSelected(target)) return;
       const refreshed = await fetchAttendeeDetail(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
       setDetail(refreshed);
       setResendOpen(false);
       addToast(
@@ -241,9 +265,10 @@ export function AttendeeDetailPage() {
         delivery.status === "failed" ? "warning" : "success",
       );
     } catch (err) {
+      if (!isStillSelected(target)) return;
       setResendError(err instanceof ApiError ? err.message : "Resend failed.");
     } finally {
-      setResending(false);
+      if (isStillSelected(target)) setResending(false);
     }
   }
 

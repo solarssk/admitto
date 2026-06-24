@@ -25,6 +25,7 @@ import type {
   EventTemplateDto,
   SaveTemplateBody,
   PreviewTemplateResponse,
+  RsvpStatus,
   TestSendBody,
   TestSendResponse,
   MailSettingsResponse,
@@ -589,7 +590,7 @@ export async function fetchTicketTypes(
 /** Download a filtered attendee export and trigger browser save. */
 export async function exportAttendees(
   eventId: string,
-  params: { q?: string; status?: string; ticket_type?: string; rsvp_status?: string },
+  params: { q?: string; status?: string; ticket_type?: string; rsvp_status?: RsvpStatus },
   format: "xlsx" | "csv" | "pdf",
   signal?: AbortSignal,
 ): Promise<void> {

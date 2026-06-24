@@ -1,7 +1,7 @@
 import { Badge } from "@admitto/ui";
 import type { RsvpStatus } from "../api/types.js";
 
-const RSVP_LABELS: Record<RsvpStatus, string> = {
+export const RSVP_LABELS: Record<RsvpStatus, string> = {
   none: "Registered",
   confirmed: "Confirmed",
   declined: "Declined",

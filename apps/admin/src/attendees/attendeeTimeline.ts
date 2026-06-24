@@ -1,4 +1,11 @@
-import type { AttendeeActionLogEntryDto } from "../api/types.js";
+import type { AttendeeActionLogEntryDto, RsvpStatus } from "../api/types.js";
+import { RSVP_LABELS } from "./rsvpStatusBadge.js";
+
+function formatRsvpStatus(value: unknown): string {
+  const key = String(value);
+  if (key in RSVP_LABELS) return RSVP_LABELS[key as RsvpStatus];
+  return key;
+}
 
 export function getTimelineIcon(actionType: string): string {
   const icons: Record<string, string> = {
@@ -38,7 +45,7 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
     case "attendee_ingested":
       return "Ingested via API";
     case "rsvp_status_changed":
-      return `Status changed to ${String(meta.to ?? "updated")}`;
+      return `Status changed to ${formatRsvpStatus(meta.to ?? "updated")}`;
     case "ticket_sent":
       return "Ticket sent";
     case "mail_delivered":
@@ -76,7 +83,7 @@ export function getTimelineDetail(entry: AttendeeActionLogEntryDto): string {
     const from = entry.metadata.from;
     const to = entry.metadata.to;
     if (from != null && to != null) {
-      return `${String(from)} → ${String(to)} · ${actor}`;
+      return `${formatRsvpStatus(from)} → ${formatRsvpStatus(to)} · ${actor}`;
     }
   }
   return actor;

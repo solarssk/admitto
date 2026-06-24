@@ -1343,7 +1343,6 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
         attendee_id: row.id,
         action_type: "attendee_created_manual",
         audit: adminAuditFromContext(c),
-        metadata: { email, name },
       });
 
       return row;

@@ -93,32 +93,47 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
             required
             value={email}
             disabled={submitting}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setError(null);
+            }}
           />
           <Input
             label="Name"
             required
             value={name}
             disabled={submitting}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setError(null);
+            }}
           />
           <Input
             label="Company"
             value={company}
             disabled={submitting}
-            onChange={(e) => setCompany(e.target.value)}
+            onChange={(e) => {
+              setCompany(e.target.value);
+              setError(null);
+            }}
           />
           <Input
             label="Department"
             value={department}
             disabled={submitting}
-            onChange={(e) => setDepartment(e.target.value)}
+            onChange={(e) => {
+              setDepartment(e.target.value);
+              setError(null);
+            }}
           />
           <Input
             label="Ticket type"
             value={ticketType}
             disabled={submitting}
-            onChange={(e) => setTicketType(e.target.value)}
+            onChange={(e) => {
+              setTicketType(e.target.value);
+              setError(null);
+            }}
           />
         </div>
         <div className="add-attendee-modal__actions">
