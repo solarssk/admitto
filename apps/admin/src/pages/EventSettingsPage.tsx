@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useBlocker, useNavigate, useParams } from "react-router-dom";
 import { Button, Card, EmptyState, Input, PageHeader, StatusBadge, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -81,6 +81,10 @@ export function EventSettingsPage() {
 
   const dirty =
     form !== null && original !== null && JSON.stringify(form) !== JSON.stringify(original);
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty && currentLocation.pathname !== nextLocation.pathname,
+  );
   const isArchived = event?.status === "archived";
 
   const load = useCallback(async () => {
@@ -112,6 +116,7 @@ export function EventSettingsPage() {
     if (!dirty) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
+      e.returnValue = "";
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
@@ -404,6 +409,16 @@ export function EventSettingsPage() {
         loading={archiving}
         onConfirm={() => void handleArchiveConfirm()}
         onCancel={() => setArchiveOpen(false)}
+      />
+      <ConfirmDialog
+        open={blocker.state === "blocked"}
+        title="Discard unsaved changes?"
+        message="You have unsaved event settings. They will be lost if you leave this page."
+        confirmLabel="Discard"
+        confirmVariant="danger"
+        cancelLabel="Keep editing"
+        onConfirm={() => blocker.proceed?.()}
+        onCancel={() => blocker.reset?.()}
       />
     </div>
   );

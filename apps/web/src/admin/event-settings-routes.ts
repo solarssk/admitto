@@ -13,6 +13,8 @@ const dateOnlyField = z
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine((value) => isValidCalendarDate(value), "Invalid date");
 
+const PG_INT_MAX = 2_147_483_647;
+
 /**
  * Strict schema: unknown keys (including `slug`) return 400 — slug is immutable and
  * clients must omit it; we do not silently strip extra fields.
@@ -22,7 +24,7 @@ const patchEventSchema = z
     title: z.string().trim().min(1).max(200).optional(),
     date: z.union([z.string().datetime(), dateOnlyField]).optional(),
     location: z.string().trim().max(300).nullish(),
-    capacity: z.number().int().positive().nullish(),
+    capacity: z.number().int().positive().max(PG_INT_MAX).nullish(),
   })
   .strict();
 
@@ -213,7 +215,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
 function sanitizeCsvCell(value: string | null | undefined): string {
   if (value == null) return "";
   const s = String(value);
-  if (/^[=+\-@\t\r]/.test(s)) return `'${s}`;
+  if (/^[=+\-@\t\r\n]/.test(s)) return `'${s}`;
   return s;
 }
 
@@ -236,18 +238,18 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
 
   const auth = c.get("auth");
 
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: { id: true, slug: true, organization_id: true },
+  });
+  if (!event) return c.json({ error: "not_found" }, 404);
+
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
   if (!(await canManageInstance(db, auth.userId))) {
     return c.json({ error: "forbidden" }, 403);
   }
-
-  const event = await db.event.findUnique({
-    where: { id: eventId },
-    select: { id: true, slug: true, organization_id: true },
-  });
-  if (!event) return c.json({ error: "not_found" }, 404);
 
   const audit = adminAuditFromContext(c);
   if (!audit.operator) return c.json({ error: "unauthorized" }, 401);
@@ -324,6 +326,9 @@ export async function handleExportEventPii(c: Context, db: PrismaClient): Promis
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": exportContentDisposition(filename),
+      "Cache-Control": "no-store",
+      "Pragma": "no-cache",
+      "X-Content-Type-Options": "nosniff",
       ...(truncated
         ? {
             "X-Export-Truncated": "true",

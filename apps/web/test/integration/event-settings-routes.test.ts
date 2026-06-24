@@ -311,6 +311,15 @@ describe("PATCH /api/admin/events/:eventId", () => {
     const event = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
     expect(event.slug).toBe("event-settings");
   });
+
+  it("returns 400 when capacity exceeds PostgreSQL int max", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ capacity: 2_147_483_648 }),
+    });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("GET /api/admin/events/:eventId/export-pii", () => {
@@ -321,6 +330,15 @@ describe("GET /api/admin/events/:eventId/export-pii", () => {
     expect(res.status).toBe(403);
   });
 
+  it("returns 404 for non-existent event (superadmin)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_MISSING}/export-pii`, {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("not_found");
+  });
+
   it("returns CSV attachment for superadmin and writes audit log", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_SET}/export-pii`, {
       headers: { Cookie: superCookie },
@@ -329,6 +347,7 @@ describe("GET /api/admin/events/:eventId/export-pii", () => {
     expect(res.headers.get("Content-Type")).toContain("text/csv");
     expect(res.headers.get("Content-Disposition")).toContain("attachment");
     expect(res.headers.get("Content-Disposition")).toContain("pii-export-event-settings");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
 
     const buf = await res.arrayBuffer();
     const bytes = new Uint8Array(buf);
