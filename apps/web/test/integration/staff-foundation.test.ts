@@ -137,7 +137,7 @@ describe("GET /api/admin/me", () => {
     expect(body.mailer_status).toEqual(
       expect.objectContaining({
         configured: expect.any(Boolean),
-        provider: expect.anything(),
+        provider: expect.toSatisfy((v: unknown) => v === null || typeof v === "string"),
       }),
     );
   });
