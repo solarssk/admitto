@@ -26,6 +26,7 @@ export async function isFirstRunRequired(db: PrismaClient): Promise<boolean> {
   return count === 0;
 }
 
+/** Apply setup page security headers and return an HTML response. */
 function htmlResponse(c: Context, html: string, status: 200 | 409 = 200): Response {
   for (const [name, value] of Object.entries(getSetupPageSecurityHeaders())) {
     c.header(name, value);
@@ -33,6 +34,7 @@ function htmlResponse(c: Context, html: string, status: 200 | 409 = 200): Respon
   return c.html(html, status);
 }
 
+/** Parse `application/x-www-form-urlencoded` POST body for /setup. */
 async function parseSetupForm(c: Context): Promise<Record<string, string>> {
   const contentType = c.req.header("content-type") ?? "";
   if (contentType.includes("application/x-www-form-urlencoded")) {
@@ -46,6 +48,7 @@ async function parseSetupForm(c: Context): Promise<Record<string, string>> {
   return {};
 }
 
+/** Validate first-run setup form fields before creating the superadmin user. */
 function validateSetupForm(form: Record<string, string>): {
   ok: true;
   email: string;

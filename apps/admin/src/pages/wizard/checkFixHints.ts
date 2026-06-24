@@ -16,6 +16,7 @@ Then restart the server.`,
 In production, BASE_URL must use https://.`,
 };
 
+/** Operator-facing remediation copy for a failed setup readiness check. */
 export function checkFixHint(key: SetupCheckKey): string {
   return FIX_HINTS[key];
 }

@@ -730,16 +730,19 @@ export async function patchSecuritySettings(
   return parseJson<SecuritySettingsDto>(res);
 }
 
+/** Load system readiness checks for first-run wizard step 1 (superadmin). */
 export async function fetchSetupChecks(signal?: AbortSignal): Promise<SetupChecksResponse> {
   const res = await fetch("/api/admin/setup/checks", { credentials: "same-origin", signal });
   return parseJson<SetupChecksResponse>(res);
 }
 
+/** Load instance organisation name and logo URL for setup wizard branding step. */
 export async function fetchOrgBranding(signal?: AbortSignal): Promise<SetupOrgBrandingDto> {
   const res = await fetch("/api/admin/setup/org-branding", { credentials: "same-origin", signal });
   return parseJson<SetupOrgBrandingDto>(res);
 }
 
+/** Save organisation name and HTTPS logo URL during first-run branding step. */
 export async function patchOrgBranding(
   body: PatchSetupOrgBrandingBody,
 ): Promise<SetupOrgBrandingDto> {
@@ -747,6 +750,7 @@ export async function patchOrgBranding(
   return parseJson<SetupOrgBrandingDto>(res);
 }
 
+/** Mark first-run onboarding wizard complete (superadmin, POST setup/complete). */
 export async function completeSetup(): Promise<{ setup_complete: boolean }> {
   const res = await fetch("/api/admin/setup/complete", jsonPostInit({}));
   return parseJson<{ setup_complete: boolean }>(res);

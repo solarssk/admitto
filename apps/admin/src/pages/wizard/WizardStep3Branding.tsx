@@ -18,6 +18,7 @@ type WizardStep3BrandingProps = {
   onDirtyChange?: (dirty: boolean) => void;
 };
 
+/** Return a normalized HTTPS logo URL safe for img src, or null when invalid. */
 function safeHttpsLogoHref(url: string): string | null {
   const trimmed = url.trim();
   if (!trimmed) return null;

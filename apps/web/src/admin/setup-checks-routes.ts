@@ -19,6 +19,7 @@ export type SetupChecksPayload = {
   };
 };
 
+/** Validate ENCRYPTION_KEY boot config (optional in dev/test when unset). */
 function checkEncryption(env: NodeJS.ProcessEnv = process.env): SetupCheckResult {
   if (env.NODE_ENV === "development" || env.NODE_ENV === "test") {
     const raw = env.ENCRYPTION_KEY?.trim();
@@ -35,6 +36,7 @@ function checkEncryption(env: NodeJS.ProcessEnv = process.env): SetupCheckResult
   }
 }
 
+/** Validate BASE_URL is set and uses HTTPS in production. */
 function checkBaseUrl(env: NodeJS.ProcessEnv = process.env): SetupCheckResult {
   const raw = env.BASE_URL?.trim();
   if (!raw) {

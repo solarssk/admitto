@@ -6,6 +6,7 @@ import {
   renderAuthPage,
 } from "./shared-auth-styles.js";
 
+/** Escape user-supplied text for safe inclusion in setup page HTML. */
 function esc(s: string): string {
   return s
     .replace(/&/g, "&amp;")
