@@ -11,11 +11,11 @@ export async function testCfAccessConnection(input: {
     assertSafeOidcFetchUrl(jwksUrl);
     const res = await safeOidcFetch(jwksUrl, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
-      return { ok: false, error: `JWKS endpoint returned HTTP ${res.status}` };
+      return { ok: false, error: `Connection check failed (HTTP ${res.status})` };
     }
     const body = (await res.json()) as { keys?: unknown };
     if (!Array.isArray(body.keys) || body.keys.length === 0) {
-      return { ok: false, error: "JWKS document has no keys" };
+      return { ok: false, error: "Connection check failed: no signing keys found" };
     }
     return { ok: true };
   } catch (err) {

@@ -173,14 +173,14 @@ export async function handlePostCfAccessTest(c: Context, db: PrismaClient): Prom
     const view = await buildFormView(db);
     return htmlResponse(
       c,
-      renderCfAccessForm({ form: view, error: "Team domain is required to test JWKS" }),
+      renderCfAccessForm({ form: view, error: "Team domain is required to test connection" }),
     );
   }
 
   const result = await testCfAccessConnection({ teamDomain });
   const view = await buildFormView(db);
   if (result.ok) {
-    return htmlResponse(c, renderCfAccessForm({ form: view, flash: "JWKS connection OK" }));
+    return htmlResponse(c, renderCfAccessForm({ form: view, flash: "Connection verified" }));
   }
   return htmlResponse(c, renderCfAccessForm({ form: view, error: result.error }));
 }

@@ -173,14 +173,27 @@ describe("oidc admin routes", () => {
     expect(row.enabled).toBe(false);
   });
 
-  it("provider list shows role select on edit form", async () => {
-    const res = await app.request(`/admin/auth/providers/${PROVIDER_ID}`, {
-      headers: { Cookie: superCookie },
+  it("provider edit form shows role select when mappings exist", async () => {
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        group: "admins",
+        role: "superadmin",
+        scope_type: "instance",
+        scope_id: "",
+      },
     });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain('name="mapping_role_');
-    expect(html).toContain("<select");
-    expect(html).toContain("superadmin");
+    try {
+      const res = await app.request(`/admin/auth/providers/${PROVIDER_ID}`, {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('name="mapping_role_0"');
+      expect(html).toContain("<select");
+      expect(html).toContain("superadmin");
+    } finally {
+      await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    }
   });
 });

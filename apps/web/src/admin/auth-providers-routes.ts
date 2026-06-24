@@ -13,11 +13,15 @@ import {
   logAuthSettingsChanged,
 } from "@admitto/auth";
 import {
+  createProviderFormScriptNonce,
   getAdminPageSecurityHeaders,
   renderProviderList,
   renderProviderForm,
   parseMappingsFromForm,
+  parseMappingRowsFromForm,
   parseProviderInput,
+  providerFormViewFromSubmitted,
+  incompleteMappingRowsWarning,
   type MappingRow,
 } from "./auth-providers-html.js";
 
@@ -26,6 +30,20 @@ function htmlResponse(c: Context, html: string, status: 200 | 403 = 200): Respon
     c.header(name, value);
   }
   return c.html(html, status);
+}
+
+type ProviderFormRenderOptions = Omit<Parameters<typeof renderProviderForm>[0], "scriptNonce">;
+
+function providerFormHtmlResponse(
+  c: Context,
+  options: ProviderFormRenderOptions,
+  status: 200 | 403 = 200,
+): Response {
+  const scriptNonce = createProviderFormScriptNonce();
+  for (const [name, value] of Object.entries(getAdminPageSecurityHeaders(scriptNonce))) {
+    c.header(name, value);
+  }
+  return c.html(renderProviderForm({ ...options, scriptNonce }), status);
 }
 
 async function parseForm(c: Context): Promise<Record<string, string>> {
@@ -55,6 +73,22 @@ async function mappingsForProvider(db: PrismaClient, providerId: string): Promis
   }));
 }
 
+function providerFormFromSubmission(options: {
+  isNew: boolean;
+  form: Record<string, string>;
+  existing?: NonNullable<Awaited<ReturnType<typeof findOidcProviderById>>>;
+  error: string;
+}): ProviderFormRenderOptions {
+  const base = options.existing ? toProviderFormView(options.existing) : undefined;
+  return {
+    isNew: options.isNew,
+    provider: providerFormViewFromSubmitted(options.form, base),
+    mappings: parseMappingRowsFromForm(options.form),
+    error: options.error,
+    warning: incompleteMappingRowsWarning(options.form),
+  };
+}
+
 /** GET /admin/auth/providers */
 export async function handleListProviders(c: Context, db: PrismaClient): Promise<Response> {
   const providers = await listOidcProviders(db);
@@ -74,10 +108,11 @@ export async function handleListProviders(c: Context, db: PrismaClient): Promise
 
 /** GET /admin/auth/providers/new */
 export function handleGetNewProvider(c: Context): Response {
-  return htmlResponse(
-    c,
-    renderProviderForm({ isNew: true, mappings: [], flash: flashFromQuery(c) }),
-  );
+  return providerFormHtmlResponse(c, {
+    isNew: true,
+    mappings: [],
+    flash: flashFromQuery(c),
+  });
 }
 
 /** POST /admin/auth/providers/new */
@@ -85,11 +120,11 @@ export async function handlePostNewProvider(c: Context, db: PrismaClient): Promi
   const form = await parseForm(c);
   const input = parseProviderInput(form);
   if (!input.display_name || !input.issuer || !input.client_id) {
-    return htmlResponse(
+    return providerFormHtmlResponse(
       c,
-      renderProviderForm({
+      providerFormFromSubmission({
         isNew: true,
-        mappings: [],
+        form,
         error: "Display name, issuer, and client ID are required.",
       }),
     );
@@ -101,7 +136,10 @@ export async function handlePostNewProvider(c: Context, db: PrismaClient): Promi
     providerId = provider.id;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to create provider";
-    return htmlResponse(c, renderProviderForm({ isNew: true, mappings: [], error: message }));
+    return providerFormHtmlResponse(
+      c,
+      providerFormFromSubmission({ isNew: true, form, error: message }),
+    );
   }
 
   logAuthSettingsChanged({
@@ -119,15 +157,12 @@ export async function handleGetEditProvider(c: Context, db: PrismaClient): Promi
   const provider = await findOidcProviderById(db, id);
   if (!provider) return c.text("Not found", 404);
   const mappings = await mappingsForProvider(db, id);
-  return htmlResponse(
-    c,
-    renderProviderForm({
-      isNew: false,
-      provider: toProviderFormView(provider),
-      mappings,
-      flash: flashFromQuery(c),
-    }),
-  );
+  return providerFormHtmlResponse(c, {
+    isNew: false,
+    provider: toProviderFormView(provider),
+    mappings,
+    flash: flashFromQuery(c),
+  });
 }
 
 /** POST /admin/auth/providers/:id */
@@ -139,13 +174,12 @@ export async function handlePostEditProvider(c: Context, db: PrismaClient): Prom
   const form = await parseForm(c);
   const input = parseProviderInput(form);
   if (!input.display_name || !input.issuer || !input.client_id) {
-    const mappings = await mappingsForProvider(db, id);
-    return htmlResponse(
+    return providerFormHtmlResponse(
       c,
-      renderProviderForm({
+      providerFormFromSubmission({
         isNew: false,
-        provider: toProviderFormView(provider),
-        mappings,
+        form,
+        existing: provider,
         error: "Display name, issuer, and client ID are required.",
       }),
     );
@@ -156,13 +190,12 @@ export async function handlePostEditProvider(c: Context, db: PrismaClient): Prom
     await updateIdentityProviderWithMappings(db, id, input, mappings);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to save provider";
-    const mappings = await mappingsForProvider(db, id);
-    return htmlResponse(
+    return providerFormHtmlResponse(
       c,
-      renderProviderForm({
+      providerFormFromSubmission({
         isNew: false,
-        provider: toProviderFormView(provider),
-        mappings,
+        form,
+        existing: provider,
         error: message,
       }),
     );

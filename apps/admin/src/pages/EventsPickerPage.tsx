@@ -8,10 +8,13 @@ import type { EventDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { formatEventDate, formatEventDateTime } from "../utils/event-dates.js";
+import { filterEventsBySearch } from "../utils/event-search.js";
 
 type PickerTab = "active" | "archived";
 
 type UnarchiveTarget = { event: EventDto };
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 /** Event picker for org admins and superadmins at `/admin` (no event context). */
 export function EventsPickerPage() {
@@ -26,7 +29,14 @@ export function EventsPickerPage() {
   const [unarchiveTarget, setUnarchiveTarget] = useState<UnarchiveTarget | null>(null);
   const [unarchiving, setUnarchiving] = useState(false);
   const [unarchiveError, setUnarchiveError] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const { reportApiError } = useConnectionState();
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearchQuery(searchInput.trim()), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -63,6 +73,15 @@ export function EventsPickerPage() {
     [events],
   );
   const displayedEvents = tab === "archived" ? archivedEvents : activeEvents;
+  const filteredEvents = useMemo(
+    () => filterEventsBySearch(displayedEvents, searchQuery),
+    [displayedEvents, searchQuery],
+  );
+  const otherTabEvents = tab === "archived" ? activeEvents : archivedEvents;
+  const otherTabMatchCount = useMemo(
+    () => (searchQuery ? filterEventsBySearch(otherTabEvents, searchQuery).length : 0),
+    [otherTabEvents, searchQuery],
+  );
   const allEventsArchived = events.length > 0 && activeEvents.length === 0;
 
   useEffect(() => {
@@ -87,7 +106,7 @@ export function EventsPickerPage() {
   };
 
   return (
-    <>
+    <div className="events-picker-screen">
       <PageHeader
         title="Events"
         subtitle="Select an event to manage its lifecycle."
@@ -116,6 +135,45 @@ export function EventsPickerPage() {
         </div>
       )}
       {error && <p className="text-error">{error}</p>}
+
+      {!loading && !error && displayedEvents.length > 0 && (
+        <div className="events-picker-toolbar">
+          <label className="at-field events-picker-search">
+            <span className="at-label">Search events</span>
+            <input
+              className="at-input"
+              type="search"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Title or location"
+              autoComplete="off"
+            />
+          </label>
+        </div>
+      )}
+
+      {!loading && !error && displayedEvents.length > 0 && filteredEvents.length === 0 && (
+        <Card>
+          <p>No events match &quot;{searchQuery}&quot;.</p>
+          {otherTabMatchCount > 0 && (
+            <p className="at-hint">
+              No results on this tab — try the{" "}
+              <button
+                type="button"
+                className="picker-inline-link"
+                onClick={() => {
+                  setTabTouched(true);
+                  setTab(tab === "archived" ? "active" : "archived");
+                }}
+              >
+                {tab === "archived" ? "Active events" : "Archived events"}
+              </button>{" "}
+              tab ({otherTabMatchCount} {otherTabMatchCount === 1 ? "match" : "matches"}).
+            </p>
+          )}
+        </Card>
+      )}
+
       {!loading && !error && displayedEvents.length === 0 && (
         <Card>
           <p>{tab === "archived" ? "No archived events." : "No active events in your scope."}</p>
@@ -138,7 +196,7 @@ export function EventsPickerPage() {
         </Card>
       )}
       <div className="event-grid">
-        {displayedEvents.map((event) => {
+        {filteredEvents.map((event) => {
           const showUnarchive = tab === "archived" && canUnarchive;
           const cardBody = (
             <>
@@ -220,6 +278,6 @@ export function EventsPickerPage() {
           }
         }}
       />
-    </>
+    </div>
   );
 }
