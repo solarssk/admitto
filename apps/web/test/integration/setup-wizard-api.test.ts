@@ -150,6 +150,15 @@ describe("GET /api/admin/me setup_complete", () => {
     expect(body.setup_complete).toBe(false);
     await prisma.systemSettings.deleteMany({ where: { key: SETTING_SETUP_COMPLETE } });
   });
+
+  it("includes setup_complete on /api/auth/me for superadmin (operator SPA path)", async () => {
+    await setSetting(prisma, SETTING_SETUP_COMPLETE, false);
+    const res = await app.request("/api/auth/me", { headers: { Cookie: superCookie } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { setup_complete: boolean };
+    expect(body.setup_complete).toBe(false);
+    await prisma.systemSettings.deleteMany({ where: { key: SETTING_SETUP_COMPLETE } });
+  });
 });
 
 describe("setup org-branding", () => {

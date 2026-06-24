@@ -23,6 +23,7 @@ import {
   DEVICE_LABEL_MAX_LEN,
   regenerateBackupRecoveryCodes,
   resolveSetupComplete,
+  canManageInstance,
 } from "@admitto/auth";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
@@ -149,7 +150,7 @@ export type MailerStatusPayload = {
 export interface HandleMeOptions {
   /** When true (`/api/admin/me` only), resolve org mail transport presence — no credentials. */
   includeMailerStatus?: boolean;
-  /** When true (`/api/admin/me` only), include first-run onboarding completion flag. */
+  /** When true, always include first-run onboarding completion flag (also auto-included for instance superadmins on `/api/auth/me`). */
   includeSetupComplete?: boolean;
 }
 
@@ -228,7 +229,7 @@ export async function handleMe(
     body.mailer_status = await resolveMailerStatus(db);
   }
 
-  if (opts?.includeSetupComplete) {
+  if (opts?.includeSetupComplete || (await canManageInstance(db, auth.userId))) {
     body.setup_complete = await resolveSetupComplete(db);
   }
 

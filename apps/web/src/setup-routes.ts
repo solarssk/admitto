@@ -20,6 +20,13 @@ import {
 const DISPLAY_NAME_MAX = 120;
 const PASSWORD_MIN = 12;
 
+class SetupAlreadyInitializedError extends Error {
+  constructor() {
+    super("already_initialized");
+    this.name = "SetupAlreadyInitializedError";
+  }
+}
+
 /** True when no users exist — first-run SSR gate. */
 export async function isFirstRunRequired(db: PrismaClient): Promise<boolean> {
   const count = await db.user.count();
@@ -114,24 +121,33 @@ export async function handlePostSetup(c: Context, db: PrismaClient): Promise<Res
   const { email, password, displayName } = validated;
 
   try {
-    await db.$transaction(async (tx) => {
-      const user = await createUser(tx, {
-        email,
-        password,
-        displayName: displayName ?? undefined,
-        isActive: true,
-      });
-      await tx.roleAssignment.create({
-        data: {
-          user_id: user.id,
-          role: "superadmin",
-          scope_type: "instance",
-          scope_id: null,
-        },
-      });
-      await markSetupIncomplete(tx);
-    });
+    await db.$transaction(
+      async (tx) => {
+        if ((await tx.user.count()) > 0) {
+          throw new SetupAlreadyInitializedError();
+        }
+        const user = await createUser(tx, {
+          email,
+          password,
+          displayName: displayName ?? undefined,
+          isActive: true,
+        });
+        await tx.roleAssignment.create({
+          data: {
+            user_id: user.id,
+            role: "superadmin",
+            scope_type: "instance",
+            scope_id: null,
+          },
+        });
+        await markSetupIncomplete(tx);
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   } catch (err) {
+    if (err instanceof SetupAlreadyInitializedError) {
+      return c.json({ code: "already_initialized" }, 409);
+    }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return htmlResponse(
         c,

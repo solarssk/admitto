@@ -35,7 +35,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
     const [error, setError] = useState<string | null>(null);
 
     const slug = slugFromTitle(title, 60);
-    const canSubmit = Boolean(title.trim() && date);
+    const canSubmit = Boolean(title.trim() && date && slug.length > 0);
 
     useEffect(() => {
       onCanContinueChange(canSubmit);

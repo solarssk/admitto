@@ -163,6 +163,7 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
                 <div className="setup-wizard__preview-brand">
                   {previewLogo ? (
                     <img
+                      key={previewLogo}
                       src={previewLogo}
                       alt=""
                       onError={(e) => {

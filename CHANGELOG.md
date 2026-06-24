@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - First-run setup: server-rendered `/setup` for empty-database superadmin bootstrap; 5-step React onboarding wizard (system checks, mail, org branding, first event, completion) gated by `setup_complete` in `SystemSettings`
 
+### Fixed
+- First-run `POST /setup` bootstrap race: Serializable transaction re-checks empty user table so only one superadmin can be created
+- Setup wizard no longer bypassed on `/operator` — `setup_complete` included on `/api/auth/me` for instance superadmins
+- Event slug helper truncates before trimming trailing dashes; wizard step 4 disables Continue when slug is empty
+
 ## [0.4.5] - 2026-06-24
 
 ### Added
