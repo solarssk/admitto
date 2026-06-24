@@ -160,6 +160,7 @@ import {
   handleRevokeSession,
   handleRevokeAllOperatorSessions,
 } from "./admin/sessions-routes.js";
+import { handleGetAuditLog } from "./admin/audit-routes.js";
 import {
   handleGetSystemSettings,
   handlePatchSystemSettings,
@@ -509,6 +510,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/admin/setup/complete", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostSetupComplete(c, db),
   );
+  app.get("/api/admin/audit-log", staffAdminGate, (c) => handleGetAuditLog(c, db));
   app.get("/api/admin/sessions", staffAdminGate, (c) => handleGetSessions(c, db));
   app.post("/api/admin/sessions/:id/revoke", jsonPostCsrf, staffAdminGate, (c) =>
     handleRevokeSession(c, db),

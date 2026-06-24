@@ -39,6 +39,7 @@ import type {
   SetupChecksResponse,
   SetupOrgBrandingDto,
   PatchSetupOrgBrandingBody,
+  AuditLogResponse,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -754,4 +755,29 @@ export async function patchOrgBranding(
 export async function completeSetup(): Promise<{ setup_complete: boolean }> {
   const res = await fetch("/api/admin/setup/complete", jsonPostInit({}));
   return parseJson<{ setup_complete: boolean }>(res);
+}
+
+/** Load paginated instance admin audit log (superadmin). Pass ISO instants for date bounds (local-day from UI). */
+export async function fetchAuditLog(
+  params: {
+    page?: number;
+    pageSize?: number;
+    actionType?: string;
+    start?: string;
+    end?: string;
+  },
+  signal?: AbortSignal,
+): Promise<AuditLogResponse> {
+  const q = new URLSearchParams();
+  if (params.page != null) q.set("page", String(params.page));
+  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
+  if (params.actionType) q.set("action_type", params.actionType);
+  if (params.start) q.set("start", params.start);
+  if (params.end) q.set("end", params.end);
+  const qs = q.toString();
+  const res = await fetch(`/api/admin/audit-log${qs ? `?${qs}` : ""}`, {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<AuditLogResponse>(res);
 }

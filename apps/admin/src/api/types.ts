@@ -490,3 +490,23 @@ export interface PatchSetupOrgBrandingBody {
   org_name?: string;
   logo_url?: string | null;
 }
+
+/** One row from GET /api/admin/audit-log. */
+export interface AuditLogEntryDto {
+  id: string;
+  action_type: string;
+  actor_user_id: string;
+  actor_email: string | null;
+  actor_display_name: string | null;
+  ip: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+/** Paginated admin audit log list response. */
+export interface AuditLogResponse {
+  entries: AuditLogEntryDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
