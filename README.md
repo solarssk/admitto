@@ -52,12 +52,14 @@ More detail: [infra/README.md](infra/README.md), [packages/db/README.md](package
 After the database steps above, start the **staff UI** (login, admin SPA, SSR settings):
 
 ```bash
-# App env — dev defaults are fine; see apps/web/.env.example for production fields
-cp apps/web/.env.example apps/web/.env
+# ENCRYPTION_KEY in packages/db/.env (setup step above) — required before MFA/OIDC secrets.
+# Prisma and auth CLI load that file automatically; npm run dev does not read apps/web/.env.
 
 # First platform superadmin (password read from stdin — never pass on argv)
 npm run auth:bootstrap -- --email admin@example.com
 ```
+
+Optional: copy [`apps/web/.env.example`](apps/web/.env.example) when tuning mail, `BASE_URL`, or ops tokens — export those vars in your shell or use the single-server flow on `:3000` only.
 
 Then choose how to run the staff UI:
 

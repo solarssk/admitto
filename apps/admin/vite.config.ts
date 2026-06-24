@@ -15,6 +15,7 @@ export default defineConfig({
       "/admin/auth": "http://localhost:3000",
       "/login": "http://localhost:3000",
       "/logout": "http://localhost:3000",
+      "/mfa": "http://localhost:3000",
       "/healthz": "http://localhost:3000",
     },
   },
