@@ -15,6 +15,7 @@ const sameOrigin = { Origin: "http://localhost" };
 const ORG_SET = "org-event-settings";
 const EVENT_SET = "evt-event-settings";
 const EVENT_ARCHIVED = "evt-event-settings-archived";
+const EVENT_MISSING = "evt-event-settings-missing";
 const ATT_SET = "att-event-settings-1";
 const ITEM_SET = "item-event-settings-1";
 
@@ -208,6 +209,24 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.status).toBe("active");
     expect(body.organization_name).toBe("Settings Org");
     expect(body.active_items.some((i) => i.id === ITEM_SET && i.name === "Badge")).toBe(true);
+  });
+
+  it("returns 404 for non-existent event (superadmin)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_MISSING}/settings`, {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("not_found");
+  });
+
+  it("returns 404 for non-existent event (org admin)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_MISSING}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("not_found");
   });
 });
 

@@ -272,6 +272,7 @@ export function EventSettingsPage() {
           value={form.location}
           disabled={isArchived || saving}
           placeholder="Convention Center, Warsaw"
+          icon={<i className="ti ti-map-pin" aria-hidden="true" />}
           onChange={(e) => setForm({ ...form, location: e.target.value })}
         />
         <p className="field-hint">Optional. Shown on tickets and calendar invites.</p>

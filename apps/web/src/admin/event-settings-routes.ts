@@ -114,11 +114,11 @@ export async function handleGetEventSettings(c: Context, db: PrismaClient): Prom
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
 
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
   const event = await loadEventSettingsRow(db, eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
 
   return c.json(serializeEventSettings(event));
 }
