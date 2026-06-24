@@ -528,6 +528,12 @@
   color: var(--status-warn-fg);
 }
 
+.ck-connection--session_ended {
+  background: var(--status-warn-tint);
+  border: 1px solid var(--status-warn);
+  color: var(--status-warn-fg);
+}
+
 .ck-scan-bar {
   display: flex;
   align-items: center;
@@ -715,6 +721,10 @@
   background: var(--status-error);
 }
 
+.rec-dot--revoked {
+  background: var(--text-secondary);
+}
+
 .ck-empty {
   display: flex;
   flex-direction: column;
@@ -729,7 +739,7 @@
   font-size: 2rem;
 }
 
-/* Camera overlay */
+/* Camera overlay — fixed dark palette (#0e1117 / #f8fafc / white alphas) for full-screen QR view; not theme tokens. */
 .ck-overlay {
   position: fixed;
   inset: 0;
@@ -869,6 +879,12 @@
   animation: scan-line 2s ease-in-out infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .vf-line {
+    animation: none;
+  }
+}
+
 @keyframes scan-line {
   0% {
     top: 0;
@@ -980,6 +996,14 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
+}
+
+.ck-overlay__manual-error {
+  width: 100%;
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: #f87171;
+  text-align: center;
 }
 
 .checkin-action-btn--sm {

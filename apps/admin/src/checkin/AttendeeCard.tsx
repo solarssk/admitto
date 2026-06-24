@@ -111,8 +111,8 @@ export function AttendeeCard({
 
         <h2 className="checkin-card__name">{card.name}</h2>
 
-        {card.warnings.map((w) => (
-          <p key={w} className="checkin-card__warning" role="alert">
+        {card.warnings.map((w, i) => (
+          <p key={`warning-${i}`} className="checkin-card__warning" role="alert">
             {w}
           </p>
         ))}
@@ -176,7 +176,7 @@ export function AttendeeCard({
             <button
               type="button"
               className="link-btn"
-              disabled={!canAct || pending}
+              disabled={pending}
               onClick={() => onCancel?.()}
             >
               Cancel

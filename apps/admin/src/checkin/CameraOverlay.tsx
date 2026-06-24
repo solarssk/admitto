@@ -17,6 +17,9 @@ type CameraOverlayProps = {
   wedgeActive: boolean;
   onClose: () => void;
   onScan: (raw: string) => void;
+  onManualEntry: (query: string) => Promise<boolean>;
+  manualError?: string | null;
+  onClearManualError?: () => void;
   scanResult: CheckInScanResponse | null;
   card: AttendeeCardDto | null;
   pending: boolean;
@@ -133,6 +136,9 @@ export function CameraOverlay({
   wedgeActive,
   onClose,
   onScan,
+  onManualEntry,
+  manualError,
+  onClearManualError,
   scanResult,
   card,
   pending,
@@ -159,13 +165,14 @@ export function CameraOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  const submitManual = useCallback(() => {
+  const submitManual = useCallback(async () => {
     const raw = manualToken.trim();
-    if (!raw) return;
-    onScan(raw);
+    if (!raw || !canAct || pending) return;
+    const ok = await onManualEntry(raw);
+    if (!ok) return;
     setManualToken("");
     setManualMode(false);
-  }, [manualToken, onScan]);
+  }, [canAct, manualToken, onManualEntry, pending]);
 
   const onManualKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
@@ -196,7 +203,11 @@ export function CameraOverlay({
 
       <div className="ck-overlay__body">
         <div className="ck-overlay__main">
-          <CameraScanner enabled wedgeActive={wedgeActive} onScan={onScan} />
+          <CameraScanner
+            enabled={!scanResult && !pending}
+            wedgeActive={wedgeActive}
+            onScan={onScan}
+          />
           {scanResult ? (
             <OverlayResultPanel
               scanResult={scanResult}
@@ -232,14 +243,30 @@ export function CameraOverlay({
               type="text"
               className="ck-overlay__manual-input"
               value={manualToken}
-              onChange={(e) => setManualToken(e.target.value)}
+              onChange={(e) => {
+                setManualToken(e.target.value);
+                if (manualError) onClearManualError?.();
+              }}
               onKeyDown={onManualKeyDown}
-              placeholder="Paste token or search…"
+              placeholder="Paste token or search by name, email…"
               autoComplete="off"
               spellCheck={false}
-              aria-label="Enter token or search"
+              aria-label="Enter token or search by name"
+              aria-invalid={manualError ? true : undefined}
+              aria-describedby={manualError ? "ck-overlay-manual-error" : undefined}
             />
-            <Button type="button" variant="secondary" size="sm" onClick={submitManual}>
+            {manualError && (
+              <p id="ck-overlay-manual-error" className="ck-overlay__manual-error" role="alert">
+                {manualError}
+              </p>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={!canAct || pending}
+              onClick={submitManual}
+            >
               Submit
             </Button>
             <button type="button" className="link-btn" onClick={() => setManualMode(false)}>
@@ -247,8 +274,15 @@ export function CameraOverlay({
             </button>
           </div>
         ) : (
-          <button type="button" className="link-btn" onClick={() => setManualMode(true)}>
-            ⌨ Enter token or search by name
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => {
+              setManualMode(true);
+              onClearManualError?.();
+            }}
+          >
+            ⌨ Enter token or search by name, email
           </button>
         )}
       </div>

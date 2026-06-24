@@ -21,6 +21,7 @@ import { canMutateCheckin } from "../checkin/connection.js";
 import { ScanFeedback } from "../checkin/ScanFeedback.js";
 import { AttendeeCard } from "../checkin/AttendeeCard.js";
 import { CameraOverlay } from "../checkin/CameraOverlay.js";
+import { CameraScanner } from "../checkin/CameraScanner.js";
 import { CheckinConnectionBanner } from "../checkin/ConnectionBanner.js";
 import { CkEmptyState } from "../checkin/CkEmptyState.js";
 import { ManualLookupPanel } from "../checkin/ManualLookupPanel.js";
@@ -45,6 +46,9 @@ export function CheckInPage({
   const { deviceLabel } = useAuth();
   const { state: connectionState, reportApiError } = useConnectionState();
   const canAct = canMutateCheckin(connectionState);
+  const isOperatorShell = onUseCameraChange === undefined;
+  const [operatorCamera, setOperatorCamera] = useState(false);
+  const cameraActive = isOperatorShell ? operatorCamera : useCamera;
 
   const inputRef = useRef<HTMLInputElement>(null);
   const lastScanRef = useRef<{ value: string; at: number } | null>(null);
@@ -64,13 +68,14 @@ export function CheckInPage({
   const [totalCount, setTotalCount] = useState(0);
   const [manualOpen, setManualOpen] = useState(false);
   const [admitOrigin, setAdmitOrigin] = useState<"scan" | "manual">("manual");
+  const [overlayManualError, setOverlayManualError] = useState<string | null>(null);
 
   const deviceId = deviceLabel ?? undefined;
 
   const focusScan = useCallback(() => {
-    if (useCamera) return;
+    if (cameraActive) return;
     requestAnimationFrame(() => inputRef.current?.focus());
-  }, [useCamera]);
+  }, [cameraActive]);
 
   const refreshSidebar = useCallback(async () => {
     if (!eventId) return;
@@ -95,6 +100,7 @@ export function CheckInPage({
   useEffect(() => {
     return () => {
       if (wedgeTimerRef.current != null) window.clearTimeout(wedgeTimerRef.current);
+      if (pendingTimerRef.current != null) window.clearTimeout(pendingTimerRef.current);
     };
   }, []);
 
@@ -180,12 +186,21 @@ export function CheckInPage({
   );
 
   const resetScan = useCallback(() => {
+    if (wedgeTimerRef.current != null) {
+      window.clearTimeout(wedgeTimerRef.current);
+      wedgeTimerRef.current = null;
+    }
     setScanResult(null);
     setCard(null);
     setTransportError(null);
+    setOverlayManualError(null);
     setBuffer("");
     focusScan();
   }, [focusScan]);
+
+  const closeCameraOverlay = useCallback(() => {
+    onUseCameraChange?.(false);
+  }, [onUseCameraChange]);
 
   const admitCurrent = async (attendeeId: string, method: "scan" | "manual" = "manual") => {
     if (!eventId || !canAct) return;
@@ -235,6 +250,57 @@ export function CheckInPage({
     }
   };
 
+  const submitScanOrLookup = useCallback(
+    async (query: string): Promise<boolean> => {
+      const trimmed = query.trim();
+      if (!trimmed) return false;
+
+      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN) {
+        void runScan(trimmed);
+        return true;
+      }
+
+      if (!eventId || !canAct) return false;
+
+      setBusy(true);
+      setTransportError(null);
+      setOverlayManualError(null);
+      try {
+        const results = await lookupCheckInAttendees(eventId, trimmed);
+        if (results.length === 1) {
+          await openLookupResult(results[0].id);
+          setBuffer("");
+          return true;
+        }
+        const message =
+          results.length === 0
+            ? "No attendees matched that search."
+            : "Multiple matches — narrow your search or use manual lookup.";
+        if (cameraActive) setOverlayManualError(message);
+        else setTransportError(message);
+        return false;
+      } catch (err) {
+        if (err instanceof ApiError) {
+          reportApiError(err.status);
+          const message =
+            err.status === 401
+              ? "Session expired — sign in again."
+              : err.message || "Request failed.";
+          if (cameraActive) setOverlayManualError(message);
+          else setTransportError(message);
+        } else if (cameraActive) {
+          setOverlayManualError("Request failed. Try again.");
+        } else {
+          setTransportError("Request failed. Try again.");
+        }
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [cameraActive, canAct, eventId, reportApiError, runScan],
+  );
+
   const onItemAction = async (itemKey: string, targetState: string) => {
     if (!eventId || !card || !canAct) return;
     setBusy(true);
@@ -282,14 +348,14 @@ export function CheckInPage({
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    void runScan(buffer);
+    void submitScanOrLookup(buffer);
   };
 
   const handleBufferChange = (value: string) => {
     if (value.includes("\r") || value.includes("\n")) {
       const cleaned = value.replace(/[\r\n]+/g, "").trim();
       setBuffer("");
-      if (cleaned && canAct) void runScan(cleaned);
+      if (cleaned && canAct) void submitScanOrLookup(cleaned);
       return;
     }
 
@@ -307,12 +373,13 @@ export function CheckInPage({
     if (event.key === "Escape") {
       event.preventDefault();
       resetScan();
-      if (useCamera) onUseCameraChange?.(false);
+      if (isOperatorShell) setOperatorCamera(false);
+      else if (useCamera) onUseCameraChange(false);
       return;
     }
     if (event.key === "Enter") {
       event.preventDefault();
-      void runScan(buffer);
+      void submitScanOrLookup(buffer);
     }
   };
 
@@ -345,7 +412,7 @@ export function CheckInPage({
 
   return (
     <>
-      <CheckinConnectionBanner />
+      {!isOperatorShell && <CheckinConnectionBanner />}
 
       {!canAct && (
         <p className="checkin-surface__transport-error" role="status">
@@ -386,6 +453,24 @@ export function CheckInPage({
           <p id="ck-scan-hint" className="ck-hint">
             Keyboard wedge auto-submits · Enter to confirm · Esc to clear
           </p>
+
+          {isOperatorShell && (
+            <label className="checkin-surface__camera-toggle">
+              <input
+                type="checkbox"
+                checked={operatorCamera}
+                onChange={(e) => setOperatorCamera(e.target.checked)}
+              />
+              Use camera to scan (opt-in)
+            </label>
+          )}
+          {isOperatorShell && operatorCamera && (
+            <CameraScanner
+              enabled={!scanResult && !pending}
+              wedgeActive={buffer.trim().length > 0}
+              onScan={(raw) => void runScan(raw)}
+            />
+          )}
 
           {transportError && (
             <p className="checkin-surface__transport-error" role="alert">
@@ -443,25 +528,30 @@ export function CheckInPage({
         </aside>
       </div>
 
-      <CameraOverlay
-        open={useCamera}
-        eventTitle={eventTitle}
-        admittedCount={admittedCount}
-        history={history}
-        wedgeActive={buffer.trim().length > 0}
-        onClose={() => onUseCameraChange?.(false)}
-        onScan={(raw) => void runScan(raw)}
-        scanResult={scanResult}
-        card={card}
-        pending={pending}
-        canAct={canAct && !busy}
-        onConfirm={
-          card && scanResult?.status === "PREVIEW"
-            ? () => void admitCurrent(card.id, admitOrigin)
-            : undefined
-        }
-        onReset={resetScan}
-      />
+      {!isOperatorShell && (
+        <CameraOverlay
+          open={useCamera}
+          eventTitle={eventTitle}
+          admittedCount={admittedCount}
+          history={history}
+          wedgeActive={buffer.trim().length > 0}
+          onClose={closeCameraOverlay}
+          onScan={(raw) => void runScan(raw)}
+          onManualEntry={submitScanOrLookup}
+          manualError={overlayManualError}
+          onClearManualError={() => setOverlayManualError(null)}
+          scanResult={scanResult}
+          card={card}
+          pending={pending}
+          canAct={canAct && !busy}
+          onConfirm={
+            card && scanResult?.status === "PREVIEW"
+              ? () => void admitCurrent(card.id, admitOrigin)
+              : undefined
+          }
+          onReset={resetScan}
+        />
+      )}
     </>
   );
 }

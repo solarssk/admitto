@@ -19,6 +19,7 @@ function dotClass(status: string): string {
   const normalized = status.toLowerCase();
   if (normalized === "admitted" || normalized === "valid") return "rec-dot--admitted";
   if (normalized === "already_checked_in") return "rec-dot--already_checked_in";
+  if (normalized === "revoked") return "rec-dot--revoked";
   return "rec-dot--invalid";
 }
 

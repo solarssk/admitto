@@ -1,7 +1,7 @@
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import type { ConnectionState } from "../connection/types.js";
 
-export type CheckinConnectionVisual = "connected" | "offline" | "degraded";
+export type CheckinConnectionVisual = "connected" | "offline" | "degraded" | "session_ended";
 
 function mapConnectionState(state: ConnectionState): CheckinConnectionVisual | null {
   switch (state) {
@@ -13,7 +13,7 @@ function mapConnectionState(state: ConnectionState): CheckinConnectionVisual | n
     case "server_unavailable":
       return "degraded";
     case "session_ended":
-      return null;
+      return "session_ended";
     default:
       return "degraded";
   }
@@ -26,15 +26,19 @@ const COPY: Record<CheckinConnectionVisual, { icon: string; message: string }> =
   },
   offline: {
     icon: "ti-wifi-off",
-    message: "Offline — scans will be queued",
+    message: "Offline — new check-ins are blocked until connection returns",
   },
   degraded: {
     icon: "ti-alert-circle",
     message: "Connection error — check network",
   },
+  session_ended: {
+    icon: "ti-logout",
+    message: "Your session has ended. Redirecting to sign in…",
+  },
 };
 
-/** Check-in connection stripe — separate from operator `ConnectionBanner` in ConnectionStateProvider. */
+/** Admin check-in only — operator shell renders its own `ConnectionBanner`. */
 export function CheckinConnectionBanner() {
   const { state } = useConnectionState();
   const visual = mapConnectionState(state);
