@@ -30,6 +30,8 @@ let superCookie = "";
 let adminCookie = "";
 let operatorCookie = "";
 let superSessionId = "";
+let adminSessionId = "";
+let operatorSessionId = "";
 let superAssignmentId = "";
 let targetAssignmentId = "";
 let eventId = "";
@@ -54,6 +56,16 @@ async function seed(client: PrismaClient) {
     },
   });
   await client.roleAssignment.deleteMany({ where: { scope_id: ORG_USERS } });
+  await client.roleAssignment.deleteMany({
+    where: {
+      role: "superadmin",
+      scope_type: "instance",
+      scope_id: null,
+      user: {
+        email: { notIn: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_OPERATOR, EMAIL_TARGET] },
+      },
+    },
+  });
   await client.roleAssignment.deleteMany({
     where: {
       user: {
@@ -169,6 +181,8 @@ beforeAll(async () => {
   adminCookie = `admitto_session=${adminSession.rawToken}`;
   operatorCookie = `admitto_session=${operatorSession.rawToken}`;
   superSessionId = superSession.session.id;
+  adminSessionId = adminSession.session.id;
+  operatorSessionId = operatorSession.session.id;
 });
 
 afterEach(async () => {
@@ -181,8 +195,23 @@ afterEach(async () => {
   await prisma.session.deleteMany({
     where: {
       user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_OPERATOR, EMAIL_TARGET] } },
-      id: { notIn: [superSessionId] },
+      id: { notIn: [superSessionId, adminSessionId, operatorSessionId] },
     },
+  });
+  const superAssignment = await prisma.roleAssignment.findFirst({
+    where: { user_id: superId, role: "superadmin", scope_type: "instance", scope_id: null },
+  });
+  if (!superAssignment) {
+    const created = await prisma.roleAssignment.create({
+      data: { user_id: superId, role: "superadmin", scope_type: "instance", scope_id: null },
+    });
+    superAssignmentId = created.id;
+  } else {
+    superAssignmentId = superAssignment.id;
+  }
+  await prisma.user.update({
+    where: { id: superId },
+    data: { must_change_password: false, is_active: true },
   });
   await prisma.userMfaMethod.deleteMany({ where: { user_id: targetId } });
   await prisma.userMfaMethod.create({
@@ -249,6 +278,11 @@ describe("PATCH /api/admin/users/:id anti-lockout", () => {
 
 describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
   it("returns 409 last_superadmin for final superadmin assignment", async () => {
+    const globalSuperadmins = await prisma.roleAssignment.count({
+      where: { role: "superadmin", scope_type: "instance", scope_id: null },
+    });
+    expect(globalSuperadmins).toBe(1);
+
     const res = await app.request(`/api/admin/users/${superId}/roles/${superAssignmentId}`, {
       method: "DELETE",
       headers: { Cookie: superCookie, ...sameOrigin },
