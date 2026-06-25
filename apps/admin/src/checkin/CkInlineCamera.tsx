@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { AttendeeCardDto, CheckInScanResponse } from "../api/types.js";
 import { CameraScanner } from "./CameraScanner.js";
 import { CheckInCameraResultPanel } from "./CheckInCameraResultPanel.js";
@@ -26,13 +26,24 @@ export function CkInlineCamera({
   onConfirm,
   onReset,
 }: CkInlineCameraProps) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  const dismiss = useCallback(() => {
+    onReset();
+    onClose();
+  }, [onClose, onReset]);
+
+  useEffect(() => {
+    closeRef.current?.focus();
+  }, []);
+
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") dismiss();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [dismiss]);
 
   return (
     <div className="ck-inline-camera">
@@ -61,15 +72,18 @@ export function CkInlineCamera({
               <span className="c br" />
               <span className="vf-line" />
             </div>
-            <p className="ck-inline-camera__hint">Point the camera at the attendee&apos;s QR</p>
           </div>
         )}
       </div>
+      {!scanResult && (
+        <p className="ck-inline-camera__hint">Point the camera at the attendee&apos;s QR</p>
+      )}
       <button
+        ref={closeRef}
         type="button"
         className="ck-inline-camera__close"
         aria-label="Exit camera mode"
-        onClick={onClose}
+        onClick={dismiss}
       >
         <i className="ti ti-x" aria-hidden="true" />
       </button>

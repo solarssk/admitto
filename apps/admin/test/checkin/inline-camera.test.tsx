@@ -82,6 +82,26 @@ describe("CkInlineCamera", () => {
     expect(screen.getByLabelText("Exit camera mode")).toBeTruthy();
   });
 
+  it("calls onReset and onClose when exit is clicked", () => {
+    const onClose = vi.fn();
+    const onReset = vi.fn();
+    render(
+      <CkInlineCamera
+        wedgeActive={false}
+        onScan={() => {}}
+        onClose={onClose}
+        scanResult={{ status: "PREVIEW", confirmed: false }}
+        card={null}
+        pending={false}
+        canAct
+        onReset={onReset}
+      />,
+    );
+    screen.getByLabelText("Exit camera mode").click();
+    expect(onReset).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("renders result panel when scanResult is set", () => {
     render(
       <CkInlineCamera

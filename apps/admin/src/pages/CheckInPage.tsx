@@ -63,6 +63,8 @@ export function CheckInPage({
   );
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const operatorCameraActionsRef = useRef<HTMLDivElement>(null);
+  const returnFocusUseCameraRef = useRef(false);
   const lastScanRef = useRef<{ value: string; at: number } | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
   const wedgeTimerRef = useRef<number | null>(null);
@@ -115,6 +117,16 @@ export function CheckInPage({
       if (pendingTimerRef.current != null) window.clearTimeout(pendingTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (cameraActive || !returnFocusUseCameraRef.current || !isOperatorShell) return;
+    returnFocusUseCameraRef.current = false;
+    requestAnimationFrame(() => {
+      operatorCameraActionsRef.current
+        ?.querySelector<HTMLButtonElement>("button")
+        ?.focus();
+    });
+  }, [cameraActive, isOperatorShell]);
 
   const clearPendingTimer = () => {
     if (pendingTimerRef.current != null) {
@@ -209,6 +221,14 @@ export function CheckInPage({
     setBuffer("");
     focusScan();
   }, [focusScan]);
+
+  const closeInlineCamera = useCallback(() => {
+    returnFocusUseCameraRef.current = isOperatorShell;
+    setCameraActive(false);
+    if (!isOperatorShell) {
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }, [isOperatorShell, setCameraActive]);
 
   const admitCurrent = async (attendeeId: string, method: "scan" | "manual" = "manual") => {
     if (!eventId || !canAct) return;
@@ -380,6 +400,7 @@ export function CheckInPage({
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
+      if (showInlineCamera) return;
       resetScan();
       if (cameraActive) setCameraActive(false);
       return;
@@ -428,7 +449,7 @@ export function CheckInPage({
       )}
 
       {isOperatorShell && !cameraActive && (
-        <div className="ck-operator-actions">
+        <div className="ck-operator-actions" ref={operatorCameraActionsRef}>
           <Button
             type="button"
             variant="secondary"
@@ -485,7 +506,7 @@ export function CheckInPage({
             <CkInlineCamera
               wedgeActive={buffer.trim().length > 0}
               onScan={(raw) => void runScan(raw)}
-              onClose={() => setCameraActive(false)}
+              onClose={closeInlineCamera}
               scanResult={scanResult}
               card={card}
               pending={pending}

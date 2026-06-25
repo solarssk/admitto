@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 
 const DESKTOP_BREAKPOINT = 768;
 
+function readDesktopMatch(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT}px)`).matches;
+}
+
 export function useIsDesktop(): boolean {
-  const [isDesktop, setIsDesktop] = useState(
-    () => window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT}px)`).matches,
-  );
+  const [isDesktop, setIsDesktop] = useState(readDesktopMatch);
 
   useEffect(() => {
     const mq = window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT}px)`);
@@ -18,5 +21,5 @@ export function useIsDesktop(): boolean {
 }
 
 export function isDesktopViewport(): boolean {
-  return window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT}px)`).matches;
+  return readDesktopMatch();
 }
