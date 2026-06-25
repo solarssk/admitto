@@ -300,6 +300,73 @@ describe("PATCH /api/admin/users/:id anti-lockout", () => {
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("cannot_deactivate_self");
   });
+
+  it("returns 409 last_superadmin when deactivating the sole active superadmin account", async () => {
+    await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "RoleAssignment_single_superadmin_key"`);
+
+    let targetSuperAssignmentId = "";
+    let targetSuperSessionId = "";
+
+    try {
+      const targetSuperAssignment = await prisma.roleAssignment.create({
+        data: {
+          user_id: targetId,
+          role: "superadmin",
+          scope_type: "instance",
+          scope_id: null,
+        },
+      });
+      targetSuperAssignmentId = targetSuperAssignment.id;
+
+      await prisma.user.update({
+        where: { id: targetId },
+        data: { is_active: false },
+      });
+
+      const activeSuperadmins = await prisma.roleAssignment.count({
+        where: {
+          role: "superadmin",
+          scope_type: "instance",
+          scope_id: null,
+          user: { is_active: true },
+        },
+      });
+      expect(activeSuperadmins).toBe(1);
+
+      const targetSuperSession = await createSession(prisma, {
+        userId: targetId,
+        stage: SESSION_STAGE.FULL,
+        ip: "127.0.0.4",
+      });
+      targetSuperSessionId = targetSuperSession.session.id;
+      const targetSuperCookie = `admitto_session=${targetSuperSession.rawToken}`;
+
+      const res = await app.request(`/api/admin/users/${superId}`, {
+        method: "PATCH",
+        headers: { Cookie: targetSuperCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: false }),
+      });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("last_superadmin");
+    } finally {
+      await prisma.session.deleteMany({
+        where: { id: targetSuperSessionId },
+      });
+      if (targetSuperAssignmentId) {
+        await prisma.roleAssignment.delete({ where: { id: targetSuperAssignmentId } }).catch(() => {});
+      }
+      await prisma.user.update({
+        where: { id: targetId },
+        data: { is_active: true },
+      });
+      await prisma.$executeRawUnsafe(`
+        CREATE UNIQUE INDEX IF NOT EXISTS "RoleAssignment_single_superadmin_key"
+          ON "RoleAssignment" ("role", "scope_type")
+          WHERE "scope_id" IS NULL AND "role" = 'superadmin'
+      `);
+    }
+  });
 });
 
 describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
