@@ -33,6 +33,10 @@ async function verifyOidcLinkStepUpInTransaction(
     return { ok: false, reason: "invalid_credentials" };
   }
 
+  if (!user.password_hash) {
+    return { ok: false, reason: "invalid_credentials" };
+  }
+
   const passwordOk = await verifyPassword(input.password, user.password_hash);
   if (!passwordOk) {
     return { ok: false, reason: "invalid_credentials" };

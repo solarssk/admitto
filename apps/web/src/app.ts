@@ -57,7 +57,10 @@ import {
 import { createRequireSession, createRequirePartialSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
 import { createOidcAuthRateLimitMiddleware } from "./auth/oidc-rate-limit.js";
-import { createMfaEnrollRateLimitMiddleware } from "./auth/mfa-rate-limit.js";
+import {
+  createAccountMfaEnrollRateLimitMiddleware,
+  createMfaEnrollRateLimitMiddleware,
+} from "./auth/mfa-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
 import { createAdminResendRateLimit } from "./admin-resend-rate-limit.js";
@@ -178,6 +181,16 @@ import {
   handleGetChangePassword,
   handlePostChangePassword,
 } from "./auth/change-password-routes.js";
+import {
+  handleGetAccount,
+  handlePatchAccountProfile,
+  handlePatchAccountPassword,
+  handleGetAccountSessions,
+  handleDeleteAccountSession,
+  handlePostMfaEnroll as handlePostAccountMfaEnroll,
+  handlePostMfaConfirm as handlePostAccountMfaConfirm,
+  handlePostMfaReset as handlePostAccountMfaReset,
+} from "./admin/account-routes.js";
 import {
   handleGetSystemSettings,
   handlePatchSystemSettings,
@@ -566,6 +579,32 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/api/admin/client-errors", jsonPostCsrf, staffAdminGate, (c) => handlePostClientError(c));
 
+  app.get("/api/account", requireSession, (c) => handleGetAccount(c, db));
+  app.patch("/api/account/profile", jsonPostCsrf, requireSession, (c) =>
+    handlePatchAccountProfile(c, db),
+  );
+  app.patch("/api/account/password", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+    handlePatchAccountPassword(c, db),
+  );
+  app.get("/api/account/sessions", requireSession, (c) => handleGetAccountSessions(c, db));
+  app.delete("/api/account/sessions/:sessionId", jsonPostCsrf, requireSession, (c) =>
+    handleDeleteAccountSession(c, db),
+  );
+  app.post(
+    "/api/account/mfa/totp/enroll",
+    jsonPostCsrf,
+    loginRateLimitJson,
+    requireSession,
+    createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
+    (c) => handlePostAccountMfaEnroll(c, db),
+  );
+  app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+    handlePostAccountMfaConfirm(c, db, rateLimitStore),
+  );
+  app.post("/api/account/mfa/reset", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+    handlePostAccountMfaReset(c, db),
+  );
+
   app.get("/api/checkin/events", requireSession, (c) => handleGetCheckinEvents(c, db));
   app.get("/api/staff/theme", requireSession, (c) => handleGetStaffTheme(c, db));
   app.put("/api/staff/theme", jsonPostCsrf, requireSession, (c) => handlePutStaffTheme(c, db));
@@ -658,6 +697,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/vendor/tabler-icons/*", serveTablerIcons);
   app.get("/admin", staffAdminGate, staffSpa.serveSpaIndex);
   app.get("/admin/*", staffAdminGate, staffSpa.serveSpaIndex);
+  app.get("/account", requireSessionHtml, staffSpa.serveSpaIndex);
   app.get("/operator", requireSessionHtml, checkInPanelGuard, staffSpa.serveSpaIndex);
   app.get("/operator/*", requireSessionHtml, checkInPanelGuard, staffSpa.serveSpaIndex);
 

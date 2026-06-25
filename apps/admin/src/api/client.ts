@@ -48,6 +48,14 @@ import type {
   PatchSetupOrgBrandingBody,
   AuditLogResponse,
   EventReportsResponse,
+  AccountDto,
+  PatchAccountProfileBody,
+  PatchAccountPasswordBody,
+  PatchAccountPasswordResponse,
+  MfaEnrollResponse,
+  ConfirmMfaTotpBody,
+  ResetMfaBody,
+  ResetMfaResponse,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -913,6 +921,46 @@ export async function fetchAuditLog(
   return parseJson<AuditLogResponse>(res);
 }
 
+export async function fetchAccount(signal?: AbortSignal): Promise<AccountDto> {
+  const res = await fetch("/api/account", { credentials: "same-origin", signal });
+  return parseJson<AccountDto>(res);
+}
+
+export async function patchAccountProfile(body: PatchAccountProfileBody): Promise<{ display_name: string | null }> {
+  const res = await fetch("/api/account/profile", jsonPatchInit(body));
+  return parseJson<{ display_name: string | null }>(res);
+}
+
+export async function patchAccountPassword(body: PatchAccountPasswordBody): Promise<PatchAccountPasswordResponse> {
+  const res = await fetch("/api/account/password", jsonPatchInit(body));
+  return parseJson<PatchAccountPasswordResponse>(res);
+}
+
+export async function fetchAccountSessions(signal?: AbortSignal): Promise<SessionsResponse> {
+  const res = await fetch("/api/account/sessions", { credentials: "same-origin", signal });
+  return parseJson<SessionsResponse>(res);
+}
+
+export async function deleteAccountSession(sessionId: string): Promise<void> {
+  const res = await fetch(`/api/account/sessions/${encodeURIComponent(sessionId)}`, jsonDeleteInit());
+  await parseJson<unknown>(res);
+}
+
+export async function enrollMfaTotp(): Promise<MfaEnrollResponse> {
+  const res = await fetch("/api/account/mfa/totp/enroll", jsonPostInit({}));
+  return parseJson<MfaEnrollResponse>(res);
+}
+
+export async function confirmMfaTotp(body: ConfirmMfaTotpBody): Promise<{ ok: true }> {
+  const res = await fetch("/api/account/mfa/totp/confirm", jsonPostInit(body));
+  return parseJson<{ ok: true }>(res);
+}
+
+export async function resetMfa(body: ResetMfaBody): Promise<ResetMfaResponse> {
+  const res = await fetch("/api/account/mfa/reset", jsonPostInit(body));
+  return parseJson<ResetMfaResponse>(res);
+}
+
 /** Load aggregated admission report for an event. */
 export async function fetchEventReports(
   eventId: string,
@@ -964,3 +1012,4 @@ export async function exportEventReportsCsv(
 export function eventReportsPrintUrl(eventId: string): string {
   return `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=pdf`;
 }
+

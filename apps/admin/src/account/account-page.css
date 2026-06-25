@@ -1,0 +1,79 @@
+.account-warn-block {
+  background: var(--status-warning-bg, #fff8e1);
+  border: 1px solid var(--status-warning-border, #f59f00);
+  border-radius: var(--radius, 4px);
+  padding: var(--space-3, 0.75rem);
+  margin-bottom: var(--space-3, 0.75rem);
+  font-size: var(--fs-sm, 0.875rem);
+}
+
+.account-auth-backup {
+  background: var(--status-warning-bg, #fff8e1);
+  border: 1px solid var(--status-warning-border, #f59f00);
+  border-radius: var(--radius, 4px);
+  padding: var(--space-3, 0.75rem);
+  font-size: var(--fs-sm, 0.875rem);
+  margin: var(--space-3, 0.75rem) 0;
+}
+
+.account-auth-backup ul {
+  margin: var(--space-2, 0.5rem) 0;
+  padding-left: 1.25rem;
+}
+
+.account-auth-backup code {
+  font-size: 0.8rem;
+}
+
+.account-uri-code {
+  font-size: 0.75rem;
+  word-break: break-all;
+  display: block;
+  background: var(--surface-muted, var(--at-gray-100));
+  padding: var(--space-2, 0.5rem);
+  border-radius: var(--radius, 4px);
+  margin: var(--space-2, 0.5rem) 0;
+}
+
+.account-role-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+  margin-top: var(--space-2, 0.5rem);
+}
+
+.account-role-hint,
+.account-info-block {
+  font-size: var(--fs-sm, 0.875rem);
+  color: var(--text-muted);
+  margin-top: var(--space-2, 0.5rem);
+}
+
+.account-info-block {
+  margin-top: 0;
+}
+
+.account-mfa-status {
+  margin-bottom: var(--space-3, 0.75rem);
+}
+
+.account-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2, 0.5rem);
+  margin: var(--space-3, 0.75rem) 0;
+  font-size: var(--fs-sm, 0.875rem);
+}
+
+.account-enroll-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+  margin-top: var(--space-3, 0.75rem);
+}
+
+.account-readonly-field {
+  font-size: var(--fs-sm, 0.875rem);
+  color: var(--text-primary);
+  margin: 0;
+}

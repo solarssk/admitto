@@ -79,6 +79,10 @@ async function verifyTargetUserPassword(email: string): Promise<{ userId: string
   }
 
   const password = await readPasswordFromStdin("Target superadmin password: ");
+  if (!user.password_hash) {
+    throw new CliError("Password verification failed.");
+  }
+
   const ok = await verifyPassword(password, user.password_hash);
   if (!ok) {
     throw new CliError("Password verification failed.");
