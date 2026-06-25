@@ -13,6 +13,11 @@ import { hasScope, ROLES, SCOPE_TYPES, type Role, type ScopeType } from "@admitt
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { adminAuditFromContext, positiveIntQuery } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import {
+  assertLastSuperadminDeactivationAllowed,
+  assertLastSuperadminRemovalAllowed,
+  LastSuperadminError,
+} from "./users-lockout-guards.js";
 
 const MIN_PASSWORD_LEN = 8;
 
@@ -22,19 +27,22 @@ async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response
   return null;
 }
 
-async function countSuperadminAssignments(db: PrismaClient): Promise<number> {
-  return db.roleAssignment.count({
-    where: {
-      role: "superadmin",
-      scope_type: "instance",
-      scope_id: null,
-      user: { is_active: true },
-    },
+async function respondRoleDeleteGone(
+  c: Context,
+  db: PrismaClient,
+  userId: string,
+  assignmentId: string,
+  actorIsSuperadmin: boolean,
+): Promise<Response> {
+  const byId = await db.roleAssignment.findUnique({
+    where: { id: assignmentId },
+    select: { user_id: true },
   });
-}
-
-async function targetIsSuperadmin(db: PrismaClient, userId: string): Promise<boolean> {
-  return hasScope(db, userId, "superadmin", "instance");
+  if (byId && byId.user_id !== userId) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  if (actorIsSuperadmin) return c.body(null, 204);
+  return c.json({ error: "forbidden" }, 403);
 }
 
 type UserWithRoles = Prisma.UserGetPayload<{
@@ -321,10 +329,6 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
     if (body.is_active === false && id === actorId) {
       return c.json({ code: "cannot_deactivate_self" }, 409);
     }
-    if (body.is_active === false && (await targetIsSuperadmin(db, id))) {
-      const superadmins = await countSuperadminAssignments(db);
-      if (superadmins <= 1) return c.json({ code: "last_superadmin" }, 409);
-    }
     data.is_active = body.is_active;
   }
 
@@ -333,10 +337,32 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
   const before = await db.user.findUnique({ where: { id }, select: { is_active: true } });
   if (!before) return c.json({ error: "not_found" }, 404);
 
-  await db.user.update({ where: { id }, data });
-
-  if (data.is_active === false) {
-    await revokeUserAuthState(db, id);
+  try {
+    if (data.is_active === false) {
+      const wasActive = await db.$transaction(
+        async (tx) => {
+          const current = await tx.user.findUnique({ where: { id }, select: { is_active: true } });
+          if (!current) return null;
+          if (current.is_active) {
+            await assertLastSuperadminDeactivationAllowed(tx, id);
+          }
+          await tx.user.update({ where: { id }, data });
+          return current.is_active;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+      if (wasActive === null) return c.json({ error: "not_found" }, 404);
+      if (wasActive) {
+        await revokeUserAuthState(db, id);
+      }
+    } else {
+      await db.user.update({ where: { id }, data });
+    }
+  } catch (err) {
+    if (err instanceof LastSuperadminError) {
+      return c.json({ code: "last_superadmin" }, 409);
+    }
+    throw err;
   }
 
   const user = await loadUser(db, id);
@@ -445,8 +471,7 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
     include: { oidc_role_grants: { select: { id: true } } },
   });
   if (!assignment) {
-    if (actorIsSuperadmin) return c.body(null, 204);
-    return c.json({ error: "forbidden" }, 403);
+    return respondRoleDeleteGone(c, db, id, assignmentId, actorIsSuperadmin);
   }
 
   const revokeDenied = await assertRoleRevokeAllowed(c, db, actorId, assignment);
@@ -456,12 +481,55 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
     return c.json({ code: "managed_by_idp" }, 409);
   }
 
-  if (assignment.role === "superadmin" && assignment.scope_type === "instance") {
-    const superadmins = await countSuperadminAssignments(db);
-    if (superadmins <= 1) return c.json({ code: "last_superadmin" }, 409);
-  }
+  type DeletedAssignment = {
+    role: string;
+    scope_type: string;
+    scope_id: string | null;
+  };
 
-  await db.roleAssignment.delete({ where: { id: assignmentId } });
+  let deletedAssignment: DeletedAssignment;
+
+  try {
+    const outcome = await db.$transaction(
+      async (tx) => {
+        const current = await tx.roleAssignment.findFirst({
+          where: { id: assignmentId, user_id: id },
+          select: {
+            id: true,
+            role: true,
+            scope_type: true,
+            scope_id: true,
+            oidc_role_grants: { select: { id: true }, take: 1 },
+          },
+        });
+        if (!current) return "gone" as const;
+        if (current.oidc_role_grants.length > 0) return "managed_by_idp" as const;
+
+        await assertLastSuperadminRemovalAllowed(tx, current);
+        await tx.roleAssignment.delete({ where: { id: assignmentId } });
+        return {
+          role: current.role,
+          scope_type: current.scope_type,
+          scope_id: current.scope_id,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+
+    if (outcome === "gone") {
+      return respondRoleDeleteGone(c, db, id, assignmentId, actorIsSuperadmin);
+    }
+    if (outcome === "managed_by_idp") {
+      return c.json({ code: "managed_by_idp" }, 409);
+    }
+
+    deletedAssignment = outcome;
+  } catch (err) {
+    if (err instanceof LastSuperadminError) {
+      return c.json({ code: "last_superadmin" }, 409);
+    }
+    throw err;
+  }
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -473,9 +541,9 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
     actionType: "role_revoked",
     metadata: {
       userId: id,
-      role: assignment.role,
-      scopeType: assignment.scope_type,
-      scopeId: assignment.scope_id,
+      role: deletedAssignment.role,
+      scopeType: deletedAssignment.scope_type,
+      scopeId: deletedAssignment.scope_id,
     },
   });
 

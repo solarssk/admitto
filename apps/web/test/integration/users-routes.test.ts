@@ -5,6 +5,10 @@ import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE, verifyPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
+import {
+  assertLastSuperadminDeactivationAllowed,
+  LastSuperadminError,
+} from "../../src/admin/users-lockout-guards.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
@@ -300,6 +304,12 @@ describe("PATCH /api/admin/users/:id anti-lockout", () => {
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("cannot_deactivate_self");
   });
+
+  it("blocks deactivating the sole active superadmin in the PATCH guard", async () => {
+    await expect(
+      prisma.$transaction((tx) => assertLastSuperadminDeactivationAllowed(tx, superId)),
+    ).rejects.toBeInstanceOf(LastSuperadminError);
+  });
 });
 
 describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
@@ -348,6 +358,48 @@ describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
       headers: { Cookie: adminCookie, ...sameOrigin },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("returns 404 for superadmin when assignment belongs to another user", async () => {
+    const res = await app.request(`/api/admin/users/${superId}/roles/${targetAssignmentId}`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("not_found");
+  });
+
+  it("returns 204 when superadmin deletes an already-removed assignment", async () => {
+    const email = "double-delete-role@example.com";
+    const created = await prisma.user.create({
+      data: { email, password_hash: await hashPassword(PASSWORD) },
+    });
+    const assignment = await prisma.roleAssignment.create({
+      data: {
+        user_id: created.id,
+        role: "operator",
+        scope_type: "event",
+        scope_id: eventId,
+      },
+    });
+
+    try {
+      const first = await app.request(`/api/admin/users/${created.id}/roles/${assignment.id}`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+      expect(first.status).toBe(204);
+
+      const second = await app.request(`/api/admin/users/${created.id}/roles/${assignment.id}`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+      expect(second.status).toBe(204);
+    } finally {
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
   });
 });
 
