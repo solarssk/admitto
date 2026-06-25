@@ -17,7 +17,7 @@ type UserEditModalProps = {
   open: boolean;
   user: UserListItemDto | null;
   onClose: () => void;
-  onUpdated: (user: UserListItemDto) => void;
+  onUpdated: (user: UserListItemDto, message?: string) => void;
 };
 
 type AssignRole = "" | "superadmin" | "admin" | "operator";
@@ -98,7 +98,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
         display_name: displayName.trim() || null,
         is_active: active,
       });
-      onUpdated(updated);
+      onUpdated(updated, "Profile updated");
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? mapApiError(err.message) : "Failed to save changes.");
@@ -126,7 +126,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
         }
         await grantUserRole(user.id, { role: "operator", scope_type: "event", scope_id: newEventId });
       }
-      onUpdated(user);
+      onUpdated(user, "Role assigned");
       setNewRole("");
       setNewEventId("");
       onClose();
@@ -144,7 +144,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
     try {
       await revokeUserRole(user.id, assignmentId);
       onClose();
-      onUpdated(user);
+      onUpdated(user, "Role removed");
     } catch (err) {
       setError(err instanceof ApiError ? mapApiError(err.message) : "Failed to remove role.");
     } finally {
@@ -158,6 +158,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
     try {
       await resetUserMfa(user.id);
       setResetMfaOpen(false);
+      onUpdated(user, "2FA reset — user must sign in again");
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to reset 2FA.");
@@ -174,6 +175,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
       await resetUserPassword(user.id, { new_password: newPassword });
       setResetPasswordOpen(false);
       setNewPassword("");
+      onUpdated(user, "Password reset — sessions revoked");
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to reset password.");

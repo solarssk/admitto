@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button } from "@admitto/ui";
+import { Badge, Button, EmptyState, Skeleton, useToast } from "@admitto/ui";
 import { ApiError, fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
 import type { RoleAssignmentListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { useAuth } from "../../auth/AuthProvider.js";
 import { isSuperadmin } from "../../auth/capabilities.js";
+
+const SKELETON_ROWS = 4;
 
 function scopeLabel(row: RoleAssignmentListItemDto): string {
   if (row.scope_type === "event" && row.event) return row.event.title;
@@ -22,9 +24,85 @@ function mapRevokeError(message: string): string {
   return message;
 }
 
+type AssignmentRowProps = {
+  row: RoleAssignmentListItemDto;
+  canRevoke: boolean;
+  onRevoke: (row: RoleAssignmentListItemDto) => void;
+};
+
+function AssignmentTableRow({ row, canRevoke, onRevoke }: AssignmentRowProps) {
+  return (
+    <tr>
+      <td>{scopeLabel(row)}</td>
+      <td>
+        <div>{row.user_display_name ?? row.user_email}</div>
+        {row.user_display_name && <div className="users-page__user-email">{row.user_email}</div>}
+      </td>
+      <td>
+        <Badge variant="neutral">{row.role}</Badge>
+        {row.is_oidc && (
+          <span className="users-page__role-oidc" title="Managed by identity provider">
+            <i className="ti ti-cloud" aria-hidden="true" />
+          </span>
+        )}
+      </td>
+      <td>{new Date(row.granted_at).toLocaleDateString()}</td>
+      <td>
+        {canRevoke ? (
+          <Button type="button" variant="danger" onClick={() => onRevoke(row)}>
+            Revoke
+          </Button>
+        ) : (
+          <span className="form-hint">—</span>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function AssignmentCard({ row, canRevoke, onRevoke }: AssignmentRowProps) {
+  return (
+    <article className="users-page__card users-page__card--assignment">
+      <div className="users-page__card-head">
+        <div>
+          <div className="users-page__user-name">{row.user_display_name ?? row.user_email}</div>
+          {row.user_display_name && <div className="users-page__user-email">{row.user_email}</div>}
+        </div>
+        <Badge variant="neutral">{row.role}</Badge>
+      </div>
+      <dl className="users-page__card-meta">
+        <div>
+          <dt>Scope</dt>
+          <dd>{scopeLabel(row)}</dd>
+        </div>
+        <div>
+          <dt>Granted</dt>
+          <dd>{new Date(row.granted_at).toLocaleDateString()}</dd>
+        </div>
+        {row.is_oidc && (
+          <div>
+            <dt>Source</dt>
+            <dd>
+              <span className="users-page__role-oidc" title="Managed by identity provider">
+                <i className="ti ti-cloud" aria-hidden="true" /> Identity provider
+              </span>
+            </dd>
+          </div>
+        )}
+      </dl>
+      {canRevoke && (
+        <Button type="button" variant="danger" className="users-page__card-revoke" onClick={() => onRevoke(row)}>
+          Revoke assignment
+        </Button>
+      )}
+    </article>
+  );
+}
+
 /** Role assignments tab — per-event/org grants with revoke action. */
 export function RoleAssignmentsTab() {
   const { assignments } = useAuth();
+  const { addToast } = useToast();
   const canRevokeAll = isSuperadmin(assignments);
   const [rows, setRows] = useState<RoleAssignmentListItemDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,10 +140,15 @@ export function RoleAssignmentsTab() {
     setRevokeError(null);
     try {
       await revokeUserRole(confirmTarget.user_id, confirmTarget.id);
+      const label = confirmTarget.user_display_name ?? confirmTarget.user_email;
       setConfirmTarget(null);
+      addToast(`Role revoked for ${label}`, "success");
       await load();
     } catch (err) {
-      setRevokeError(err instanceof ApiError ? mapRevokeError(err.message) : "Failed to revoke role.");
+      const message =
+        err instanceof ApiError ? mapRevokeError(err.message) : "Failed to revoke role.";
+      setRevokeError(message);
+      addToast(message, "error");
     } finally {
       setRevoking(false);
     }
@@ -79,7 +162,38 @@ export function RoleAssignmentsTab() {
 
   return (
     <>
-      {loading && <p className="users-page__status">Loading…</p>}
+      {loading && (
+        <>
+          <div className="users-page__table-wrap users-page__table-wrap--desktop" aria-hidden="true">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Scope</th>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Granted</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: SKELETON_ROWS }, (_, i) => (
+                  <tr key={i}>
+                    <td colSpan={5}>
+                      <Skeleton variant="rect" height={48} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="users-page__cards users-page__cards--mobile" aria-hidden="true">
+            {Array.from({ length: 3 }, (_, i) => (
+              <Skeleton key={i} variant="rect" height={140} className="users-page__card-skeleton" />
+            ))}
+          </div>
+        </>
+      )}
+
       {!loading && error && (
         <div className="users-page__status">
           <p>{error}</p>
@@ -88,12 +202,18 @@ export function RoleAssignmentsTab() {
           </Button>
         </div>
       )}
+
       {!loading && !error && rows.length === 0 && (
-        <p className="users-page__status">No role assignments yet.</p>
+        <EmptyState
+          icon={<i className="ti ti-shield" aria-hidden="true" />}
+          title="No role assignments yet"
+          description="Event and organization role grants will appear here once users are assigned."
+        />
       )}
+
       {!loading && !error && rows.length > 0 && (
         <>
-          <div className="users-page__table-wrap">
+          <div className="users-page__table-wrap users-page__table-wrap--desktop">
             <table className="table">
               <thead>
                 <tr>
@@ -106,37 +226,28 @@ export function RoleAssignmentsTab() {
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.id}>
-                    <td>{scopeLabel(row)}</td>
-                    <td>
-                      <div>{row.user_display_name ?? row.user_email}</div>
-                      {row.user_display_name && (
-                        <div className="users-page__user-email">{row.user_email}</div>
-                      )}
-                    </td>
-                    <td>
-                      <Badge variant="neutral">{row.role}</Badge>
-                      {row.is_oidc && (
-                        <span className="users-page__role-oidc" title="Managed by identity provider">
-                          <i className="ti ti-cloud" aria-hidden="true" />
-                        </span>
-                      )}
-                    </td>
-                    <td>{new Date(row.granted_at).toLocaleDateString()}</td>
-                    <td>
-                      {canRevokeRow(row) ? (
-                        <Button type="button" variant="danger" onClick={() => setConfirmTarget(row)}>
-                          Revoke
-                        </Button>
-                      ) : (
-                        <span className="form-hint">—</span>
-                      )}
-                    </td>
-                  </tr>
+                  <AssignmentTableRow
+                    key={row.id}
+                    row={row}
+                    canRevoke={canRevokeRow(row)}
+                    onRevoke={setConfirmTarget}
+                  />
                 ))}
               </tbody>
             </table>
           </div>
+
+          <div className="users-page__cards users-page__cards--mobile">
+            {rows.map((row) => (
+              <AssignmentCard
+                key={row.id}
+                row={row}
+                canRevoke={canRevokeRow(row)}
+                onRevoke={setConfirmTarget}
+              />
+            ))}
+          </div>
+
           <div className="users-page__foot">
             <span>
               Page {page} of {totalPages} · {total} assignment{total === 1 ? "" : "s"}

@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Avatar,
-  Badge,
   Button,
   Card,
-  IconButton,
+  EmptyState,
   PageHeader,
-  Spinner,
-  StatusBadge,
+  Skeleton,
   Tabs,
+  useToast,
 } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
@@ -18,42 +16,16 @@ import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { InviteUserModal } from "./users/InviteUserModal.js";
 import { UserEditModal } from "./users/UserEditModal.js";
 import { RoleAssignmentsTab } from "./users/RoleAssignmentsTab.js";
+import { StaffUserCard, StaffUserTableRow } from "./users/StaffUserListItem.js";
 import "./users-page.css";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const PAGE_SIZE = 25;
+const SKELETON_ROWS = 5;
 
 type UsersTab = "staff" | "roles";
 type RoleFilter = "all" | "superadmin" | "admin" | "operator";
 type StatusFilter = "all" | "active" | "disabled";
-
-function formatRelativeTime(iso: string | null): string {
-  if (!iso) return "Never";
-  const diffMs = Date.now() - new Date(iso).getTime();
-  if (diffMs < 60_000) return "Just now";
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 60) return `${days} day${days === 1 ? "" : "s"} ago`;
-  const months = Math.floor(days / 30);
-  return `${months} month${months === 1 ? "" : "s"} ago`;
-}
-
-function roleBadgeVariant(role: string): "error" | "warn" | "info" | "neutral" {
-  if (role === "superadmin") return "error";
-  if (role === "admin") return "warn";
-  if (role === "operator") return "info";
-  return "neutral";
-}
-
-function roleShort(role: string): string {
-  if (role === "superadmin") return "SA";
-  if (role === "admin") return "AD";
-  if (role === "operator") return "OP";
-  return role.slice(0, 2).toUpperCase();
-}
 
 function userMatchesRoleFilter(user: UserListItemDto, filter: RoleFilter): boolean {
   if (filter === "all") return true;
@@ -66,9 +38,46 @@ function userMatchesStatusFilter(user: UserListItemDto, filter: StatusFilter): b
   return !user.is_active;
 }
 
+function StaffUsersSkeleton() {
+  return (
+    <>
+      <div className="users-page__table-wrap users-page__table-wrap--desktop" aria-hidden="true">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Roles</th>
+              <th>MFA</th>
+              <th>Last login</th>
+              <th>Sessions</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: SKELETON_ROWS }, (_, i) => (
+              <tr key={i}>
+                <td colSpan={7}>
+                  <Skeleton variant="rect" height={52} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="users-page__cards users-page__cards--mobile" aria-hidden="true">
+        {Array.from({ length: 3 }, (_, i) => (
+          <Skeleton key={i} variant="rect" height={180} className="users-page__card-skeleton" />
+        ))}
+      </div>
+    </>
+  );
+}
+
 /** IAM page — staff users and role assignments (/admin/users). */
 export function UsersPage() {
   const { assignments } = useAuth();
+  const { addToast } = useToast();
   const superadmin = isSuperadmin(assignments);
   const [tab, setTab] = useState<UsersTab>(superadmin ? "staff" : "roles");
   const [users, setUsers] = useState<UserListItemDto[]>([]);
@@ -122,6 +131,9 @@ export function UsersPage() {
   );
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const filtersActive =
+    searchQuery.length > 0 || roleFilter !== "all" || statusFilter !== "all";
+  const showInitialEmpty = !loading && !error && total === 0 && !filtersActive;
 
   const handleRevokeSessions = async () => {
     if (!revokeTarget) return;
@@ -129,34 +141,29 @@ export function UsersPage() {
     setRevokeError(null);
     try {
       await revokeUserSessions(revokeTarget.id);
+      const label = revokeTarget.display_name ?? revokeTarget.email;
       setRevokeTarget(null);
+      addToast(`Sessions revoked for ${label}`, "success");
       await load();
     } catch (err) {
-      setRevokeError(err instanceof ApiError ? err.message : "Failed to revoke sessions.");
+      const message = err instanceof ApiError ? err.message : "Failed to revoke sessions.";
+      setRevokeError(message);
+      addToast(message, "error");
     } finally {
       setRevoking(false);
     }
   };
 
   const tabs = [
-    ...(superadmin
-      ? [{ id: "staff" as const, label: "Staff users", count: total }]
-      : []),
+    ...(superadmin ? [{ id: "staff" as const, label: "Staff users", count: total }] : []),
     { id: "roles" as const, label: "Role assignments" },
   ];
 
   return (
     <>
-      <PageHeader
-        title="Users & roles"
-        subtitle="Manage staff accounts, roles, and access"
-      />
+      <PageHeader title="Users & roles" subtitle="Manage staff accounts, roles, and access" />
 
-      <Tabs
-        tabs={tabs}
-        value={tab}
-        onChange={(id) => setTab(id as UsersTab)}
-      />
+      <Tabs tabs={tabs} value={tab} onChange={(id) => setTab(id as UsersTab)} />
 
       {tab === "staff" && superadmin && (
         <Card>
@@ -191,16 +198,12 @@ export function UsersPage() {
                 <option value="disabled">Disabled</option>
               </select>
             </div>
-            <Button type="button" variant="primary" onClick={() => setInviteOpen(true)}>
+            <Button type="button" variant="primary" className="users-page__invite-btn" onClick={() => setInviteOpen(true)}>
               Invite user
             </Button>
           </div>
 
-          {loading && (
-            <div className="users-page__status" role="status">
-              <Spinner label="Loading users" />
-            </div>
-          )}
+          {loading && <StaffUsersSkeleton />}
 
           {!loading && error && (
             <div className="users-page__status">
@@ -211,13 +214,43 @@ export function UsersPage() {
             </div>
           )}
 
-          {!loading && !error && filteredUsers.length === 0 && (
-            <p className="users-page__status">No users match your filters.</p>
+          {!loading && !error && showInitialEmpty && (
+            <EmptyState
+              icon={<i className="ti ti-users-group" aria-hidden="true" />}
+              title="No users yet"
+              description="Invite your first team member to get started."
+              action={
+                <Button type="button" variant="primary" onClick={() => setInviteOpen(true)}>
+                  Invite user
+                </Button>
+              }
+            />
+          )}
+
+          {!loading && !error && !showInitialEmpty && filteredUsers.length === 0 && (
+            <EmptyState
+              icon={<i className="ti ti-filter-off" aria-hidden="true" />}
+              title="No users match your filters"
+              description="Try a different search term or clear the role and status filters."
+              action={
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setSearchInput("");
+                    setRoleFilter("all");
+                    setStatusFilter("all");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              }
+            />
           )}
 
           {!loading && !error && filteredUsers.length > 0 && (
             <>
-              <div className="users-page__table-wrap">
+              <div className="users-page__table-wrap users-page__table-wrap--desktop">
                 <table className="table">
                   <thead>
                     <tr>
@@ -232,99 +265,28 @@ export function UsersPage() {
                   </thead>
                   <tbody>
                     {filteredUsers.map((user) => (
-                      <tr key={user.id}>
-                        <td>
-                          <div className="users-page__user-cell">
-                            <Avatar
-                              name={user.display_name ?? user.email}
-                              size="sm"
-                            />
-                            <div className="users-page__user-meta">
-                              <div className="users-page__user-name">
-                                {user.display_name ?? user.email}
-                              </div>
-                              <div className="users-page__user-email">{user.email}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td>
-                          <div className="users-page__roles">
-                            {user.roles.length === 0 && "—"}
-                            {user.roles.map((role) => (
-                              <Badge
-                                key={role.id}
-                                variant={roleBadgeVariant(role.role)}
-                                title={role.is_oidc ? "Managed by identity provider" : undefined}
-                              >
-                                {role.is_oidc && (
-                                  <i className="ti ti-cloud" aria-hidden="true" />
-                                )}{" "}
-                                {roleShort(role.role)}
-                              </Badge>
-                            ))}
-                          </div>
-                        </td>
-                        <td>
-                          <span className="users-page__mfa">
-                            {user.has_mfa ? (
-                              <>
-                                <i
-                                  className="ti ti-shield-check"
-                                  style={{ color: "var(--status-ok)" }}
-                                  aria-hidden="true"
-                                />
-                                TOTP
-                              </>
-                            ) : (
-                              <>
-                                <i
-                                  className="ti ti-shield-off"
-                                  style={{ color: "var(--text-disabled)" }}
-                                  aria-hidden="true"
-                                />
-                                None
-                              </>
-                            )}
-                          </span>
-                        </td>
-                        <td>{formatRelativeTime(user.last_login_at)}</td>
-                        <td>
-                          <span
-                            className={`users-page__sessions-badge ${
-                              user.active_sessions_count > 0
-                                ? "users-page__sessions-badge--active"
-                                : "users-page__sessions-badge--empty"
-                            }`}
-                          >
-                            {user.active_sessions_count}
-                          </span>
-                        </td>
-                        <td>
-                          {user.is_active ? (
-                            <StatusBadge status="ok" label="Active" />
-                          ) : (
-                            <StatusBadge status="neutral" label="Disabled" />
-                          )}
-                        </td>
-                        <td>
-                          <div className="users-page__actions">
-                            <IconButton
-                              icon="ti ti-pencil"
-                              label="Edit user"
-                              onClick={() => setEditUser(user)}
-                            />
-                            <IconButton
-                              icon="ti ti-arrows-clockwise"
-                              label="Reset sessions"
-                              onClick={() => setRevokeTarget(user)}
-                            />
-                          </div>
-                        </td>
-                      </tr>
+                      <StaffUserTableRow
+                        key={user.id}
+                        user={user}
+                        onEdit={setEditUser}
+                        onRevokeSessions={setRevokeTarget}
+                      />
                     ))}
                   </tbody>
                 </table>
               </div>
+
+              <div className="users-page__cards users-page__cards--mobile">
+                {filteredUsers.map((user) => (
+                  <StaffUserCard
+                    key={user.id}
+                    user={user}
+                    onEdit={setEditUser}
+                    onRevokeSessions={setRevokeTarget}
+                  />
+                ))}
+              </div>
+
               <div className="users-page__foot">
                 <span>
                   Showing {filteredUsers.length} on this page · {total} total
@@ -358,8 +320,8 @@ export function UsersPage() {
 
       {tab === "staff" && !superadmin && (
         <p className="users-page__admin-note">
-          Staff user management is available to superadmins. You can review and revoke operator
-          role assignments on the Role assignments tab.
+          Staff user management is available to superadmins. You can review and revoke operator role
+          assignments on the Role assignments tab.
         </p>
       )}
 
@@ -372,14 +334,20 @@ export function UsersPage() {
       <InviteUserModal
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
-        onCreated={() => void load()}
+        onCreated={(user) => {
+          addToast(`${user.email} invited successfully`, "success");
+          void load();
+        }}
       />
 
       <UserEditModal
         open={!!editUser}
         user={editUser}
         onClose={() => setEditUser(null)}
-        onUpdated={() => void load()}
+        onUpdated={(user, message) => {
+          addToast(message ?? `${user.display_name ?? user.email} updated`, "success");
+          void load();
+        }}
       />
 
       <ConfirmDialog
