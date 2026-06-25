@@ -337,10 +337,10 @@ export function UsersPage() {
       <InviteUserModal
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
-        onCreated={(user, message) => {
+        onCreated={({ user, warning }) => {
           void load();
-          if (message) {
-            addToast(message, "error");
+          if (warning) {
+            addToast(warning, "error");
           } else {
             addToast(`${user.email} invited successfully`, "success");
           }

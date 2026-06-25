@@ -10,10 +10,15 @@ import {
 import type { EventDto, UserListItemDto } from "../../api/types.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
 
+export type InviteUserCreatedResult = {
+  user: UserListItemDto;
+  warning?: string;
+};
+
 type InviteUserModalProps = {
   open: boolean;
   onClose: () => void;
-  onCreated: (user: UserListItemDto, message?: string) => void;
+  onCreated: (result: InviteUserCreatedResult) => void;
 };
 
 type InitialRole = "" | "superadmin" | "admin" | "operator";
@@ -117,14 +122,17 @@ export function InviteUserModal({ open, onClose, onCreated }: InviteUserModalPro
         try {
           await grantInitialRole(user.id);
         } catch (roleErr) {
-          onCreated(user, `User created, but role assignment failed: ${mapRoleGrantError(roleErr)}`);
+          onCreated({
+            user,
+            warning: `User created, but role assignment failed: ${mapRoleGrantError(roleErr)}`,
+          });
           resetForm();
           onClose();
           return;
         }
       }
 
-      onCreated(user);
+      onCreated({ user });
       resetForm();
       onClose();
     } catch (err) {

@@ -349,6 +349,36 @@ describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("returns 204 when superadmin deletes an already-removed assignment", async () => {
+    const email = "double-delete-role@example.com";
+    const created = await prisma.user.create({
+      data: { email, password_hash: await hashPassword(PASSWORD) },
+    });
+    const assignment = await prisma.roleAssignment.create({
+      data: {
+        user_id: created.id,
+        role: "operator",
+        scope_type: "event",
+        scope_id: eventId,
+      },
+    });
+
+    const first = await app.request(`/api/admin/users/${created.id}/roles/${assignment.id}`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(first.status).toBe(204);
+
+    const second = await app.request(`/api/admin/users/${created.id}/roles/${assignment.id}`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(second.status).toBe(204);
+
+    await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+    await prisma.user.delete({ where: { id: created.id } });
+  });
 });
 
 describe("POST /api/admin/users functional", () => {
