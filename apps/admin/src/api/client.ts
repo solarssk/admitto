@@ -40,6 +40,7 @@ import type {
   SetupOrgBrandingDto,
   PatchSetupOrgBrandingBody,
   AuditLogResponse,
+  EventReportsResponse,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -780,4 +781,56 @@ export async function fetchAuditLog(
     signal,
   });
   return parseJson<AuditLogResponse>(res);
+}
+
+/** Load aggregated admission report for an event. */
+export async function fetchEventReports(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventReportsResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<EventReportsResponse>(res);
+}
+
+/** Download admission log CSV export and trigger browser save. */
+export async function exportEventReportsCsv(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=csv`,
+    { credentials: "same-origin", signal },
+  );
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as ApiErrorBody;
+      message = messageFromApiErrorBody(body) ?? message;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match?.[1] ?? "admissions.csv";
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** Same-origin URL for printable HTML report (open in new tab for Save as PDF). */
+export function eventReportsPrintUrl(eventId: string): string {
+  return `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=pdf`;
 }

@@ -25,6 +25,7 @@ import { ImportPage } from "./pages/ImportPage.js";
 import { RequirementsPage } from "./pages/RequirementsPage.js";
 import { CommunicationPage } from "./pages/CommunicationPage.js";
 import { EventOverviewPage } from "./pages/EventOverviewPage.js";
+import { ReportsPage } from "./pages/ReportsPage.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
 import { SetupWizardPage } from "./pages/SetupWizardPage.js";
 import { ApiError, fetchAdminEvents } from "./api/client.js";
@@ -124,6 +125,8 @@ function StaffRoutes() {
                   <RequirementsPage />
                 ) : r.path === "communication" ? (
                   <CommunicationPage />
+                ) : r.path === "reports" ? (
+                  <ReportsPage />
                 ) : (
                   <PlaceholderPage title={r.title} />
                 )

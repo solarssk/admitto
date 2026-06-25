@@ -119,6 +119,7 @@ import {
   handleGetEventOpsConfig,
   handlePatchEventOpsConfig,
 } from "./admin/event-items-api-routes.js";
+import { handleGetReports, handleExportReports } from "./admin/reports-routes.js";
 import {
   handleGetEventTemplate,
   handlePutEventTemplate,
@@ -487,6 +488,8 @@ export function createApp(options: CreateAppOptions = {}) {
   app.patch("/api/admin/events/:eventId/ops-config", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
     handlePatchEventOpsConfig(c, db),
   ));
+  app.get("/api/admin/events/:eventId/reports", staffAdminGate, (c) => handleGetReports(c, db));
+  app.get("/api/admin/events/:eventId/reports/export", staffAdminGate, (c) => handleExportReports(c, db));
   app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
   app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));
   app.get("/api/admin/mail-settings", staffAdminGate, (c) => handleGetMailSettings(c, db));
