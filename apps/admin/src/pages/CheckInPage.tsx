@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useParams } from "react-router-dom";
-import { Card } from "@admitto/ui";
+import { Button, Card } from "@admitto/ui";
 import {
   ApiError,
   fetchAttendeeCard,
@@ -21,9 +21,10 @@ import { canMutateCheckin } from "../checkin/connection.js";
 import { ScanFeedback } from "../checkin/ScanFeedback.js";
 import { AttendeeCard } from "../checkin/AttendeeCard.js";
 import { CameraOverlay } from "../checkin/CameraOverlay.js";
-import { CameraScanner } from "../checkin/CameraScanner.js";
 import { CheckinConnectionBanner } from "../checkin/ConnectionBanner.js";
 import { CkEmptyState } from "../checkin/CkEmptyState.js";
+import { CkInlineCamera } from "../checkin/CkInlineCamera.js";
+import { isDesktopViewport, useIsDesktop } from "../hooks/useIsDesktop.js";
 import { ManualLookupPanel } from "../checkin/ManualLookupPanel.js";
 import { ScanHistoryList } from "../checkin/ScanHistoryList.js";
 
@@ -47,10 +48,23 @@ export function CheckInPage({
   const { state: connectionState, reportApiError } = useConnectionState();
   const canAct = canMutateCheckin(connectionState);
   const isOperatorShell = onUseCameraChange === undefined;
-  const [operatorCamera, setOperatorCamera] = useState(false);
+  const isDesktop = useIsDesktop();
+  const [operatorCamera, setOperatorCamera] = useState(() => !isDesktopViewport());
   const cameraActive = isOperatorShell ? operatorCamera : useCamera;
+  const showMobileOverlay = cameraActive && !isDesktop;
+  const showInlineCamera = cameraActive && isDesktop;
+
+  const setCameraActive = useCallback(
+    (open: boolean) => {
+      if (isOperatorShell) setOperatorCamera(open);
+      else onUseCameraChange?.(open);
+    },
+    [isOperatorShell, onUseCameraChange],
+  );
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const operatorCameraActionsRef = useRef<HTMLDivElement>(null);
+  const returnFocusUseCameraRef = useRef(false);
   const lastScanRef = useRef<{ value: string; at: number } | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
   const wedgeTimerRef = useRef<number | null>(null);
@@ -73,9 +87,9 @@ export function CheckInPage({
   const deviceId = deviceLabel ?? undefined;
 
   const focusScan = useCallback(() => {
-    if (cameraActive) return;
+    if (showMobileOverlay) return;
     requestAnimationFrame(() => inputRef.current?.focus());
-  }, [cameraActive]);
+  }, [showMobileOverlay]);
 
   const refreshSidebar = useCallback(async () => {
     if (!eventId) return;
@@ -103,6 +117,16 @@ export function CheckInPage({
       if (pendingTimerRef.current != null) window.clearTimeout(pendingTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (cameraActive || !returnFocusUseCameraRef.current || !isOperatorShell) return;
+    returnFocusUseCameraRef.current = false;
+    requestAnimationFrame(() => {
+      operatorCameraActionsRef.current
+        ?.querySelector<HTMLButtonElement>("button")
+        ?.focus();
+    });
+  }, [cameraActive, isOperatorShell]);
 
   const clearPendingTimer = () => {
     if (pendingTimerRef.current != null) {
@@ -198,9 +222,13 @@ export function CheckInPage({
     focusScan();
   }, [focusScan]);
 
-  const closeCameraOverlay = useCallback(() => {
-    onUseCameraChange?.(false);
-  }, [onUseCameraChange]);
+  const closeInlineCamera = useCallback(() => {
+    returnFocusUseCameraRef.current = isOperatorShell;
+    setCameraActive(false);
+    if (!isOperatorShell) {
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }, [isOperatorShell, setCameraActive]);
 
   const admitCurrent = async (attendeeId: string, method: "scan" | "manual" = "manual") => {
     if (!eventId || !canAct) return;
@@ -276,7 +304,7 @@ export function CheckInPage({
           results.length === 0
             ? "No attendees matched that search."
             : "Multiple matches — narrow your search or use manual lookup.";
-        if (cameraActive) setOverlayManualError(message);
+        if (showMobileOverlay) setOverlayManualError(message);
         else setTransportError(message);
         return false;
       } catch (err) {
@@ -286,9 +314,9 @@ export function CheckInPage({
             err.status === 401
               ? "Session expired — sign in again."
               : err.message || "Request failed.";
-          if (cameraActive) setOverlayManualError(message);
+          if (showMobileOverlay) setOverlayManualError(message);
           else setTransportError(message);
-        } else if (cameraActive) {
+        } else if (showMobileOverlay) {
           setOverlayManualError("Request failed. Try again.");
         } else {
           setTransportError("Request failed. Try again.");
@@ -298,7 +326,7 @@ export function CheckInPage({
         setBusy(false);
       }
     },
-    [cameraActive, canAct, eventId, reportApiError, runScan],
+    [canAct, eventId, reportApiError, runScan, showMobileOverlay],
   );
 
   const onItemAction = async (itemKey: string, targetState: string) => {
@@ -372,9 +400,9 @@ export function CheckInPage({
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
+      if (showInlineCamera) return;
       resetScan();
-      if (isOperatorShell) setOperatorCamera(false);
-      else if (useCamera) onUseCameraChange(false);
+      if (cameraActive) setCameraActive(false);
       return;
     }
     if (event.key === "Enter") {
@@ -420,6 +448,20 @@ export function CheckInPage({
         </p>
       )}
 
+      {isOperatorShell && !cameraActive && (
+        <div className="ck-operator-actions" ref={operatorCameraActionsRef}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            icon={<i className="ti ti-camera" aria-hidden="true" />}
+            onClick={() => setCameraActive(true)}
+          >
+            Use camera
+          </Button>
+        </div>
+      )}
+
       <div className="ck-layout">
         <div className="ck-main">
           <form className="ck-scan-bar" onSubmit={onSubmit}>
@@ -454,55 +496,82 @@ export function CheckInPage({
             Keyboard wedge auto-submits · Enter to confirm · Esc to clear
           </p>
 
-          {isOperatorShell && (
-            <label className="checkin-surface__camera-toggle">
-              <input
-                type="checkbox"
-                checked={operatorCamera}
-                onChange={(e) => setOperatorCamera(e.target.checked)}
-              />
-              Use camera to scan (opt-in)
-            </label>
-          )}
-          {isOperatorShell && operatorCamera && (
-            <CameraScanner
-              enabled={!scanResult && !pending}
-              wedgeActive={buffer.trim().length > 0}
-              onScan={(raw) => void runScan(raw)}
-            />
-          )}
-
           {transportError && (
             <p className="checkin-surface__transport-error" role="alert">
               {transportError}
             </p>
           )}
 
-          {showCompactFeedback && scanResult && (
-            <ScanFeedback result={scanResult} hidden={false} />
-          )}
-
-          {showResultCard && card ? (
-            <AttendeeCard
-              key={card.id}
-              card={card}
-              scanStatus={scanResult?.status}
-              confirmed={scanResult?.confirmed}
-              pending={pending}
-              canAct={canAct && !busy}
-              onCheckIn={
-                card.check_in_status === "not_admitted"
-                  ? () => void admitCurrent(card.id, admitOrigin)
-                  : undefined
-              }
-              onItemAction={(key: string, state: string) => void onItemAction(key, state)}
-              onAddNote={onAddNote}
-              onUndo={() => void onUndo()}
-              showUndo={showUndo}
-              onCancel={resetScan}
-            />
+          {showInlineCamera ? (
+            <>
+              <CkInlineCamera
+                wedgeActive={buffer.trim().length > 0}
+                scannerPaused={!!scanResult || pending}
+                overlayScanResult={showCompactFeedback ? scanResult : null}
+                onScan={(raw) => void runScan(raw)}
+                onClose={closeInlineCamera}
+                card={card}
+                pending={pending}
+                canAct={canAct && !busy}
+                onConfirm={
+                  showCompactFeedback &&
+                  card &&
+                  scanResult?.status === "PREVIEW"
+                    ? () => void admitCurrent(card.id, admitOrigin)
+                    : undefined
+                }
+                onReset={resetScan}
+              />
+              {showResultCard && card && (
+                <AttendeeCard
+                  key={card.id}
+                  card={card}
+                  scanStatus={scanResult?.status}
+                  confirmed={scanResult?.confirmed}
+                  pending={pending}
+                  canAct={canAct && !busy}
+                  onCheckIn={
+                    card.check_in_status === "not_admitted"
+                      ? () => void admitCurrent(card.id, admitOrigin)
+                      : undefined
+                  }
+                  onItemAction={(key: string, state: string) => void onItemAction(key, state)}
+                  onAddNote={onAddNote}
+                  onUndo={() => void onUndo()}
+                  showUndo={showUndo}
+                  onCancel={resetScan}
+                />
+              )}
+            </>
           ) : (
-            !scanResult && <CkEmptyState />
+            <>
+              {showCompactFeedback && scanResult && (
+                <ScanFeedback result={scanResult} hidden={false} />
+              )}
+
+              {showResultCard && card ? (
+                <AttendeeCard
+                  key={card.id}
+                  card={card}
+                  scanStatus={scanResult?.status}
+                  confirmed={scanResult?.confirmed}
+                  pending={pending}
+                  canAct={canAct && !busy}
+                  onCheckIn={
+                    card.check_in_status === "not_admitted"
+                      ? () => void admitCurrent(card.id, admitOrigin)
+                      : undefined
+                  }
+                  onItemAction={(key: string, state: string) => void onItemAction(key, state)}
+                  onAddNote={onAddNote}
+                  onUndo={() => void onUndo()}
+                  showUndo={showUndo}
+                  onCancel={resetScan}
+                />
+              ) : (
+                !scanResult && <CkEmptyState />
+              )}
+            </>
           )}
         </div>
 
@@ -528,14 +597,14 @@ export function CheckInPage({
         </aside>
       </div>
 
-      {!isOperatorShell && (
+      {showMobileOverlay && (
         <CameraOverlay
-          open={useCamera}
+          open
           eventTitle={eventTitle}
           admittedCount={admittedCount}
           history={history}
           wedgeActive={buffer.trim().length > 0}
-          onClose={closeCameraOverlay}
+          onClose={() => setCameraActive(false)}
           onScan={(raw) => void runScan(raw)}
           onManualEntry={submitScanOrLookup}
           manualError={overlayManualError}
