@@ -1,15 +1,21 @@
-import { PrismaClient, type Prisma } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
+
+function isRootPrismaClient(
+  prisma: PrismaClient | Prisma.TransactionClient,
+): prisma is PrismaClient {
+  return typeof (prisma as PrismaClient).$transaction === "function";
+}
 
 /**
  * Run `fn` in a transaction when `prisma` is a root client; reuse `tx` when already nested.
- * Uses `instanceof PrismaClient` (not `$transaction` duck-typing) so nested tx clients stay
- * identifiable if Prisma ever exposes `$transaction` on `TransactionClient`.
+ * Duck-types on `$transaction` (not `instanceof PrismaClient`) so barrel imports of
+ * `@admitto/auth` do not require a generated Prisma client at module load time.
  */
 export async function runInTransaction<T>(
   prisma: PrismaClient | Prisma.TransactionClient,
   fn: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
-  if (prisma instanceof PrismaClient) {
+  if (isRootPrismaClient(prisma)) {
     return prisma.$transaction(fn);
   }
   return fn(prisma);
