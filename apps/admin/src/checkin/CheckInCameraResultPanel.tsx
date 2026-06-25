@@ -37,12 +37,18 @@ function statusMeta(status: CheckInStatus): {
         tone: "error",
       };
     case "PREVIEW":
-    default:
       return {
         icon: "ti-circle-check",
         title: "Valid",
         subtitle: "Admit attendee",
         tone: "ok",
+      };
+    default:
+      return {
+        icon: "ti-help-circle",
+        title: "Unknown",
+        subtitle: "Unrecognized status",
+        tone: "warn",
       };
   }
 }
@@ -54,6 +60,8 @@ type CheckInCameraResultPanelProps = {
   canAct: boolean;
   onConfirm?: () => void;
   onReset: () => void;
+  /** When set, Cancel exits camera mode; otherwise Cancel clears the result only. */
+  onCancel?: () => void;
   className?: string;
 };
 
@@ -64,6 +72,7 @@ export function CheckInCameraResultPanel({
   canAct,
   onConfirm,
   onReset,
+  onCancel,
   className,
 }: CheckInCameraResultPanelProps) {
   const meta = statusMeta(scanResult.status);
@@ -97,7 +106,7 @@ export function CheckInCameraResultPanel({
             Scan next
           </Button>
         )}
-        <button type="button" className="link-btn" onClick={onReset}>
+        <button type="button" className="link-btn" onClick={onCancel ?? onReset}>
           Cancel
         </button>
       </div>

@@ -66,6 +66,7 @@ export function CkInlineCamera({
             canAct={canAct}
             onConfirm={onConfirm}
             onReset={onReset}
+            onCancel={dismiss}
           />
         ) : (
           <div className="ck-inline-camera__viewfinder" aria-hidden="true">

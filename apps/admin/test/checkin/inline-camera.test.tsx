@@ -88,6 +88,38 @@ describe("CkInlineCamera", () => {
     expect(screen.queryByText(/Point the camera at the attendee's QR/i)).toBeNull();
   });
 
+  it("Scan next resets without closing inline camera", () => {
+    const onClose = vi.fn();
+    const onReset = vi.fn();
+    render(
+      <CkInlineCamera
+        {...baseProps}
+        onClose={onClose}
+        onReset={onReset}
+        overlayScanResult={{ status: "INVALID", confirmed: false }}
+      />,
+    );
+    screen.getByRole("button", { name: "Scan next" }).click();
+    expect(onReset).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("Cancel dismisses inline camera", () => {
+    const onClose = vi.fn();
+    const onReset = vi.fn();
+    render(
+      <CkInlineCamera
+        {...baseProps}
+        onClose={onClose}
+        onReset={onReset}
+        overlayScanResult={{ status: "INVALID", confirmed: false }}
+      />,
+    );
+    screen.getByRole("button", { name: "Cancel" }).click();
+    expect(onReset).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("calls onReset and onClose when exit is clicked", () => {
     const onClose = vi.fn();
     const onReset = vi.fn();

@@ -13,6 +13,7 @@ export function useIsDesktop(): boolean {
   useEffect(() => {
     const mq = window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT}px)`);
     const handler = (event: MediaQueryListEvent) => setIsDesktop(event.matches);
+    setIsDesktop(mq.matches);
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
