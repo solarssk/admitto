@@ -10,6 +10,8 @@ import {
   userHasConfirmedTotp,
   verifyPasswordOrDummy,
 } from "@admitto/auth";
+import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
+import type { RateLimitStore } from "../rate-limit/types.js";
 
 function hasLocalPassword(passwordHash: string | null): boolean {
   return passwordHash !== null;
@@ -243,8 +245,13 @@ export async function handlePostMfaEnroll(c: Context, db: PrismaClient): Promise
 const confirmSchema = z.object({ code: z.string().min(1) }).strict();
 
 /** POST /api/account/mfa/totp/confirm — confirm pending TOTP enrollment. */
-export async function handlePostMfaConfirm(c: Context, db: PrismaClient): Promise<Response> {
-  const userId = c.get("auth").userId;
+export async function handlePostMfaConfirm(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
+  const auth = c.get("auth");
+  const userId = auth.userId;
 
   let body: unknown;
   try {
@@ -256,7 +263,16 @@ export async function handlePostMfaConfirm(c: Context, db: PrismaClient): Promis
   const parsed = confirmSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  const ok = await confirmTotpEnrollment(db, userId, parsed.data.code.trim());
+  const code = parsed.data.code.trim();
+  const sessionId = auth.sessionId;
+  if (!sessionId) return c.json({ error: "unauthorized" }, 401);
+
+  const ip = resolveMfaClientIp(c);
+  if (!(await checkMfaVerifyRateLimit(rateLimitStore, sessionId, ip, code))) {
+    return c.json({ error: "too many requests" }, 429);
+  }
+
+  const ok = await confirmTotpEnrollment(db, userId, code);
   if (!ok) return c.json({ code: "invalid_code" }, 400);
   return c.json({ ok: true });
 }

@@ -237,7 +237,7 @@ export function AccountPage() {
             </div>
           </>
         )}
-        {totpEnrolled && (
+        {totpEnrolled && account.has_local_password && (
           <>
             <p className="account-info-block">Resetting 2FA will log you out of all sessions.</p>
             {!resetFormOpen ? (
@@ -255,6 +255,11 @@ export function AccountPage() {
               </>
             )}
           </>
+        )}
+        {totpEnrolled && !account.has_local_password && (
+          <p className="account-info-block">
+            Two-factor reset requires a local password. Sign-in-only accounts must contact an administrator.
+          </p>
         )}
         {mfaError && <p className="text-error" role="alert">{mfaError}</p>}
         {mfaStatus && <p className="text-success" role="status">{mfaStatus}</p>}

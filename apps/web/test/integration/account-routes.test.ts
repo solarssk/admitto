@@ -52,7 +52,7 @@ async function seed(client: PrismaClient) {
 
   await client.roleAssignment.createMany({
     data: [
-      { user_id: userId, role: "admin", scope_type: "organization", scope_id: ORG_ACCOUNT },
+      { user_id: userId, role: "operator", scope_type: "event", scope_id: "evt-account" },
       { user_id: oidcUserId, role: "operator", scope_type: "event", scope_id: "evt-account" },
       { user_id: otherUserId, role: "operator", scope_type: "event", scope_id: "evt-account" },
     ],
@@ -199,7 +199,7 @@ describe("POST /api/account/mfa/totp/*", () => {
     const res = await app.request("/api/account/mfa/reset", {
       method: "POST",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ password: NEW_PASSWORD }),
+      body: JSON.stringify({ password: PASSWORD }),
     });
     expect(res.status).toBe(200);
     expect(await prisma.userMfaMethod.count({ where: { user_id: userId } })).toBe(0);

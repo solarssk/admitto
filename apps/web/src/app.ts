@@ -57,7 +57,10 @@ import {
 import { createRequireSession, createRequirePartialSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
 import { createOidcAuthRateLimitMiddleware } from "./auth/oidc-rate-limit.js";
-import { createMfaEnrollRateLimitMiddleware } from "./auth/mfa-rate-limit.js";
+import {
+  createAccountMfaEnrollRateLimitMiddleware,
+  createMfaEnrollRateLimitMiddleware,
+} from "./auth/mfa-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
 import { createAdminResendRateLimit } from "./admin-resend-rate-limit.js";
@@ -520,20 +523,25 @@ export function createApp(options: CreateAppOptions = {}) {
   app.patch("/api/account/profile", jsonPostCsrf, requireSession, (c) =>
     handlePatchAccountProfile(c, db),
   );
-  app.patch("/api/account/password", jsonPostCsrf, requireSession, (c) =>
+  app.patch("/api/account/password", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
     handlePatchAccountPassword(c, db),
   );
   app.get("/api/account/sessions", requireSession, (c) => handleGetAccountSessions(c, db));
   app.delete("/api/account/sessions/:sessionId", jsonPostCsrf, requireSession, (c) =>
     handleDeleteAccountSession(c, db),
   );
-  app.post("/api/account/mfa/totp/enroll", jsonPostCsrf, requireSession, (c) =>
-    handlePostAccountMfaEnroll(c, db),
+  app.post(
+    "/api/account/mfa/totp/enroll",
+    jsonPostCsrf,
+    loginRateLimitJson,
+    requireSession,
+    createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
+    (c) => handlePostAccountMfaEnroll(c, db),
   );
-  app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, requireSession, (c) =>
-    handlePostAccountMfaConfirm(c, db),
+  app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+    handlePostAccountMfaConfirm(c, db, rateLimitStore),
   );
-  app.post("/api/account/mfa/reset", jsonPostCsrf, requireSession, (c) =>
+  app.post("/api/account/mfa/reset", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
     handlePostAccountMfaReset(c, db),
   );
 
