@@ -122,6 +122,7 @@ import {
   handleGetEventOpsConfig,
   handlePatchEventOpsConfig,
 } from "./admin/event-items-api-routes.js";
+import { handleGetReports, handleExportReports } from "./admin/reports-routes.js";
 import {
   handleGetEventTemplate,
   handlePutEventTemplate,
@@ -151,11 +152,35 @@ import {
   handlePostMailSettingsTest,
   MAX_MAIL_SETTINGS_BODY_BYTES,
 } from "./admin/mail-settings-routes.js";
+import { handleGetSetupChecks } from "./admin/setup-checks-routes.js";
+import { handlePostSetupComplete } from "./admin/setup-complete-routes.js";
+import {
+  handleGetSetupOrgBranding,
+  handlePatchSetupOrgBranding,
+} from "./admin/setup-org-branding-routes.js";
+import { handleGetSetup, handlePostSetup } from "./setup-routes.js";
 import {
   handleGetSessions,
   handleRevokeSession,
   handleRevokeAllOperatorSessions,
 } from "./admin/sessions-routes.js";
+import { handleGetAuditLog } from "./admin/audit-routes.js";
+import {
+  handleGetOrganizations,
+  handleGetUsers,
+  handlePostUser,
+  handlePatchUser,
+  handlePostUserRole,
+  handleDeleteUserRole,
+  handlePostResetUserMfa,
+  handlePostResetUserPassword,
+  handlePostRevokeUserSessions,
+} from "./admin/users-routes.js";
+import { handleGetRoleAssignments } from "./admin/role-assignments-routes.js";
+import {
+  handleGetChangePassword,
+  handlePostChangePassword,
+} from "./auth/change-password-routes.js";
 import {
   handleGetAccount,
   handlePatchAccountProfile,
@@ -400,7 +425,9 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostSessionDeviceLabel(c, db),
   );
 
-  app.get("/api/admin/me", staffAdminGate, (c) => handleMe(c, db, { includeMailerStatus: true }));
+  app.get("/api/admin/me", staffAdminGate, (c) =>
+    handleMe(c, db, { includeMailerStatus: true, includeSetupComplete: true }),
+  );
   app.get("/api/admin/events", staffAdminGate, (c) => handleGetAdminEvents(c, db));
   app.post("/api/admin/events", jsonPostCsrf, staffAdminGate, (c) => handleCreateEvent(c, db));
   app.post("/api/admin/events/:eventId/archive", jsonPostCsrf, staffAdminGate, (c) =>
@@ -490,6 +517,8 @@ export function createApp(options: CreateAppOptions = {}) {
   app.patch("/api/admin/events/:eventId/ops-config", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
     handlePatchEventOpsConfig(c, db),
   ));
+  app.get("/api/admin/events/:eventId/reports", staffAdminGate, (c) => handleGetReports(c, db));
+  app.get("/api/admin/events/:eventId/reports/export", staffAdminGate, (c) => handleExportReports(c, db));
   app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
   app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));
   app.get("/api/admin/mail-settings", staffAdminGate, (c) => handleGetMailSettings(c, db));
@@ -503,6 +532,17 @@ export function createApp(options: CreateAppOptions = {}) {
     adminMailSettingsRateLimit,
     (c) => handlePostMailSettingsTest(c, db, mailDeliveryDeps),
   );
+  app.get("/api/admin/setup/checks", staffAdminGate, (c) =>
+    handleGetSetupChecks(c, db, rateLimitStore),
+  );
+  app.get("/api/admin/setup/org-branding", staffAdminGate, (c) => handleGetSetupOrgBranding(c, db));
+  app.patch("/api/admin/setup/org-branding", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePatchSetupOrgBranding(c, db),
+  );
+  app.post("/api/admin/setup/complete", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePostSetupComplete(c, db),
+  );
+  app.get("/api/admin/audit-log", staffAdminGate, (c) => handleGetAuditLog(c, db));
   app.get("/api/admin/sessions", staffAdminGate, (c) => handleGetSessions(c, db));
   app.post("/api/admin/sessions/:id/revoke", jsonPostCsrf, staffAdminGate, (c) =>
     handleRevokeSession(c, db),
@@ -513,6 +553,26 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     (c) => handleRevokeAllOperatorSessions(c, db),
   );
+  app.get("/api/admin/organizations", staffAdminGate, (c) => handleGetOrganizations(c, db));
+  app.get("/api/admin/users", staffAdminGate, (c) => handleGetUsers(c, db));
+  app.post("/api/admin/users", jsonPostCsrf, staffAdminGate, (c) => handlePostUser(c, db));
+  app.patch("/api/admin/users/:id", jsonPostCsrf, staffAdminGate, (c) => handlePatchUser(c, db));
+  app.post("/api/admin/users/:id/roles", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePostUserRole(c, db),
+  );
+  app.delete("/api/admin/users/:id/roles/:assignmentId", jsonPostCsrf, staffAdminGate, (c) =>
+    handleDeleteUserRole(c, db),
+  );
+  app.post("/api/admin/users/:id/reset-2fa", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePostResetUserMfa(c, db),
+  );
+  app.post("/api/admin/users/:id/reset-password", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePostResetUserPassword(c, db),
+  );
+  app.post("/api/admin/users/:id/revoke-sessions", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePostRevokeUserSessions(c, db),
+  );
+  app.get("/api/admin/role-assignments", staffAdminGate, (c) => handleGetRoleAssignments(c, db));
   app.get("/api/admin/system-settings", staffAdminGate, (c) => handleGetSystemSettings(c, db));
   app.patch("/api/admin/system-settings", jsonPostCsrf, staffAdminGate, (c) =>
     handlePatchSystemSettings(c, db),
@@ -603,6 +663,8 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostCfAccessTest(c, db),
   );
 
+  app.get("/setup", (c) => handleGetSetup(c, db));
+  app.post("/setup", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostSetup(c, db));
   app.get("/login", (c) => handleGetLogin(c, db));
   app.post("/login", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostLogin(c, db, rateLimitStore));
   app.get("/mfa/verify", requirePartialSessionHtml, (c) => handleGetMfaVerify(c));
@@ -626,6 +688,10 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostMfaEnrollDownloadCodes(c, db),
   );
   app.post("/logout", htmlPostCsrf, (c) => handlePostLogout(c, db));
+  app.get("/change-password", requireSessionHtml, (c) => handleGetChangePassword(c, db));
+  app.post("/change-password", htmlPostCsrf, requireSessionHtml, (c) =>
+    handlePostChangePassword(c, db),
+  );
 
   app.get("/assets/*", staffSpa.serveAsset);
   app.get("/vendor/tabler-icons/*", serveTablerIcons);

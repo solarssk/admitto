@@ -47,6 +47,7 @@ export const LOGIN_NEXT = {
   MFA_REQUIRED: "mfa_required",
   ENROLLMENT_REQUIRED: "enrollment_required",
   BACKUP_CODES_REQUIRED: "backup_codes_required",
+  CHANGE_PASSWORD: "change_password",
 } as const;
 
 export type LoginNext = (typeof LOGIN_NEXT)[keyof typeof LOGIN_NEXT];

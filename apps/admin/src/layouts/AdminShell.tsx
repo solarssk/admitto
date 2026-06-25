@@ -24,6 +24,7 @@ const LIVE_SEGMENTS = new Set([
   "requirements",
   "communication",
   "checkin",
+  "reports",
   "settings",
 ]);
 

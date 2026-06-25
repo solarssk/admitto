@@ -415,7 +415,7 @@ model RoleAssignment {
 
   @@index([user_id])
   @@index([scope_type, scope_id])
-  // Partial UNIQUE indexes (scoped + instance NULL) live in migration SQL — not expressible via @@unique.
+  // Partial UNIQUE indexes (scoped + instance NULL + single superadmin) live in migration SQL — not expressible via @@unique.
 }
 
 // OIDC / external identity providers (prompt 16b; cloudflare_access reserved for 16c).

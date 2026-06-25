@@ -26,6 +26,7 @@ export interface MeResponse {
   device_label?: string | null;
   session_active: boolean;
   mailer_status?: MailerStatus | null;
+  setup_complete?: boolean;
 }
 
 export interface EventDto {
@@ -469,6 +470,106 @@ export interface PatchSecuritySettingsBody {
   mfa_required_roles?: string[] | null;
 }
 
+export interface RoleAssignmentDto {
+  id: string;
+  role: string;
+  scope_type: string;
+  scope_id: string | null;
+  is_oidc: boolean;
+}
+
+export interface UserListItemDto {
+  id: string;
+  email: string;
+  display_name: string | null;
+  is_active: boolean;
+  must_change_password: boolean;
+  created_at: string;
+  last_login_at: string | null;
+  active_sessions_count: number;
+  has_mfa: boolean;
+  roles: RoleAssignmentDto[];
+}
+
+export interface UserListResponse {
+  users: UserListItemDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface CreateAdminUserBody {
+  email: string;
+  password: string;
+  display_name?: string | null;
+  must_change_password?: boolean;
+}
+
+export interface PatchAdminUserBody {
+  is_active?: boolean;
+  display_name?: string | null;
+}
+
+export interface GrantUserRoleBody {
+  role: string;
+  scope_type: string;
+  scope_id?: string | null;
+}
+
+export interface ResetUserPasswordBody {
+  new_password: string;
+}
+
+export interface RoleAssignmentListItemDto {
+  id: string;
+  user_id: string;
+  user_email: string;
+  user_display_name: string | null;
+  role: string;
+  scope_type: string;
+  scope_id: string | null;
+  is_oidc: boolean;
+  granted_at: string;
+  event: {
+    id: string;
+    title: string;
+    slug: string;
+    organization_id: string;
+  } | null;
+  organization: {
+    id: string;
+    name: string;
+  } | null;
+}
+
+export interface RoleAssignmentsListResponse {
+  assignments: RoleAssignmentListItemDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export type SetupCheckKey = "database" | "migrations" | "redis" | "encryption" | "base_url";
+
+export interface SetupCheckResult {
+  ok: boolean;
+  detail: string;
+}
+
+export interface SetupChecksResponse {
+  checks: Record<SetupCheckKey, SetupCheckResult>;
+}
+
+export interface SetupOrgBrandingDto {
+  org_name: string | null;
+  logo_url: string | null;
+}
+
+export interface PatchSetupOrgBrandingBody {
+  org_name?: string;
+  logo_url?: string | null;
+}
+
 /** One row from GET /api/admin/audit-log. */
 export interface AuditLogEntryDto {
   id: string;
@@ -540,4 +641,39 @@ export interface ConfirmMfaTotpBody {
 
 export interface ResetMfaBody {
   password: string;
+}
+
+export interface EventReportsResponse {
+  timezone: string;
+  event: {
+    id: string;
+    title: string;
+    date: string;
+    capacity: number | null;
+  };
+  summary: {
+    total_attendees: number;
+    admitted: number;
+    no_shows: number;
+    admission_rate_pct: number;
+    peak_hour: string | null;
+    peak_hour_count: number;
+  };
+  by_hour: Array<{ hour: string; count: number }>;
+  by_ticket_type: Array<{
+    type: string;
+    total: number;
+    admitted: number;
+    admission_pct: number;
+  }>;
+  admission_log: Array<{
+    attendee_id: string;
+    name: string;
+    email: string;
+    ticket_type: string;
+    admitted_at: string;
+    device_id: string | null;
+  }>;
+  admission_log_truncated: boolean;
+  admission_log_total: number;
 }

@@ -36,7 +36,18 @@ import type {
   SessionsResponse,
   SecuritySettingsDto,
   PatchSecuritySettingsBody,
+  UserListResponse,
+  CreateAdminUserBody,
+  PatchAdminUserBody,
+  GrantUserRoleBody,
+  ResetUserPasswordBody,
+  UserListItemDto,
+  RoleAssignmentsListResponse,
+  SetupChecksResponse,
+  SetupOrgBrandingDto,
+  PatchSetupOrgBrandingBody,
   AuditLogResponse,
+  EventReportsResponse,
   AccountDto,
   PatchAccountProfileBody,
   PatchAccountPasswordBody,
@@ -735,7 +746,156 @@ export async function patchSecuritySettings(
   return parseJson<SecuritySettingsDto>(res);
 }
 
-/** Load paginated instance admin audit log (superadmin). Date-only `start`/`end` use inclusive day bounds server-side. */
+function usersListQuery(
+  params: {
+    q?: string;
+    page?: number;
+    pageSize?: number;
+    organizationId?: string;
+    role?: string;
+    status?: string;
+  } = {},
+): string {
+  const q = new URLSearchParams();
+  if (params.q) q.set("q", params.q);
+  if (params.page != null) q.set("page", String(params.page));
+  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
+  if (params.organizationId) q.set("organizationId", params.organizationId);
+  if (params.role && params.role !== "all") q.set("role", params.role);
+  if (params.status && params.status !== "all") q.set("status", params.status);
+  const qs = q.toString();
+  return `/api/admin/users${qs ? `?${qs}` : ""}`;
+}
+
+export async function fetchAdminOrganizations(signal?: AbortSignal): Promise<
+  Array<{ id: string; name: string }>
+> {
+  const res = await fetch("/api/admin/organizations", { credentials: "same-origin", signal });
+  const data = await parseJson<{ organizations: Array<{ id: string; name: string }> }>(res);
+  return data.organizations;
+}
+
+export async function fetchAdminUsers(
+  params: {
+    q?: string;
+    page?: number;
+    pageSize?: number;
+    organizationId?: string;
+    role?: string;
+    status?: string;
+  } = {},
+  signal?: AbortSignal,
+): Promise<UserListResponse> {
+  const res = await fetch(usersListQuery(params), { credentials: "same-origin", signal });
+  return parseJson<UserListResponse>(res);
+}
+
+export async function createAdminUser(body: CreateAdminUserBody): Promise<{ user: UserListItemDto }> {
+  const res = await fetch("/api/admin/users", jsonPostInit(body));
+  return parseJson<{ user: UserListItemDto }>(res);
+}
+
+export async function patchAdminUser(
+  id: string,
+  body: PatchAdminUserBody,
+): Promise<{ user: UserListItemDto }> {
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}`, jsonPatchInit(body));
+  return parseJson<{ user: UserListItemDto }>(res);
+}
+
+export async function grantUserRole(
+  id: string,
+  body: GrantUserRoleBody,
+): Promise<{ assignment: { id: string; role: string; scope_type: string; scope_id: string | null } }> {
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}/roles`, jsonPostInit(body));
+  return parseJson(res);
+}
+
+export async function revokeUserRole(id: string, assignmentId: string): Promise<void> {
+  const res = await fetch(
+    `/api/admin/users/${encodeURIComponent(id)}/roles/${encodeURIComponent(assignmentId)}`,
+    jsonDeleteInit(),
+  );
+  if (!res.ok) {
+    let message = res.statusText || `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as ApiErrorBody;
+      message = messageFromApiErrorBody(body) ?? message;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+}
+
+export async function resetUserMfa(id: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}/reset-2fa`, jsonPostInit({}));
+  return parseJson<{ ok: boolean }>(res);
+}
+
+export async function resetUserPassword(
+  id: string,
+  body: ResetUserPasswordBody,
+): Promise<{ ok: boolean }> {
+  const res = await fetch(
+    `/api/admin/users/${encodeURIComponent(id)}/reset-password`,
+    jsonPostInit(body),
+  );
+  return parseJson<{ ok: boolean }>(res);
+}
+
+export async function revokeUserSessions(
+  id: string,
+): Promise<{ ok: boolean; sessionsRevoked: number }> {
+  const res = await fetch(
+    `/api/admin/users/${encodeURIComponent(id)}/revoke-sessions`,
+    jsonPostInit({}),
+  );
+  return parseJson<{ ok: boolean; sessionsRevoked: number }>(res);
+}
+
+export async function fetchRoleAssignments(
+  params: { page?: number; pageSize?: number } = {},
+  signal?: AbortSignal,
+): Promise<RoleAssignmentsListResponse> {
+  const q = new URLSearchParams();
+  if (params.page != null) q.set("page", String(params.page));
+  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
+  const qs = q.toString();
+  const res = await fetch(`/api/admin/role-assignments${qs ? `?${qs}` : ""}`, {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<RoleAssignmentsListResponse>(res);
+}
+
+/** Load system readiness checks for first-run wizard step 1 (superadmin). */
+export async function fetchSetupChecks(signal?: AbortSignal): Promise<SetupChecksResponse> {
+  const res = await fetch("/api/admin/setup/checks", { credentials: "same-origin", signal });
+  return parseJson<SetupChecksResponse>(res);
+}
+
+/** Load instance organisation name and logo URL for setup wizard branding step. */
+export async function fetchOrgBranding(signal?: AbortSignal): Promise<SetupOrgBrandingDto> {
+  const res = await fetch("/api/admin/setup/org-branding", { credentials: "same-origin", signal });
+  return parseJson<SetupOrgBrandingDto>(res);
+}
+
+/** Save organisation name and HTTPS logo URL during first-run branding step. */
+export async function patchOrgBranding(
+  body: PatchSetupOrgBrandingBody,
+): Promise<SetupOrgBrandingDto> {
+  const res = await fetch("/api/admin/setup/org-branding", jsonPatchInit(body));
+  return parseJson<SetupOrgBrandingDto>(res);
+}
+
+/** Mark first-run onboarding wizard complete (superadmin, POST setup/complete). */
+export async function completeSetup(): Promise<{ setup_complete: boolean }> {
+  const res = await fetch("/api/admin/setup/complete", jsonPostInit({}));
+  return parseJson<{ setup_complete: boolean }>(res);
+}
+
+/** Load paginated instance admin audit log (superadmin). Pass ISO instants for date bounds (local-day from UI). */
 export async function fetchAuditLog(
   params: {
     page?: number;
@@ -747,8 +907,8 @@ export async function fetchAuditLog(
   signal?: AbortSignal,
 ): Promise<AuditLogResponse> {
   const q = new URLSearchParams();
-  if (params.page) q.set("page", String(params.page));
-  if (params.pageSize) q.set("pageSize", String(params.pageSize));
+  if (params.page != null) q.set("page", String(params.page));
+  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
   if (params.actionType) q.set("action_type", params.actionType);
   if (params.start) q.set("start", params.start);
   if (params.end) q.set("end", params.end);
@@ -799,3 +959,56 @@ export async function resetMfa(body: ResetMfaBody): Promise<{ ok: true }> {
   const res = await fetch("/api/account/mfa/reset", jsonPostInit(body));
   return parseJson<{ ok: true }>(res);
 }
+
+/** Load aggregated admission report for an event. */
+export async function fetchEventReports(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventReportsResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<EventReportsResponse>(res);
+}
+
+/** Download admission log CSV export and trigger browser save. */
+export async function exportEventReportsCsv(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=csv`,
+    { credentials: "same-origin", signal },
+  );
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as ApiErrorBody;
+      message = messageFromApiErrorBody(body) ?? message;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match?.[1] ?? "admissions.csv";
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** Same-origin URL for printable HTML report (open in new tab for Save as PDF). */
+export function eventReportsPrintUrl(eventId: string): string {
+  return `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=pdf`;
+}
+

@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@admitto/ui";
 import { ApiError, createEvent } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
+import { slugFromTitle } from "./slug.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import "./create-event-modal.css";
 
@@ -10,16 +11,6 @@ type CreateEventModalProps = {
   onClose: () => void;
   onCreated: (event: EventDto) => void;
 };
-
-function slugFromTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9_-]/g, "")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 80);
-}
 
 export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalProps) {
   const titleId = useId();
@@ -34,7 +25,7 @@ export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalP
 
   useEffect(() => {
     if (!slugTouched) {
-      setSlug(slugFromTitle(title));
+      setSlug(slugFromTitle(title, 80));
     }
   }, [title, slugTouched]);
 
