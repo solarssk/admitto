@@ -6,6 +6,7 @@ import {
   hashPassword,
   normalizeEmail,
   resetUserMfa,
+  revokeAllTrustedDevicesForUser,
   revokeUserAuthState,
 } from "@admitto/auth";
 import { hasScope, ROLES, SCOPE_TYPES, type Role, type ScopeType } from "@admitto/db";
@@ -530,7 +531,11 @@ export async function handlePostResetUserPassword(c: Context, db: PrismaClient):
       where: { id },
       data: { password_hash: hash, must_change_password: true },
     });
-    await revokeUserAuthState(tx, id);
+    await tx.session.updateMany({
+      where: { user_id: id, revoked_at: null },
+      data: { revoked_at: new Date() },
+    });
+    await revokeAllTrustedDevicesForUser(tx, id);
   });
 
   const orgId = await resolveInstanceOrganizationId(db);
