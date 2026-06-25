@@ -1060,6 +1060,90 @@
   font-size: var(--fs-sm);
 }
 
+/* Inline camera (desktop check-in) */
+.ck-operator-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.ck-inline-camera {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #0e1117;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.ck-inline-camera__video-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.ck-inline-camera__video-wrap .checkin-camera {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+}
+
+.ck-inline-camera__video-wrap .checkin-camera__video {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: cover;
+}
+
+.ck-inline-camera__viewfinder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.ck-inline-camera__viewfinder .vf-frame {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+}
+
+.ck-inline-camera__hint {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.75rem;
+  margin-top: var(--space-3, 12px);
+  text-align: center;
+}
+
+.ck-inline-camera__result {
+  z-index: 1;
+}
+
+.ck-inline-camera__close {
+  position: absolute;
+  top: var(--space-2, 8px);
+  right: var(--space-2, 8px);
+  z-index: 2;
+  background: rgba(14, 17, 23, 0.6);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.ck-inline-camera__close:hover {
+  background: rgba(14, 17, 23, 0.9);
+}
+
 @media (max-width: 768px) {
   .ck-layout {
     grid-template-columns: 1fr;
