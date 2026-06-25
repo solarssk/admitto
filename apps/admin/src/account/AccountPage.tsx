@@ -30,6 +30,15 @@ function isTotpEnrolled(account: AccountDto): boolean {
   return account.mfa_methods.some((m) => m.type === "totp" && m.confirmed);
 }
 
+function redirectToLoginIfUnauthorized(err: unknown): boolean {
+  if (err instanceof ApiError && err.status === 401) {
+    const next = encodeURIComponent(window.location.pathname);
+    window.location.assign(`/login?next=${next}`);
+    return true;
+  }
+  return false;
+}
+
 export function AccountPage() {
   const [account, setAccount] = useState<AccountDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -65,36 +74,42 @@ export function AccountPage() {
   const [revokeAllOpen, setRevokeAllOpen] = useState(false);
   const [revokeAllBusy, setRevokeAllBusy] = useState(false);
 
-  const loadAccount = useCallback(async () => {
+  const loadAccount = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchAccount();
+      const data = await fetchAccount(signal);
       setAccount(data);
       setDisplayName(data.display_name ?? "");
     } catch (err) {
+      if (signal?.aborted) return;
+      if (redirectToLoginIfUnauthorized(err)) return;
       setError(err instanceof ApiError ? err.message : "Failed to load account.");
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
-  const loadSessions = useCallback(async () => {
+  const loadSessions = useCallback(async (signal?: AbortSignal) => {
     setSessionsLoading(true);
     setSessionsError(null);
     try {
-      const data = await fetchAccountSessions();
+      const data = await fetchAccountSessions(signal);
       setSessions(data.sessions);
     } catch (err) {
+      if (signal?.aborted) return;
+      if (redirectToLoginIfUnauthorized(err)) return;
       setSessionsError(err instanceof ApiError ? err.message : "Failed to load sessions.");
     } finally {
-      setSessionsLoading(false);
+      if (!signal?.aborted) setSessionsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadAccount();
-    void loadSessions();
+    const controller = new AbortController();
+    void loadAccount(controller.signal);
+    void loadSessions(controller.signal);
+    return () => controller.abort();
   }, [loadAccount, loadSessions]);
 
   if (loading) {
@@ -270,7 +285,7 @@ export function AccountPage() {
         {mfaStatus && <p className="text-success" role="status">{mfaStatus}</p>}
       </Card>
 
-      <Card title="Active sessions" actions={otherSessions.length > 0 ? <Button type="button" variant="danger" size="sm" onClick={() => setRevokeAllOpen(true)}>Revoke all other sessions</Button> : undefined}>
+      <Card title="Active sessions" actions={otherSessions.length > 0 ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}>
         {sessionsLoading && <p className="sessions-status">Loading…</p>}
         {!sessionsLoading && sessionsError && (
           <div className="sessions-status"><p>{sessionsError}</p><Button type="button" variant="secondary" onClick={() => void loadSessions()}>Retry</Button></div>
@@ -295,7 +310,7 @@ export function AccountPage() {
                       {s.isCurrent ? (
                         <Button type="button" variant="danger" disabled title="Cannot revoke current session">Revoke</Button>
                       ) : (
-                        <Button type="button" variant="danger" onClick={() => setRevokeTarget(s)}>Revoke</Button>
+                        <Button type="button" variant="danger" onClick={() => { setRevokeError(null); setRevokeTarget(s); }}>Revoke</Button>
                       )}
                     </td>
                   </tr>
@@ -307,22 +322,26 @@ export function AccountPage() {
         {revokeError && <p className="sessions-error">{revokeError}</p>}
       </Card>
 
-      <ConfirmDialog open={!!revokeTarget} title="Revoke session" message={revokeTarget ? `Revoke this session? Last active ${formatDate(revokeTarget.lastSeenAt)}.` : ""} confirmLabel="Revoke" confirmVariant="danger" loading={revoking} onConfirm={async () => {
+      <ConfirmDialog open={!!revokeTarget} title="Revoke session" message={revokeTarget ? `Revoke this session? Last active ${formatDate(revokeTarget.lastSeenAt)}.` : ""} confirmLabel="Revoke" confirmVariant="danger" loading={revoking} errorMessage={revokeError ?? undefined} onConfirm={async () => {
         if (!revokeTarget) return;
         setRevoking(true); setRevokeError(null);
         try { await deleteAccountSession(revokeTarget.id); setRevokeTarget(null); await loadSessions(); }
         catch (err) { setRevokeError(err instanceof ApiError ? err.message : "Failed to revoke session."); }
         finally { setRevoking(false); }
-      }} onCancel={() => { if (!revoking) setRevokeTarget(null); }} />
+      }} onCancel={() => { if (!revoking) { setRevokeTarget(null); setRevokeError(null); } }} />
 
-      <ConfirmDialog open={revokeAllOpen} title="Revoke all other sessions" message={`This will end ${otherSessions.length} other active session${otherSessions.length === 1 ? "" : "s"}.`} confirmLabel="Revoke all" confirmVariant="danger" loading={revokeAllBusy} onConfirm={async () => {
+      <ConfirmDialog open={revokeAllOpen} title="Revoke all other sessions" message={`This will end ${otherSessions.length} other active session${otherSessions.length === 1 ? "" : "s"}.`} confirmLabel="Revoke all" confirmVariant="danger" loading={revokeAllBusy} errorMessage={revokeError ?? undefined} onConfirm={async () => {
         setRevokeAllBusy(true); setRevokeError(null);
         try {
           for (const s of otherSessions) await deleteAccountSession(s.id);
-          setRevokeAllOpen(false); await loadSessions();
-        } catch (err) { setRevokeError(err instanceof ApiError ? err.message : "Failed to revoke sessions."); }
-        finally { setRevokeAllBusy(false); }
-      }} onCancel={() => { if (!revokeAllBusy) setRevokeAllOpen(false); }} />
+          setRevokeAllOpen(false);
+          setRevokeError(null);
+          await loadSessions();
+        } catch (err) {
+          setRevokeError(err instanceof ApiError ? err.message : "Failed to revoke sessions.");
+          await loadSessions();
+        } finally { setRevokeAllBusy(false); }
+      }} onCancel={() => { if (!revokeAllBusy) { setRevokeAllOpen(false); setRevokeError(null); } }} />
 
       <ConfirmDialog open={resetConfirmOpen} title="Reset two-factor authentication" message="This removes your authenticator and ends other active sessions. You will stay signed in here." confirmLabel="Reset 2FA" confirmVariant="danger" loading={resetting} errorMessage={resetError ?? undefined} onConfirm={async () => {
         setResetting(true); setResetError(null);
