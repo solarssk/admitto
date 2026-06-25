@@ -470,6 +470,86 @@ export interface PatchSecuritySettingsBody {
   mfa_required_roles?: string[] | null;
 }
 
+
+export interface RoleAssignmentDto {
+  id: string;
+  role: string;
+  scope_type: string;
+  scope_id: string | null;
+  is_oidc: boolean;
+}
+
+export interface UserListItemDto {
+  id: string;
+  email: string;
+  display_name: string | null;
+  is_active: boolean;
+  must_change_password: boolean;
+  created_at: string;
+  last_login_at: string | null;
+  active_sessions_count: number;
+  has_mfa: boolean;
+  roles: RoleAssignmentDto[];
+}
+
+export interface UserListResponse {
+  users: UserListItemDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface CreateAdminUserBody {
+  email: string;
+  password: string;
+  display_name?: string | null;
+  must_change_password?: boolean;
+}
+
+export interface PatchAdminUserBody {
+  is_active?: boolean;
+  display_name?: string | null;
+}
+
+export interface GrantUserRoleBody {
+  role: string;
+  scope_type: string;
+  scope_id?: string | null;
+}
+
+export interface ResetUserPasswordBody {
+  new_password: string;
+}
+
+export interface RoleAssignmentListItemDto {
+  id: string;
+  user_id: string;
+  user_email: string;
+  user_display_name: string | null;
+  role: string;
+  scope_type: string;
+  scope_id: string | null;
+  is_oidc: boolean;
+  granted_at: string;
+  event: {
+    id: string;
+    title: string;
+    slug: string;
+    organization_id: string;
+  } | null;
+  organization: {
+    id: string;
+    name: string;
+  } | null;
+}
+
+export interface RoleAssignmentsListResponse {
+  assignments: RoleAssignmentListItemDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export type SetupCheckKey = "database" | "migrations" | "redis" | "encryption" | "base_url";
 
 export interface SetupCheckResult {

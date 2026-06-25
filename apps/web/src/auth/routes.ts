@@ -16,6 +16,7 @@ import {
   confirmTotpEnrollment,
   promoteSessionToFull,
   promoteSessionToBackupCodesStep,
+  loginNextAfterFullSession,
   getTrustedDeviceDays,
   revokeTrustedDeviceByToken,
   SESSION_STAGE,
@@ -23,7 +24,6 @@ import {
   DEVICE_LABEL_MAX_LEN,
   regenerateBackupRecoveryCodes,
   resolveSetupComplete,
-  canManageInstance,
 } from "@admitto/auth";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
@@ -229,7 +229,9 @@ export async function handleMe(
     body.mailer_status = await resolveMailerStatus(db);
   }
 
-  if (opts?.includeSetupComplete || (await canManageInstance(db, auth.userId))) {
+  if (opts?.includeSetupComplete || assignments.some(
+    (a) => a.role === "superadmin" && a.scope_type === "instance" && a.scope_id == null,
+  )) {
     body.setup_complete = await resolveSetupComplete(db);
   }
 
@@ -330,7 +332,8 @@ export async function handleMfaVerify(
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
 
-  return c.json({ ok: true, next: LOGIN_NEXT.COMPLETE }, 200);
+  const next = await loginNextAfterFullSession(db, partial.userId);
+  return c.json({ ok: true, next }, 200);
 }
 
 /** POST /api/auth/mfa/totp/enroll — start enrollment (enrollment_required only). */
@@ -445,5 +448,6 @@ export async function handleTotpBackupCodesComplete(c: Context, db: PrismaClient
   }
 
   clearEnrollmentBackupCodes(partial.sessionId);
-  return c.json({ ok: true, next: LOGIN_NEXT.COMPLETE }, 200);
+  const next = await loginNextAfterFullSession(db, partial.userId);
+  return c.json({ ok: true, next }, 200);
 }

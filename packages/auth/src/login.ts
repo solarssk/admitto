@@ -92,6 +92,10 @@ export async function login(
     }
   }
 
+  if (stage === SESSION_STAGE.FULL && user.must_change_password) {
+    next = LOGIN_NEXT.CHANGE_PASSWORD;
+  }
+
   const { session, rawToken } = await createSession(prisma, {
     userId: user.id,
     stage,
@@ -236,6 +240,19 @@ export async function completeMfa(
 
   if (!txResult.ok) return { ok: false };
   return { ok: true, trustedDeviceRawToken: txResult.trustedDeviceRawToken };
+}
+
+/** Post-MFA / full-session next step when password change may be required. */
+export async function loginNextAfterFullSession(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<LoginNext> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { must_change_password: true },
+  });
+  if (user?.must_change_password) return LOGIN_NEXT.CHANGE_PASSWORD;
+  return LOGIN_NEXT.COMPLETE;
 }
 
 /** Revoke the validated session row (idempotent when already revoked). */

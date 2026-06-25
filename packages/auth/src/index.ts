@@ -138,13 +138,21 @@ export {
   type RateLimitScope,
   type AuthSettingsResource,
 } from "./audit.js";
-export { login, logout, completeMfa, type LoginInput, type LoginResult, type CompleteMfaInput } from "./login.js";
+export {
+  login,
+  logout,
+  completeMfa,
+  loginNextAfterFullSession,
+  type LoginInput,
+  type LoginResult,
+  type CompleteMfaInput,
+} from "./login.js";
 export {
   bootstrapSuperadmin,
   superadminInstanceExists,
   userIsInstanceSuperadmin,
 } from "./bootstrap.js";
-export { revokeUserAuthState } from "./revocation.js";
+export { revokeUserAuthState, revokeOtherSessions } from "./revocation.js";
 export { userRequiresMfa, userHasConfirmedTotp } from "./mfa/policy.js";
 export {
   startTotpEnrollment,

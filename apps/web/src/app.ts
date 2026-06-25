@@ -163,6 +163,22 @@ import {
 } from "./admin/sessions-routes.js";
 import { handleGetAuditLog } from "./admin/audit-routes.js";
 import {
+  handleGetOrganizations,
+  handleGetUsers,
+  handlePostUser,
+  handlePatchUser,
+  handlePostUserRole,
+  handleDeleteUserRole,
+  handlePostResetUserMfa,
+  handlePostResetUserPassword,
+  handlePostRevokeUserSessions,
+} from "./admin/users-routes.js";
+import { handleGetRoleAssignments } from "./admin/role-assignments-routes.js";
+import {
+  handleGetChangePassword,
+  handlePostChangePassword,
+} from "./auth/change-password-routes.js";
+import {
   handleGetSystemSettings,
   handlePatchSystemSettings,
 } from "./admin/system-settings-routes.js";
@@ -524,6 +540,26 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     (c) => handleRevokeAllOperatorSessions(c, db),
   );
+  app.get("/api/admin/organizations", staffAdminGate, (c) => handleGetOrganizations(c, db));
+  app.get("/api/admin/users", staffAdminGate, (c) => handleGetUsers(c, db));
+  app.post("/api/admin/users", jsonPostCsrf, staffAdminGate, (c) => handlePostUser(c, db));
+  app.patch("/api/admin/users/:id", jsonPostCsrf, staffAdminGate, (c) => handlePatchUser(c, db));
+  app.post("/api/admin/users/:id/roles", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePostUserRole(c, db),
+  );
+  app.delete("/api/admin/users/:id/roles/:assignmentId", jsonPostCsrf, staffAdminGate, (c) =>
+    handleDeleteUserRole(c, db),
+  );
+  app.post("/api/admin/users/:id/reset-2fa", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePostResetUserMfa(c, db),
+  );
+  app.post("/api/admin/users/:id/reset-password", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePostResetUserPassword(c, db),
+  );
+  app.post("/api/admin/users/:id/revoke-sessions", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePostRevokeUserSessions(c, db),
+  );
+  app.get("/api/admin/role-assignments", staffAdminGate, (c) => handleGetRoleAssignments(c, db));
   app.get("/api/admin/system-settings", staffAdminGate, (c) => handleGetSystemSettings(c, db));
   app.patch("/api/admin/system-settings", jsonPostCsrf, staffAdminGate, (c) =>
     handlePatchSystemSettings(c, db),
@@ -613,6 +649,10 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostMfaEnrollDownloadCodes(c, db),
   );
   app.post("/logout", htmlPostCsrf, (c) => handlePostLogout(c, db));
+  app.get("/change-password", requireSessionHtml, (c) => handleGetChangePassword(c, db));
+  app.post("/change-password", htmlPostCsrf, requireSessionHtml, (c) =>
+    handlePostChangePassword(c, db),
+  );
 
   app.get("/assets/*", staffSpa.serveAsset);
   app.get("/vendor/tabler-icons/*", serveTablerIcons);
