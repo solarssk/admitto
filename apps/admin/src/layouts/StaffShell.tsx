@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useCallback, useState, type ReactNode } from "react";
 import { useAuth } from "../auth/AuthProvider.js";
 import { MailerStatusBadge } from "../components/MailerStatusBadge.js";
@@ -44,10 +45,10 @@ export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
           <div className="topbar__right">
             <MailerStatusBadge status={user.mailer_status} />
             <div className="topbar__user">
-              <a href="/account" className="topbar__user-link">
+              <Link to="/account" className="topbar__user-link">
                 <RoleBadge assignments={assignments} />
                 <span className="topbar__user-name">{displayName}</span>
-              </a>
+              </Link>
             </div>
             <form method="post" action="/logout">
               <button

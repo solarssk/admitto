@@ -92,6 +92,7 @@ afterAll(async () => {
 
 describe("GET /api/account", () => {
   it("returns profile without password_hash", async () => {
+    await prisma.user.update({ where: { id: userId }, data: { must_change_password: true } });
     const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
