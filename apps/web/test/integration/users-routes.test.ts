@@ -374,20 +374,22 @@ describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
       },
     });
 
-    const first = await app.request(`/api/admin/users/${created.id}/roles/${assignment.id}`, {
-      method: "DELETE",
-      headers: { Cookie: superCookie, ...sameOrigin },
-    });
-    expect(first.status).toBe(204);
+    try {
+      const first = await app.request(`/api/admin/users/${created.id}/roles/${assignment.id}`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+      expect(first.status).toBe(204);
 
-    const second = await app.request(`/api/admin/users/${created.id}/roles/${assignment.id}`, {
-      method: "DELETE",
-      headers: { Cookie: superCookie, ...sameOrigin },
-    });
-    expect(second.status).toBe(204);
-
-    await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
-    await prisma.user.delete({ where: { id: created.id } });
+      const second = await app.request(`/api/admin/users/${created.id}/roles/${assignment.id}`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+      expect(second.status).toBe(204);
+    } finally {
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
   });
 });
 

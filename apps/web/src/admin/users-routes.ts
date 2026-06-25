@@ -471,13 +471,24 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
       async (tx) => {
         const current = await tx.roleAssignment.findFirst({
           where: { id: assignmentId, user_id: id },
-          select: { id: true, role: true, scope_type: true, scope_id: true },
+          select: {
+            id: true,
+            role: true,
+            scope_type: true,
+            scope_id: true,
+            oidc_role_grants: { select: { id: true }, take: 1 },
+          },
         });
         if (!current) return "gone" as const;
+        if (current.oidc_role_grants.length > 0) return "managed_by_idp" as const;
 
         await assertLastSuperadminRemovalAllowed(tx, current);
         await tx.roleAssignment.delete({ where: { id: assignmentId } });
-        return current;
+        return {
+          role: current.role,
+          scope_type: current.scope_type,
+          scope_id: current.scope_id,
+        };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
@@ -485,6 +496,9 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
     if (outcome === "gone") {
       if (actorIsSuperadmin) return c.body(null, 204);
       return c.json({ error: "forbidden" }, 403);
+    }
+    if (outcome === "managed_by_idp") {
+      return c.json({ code: "managed_by_idp" }, 409);
     }
 
     deletedAssignment = outcome;

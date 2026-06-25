@@ -25,9 +25,15 @@ async function targetIsSuperadmin(db: PrismaClient | PrismaTx, userId: string): 
 
 export async function assertLastSuperadminRemovalAllowed(
   tx: PrismaTx,
-  assignment: { role: string; scope_type: string },
+  assignment: { id: string; role: string; scope_type: string; scope_id: string | null },
 ): Promise<void> {
-  if (assignment.role !== "superadmin" || assignment.scope_type !== "instance") return;
+  if (assignment.role !== "superadmin" || assignment.scope_type !== "instance" || assignment.scope_id !== null) {
+    return;
+  }
+  const removesActiveSuperadmin = await tx.roleAssignment.count({
+    where: { id: assignment.id, user: { is_active: true } },
+  });
+  if (removesActiveSuperadmin === 0) return;
   const superadmins = await countSuperadminAssignments(tx);
   if (superadmins <= 1) throw new LastSuperadminError();
 }
