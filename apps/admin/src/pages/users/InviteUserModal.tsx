@@ -128,7 +128,7 @@ export function InviteUserModal({ open, onClose, onCreated }: InviteUserModalPro
       resetForm();
       onClose();
     } catch (err) {
-      if (err instanceof ApiError && err.message.includes("email_taken")) {
+      if (err instanceof ApiError && (err.message.includes("email_taken") || err.message.includes("email_conflict"))) {
         setError("A user with this email already exists.");
       } else {
         setError(err instanceof ApiError ? err.message : "Failed to invite user.");

@@ -341,6 +341,14 @@ describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("managed_by_idp");
   });
+
+  it("returns 403 for org admin when assignment does not exist", async () => {
+    const res = await app.request(`/api/admin/users/${targetId}/roles/does-not-exist`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe("POST /api/admin/users functional", () => {
@@ -360,6 +368,46 @@ describe("POST /api/admin/users functional", () => {
     expect(roles).toBe(0);
 
     await prisma.user.delete({ where: { email } });
+  });
+
+  it("returns 409 email_conflict for duplicate email", async () => {
+    const res = await app.request("/api/admin/users", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: EMAIL_TARGET, password: "duplicate-pass-1" }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; error: string };
+    expect(body.code).toBe("email_conflict");
+    expect(body.error).toBe("email_taken");
+  });
+});
+
+describe("POST /api/admin/users/:id/revoke-sessions", () => {
+  it("preserves last_login_at while clearing active session count", async () => {
+    await createSession(prisma, { userId: targetId, stage: SESSION_STAGE.FULL });
+
+    const listBefore = await app.request("/api/admin/users", { headers: { Cookie: superCookie } });
+    const beforeBody = (await listBefore.json()) as {
+      users: Array<{ id: string; last_login_at: string | null; active_sessions_count: number }>;
+    };
+    const targetBefore = beforeBody.users.find((u) => u.id === targetId);
+    expect(targetBefore?.last_login_at).not.toBeNull();
+    expect(targetBefore?.active_sessions_count).toBeGreaterThan(0);
+
+    const revokeRes = await app.request(`/api/admin/users/${targetId}/revoke-sessions`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(revokeRes.status).toBe(200);
+
+    const listAfter = await app.request("/api/admin/users", { headers: { Cookie: superCookie } });
+    const afterBody = (await listAfter.json()) as {
+      users: Array<{ id: string; last_login_at: string | null; active_sessions_count: number }>;
+    };
+    const targetAfter = afterBody.users.find((u) => u.id === targetId);
+    expect(targetAfter?.last_login_at).toBe(targetBefore?.last_login_at);
+    expect(targetAfter?.active_sessions_count).toBe(0);
   });
 });
 
@@ -477,6 +525,54 @@ describe("GET /change-password", () => {
     await prisma.user.update({
       where: { id: superId },
       data: { must_change_password: false },
+    });
+  });
+});
+
+describe("POST /change-password", () => {
+  it("updates password atomically, clears flag, and revokes other sessions", async () => {
+    await prisma.user.update({
+      where: { id: targetId },
+      data: { must_change_password: true },
+    });
+
+    const keepSession = await createSession(prisma, {
+      userId: targetId,
+      stage: SESSION_STAGE.FULL,
+      ip: "127.0.0.4",
+    });
+    const otherSession = await createSession(prisma, {
+      userId: targetId,
+      stage: SESSION_STAGE.FULL,
+      ip: "127.0.0.5",
+    });
+
+    const res = await app.request("/change-password", {
+      method: "POST",
+      headers: {
+        Cookie: `admitto_session=${keepSession.rawToken}`,
+        ...sameOrigin,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        password: NEW_PASSWORD,
+        password_confirm: NEW_PASSWORD,
+      }).toString(),
+    });
+    expect(res.status).toBe(302);
+
+    const user = await prisma.user.findUnique({ where: { id: targetId } });
+    expect(user?.must_change_password).toBe(false);
+    expect(await verifyPassword(NEW_PASSWORD, user!.password_hash!)).toBe(true);
+
+    const kept = await prisma.session.findUnique({ where: { id: keepSession.session.id } });
+    const other = await prisma.session.findUnique({ where: { id: otherSession.session.id } });
+    expect(kept?.revoked_at).toBeNull();
+    expect(other?.revoked_at).not.toBeNull();
+
+    await prisma.user.update({
+      where: { id: targetId },
+      data: { password_hash: await hashPassword(PASSWORD) },
     });
   });
 });

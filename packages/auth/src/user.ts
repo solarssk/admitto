@@ -12,6 +12,7 @@ export interface CreateUserInput {
   password: string;
   displayName?: string;
   isActive?: boolean;
+  mustChangePassword?: boolean;
 }
 
 /** Create a user with argon2id-hashed password and normalized email. */
@@ -27,6 +28,7 @@ export async function createUser(
       password_hash,
       display_name: input.displayName ?? null,
       is_active: input.isActive ?? true,
+      must_change_password: input.mustChangePassword ?? false,
     },
   });
 }

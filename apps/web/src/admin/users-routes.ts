@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   canManageInstance,
   createUser,
@@ -38,29 +38,53 @@ type UserWithRoles = Prisma.UserGetPayload<{
   };
 }>;
 
-async function sessionStatsForUser(
+type SessionStats = { last_login_at: string | null; active_sessions_count: number };
+
+async function sessionStatsForUsers(
   db: PrismaClient,
-  userId: string,
-): Promise<{ last_login_at: string | null; active_sessions_count: number }> {
+  userIds: string[],
+): Promise<Map<string, SessionStats>> {
+  const stats = new Map<string, SessionStats>();
+  for (const id of userIds) {
+    stats.set(id, { last_login_at: null, active_sessions_count: 0 });
+  }
+  if (userIds.length === 0) return stats;
+
   const now = new Date();
-  const [lastSession, active_sessions_count] = await Promise.all([
-    db.session.findFirst({
-      where: { user_id: userId, revoked_at: null },
-      orderBy: { created_at: "desc" },
-      select: { created_at: true },
+  const [sessions, activeCounts] = await Promise.all([
+    db.session.findMany({
+      where: { user_id: { in: userIds } },
+      select: { user_id: true, created_at: true },
     }),
-    db.session.count({
-      where: { user_id: userId, revoked_at: null, expires_at: { gt: now } },
+    db.session.groupBy({
+      by: ["user_id"],
+      where: {
+        user_id: { in: userIds },
+        revoked_at: null,
+        expires_at: { gt: now },
+      },
+      _count: { _all: true },
     }),
   ]);
-  return {
-    last_login_at: lastSession?.created_at.toISOString() ?? null,
-    active_sessions_count,
-  };
+
+  for (const row of activeCounts) {
+    const entry = stats.get(row.user_id);
+    if (entry) entry.active_sessions_count = row._count._all;
+  }
+
+  for (const session of sessions) {
+    const entry = stats.get(session.user_id);
+    if (!entry) continue;
+    const iso = session.created_at.toISOString();
+    if (!entry.last_login_at || iso > entry.last_login_at) {
+      entry.last_login_at = iso;
+    }
+  }
+
+  return stats;
 }
 
-async function serializeUser(db: PrismaClient, user: UserWithRoles) {
-  const stats = await sessionStatsForUser(db, user.id);
+function serializeUserRow(user: UserWithRoles, sessionStats: SessionStats) {
   return {
     id: user.id,
     email: user.email,
@@ -68,8 +92,8 @@ async function serializeUser(db: PrismaClient, user: UserWithRoles) {
     is_active: user.is_active,
     must_change_password: user.must_change_password,
     created_at: user.created_at.toISOString(),
-    last_login_at: stats.last_login_at,
-    active_sessions_count: stats.active_sessions_count,
+    last_login_at: sessionStats.last_login_at,
+    active_sessions_count: sessionStats.active_sessions_count,
     has_mfa: user.mfa_methods.some((m) => m.confirmed_at != null),
     roles: user.role_assignments.map((a) => ({
       id: a.id,
@@ -79,6 +103,12 @@ async function serializeUser(db: PrismaClient, user: UserWithRoles) {
       is_oidc: a.oidc_role_grants.length > 0,
     })),
   };
+}
+
+async function serializeUser(db: PrismaClient, user: UserWithRoles) {
+  const statsMap = await sessionStatsForUsers(db, [user.id]);
+  const stats = statsMap.get(user.id) ?? { last_login_at: null, active_sessions_count: 0 };
+  return serializeUserRow(user, stats);
 }
 
 const userInclude = {
@@ -209,7 +239,11 @@ export async function handleGetUsers(c: Context, db: PrismaClient): Promise<Resp
     }),
   ]);
 
-  const users = await Promise.all(rows.map((row) => serializeUser(db, row)));
+  const userIds = rows.map((row) => row.id);
+  const statsMap = await sessionStatsForUsers(db, userIds);
+  const users = rows.map((row) =>
+    serializeUserRow(row, statsMap.get(row.id) ?? { last_login_at: null, active_sessions_count: 0 }),
+  );
   return c.json({ users, total, page, pageSize });
 }
 
@@ -230,18 +264,20 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
     return c.json({ error: "invalid_request" }, 400);
   }
 
-  const created = await createUser(db, {
-    email,
-    password,
-    displayName: displayName ?? undefined,
-    isActive: true,
-  });
-
-  if (mustChange) {
-    await db.user.update({
-      where: { id: created.id },
-      data: { must_change_password: true },
+  let created;
+  try {
+    created = await createUser(db, {
+      email,
+      password,
+      displayName: displayName ?? undefined,
+      isActive: true,
+      mustChangePassword: mustChange,
     });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return c.json({ code: "email_conflict", error: "email_taken" }, 409);
+    }
+    throw err;
   }
 
   const user = await loadUser(db, created.id);
@@ -396,13 +432,18 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
   const assignmentId = c.req.param("assignmentId") ?? "";
   if (!id || !assignmentId) return c.json({ error: "id required" }, 400);
 
+  const actorId = c.get("auth").userId;
+  const actorIsSuperadmin = await canManageInstance(db, actorId);
+
   const assignment = await db.roleAssignment.findFirst({
     where: { id: assignmentId, user_id: id },
     include: { oidc_role_grants: { select: { id: true } } },
   });
-  if (!assignment) return c.body(null, 204);
+  if (!assignment) {
+    if (actorIsSuperadmin) return c.body(null, 204);
+    return c.json({ error: "forbidden" }, 403);
+  }
 
-  const actorId = c.get("auth").userId;
   const revokeDenied = await assertRoleRevokeAllowed(c, db, actorId, assignment);
   if (revokeDenied) return revokeDenied;
 
@@ -479,11 +520,13 @@ export async function handlePostResetUserPassword(c: Context, db: PrismaClient):
   if (!user) return c.json({ error: "not_found" }, 404);
 
   const hash = await hashPassword(newPassword);
-  await db.user.update({
-    where: { id },
-    data: { password_hash: hash, must_change_password: true },
+  await db.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id },
+      data: { password_hash: hash, must_change_password: true },
+    });
+    await revokeUserAuthState(tx, id);
   });
-  await revokeUserAuthState(db, id);
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
