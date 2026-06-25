@@ -23,6 +23,7 @@ import {
   updateSessionDeviceLabel,
   DEVICE_LABEL_MAX_LEN,
   regenerateBackupRecoveryCodes,
+  markBackupCodesAcknowledged,
   resolveSetupComplete,
 } from "@admitto/auth";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
@@ -33,6 +34,7 @@ import {
   extendEnrollmentBackupCodes,
   clearEnrollmentBackupCodes,
 } from "./enrollment-backup-cache.js";
+import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
@@ -332,6 +334,16 @@ export async function handleMfaVerify(
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
 
+  // User still owes backup-code acknowledgment — keep them in the constrained
+  // stage instead of granting full access (IAM-002).
+  if (result.stage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {
+    const backupCodes = await ensureEnrollmentBackupCodesStashed(db, partial.sessionId, partial.userId);
+    return c.json(
+      { ok: true, next: LOGIN_NEXT.BACKUP_CODES_REQUIRED, backup_codes: backupCodes },
+      200,
+    );
+  }
+
   const next = await loginNextAfterFullSession(db, partial.userId);
   return c.json({ ok: true, next }, 200);
 }
@@ -441,6 +453,10 @@ export async function handleTotpBackupCodesComplete(c: Context, db: PrismaClient
       401,
     );
   }
+
+  // Record acknowledgment before promotion so the session can leave the
+  // backup-codes stage (IAM-002).
+  await markBackupCodesAcknowledged(db, partial.userId);
 
   const promoted = await promoteSessionToFull(db, partial.sessionId, partial.userId);
   if (!promoted) {

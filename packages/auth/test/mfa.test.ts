@@ -299,7 +299,7 @@ describe("promoteSessionToFull", () => {
       data: { expires_at: new Date(Date.now() - 1000) },
     });
 
-    expect(await promoteSessionToFull(prisma, loginResult.sessionId, loginResult.userId)).toBe(false);
+    expect(await promoteSessionToFull(prisma, loginResult.sessionId, loginResult.userId)).toBeNull();
   });
 });
 

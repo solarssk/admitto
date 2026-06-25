@@ -7,7 +7,11 @@ import {
   getSessionTtlOperatorMs,
   getMfaRequiredRoles,
 } from "./settings/resolver.js";
-import { userRequiresMfa, userHasConfirmedTotp } from "./mfa/policy.js";
+import {
+  userRequiresMfa,
+  userHasConfirmedTotp,
+  userHasUnacknowledgedBackupCodes,
+} from "./mfa/policy.js";
 
 /** Max length for optional device label on sessions (operator check-in step). */
 export const DEVICE_LABEL_MAX_LEN = 120;
@@ -51,6 +55,28 @@ async function resolveFullTtlMs(
   return hasElevated ? getSessionTtlAdminMs(prisma) : getSessionTtlOperatorMs(prisma);
 }
 
+/**
+ * Resolve the stage a session is allowed to hold once any MFA step is satisfied.
+ * A `full` session is withheld while the user still owes a constrained step:
+ * acknowledging backup recovery codes (IAM-002) or a forced password change
+ * (IAM-001). These gates are enforced at the session layer so no HTTP client can
+ * skip them by ignoring a client-side `next` hint.
+ */
+async function resolvePostMfaStage(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<SessionStage> {
+  if (await userHasUnacknowledgedBackupCodes(prisma, userId)) {
+    return SESSION_STAGE.BACKUP_CODES_REQUIRED;
+  }
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { must_change_password: true },
+  });
+  if (user?.must_change_password) return SESSION_STAGE.CHANGE_PASSWORD_REQUIRED;
+  return SESSION_STAGE.FULL;
+}
+
 /** Derive session stage when caller omits it (fail closed for MFA-required users). */
 async function resolveInitialSessionStage(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -58,7 +84,7 @@ async function resolveInitialSessionStage(
   explicit?: SessionStage,
 ): Promise<SessionStage> {
   if (explicit !== undefined) return explicit;
-  if (!(await userRequiresMfa(prisma, userId))) return SESSION_STAGE.FULL;
+  if (!(await userRequiresMfa(prisma, userId))) return resolvePostMfaStage(prisma, userId);
   if (await userHasConfirmedTotp(prisma, userId)) return SESSION_STAGE.MFA_PENDING;
   return SESSION_STAGE.ENROLLMENT_REQUIRED;
 }
@@ -153,6 +179,9 @@ async function assertFullSessionMfaPolicy(
   if (validated.session.auth_method === AUTH_METHOD.OIDC) return true;
   if (!(await userRequiresMfa(prisma, validated.userId))) return true;
   if (!(await userHasConfirmedTotp(prisma, validated.userId))) return false;
+  // Backup-code acknowledgment is mandatory before a full session is honored;
+  // reject at the transport layer as defense-in-depth (IAM-002).
+  if (await userHasUnacknowledgedBackupCodes(prisma, validated.userId)) return false;
 
   const requiredRoles = await getMfaRequiredRoles(prisma);
   const firstElevatedRole = await prisma.roleAssignment.findFirst({
@@ -207,14 +236,25 @@ export async function promoteSessionToBackupCodesStep(
   return result.count === 1;
 }
 
-/** Promote partial session to full after successful MFA; false if session ineligible or already full. */
+/**
+ * Advance a partial session after a successful step. Resolves the next stage via
+ * {@link resolvePostMfaStage}: usually `full`, but kept constrained when the user
+ * still owes backup-code acknowledgment (IAM-002) or a forced password change
+ * (IAM-001). Returns the resulting stage, or `null` if the session was ineligible.
+ */
 export async function promoteSessionToFull(
   prisma: PrismaClient | Prisma.TransactionClient,
   sessionId: string,
   userId: string,
-): Promise<boolean> {
+): Promise<SessionStage | null> {
+  const targetStage = await resolvePostMfaStage(prisma, userId);
   // TTL is resolved at promotion time (not cached from login) so SystemSettings changes apply immediately.
-  const ttlMs = await resolveFullTtlMs(prisma, userId);
+  const ttlMs =
+    targetStage === SESSION_STAGE.FULL
+      ? await resolveFullTtlMs(prisma, userId)
+      : targetStage === SESSION_STAGE.BACKUP_CODES_REQUIRED
+        ? BACKUP_CODES_STEP_TTL_MS
+        : MFA_PENDING_SESSION_TTL_MS;
   const now = new Date();
   const result = await prisma.session.updateMany({
     where: {
@@ -227,16 +267,17 @@ export async function promoteSessionToFull(
           SESSION_STAGE.MFA_PENDING,
           SESSION_STAGE.ENROLLMENT_REQUIRED,
           SESSION_STAGE.BACKUP_CODES_REQUIRED,
+          SESSION_STAGE.CHANGE_PASSWORD_REQUIRED,
         ],
       },
     },
     data: {
-      stage: SESSION_STAGE.FULL,
+      stage: targetStage,
       expires_at: new Date(now.getTime() + ttlMs),
       last_seen_at: now,
     },
   });
-  return result.count === 1;
+  return result.count === 1 ? targetStage : null;
 }
 
 /** Set or clear device label on the active session (operator check-in step). */

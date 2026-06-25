@@ -137,6 +137,8 @@ export async function confirmTotpEnrollment(
       confirmed_at: new Date(),
       last_totp_time_step: verified.timeStep,
       last_used_at: new Date(),
+      // Force the backup-codes acknowledgment step before a full session (IAM-002).
+      backup_codes_acknowledged_at: null,
     },
   });
   return true;

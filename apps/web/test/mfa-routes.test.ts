@@ -575,6 +575,139 @@ describe("HTML MFA enroll", () => {
   });
 });
 
+describe("IAM-002 backup-code acknowledgment cannot be skipped via a fresh login", () => {
+  it("verifying TOTP on a new login with unacknowledged codes yields backup_codes_required, not full", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    clearEnrollmentBackupCacheForTests();
+    const secret = generateTotpSecret();
+    // Simulate a TOTP that was just confirmed but whose backup codes were never acknowledged.
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: admin!.id,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+        backup_codes_acknowledged_at: null,
+      },
+    });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+    expect((await loginRes.json()) as { next: string }).toEqual(
+      expect.objectContaining({ next: LOGIN_NEXT.MFA_REQUIRED }),
+    );
+
+    const verifyRes = await app.request("/api/auth/mfa/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({ code: generateTotpCode(secret) }),
+    });
+    expect(verifyRes.status).toBe(200);
+    const verifyBody = (await verifyRes.json()) as { next: string; backup_codes?: string[] };
+    // Must NOT be a full session — user still owes backup-code acknowledgment.
+    expect(verifyBody.next).toBe(LOGIN_NEXT.BACKUP_CODES_REQUIRED);
+    expect(Array.isArray(verifyBody.backup_codes)).toBe(true);
+    expect(verifyBody.backup_codes!.length).toBeGreaterThan(0);
+
+    const me = await app.request("/api/auth/me", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(me.status).toBe(401);
+
+    // Acknowledging the codes finally promotes the session to full.
+    const finishRes = await app.request("/api/auth/mfa/totp/backup-codes/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(finishRes.status).toBe(200);
+
+    const meFull = await app.request("/api/auth/me", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(meFull.status).toBe(200);
+  });
+});
+
+describe("IAM-001/IAM-003 forced password change is enforced at the session layer", () => {
+  it("blocks protected APIs until the password is changed and requires the full-length policy", async () => {
+    const op = await prisma.user.findUnique({ where: { email: operatorEmail } });
+    await prisma.session.updateMany({
+      where: { user_id: op!.id, revoked_at: null },
+      data: { revoked_at: new Date() },
+    });
+    await prisma.user.update({ where: { id: op!.id }, data: { must_change_password: true } });
+
+    try {
+      const loginRes = await app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({ email: operatorEmail, password: "web-op-pass-123" }),
+      });
+      expect(loginRes.status).toBe(200);
+      expect((await loginRes.json()) as { next: string }).toEqual(
+        expect.objectContaining({ next: LOGIN_NEXT.CHANGE_PASSWORD }),
+      );
+
+      // Session is constrained: a protected route must reject it (IAM-001).
+      const blocked = await app.request("/api/checkin/events", {
+        headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      });
+      expect(blocked.status).toBe(401);
+
+      // IAM-003: an 11-character password is below the 12-char policy.
+      const tooShort = await app.request("/change-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          ...sameOrigin,
+          ...cookieHeader(loginRes),
+        },
+        body: new URLSearchParams({ password: "elevenchar1", password_confirm: "elevenchar1" }).toString(),
+        redirect: "manual",
+      });
+      expect(tooShort.status).toBe(400);
+
+      const newPassword = "brand-new-password-123";
+      const changed = await app.request("/change-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          ...sameOrigin,
+          ...cookieHeader(loginRes),
+        },
+        body: new URLSearchParams({ password: newPassword, password_confirm: newPassword }).toString(),
+        redirect: "manual",
+      });
+      expect(changed.status).toBe(302);
+
+      const refreshed = await prisma.user.findUnique({
+        where: { id: op!.id },
+        select: { must_change_password: true },
+      });
+      expect(refreshed?.must_change_password).toBe(false);
+
+      // The same session is now full and may reach protected routes.
+      const allowed = await app.request("/api/checkin/events", {
+        headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      });
+      expect(allowed.status).toBe(200);
+    } finally {
+      await prisma.user.update({
+        where: { id: op!.id },
+        data: { must_change_password: false, password_hash: await hashPassword("web-op-pass-123") },
+      });
+      await prisma.session.updateMany({
+        where: { user_id: op!.id, revoked_at: null },
+        data: { revoked_at: new Date() },
+      });
+    }
+  });
+});
+
 describe("logout revokes trusted device", () => {
   it("API logout invalidates remembered device token", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });

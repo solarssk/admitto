@@ -92,7 +92,12 @@ export async function login(
     }
   }
 
+  // Forced password change is enforced as a constrained session stage (not just a
+  // client-side `next` hint) so no HTTP client can reach protected routes with the
+  // temporary credential (IAM-001). MFA-required users hit this gate after MFA, at
+  // session promotion time.
   if (stage === SESSION_STAGE.FULL && user.must_change_password) {
+    stage = SESSION_STAGE.CHANGE_PASSWORD_REQUIRED;
     next = LOGIN_NEXT.CHANGE_PASSWORD;
   }
 
@@ -130,6 +135,8 @@ export interface CompleteMfaInput {
 export interface CompleteMfaResult {
   ok: boolean;
   trustedDeviceRawToken?: string;
+  /** Stage the session reached after promotion (e.g. `backup_codes_required` when codes still owed). */
+  stage?: SessionStage;
 }
 
 type CompleteMfaTxResult =
@@ -139,6 +146,7 @@ type CompleteMfaTxResult =
       method: MfaMethod;
       recoveryMethod?: "backup" | "emergency";
       trustedDeviceRawToken?: string;
+      stage: SessionStage;
     };
 
 async function completeMfaInTransaction(
@@ -163,8 +171,8 @@ async function completeMfaInTransaction(
 
   if (!totpOk && !recoveryRowId) return { ok: false, reason: "invalid_code" };
 
-  const promoted = await promoteSessionToFull(tx, sessionId, userId);
-  if (!promoted) return { ok: false, reason: "session_not_promoted" };
+  const promotedStage = await promoteSessionToFull(tx, sessionId, userId);
+  if (!promotedStage) return { ok: false, reason: "session_not_promoted" };
 
   let method: MfaMethod;
   if (totpOk) {
@@ -189,11 +197,17 @@ async function completeMfaInTransaction(
         userAgent: input.userAgent,
         label: input.deviceLabel,
       });
-      return { ok: true, method, recoveryMethod: recoveryMethod ?? undefined, trustedDeviceRawToken: rawToken };
+      return {
+        ok: true,
+        method,
+        recoveryMethod: recoveryMethod ?? undefined,
+        trustedDeviceRawToken: rawToken,
+        stage: promotedStage,
+      };
     }
   }
 
-  return { ok: true, method, recoveryMethod: recoveryMethod ?? undefined };
+  return { ok: true, method, recoveryMethod: recoveryMethod ?? undefined, stage: promotedStage };
 }
 
 /** Emit MFA audit events after the DB transaction commits (success paths only). */
@@ -239,7 +253,11 @@ export async function completeMfa(
   emitMfaAudit(audit, input, txResult);
 
   if (!txResult.ok) return { ok: false };
-  return { ok: true, trustedDeviceRawToken: txResult.trustedDeviceRawToken };
+  return {
+    ok: true,
+    trustedDeviceRawToken: txResult.trustedDeviceRawToken,
+    stage: txResult.stage,
+  };
 }
 
 /** Post-MFA / full-session next step when password change may be required. */

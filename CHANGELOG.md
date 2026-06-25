@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Event slug helper truncates before trimming trailing dashes; wizard step 4 disables Continue when slug is empty and uses max slug length 80 (aligned with API and CreateEventModal)
 - DB partial unique index enforces at most one instance-scoped superadmin `RoleAssignment`
 
+### Security
+- Forced password change is now enforced as a dedicated `change_password_required` session stage: a user whose password was reset by an admin cannot reach any protected route (API or UI) until they set a new password — the previous `next: change_password` hint was a UI directive only and could be ignored by any HTTP client (IAM-001)
+- Backup recovery codes must be acknowledged before a full session is granted, even after a fresh login or when the completion request lands on a different process: acknowledgment is now persisted on `UserMfaMethod` (`backup_codes_acknowledged_at`) instead of an in-memory stash, closing a bypass where a returning user could skip saving recovery codes (IAM-002)
+- Forced password-change form now enforces the same 12-character minimum as all other self-set passwords (was 8) (IAM-003)
+- Granting `superadmin@instance` to a second user now returns HTTP 409 `single_superadmin_limit` instead of an unhandled 500 (IAM-004)
+- Known limitation: OIDC group→role mappings are reconciled only at login; a user removed from an IdP group keeps their elevated role until their next OIDC login or session expiry/revocation (accepted risk, IAM-005)
+
 ## [0.4.5] - 2026-06-24
 
 ### Added

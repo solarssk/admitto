@@ -231,6 +231,11 @@ Be explicit with auditors about what is **out of product scope** today:
   length only; operators should generate with `openssl rand -hex 32` (documented in `.env.example`).
 - Rate limits are application-layer; high-volume DoS may still require edge WAF/CDN or network
   controls in front of the origin.
+- **OIDC roles are reconciled at login only (JIT):** group→role mappings are evaluated on each
+  OIDC sign-in. If a user is removed from a group in the identity provider, their elevated Admitto
+  role persists until their next OIDC login or until the session expires / is revoked. To revoke
+  immediately, revoke the user's sessions (`POST /api/admin/users/:id/revoke-sessions`) or shorten
+  the admin session TTL.
 
 ### Penetration test verification (operator checklist)
 

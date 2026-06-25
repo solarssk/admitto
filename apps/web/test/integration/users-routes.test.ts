@@ -569,7 +569,15 @@ describe("GET /change-password", () => {
       data: { must_change_password: true },
     });
 
-    const res = await app.request("/change-password", { headers: { Cookie: superCookie } });
+    const forcedSession = await createSession(prisma, {
+      userId: superId,
+      stage: SESSION_STAGE.CHANGE_PASSWORD_REQUIRED,
+      ip: "127.0.0.6",
+    });
+
+    const res = await app.request("/change-password", {
+      headers: { Cookie: `admitto_session=${forcedSession.rawToken}` },
+    });
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Change password");
@@ -577,6 +585,10 @@ describe("GET /change-password", () => {
     await prisma.user.update({
       where: { id: superId },
       data: { must_change_password: false },
+    });
+    await prisma.session.update({
+      where: { id: forcedSession.session.id },
+      data: { revoked_at: new Date() },
     });
   });
 });
@@ -590,7 +602,7 @@ describe("POST /change-password", () => {
 
     const keepSession = await createSession(prisma, {
       userId: targetId,
-      stage: SESSION_STAGE.FULL,
+      stage: SESSION_STAGE.CHANGE_PASSWORD_REQUIRED,
       ip: "127.0.0.4",
     });
     const otherSession = await createSession(prisma, {
@@ -626,5 +638,32 @@ describe("POST /change-password", () => {
       where: { id: targetId },
       data: { password_hash: await hashPassword(PASSWORD) },
     });
+  });
+});
+
+describe("IAM-004 granting a second instance superadmin", () => {
+  // The partial unique index is migration-only (not expressible in schema.prisma),
+  // so create it locally to reproduce the production constraint under `db push`.
+  const INDEX = "RoleAssignment_single_superadmin_key";
+
+  it("returns 409 single_superadmin_limit instead of 500", async () => {
+    await prisma.$executeRawUnsafe(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "${INDEX}" ON "RoleAssignment" ("role", "scope_type") WHERE "scope_id" IS NULL AND "role" = 'superadmin'`,
+    );
+    try {
+      const res = await app.request(`/api/admin/users/${targetId}/roles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: superCookie },
+        body: JSON.stringify({ role: "superadmin", scope_type: "instance" }),
+      });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code?: string };
+      expect(body.code).toBe("single_superadmin_limit");
+    } finally {
+      await prisma.roleAssignment.deleteMany({
+        where: { user_id: targetId, role: "superadmin", scope_type: "instance", scope_id: null },
+      });
+      await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "${INDEX}"`);
+    }
   });
 });

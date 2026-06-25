@@ -6,7 +6,7 @@ import { prisma as defaultPrisma } from "@admitto/db";
 import type { AttendeeStatus } from "@admitto/db";
 import { recordTicketViewed } from "@admitto/mail-delivery";
 import type { MailDeliveryDeps } from "@admitto/mail-delivery";
-import { getBrandingTheme } from "@admitto/auth";
+import { getBrandingTheme, SESSION_STAGE } from "@admitto/auth";
 import {
   resolveTicket,
   generateQrPng,
@@ -300,6 +300,12 @@ export function createApp(options: CreateAppOptions = {}) {
   const requireSessionHtml = createRequireSession(db, { redirectTo: "/login" });
   const requirePartialSession = createRequirePartialSession(db);
   const requirePartialSessionHtml = createRequirePartialSession(db, { redirectTo: "/login" });
+  // Forced password change is its own constrained stage; only sessions in that
+  // stage may reach `/change-password`, and full sessions never can (IAM-001).
+  const requireChangePasswordSession = createRequirePartialSession(db, {
+    redirectTo: "/login",
+    allowedStages: [SESSION_STAGE.CHANGE_PASSWORD_REQUIRED],
+  });
   const requireAdminAccess = createAdminAccessMiddleware(db);
   const staffAdminGate = createStaffAdminGate(db);
   /** Middleware: event manage access, then archived read-only guard, then route handler. */
@@ -688,8 +694,8 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostMfaEnrollDownloadCodes(c, db),
   );
   app.post("/logout", htmlPostCsrf, (c) => handlePostLogout(c, db));
-  app.get("/change-password", requireSessionHtml, (c) => handleGetChangePassword(c, db));
-  app.post("/change-password", htmlPostCsrf, requireSessionHtml, (c) =>
+  app.get("/change-password", requireChangePasswordSession, (c) => handleGetChangePassword(c, db));
+  app.post("/change-password", htmlPostCsrf, requireChangePasswordSession, (c) =>
     handlePostChangePassword(c, db),
   );
 

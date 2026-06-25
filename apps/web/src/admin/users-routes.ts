@@ -419,14 +419,28 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
   });
   if (existing) return c.json({ code: "already_assigned" }, 409);
 
-  const assignment = await db.roleAssignment.create({
-    data: {
-      user_id: id,
-      role: parsed.role,
-      scope_type: parsed.scopeType,
-      scope_id: parsed.scopeId,
-    },
-  });
+  let assignment;
+  try {
+    assignment = await db.roleAssignment.create({
+      data: {
+        user_id: id,
+        role: parsed.role,
+        scope_type: parsed.scopeType,
+        scope_id: parsed.scopeId,
+      },
+    });
+  } catch (err) {
+    // The partial unique index allows at most one instance-scoped superadmin;
+    // a second grant collides on P2002. Surface a descriptive 409 instead of a
+    // generic 500 (IAM-004).
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      if (parsed.role === "superadmin") {
+        return c.json({ code: "single_superadmin_limit" }, 409);
+      }
+      return c.json({ code: "already_assigned" }, 409);
+    }
+    throw err;
+  }
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);

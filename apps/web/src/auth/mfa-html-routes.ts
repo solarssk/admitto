@@ -15,6 +15,7 @@ import {
   BACKUP_RECOVERY_CODE_COUNT,
   verifyBackupRecoveryCodesSet,
   regenerateBackupRecoveryCodes,
+  markBackupCodesAcknowledged,
 } from "@admitto/auth";
 import {
   getMfaEnrollPageSecurityHeaders,
@@ -32,6 +33,7 @@ import {
   stashEnrollmentBackupCodes,
   submittedCodesMatchStashedEnrollmentBackup,
 } from "./enrollment-backup-cache.js";
+import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { setTrustedDeviceCookie, clearSessionCookie } from "./routes.js";
@@ -210,6 +212,15 @@ export async function handlePostMfaVerify(
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
 
+  // User still owes backup-code acknowledgment — route to the backup-codes step
+  // instead of granting full access (IAM-002).
+  if (result.stage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {
+    await ensureEnrollmentBackupCodesStashed(db, partial.sessionId, partial.userId);
+    const next = resolveOptionalSafeRedirectPath(form["next"] ?? c.req.query("next"));
+    const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
+    return c.redirect(`/mfa/enroll/backup-codes${nextQuery}`, 302);
+  }
+
   return redirectAfterFullEnrollment(c, db, partial.userId, partial.sessionId, form["next"]);
 }
 
@@ -355,6 +366,10 @@ export async function handlePostMfaEnrollBackupCodes(
       401,
     );
   }
+
+  // Record acknowledgment before promotion so the session can leave the
+  // backup-codes stage (IAM-002).
+  await markBackupCodesAcknowledged(db, partial.userId);
 
   const promoted = await promoteSessionToFull(db, partial.sessionId, partial.userId);
   if (!promoted) {

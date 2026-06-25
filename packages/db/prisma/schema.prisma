@@ -370,6 +370,11 @@ model UserMfaMethod {
   label           String?   // e.g. "emergency" for break-glass one-time codes
   confirmed_at    DateTime?
   last_used_at    DateTime?
+  /// When the user acknowledged the backup recovery codes for this TOTP method.
+  /// Defaults to row-creation time; the live enrollment flow explicitly clears it at
+  /// TOTP confirmation so the user must pass the backup-codes step before a full
+  /// session is granted (IAM-002). Re-set when the codes are acknowledged.
+  backup_codes_acknowledged_at DateTime? @default(now())
   /// Last accepted TOTP time step (RFC 6238) — replay protection via otplib `afterTimeStep`.
   last_totp_time_step Int?
   created_at      DateTime  @default(now())

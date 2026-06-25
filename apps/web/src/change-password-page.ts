@@ -1,3 +1,4 @@
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth";
 import {
   AUTH_FORM_SUBMIT_SCRIPT,
   AUTH_PAGE_CSS,
@@ -33,7 +34,7 @@ const PASSWORD_INVALID = "password_invalid";
 
 function errorMessage(error?: string): string | undefined {
   if (error === PASSWORD_MISMATCH) return "Passwords do not match.";
-  if (error === PASSWORD_TOO_SHORT) return "Password must be at least 8 characters.";
+  if (error === PASSWORD_TOO_SHORT) return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`;
   if (error === PASSWORD_INVALID) return "Could not update password. Try again.";
   return undefined;
 }
@@ -49,11 +50,11 @@ export function renderChangePasswordForm(error?: string): string {
     <form method="post" action="/change-password" aria-label="Change password">
       <div class="auth-field">
         <label class="auth-label" for="password">New password</label>
-        <input class="auth-input" id="password" name="password" type="password" autocomplete="new-password" required minlength="8" />
+        <input class="auth-input" id="password" name="password" type="password" autocomplete="new-password" required minlength="${PASSWORD_MIN_LENGTH}" />
       </div>
       <div class="auth-field">
         <label class="auth-label" for="password_confirm">Confirm password</label>
-        <input class="auth-input" id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" required minlength="8" />
+        <input class="auth-input" id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" required minlength="${PASSWORD_MIN_LENGTH}" />
       </div>
       <button type="submit" class="auth-btn-primary">Save password</button>
     </form>`;
