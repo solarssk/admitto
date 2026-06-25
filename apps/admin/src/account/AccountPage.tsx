@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, Checkbox, Input } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, Input, Spinner } from "@admitto/ui";
 import {
   ApiError,
   confirmMfaTotp,
@@ -11,7 +11,7 @@ import {
   patchAccountProfile,
   resetMfa,
 } from "../api/client.js";
-import type { AccountDto, SessionListDto } from "../api/types.js";
+import type { AccountDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 
 function parseUserAgent(ua: string | null): string {
@@ -53,7 +53,7 @@ export function AccountPage() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordStatus, setPasswordStatus] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [enrollData, setEnrollData] = useState<{ otpauthUri: string; backupCodes: string[]; backupCodesAlreadyShown: boolean } | null>(null);
+  const [enrollData, setEnrollData] = useState<MfaEnrollResponse | null>(null);
   const [backupSaved, setBackupSaved] = useState(false);
   const [totpCode, setTotpCode] = useState("");
   const [mfaEnrolling, setMfaEnrolling] = useState(false);
@@ -113,7 +113,13 @@ export function AccountPage() {
   }, [loadAccount, loadSessions]);
 
   if (loading) {
-    return <Card title="Profile"><p className="sessions-status">Loading…</p></Card>;
+    return (
+      <Card title="Profile">
+        <div className="sessions-status">
+          <Spinner label="Loading account" />
+        </div>
+      </Card>
+    );
   }
   if (error || !account) {
     return (
@@ -126,10 +132,18 @@ export function AccountPage() {
 
   const totpEnrolled = isTotpEnrolled(account);
   const otherSessions = sessions.filter((s) => !s.isCurrent);
+  const profileDirty = displayName !== (account.display_name ?? "");
+  const passwordMismatch =
+    confirmPassword.length > 0 && newPassword.length > 0 && confirmPassword !== newPassword;
+  const passwordFormValid =
+    currentPassword.length > 0 &&
+    newPassword.length >= 12 &&
+    confirmPassword.length > 0 &&
+    !passwordMismatch;
 
   return (
     <>
-      <Card title="Profile" footer={<div className="mail-transport-footer"><Button type="button" variant="primary" disabled={profileSaving} onClick={async () => {
+      <Card title="Profile" footer={<div className="mail-transport-footer"><Button type="button" variant="primary" disabled={profileSaving || !profileDirty} onClick={async () => {
         setProfileSaving(true); setProfileError(null); setProfileStatus(null);
         try {
           const { display_name } = await patchAccountProfile({ display_name: displayName });
@@ -143,6 +157,7 @@ export function AccountPage() {
         <div className="mail-field-row">
           <label className="mail-field-label" htmlFor="account-display-name">Display name</label>
           <Input id="account-display-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={120} />
+          <p className="mail-field-hint">{displayName.length}/120 characters</p>
         </div>
         <div className="mail-field-row">
           <span className="mail-field-label">Email</span>
@@ -183,10 +198,13 @@ export function AccountPage() {
             </div>
             <div className="mail-field-row">
               <label className="mail-field-label" htmlFor="account-confirm-password">Confirm new password</label>
-              <Input id="account-confirm-password" type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+              <Input id="account-confirm-password" type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} aria-invalid={passwordMismatch || undefined} />
+              {passwordMismatch && (
+                <p className="text-error" role="alert">Passwords do not match.</p>
+              )}
             </div>
             <div className="mail-transport-footer">
-              <Button type="button" variant="primary" disabled={passwordSaving || !currentPassword || !newPassword || !confirmPassword} onClick={async () => {
+              <Button type="button" variant="primary" disabled={passwordSaving || !passwordFormValid} onClick={async () => {
                 setPasswordSaving(true); setPasswordError(null); setPasswordStatus(null);
                 try {
                   const { sessions_revoked } = await patchAccountPassword({ current_password: currentPassword, new_password: newPassword, new_password_confirm: confirmPassword });
@@ -286,7 +304,11 @@ export function AccountPage() {
       </Card>
 
       <Card title="Active sessions" actions={otherSessions.length > 0 ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}>
-        {sessionsLoading && <p className="sessions-status">Loading…</p>}
+        {sessionsLoading && (
+          <div className="sessions-status">
+            <Spinner label="Loading sessions" />
+          </div>
+        )}
         {!sessionsLoading && sessionsError && (
           <div className="sessions-status"><p>{sessionsError}</p><Button type="button" variant="secondary" onClick={() => void loadSessions()}>Retry</Button></div>
         )}

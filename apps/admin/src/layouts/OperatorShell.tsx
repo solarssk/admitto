@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Outlet, useParams } from "react-router-dom";
+import { Link, Outlet, useParams } from "react-router-dom";
 import { Avatar } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 import { ConnectionBanner } from "../connection/ConnectionStateProvider.js";
@@ -60,10 +60,10 @@ export function OperatorShell() {
         </div>
         <OperatorContextBar deviceLabel={deviceLabel} />
         <div className="operator-shell__user">
-          <a href="/account" className="operator-shell__user-link">
+          <Link to="/account" className="operator-shell__user-link">
             <Avatar name={displayName} size="sm" />
             <span>{displayName}</span>
-          </a>
+          </Link>
           <form method="post" action="/logout">
             <button type="submit" className="topbar__signout">
               Sign out
