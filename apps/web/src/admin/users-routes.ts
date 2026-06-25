@@ -319,18 +319,24 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
   const before = await db.user.findUnique({ where: { id }, select: { is_active: true } });
   if (!before) return c.json({ error: "not_found" }, 404);
 
-  const willDeactivate = data.is_active === false && before.is_active;
-
   try {
-    if (willDeactivate) {
-      await db.$transaction(
+    if (data.is_active === false) {
+      const wasActive = await db.$transaction(
         async (tx) => {
-          await assertLastSuperadminDeactivationAllowed(tx, id);
+          const current = await tx.user.findUnique({ where: { id }, select: { is_active: true } });
+          if (!current) return null;
+          if (current.is_active) {
+            await assertLastSuperadminDeactivationAllowed(tx, id);
+          }
           await tx.user.update({ where: { id }, data });
+          return current.is_active;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
-      await revokeUserAuthState(db, id);
+      if (wasActive === null) return c.json({ error: "not_found" }, 404);
+      if (wasActive) {
+        await revokeUserAuthState(db, id);
+      }
     } else {
       await db.user.update({ where: { id }, data });
     }
@@ -464,7 +470,7 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
     scope_id: string | null;
   };
 
-  let deletedAssignment: DeletedAssignment | null = null;
+  let deletedAssignment: DeletedAssignment;
 
   try {
     const outcome = await db.$transaction(
