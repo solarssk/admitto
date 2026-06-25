@@ -31,6 +31,11 @@ export function SuperadminGuard() {
   return <Outlet />;
 }
 
+/** Any authenticated staff session — backend requireSession is the source of truth. */
+export function AuthenticatedGuard() {
+  return <Outlet />;
+}
+
 export function OperatorGuard() {
   const { assignments } = useAuth();
   if (!canAccessCheckInPanel(assignments)) {

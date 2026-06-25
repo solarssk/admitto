@@ -44,8 +44,10 @@ export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
           <div className="topbar__right">
             <MailerStatusBadge status={user.mailer_status} />
             <div className="topbar__user">
-              <RoleBadge assignments={assignments} />
-              <span className="topbar__user-name">{displayName}</span>
+              <a href="/account" className="topbar__user-link">
+                <RoleBadge assignments={assignments} />
+                <span className="topbar__user-name">{displayName}</span>
+              </a>
             </div>
             <form method="post" action="/logout">
               <button
