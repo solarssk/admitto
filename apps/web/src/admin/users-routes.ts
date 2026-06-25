@@ -27,6 +27,24 @@ async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response
   return null;
 }
 
+async function respondRoleDeleteGone(
+  c: Context,
+  db: PrismaClient,
+  userId: string,
+  assignmentId: string,
+  actorIsSuperadmin: boolean,
+): Promise<Response> {
+  const byId = await db.roleAssignment.findUnique({
+    where: { id: assignmentId },
+    select: { user_id: true },
+  });
+  if (byId && byId.user_id !== userId) {
+    return c.json({ error: "not_found" }, 404);
+  }
+  if (actorIsSuperadmin) return c.body(null, 204);
+  return c.json({ error: "forbidden" }, 403);
+}
+
 type UserWithRoles = Prisma.UserGetPayload<{
   include: {
     role_assignments: { include: { oidc_role_grants: { select: { id: true } } } };
@@ -453,8 +471,7 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
     include: { oidc_role_grants: { select: { id: true } } },
   });
   if (!assignment) {
-    if (actorIsSuperadmin) return c.body(null, 204);
-    return c.json({ error: "forbidden" }, 403);
+    return respondRoleDeleteGone(c, db, id, assignmentId, actorIsSuperadmin);
   }
 
   const revokeDenied = await assertRoleRevokeAllowed(c, db, actorId, assignment);
@@ -500,8 +517,7 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
     );
 
     if (outcome === "gone") {
-      if (actorIsSuperadmin) return c.body(null, 204);
-      return c.json({ error: "forbidden" }, 403);
+      return respondRoleDeleteGone(c, db, id, assignmentId, actorIsSuperadmin);
     }
     if (outcome === "managed_by_idp") {
       return c.json({ code: "managed_by_idp" }, 409);

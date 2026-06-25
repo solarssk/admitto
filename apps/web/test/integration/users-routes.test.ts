@@ -360,6 +360,16 @@ describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
     expect(res.status).toBe(403);
   });
 
+  it("returns 404 for superadmin when assignment belongs to another user", async () => {
+    const res = await app.request(`/api/admin/users/${superId}/roles/${targetAssignmentId}`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("not_found");
+  });
+
   it("returns 204 when superadmin deletes an already-removed assignment", async () => {
     const email = "double-delete-role@example.com";
     const created = await prisma.user.create({
