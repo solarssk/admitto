@@ -5,9 +5,12 @@ import { CheckInCameraResultPanel } from "./CheckInCameraResultPanel.js";
 
 type CkInlineCameraProps = {
   wedgeActive: boolean;
+  /** Pause ZXing while a result is shown in AttendeeCard or overlay. */
+  scannerPaused: boolean;
+  /** Compact pass/fail overlay on video; null when AttendeeCard renders below. */
+  overlayScanResult: CheckInScanResponse | null;
   onScan: (raw: string) => void;
   onClose: () => void;
-  scanResult: CheckInScanResponse | null;
   card: AttendeeCardDto | null;
   pending: boolean;
   canAct: boolean;
@@ -17,9 +20,10 @@ type CkInlineCameraProps = {
 
 export function CkInlineCamera({
   wedgeActive,
+  scannerPaused,
+  overlayScanResult,
   onScan,
   onClose,
-  scanResult,
   card,
   pending,
   canAct,
@@ -49,14 +53,14 @@ export function CkInlineCamera({
     <div className="ck-inline-camera">
       <div className="ck-inline-camera__video-wrap">
         <CameraScanner
-          enabled={!scanResult && !pending}
+          enabled={!scannerPaused}
           wedgeActive={wedgeActive}
           onScan={onScan}
         />
-        {scanResult ? (
+        {overlayScanResult ? (
           <CheckInCameraResultPanel
             className="ck-inline-camera__result"
-            scanResult={scanResult}
+            scanResult={overlayScanResult}
             card={card}
             pending={pending}
             canAct={canAct}
@@ -75,7 +79,7 @@ export function CkInlineCamera({
           </div>
         )}
       </div>
-      {!scanResult && (
+      {!overlayScanResult && !scannerPaused && (
         <p className="ck-inline-camera__hint">Point the camera at the attendee&apos;s QR</p>
       )}
       <button

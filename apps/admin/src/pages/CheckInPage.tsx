@@ -304,7 +304,7 @@ export function CheckInPage({
           results.length === 0
             ? "No attendees matched that search."
             : "Multiple matches — narrow your search or use manual lookup.";
-        if (cameraActive) setOverlayManualError(message);
+        if (showMobileOverlay) setOverlayManualError(message);
         else setTransportError(message);
         return false;
       } catch (err) {
@@ -314,9 +314,9 @@ export function CheckInPage({
             err.status === 401
               ? "Session expired — sign in again."
               : err.message || "Request failed.";
-          if (cameraActive) setOverlayManualError(message);
+          if (showMobileOverlay) setOverlayManualError(message);
           else setTransportError(message);
-        } else if (cameraActive) {
+        } else if (showMobileOverlay) {
           setOverlayManualError("Request failed. Try again.");
         } else {
           setTransportError("Request failed. Try again.");
@@ -326,7 +326,7 @@ export function CheckInPage({
         setBusy(false);
       }
     },
-    [cameraActive, canAct, eventId, reportApiError, runScan],
+    [canAct, eventId, reportApiError, runScan, showMobileOverlay],
   );
 
   const onItemAction = async (itemKey: string, targetState: string) => {
@@ -503,21 +503,46 @@ export function CheckInPage({
           )}
 
           {showInlineCamera ? (
-            <CkInlineCamera
-              wedgeActive={buffer.trim().length > 0}
-              onScan={(raw) => void runScan(raw)}
-              onClose={closeInlineCamera}
-              scanResult={scanResult}
-              card={card}
-              pending={pending}
-              canAct={canAct && !busy}
-              onConfirm={
-                card && scanResult?.status === "PREVIEW"
-                  ? () => void admitCurrent(card.id, admitOrigin)
-                  : undefined
-              }
-              onReset={resetScan}
-            />
+            <>
+              <CkInlineCamera
+                wedgeActive={buffer.trim().length > 0}
+                scannerPaused={!!scanResult || pending}
+                overlayScanResult={showCompactFeedback ? scanResult : null}
+                onScan={(raw) => void runScan(raw)}
+                onClose={closeInlineCamera}
+                card={card}
+                pending={pending}
+                canAct={canAct && !busy}
+                onConfirm={
+                  showCompactFeedback &&
+                  card &&
+                  scanResult?.status === "PREVIEW"
+                    ? () => void admitCurrent(card.id, admitOrigin)
+                    : undefined
+                }
+                onReset={resetScan}
+              />
+              {showResultCard && card && (
+                <AttendeeCard
+                  key={card.id}
+                  card={card}
+                  scanStatus={scanResult?.status}
+                  confirmed={scanResult?.confirmed}
+                  pending={pending}
+                  canAct={canAct && !busy}
+                  onCheckIn={
+                    card.check_in_status === "not_admitted"
+                      ? () => void admitCurrent(card.id, admitOrigin)
+                      : undefined
+                  }
+                  onItemAction={(key: string, state: string) => void onItemAction(key, state)}
+                  onAddNote={onAddNote}
+                  onUndo={() => void onUndo()}
+                  showUndo={showUndo}
+                  onCancel={resetScan}
+                />
+              )}
+            </>
           ) : (
             <>
               {showCompactFeedback && scanResult && (

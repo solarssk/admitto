@@ -29,6 +29,18 @@ function mockMatchMedia(matches: boolean) {
   return mq;
 }
 
+const baseProps = {
+  wedgeActive: false,
+  scannerPaused: false,
+  overlayScanResult: null,
+  onScan: () => {},
+  onClose: () => {},
+  card: null,
+  pending: false,
+  canAct: true,
+  onReset: () => {},
+};
+
 describe("useIsDesktop", () => {
   afterEach(() => {
     cleanup();
@@ -65,21 +77,15 @@ describe("CkInlineCamera", () => {
   });
 
   it("renders viewfinder when no scan result", () => {
-    render(
-      <CkInlineCamera
-        wedgeActive={false}
-        onScan={() => {}}
-        onClose={() => {}}
-        scanResult={null}
-        card={null}
-        pending={false}
-        canAct
-        onReset={() => {}}
-      />,
-    );
+    render(<CkInlineCamera {...baseProps} />);
     expect(screen.getByTestId("camera-scanner")).toBeTruthy();
     expect(screen.getByText(/Point the camera at the attendee's QR/i)).toBeTruthy();
     expect(screen.getByLabelText("Exit camera mode")).toBeTruthy();
+  });
+
+  it("hides hint when scanner is paused for AttendeeCard below", () => {
+    render(<CkInlineCamera {...baseProps} scannerPaused />);
+    expect(screen.queryByText(/Point the camera at the attendee's QR/i)).toBeNull();
   });
 
   it("calls onReset and onClose when exit is clicked", () => {
@@ -87,14 +93,10 @@ describe("CkInlineCamera", () => {
     const onReset = vi.fn();
     render(
       <CkInlineCamera
-        wedgeActive={false}
-        onScan={() => {}}
+        {...baseProps}
         onClose={onClose}
-        scanResult={{ status: "PREVIEW", confirmed: false }}
-        card={null}
-        pending={false}
-        canAct
         onReset={onReset}
+        overlayScanResult={{ status: "INVALID", confirmed: false }}
       />,
     );
     screen.getByLabelText("Exit camera mode").click();
@@ -102,17 +104,12 @@ describe("CkInlineCamera", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("renders result panel when scanResult is set", () => {
+  it("renders result panel when overlayScanResult is set", () => {
     render(
       <CkInlineCamera
-        wedgeActive={false}
-        onScan={() => {}}
-        onClose={() => {}}
-        scanResult={{ status: "INVALID", confirmed: false }}
-        card={null}
-        pending={false}
-        canAct
-        onReset={() => {}}
+        {...baseProps}
+        scannerPaused
+        overlayScanResult={{ status: "INVALID", confirmed: false }}
       />,
     );
     expect(screen.getByRole("heading", { name: "Invalid ticket" })).toBeTruthy();
