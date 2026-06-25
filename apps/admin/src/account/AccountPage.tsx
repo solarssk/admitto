@@ -193,13 +193,18 @@ export function AccountPage() {
         <div className="account-mfa-status">
           <Badge variant={totpEnrolled ? "ok" : "neutral"}>{totpEnrolled ? "Enabled" : "Not configured"}</Badge>
         </div>
-        {!totpEnrolled && !enrollData && (
+        {!totpEnrolled && !enrollData && account.has_local_password && (
           <Button type="button" variant="primary" disabled={mfaEnrolling} onClick={async () => {
             setMfaEnrolling(true); setMfaError(null); setMfaStatus(null); setBackupSaved(false); setTotpCode("");
             try { setEnrollData(await enrollMfaTotp()); }
             catch (err) { setMfaError(err instanceof ApiError ? err.message : "Failed to start 2FA setup."); }
             finally { setMfaEnrolling(false); }
           }}>Set up authenticator</Button>
+        )}
+        {!totpEnrolled && !enrollData && !account.has_local_password && (
+          <p className="account-info-block">
+            Two-factor setup requires a local password. Sign-in-only accounts must use their identity provider or contact an administrator.
+          </p>
         )}
         {enrollData && (
           <>
@@ -239,7 +244,7 @@ export function AccountPage() {
         )}
         {totpEnrolled && account.has_local_password && (
           <>
-            <p className="account-info-block">Resetting 2FA will log you out of all sessions.</p>
+            <p className="account-info-block">Resetting 2FA will end your other active sessions. You will stay signed in on this device.</p>
             {!resetFormOpen ? (
               <Button type="button" variant="danger" onClick={() => setResetFormOpen(true)}>Reset 2FA</Button>
             ) : (
@@ -319,9 +324,16 @@ export function AccountPage() {
         finally { setRevokeAllBusy(false); }
       }} onCancel={() => { if (!revokeAllBusy) setRevokeAllOpen(false); }} />
 
-      <ConfirmDialog open={resetConfirmOpen} title="Reset two-factor authentication" message="This removes your authenticator and signs you out of all sessions." confirmLabel="Reset 2FA" confirmVariant="danger" loading={resetting} errorMessage={resetError ?? undefined} onConfirm={async () => {
+      <ConfirmDialog open={resetConfirmOpen} title="Reset two-factor authentication" message="This removes your authenticator and ends other active sessions. You will stay signed in here." confirmLabel="Reset 2FA" confirmVariant="danger" loading={resetting} errorMessage={resetError ?? undefined} onConfirm={async () => {
         setResetting(true); setResetError(null);
-        try { await resetMfa({ password: resetPassword }); window.location.assign("/login"); }
+        try {
+          const { sessions_revoked } = await resetMfa({ password: resetPassword });
+          setResetFormOpen(false); setResetPassword(""); setResetConfirmOpen(false);
+          setMfaStatus(
+            `Two-factor authentication reset.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} ended.` : ""}`,
+          );
+          await loadAccount(); await loadSessions();
+        }
         catch (err) { setResetError(err instanceof ApiError ? err.message : "Failed to reset 2FA."); }
         finally { setResetting(false); }
       }} onCancel={() => { if (!resetting) setResetConfirmOpen(false); }} />

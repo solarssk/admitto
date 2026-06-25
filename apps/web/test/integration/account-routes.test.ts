@@ -191,7 +191,7 @@ describe("POST /api/account/mfa/totp/*", () => {
     expect(res.status).toBe(401);
   });
 
-  it("resets MFA and revokes sessions on valid password", async () => {
+  it("resets MFA and revokes other sessions on valid password", async () => {
     await prisma.userMfaMethod.create({
       data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
     });
@@ -202,9 +202,23 @@ describe("POST /api/account/mfa/totp/*", () => {
       body: JSON.stringify({ password: PASSWORD }),
     });
     expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; sessions_revoked: number };
+    expect(body.ok).toBe(true);
+    expect(body.sessions_revoked).toBe(1);
     expect(await prisma.userMfaMethod.count({ where: { user_id: userId } })).toBe(0);
-    expect((await prisma.session.findUnique({ where: { id: userSessionId } }))?.revoked_at).not.toBeNull();
+    expect((await prisma.session.findUnique({ where: { id: userSessionId } }))?.revoked_at).toBeNull();
     expect((await prisma.session.findUnique({ where: { id: extra.session.id } }))?.revoked_at).not.toBeNull();
+  });
+
+  it("returns 400 no_local_password for OIDC-only TOTP enroll", async () => {
+    const oidcSession = await createSession(prisma, { userId: oidcUserId, stage: SESSION_STAGE.FULL });
+    const res = await app.request("/api/account/mfa/totp/enroll", {
+      method: "POST",
+      headers: { Cookie: `admitto_session=${oidcSession.rawToken}`, ...sameOrigin },
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("no_local_password");
+    await prisma.session.delete({ where: { id: oidcSession.session.id } });
   });
 });
 

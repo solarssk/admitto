@@ -643,6 +643,11 @@ export interface ResetMfaBody {
   password: string;
 }
 
+export interface ResetMfaResponse {
+  ok: true;
+  sessions_revoked: number;
+}
+
 export interface EventReportsResponse {
   timezone: string;
   event: {

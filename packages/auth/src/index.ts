@@ -153,6 +153,7 @@ export {
   userIsInstanceSuperadmin,
 } from "./bootstrap.js";
 export { revokeUserAuthState, revokeOtherSessions } from "./revocation.js";
+export { runInTransaction } from "./prisma-tx.js";
 export { userRequiresMfa, userHasConfirmedTotp } from "./mfa/policy.js";
 export {
   startTotpEnrollment,

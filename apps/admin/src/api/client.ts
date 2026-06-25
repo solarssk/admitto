@@ -55,6 +55,7 @@ import type {
   MfaEnrollResponse,
   ConfirmMfaTotpBody,
   ResetMfaBody,
+  ResetMfaResponse,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -955,9 +956,9 @@ export async function confirmMfaTotp(body: ConfirmMfaTotpBody): Promise<{ ok: tr
   return parseJson<{ ok: true }>(res);
 }
 
-export async function resetMfa(body: ResetMfaBody): Promise<{ ok: true }> {
+export async function resetMfa(body: ResetMfaBody): Promise<ResetMfaResponse> {
   const res = await fetch("/api/account/mfa/reset", jsonPostInit(body));
-  return parseJson<{ ok: true }>(res);
+  return parseJson<ResetMfaResponse>(res);
 }
 
 /** Load aggregated admission report for an event. */

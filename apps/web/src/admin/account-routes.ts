@@ -5,8 +5,10 @@ import {
   confirmTotpEnrollment,
   getOrStartTotpEnrollment,
   hashPassword,
-  resetUserMfa,
+  revokeAllTrustedDevicesForUser,
+  revokeOtherSessions,
   revokeSession,
+  runInTransaction,
   userHasConfirmedTotp,
   verifyPasswordOrDummy,
 } from "@admitto/auth";
@@ -15,6 +17,16 @@ import type { RateLimitStore } from "../rate-limit/types.js";
 
 function hasLocalPassword(passwordHash: string | null): boolean {
   return passwordHash !== null;
+}
+
+const ROLE_PRIORITY: Record<string, number> = { superadmin: 3, admin: 2, operator: 1 };
+
+function highestRole(assignments: { role: string }[]): string {
+  if (!assignments.length) return "operator";
+  return assignments.reduce(
+    (best, a) => ((ROLE_PRIORITY[a.role] ?? 0) > (ROLE_PRIORITY[best] ?? 0) ? a.role : best),
+    "operator",
+  );
 }
 
 function serializeAccountSession(
@@ -29,7 +41,11 @@ function serializeAccountSession(
     expires_at: Date;
     auth_method: string;
     stage: string;
-    user: { email: string; display_name: string | null };
+    user: {
+      email: string;
+      display_name: string | null;
+      role_assignments: { role: string }[];
+    };
   },
   currentSessionId: string | undefined,
 ) {
@@ -38,7 +54,7 @@ function serializeAccountSession(
     userId: row.user_id,
     userEmail: row.user.email,
     userDisplayName: row.user.display_name ?? null,
-    role: "operator" as const,
+    role: highestRole(row.user.role_assignments),
     deviceLabel: row.device_label,
     ip: row.ip,
     userAgent: row.user_agent,
@@ -170,23 +186,22 @@ export async function handlePatchAccountPassword(c: Context, db: PrismaClient): 
   if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
 
   const password_hash = await hashPassword(new_password);
-  await db.user.update({
-    where: { id: userId },
-    data: { password_hash, must_change_password: false },
+  const sessions_revoked = await runInTransaction(db, async (tx) => {
+    await tx.user.update({
+      where: { id: userId },
+      data: { password_hash, must_change_password: false },
+    });
+    if (currentSessionId) {
+      return revokeOtherSessions(tx, userId, currentSessionId);
+    }
+    const revoked = await tx.session.updateMany({
+      where: { user_id: userId, revoked_at: null },
+      data: { revoked_at: new Date() },
+    });
+    return revoked.count;
   });
 
-  const revokeWhere: { user_id: string; revoked_at: null; id?: { not: string } } = {
-    user_id: userId,
-    revoked_at: null,
-  };
-  if (currentSessionId) revokeWhere.id = { not: currentSessionId };
-
-  const revoked = await db.session.updateMany({
-    where: revokeWhere,
-    data: { revoked_at: new Date() },
-  });
-
-  return c.json({ sessions_revoked: revoked.count });
+  return c.json({ sessions_revoked });
 }
 
 /** GET /api/account/sessions — own active sessions only. */
@@ -198,7 +213,15 @@ export async function handleGetAccountSessions(c: Context, db: PrismaClient): Pr
       revoked_at: null,
       expires_at: { gt: new Date() },
     },
-    include: { user: { select: { email: true, display_name: true } } },
+    include: {
+      user: {
+        select: {
+          email: true,
+          display_name: true,
+          role_assignments: { select: { role: true } },
+        },
+      },
+    },
     orderBy: { last_seen_at: "desc" },
   });
   return c.json({ sessions: rows.map((s) => serializeAccountSession(s, auth.sessionId)) });
@@ -225,9 +248,19 @@ export async function handleDeleteAccountSession(c: Context, db: PrismaClient): 
   return c.json({}, 200);
 }
 
-/** POST /api/account/mfa/totp/enroll — start or resume TOTP enrollment (FULL session). */
+/** POST /api/account/mfa/totp/enroll — start or resume TOTP enrollment (local-password accounts only). */
 export async function handlePostMfaEnroll(c: Context, db: PrismaClient): Promise<Response> {
   const userId = c.get("auth").userId;
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { password_hash: true },
+  });
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  if (!hasLocalPassword(user.password_hash)) {
+    return c.json({ code: "no_local_password" }, 400);
+  }
+
   if (await userHasConfirmedTotp(db, userId)) {
     return c.json({ code: "already_enrolled" }, 409);
   }
@@ -279,9 +312,11 @@ export async function handlePostMfaConfirm(
 
 const resetSchema = z.object({ password: z.string() }).strict();
 
-/** POST /api/account/mfa/reset — re-auth + remove all MFA (revokes all sessions). */
+/** POST /api/account/mfa/reset — re-auth, remove MFA, revoke other sessions (keeps current). */
 export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<Response> {
-  const userId = c.get("auth").userId;
+  const auth = c.get("auth");
+  const userId = auth.userId;
+  const currentSessionId = auth.sessionId;
 
   let body: unknown;
   try {
@@ -305,6 +340,18 @@ export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<
   const passwordOk = await verifyPasswordOrDummy(parsed.data.password, user.password_hash);
   if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
 
-  await resetUserMfa(db, userId);
-  return c.json({ ok: true });
+  const sessions_revoked = await runInTransaction(db, async (tx) => {
+    await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
+    await revokeAllTrustedDevicesForUser(tx, userId);
+    if (currentSessionId) {
+      return revokeOtherSessions(tx, userId, currentSessionId);
+    }
+    const revoked = await tx.session.updateMany({
+      where: { user_id: userId, revoked_at: null },
+      data: { revoked_at: new Date() },
+    });
+    return revoked.count;
+  });
+
+  return c.json({ ok: true, sessions_revoked });
 }
