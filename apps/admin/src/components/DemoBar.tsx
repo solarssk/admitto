@@ -29,14 +29,6 @@ export function DemoBar() {
       <button type="button" onClick={() => addToast("Ticket resent to jan@example.com", "info")}>
         i Info toast
       </button>
-      <button
-        type="button"
-        className="demo-bar__btn--setup"
-        disabled
-        title="Available after first-run wizard PR"
-      >
-        ⚙ First-run wizard
-      </button>
     </div>
   );
 }

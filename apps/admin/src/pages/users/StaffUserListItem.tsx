@@ -101,6 +101,7 @@ function UserActions({ user, onEdit, onRevokeSessions }: StaffUserListItemProps)
       >
         <i className="ti ti-pencil" aria-hidden="true" />
         <span>Edit</span>
+        <span className="sr-only"> profile for {label}</span>
       </Button>
       <Button
         type="button"

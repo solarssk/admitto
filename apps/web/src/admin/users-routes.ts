@@ -23,7 +23,12 @@ async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response
 
 async function countSuperadminAssignments(db: PrismaClient): Promise<number> {
   return db.roleAssignment.count({
-    where: { role: "superadmin", scope_type: "instance", scope_id: null },
+    where: {
+      role: "superadmin",
+      scope_type: "instance",
+      scope_id: null,
+      user: { is_active: true },
+    },
   });
 }
 

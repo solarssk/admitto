@@ -43,6 +43,11 @@ import type {
   ResetUserPasswordBody,
   UserListItemDto,
   RoleAssignmentsListResponse,
+  SetupChecksResponse,
+  SetupOrgBrandingDto,
+  PatchSetupOrgBrandingBody,
+  AuditLogResponse,
+  EventReportsResponse,
 } from "./types.js";
 
 export class ApiError extends Error {
@@ -855,4 +860,107 @@ export async function fetchRoleAssignments(
     signal,
   });
   return parseJson<RoleAssignmentsListResponse>(res);
+}
+
+/** Load system readiness checks for first-run wizard step 1 (superadmin). */
+export async function fetchSetupChecks(signal?: AbortSignal): Promise<SetupChecksResponse> {
+  const res = await fetch("/api/admin/setup/checks", { credentials: "same-origin", signal });
+  return parseJson<SetupChecksResponse>(res);
+}
+
+/** Load instance organisation name and logo URL for setup wizard branding step. */
+export async function fetchOrgBranding(signal?: AbortSignal): Promise<SetupOrgBrandingDto> {
+  const res = await fetch("/api/admin/setup/org-branding", { credentials: "same-origin", signal });
+  return parseJson<SetupOrgBrandingDto>(res);
+}
+
+/** Save organisation name and HTTPS logo URL during first-run branding step. */
+export async function patchOrgBranding(
+  body: PatchSetupOrgBrandingBody,
+): Promise<SetupOrgBrandingDto> {
+  const res = await fetch("/api/admin/setup/org-branding", jsonPatchInit(body));
+  return parseJson<SetupOrgBrandingDto>(res);
+}
+
+/** Mark first-run onboarding wizard complete (superadmin, POST setup/complete). */
+export async function completeSetup(): Promise<{ setup_complete: boolean }> {
+  const res = await fetch("/api/admin/setup/complete", jsonPostInit({}));
+  return parseJson<{ setup_complete: boolean }>(res);
+}
+
+/** Load paginated instance admin audit log (superadmin). Pass ISO instants for date bounds (local-day from UI). */
+export async function fetchAuditLog(
+  params: {
+    page?: number;
+    pageSize?: number;
+    actionType?: string;
+    start?: string;
+    end?: string;
+  },
+  signal?: AbortSignal,
+): Promise<AuditLogResponse> {
+  const q = new URLSearchParams();
+  if (params.page != null) q.set("page", String(params.page));
+  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
+  if (params.actionType) q.set("action_type", params.actionType);
+  if (params.start) q.set("start", params.start);
+  if (params.end) q.set("end", params.end);
+  const qs = q.toString();
+  const res = await fetch(`/api/admin/audit-log${qs ? `?${qs}` : ""}`, {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<AuditLogResponse>(res);
+}
+
+/** Load aggregated admission report for an event. */
+export async function fetchEventReports(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventReportsResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<EventReportsResponse>(res);
+}
+
+/** Download admission log CSV export and trigger browser save. */
+export async function exportEventReportsCsv(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=csv`,
+    { credentials: "same-origin", signal },
+  );
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as ApiErrorBody;
+      message = messageFromApiErrorBody(body) ?? message;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match?.[1] ?? "admissions.csv";
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** Same-origin URL for printable HTML report (open in new tab for Save as PDF). */
+export function eventReportsPrintUrl(eventId: string): string {
+  return `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=pdf`;
 }

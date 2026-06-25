@@ -26,6 +26,7 @@ export interface MeResponse {
   device_label?: string | null;
   session_active: boolean;
   mailer_status?: MailerStatus | null;
+  setup_complete?: boolean;
 }
 
 export interface EventDto {
@@ -469,6 +470,7 @@ export interface PatchSecuritySettingsBody {
   mfa_required_roles?: string[] | null;
 }
 
+
 export interface RoleAssignmentDto {
   id: string;
   role: string;
@@ -546,4 +548,80 @@ export interface RoleAssignmentsListResponse {
   total: number;
   page: number;
   pageSize: number;
+}
+
+export type SetupCheckKey = "database" | "migrations" | "redis" | "encryption" | "base_url";
+
+export interface SetupCheckResult {
+  ok: boolean;
+  detail: string;
+}
+
+export interface SetupChecksResponse {
+  checks: Record<SetupCheckKey, SetupCheckResult>;
+}
+
+export interface SetupOrgBrandingDto {
+  org_name: string | null;
+  logo_url: string | null;
+}
+
+export interface PatchSetupOrgBrandingBody {
+  org_name?: string;
+  logo_url?: string | null;
+}
+
+/** One row from GET /api/admin/audit-log. */
+export interface AuditLogEntryDto {
+  id: string;
+  action_type: string;
+  actor_user_id: string;
+  actor_email: string | null;
+  actor_display_name: string | null;
+  ip: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+/** Paginated admin audit log list response. */
+export interface AuditLogResponse {
+  entries: AuditLogEntryDto[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface EventReportsResponse {
+  timezone: string;
+  event: {
+    id: string;
+    title: string;
+    date: string;
+    capacity: number | null;
+  };
+  summary: {
+    total_attendees: number;
+    admitted: number;
+    no_shows: number;
+    admission_rate_pct: number;
+    peak_hour: string | null;
+    peak_hour_count: number;
+  };
+  by_hour: Array<{ hour: string; count: number }>;
+  by_ticket_type: Array<{
+    type: string;
+    total: number;
+    admitted: number;
+    admission_pct: number;
+  }>;
+  admission_log: Array<{
+    attendee_id: string;
+    name: string;
+    email: string;
+    ticket_type: string;
+    admitted_at: string;
+    device_id: string | null;
+  }>;
+  admission_log_truncated: boolean;
+  admission_log_total: number;
 }
