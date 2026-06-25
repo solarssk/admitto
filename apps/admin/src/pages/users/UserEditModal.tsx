@@ -69,7 +69,19 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
     setNewRole("");
     setNewOrgId("");
     setNewEventId("");
+    setResetMfaOpen(false);
+    setResetPasswordOpen(false);
+    setNewPassword("");
+    setDeactivateConfirm(false);
   }, [user]);
+
+  useEffect(() => {
+    if (open) return;
+    setResetMfaOpen(false);
+    setResetPasswordOpen(false);
+    setNewPassword("");
+    setDeactivateConfirm(false);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -95,6 +107,10 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
 
   const handleClose = () => {
     if (submitting || resetMfaBusy || resetPasswordBusy || roleBusy) return;
+    setResetMfaOpen(false);
+    setResetPasswordOpen(false);
+    setNewPassword("");
+    setDeactivateConfirm(false);
     onClose();
   };
 
@@ -272,6 +288,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
           <div className="users-modal__role-assign">
             <select
               className="users-modal__select"
+              aria-label="Role to assign"
               value={newRole}
               disabled={roleBusy}
               onChange={(e) => setNewRole(e.target.value as AssignRole)}
@@ -284,6 +301,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
             {newRole === "operator" ? (
               <select
                 className="users-modal__select"
+                aria-label="Event scope for operator role"
                 value={newEventId}
                 disabled={roleBusy}
                 onChange={(e) => setNewEventId(e.target.value)}
@@ -298,6 +316,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
             ) : newRole === "admin" ? (
               <select
                 className="users-modal__select"
+                aria-label="Organization scope for admin role"
                 value={newOrgId}
                 disabled={roleBusy || organizations.length === 0}
                 onChange={(e) => setNewOrgId(e.target.value)}

@@ -57,10 +57,11 @@ async function sessionStatsForUsers(
   if (userIds.length === 0) return stats;
 
   const now = new Date();
-  const [sessions, activeCounts] = await Promise.all([
-    db.session.findMany({
+  const [latestLogins, activeCounts] = await Promise.all([
+    db.session.groupBy({
+      by: ["user_id"],
       where: { user_id: { in: userIds } },
-      select: { user_id: true, created_at: true },
+      _max: { created_at: true },
     }),
     db.session.groupBy({
       by: ["user_id"],
@@ -78,13 +79,11 @@ async function sessionStatsForUsers(
     if (entry) entry.active_sessions_count = row._count._all;
   }
 
-  for (const session of sessions) {
-    const entry = stats.get(session.user_id);
+  for (const row of latestLogins) {
+    const entry = stats.get(row.user_id);
     if (!entry) continue;
-    const iso = session.created_at.toISOString();
-    if (!entry.last_login_at || iso > entry.last_login_at) {
-      entry.last_login_at = iso;
-    }
+    const latest = row._max.created_at;
+    if (latest) entry.last_login_at = latest.toISOString();
   }
 
   return stats;

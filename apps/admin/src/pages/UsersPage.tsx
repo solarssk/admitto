@@ -166,6 +166,7 @@ export function UsersPage() {
               <i className="ti ti-search" aria-hidden="true" />
               <input
                 type="search"
+                aria-label="Search users by name or email"
                 placeholder="Search name or email"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
@@ -174,6 +175,7 @@ export function UsersPage() {
             <div className="users-page__filters">
               <select
                 className="at-select"
+                aria-label="Filter users by role"
                 value={roleFilter}
                 onChange={(e) => {
                   setRoleFilter(e.target.value as RoleFilter);
@@ -187,6 +189,7 @@ export function UsersPage() {
               </select>
               <select
                 className="at-select"
+                aria-label="Filter users by status"
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value as StatusFilter);
