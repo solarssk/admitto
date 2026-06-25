@@ -36,6 +36,11 @@
   color: var(--text-primary);
 }
 
+.users-page__search:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
+
 .users-page__search input:focus {
   outline: none;
 }
@@ -379,6 +384,16 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+.users-modal__subsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
 }
 
 .users-modal__section-title {

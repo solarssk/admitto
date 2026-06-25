@@ -1,16 +1,30 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Switch } from "@admitto/ui";
-import { ApiError, createAdminUser, fetchAdminEvents, grantUserRole } from "../../api/client.js";
+import {
+  ApiError,
+  createAdminUser,
+  fetchAdminEvents,
+  fetchAdminOrganizations,
+  grantUserRole,
+} from "../../api/client.js";
 import type { EventDto, UserListItemDto } from "../../api/types.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
 
 type InviteUserModalProps = {
   open: boolean;
   onClose: () => void;
-  onCreated: (user: UserListItemDto) => void;
+  onCreated: (user: UserListItemDto, message?: string) => void;
 };
 
 type InitialRole = "" | "superadmin" | "admin" | "operator";
+
+function mapRoleGrantError(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.message.includes("already_assigned")) return "This role assignment already exists.";
+    return err.message;
+  }
+  return "Failed to assign role.";
+}
 
 export function InviteUserModal({ open, onClose, onCreated }: InviteUserModalProps) {
   const titleId = useId();
@@ -20,16 +34,33 @@ export function InviteUserModal({ open, onClose, onCreated }: InviteUserModalPro
   const [password, setPassword] = useState("");
   const [mustChange, setMustChange] = useState(true);
   const [initialRole, setInitialRole] = useState<InitialRole>("");
+  const [orgId, setOrgId] = useState("");
   const [eventId, setEventId] = useState("");
   const [events, setEvents] = useState<EventDto[]>([]);
+  const [organizations, setOrganizations] = useState<Array<{ id: string; name: string }>>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    fetchAdminEvents({ includeArchived: false })
-      .then(setEvents)
-      .catch(() => setEvents([]));
+    const controller = new AbortController();
+    Promise.all([
+      fetchAdminEvents({ includeArchived: false, signal: controller.signal }),
+      fetchAdminOrganizations(controller.signal),
+    ])
+      .then(([eventList, orgList]) => {
+        if (controller.signal.aborted) return;
+        setEvents(eventList);
+        setOrganizations(orgList);
+        setOrgId((current) => current || orgList[0]?.id || "");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setEvents([]);
+          setOrganizations([]);
+        }
+      });
+    return () => controller.abort();
   }, [open]);
 
   const resetForm = () => {
@@ -38,6 +69,7 @@ export function InviteUserModal({ open, onClose, onCreated }: InviteUserModalPro
     setPassword("");
     setMustChange(true);
     setInitialRole("");
+    setOrgId("");
     setEventId("");
     setError(null);
   };
@@ -50,10 +82,25 @@ export function InviteUserModal({ open, onClose, onCreated }: InviteUserModalPro
 
   useModalFocusTrap(panelRef, open, handleClose);
 
+  const grantInitialRole = async (userId: string) => {
+    if (initialRole === "superadmin") {
+      await grantUserRole(userId, { role: "superadmin", scope_type: "instance" });
+    } else if (initialRole === "admin") {
+      if (!orgId) throw new Error("Select an organization for the admin role.");
+      await grantUserRole(userId, { role: "admin", scope_type: "organization", scope_id: orgId });
+    } else if (initialRole === "operator" && eventId) {
+      await grantUserRole(userId, { role: "operator", scope_type: "event", scope_id: eventId });
+    }
+  };
+
   const handleSubmit = async () => {
     if (submitting || !email.trim() || !password || password.length < 8) return;
     if (initialRole === "operator" && !eventId) {
       setError("Select an event for the operator role.");
+      return;
+    }
+    if (initialRole === "admin" && !orgId) {
+      setError("Select an organization for the admin role.");
       return;
     }
 
@@ -66,18 +113,15 @@ export function InviteUserModal({ open, onClose, onCreated }: InviteUserModalPro
         display_name: displayName.trim() || null,
         must_change_password: mustChange,
       });
-
-      if (initialRole === "superadmin") {
-        await grantUserRole(user.id, { role: "superadmin", scope_type: "instance" });
-      } else if (initialRole === "admin") {
-        const orgId = events[0]?.organization_id;
-        if (!orgId) {
-          setError("No organization available for admin role.");
+      if (initialRole) {
+        try {
+          await grantInitialRole(user.id);
+        } catch (roleErr) {
+          onCreated(user, `User created, but role assignment failed: ${mapRoleGrantError(roleErr)}`);
+          resetForm();
+          onClose();
           return;
         }
-        await grantUserRole(user.id, { role: "admin", scope_type: "organization", scope_id: orgId });
-      } else if (initialRole === "operator" && eventId) {
-        await grantUserRole(user.id, { role: "operator", scope_type: "event", scope_id: eventId });
       }
 
       onCreated(user);
@@ -146,6 +190,28 @@ export function InviteUserModal({ open, onClose, onCreated }: InviteUserModalPro
             <option value="operator">Operator</option>
           </select>
         </div>
+        {initialRole === "admin" && (
+          <div className="users-modal__field">
+            <label htmlFor="invite-org">Organization scope</label>
+            <select
+              id="invite-org"
+              className="users-modal__select"
+              value={orgId}
+              disabled={submitting || organizations.length === 0}
+              onChange={(e) => setOrgId(e.target.value)}
+            >
+              {organizations.length === 0 ? (
+                <option value="">No organizations available</option>
+              ) : (
+                organizations.map((org) => (
+                  <option key={org.id} value={org.id}>
+                    {org.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+        )}
         {initialRole === "operator" && (
           <div className="users-modal__field">
             <label htmlFor="invite-event">Event scope</label>

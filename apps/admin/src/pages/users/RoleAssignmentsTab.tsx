@@ -114,22 +114,26 @@ export function RoleAssignmentsTab() {
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchRoleAssignments({ page, pageSize });
+      const data = await fetchRoleAssignments({ page, pageSize }, signal);
+      if (signal?.aborted) return;
       setRows(data.assignments);
       setTotal(data.total);
     } catch (err) {
+      if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
       setError(err instanceof ApiError ? err.message : "Failed to load role assignments.");
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [page]);
 
   useEffect(() => {
-    void load();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
   }, [load]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));

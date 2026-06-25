@@ -154,6 +154,7 @@ import {
   handleRevokeAllOperatorSessions,
 } from "./admin/sessions-routes.js";
 import {
+  handleGetOrganizations,
   handleGetUsers,
   handlePostUser,
   handlePatchUser,
@@ -515,6 +516,7 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     (c) => handleRevokeAllOperatorSessions(c, db),
   );
+  app.get("/api/admin/organizations", staffAdminGate, (c) => handleGetOrganizations(c, db));
   app.get("/api/admin/users", staffAdminGate, (c) => handleGetUsers(c, db));
   app.post("/api/admin/users", jsonPostCsrf, staffAdminGate, (c) => handlePostUser(c, db));
   app.patch("/api/admin/users/:id", jsonPostCsrf, staffAdminGate, (c) => handlePatchUser(c, db));

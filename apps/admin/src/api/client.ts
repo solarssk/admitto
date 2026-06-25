@@ -735,19 +735,43 @@ export async function patchSecuritySettings(
 }
 
 function usersListQuery(
-  params: { q?: string; page?: number; pageSize?: number; organizationId?: string } = {},
+  params: {
+    q?: string;
+    page?: number;
+    pageSize?: number;
+    organizationId?: string;
+    role?: string;
+    status?: string;
+  } = {},
 ): string {
   const q = new URLSearchParams();
   if (params.q) q.set("q", params.q);
   if (params.page != null) q.set("page", String(params.page));
   if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
   if (params.organizationId) q.set("organizationId", params.organizationId);
+  if (params.role && params.role !== "all") q.set("role", params.role);
+  if (params.status && params.status !== "all") q.set("status", params.status);
   const qs = q.toString();
   return `/api/admin/users${qs ? `?${qs}` : ""}`;
 }
 
+export async function fetchAdminOrganizations(signal?: AbortSignal): Promise<
+  Array<{ id: string; name: string }>
+> {
+  const res = await fetch("/api/admin/organizations", { credentials: "same-origin", signal });
+  const data = await parseJson<{ organizations: Array<{ id: string; name: string }> }>(res);
+  return data.organizations;
+}
+
 export async function fetchAdminUsers(
-  params: { q?: string; page?: number; pageSize?: number; organizationId?: string } = {},
+  params: {
+    q?: string;
+    page?: number;
+    pageSize?: number;
+    organizationId?: string;
+    role?: string;
+    status?: string;
+  } = {},
   signal?: AbortSignal,
 ): Promise<UserListResponse> {
   const res = await fetch(usersListQuery(params), { credentials: "same-origin", signal });

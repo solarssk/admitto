@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Button,
   Card,
@@ -26,17 +26,6 @@ const SKELETON_ROWS = 5;
 type UsersTab = "staff" | "roles";
 type RoleFilter = "all" | "superadmin" | "admin" | "operator";
 type StatusFilter = "all" | "active" | "disabled";
-
-function userMatchesRoleFilter(user: UserListItemDto, filter: RoleFilter): boolean {
-  if (filter === "all") return true;
-  return user.roles.some((r) => r.role === filter);
-}
-
-function userMatchesStatusFilter(user: UserListItemDto, filter: StatusFilter): boolean {
-  if (filter === "all") return true;
-  if (filter === "active") return user.is_active;
-  return !user.is_active;
-}
 
 function StaffUsersSkeleton() {
   return (
@@ -103,32 +92,37 @@ export function UsersPage() {
     return () => window.clearTimeout(timer);
   }, [searchInput]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     if (!superadmin) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchAdminUsers({ q: searchQuery || undefined, page, pageSize: PAGE_SIZE });
+      const data = await fetchAdminUsers(
+        {
+          q: searchQuery || undefined,
+          page,
+          pageSize: PAGE_SIZE,
+          role: roleFilter,
+          status: statusFilter,
+        },
+        signal,
+      );
+      if (signal?.aborted) return;
       setUsers(data.users);
       setTotal(data.total);
     } catch (err) {
+      if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
       setError(err instanceof ApiError ? err.message : "Failed to load users.");
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
-  }, [superadmin, searchQuery, page]);
+  }, [superadmin, searchQuery, page, roleFilter, statusFilter]);
 
   useEffect(() => {
-    void load();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
   }, [load]);
-
-  const filteredUsers = useMemo(
-    () =>
-      users.filter(
-        (u) => userMatchesRoleFilter(u, roleFilter) && userMatchesStatusFilter(u, statusFilter),
-      ),
-    [users, roleFilter, statusFilter],
-  );
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const filtersActive =
@@ -181,7 +175,10 @@ export function UsersPage() {
               <select
                 className="at-select"
                 value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
+                onChange={(e) => {
+                  setRoleFilter(e.target.value as RoleFilter);
+                  setPage(1);
+                }}
               >
                 <option value="all">All roles</option>
                 <option value="superadmin">Superadmin</option>
@@ -191,7 +188,10 @@ export function UsersPage() {
               <select
                 className="at-select"
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as StatusFilter);
+                  setPage(1);
+                }}
               >
                 <option value="all">All statuses</option>
                 <option value="active">Active</option>
@@ -227,7 +227,7 @@ export function UsersPage() {
             />
           )}
 
-          {!loading && !error && !showInitialEmpty && filteredUsers.length === 0 && (
+          {!loading && !error && !showInitialEmpty && users.length === 0 && (
             <EmptyState
               icon={<i className="ti ti-filter-off" aria-hidden="true" />}
               title="No users match your filters"
@@ -248,7 +248,7 @@ export function UsersPage() {
             />
           )}
 
-          {!loading && !error && filteredUsers.length > 0 && (
+          {!loading && !error && users.length > 0 && (
             <>
               <div className="users-page__table-wrap users-page__table-wrap--desktop">
                 <table className="table">
@@ -264,7 +264,7 @@ export function UsersPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUsers.map((user) => (
+                    {users.map((user) => (
                       <StaffUserTableRow
                         key={user.id}
                         user={user}
@@ -277,7 +277,7 @@ export function UsersPage() {
               </div>
 
               <div className="users-page__cards users-page__cards--mobile">
-                {filteredUsers.map((user) => (
+                {users.map((user) => (
                   <StaffUserCard
                     key={user.id}
                     user={user}
@@ -289,7 +289,7 @@ export function UsersPage() {
 
               <div className="users-page__foot">
                 <span>
-                  Showing {filteredUsers.length} on this page · {total} total
+                  Showing {users.length} on this page · {total} total
                 </span>
                 <div className="users-page__actions">
                   <Button
@@ -334,9 +334,13 @@ export function UsersPage() {
       <InviteUserModal
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
-        onCreated={(user) => {
-          addToast(`${user.email} invited successfully`, "success");
+        onCreated={(user, message) => {
           void load();
+          if (message) {
+            addToast(message, "error");
+          } else {
+            addToast(`${user.email} invited successfully`, "success");
+          }
         }}
       />
 

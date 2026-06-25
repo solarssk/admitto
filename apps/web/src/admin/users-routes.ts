@@ -146,6 +146,33 @@ function parseRoleScope(body: Record<string, unknown>): { role: Role; scopeType:
   return { role: role as Role, scopeType: scopeType as ScopeType, scopeId };
 }
 
+const USER_LIST_ROLES = ["superadmin", "admin", "operator"] as const;
+type UserListRole = (typeof USER_LIST_ROLES)[number];
+
+function parseUserListRole(raw: string | undefined): UserListRole | null {
+  if (!raw || raw === "all") return null;
+  return USER_LIST_ROLES.includes(raw as UserListRole) ? (raw as UserListRole) : null;
+}
+
+function parseUserListStatus(raw: string | undefined): boolean | null {
+  if (!raw || raw === "all") return null;
+  if (raw === "active") return true;
+  if (raw === "disabled") return false;
+  return null;
+}
+
+/** GET /api/admin/organizations — org picker for IAM (superadmin only). */
+export async function handleGetOrganizations(c: Context, db: PrismaClient): Promise<Response> {
+  const denied = await requireSuperadmin(c, db);
+  if (denied) return denied;
+
+  const organizations = await db.organization.findMany({
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
+  return c.json({ organizations });
+}
+
 /** GET /api/admin/users — paginated staff list (superadmin only). */
 export async function handleGetUsers(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
@@ -154,6 +181,8 @@ export async function handleGetUsers(c: Context, db: PrismaClient): Promise<Resp
   const q = c.req.query("q")?.trim();
   const page = positiveIntQuery(c.req.query("page"), 1);
   const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 50);
+  const role = parseUserListRole(c.req.query("role")?.trim());
+  const isActive = parseUserListStatus(c.req.query("status")?.trim());
 
   const where: Prisma.UserWhereInput = {};
   if (q) {
@@ -161,6 +190,12 @@ export async function handleGetUsers(c: Context, db: PrismaClient): Promise<Resp
       { email: { contains: q, mode: "insensitive" } },
       { display_name: { contains: q, mode: "insensitive" } },
     ];
+  }
+  if (isActive != null) {
+    where.is_active = isActive;
+  }
+  if (role) {
+    where.role_assignments = { some: { role } };
   }
 
   const [total, rows] = await Promise.all([

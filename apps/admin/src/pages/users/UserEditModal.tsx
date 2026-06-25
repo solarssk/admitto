@@ -3,6 +3,7 @@ import { Badge, Button, Switch } from "@admitto/ui";
 import {
   ApiError,
   fetchAdminEvents,
+  fetchAdminOrganizations,
   grantUserRole,
   patchAdminUser,
   resetUserMfa,
@@ -41,13 +42,16 @@ function mapApiError(message: string): string {
 
 export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalProps) {
   const titleId = useId();
+  const resetPasswordTitleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const [displayName, setDisplayName] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<EventDto[]>([]);
+  const [organizations, setOrganizations] = useState<Array<{ id: string; name: string }>>([]);
   const [newRole, setNewRole] = useState<AssignRole>("");
+  const [newOrgId, setNewOrgId] = useState("");
   const [newEventId, setNewEventId] = useState("");
   const [roleBusy, setRoleBusy] = useState(false);
   const [resetMfaOpen, setResetMfaOpen] = useState(false);
@@ -63,14 +67,30 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
     setIsActive(user.is_active);
     setError(null);
     setNewRole("");
+    setNewOrgId("");
     setNewEventId("");
   }, [user]);
 
   useEffect(() => {
     if (!open) return;
-    fetchAdminEvents({ includeArchived: true })
-      .then(setEvents)
-      .catch(() => setEvents([]));
+    const controller = new AbortController();
+    Promise.all([
+      fetchAdminEvents({ includeArchived: true, signal: controller.signal }),
+      fetchAdminOrganizations(controller.signal),
+    ])
+      .then(([eventList, orgList]) => {
+        if (controller.signal.aborted) return;
+        setEvents(eventList);
+        setOrganizations(orgList);
+        setNewOrgId((current) => current || orgList[0]?.id || "");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setEvents([]);
+          setOrganizations([]);
+        }
+      });
+    return () => controller.abort();
   }, [open]);
 
   const handleClose = () => {
@@ -116,9 +136,11 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
       if (newRole === "superadmin") {
         await grantUserRole(user.id, { role: "superadmin", scope_type: "instance" });
       } else if (newRole === "admin") {
-        const orgId = events[0]?.organization_id;
-        if (!orgId) throw new Error("No organization available.");
-        await grantUserRole(user.id, { role: "admin", scope_type: "organization", scope_id: orgId });
+        if (!newOrgId) {
+          setError("Select an organization for the admin role.");
+          return;
+        }
+        await grantUserRole(user.id, { role: "admin", scope_type: "organization", scope_id: newOrgId });
       } else if (newRole === "operator") {
         if (!newEventId) {
           setError("Select an event for the operator role.");
@@ -273,6 +295,23 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
                   </option>
                 ))}
               </select>
+            ) : newRole === "admin" ? (
+              <select
+                className="users-modal__select"
+                value={newOrgId}
+                disabled={roleBusy || organizations.length === 0}
+                onChange={(e) => setNewOrgId(e.target.value)}
+              >
+                {organizations.length === 0 ? (
+                  <option value="">No organizations available</option>
+                ) : (
+                  organizations.map((org) => (
+                    <option key={org.id} value={org.id}>
+                      {org.name}
+                    </option>
+                  ))
+                )}
+              </select>
             ) : (
               <Button type="button" variant="secondary" disabled={!newRole || roleBusy} onClick={() => void handleAddRole()}>
                 Add
@@ -284,16 +323,63 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
               Add operator role
             </Button>
           )}
+          {newRole === "admin" && (
+            <Button type="button" variant="secondary" disabled={!newOrgId || roleBusy} onClick={() => void handleAddRole()}>
+              Add admin role
+            </Button>
+          )}
 
           <p className="users-modal__section-title">Security</p>
-          <div className="users-modal__actions" style={{ justifyContent: "flex-start" }}>
-            <Button type="button" variant="secondary" onClick={() => setResetMfaOpen(true)}>
-              Reset 2FA
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => setResetPasswordOpen(true)}>
-              Reset password
-            </Button>
-          </div>
+          {!resetPasswordOpen ? (
+            <div className="users-modal__actions" style={{ justifyContent: "flex-start" }}>
+              <Button type="button" variant="secondary" onClick={() => setResetMfaOpen(true)}>
+                Reset 2FA
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setResetPasswordOpen(true)}>
+                Reset password
+              </Button>
+            </div>
+          ) : (
+            <div className="users-modal__subsection" role="region" aria-labelledby={resetPasswordTitleId}>
+              <h3 className="users-modal__section-title" id={resetPasswordTitleId}>
+                Reset password
+              </h3>
+              <div className="users-modal__field">
+                <label htmlFor="reset-password">New temporary password</label>
+                <input
+                  id="reset-password"
+                  className="users-modal__input"
+                  type="password"
+                  minLength={8}
+                  value={newPassword}
+                  disabled={resetPasswordBusy}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+              </div>
+              <p className="form-hint">User sessions will be revoked. They must log in with the new password.</p>
+              <div className="users-modal__actions" style={{ justifyContent: "flex-start" }}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={resetPasswordBusy}
+                  onClick={() => {
+                    setResetPasswordOpen(false);
+                    setNewPassword("");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={resetPasswordBusy || newPassword.length < 8}
+                  onClick={() => void handleResetPassword()}
+                >
+                  {resetPasswordBusy ? "Resetting…" : "Reset password"}
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="users-modal__actions">
             <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
@@ -335,40 +421,6 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
         }}
       />
 
-      {resetPasswordOpen && (
-        <div className="users-modal" role="dialog" aria-modal="true">
-          <div className="users-modal__backdrop" role="presentation" onClick={() => setResetPasswordOpen(false)} />
-          <div className="users-modal__panel">
-            <h3 className="users-modal__title">Reset password</h3>
-            <div className="users-modal__field">
-              <label htmlFor="reset-password">New temporary password</label>
-              <input
-                id="reset-password"
-                className="users-modal__input"
-                type="password"
-                minLength={8}
-                value={newPassword}
-                disabled={resetPasswordBusy}
-                onChange={(e) => setNewPassword(e.target.value)}
-              />
-            </div>
-            <p className="form-hint">User sessions will be revoked. They must log in with the new password.</p>
-            <div className="users-modal__actions">
-              <Button type="button" variant="secondary" disabled={resetPasswordBusy} onClick={() => setResetPasswordOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="danger"
-                disabled={resetPasswordBusy || newPassword.length < 8}
-                onClick={() => void handleResetPassword()}
-              >
-                {resetPasswordBusy ? "Resetting…" : "Reset password"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

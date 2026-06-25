@@ -247,6 +247,32 @@ describe("GET /api/admin/users security", () => {
     expect(raw).not.toContain("password_hash");
     expect(raw).not.toContain("secret_enc");
   });
+
+  it("filters by role and status query params", async () => {
+    const superOnly = await app.request("/api/admin/users?role=superadmin", {
+      headers: { Cookie: superCookie },
+    });
+    expect(superOnly.status).toBe(200);
+    const superBody = (await superOnly.json()) as {
+      users: Array<{ roles: Array<{ role: string }> }>;
+      total: number;
+    };
+    expect(superBody.total).toBeGreaterThanOrEqual(1);
+    for (const user of superBody.users) {
+      expect(user.roles.some((r) => r.role === "superadmin")).toBe(true);
+    }
+
+    const activeOnly = await app.request("/api/admin/users?status=active", {
+      headers: { Cookie: superCookie },
+    });
+    expect(activeOnly.status).toBe(200);
+    const activeBody = (await activeOnly.json()) as {
+      users: Array<{ is_active: boolean }>;
+    };
+    for (const user of activeBody.users) {
+      expect(user.is_active).toBe(true);
+    }
+  });
 });
 
 describe("POST /api/admin/users security", () => {
