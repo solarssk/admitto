@@ -13,50 +13,18 @@ import { hasScope, ROLES, SCOPE_TYPES, type Role, type ScopeType } from "@admitt
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { adminAuditFromContext, positiveIntQuery } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import {
+  assertLastSuperadminDeactivationAllowed,
+  assertLastSuperadminRemovalAllowed,
+  LastSuperadminError,
+} from "./users-lockout-guards.js";
 
 const MIN_PASSWORD_LEN = 8;
-
-class LastSuperadminError extends Error {}
-
-type PrismaTx = Omit<
-  PrismaClient,
-  "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends" | "$use"
->;
 
 async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response | null> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) return c.json({ error: "forbidden" }, 403);
   return null;
-}
-
-async function countSuperadminAssignments(db: PrismaClient | PrismaTx): Promise<number> {
-  return db.roleAssignment.count({
-    where: {
-      role: "superadmin",
-      scope_type: "instance",
-      scope_id: null,
-      user: { is_active: true },
-    },
-  });
-}
-
-async function targetIsSuperadmin(db: PrismaClient | PrismaTx, userId: string): Promise<boolean> {
-  return hasScope(db, userId, "superadmin", "instance");
-}
-
-async function assertLastSuperadminRemovalAllowed(
-  tx: PrismaTx,
-  assignment: { role: string; scope_type: string },
-): Promise<void> {
-  if (assignment.role !== "superadmin" || assignment.scope_type !== "instance") return;
-  const superadmins = await countSuperadminAssignments(tx);
-  if (superadmins <= 1) throw new LastSuperadminError();
-}
-
-async function assertLastSuperadminDeactivationAllowed(tx: PrismaTx, userId: string): Promise<void> {
-  if (!(await targetIsSuperadmin(tx, userId))) return;
-  const superadmins = await countSuperadminAssignments(tx);
-  if (superadmins <= 1) throw new LastSuperadminError();
 }
 
 type UserWithRoles = Prisma.UserGetPayload<{
