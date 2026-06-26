@@ -212,6 +212,7 @@ elif [ "$status_exit" -ne 0 ]; then
 fi
 
 run_as_node_cmd node node_modules/prisma/build/index.js migrate deploy --schema "$SCHEMA"
-run_as_node_cmd node packages/db/dist/scripts/backfill-public-ref.js
+log "running agency public_ref backfill with 120s timeout"
+run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-public-ref.js
 
 run_as_node node apps/web/dist/src/index.js
