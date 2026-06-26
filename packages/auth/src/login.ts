@@ -23,7 +23,7 @@ import {
   type LoginNext,
   type SessionStage,
 } from "./constants.js";
-import { userRequiresMfa, userHasConfirmedTotp } from "./mfa/policy.js";
+import { userRequiresMfa, userHasConfirmedTotp, userHasUnacknowledgedBackupCodes } from "./mfa/policy.js";
 import { validateTrustedDevice, createTrustedDevice } from "./mfa/trusted-device.js";
 import { findBackupRecoveryRowId } from "./mfa/backup-recovery.js";
 import { findEmergencyRecoveryRowId } from "./mfa/emergency-recovery.js";
@@ -92,13 +92,18 @@ export async function login(
     }
   }
 
-  // Forced password change is enforced as a constrained session stage (not just a
-  // client-side `next` hint) so no HTTP client can reach protected routes with the
-  // temporary credential (IAM-001). MFA-required users hit this gate after MFA, at
-  // session promotion time.
-  if (stage === SESSION_STAGE.FULL && user.must_change_password) {
-    stage = SESSION_STAGE.CHANGE_PASSWORD_REQUIRED;
-    next = LOGIN_NEXT.CHANGE_PASSWORD;
+  // Forced password change and backup-code acknowledgment are enforced as
+  // constrained session stages (not just client-side `next` hints) so no HTTP
+  // client can reach protected routes while either step is still owed (IAM-001,
+  // IAM-002). MFA-required users hit these gates after MFA, at promotion time.
+  if (stage === SESSION_STAGE.FULL) {
+    if (await userHasUnacknowledgedBackupCodes(prisma, user.id)) {
+      stage = SESSION_STAGE.BACKUP_CODES_REQUIRED;
+      next = LOGIN_NEXT.BACKUP_CODES_REQUIRED;
+    } else if (user.must_change_password) {
+      stage = SESSION_STAGE.CHANGE_PASSWORD_REQUIRED;
+      next = LOGIN_NEXT.CHANGE_PASSWORD;
+    }
   }
 
   const { session, rawToken } = await createSession(prisma, {
@@ -171,6 +176,11 @@ async function completeMfaInTransaction(
 
   if (!totpOk && !recoveryRowId) return { ok: false, reason: "invalid_code" };
 
+  if (recoveryRowId) {
+    const consumed = await consumeRecoveryRow(tx, recoveryRowId);
+    if (!consumed) return { ok: false, reason: "recovery_consume_conflict" };
+  }
+
   const promotedStage = await promoteSessionToFull(tx, sessionId, userId);
   if (!promotedStage) return { ok: false, reason: "session_not_promoted" };
 
@@ -181,11 +191,6 @@ async function completeMfaInTransaction(
     method = recoveryMethod;
   } else {
     return { ok: false, reason: "invalid_code" };
-  }
-
-  if (recoveryRowId) {
-    const consumed = await consumeRecoveryRow(tx, recoveryRowId);
-    if (!consumed) return { ok: false, reason: "recovery_consume_conflict" };
   }
 
   if (input.rememberDevice) {
@@ -236,7 +241,8 @@ function emitMfaAudit(
 
 /**
  * Complete MFA step: TOTP or backup/emergency recovery code.
- * Promotes session to full when code is valid; recovery codes are consumed only after promotion.
+ * Promotes session when the code is valid; recovery codes are consumed before
+ * promotion so a consume race cannot leave a promoted session behind.
  */
 export async function completeMfa(
   prisma: PrismaClient | Prisma.TransactionClient,

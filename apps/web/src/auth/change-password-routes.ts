@@ -5,6 +5,8 @@ import {
   revokeOtherSessions,
   promoteSessionToFull,
   PASSWORD_MIN_LENGTH,
+  SESSION_STAGE,
+  type SessionStage,
 } from "@admitto/auth";
 import {
   getChangePasswordPageSecurityHeaders,
@@ -12,8 +14,10 @@ import {
   PASSWORD_INVALID,
   PASSWORD_MISMATCH,
   PASSWORD_TOO_SHORT,
+  PASSWORD_COMPLETE_FAILED,
 } from "../change-password-page.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
+import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 
 function htmlResponse(c: Context, html: string, status: 200 | 400 = 200): Response {
   for (const [name, value] of Object.entries(getChangePasswordPageSecurityHeaders())) {
@@ -82,21 +86,32 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
 
   try {
     const hash = await hashPassword(password);
+    let promotedStage: SessionStage | null = null;
     await db.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: gate.userId },
         data: { password_hash: hash, must_change_password: false },
       });
       await revokeOtherSessions(tx, gate.userId, gate.sessionId);
-      // Flag is now cleared, so promote the constrained session to full and let
-      // the user proceed without re-authenticating (IAM-001).
-      const promoted = await promoteSessionToFull(tx, gate.sessionId, gate.userId);
-      if (!promoted) throw new Error("session_promotion_failed");
+      // Flag is now cleared, so promote the constrained session and resolve any
+      // remaining gates (backup codes, then full) in one transaction (IAM-001).
+      promotedStage = await promoteSessionToFull(tx, gate.sessionId, gate.userId);
+      if (!promotedStage) throw new Error("session_promotion_failed");
     });
-  } catch {
-    return htmlResponse(c, renderChangePasswordForm(PASSWORD_INVALID), 400);
-  }
 
-  const landing = await resolvePostLoginRedirectForUser(db, gate.userId);
-  return c.redirect(landing, 302);
+    if (promotedStage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {
+      await ensureEnrollmentBackupCodesStashed(db, gate.sessionId, gate.userId);
+      return c.redirect("/mfa/enroll/backup-codes", 302);
+    }
+
+    const landing = await resolvePostLoginRedirectForUser(db, gate.userId);
+    return c.redirect(landing, 302);
+  } catch (err) {
+    console.error("change-password transaction failed:", err);
+    const message =
+      err instanceof Error && err.message === "session_promotion_failed"
+        ? PASSWORD_COMPLETE_FAILED
+        : PASSWORD_INVALID;
+    return htmlResponse(c, renderChangePasswordForm(message), 400);
+  }
 }

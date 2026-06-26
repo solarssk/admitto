@@ -127,6 +127,14 @@ export async function handleLogin(
   }
 
   setSessionCookie(c, result.rawToken);
+  if (result.next === LOGIN_NEXT.BACKUP_CODES_REQUIRED) {
+    const backupCodes = await ensureEnrollmentBackupCodesStashed(
+      db,
+      result.sessionId,
+      result.userId,
+    );
+    return c.json({ ok: true, next: result.next, backup_codes: backupCodes }, 200);
+  }
   return c.json({ ok: true, next: result.next }, 200);
 }
 
@@ -343,6 +351,9 @@ export async function handleMfaVerify(
       200,
     );
   }
+  if (result.stage === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
+    return c.json({ ok: true, next: LOGIN_NEXT.CHANGE_PASSWORD }, 200);
+  }
 
   const next = await loginNextAfterFullSession(db, partial.userId);
   return c.json({ ok: true, next }, 200);
@@ -464,6 +475,9 @@ export async function handleTotpBackupCodesComplete(c: Context, db: PrismaClient
   }
 
   clearEnrollmentBackupCodes(partial.sessionId);
+  if (promoted === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
+    return c.json({ ok: true, next: LOGIN_NEXT.CHANGE_PASSWORD }, 200);
+  }
   const next = await loginNextAfterFullSession(db, partial.userId);
   return c.json({ ok: true, next }, 200);
 }

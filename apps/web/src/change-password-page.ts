@@ -31,11 +31,15 @@ export function getChangePasswordPageSecurityHeaders(): Record<string, string> {
 const PASSWORD_MISMATCH = "password_mismatch";
 const PASSWORD_TOO_SHORT = "password_too_short";
 const PASSWORD_INVALID = "password_invalid";
+export const PASSWORD_COMPLETE_FAILED = "password_complete_failed";
 
 function errorMessage(error?: string): string | undefined {
   if (error === PASSWORD_MISMATCH) return "Passwords do not match.";
   if (error === PASSWORD_TOO_SHORT) return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`;
   if (error === PASSWORD_INVALID) return "Could not update password. Try again.";
+  if (error === PASSWORD_COMPLETE_FAILED) {
+    return "Password updated, but sign-in could not be completed. Try logging in again.";
+  }
   return undefined;
 }
 

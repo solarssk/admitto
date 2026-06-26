@@ -685,7 +685,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostMfaEnroll(c, db, rateLimitStore),
   );
   app.get("/mfa/enroll/backup-codes", requirePartialSessionHtml, (c) =>
-    handleGetMfaEnrollBackupCodes(c),
+    handleGetMfaEnrollBackupCodes(c, db),
   );
   app.post("/mfa/enroll/backup-codes", htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnrollBackupCodes(c, db),

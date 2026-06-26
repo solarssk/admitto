@@ -176,12 +176,13 @@ async function assertFullSessionMfaPolicy(
   prisma: PrismaClient | Prisma.TransactionClient,
   validated: ValidatedPartialSession,
 ): Promise<boolean> {
+  // Backup-code acknowledgment is mandatory before a full session is honored for
+  // every auth method, including OIDC (IAM-002).
+  if (await userHasUnacknowledgedBackupCodes(prisma, validated.userId)) return false;
+
   if (validated.session.auth_method === AUTH_METHOD.OIDC) return true;
   if (!(await userRequiresMfa(prisma, validated.userId))) return true;
   if (!(await userHasConfirmedTotp(prisma, validated.userId))) return false;
-  // Backup-code acknowledgment is mandatory before a full session is honored;
-  // reject at the transport layer as defense-in-depth (IAM-002).
-  if (await userHasUnacknowledgedBackupCodes(prisma, validated.userId)) return false;
 
   const requiredRoles = await getMfaRequiredRoles(prisma);
   const firstElevatedRole = await prisma.roleAssignment.findFirst({

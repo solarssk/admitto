@@ -220,6 +220,9 @@ export async function handlePostMfaVerify(
     const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
     return c.redirect(`/mfa/enroll/backup-codes${nextQuery}`, 302);
   }
+  if (result.stage === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
+    return c.redirect("/change-password", 302);
+  }
 
   return redirectAfterFullEnrollment(c, db, partial.userId, partial.sessionId, form["next"]);
 }
@@ -332,11 +335,13 @@ export async function handlePostMfaEnroll(
 }
 
 /** GET /mfa/enroll/backup-codes — show one-time backup recovery codes. */
-export function handleGetMfaEnrollBackupCodes(c: Context): Response {
+export async function handleGetMfaEnrollBackupCodes(c: Context, db: PrismaClient): Promise<Response> {
   const partial = c.get("partialAuth");
   if (partial.stage !== SESSION_STAGE.BACKUP_CODES_REQUIRED) {
     return c.redirect("/login", 302);
   }
+
+  await ensureEnrollmentBackupCodesStashed(db, partial.sessionId, partial.userId);
 
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
   return htmlEnrollResponse(c, renderBackupCodesPageForSession(partial.sessionId, undefined, next));
@@ -378,6 +383,9 @@ export async function handlePostMfaEnrollBackupCodes(
       renderBackupCodesPageForSession(partial.sessionId, "Could not complete setup. Try again.", next),
       401,
     );
+  }
+  if (promoted === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
+    return c.redirect("/change-password", 302);
   }
 
   return redirectAfterFullEnrollment(c, db, partial.userId, partial.sessionId, form["next"]);

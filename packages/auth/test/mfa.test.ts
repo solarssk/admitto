@@ -250,7 +250,7 @@ describe("login MFA flow", () => {
     expect(await validateSession(prisma, loginResult.rawToken)).not.toBeNull();
   });
 
-  it("does not consume recovery code when session promotion fails", async () => {
+  it("consumes recovery code before promotion and does not grant access when promotion fails", async () => {
     await resetUserMfa(prisma, USER_ADMIN);
     const { codes } = await regenerateBackupRecoveryCodes(prisma, USER_ADMIN);
     const secret = generateTotpSecret();
@@ -270,6 +270,7 @@ describe("login MFA flow", () => {
     expect(loginResult.ok).toBe(true);
     if (!loginResult.ok) return;
 
+    // Force the session out of a promotable stage so promotion fails after consume.
     await prisma.session.update({
       where: { id: loginResult.sessionId },
       data: { stage: SESSION_STAGE.FULL },
@@ -281,7 +282,9 @@ describe("login MFA flow", () => {
       code: codes[0]!,
     });
     expect(mfa.ok).toBe(false);
-    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(true);
+    // Consume happens before promotion so a race cannot leave a promoted session
+    // behind with an unconsumed recovery row.
+    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(false);
   });
 });
 
