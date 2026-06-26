@@ -1,5 +1,5 @@
 import { encryptToString } from "@admitto/crypto";
-import type { MailSettings, PrismaClient } from "@prisma/client";
+import type { MailSettings, Prisma, PrismaClient } from "@prisma/client";
 import type { MailScope, MailSettingsInput } from "./types.js";
 
 function maybeEncrypt(value: string | undefined): string | undefined {
@@ -100,7 +100,7 @@ export function mergeOrgMailSettingsRow(
 export async function setMailSettings(
   scope: MailScope,
   input: MailSettingsInput,
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<void> {
   // For create: all columns start at null; only supplied fields are set.
   // For update: only supplied fields are included — omitted fields are not touched.

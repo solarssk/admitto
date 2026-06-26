@@ -233,11 +233,11 @@ export async function handlePutMailSettings(c: Context, db: PrismaClient): Promi
     }
   }
 
-  await setMailSettings({ scopeType: "organization", scopeId: orgId }, body as MailSettingsInput, db);
+  await db.$transaction(async (tx) => {
+    await setMailSettings({ scopeType: "organization", scopeId: orgId }, body as MailSettingsInput, tx);
 
-  const audit = adminAuditFromContext(c);
-  try {
-    await writeAdminAuditLog(db, {
+    const audit = adminAuditFromContext(c);
+    await writeAdminAuditLog(tx, {
       organizationId: orgId,
       actorUserId: audit.operator!,
       sessionId: audit.sessionId,
@@ -250,9 +250,7 @@ export async function handlePutMailSettings(c: Context, db: PrismaClient): Promi
         secrets_cleared: secretsCleared,
       },
     });
-  } catch (auditErr) {
-    console.error("[audit] mail_settings_updated log failed", auditErr);
-  }
+  });
 
   const desc = await describeMailConfigForOrg(orgId, db, process.env);
   return c.json({

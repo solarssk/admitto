@@ -35,9 +35,9 @@ describe("clientSafeDeliveryError", () => {
   });
 
   it("redacts internal URLs", () => {
-    expect(clientSafeDeliveryError("http://internal-relay/api failed")).toBe("send failed");
-    expect(clientSafeDeliveryError("https://smtp.corp.local/send failed")).toBe("send failed");
-    expect(clientSafeDeliveryError("HTTPS://smtp.corp.local/send failed")).toBe("send failed");
+    expect(clientSafeDeliveryError("http://internal-relay/api failed")).toBe("[redacted] failed");
+    expect(clientSafeDeliveryError("https://smtp.corp.local/send failed")).toBe("[redacted] failed");
+    expect(clientSafeDeliveryError("HTTPS://smtp.corp.local/send failed")).toBe("[redacted] failed");
   });
 
   it("redacts host:port patterns", () => {
@@ -59,5 +59,13 @@ describe("clientSafeDeliveryError", () => {
 describe("sanitizeDeliveryError", () => {
   it("returns undefined for empty input", () => {
     expect(sanitizeDeliveryError(undefined)).toBeUndefined();
+  });
+
+  it("redacts URLs before persisting", () => {
+    const out = sanitizeDeliveryError(
+      "Webhook failed: https://prod-12.westus.logic.azure.com/workflows/abc123/triggers/manual/paths/invoke?api-version=2016",
+    );
+    expect(out).not.toContain("https://");
+    expect(out).toContain("[redacted]");
   });
 });

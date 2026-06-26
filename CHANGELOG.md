@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Setup wizard no longer bypassed on `/operator` — `setup_complete` included on `/api/auth/me` for instance superadmins
 - Event slug helper truncates before trimming trailing dashes; wizard step 4 disables Continue when slug is empty and uses max slug length 80 (aligned with API and CreateEventModal)
 - DB partial unique index enforces at most one instance-scoped superadmin `RoleAssignment`
+- Admin mutations that write `AdminAuditLog` now persist audit rows in the same database transaction as the primary change (users IAM routes, mail settings PUT); audit failure rolls back the mutation instead of leaving inconsistent state (BE-001, BE-002)
+- Concurrent attendee import commits for the same event are serialized with a PostgreSQL advisory lock so duplicate bulk audit rows cannot be written (BE-004)
+- Agency `public_ref` backfill processes attendees in bounded batches instead of loading all rows at once (BE-005)
 
 ### Security
 - Forced password change is now enforced as a dedicated `change_password_required` session stage: a user whose password was reset by an admin cannot reach any protected route (API or UI) until they set a new password — the previous `next: change_password` hint was a UI directive only and could be ignored by any HTTP client (IAM-001)
@@ -38,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Known limitation: OIDC group→role mappings are reconciled only at login; a user removed from an IdP group keeps their elevated role until their next OIDC login or session expiry/revocation (accepted risk, IAM-005)
 - Attendee CSV export now uses the shared CSV formula-injection sanitizer (covers newline-prefixed formulas and whitespace-padded `=`) across attendee, event-settings PII, and reports exports (SEC-001)
 - Printable HTML/PDF event report export now sends a restrictive Content-Security-Policy header (SEC-003)
+- `EmailDelivery.error` sanitization now redacts URLs (e.g. Power Automate webhooks) before persistence (BE-006)
+- REVOKED check-in audit rows are written inside a transaction for consistency with other check-in paths (BE-003)
 
 ## [0.4.5] - 2026-06-24
 

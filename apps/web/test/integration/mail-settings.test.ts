@@ -1,10 +1,11 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import type { ExportPayload } from "@admitto/mailer";
+import * as tickets from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 import { setMailSettings } from "@admitto/mailer-config";
@@ -615,5 +616,34 @@ describe("POST /api/admin/mail-settings/test", () => {
     expect(limited.status).toBe(429);
     const body = (await limited.json()) as { error?: string };
     expect(body.error).toBe("too many requests");
+  });
+});
+
+describe("admin audit atomicity (BE-001)", () => {
+  it("rolls back mail settings when audit log write fails", async () => {
+    const spy = vi
+      .spyOn(tickets, "writeAdminAuditLog")
+      .mockRejectedValueOnce(new Error("audit failed"));
+
+    const res = await app.request("/api/admin/mail-settings", {
+      method: "PUT",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "smtp",
+        host: "smtp.audit-rollback.example.com",
+        port: 587,
+        user: "audit@example.com",
+        fromAddress: "audit@example.com",
+        smtpPassword: "audit-rollback-secret",
+      }),
+    });
+    expect(res.status).toBe(500);
+
+    const row = await prisma.mailSettings.findUnique({
+      where: { scope_type_scope_id: { scope_type: "organization", scope_id: ORG_MAIL } },
+    });
+    expect(row?.host).not.toBe("smtp.audit-rollback.example.com");
+
+    spy.mockRestore();
   });
 });

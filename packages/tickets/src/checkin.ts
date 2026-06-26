@@ -37,15 +37,17 @@ export async function checkInScan(
     const card = await getAttendeeCard(eventId, attendee.id, prisma);
     if (!card) return { status: "INVALID", confirmed: false };
 
-    await prisma.checkIn.create({
-      data: {
-        attendee_id: attendee.id,
-        event_id: eventId,
-        checked_in_by: params.operator ?? null,
-        device_id: params.deviceId ?? null,
-        source: "scan",
-        status: "REVOKED",
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.checkIn.create({
+        data: {
+          attendee_id: attendee.id,
+          event_id: eventId,
+          checked_in_by: params.operator ?? null,
+          device_id: params.deviceId ?? null,
+          source: "scan",
+          status: "REVOKED",
+        },
+      });
     });
     return { status: "REVOKED", confirmed: false, card };
   }
