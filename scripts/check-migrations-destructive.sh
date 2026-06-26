@@ -42,6 +42,9 @@ scan_file() {
   if printf '%s' "$content" | grep -qE '(^|[^A-Z])TRUNCATE[[:space:]]'; then
     hits+=("TRUNCATE")
   fi
+  if printf '%s' "$content" | grep -qE '(^|[^A-Z])DELETE[[:space:]]+FROM[[:space:]]'; then
+    hits+=("DELETE FROM")
+  fi
   if printf '%s' "$content" | grep -qE 'ALTER[[:space:]]+COLUMN[[:space:]]+[^;]+[[:space:]]+TYPE'; then
     hits+=("ALTER COLUMN TYPE")
   fi
