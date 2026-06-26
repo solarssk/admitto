@@ -59,7 +59,7 @@ flowchart TB
 Sessions are **server-side** (opaque token, hash stored in the database). Cookie flags follow
 common web hardening (`httpOnly`, `SameSite`, `secure` in production).
 Expired or revoked session and trusted-device rows are purged during container startup after
-migrations/backfills. Operators can also run
+migrations/backfills with a 120-second timeout. Operators can also run
 `npm run cli -w @admitto/auth -- purge-auth-retention` (use `--dry-run` first
 to preview counts).
 
