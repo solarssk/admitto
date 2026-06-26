@@ -236,11 +236,20 @@ Be explicit with auditors about what is **out of product scope** today:
   length only; operators should generate with `openssl rand -hex 32` (documented in `.env.example`).
 - Rate limits are application-layer; high-volume DoS may still require edge WAF/CDN or network
   controls in front of the origin.
-- **OIDC roles are reconciled at login only (JIT):** group→role mappings are evaluated on each
-  OIDC sign-in. If a user is removed from a group in the identity provider, their elevated Admitto
-  role persists until their next OIDC login or until the session expires / is revoked. To revoke
-  immediately, revoke the user's sessions (`POST /api/admin/users/:id/revoke-sessions`) or shorten
-  the admin session TTL.
+- **OIDC roles are reconciled at login only (JIT):** group→role mappings are fully evaluated on
+  each OIDC sign-in, including removal of grants no longer authorized by IdP group membership.
+  If a user is removed from a group in the identity provider, an already-active elevated Admitto
+  session persists until the next OIDC login, session expiry, or session revocation. For
+  deployments where OIDC group mappings grant admin/superadmin roles, set `SESSION_TTL_ADMIN_MS`
+  to **8h or less** (`28800000`) so the stale-session window is bounded.
+
+  Offboarding runbook for OIDC-managed elevated roles:
+  1. Remove the user from the relevant group in the IdP.
+  2. In Admitto, revoke the user's active sessions (`POST /api/admin/users/:id/revoke-sessions`).
+  3. On the next OIDC login, `applyOidcGroupRoleMappings` removes grants no longer authorized by
+     current IdP group membership.
+  4. If immediate grant removal is required before the next login, remove the OIDC-sourced grant
+     from Admitto as an admin action and keep the session revoked.
 
 ### Penetration test verification (operator checklist)
 
