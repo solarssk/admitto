@@ -498,9 +498,9 @@ model OidcRoleGrant {
   role_assignment    RoleAssignment   @relation(fields: [role_assignment_id], references: [id], onDelete: Cascade)
   created_at         DateTime         @default(now())
 
-  @@unique([user_id, provider_id, role, scope_type, scope_id])
   @@index([provider_id, user_id])
   @@index([role_assignment_id])
+  // Partial UNIQUE indexes (scoped + instance NULL) live in migration SQL — not expressible via @@unique.
 }
 
 // Short-lived OAuth state (PKCE, CSRF, nonce) — single-use.
