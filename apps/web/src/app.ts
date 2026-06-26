@@ -109,6 +109,7 @@ import {
   handleCreateEventAttendee,
   handleGetEventAttendee,
   handlePatchEventAttendee,
+  handleDeleteEventAttendee,
   handleResendEventAttendeeTicket,
   handleListTicketTypes,
   handleExportAttendees,
@@ -473,6 +474,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.patch("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
     handlePatchEventAttendee(c, db),
   ));
+  app.delete("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, (c) =>
+    handleDeleteEventAttendee(c, db),
+  );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/resend",
     jsonPostCsrf,

@@ -1266,6 +1266,55 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   }
 }
 
+/** DELETE /api/admin/events/:eventId/attendees/:id — GDPR erasure path. */
+export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const attendeeIdOrRes = requireAttendeeId(c);
+  if (attendeeIdOrRes instanceof Response) return attendeeIdOrRes;
+  const attendeeId = attendeeIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
+  if (!existing) return c.json({ error: "forbidden" }, 403);
+
+  try {
+    await db.$transaction(async (tx) => {
+      const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
+        tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: attendeeId } }),
+        tx.walletPass.deleteMany({ where: { attendee_id: attendeeId } }),
+        tx.checkIn.deleteMany({ where: { event_id: eventId, attendee_id: attendeeId } }),
+      ]);
+
+      await tx.attendee.delete({
+        where: { id_event_id: { id: attendeeId, event_id: eventId } },
+      });
+
+      await writeBulkActionLog(tx, {
+        event_id: eventId,
+        action_type: "attendee_erased",
+        audit: adminAuditFromContext(c),
+        metadata: {
+          attendee_id: attendeeId,
+          removed: {
+            email_deliveries: emailDeliveries.count,
+            wallet_passes: walletPasses.count,
+            check_ins: checkIns.count,
+          },
+        },
+      });
+    });
+
+    return c.body(null, 204);
+  } catch (err) {
+    console.error("handleDeleteEventAttendee failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
+}
+
 
 /** POST /api/admin/events/:eventId/attendees — manual attendee create (admin/superadmin). */
 export async function handleCreateEventAttendee(c: Context, db: PrismaClient): Promise<Response> {

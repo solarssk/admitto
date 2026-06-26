@@ -315,6 +315,141 @@ describe("GET /api/admin/events/:eventId/attendees/:id", () => {
   });
 });
 
+describe("DELETE /api/admin/events/:eventId/attendees/:id", () => {
+  const ERASE_ATTENDEE = "att-admin-erase";
+
+  async function seedErasableAttendee() {
+    await prisma.attendee.create({
+      data: {
+        id: ERASE_ATTENDEE,
+        event_id: EVENT_A,
+        email: "erase-me@example.com",
+        name: "Erase Me",
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+      },
+    });
+
+    const giftbag = await prisma.eventItem.findFirstOrThrow({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      select: { id: true },
+    });
+
+    await prisma.$transaction([
+      prisma.emailDelivery.create({
+        data: {
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          attendee_id: ERASE_ATTENDEE,
+          purpose: "initial",
+          provider: "export_only",
+          status: "sent",
+          recipient_email: "erase-me@example.com",
+          rendered_subject: "Erase ticket",
+          rendered_html: "<p>Erase Me ticket</p>",
+        },
+      }),
+      prisma.walletPass.create({
+        data: {
+          attendee_id: ERASE_ATTENDEE,
+          pass_type_id: "pass.example.admitto",
+          serial_number: "erase-serial-001",
+          auth_token: "erase-auth-token",
+        },
+      }),
+      prisma.checkIn.create({
+        data: {
+          attendee_id: ERASE_ATTENDEE,
+          event_id: EVENT_A,
+          status: "VALID",
+          checked_in_by: adminId,
+        },
+      }),
+      prisma.attendeeItemState.create({
+        data: {
+          attendee_id: ERASE_ATTENDEE,
+          event_item_id: giftbag.id,
+          state: "issued",
+          updated_by: adminId,
+        },
+      }),
+      prisma.attendeeNote.create({
+        data: {
+          attendee_id: ERASE_ATTENDEE,
+          event_id: EVENT_A,
+          author_user_id: adminId,
+          body: "private erasure note",
+        },
+      }),
+      prisma.attendeeActionLog.create({
+        data: {
+          event_id: EVENT_A,
+          attendee_id: ERASE_ATTENDEE,
+          action_type: "test_existing_attendee_log",
+          actor_user_id: adminId,
+        },
+      }),
+    ]);
+  }
+
+  it("erases attendee dependencies and writes durable non-PII audit", async () => {
+    await seedErasableAttendee();
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ERASE_ATTENDEE}`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+
+    expect(res.status).toBe(204);
+    expect(await prisma.attendee.findUnique({ where: { id: ERASE_ATTENDEE } })).toBeNull();
+    expect(await prisma.emailDelivery.count({ where: { attendee_id: ERASE_ATTENDEE } })).toBe(0);
+    expect(await prisma.walletPass.count({ where: { attendee_id: ERASE_ATTENDEE } })).toBe(0);
+    expect(await prisma.checkIn.count({ where: { attendee_id: ERASE_ATTENDEE } })).toBe(0);
+    expect(await prisma.attendeeItemState.count({ where: { attendee_id: ERASE_ATTENDEE } })).toBe(0);
+    expect(await prisma.attendeeNote.count({ where: { attendee_id: ERASE_ATTENDEE } })).toBe(0);
+    expect(await prisma.attendeeActionLog.count({ where: { attendee_id: ERASE_ATTENDEE } })).toBe(0);
+
+    const audit = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_A, attendee_id: null, action_type: "attendee_erased" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit).not.toBeNull();
+    expect(audit?.actor_user_id).toBe(adminId);
+    const metadata = audit!.metadata as {
+      attendee_id?: string;
+      removed?: { email_deliveries?: number; wallet_passes?: number; check_ins?: number };
+    };
+    expect(metadata.attendee_id).toBe(ERASE_ATTENDEE);
+    expect(metadata.removed).toMatchObject({
+      email_deliveries: 1,
+      wallet_passes: 1,
+      check_ins: 1,
+    });
+    expect(JSON.stringify(metadata)).not.toContain("erase-me@example.com");
+    expect(JSON.stringify(metadata)).not.toContain("Erase Me");
+  });
+
+  it("returns 403 for cross-event attendee", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_B1}`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+
+    expect(res.status).toBe(403);
+    expect(await prisma.attendee.findUnique({ where: { id: ATT_B1 } })).not.toBeNull();
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "DELETE",
+      headers: { Cookie: opCookie, ...sameOrigin },
+    });
+
+    expect(res.status).toBe(403);
+    expect(await prisma.attendee.findUnique({ where: { id: ATT_A2 } })).not.toBeNull();
+  });
+});
+
 describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
   async function currentUpdatedAt(attendeeId: string): Promise<string> {
     const row = await prisma.attendee.findUniqueOrThrow({
