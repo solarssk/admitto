@@ -1,9 +1,10 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE, verifyPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
+import * as tickets from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import {
   assertLastSuperadminDeactivationAllowed,
@@ -665,5 +666,26 @@ describe("IAM-004 granting a second instance superadmin", () => {
       });
       await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "${INDEX}"`);
     }
+  });
+});
+
+describe("admin audit atomicity (BE-002)", () => {
+  it("rolls back user creation when audit log write fails", async () => {
+    const email = "audit-rollback@example.com";
+    const spy = vi
+      .spyOn(tickets, "writeAdminAuditLog")
+      .mockRejectedValueOnce(new Error("audit failed"));
+
+    const res = await app.request("/api/admin/users", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: "audit-rollback-1" }),
+    });
+    expect(res.status).toBe(500);
+
+    const row = await prisma.user.findUnique({ where: { email } });
+    expect(row).toBeNull();
+
+    spy.mockRestore();
   });
 });

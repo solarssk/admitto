@@ -276,14 +276,29 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
     return c.json({ error: "invalid_request" }, 400);
   }
 
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+  const actorUserId = audit.operator ?? c.get("auth").userId;
+
   let created;
   try {
-    created = await createUser(db, {
-      email,
-      password,
-      displayName: displayName ?? undefined,
-      isActive: true,
-      mustChangePassword: mustChange,
+    created = await db.$transaction(async (tx) => {
+      const user = await createUser(tx, {
+        email,
+        password,
+        displayName: displayName ?? undefined,
+        isActive: true,
+        mustChangePassword: mustChange,
+      });
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        actionType: "user_created",
+        metadata: { userId: user.id, email: user.email },
+      });
+      return user;
     });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -294,17 +309,6 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
 
   const user = await loadUser(db, created.id);
   if (!user) return c.json({ error: "not_found" }, 404);
-
-  const orgId = await resolveInstanceOrganizationId(db);
-  const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId: audit.operator ?? c.get("auth").userId,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    actionType: "user_created",
-    metadata: { userId: user.id, email: user.email },
-  });
 
   return c.json({ user: await serializeUser(db, user) }, 201);
 }
@@ -336,26 +340,47 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
   const before = await db.user.findUnique({ where: { id }, select: { is_active: true } });
   if (!before) return c.json({ error: "not_found" }, 404);
 
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+  let actionType = "user_profile_updated";
+  if (typeof data.is_active === "boolean" && data.is_active !== before.is_active) {
+    actionType = data.is_active ? "user_reactivated" : "user_deactivated";
+  }
+
   try {
-    if (data.is_active === false) {
-      const wasActive = await db.$transaction(
-        async (tx) => {
-          const current = await tx.user.findUnique({ where: { id }, select: { is_active: true } });
-          if (!current) return null;
-          if (current.is_active) {
-            await assertLastSuperadminDeactivationAllowed(tx, id);
-          }
-          await tx.user.update({ where: { id }, data });
-          return current.is_active;
-        },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-      );
-      if (wasActive === null) return c.json({ error: "not_found" }, 404);
-      if (wasActive) {
-        await revokeUserAuthState(db, id);
-      }
-    } else {
-      await db.user.update({ where: { id }, data });
+    const outcome = await db.$transaction(
+      async (tx) => {
+        const current = await tx.user.findUnique({ where: { id }, select: { is_active: true } });
+        if (!current) return null;
+
+        if (data.is_active === false && current.is_active) {
+          await assertLastSuperadminDeactivationAllowed(tx, id);
+        }
+
+        await tx.user.update({ where: { id }, data });
+
+        await writeAdminAuditLog(tx, {
+          organizationId: orgId,
+          actorUserId: audit.operator ?? actorId,
+          sessionId: audit.sessionId,
+          ip: audit.ip,
+          actionType,
+          metadata: { userId: id },
+        });
+
+        return current.is_active;
+      },
+      data.is_active === false
+        ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        : undefined,
+    );
+
+    if (outcome === null) return c.json({ error: "not_found" }, 404);
+
+    // Revoke after commit: session last_seen_at updates during a Serializable tx
+    // can cause serialization failures if sessions are updated in the same tx.
+    if (data.is_active === false && outcome) {
+      await revokeUserAuthState(db, id);
     }
   } catch (err) {
     if (err instanceof LastSuperadminError) {
@@ -366,21 +391,6 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
 
   const user = await loadUser(db, id);
   if (!user) return c.json({ error: "not_found" }, 404);
-
-  const orgId = await resolveInstanceOrganizationId(db);
-  const audit = adminAuditFromContext(c);
-  let actionType = "user_profile_updated";
-  if (typeof data.is_active === "boolean" && data.is_active !== before.is_active) {
-    actionType = data.is_active ? "user_reactivated" : "user_deactivated";
-  }
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId: audit.operator ?? actorId,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    actionType,
-    metadata: { userId: id },
-  });
 
   return c.json({ user: await serializeUser(db, user) });
 }
@@ -418,15 +428,34 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
   });
   if (existing) return c.json({ code: "already_assigned" }, 409);
 
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+
   let assignment;
   try {
-    assignment = await db.roleAssignment.create({
-      data: {
-        user_id: id,
-        role: parsed.role,
-        scope_type: parsed.scopeType,
-        scope_id: parsed.scopeId,
-      },
+    assignment = await db.$transaction(async (tx) => {
+      const created = await tx.roleAssignment.create({
+        data: {
+          user_id: id,
+          role: parsed.role,
+          scope_type: parsed.scopeType,
+          scope_id: parsed.scopeId,
+        },
+      });
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId: audit.operator ?? actorId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        actionType: "role_granted",
+        metadata: {
+          userId: id,
+          role: parsed.role,
+          scopeType: parsed.scopeType,
+          scopeId: parsed.scopeId,
+        },
+      });
+      return created;
     });
   } catch (err) {
     // The partial unique index allows at most one instance-scoped superadmin;
@@ -447,22 +476,6 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
     }
     throw err;
   }
-
-  const orgId = await resolveInstanceOrganizationId(db);
-  const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId: audit.operator ?? actorId,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    actionType: "role_granted",
-    metadata: {
-      userId: id,
-      role: parsed.role,
-      scopeType: parsed.scopeType,
-      scopeId: parsed.scopeId,
-    },
-  });
 
   return c.json(
     {
@@ -501,13 +514,8 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
     return c.json({ code: "managed_by_idp" }, 409);
   }
 
-  type DeletedAssignment = {
-    role: string;
-    scope_type: string;
-    scope_id: string | null;
-  };
-
-  let deletedAssignment: DeletedAssignment;
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
 
   try {
     const outcome = await db.$transaction(
@@ -527,6 +535,19 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
 
         await assertLastSuperadminRemovalAllowed(tx, current);
         await tx.roleAssignment.delete({ where: { id: assignmentId } });
+        await writeAdminAuditLog(tx, {
+          organizationId: orgId,
+          actorUserId: audit.operator ?? actorId,
+          sessionId: audit.sessionId,
+          ip: audit.ip,
+          actionType: "role_revoked",
+          metadata: {
+            userId: id,
+            role: current.role,
+            scopeType: current.scope_type,
+            scopeId: current.scope_id,
+          },
+        });
         return {
           role: current.role,
           scope_type: current.scope_type,
@@ -542,30 +563,12 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
     if (outcome === "managed_by_idp") {
       return c.json({ code: "managed_by_idp" }, 409);
     }
-
-    deletedAssignment = outcome;
   } catch (err) {
     if (err instanceof LastSuperadminError) {
       return c.json({ code: "last_superadmin" }, 409);
     }
     throw err;
   }
-
-  const orgId = await resolveInstanceOrganizationId(db);
-  const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId: audit.operator ?? actorId,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    actionType: "role_revoked",
-    metadata: {
-      userId: id,
-      role: deletedAssignment.role,
-      scopeType: deletedAssignment.scope_type,
-      scopeId: deletedAssignment.scope_id,
-    },
-  });
 
   return c.body(null, 204);
 }
@@ -581,17 +584,19 @@ export async function handlePostResetUserMfa(c: Context, db: PrismaClient): Prom
   const user = await db.user.findUnique({ where: { id }, select: { id: true } });
   if (!user) return c.json({ error: "not_found" }, 404);
 
-  await resetUserMfa(db, id);
-
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId: audit.operator ?? c.get("auth").userId,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    actionType: "user_mfa_reset",
-    metadata: { userId: id },
+
+  await db.$transaction(async (tx) => {
+    await resetUserMfa(tx, id);
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? c.get("auth").userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "user_mfa_reset",
+      metadata: { userId: id },
+    });
   });
 
   return c.json({ ok: true });
@@ -613,6 +618,9 @@ export async function handlePostResetUserPassword(c: Context, db: PrismaClient):
   if (!user) return c.json({ error: "not_found" }, 404);
 
   const hash = await hashPassword(newPassword);
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+
   await db.$transaction(async (tx) => {
     await tx.user.update({
       where: { id },
@@ -623,17 +631,14 @@ export async function handlePostResetUserPassword(c: Context, db: PrismaClient):
       data: { revoked_at: new Date() },
     });
     await revokeAllTrustedDevicesForUser(tx, id);
-  });
-
-  const orgId = await resolveInstanceOrganizationId(db);
-  const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId: audit.operator ?? c.get("auth").userId,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    actionType: "user_password_reset",
-    metadata: { userId: id },
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? c.get("auth").userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "user_password_reset",
+      metadata: { userId: id },
+    });
   });
 
   return c.json({ ok: true });
@@ -650,17 +655,20 @@ export async function handlePostRevokeUserSessions(c: Context, db: PrismaClient)
   const user = await db.user.findUnique({ where: { id }, select: { id: true } });
   if (!user) return c.json({ error: "not_found" }, 404);
 
-  const { sessionsRevoked } = await revokeUserAuthState(db, id);
-
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId: audit.operator ?? c.get("auth").userId,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    actionType: "user_sessions_revoked",
-    metadata: { userId: id, sessionsRevoked },
+
+  const { sessionsRevoked } = await db.$transaction(async (tx) => {
+    const revoked = await revokeUserAuthState(tx, id);
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? c.get("auth").userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "user_sessions_revoked",
+      metadata: { userId: id, sessionsRevoked: revoked.sessionsRevoked },
+    });
+    return revoked;
   });
 
   return c.json({ ok: true, sessionsRevoked });

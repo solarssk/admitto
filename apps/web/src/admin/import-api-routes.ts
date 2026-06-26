@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { parseAttendees, commitImport } from "@admitto/import";
 import { writeBulkActionLog } from "@admitto/tickets";
 import { xlsxBufferToCsv, ImportRowLimitError, ImportZipBombError, MAX_CSV_CHARS, MAX_IMPORT_ROWS } from "./xlsx-to-csv.js";
@@ -17,8 +17,9 @@ const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 /** Maximum request body size for import routes (file cap plus multipart overhead). */
 export const MAX_IMPORT_BODY_BYTES = MAX_FILE_BYTES + MULTIPART_OVERHEAD_BYTES;
 
-const IMPORT_TX_TIMEOUT_MS = 30_000;
-const IMPORT_TX_MAX_WAIT_MS = 10_000;
+/** Import commit: lock wait + row writes share this budget (queued concurrent commits). */
+const IMPORT_TX_TIMEOUT_MS = 120_000;
+const IMPORT_TX_MAX_WAIT_MS = 30_000;
 
 export type ImportInvalidRowDto = {
   rowIndex: number;
@@ -374,6 +375,10 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
 
     const summary = await db.$transaction(
       async (tx) => {
+        await tx.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`event-import:${eventId}`}))`,
+        );
+
         const result = await commitImport(
           eventId,
           parsed.validRows,
