@@ -9,6 +9,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitForFreshRedisWindow(windowMs: number): Promise<void> {
+  const elapsed = Date.now() % windowMs;
+  const minimumRemaining = Math.min(200, Math.floor(windowMs / 2));
+  if (windowMs - elapsed < minimumRemaining) {
+    await sleep(windowMs - elapsed + 20);
+  }
+}
+
 describe.skipIf(!redisUrl)("RedisRateLimitStore", () => {
   const store = new RedisRateLimitStore(redisUrl!);
   const rawClient = createClient({ url: redisUrl! });
@@ -54,6 +62,7 @@ describe.skipIf(!redisUrl)("RedisRateLimitStore", () => {
     const key = `test-ttl-${Date.now()}`;
     const windowMs = 500;
 
+    await waitForFreshRedisWindow(windowMs);
     const first = await store.hit(key, windowMs, 1);
     expect(first.allowed).toBe(true);
     const redisKey = redisKeyForHit(key, windowMs, first.resetAt - 1);
