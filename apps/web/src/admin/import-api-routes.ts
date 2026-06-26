@@ -17,8 +17,9 @@ const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 /** Maximum request body size for import routes (file cap plus multipart overhead). */
 export const MAX_IMPORT_BODY_BYTES = MAX_FILE_BYTES + MULTIPART_OVERHEAD_BYTES;
 
-const IMPORT_TX_TIMEOUT_MS = 30_000;
-const IMPORT_TX_MAX_WAIT_MS = 10_000;
+/** Import commit: lock wait + row writes share this budget (queued concurrent commits). */
+const IMPORT_TX_TIMEOUT_MS = 120_000;
+const IMPORT_TX_MAX_WAIT_MS = 30_000;
 
 export type ImportInvalidRowDto = {
   rowIndex: number;

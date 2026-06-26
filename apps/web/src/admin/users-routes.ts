@@ -359,10 +359,6 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
 
         await tx.user.update({ where: { id }, data });
 
-        if (data.is_active === false && current.is_active) {
-          await revokeUserAuthState(tx, id);
-        }
-
         await writeAdminAuditLog(tx, {
           organizationId: orgId,
           actorUserId: audit.operator ?? actorId,
@@ -372,7 +368,7 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
           metadata: { userId: id },
         });
 
-        return current;
+        return current.is_active;
       },
       data.is_active === false
         ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
@@ -380,6 +376,12 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
     );
 
     if (outcome === null) return c.json({ error: "not_found" }, 404);
+
+    // Revoke after commit: session last_seen_at updates during a Serializable tx
+    // can cause serialization failures if sessions are updated in the same tx.
+    if (data.is_active === false && outcome) {
+      await revokeUserAuthState(db, id);
+    }
   } catch (err) {
     if (err instanceof LastSuperadminError) {
       return c.json({ code: "last_superadmin" }, 409);
