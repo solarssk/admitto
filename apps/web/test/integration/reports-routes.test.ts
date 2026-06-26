@@ -435,6 +435,8 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/html");
+    expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
+    expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
     const html = await res.text();
     expect(html).toContain("Reports Event");
     expect(html).toContain("By ticket type");

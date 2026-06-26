@@ -7,6 +7,7 @@ import { canManageInstance } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { z } from "zod";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import { sanitizeCsvCell } from "./csv-sanitize.js";
 
 const dateOnlyField = z
   .string()
@@ -210,13 +211,6 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     console.error("[audit] event_updated transaction failed", err);
     return c.json({ code: "audit_failed" }, 500);
   }
-}
-
-function sanitizeCsvCell(value: string | null | undefined): string {
-  if (value == null) return "";
-  const s = String(value);
-  if (/^[=+\-@\t\r\n]/.test(s)) return `'${s}`;
-  return s;
 }
 
 function quoteCsvCell(value: string): string {
