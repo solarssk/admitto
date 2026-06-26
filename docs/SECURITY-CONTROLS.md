@@ -248,10 +248,14 @@ Be explicit with auditors about what is **out of product scope** today:
   2. In Admitto, revoke the user's active sessions (`POST /api/admin/users/:id/revoke-sessions`).
   3. On the next OIDC login, `applyOidcGroupRoleMappings` removes grants no longer authorized by
      current IdP group membership.
-  4. OIDC-sourced grants are managed by the IdP and cannot be removed through the manual role
-     revoke action; keep sessions revoked until the next OIDC reconciliation removes the grant.
-     In Cloudflare Access mode, Admitto re-evaluates mapped roles on authenticated staff requests,
-     so IdP removals may reconcile before a fresh OIDC login.
+  4. Revoking the user's sessions in step 2 is sufficient for immediate access removal: an
+     OIDC-sourced grant without an active session grants nothing. The grant row is removed on
+     the next OIDC reconciliation. OIDC-sourced grants cannot be removed through the manual role
+     revoke action (`managed_by_idp`); if the grant row must disappear before the user's next
+     login, temporarily remove or disable the relevant group→role mapping rule, complete
+     reconciliation, then re-enable the rule if still needed. In Cloudflare Access mode, Admitto
+     re-evaluates mapped roles on authenticated staff requests, so IdP removals may reconcile
+     before a fresh OIDC login.
 
 ### Penetration test verification (operator checklist)
 
