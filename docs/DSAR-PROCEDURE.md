@@ -51,6 +51,43 @@ flowchart TD
   2. Remove copies from local exports, mail logs, and backup retention per your backup policy.
 - Document completion date and responsible person.
 
+### Manual DB erasure order
+
+Until Admitto ships an attendee erasure endpoint, operators handling erasure by direct database
+operation must remove dependent rows before deleting the attendee. In particular,
+`EmailDelivery`, `WalletPass`, and `CheckIn` reference attendees with `ON DELETE RESTRICT`.
+Sent delivery rows can include rendered ticket email HTML.
+
+Run the operation in one transaction and scope it to the event and attendee:
+
+```sql
+BEGIN;
+
+-- Replace values before execution.
+\set event_id 'evt_...'
+\set attendee_id 'att_...'
+
+DELETE FROM "EmailDelivery"
+WHERE "event_id" = :'event_id'
+  AND "attendee_id" = :'attendee_id';
+
+DELETE FROM "WalletPass"
+WHERE "attendee_id" = :'attendee_id';
+
+DELETE FROM "CheckIn"
+WHERE "event_id" = :'event_id'
+  AND "attendee_id" = :'attendee_id';
+
+DELETE FROM "Attendee"
+WHERE "event_id" = :'event_id'
+  AND "id" = :'attendee_id';
+
+COMMIT;
+```
+
+If the final `DELETE FROM "Attendee"` affects zero rows, roll back and re-check the event/attendee
+ids before recording completion.
+
 ## 5. SLA (customer-defined)
 
 | Step | Suggested target |

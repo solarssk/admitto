@@ -32,6 +32,7 @@
   "dependencies": {
     "@admitto/crypto": "*",
     "@admitto/db": "*",
+    "@admitto/shared": "*",
     "@admitto/tickets": "*",
     "argon2": "^0.44.0",
     "jose": "^6.0.11",

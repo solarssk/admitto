@@ -1,14 +1,7 @@
 import { createHash } from "node:crypto";
+import { redactEmail } from "@admitto/shared";
 
-/** Redact email for logs: `a***@example.com`. */
-export function redactEmail(email: string): string {
-  const at = email.indexOf("@");
-  if (at <= 0) return "***";
-  const local = email.slice(0, at);
-  const domain = email.slice(at);
-  const visible = local.slice(0, 1);
-  return `${visible}***${domain}`;
-}
+export { redactEmail };
 
 /** Short SHA-256 fingerprint for IDs in audit logs (no raw UUIDs). */
 export function fingerprint(value: string): string {

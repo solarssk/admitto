@@ -6,6 +6,7 @@ import {
   hashPassword,
   normalizeEmail,
   PASSWORD_MIN_LENGTH,
+  redactEmail,
   resetUserMfa,
   revokeAllTrustedDevicesForUser,
   revokeUserAuthState,
@@ -296,7 +297,7 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
         sessionId: audit.sessionId,
         ip: audit.ip,
         actionType: "user_created",
-        metadata: { userId: user.id, email: user.email },
+        metadata: { userId: user.id, email: redactEmail(user.email) },
       });
       return user;
     });

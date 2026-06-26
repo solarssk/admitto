@@ -16,7 +16,10 @@
 | Entry status | Check-in tracking | Operational |
 | Random token / QR code | Ticket identifier — **no personal data embedded** | Non-personal |
 
-No special-category data (health, biometric, etc.) is processed.
+`AttendeeNote.body` is a free-text operator note. It may contain special-category data
+(for example accessibility, dietary, or medical information) if staff enter it. Operators
+must not record GDPR Art. 9 data unless their organisation has documented a lawful basis,
+instructions from its privacy officer/DPO, and appropriate safeguards.
 
 ## Data minimisation
 
