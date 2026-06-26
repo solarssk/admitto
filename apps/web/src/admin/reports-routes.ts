@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { writeBulkActionLog } from "@admitto/tickets";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import { sanitizeCsvCell } from "./csv-sanitize.js";
 
 const HOUR_LABELS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
 const CSV_EXPORT_MAX = 10_000;
@@ -226,11 +227,16 @@ async function loadReportsAggregates(
   };
 }
 
-function sanitizeCsvCell(value: string | null | undefined): string {
-  if (value == null) return "";
-  const s = String(value);
-  if (/^[\t\r\n]/.test(s) || /^[ \t\r\n]*[=+\-@]/.test(s)) return `'${s}`;
-  return s;
+/** Security headers for printable HTML report export (inline styles only; no scripts). */
+export function getPrintableReportSecurityHeaders(): Record<string, string> {
+  return {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+    "Pragma": "no-cache",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy":
+      "default-src 'none'; style-src 'unsafe-inline'; img-src data:; frame-ancestors 'none'",
+  };
 }
 
 /** Format admitted_at for CSV/PDF export in the event timezone (YYYY-MM-DD HH:mm). */
@@ -502,11 +508,6 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
 
   return new Response(html, {
     status: 200,
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "no-store",
-      "Pragma": "no-cache",
-      "X-Content-Type-Options": "nosniff",
-    },
+    headers: getPrintableReportSecurityHeaders(),
   });
 }

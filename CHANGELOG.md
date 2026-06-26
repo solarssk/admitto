@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Forced password-change form now enforces the same 12-character minimum as all other self-set passwords (was 8) (IAM-003)
 - Granting `superadmin@instance` to a second user now returns HTTP 409 `single_superadmin_limit` instead of an unhandled 500 (IAM-004)
 - Known limitation: OIDC group→role mappings are reconciled only at login; a user removed from an IdP group keeps their elevated role until their next OIDC login or session expiry/revocation (accepted risk, IAM-005)
+- Attendee CSV export now uses the shared CSV formula-injection sanitizer (covers newline-prefixed formulas and whitespace-padded `=`) across attendee, event-settings PII, and reports exports (SEC-001)
+- Printable HTML/PDF event report export now sends a restrictive Content-Security-Policy header (SEC-003)
 
 ## [0.4.5] - 2026-06-24
 

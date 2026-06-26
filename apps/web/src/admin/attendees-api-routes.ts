@@ -25,6 +25,7 @@ import {
   positiveIntQuery,
   requireEventId,
 } from "./admin-helpers.js";
+import { sanitizeCsvCell } from "./csv-sanitize.js";
 import { randomUUID } from "node:crypto";
 import { decryptFromString } from "@admitto/crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
@@ -172,14 +173,6 @@ function formatAdmittedAtLocal(date: Date, timeZone: string): string {
   })
     .format(date)
     .replace(",", "");
-}
-
-/** Guard against CSV/formula injection — prefix cells starting with = + - @ TAB CR. */
-function sanitizeCell(value: string | null | undefined): string {
-  if (value == null) return "";
-  const s = String(value);
-  if (/^[=+\-@\t\r]/.test(s)) return `'${s}`;
-  return s;
 }
 
 /** RFC 4180 CSV field quoting (escape embedded double quotes). */
@@ -641,15 +634,15 @@ function buildSanitizedExportRows(
     const { company, department } = resolveCompanyDepartment(row);
     return {
       check_off: "",
-      name: sanitizeCell(row.name),
-      email: sanitizeCell(row.email),
-      company: sanitizeCell(company),
-      department: sanitizeCell(department),
-      ticket_type: sanitizeCell(row.ticket_type),
+      name: sanitizeCsvCell(row.name),
+      email: sanitizeCsvCell(row.email),
+      company: sanitizeCsvCell(company),
+      department: sanitizeCsvCell(department),
+      ticket_type: sanitizeCsvCell(row.ticket_type),
       check_in_status: row.admitted_at ? "admitted" : "not_admitted",
       admitted_at: row.admitted_at ? formatAdmittedAtLocal(row.admitted_at, timeZone) : "",
       attribute_values: attributeFields.map((field) =>
-        sanitizeCell(customDataValue(row.custom_data, field.source_field)),
+        sanitizeCsvCell(customDataValue(row.custom_data, field.source_field)),
       ),
     };
   });
@@ -665,7 +658,7 @@ function buildExportColumnLabels(attributeFields: EventItemContent[]): string[] 
       (labelCounts.get(field.label) ?? 0) > 1
         ? `${field.label} (${field.source_field})`
         : field.label;
-    return sanitizeCell(label);
+    return sanitizeCsvCell(label);
   });
 }
 
