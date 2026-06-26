@@ -1281,38 +1281,33 @@ export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): P
   const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
   if (!existing) return c.json({ error: "forbidden" }, 403);
 
-  try {
-    await db.$transaction(async (tx) => {
-      const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
-        tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: attendeeId } }),
-        tx.walletPass.deleteMany({ where: { attendee_id: attendeeId } }),
-        tx.checkIn.deleteMany({ where: { event_id: eventId, attendee_id: attendeeId } }),
-      ]);
+  await db.$transaction(async (tx) => {
+    const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
+      tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: attendeeId } }),
+      tx.walletPass.deleteMany({ where: { attendee_id: attendeeId } }),
+      tx.checkIn.deleteMany({ where: { event_id: eventId, attendee_id: attendeeId } }),
+    ]);
 
-      await tx.attendee.delete({
-        where: { id_event_id: { id: attendeeId, event_id: eventId } },
-      });
-
-      await writeBulkActionLog(tx, {
-        event_id: eventId,
-        action_type: "attendee_erased",
-        audit: adminAuditFromContext(c),
-        metadata: {
-          attendee_id: attendeeId,
-          removed: {
-            email_deliveries: emailDeliveries.count,
-            wallet_passes: walletPasses.count,
-            check_ins: checkIns.count,
-          },
-        },
-      });
+    await tx.attendee.delete({
+      where: { id_event_id: { id: attendeeId, event_id: eventId } },
     });
 
-    return c.body(null, 204);
-  } catch (err) {
-    console.error("handleDeleteEventAttendee failed:", err);
-    return c.json({ error: "server error" }, 500);
-  }
+    await writeBulkActionLog(tx, {
+      event_id: eventId,
+      action_type: "attendee_erased",
+      audit: adminAuditFromContext(c),
+      metadata: {
+        attendee_id: attendeeId,
+        removed: {
+          email_deliveries: emailDeliveries.count,
+          wallet_passes: walletPasses.count,
+          check_ins: checkIns.count,
+        },
+      },
+    });
+  });
+
+  return c.body(null, 204);
 }
 
 

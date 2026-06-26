@@ -83,7 +83,8 @@ export type AttendeeActionType =
   | 'attendees_exported'
   | 'reports_exported'
   | 'rsvp_status_changed'
-  | 'attendee_created_manual';
+  | 'attendee_created_manual'
+  | 'attendee_erased';
 
 export const ATTENDEE_ACTION_TYPE = [
   'check_in',
@@ -99,6 +100,7 @@ export const ATTENDEE_ACTION_TYPE = [
   'reports_exported',
   'rsvp_status_changed',
   'attendee_created_manual',
+  'attendee_erased',
 ] as const satisfies AttendeeActionType[];
 
 /** Maximum note body length (API validation — Lock #8). */
