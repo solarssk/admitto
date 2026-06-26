@@ -1278,19 +1278,21 @@ export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): P
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
-  if (!existing) return c.json({ error: "forbidden" }, 403);
+  const result = await db.$transaction(async (tx) => {
+    const existing = await tx.attendee.findUnique({
+      where: { id: attendeeId },
+      select: { event_id: true },
+    });
+    if (!existing || existing.event_id !== eventId) return "forbidden" as const;
 
-  await db.$transaction(async (tx) => {
     const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
       tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: attendeeId } }),
       tx.walletPass.deleteMany({ where: { attendee_id: attendeeId } }),
       tx.checkIn.deleteMany({ where: { event_id: eventId, attendee_id: attendeeId } }),
     ]);
 
-    await tx.attendee.delete({
-      where: { id_event_id: { id: attendeeId, event_id: eventId } },
-    });
+    const attendeeDelete = await tx.attendee.deleteMany({ where: { id: attendeeId, event_id: eventId } });
+    if (attendeeDelete.count === 0) return "gone" as const;
 
     await writeBulkActionLog(tx, {
       event_id: eventId,
@@ -1305,8 +1307,10 @@ export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): P
         },
       },
     });
+    return "deleted" as const;
   });
 
+  if (result === "forbidden") return c.json({ error: "forbidden" }, 403);
   return c.body(null, 204);
 }
 

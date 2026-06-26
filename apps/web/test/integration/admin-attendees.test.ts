@@ -439,6 +439,31 @@ describe("DELETE /api/admin/events/:eventId/attendees/:id", () => {
     expect(await prisma.attendee.findUnique({ where: { id: ATT_B1 } })).not.toBeNull();
   });
 
+  it("does not 500 or write another audit row for an already erased attendee", async () => {
+    await seedErasableAttendee();
+
+    const first = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ERASE_ATTENDEE}`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+    expect(first.status).toBe(204);
+
+    const beforeAudit = await prisma.attendeeActionLog.count({
+      where: { event_id: EVENT_A, attendee_id: null, action_type: "attendee_erased" },
+    });
+
+    const second = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ERASE_ATTENDEE}`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+
+    expect(second.status).toBe(403);
+    const afterAudit = await prisma.attendeeActionLog.count({
+      where: { event_id: EVENT_A, attendee_id: null, action_type: "attendee_erased" },
+    });
+    expect(afterAudit).toBe(beforeAudit);
+  });
+
   it("rejects operator", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "DELETE",
