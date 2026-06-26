@@ -5,6 +5,7 @@
  *   npm run cli -w @admitto/auth -- bootstrap-superadmin --email admin@example.com
  *   npm run cli -w @admitto/auth -- reset-mfa --email superadmin@example.com
  *   npm run cli -w @admitto/auth -- generate-emergency-recovery --email superadmin@example.com
+ *   npm run cli -w @admitto/auth -- purge-auth-retention [--dry-run]
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,7 @@ import { userIsInstanceSuperadmin } from "./bootstrap.js";
 import { logMfaBreakGlass } from "./audit.js";
 import { loadEnvFile } from "./loadDotEnv.js";
 import { assertNoPasswordArgv, CliError, readPasswordFromStdin } from "./cli-helpers.js";
+import { purgeAuthRetention } from "./retention.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -47,7 +49,8 @@ function usage(): never {
   console.error(`Usage:
   npm run cli -w @admitto/auth -- bootstrap-superadmin --email <email> [--force]
   npm run cli -w @admitto/auth -- reset-mfa --email <email>
-  npm run cli -w @admitto/auth -- generate-emergency-recovery --email <email>`);
+  npm run cli -w @admitto/auth -- generate-emergency-recovery --email <email>
+  npm run cli -w @admitto/auth -- purge-auth-retention [--dry-run]`);
   throw new CliError("Invalid usage");
 }
 
@@ -134,6 +137,15 @@ async function runGenerateEmergencyRecovery(): Promise<void> {
   console.log(`Emergency one-time recovery code (shown once): ${code}`);
 }
 
+async function runPurgeAuthRetention(): Promise<void> {
+  const dryRun = hasFlag("dry-run");
+  const result = await purgeAuthRetention(prisma, { dryRun });
+  const verb = dryRun ? "Would delete" : "Deleted";
+  console.log(
+    `${verb} ${result.sessions} expired/revoked sessions and ${result.trustedDevices} expired/revoked trusted devices.`,
+  );
+}
+
 async function main(): Promise<void> {
   loadDotEnv();
 
@@ -148,6 +160,8 @@ async function main(): Promise<void> {
     await runResetMfa();
   } else if (sub === "generate-emergency-recovery") {
     await runGenerateEmergencyRecovery();
+  } else if (sub === "purge-auth-retention") {
+    await runPurgeAuthRetention();
   } else {
     usage();
   }

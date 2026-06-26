@@ -58,6 +58,10 @@ flowchart TB
 
 Sessions are **server-side** (opaque token, hash stored in the database). Cookie flags follow
 common web hardening (`httpOnly`, `SameSite`, `secure` in production).
+Expired or revoked session and trusted-device rows are purged during container startup after
+migrations/backfills. Operators can also run
+`npm run cli -w @admitto/auth -- purge-auth-retention` (use `--dry-run` first
+to preview counts).
 
 ### Implemented in codebase (v0.4.3)
 
@@ -225,7 +229,8 @@ Be explicit with auditors about what is **out of product scope** today:
 
 - No built-in SIEM or central log platform (forward container logs if required).
 - No HA / multi-region failover in the default compose topology.
-- No automated long-term PII purge job yet (retention **policy** documented; job planned for v1.0).
+- No always-on scheduler for all long-term PII purge domains yet (retention **policy** documented;
+  auth-state purge runs at container startup and is also available as a CLI maintenance command).
 - Disk/volume encryption for PostgreSQL and Redis is an **infrastructure** control.
 - No automated entropy check on `CHECKIN_OPERATOR_TOKEN` / `OPS_HEALTH_TOKEN` at boot — minimum
   length only; operators should generate with `openssl rand -hex 32` (documented in `.env.example`).

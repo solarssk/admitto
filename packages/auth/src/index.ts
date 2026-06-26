@@ -174,6 +174,7 @@ export { parseTotpSecretFromOtpauthUri } from "./mfa/totp.js";
 export { regenerateBackupRecoveryCodes, findBackupRecoveryRowId, verifyBackupRecoveryCodesSet } from "./mfa/backup-recovery.js";
 export { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
 export { validateTrustedDevice, revokeTrustedDeviceByToken, revokeAllTrustedDevicesForUser } from "./mfa/trusted-device.js";
+export { purgeAuthRetention } from "./retention.js";
 
 export {
   resolveOrCreateUserFromExternalIdentity,

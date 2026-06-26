@@ -214,5 +214,7 @@ fi
 run_as_node_cmd node node_modules/prisma/build/index.js migrate deploy --schema "$SCHEMA"
 log "running agency public_ref backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-public-ref.js
+log "purging expired/revoked auth sessions and trusted devices"
+run_as_node_cmd node packages/auth/dist/cli.js purge-auth-retention
 
 run_as_node node apps/web/dist/src/index.js
