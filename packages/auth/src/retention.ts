@@ -1,16 +1,19 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 
+/** Runtime controls for auth-state retention cleanup. */
 export interface PurgeAuthRetentionOptions {
   now?: Date;
   dryRun?: boolean;
   batchSize?: number;
 }
 
+/** Number of stale auth-state rows matched or removed by retention cleanup. */
 export interface PurgeAuthRetentionResult {
   sessions: number;
   trustedDevices: number;
 }
 
+/** Build the shared selector for auth rows that can no longer grant access. */
 function expiredOrRevokedWhere(now: Date) {
   return {
     OR: [{ expires_at: { lte: now } }, { revoked_at: { lte: now } }],
@@ -19,11 +22,13 @@ function expiredOrRevokedWhere(now: Date) {
 
 const DEFAULT_PURGE_BATCH_SIZE = 1000;
 
+/** Clamp an optional caller-provided batch size to a safe positive integer. */
 function normalizeBatchSize(batchSize: number | undefined): number {
   if (!Number.isFinite(batchSize) || !batchSize || batchSize < 1) return DEFAULT_PURGE_BATCH_SIZE;
   return Math.floor(batchSize);
 }
 
+/** Delete stale session rows in bounded batches to avoid one large startup delete. */
 async function purgeSessionBatches(
   prisma: PrismaClient | Prisma.TransactionClient,
   where: ReturnType<typeof expiredOrRevokedWhere>,
@@ -48,6 +53,7 @@ async function purgeSessionBatches(
   }
 }
 
+/** Delete stale trusted-device rows in bounded batches to avoid one large startup delete. */
 async function purgeTrustedDeviceBatches(
   prisma: PrismaClient | Prisma.TransactionClient,
   where: ReturnType<typeof expiredOrRevokedWhere>,
