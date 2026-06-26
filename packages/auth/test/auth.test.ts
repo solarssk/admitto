@@ -26,6 +26,7 @@ import {
 import { login } from "../src/login.js";
 import { bootstrapSuperadmin, superadminInstanceExists } from "../src/bootstrap.js";
 import { generateTotpSecret, encryptTotpSecret } from "../src/mfa/totp.js";
+import { purgeAuthRetention } from "../src/retention.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..", "..", "db");
@@ -325,5 +326,93 @@ describe("bootstrap", () => {
       where: { user_id: user!.id, role: "superadmin", scope_type: "instance" },
     });
     expect(assignment).not.toBeNull();
+  });
+});
+
+describe("auth retention purge", () => {
+  it("deletes only expired or revoked sessions and trusted devices", async () => {
+    const now = new Date("2026-09-10T12:00:00Z");
+    const future = new Date("2026-09-10T13:00:00Z");
+    const past = new Date("2026-09-10T11:00:00Z");
+    await prisma.session.deleteMany({ where: { id: { startsWith: "session-retention-" } } });
+    await prisma.trustedDevice.deleteMany({ where: { id: { startsWith: "trusted-retention-" } } });
+    const baseline = await purgeAuthRetention(prisma, { now, dryRun: true });
+
+    await prisma.session.createMany({
+      data: [
+        {
+          id: "session-retention-active",
+          user_id: USER_SUPER,
+          token_hash: "session-retention-active-hash",
+          expires_at: future,
+        },
+        {
+          id: "session-retention-expired",
+          user_id: USER_SUPER,
+          token_hash: "session-retention-expired-hash",
+          expires_at: past,
+        },
+        {
+          id: "session-retention-revoked",
+          user_id: USER_SUPER,
+          token_hash: "session-retention-revoked-hash",
+          expires_at: future,
+          revoked_at: past,
+        },
+      ],
+    });
+
+    await prisma.trustedDevice.createMany({
+      data: [
+        {
+          id: "trusted-retention-active",
+          user_id: USER_SUPER,
+          token_hash: "trusted-retention-active-hash",
+          expires_at: future,
+        },
+        {
+          id: "trusted-retention-expired",
+          user_id: USER_SUPER,
+          token_hash: "trusted-retention-expired-hash",
+          expires_at: past,
+        },
+        {
+          id: "trusted-retention-revoked",
+          user_id: USER_SUPER,
+          token_hash: "trusted-retention-revoked-hash",
+          expires_at: future,
+          revoked_at: past,
+        },
+      ],
+    });
+
+    const dryRun = await purgeAuthRetention(prisma, { now, dryRun: true });
+    expect(dryRun).toEqual({
+      sessions: baseline.sessions + 2,
+      trustedDevices: baseline.trustedDevices + 2,
+    });
+    expect(await prisma.session.count({ where: { id: { startsWith: "session-retention-" } } })).toBe(3);
+
+    const purged = await purgeAuthRetention(prisma, { now, batchSize: 1 });
+    expect(purged).toEqual({
+      sessions: baseline.sessions + 2,
+      trustedDevices: baseline.trustedDevices + 2,
+    });
+
+    expect(
+      await prisma.session.findMany({
+        where: { id: { startsWith: "session-retention-" } },
+        select: { id: true },
+      }),
+    ).toEqual([{ id: "session-retention-active" }]);
+    expect(
+      await prisma.trustedDevice.findMany({
+        where: { id: { startsWith: "trusted-retention-" } },
+        select: { id: true },
+      }),
+    ).toEqual([{ id: "trusted-retention-active" }]);
+
+    await prisma.session.deleteMany({ where: { id: "session-retention-active" } });
+    await prisma.trustedDevice.deleteMany({ where: { id: "trusted-retention-active" } });
   });
 });
