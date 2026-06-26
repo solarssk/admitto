@@ -1266,6 +1266,54 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   }
 }
 
+/** DELETE /api/admin/events/:eventId/attendees/:id — GDPR erasure path. */
+export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const attendeeIdOrRes = requireAttendeeId(c);
+  if (attendeeIdOrRes instanceof Response) return attendeeIdOrRes;
+  const attendeeId = attendeeIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const result = await db.$transaction(async (tx) => {
+    const existing = await tx.attendee.findUnique({
+      where: { id: attendeeId },
+      select: { event_id: true },
+    });
+    if (!existing || existing.event_id !== eventId) return "forbidden" as const;
+
+    const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
+      tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: attendeeId } }),
+      tx.walletPass.deleteMany({ where: { attendee_id: attendeeId } }),
+      tx.checkIn.deleteMany({ where: { event_id: eventId, attendee_id: attendeeId } }),
+    ]);
+
+    const attendeeDelete = await tx.attendee.deleteMany({ where: { id: attendeeId, event_id: eventId } });
+    if (attendeeDelete.count === 0) return "gone" as const;
+
+    await writeBulkActionLog(tx, {
+      event_id: eventId,
+      action_type: "attendee_erased",
+      audit: adminAuditFromContext(c),
+      metadata: {
+        attendee_id: attendeeId,
+        removed: {
+          email_deliveries: emailDeliveries.count,
+          wallet_passes: walletPasses.count,
+          check_ins: checkIns.count,
+        },
+      },
+    });
+    return "deleted" as const;
+  });
+
+  if (result === "forbidden") return c.json({ error: "forbidden" }, 403);
+  return c.body(null, 204);
+}
+
 
 /** POST /api/admin/events/:eventId/attendees — manual attendee create (admin/superadmin). */
 export async function handleCreateEventAttendee(c: Context, db: PrismaClient): Promise<Response> {
