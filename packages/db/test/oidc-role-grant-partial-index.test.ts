@@ -13,6 +13,12 @@ const USER_ID = "oidc-grant-index-user";
 let prisma: PrismaClient | undefined;
 
 beforeAll(async () => {
+  const dbUrl = process.env.DATABASE_URL ?? "";
+  if (!dbUrl.includes("localhost") && !dbUrl.includes("127.0.0.1") && !dbUrl.includes("local")) {
+    throw new Error(
+      "oidc-role-grant-partial-index.test.ts: refusing migrate reset on non-local DATABASE_URL",
+    );
+  }
   execSync("npx prisma migrate reset --force --skip-seed", {
     cwd: DB_ROOT,
     env: { ...process.env },
@@ -76,6 +82,6 @@ describe("OidcRoleGrant partial unique indexes", () => {
           role_assignment_id: assignment.id,
         },
       }),
-    ).rejects.toThrow();
+    ).rejects.toHaveProperty("code", "P2002");
   });
 });
