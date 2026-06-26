@@ -386,6 +386,7 @@ export async function handlePostMfaEnrollBackupCodes(
     );
   }
   if (promoted === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
+    clearEnrollmentBackupCodes(partial.sessionId);
     return c.redirect("/change-password", 302);
   }
 
