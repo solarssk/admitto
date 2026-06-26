@@ -30,6 +30,9 @@ export const EMERGENCY_RECOVERY_LABEL = "emergency";
 /** Throttle interval for updating last_seen_at on validate. */
 export const SESSION_LAST_SEEN_THROTTLE_MS = 60_000;
 
+/** Minimum length for any user-chosen password (forced-change, setup, account). */
+export const PASSWORD_MIN_LENGTH = 12;
+
 /** Session stages — only `full` grants protected routes. */
 export const SESSION_STAGE = {
   FULL: "full",
@@ -37,6 +40,8 @@ export const SESSION_STAGE = {
   ENROLLMENT_REQUIRED: "enrollment_required",
   /** TOTP confirmed; user must save backup recovery codes before app access. */
   BACKUP_CODES_REQUIRED: "backup_codes_required",
+  /** Admin-forced password reset pending; user can only reach `/change-password`. */
+  CHANGE_PASSWORD_REQUIRED: "change_password_required",
 } as const;
 
 export type SessionStage = (typeof SESSION_STAGE)[keyof typeof SESSION_STAGE];

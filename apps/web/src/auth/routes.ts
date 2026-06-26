@@ -23,6 +23,7 @@ import {
   updateSessionDeviceLabel,
   DEVICE_LABEL_MAX_LEN,
   regenerateBackupRecoveryCodes,
+  markBackupCodesAcknowledged,
   resolveSetupComplete,
 } from "@admitto/auth";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
@@ -33,6 +34,7 @@ import {
   extendEnrollmentBackupCodes,
   clearEnrollmentBackupCodes,
 } from "./enrollment-backup-cache.js";
+import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
@@ -125,6 +127,14 @@ export async function handleLogin(
   }
 
   setSessionCookie(c, result.rawToken);
+  if (result.next === LOGIN_NEXT.BACKUP_CODES_REQUIRED) {
+    const backupCodes = await ensureEnrollmentBackupCodesStashed(
+      db,
+      result.sessionId,
+      result.userId,
+    );
+    return c.json({ ok: true, next: result.next, backup_codes: backupCodes }, 200);
+  }
   return c.json({ ok: true, next: result.next }, 200);
 }
 
@@ -332,6 +342,19 @@ export async function handleMfaVerify(
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
 
+  // User still owes backup-code acknowledgment — keep them in the constrained
+  // stage instead of granting full access (IAM-002).
+  if (result.stage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {
+    const backupCodes = await ensureEnrollmentBackupCodesStashed(db, partial.sessionId, partial.userId);
+    return c.json(
+      { ok: true, next: LOGIN_NEXT.BACKUP_CODES_REQUIRED, backup_codes: backupCodes },
+      200,
+    );
+  }
+  if (result.stage === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
+    return c.json({ ok: true, next: LOGIN_NEXT.CHANGE_PASSWORD }, 200);
+  }
+
   const next = await loginNextAfterFullSession(db, partial.userId);
   return c.json({ ok: true, next }, 200);
 }
@@ -442,12 +465,20 @@ export async function handleTotpBackupCodesComplete(c: Context, db: PrismaClient
     );
   }
 
-  const promoted = await promoteSessionToFull(db, partial.sessionId, partial.userId);
+  // Record acknowledgment and promote atomically so a DB fault cannot leave
+  // codes acknowledged while the session stays in backup_codes_required.
+  const promoted = await db.$transaction(async (tx) => {
+    await markBackupCodesAcknowledged(tx, partial.userId);
+    return promoteSessionToFull(tx, partial.sessionId, partial.userId);
+  });
   if (!promoted) {
     return c.json(AUTH_ERROR, 401);
   }
 
   clearEnrollmentBackupCodes(partial.sessionId);
+  if (promoted === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
+    return c.json({ ok: true, next: LOGIN_NEXT.CHANGE_PASSWORD }, 200);
+  }
   const next = await loginNextAfterFullSession(db, partial.userId);
   return c.json({ ok: true, next }, 200);
 }

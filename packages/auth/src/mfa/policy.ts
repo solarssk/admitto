@@ -32,3 +32,40 @@ export async function userHasConfirmedTotp(
   });
   return row !== null;
 }
+
+/**
+ * True when the user has a confirmed TOTP method whose backup recovery codes
+ * were never acknowledged. Persisted server-side so the acknowledgment gate
+ * survives a fresh login and works across multiple processes (IAM-002).
+ */
+export async function userHasUnacknowledgedBackupCodes(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<boolean> {
+  const row = await prisma.userMfaMethod.findFirst({
+    where: {
+      user_id: userId,
+      type: "totp",
+      confirmed_at: { not: null },
+      backup_codes_acknowledged_at: null,
+    },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+/** Record that the user acknowledged their backup recovery codes (idempotent). */
+export async function markBackupCodesAcknowledged(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<void> {
+  await prisma.userMfaMethod.updateMany({
+    where: {
+      user_id: userId,
+      type: "totp",
+      confirmed_at: { not: null },
+      backup_codes_acknowledged_at: null,
+    },
+    data: { backup_codes_acknowledged_at: new Date() },
+  });
+}

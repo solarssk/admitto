@@ -13,6 +13,7 @@ export {
   AUTH_METHOD,
   BACKUP_RECOVERY_CODE_COUNT,
   EMERGENCY_RECOVERY_LABEL,
+  PASSWORD_MIN_LENGTH,
   type SessionStage,
   type LoginNext,
   type AuthMethod,
@@ -154,7 +155,12 @@ export {
 } from "./bootstrap.js";
 export { revokeUserAuthState, revokeOtherSessions } from "./revocation.js";
 export { runInTransaction } from "./prisma-tx.js";
-export { userRequiresMfa, userHasConfirmedTotp } from "./mfa/policy.js";
+export {
+  userRequiresMfa,
+  userHasConfirmedTotp,
+  userHasUnacknowledgedBackupCodes,
+  markBackupCodesAcknowledged,
+} from "./mfa/policy.js";
 export {
   startTotpEnrollment,
   getOrStartTotpEnrollment,

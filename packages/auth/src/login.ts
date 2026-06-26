@@ -23,7 +23,7 @@ import {
   type LoginNext,
   type SessionStage,
 } from "./constants.js";
-import { userRequiresMfa, userHasConfirmedTotp } from "./mfa/policy.js";
+import { userRequiresMfa, userHasConfirmedTotp, userHasUnacknowledgedBackupCodes } from "./mfa/policy.js";
 import { validateTrustedDevice, createTrustedDevice } from "./mfa/trusted-device.js";
 import { findBackupRecoveryRowId } from "./mfa/backup-recovery.js";
 import { findEmergencyRecoveryRowId } from "./mfa/emergency-recovery.js";
@@ -92,8 +92,18 @@ export async function login(
     }
   }
 
-  if (stage === SESSION_STAGE.FULL && user.must_change_password) {
-    next = LOGIN_NEXT.CHANGE_PASSWORD;
+  // Forced password change and backup-code acknowledgment are enforced as
+  // constrained session stages (not just client-side `next` hints) so no HTTP
+  // client can reach protected routes while either step is still owed (IAM-001,
+  // IAM-002). MFA-required users hit these gates after MFA, at promotion time.
+  if (stage === SESSION_STAGE.FULL) {
+    if (await userHasUnacknowledgedBackupCodes(prisma, user.id)) {
+      stage = SESSION_STAGE.BACKUP_CODES_REQUIRED;
+      next = LOGIN_NEXT.BACKUP_CODES_REQUIRED;
+    } else if (user.must_change_password) {
+      stage = SESSION_STAGE.CHANGE_PASSWORD_REQUIRED;
+      next = LOGIN_NEXT.CHANGE_PASSWORD;
+    }
   }
 
   const { session, rawToken } = await createSession(prisma, {
@@ -130,6 +140,8 @@ export interface CompleteMfaInput {
 export interface CompleteMfaResult {
   ok: boolean;
   trustedDeviceRawToken?: string;
+  /** Stage the session reached after promotion (e.g. `backup_codes_required` when codes still owed). */
+  stage?: SessionStage;
 }
 
 type CompleteMfaTxResult =
@@ -139,6 +151,7 @@ type CompleteMfaTxResult =
       method: MfaMethod;
       recoveryMethod?: "backup" | "emergency";
       trustedDeviceRawToken?: string;
+      stage: SessionStage;
     };
 
 async function completeMfaInTransaction(
@@ -163,8 +176,13 @@ async function completeMfaInTransaction(
 
   if (!totpOk && !recoveryRowId) return { ok: false, reason: "invalid_code" };
 
-  const promoted = await promoteSessionToFull(tx, sessionId, userId);
-  if (!promoted) return { ok: false, reason: "session_not_promoted" };
+  if (recoveryRowId) {
+    const consumed = await consumeRecoveryRow(tx, recoveryRowId);
+    if (!consumed) return { ok: false, reason: "recovery_consume_conflict" };
+  }
+
+  const promotedStage = await promoteSessionToFull(tx, sessionId, userId);
+  if (!promotedStage) return { ok: false, reason: "session_not_promoted" };
 
   let method: MfaMethod;
   if (totpOk) {
@@ -173,11 +191,6 @@ async function completeMfaInTransaction(
     method = recoveryMethod;
   } else {
     return { ok: false, reason: "invalid_code" };
-  }
-
-  if (recoveryRowId) {
-    const consumed = await consumeRecoveryRow(tx, recoveryRowId);
-    if (!consumed) return { ok: false, reason: "recovery_consume_conflict" };
   }
 
   if (input.rememberDevice) {
@@ -189,11 +202,17 @@ async function completeMfaInTransaction(
         userAgent: input.userAgent,
         label: input.deviceLabel,
       });
-      return { ok: true, method, recoveryMethod: recoveryMethod ?? undefined, trustedDeviceRawToken: rawToken };
+      return {
+        ok: true,
+        method,
+        recoveryMethod: recoveryMethod ?? undefined,
+        trustedDeviceRawToken: rawToken,
+        stage: promotedStage,
+      };
     }
   }
 
-  return { ok: true, method, recoveryMethod: recoveryMethod ?? undefined };
+  return { ok: true, method, recoveryMethod: recoveryMethod ?? undefined, stage: promotedStage };
 }
 
 /** Emit MFA audit events after the DB transaction commits (success paths only). */
@@ -222,7 +241,8 @@ function emitMfaAudit(
 
 /**
  * Complete MFA step: TOTP or backup/emergency recovery code.
- * Promotes session to full when code is valid; recovery codes are consumed only after promotion.
+ * Promotes session when the code is valid; recovery codes are consumed before
+ * promotion so a consume race cannot leave a promoted session behind.
  */
 export async function completeMfa(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -239,7 +259,11 @@ export async function completeMfa(
   emitMfaAudit(audit, input, txResult);
 
   if (!txResult.ok) return { ok: false };
-  return { ok: true, trustedDeviceRawToken: txResult.trustedDeviceRawToken };
+  return {
+    ok: true,
+    trustedDeviceRawToken: txResult.trustedDeviceRawToken,
+    stage: txResult.stage,
+  };
 }
 
 /** Post-MFA / full-session next step when password change may be required. */

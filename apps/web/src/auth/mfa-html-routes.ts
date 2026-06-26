@@ -15,6 +15,7 @@ import {
   BACKUP_RECOVERY_CODE_COUNT,
   verifyBackupRecoveryCodesSet,
   regenerateBackupRecoveryCodes,
+  markBackupCodesAcknowledged,
 } from "@admitto/auth";
 import {
   getMfaEnrollPageSecurityHeaders,
@@ -32,6 +33,7 @@ import {
   stashEnrollmentBackupCodes,
   submittedCodesMatchStashedEnrollmentBackup,
 } from "./enrollment-backup-cache.js";
+import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { setTrustedDeviceCookie, clearSessionCookie } from "./routes.js";
@@ -210,6 +212,18 @@ export async function handlePostMfaVerify(
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
 
+  // User still owes backup-code acknowledgment — route to the backup-codes step
+  // instead of granting full access (IAM-002).
+  if (result.stage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {
+    await ensureEnrollmentBackupCodesStashed(db, partial.sessionId, partial.userId);
+    const next = resolveOptionalSafeRedirectPath(form["next"] ?? c.req.query("next"));
+    const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
+    return c.redirect(`/mfa/enroll/backup-codes${nextQuery}`, 302);
+  }
+  if (result.stage === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
+    return c.redirect("/change-password", 302);
+  }
+
   return redirectAfterFullEnrollment(c, db, partial.userId, partial.sessionId, form["next"]);
 }
 
@@ -321,11 +335,13 @@ export async function handlePostMfaEnroll(
 }
 
 /** GET /mfa/enroll/backup-codes — show one-time backup recovery codes. */
-export function handleGetMfaEnrollBackupCodes(c: Context): Response {
+export async function handleGetMfaEnrollBackupCodes(c: Context, db: PrismaClient): Promise<Response> {
   const partial = c.get("partialAuth");
   if (partial.stage !== SESSION_STAGE.BACKUP_CODES_REQUIRED) {
     return c.redirect("/login", 302);
   }
+
+  await ensureEnrollmentBackupCodesStashed(db, partial.sessionId, partial.userId);
 
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
   return htmlEnrollResponse(c, renderBackupCodesPageForSession(partial.sessionId, undefined, next));
@@ -356,13 +372,22 @@ export async function handlePostMfaEnrollBackupCodes(
     );
   }
 
-  const promoted = await promoteSessionToFull(db, partial.sessionId, partial.userId);
+  // Record acknowledgment and promote atomically so a DB fault cannot leave
+  // codes acknowledged while the session stays in backup_codes_required.
+  const promoted = await db.$transaction(async (tx) => {
+    await markBackupCodesAcknowledged(tx, partial.userId);
+    return promoteSessionToFull(tx, partial.sessionId, partial.userId);
+  });
   if (!promoted) {
     return htmlEnrollResponse(
       c,
       renderBackupCodesPageForSession(partial.sessionId, "Could not complete setup. Try again.", next),
       401,
     );
+  }
+  if (promoted === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
+    clearEnrollmentBackupCodes(partial.sessionId);
+    return c.redirect("/change-password", 302);
   }
 
   return redirectAfterFullEnrollment(c, db, partial.userId, partial.sessionId, form["next"]);

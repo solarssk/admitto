@@ -5,6 +5,7 @@ import {
   createUser,
   hashPassword,
   normalizeEmail,
+  PASSWORD_MIN_LENGTH,
   resetUserMfa,
   revokeAllTrustedDevicesForUser,
   revokeUserAuthState,
@@ -18,8 +19,6 @@ import {
   assertLastSuperadminRemovalAllowed,
   LastSuperadminError,
 } from "./users-lockout-guards.js";
-
-const MIN_PASSWORD_LEN = 8;
 
 async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response | null> {
   const auth = c.get("auth");
@@ -273,7 +272,7 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
   const mustChange = body?.must_change_password === true;
 
   const email = normalizeEmail(emailRaw);
-  if (!email || password.length < MIN_PASSWORD_LEN) {
+  if (!email || password.length < PASSWORD_MIN_LENGTH) {
     return c.json({ error: "invalid_request" }, 400);
   }
 
@@ -419,14 +418,35 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
   });
   if (existing) return c.json({ code: "already_assigned" }, 409);
 
-  const assignment = await db.roleAssignment.create({
-    data: {
-      user_id: id,
-      role: parsed.role,
-      scope_type: parsed.scopeType,
-      scope_id: parsed.scopeId,
-    },
-  });
+  let assignment;
+  try {
+    assignment = await db.roleAssignment.create({
+      data: {
+        user_id: id,
+        role: parsed.role,
+        scope_type: parsed.scopeType,
+        scope_id: parsed.scopeId,
+      },
+    });
+  } catch (err) {
+    // The partial unique index allows at most one instance-scoped superadmin;
+    // a second grant collides on P2002. Surface a descriptive 409 instead of a
+    // generic 500 (IAM-004).
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const target = String(err.meta?.target ?? "");
+      const isDuplicateSameGrant = target.includes("user_id");
+      if (
+        parsed.role === "superadmin" &&
+        parsed.scopeType === "instance" &&
+        parsed.scopeId === null &&
+        (target.includes("RoleAssignment_single_superadmin") || !isDuplicateSameGrant)
+      ) {
+        return c.json({ code: "single_superadmin_limit" }, 409);
+      }
+      return c.json({ code: "already_assigned" }, 409);
+    }
+    throw err;
+  }
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -587,7 +607,7 @@ export async function handlePostResetUserPassword(c: Context, db: PrismaClient):
 
   const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
   const newPassword = typeof body?.new_password === "string" ? body.new_password : "";
-  if (newPassword.length < MIN_PASSWORD_LEN) return c.json({ error: "invalid_request" }, 400);
+  if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
 
   const user = await db.user.findUnique({ where: { id }, select: { id: true } });
   if (!user) return c.json({ error: "not_found" }, 404);
