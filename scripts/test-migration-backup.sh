@@ -103,5 +103,22 @@ if [ "${applied:-0}" != "0" ]; then
 fi
 echo "Scenario C OK"
 
+echo "== Scenario D: backfill timeout → app exits =="
+cleanup
+trap - EXIT
+prepare_env
+
+$COMPOSE up -d db redis --wait
+
+if $COMPOSE run --rm \
+  -e PATH="/opt/fake-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+  -v "$ROOT/scripts/fixtures/fake-timeout:/opt/fake-bin:ro" \
+  --no-deps app; then
+  echo "expected app container to fail when backfill times out" >&2
+  exit 1
+fi
+
+echo "Scenario D OK"
+
 cleanup
 echo "test-migration-backup.sh: all passed"

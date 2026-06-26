@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+if [ "${1:-}" = "120" ]; then
+  echo "fake timeout: simulating timeout for: $*" >&2
+  exit 124
+fi
+
+exec /usr/bin/timeout "$@"
