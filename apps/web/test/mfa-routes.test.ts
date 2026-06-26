@@ -706,6 +706,58 @@ describe("IAM-001/IAM-003 forced password change is enforced at the session laye
       });
     }
   });
+
+  it("MFA user with must_change_password gets change_password after TOTP verify", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: admin!.id,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+        backup_codes_acknowledged_at: new Date(),
+      },
+    });
+    await prisma.user.update({
+      where: { id: admin!.id },
+      data: { must_change_password: true },
+    });
+
+    try {
+      const loginRes = await app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+      });
+      expect(loginRes.status).toBe(200);
+      expect((await loginRes.json()) as { next: string }).toEqual(
+        expect.objectContaining({ next: LOGIN_NEXT.MFA_REQUIRED }),
+      );
+
+      const verifyRes = await app.request("/api/auth/mfa/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+        body: JSON.stringify({ code: generateTotpCode(secret) }),
+      });
+      expect(verifyRes.status).toBe(200);
+      expect((await verifyRes.json()) as { next: string }).toEqual(
+        expect.objectContaining({ next: LOGIN_NEXT.CHANGE_PASSWORD }),
+      );
+
+      const blocked = await app.request("/api/auth/me", {
+        headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      });
+      expect(blocked.status).toBe(401);
+    } finally {
+      await prisma.user.update({
+        where: { id: admin!.id },
+        data: { must_change_password: false },
+      });
+      await resetAdminAuthLabState(admin!.id);
+    }
+  });
 });
 
 describe("logout revokes trusted device", () => {

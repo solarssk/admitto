@@ -5,6 +5,7 @@ import {
   createUser,
   hashPassword,
   normalizeEmail,
+  PASSWORD_MIN_LENGTH,
   resetUserMfa,
   revokeAllTrustedDevicesForUser,
   revokeUserAuthState,
@@ -18,8 +19,6 @@ import {
   assertLastSuperadminRemovalAllowed,
   LastSuperadminError,
 } from "./users-lockout-guards.js";
-
-const MIN_PASSWORD_LEN = 8;
 
 async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response | null> {
   const auth = c.get("auth");
@@ -273,7 +272,7 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
   const mustChange = body?.must_change_password === true;
 
   const email = normalizeEmail(emailRaw);
-  if (!email || password.length < MIN_PASSWORD_LEN) {
+  if (!email || password.length < PASSWORD_MIN_LENGTH) {
     return c.json({ error: "invalid_request" }, 400);
   }
 
@@ -608,7 +607,7 @@ export async function handlePostResetUserPassword(c: Context, db: PrismaClient):
 
   const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
   const newPassword = typeof body?.new_password === "string" ? body.new_password : "";
-  if (newPassword.length < MIN_PASSWORD_LEN) return c.json({ error: "invalid_request" }, 400);
+  if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
 
   const user = await db.user.findUnique({ where: { id }, select: { id: true } });
   if (!user) return c.json({ error: "not_found" }, 404);

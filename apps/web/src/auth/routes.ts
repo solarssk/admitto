@@ -465,11 +465,12 @@ export async function handleTotpBackupCodesComplete(c: Context, db: PrismaClient
     );
   }
 
-  // Record acknowledgment before promotion so the session can leave the
-  // backup-codes stage (IAM-002).
-  await markBackupCodesAcknowledged(db, partial.userId);
-
-  const promoted = await promoteSessionToFull(db, partial.sessionId, partial.userId);
+  // Record acknowledgment and promote atomically so a DB fault cannot leave
+  // codes acknowledged while the session stays in backup_codes_required.
+  const promoted = await db.$transaction(async (tx) => {
+    await markBackupCodesAcknowledged(tx, partial.userId);
+    return promoteSessionToFull(tx, partial.sessionId, partial.userId);
+  });
   if (!promoted) {
     return c.json(AUTH_ERROR, 401);
   }
