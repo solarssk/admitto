@@ -393,7 +393,7 @@ describe("auth retention purge", () => {
     });
     expect(await prisma.session.count({ where: { id: { startsWith: "session-retention-" } } })).toBe(3);
 
-    const purged = await purgeAuthRetention(prisma, { now });
+    const purged = await purgeAuthRetention(prisma, { now, batchSize: 1 });
     expect(purged).toEqual({
       sessions: baseline.sessions + 2,
       trustedDevices: baseline.trustedDevices + 2,

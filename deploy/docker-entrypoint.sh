@@ -215,6 +215,8 @@ run_as_node_cmd node node_modules/prisma/build/index.js migrate deploy --schema 
 log "running agency public_ref backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-public-ref.js
 log "purging expired/revoked auth sessions and trusted devices with 120s timeout"
-run_as_node_cmd timeout 120 node packages/auth/dist/cli.js purge-auth-retention
+if ! run_as_node_cmd timeout 120 node packages/auth/dist/cli.js purge-auth-retention; then
+  log "warning: auth retention purge failed or timed out; continuing startup"
+fi
 
 run_as_node node apps/web/dist/src/index.js
