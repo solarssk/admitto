@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseAttendees } from "./parser.js";
 import { commitImport } from "./importer.js";
+import { formatSkippedImportRow } from "./cli-output.js";
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -70,7 +71,7 @@ async function main() {
 
   if (summary.skipped.length > 0) {
     console.log(`\nSkipped:`);
-    for (const s of summary.skipped) console.log(`  ${s.email} — ${s.reason}`);
+    for (const s of summary.skipped) console.log(formatSkippedImportRow(s));
   }
 
   if (!commit) {

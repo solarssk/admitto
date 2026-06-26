@@ -420,6 +420,13 @@ describe("POST /api/admin/users functional", () => {
     const roles = await prisma.roleAssignment.count({ where: { user_id: row!.id } });
     expect(roles).toBe(0);
 
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_USERS, action_type: "user_created" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.metadata).toMatchObject({ userId: row!.id, email: "c***@example.com" });
+    expect(JSON.stringify(audit?.metadata)).not.toContain(email);
+
     await prisma.user.delete({ where: { email } });
   });
 

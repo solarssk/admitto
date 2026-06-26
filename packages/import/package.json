@@ -20,6 +20,7 @@
     "import": "tsx src/cli.ts"
   },
   "dependencies": {
+    "@admitto/auth": "*",
     "@admitto/crypto": "*",
     "@admitto/db": "*",
     "@admitto/shared": "*",
