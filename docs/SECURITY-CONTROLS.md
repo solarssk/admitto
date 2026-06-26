@@ -236,11 +236,27 @@ Be explicit with auditors about what is **out of product scope** today:
   length only; operators should generate with `openssl rand -hex 32` (documented in `.env.example`).
 - Rate limits are application-layer; high-volume DoS may still require edge WAF/CDN or network
   controls in front of the origin.
-- **OIDC roles are reconciled at login only (JIT):** group→role mappings are evaluated on each
-  OIDC sign-in. If a user is removed from a group in the identity provider, their elevated Admitto
-  role persists until their next OIDC login or until the session expires / is revoked. To revoke
-  immediately, revoke the user's sessions (`POST /api/admin/users/:id/revoke-sessions`) or shorten
-  the admin session TTL.
+- **OIDC roles are reconciled at login only (JIT):** group→role mappings are fully evaluated on
+  each OIDC sign-in, including removal of grants no longer authorized by IdP group membership.
+  If a user is removed from a group in the identity provider, an already-active elevated Admitto
+  session persists until the next OIDC login, session expiry, or session revocation. For
+  deployments where OIDC group mappings grant admin/superadmin roles, set `SESSION_TTL_ADMIN_MS`
+  to **8h or less** (`28800000`) so the stale-session window is bounded.
+
+  Offboarding runbook for OIDC-managed elevated roles:
+  1. Remove the user from the relevant group in the IdP.
+  2. In Admitto, revoke the user's active sessions (`POST /api/admin/users/:id/revoke-sessions`).
+  3. On the next OIDC login, `applyOidcGroupRoleMappings` removes grants no longer authorized by
+     current IdP group membership.
+  4. In session-cookie OIDC mode, revoking the user's Admitto sessions in step 2 is sufficient for
+     immediate access removal: an OIDC-sourced grant without an active session grants nothing. In
+     Cloudflare Access mode, also remove or block the user at the Cloudflare Access / IdP policy
+     layer because a valid CF Access JWT can authenticate staff requests without an Admitto
+     `Session` row. The grant row is removed on the next OIDC/CF Access reconciliation.
+     OIDC-sourced grants cannot be removed through the manual role revoke action (`managed_by_idp`);
+     if the grant row must disappear before the user's next authentication, temporarily remove or
+     disable the relevant group→role mapping rule, complete reconciliation, then re-enable the rule
+     if still needed.
 
 ### Penetration test verification (operator checklist)
 
