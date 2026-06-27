@@ -44,6 +44,8 @@ contains only a random, unguessable identifier — no name, email, or other PII.
 Operational data (attendees, check-ins, email delivery records) should be deleted or
 anonymised **30–60 days after the event**. Export before deletion if required for reporting.
 
+| Mechanism | Status |
+|-----------|--------|
 | Policy documented | Yes (this document + GDPR one-pager) |
 | Organizer export before purge | Admin UI — **Attendees → Export** (CSV/XLSX/PDF; v0.4.2+) |
 | Automated purge job | Partial — auth-state and email delivery snapshot cleanup run best-effort at container startup; full attendee PII purge remains planned |

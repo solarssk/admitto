@@ -1,6 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { nullifyDeliverySnapshots } from "../src/retention.js";
+import {
+  nullifyDeliverySnapshots,
+  resolveDeliverySnapshotRetentionDays,
+} from "../src/retention.js";
 import { resetDb } from "./resetDb.js";
 
 const prisma = new PrismaClient();
@@ -18,6 +21,7 @@ async function seedDelivery(input: {
   purpose?: "initial" | "resend";
   status: string;
   sentAt?: Date | null;
+  deliveredAt?: Date | null;
   acceptedAt?: Date | null;
   failedAt?: Date | null;
   retryable?: boolean | null;
@@ -37,6 +41,7 @@ async function seedDelivery(input: {
       rendered_html: input.renderedHtml ?? "<p>Hello Guest</p>",
       rendered_subject: input.renderedSubject ?? "Your ticket",
       sent_at: input.sentAt ?? null,
+      delivered_at: input.deliveredAt ?? null,
       accepted_at: input.acceptedAt ?? null,
       failed_at: input.failedAt ?? null,
       retryable: input.retryable ?? null,
@@ -116,6 +121,18 @@ describe("nullifyDeliverySnapshots", () => {
       sentAt: daysAgo(90),
     });
     await seedDelivery({
+      id: "delivery-retention-stale-delivered",
+      status: "delivered",
+      sentAt: null,
+      deliveredAt: daysAgo(90),
+    });
+    await seedDelivery({
+      id: "delivery-retention-stale-accepted",
+      status: "accepted",
+      sentAt: null,
+      acceptedAt: daysAgo(90),
+    });
+    await seedDelivery({
       id: "delivery-retention-stale-failed",
       status: "failed",
       failedAt: daysAgo(75),
@@ -137,7 +154,7 @@ describe("nullifyDeliverySnapshots", () => {
       retentionDays: RETENTION_DAYS,
       batchSize: 1,
     });
-    expect(result.deliveries).toBe(2);
+    expect(result.deliveries).toBe(4);
 
     const staleSent = await prisma.emailDelivery.findUniqueOrThrow({
       where: { id: "delivery-retention-stale-sent" },
@@ -145,6 +162,18 @@ describe("nullifyDeliverySnapshots", () => {
     expect(staleSent.rendered_html).toBeNull();
     expect(staleSent.rendered_subject).toBeNull();
     expect(staleSent.recipient_email).toBe("guest@example.com");
+
+    const staleDelivered = await prisma.emailDelivery.findUniqueOrThrow({
+      where: { id: "delivery-retention-stale-delivered" },
+    });
+    expect(staleDelivered.rendered_html).toBeNull();
+    expect(staleDelivered.rendered_subject).toBeNull();
+
+    const staleAccepted = await prisma.emailDelivery.findUniqueOrThrow({
+      where: { id: "delivery-retention-stale-accepted" },
+    });
+    expect(staleAccepted.rendered_html).toBeNull();
+    expect(staleAccepted.rendered_subject).toBeNull();
 
     const staleFailed = await prisma.emailDelivery.findUniqueOrThrow({
       where: { id: "delivery-retention-stale-failed" },
@@ -162,5 +191,30 @@ describe("nullifyDeliverySnapshots", () => {
       where: { id: "delivery-retention-queued" },
     });
     expect(queued.rendered_html).toBe("<p>Hello Guest</p>");
+
+    const secondRun = await nullifyDeliverySnapshots(prisma, {
+      now: NOW,
+      retentionDays: RETENTION_DAYS,
+    });
+    expect(secondRun.deliveries).toBe(0);
+  });
+
+  it("resolves retention days from env with safe fallback", () => {
+    expect(resolveDeliverySnapshotRetentionDays({})).toBe(60);
+    expect(
+      resolveDeliverySnapshotRetentionDays({
+        EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS: "90",
+      }),
+    ).toBe(90);
+    expect(
+      resolveDeliverySnapshotRetentionDays({
+        EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS: "abc",
+      }),
+    ).toBe(60);
+    expect(
+      resolveDeliverySnapshotRetentionDays({
+        EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS: "0",
+      }),
+    ).toBe(60);
   });
 });

@@ -17,6 +17,8 @@ export interface NullifyDeliverySnapshotResult {
 const DEFAULT_RETENTION_DAYS = 60;
 const DEFAULT_PURGE_BATCH_SIZE = 1000;
 
+// "accepted" means the provider acknowledged the delivery. After the retention
+// window, a row stuck there is treated as terminal for data-minimisation purposes.
 const SUCCESS_TERMINAL_STATUSES = ["accepted", "sent", "delivered"] as const;
 const FAILURE_TERMINAL_STATUSES = ["failed", "bounced", "rejected"] as const;
 
@@ -71,6 +73,33 @@ function staleSnapshotWhere(cutoff: Date): Prisma.EmailDeliveryWhereInput {
   };
 }
 
+/** Transaction clients are already atomic; full Prisma clients need an explicit transaction. */
+function canOpenTransaction(
+  prisma: PrismaClient | Prisma.TransactionClient,
+): prisma is PrismaClient {
+  return "$transaction" in prisma;
+}
+
+/** Clear snapshots and retryability together so interruption cannot orphan retryable rows. */
+async function nullifyDeliverySnapshotBatch(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  ids: string[],
+): Promise<number> {
+  const updated = await prisma.emailDelivery.updateMany({
+    where: { id: { in: ids } },
+    data: { rendered_html: null, rendered_subject: null },
+  });
+  await prisma.emailDelivery.updateMany({
+    where: {
+      id: { in: ids },
+      status: { in: [...FAILURE_TERMINAL_STATUSES] },
+      retryable: true,
+    },
+    data: { retryable: false },
+  });
+  return updated.count;
+}
+
 /** Null rendered bodies in bounded batches to avoid one large startup update. */
 async function nullifyDeliverySnapshotBatches(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -87,19 +116,11 @@ async function nullifyDeliverySnapshotBatches(
     });
     if (rows.length === 0) return count;
 
-    const updated = await prisma.emailDelivery.updateMany({
-      where: { id: { in: rows.map((row) => row.id) } },
-      data: { rendered_html: null, rendered_subject: null },
-    });
-    await prisma.emailDelivery.updateMany({
-      where: {
-        id: { in: rows.map((row) => row.id) },
-        status: { in: [...FAILURE_TERMINAL_STATUSES] },
-        retryable: true,
-      },
-      data: { retryable: false },
-    });
-    count += updated.count;
+    const ids = rows.map((row) => row.id);
+    const updated = canOpenTransaction(prisma)
+      ? await prisma.$transaction((tx) => nullifyDeliverySnapshotBatch(tx, ids))
+      : await nullifyDeliverySnapshotBatch(prisma, ids);
+    count += updated;
 
     if (rows.length < batchSize) return count;
   }
