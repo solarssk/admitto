@@ -4,6 +4,7 @@
  *   npm run cli -w @admitto/mail-delivery -- test-send --to you@example.com --event <id>
  *   npm run cli -w @admitto/mail-delivery -- config-describe --event <id>
  *   npm run cli -w @admitto/mail-delivery -- deliveries --event <id> [--status accepted]
+ *   npm run cli -w @admitto/mail-delivery -- nullify-delivery-snapshots [--dry-run]
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +24,10 @@ import {
 import { loadEnvFile } from "./loadDotEnv.js";
 import { listDeliveries } from "./listDeliveries.js";
 import { sendTestEmail } from "./testSend.js";
+import {
+  nullifyDeliverySnapshots,
+  resolveDeliverySnapshotRetentionDays,
+} from "./retention.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -59,11 +64,16 @@ function requireArg(name: string): string {
 }
 
 /** Print CLI usage and exit with code 1. */
+function hasFlag(name: string): boolean {
+  return process.argv.includes(`--${name}`);
+}
+
 function usage(): never {
   console.error(`Usage:
   test-send --to <addr> --event <id>
   config-describe --event <id>
-  deliveries --event <id> [--status <status>] [--purpose initial|resend] [--attendee <id>]`);
+  deliveries --event <id> [--status <status>] [--purpose initial|resend] [--attendee <id>]
+  nullify-delivery-snapshots [--dry-run]`);
   process.exit(1);
 }
 
@@ -99,6 +109,18 @@ async function cmdConfigDescribe(prisma: PrismaClient): Promise<number> {
   const eventId = requireArg("event");
   const desc = await getMailConfigDescription(eventId, prisma);
   console.log(serializeConfigDescriptionForCli(desc));
+  return 0;
+}
+
+/** Run `nullify-delivery-snapshots [--dry-run]`. */
+async function cmdNullifyDeliverySnapshots(prisma: PrismaClient): Promise<number> {
+  const dryRun = hasFlag("dry-run");
+  const retentionDays = resolveDeliverySnapshotRetentionDays(process.env);
+  const result = await nullifyDeliverySnapshots(prisma, { dryRun, retentionDays });
+  const verb = dryRun ? "Would clear snapshots on" : "Cleared snapshots on";
+  console.log(
+    `${verb} ${result.deliveries} terminal email deliveries older than ${retentionDays} days.`,
+  );
   return 0;
 }
 
@@ -165,6 +187,9 @@ async function main() {
         break;
       case "deliveries":
         exitCode = await cmdDeliveries(prisma);
+        break;
+      case "nullify-delivery-snapshots":
+        exitCode = await cmdNullifyDeliverySnapshots(prisma);
         break;
       default:
         usage();

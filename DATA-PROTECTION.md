@@ -48,7 +48,7 @@ anonymised **30–60 days after the event**. Export before deletion if required 
 |-----------|--------|
 | Policy documented | Yes (this document + GDPR one-pager) |
 | Organizer export before purge | Admin UI — **Attendees → Export** (CSV/XLSX/PDF; v0.4.2+) |
-| Automated purge job | Planned for a future release |
+| Automated purge job | Partial — auth-state and email delivery snapshot cleanup run best-effort at container startup; full attendee PII purge remains planned |
 
 ## Data subject rights
 

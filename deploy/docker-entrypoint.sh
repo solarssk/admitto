@@ -218,5 +218,9 @@ log "purging expired/revoked auth sessions and trusted devices with 120s timeout
 if ! run_as_node_cmd timeout 120 node packages/auth/dist/cli.js purge-auth-retention; then
   log "warning: auth retention purge failed or timed out; continuing startup"
 fi
+log "nullifying stale email delivery snapshots with 120s timeout"
+if ! run_as_node_cmd timeout 120 node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots; then
+  log "warning: email delivery snapshot retention failed or timed out; continuing startup"
+fi
 
 run_as_node node apps/web/dist/src/index.js

@@ -30,3 +30,11 @@ export { claimInitialDelivery, createResendDelivery } from "./claim.js";
 export type { ClaimResult, FrozenMessage } from "./claim.js";
 export { resolveBaseUrl } from "./baseUrl.js";
 export type { SendTicketEmailsResult } from "./types.js";
+export {
+  nullifyDeliverySnapshots,
+  resolveDeliverySnapshotRetentionDays,
+} from "./retention.js";
+export type {
+  NullifyDeliverySnapshotOptions,
+  NullifyDeliverySnapshotResult,
+} from "./retention.js";

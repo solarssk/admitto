@@ -34,6 +34,7 @@ Requires `DATABASE_URL` (from `.env` in monorepo root, `packages/db/.env`, or th
 npm run cli -w @admitto/mail-delivery -- test-send --to operator@example.com --event <eventId>
 npm run cli -w @admitto/mail-delivery -- config-describe --event <eventId>
 npm run cli -w @admitto/mail-delivery -- deliveries --event <eventId> [--status accepted] [--purpose initial]
+npm run cli -w @admitto/mail-delivery -- nullify-delivery-snapshots [--dry-run]
 ```
 
 Low-level transport-only sends (no event/template) remain in `@admitto/mailer`: `npm run send -w @admitto/mailer`.
@@ -50,6 +51,13 @@ Initial sends use a PostgreSQL partial unique index on `(attendee_id, event_id) 
 
 - **Retry** — same `EmailDelivery` row, frozen `rendered_subject` / `rendered_html`.
 - **Resend** — new row with `purpose = 'resend'`, fresh render.
+
+## Snapshot retention
+
+Terminal deliveries keep frozen HTML/subject for retry and support. After 60 days (override with
+`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`), container startup and
+`nullify-delivery-snapshots` clear `rendered_html` / `rendered_subject` while preserving delivery
+log metadata.
 
 ## Tests
 
