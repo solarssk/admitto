@@ -19,7 +19,7 @@ flowchart TD
     F --> G[Deliver via secure channel]
     E -- Erasure --> H{Legal confirms erasure\nno retention exception?}
     H -- No --> I[Explain retention exception\nDocument decision]
-    H -- Yes --> J[Delete / anonymise record\nRemove copies from exports + backups]
+    H -- Yes --> J[DELETE attendee via admin API\nper DSAR procedure]
     J --> K([Document completion date\n+ responsible person])
     G --> K
 ```
@@ -46,17 +46,19 @@ flowchart TD
 ## 4. Erasure
 
 - After legal confirms erasure is required and no retention exception applies:
-  1. Delete or anonymise the attendee record in Admitto (manual DB operation or admin workflow
-     when available).
+  1. Delete the attendee record via the admin **`DELETE` API** (preferred — removes dependent
+     delivery, wallet, and check-in rows in one transaction and writes an audit log entry):
+     `DELETE /api/admin/events/:eventId/attendees/:id` with an authenticated staff session and
+     CSRF token (same session model as other admin mutations). The admin SPA does not expose a
+     delete button yet; use your internal tooling, runbook script, or API client.
   2. Remove copies from local exports, mail logs, and backup retention per your backup policy.
 - Document completion date and responsible person.
 
-### Manual DB erasure order
+### Manual DB erasure (fallback)
 
-Until Admitto ships an attendee erasure endpoint, operators handling erasure by direct database
-operation must remove dependent rows before deleting the attendee. In particular,
-`EmailDelivery`, `WalletPass`, and `CheckIn` reference attendees with `ON DELETE RESTRICT`.
-Sent delivery rows can include rendered ticket email HTML.
+If the API is unavailable, operators may erase by direct database operation. Dependent rows must be
+removed before the attendee because `EmailDelivery`, `WalletPass`, and `CheckIn` reference attendees
+with `ON DELETE RESTRICT`. Sent delivery rows can include rendered ticket email HTML.
 
 Run the operation in one transaction and scope it to the event and attendee:
 

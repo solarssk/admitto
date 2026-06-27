@@ -51,17 +51,17 @@ periods for different categories are intentional — not an inconsistency.
 | Login sessions, trusted devices | Product — automatic | Best-effort purge at container startup when expired/revoked |
 | Email bodies (`rendered_html`, `rendered_subject`) | Product — automatic | Nullified **60 days** after terminal delivery (`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) |
 | IP addresses in admin audit log and check-in history | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge |
-| Event attendee list (PII) | Operator | Manual export then delete via admin UI |
+| Event attendee list (PII) | Operator | Export via admin UI; erasure via `DELETE` API per [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md) (no delete button in SPA yet) |
 
 Automated post-event attendee purge is planned for **v1.0**. Until then, use **Attendees → Export**,
-then delete records per your retention policy. Single-attendee erasure:
-`DELETE /api/admin/events/:eventId/attendees/:id` (see [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md)).
+then erase individual records with `DELETE /api/admin/events/:eventId/attendees/:id` as described in
+[DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md). Bulk post-event cleanup has no admin UI workflow yet.
 
 | Mechanism | Status |
 |-----------|--------|
 | Policy documented | Yes (this document + GDPR one-pager) |
 | Organizer export before purge | Admin UI — **Attendees → Export** (CSV/XLSX/PDF; v0.4.2+) |
-| Per-attendee erasure | Admin UI / `DELETE` API (v0.4.6+) |
+| Per-attendee erasure | `DELETE` API only (v0.4.6+); admin SPA delete action planned for a follow-up release |
 | Automated purge job | Partial — auth-state and email delivery snapshot cleanup at container startup; full attendee PII purge planned for v1.0 |
 
 ## Data subject rights
