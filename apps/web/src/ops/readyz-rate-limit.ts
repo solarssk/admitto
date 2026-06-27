@@ -1,5 +1,5 @@
 import type { Context, Next } from "hono";
-import { logRateLimitExceeded } from "@admitto/auth";
+import { logRateLimitExceeded } from "@admitto/auth/audit";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
