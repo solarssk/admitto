@@ -15,6 +15,10 @@
       "types": "./dist/constants.d.ts",
       "default": "./dist/constants.js"
     },
+    "./audit": {
+      "types": "./dist/audit.d.ts",
+      "default": "./dist/audit.js"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"

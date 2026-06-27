@@ -132,7 +132,8 @@ On every `app` start, `deploy/docker-entrypoint.sh` runs **fail-fast** (any step
 2. **If pending migrations** and backup not disabled: pre-migration `pg_dump` to the `migration_backups` volume (`/backups/pre-migration-<UTC>.sql.gz`, `gzip -t` integrity check, `install -m 600`). If `pg_dump` fails → **no migrate**. Routine restarts with no pending migrations skip the dump.
 3. `prisma migrate deploy` — idempotent schema migrations (automatic; operators never run this by hand)
 4. `backfill-public-ref.js` — idempotent agency `public_ref` backfill (safe to re-run; throws if DB/schema incompatible)
-5. `node apps/web/dist/src/index.js` — HTTP server (drops from root to `node` user when needed)
+5. Best-effort retention cleanup (120s timeout each, non-fatal on failure): expired/revoked auth sessions and trusted devices (`purge-auth-retention`), then stale email delivery HTML/subject snapshots (`nullify-delivery-snapshots`)
+6. `node apps/web/dist/src/index.js` — HTTP server (drops from root to `node` user when needed)
 
 **Operator upgrade:** pull the new image and `docker compose up -d` — migrations apply automatically with a restore point when needed. No manual migration step.
 

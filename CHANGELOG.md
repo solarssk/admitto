@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-06-27
+
 ### Changed
 - Admin and operator check-in: desktop camera renders inline in the main panel (stats sidebar stays visible); mobile keeps fullscreen camera overlay; operator mobile autostart with "Use camera" button to reopen after close; desktop inline shows lookup errors in the scan bar area and renders full AttendeeCard (items, notes, undo) below the camera preview
+- Attendee note modal includes a one-line reminder not to record medical, dietary, or other sensitive personal data
+- Staff SPA Content-Security-Policy allows HTTPS branding logo URLs in setup wizard and settings preview (aligned with existing `font-src https:` for theme fonts)
+- Privacy docs: retention tables distinguish product-automated cleanup (sessions, email snapshots) from operator-controlled data (IP logs, attendee lists); OIDC IdP group membership documented; attendee erasure documented as API-only (no SPA delete button)
+- `SECURITY.md`: Trivy HIGH remediation SLA (30 days when fix available); blocking HIGH gate deferred to v1.0
+- `deploy/README.md`: container startup documents auth-state and email snapshot retention purge steps
+- README: MFA first-login flow notes backup-code acknowledgment is persisted in the database
 
 ### Added
 - Account self-service at `/account` for all signed-in staff: profile, password change (re-auth), TOTP enrollment/reset, and session management (`/api/account/*`)
@@ -23,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Admin attendee erasure now has a GDPR-ready `DELETE /api/admin/events/:eventId/attendees/:id` path that removes dependent delivery, wallet, and check-in rows in one transaction while preserving an event-scoped audit entry (PRIV-001, PRIV-004)
 
 ### Fixed
+- Check-in camera result panel shows the actual admission timestamp on repeat scans instead of a hardcoded "Entered earlier today" subtitle
+- Attendee note modal privacy hint is linked to the textarea via `aria-describedby` for screen readers
+- Ops health/readiness rate limiters import audit logging via `@admitto/auth/audit` so unit tests do not load the full auth barrel (flaky `PrismaClient` init in CI)
 - Account page (`/account`): profile Save disabled when unchanged; live password-confirm mismatch feedback; Spinner loading states; SPA `Link` navigation to account from staff/operator shells
 - `@admitto/auth` `runInTransaction` no longer value-imports `PrismaClient`, avoiding flaky `healthz-rate-limit` unit tests when the auth barrel loads before `prisma generate`
 - First-run `POST /setup` bootstrap race: Serializable transaction re-checks empty user table so only one superadmin can be created
@@ -54,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Printable HTML/PDF event report export now sends a restrictive Content-Security-Policy header (SEC-003)
 - `EmailDelivery.error` sanitization now redacts URLs (e.g. Power Automate webhooks) before persistence (BE-006)
 - REVOKED check-in audit rows are written inside a transaction for consistency with other check-in paths (BE-003)
+- Known limitation: automated post-event attendee PII purge deferred to v1.0 — use Attendees export + per-attendee `DELETE` API (no SPA delete button yet)
+- Known limitation: OIDC group→role reconciliation runs at OIDC login only — shorten admin session TTL and follow offboarding guidance in `SECURITY-CONTROLS.md`
+- Known limitation: Account page TOTP enrollment shows an `otpauth://` URI string; HTML `/mfa/enroll` shows a QR code — SPA QR deferred to v0.4.7
+- Known limitation: ticket token may appear in server access logs when operators open ticket URLs — accepted risk; control via reverse-proxy log retention
 
 ## [0.4.5] - 2026-06-24
 
@@ -416,7 +431,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.5...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.6...HEAD
+[0.4.6]: https://github.com/solarssk/admitto/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/solarssk/admitto/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/solarssk/admitto/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/solarssk/admitto/compare/v0.4.2...v0.4.3

@@ -15,6 +15,7 @@
 | Company / department *(optional)* | Badge display | Personal data |
 | Entry status | Check-in tracking | Operational |
 | Random token / QR code | Ticket identifier — **no personal data embedded** | Non-personal |
+| OIDC IdP group membership (`ExternalIdentity.groups`) | Role mapping at OIDC login | Personal data (access metadata) |
 
 `AttendeeNote.body` is a free-text operator note. It may contain special-category data
 (for example accessibility, dietary, or medical information) if staff enter it. Operators
@@ -41,14 +42,27 @@ contains only a random, unguessable identifier — no name, email, or other PII.
 
 ## Retention
 
-Operational data (attendees, check-ins, email delivery records) should be deleted or
-anonymised **30–60 days after the event**. Export before deletion if required for reporting.
+Retention uses two responsibility layers: **product-automated** cleanup (best-effort at container
+startup) and **operator-controlled** data (export/delete per your policy). Different retention
+periods for different categories are intentional — not an inconsistency.
+
+| Data | Who is responsible | How |
+|---|---|---|
+| Login sessions, trusted devices | Product — automatic | Best-effort purge at container startup when expired/revoked |
+| Email bodies (`rendered_html`, `rendered_subject`) | Product — automatic | Nullified **60 days** after terminal delivery (`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) |
+| IP addresses in admin audit log and check-in history | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge |
+| Event attendee list (PII) | Operator | Export via admin UI; erasure via `DELETE` API per [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md) (no delete button in SPA yet) |
+
+Automated post-event attendee purge is planned for **v1.0**. Until then, use **Attendees → Export**,
+then erase individual records with `DELETE /api/admin/events/:eventId/attendees/:id` as described in
+[DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md). Bulk post-event cleanup has no admin UI workflow yet.
 
 | Mechanism | Status |
 |-----------|--------|
 | Policy documented | Yes (this document + GDPR one-pager) |
 | Organizer export before purge | Admin UI — **Attendees → Export** (CSV/XLSX/PDF; v0.4.2+) |
-| Automated purge job | Partial — auth-state and email delivery snapshot cleanup run best-effort at container startup; full attendee PII purge remains planned |
+| Per-attendee erasure | `DELETE` API only (v0.4.6+); admin SPA delete action planned for a follow-up release |
+| Automated purge job | Partial — auth-state and email delivery snapshot cleanup at container startup; full attendee PII purge planned for v1.0 |
 
 ## Data subject rights
 

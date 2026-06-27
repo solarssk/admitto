@@ -26,6 +26,12 @@
   gap: var(--space-3);
 }
 
+.note-modal__hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
 .note-modal__textarea {
   width: 100%;
   box-sizing: border-box;

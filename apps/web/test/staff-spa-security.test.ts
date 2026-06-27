@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   STAFF_SPA_FONT_SRC,
+  STAFF_SPA_IMG_SRC,
   STAFF_SPA_STYLE_SRC,
   getStaffSpaSecurityHeaders,
 } from "../src/staff-spa.js";
@@ -29,12 +30,20 @@ function collectHttpsOrigins(text: string): Set<string> {
 }
 
 /** Return whether `csp` allows loading resources from `origin` for the given directive. */
-function cspAllowsOrigin(csp: string, directive: "style-src" | "font-src", origin: string): boolean {
+function cspAllowsOrigin(
+  csp: string,
+  directive: "style-src" | "font-src" | "img-src",
+  origin: string,
+): boolean {
   const match = csp.match(new RegExp(`${directive}\\s+([^;]+)`));
   if (!match) return false;
   const sources = match[1]!.split(/\s+/);
   if (sources.includes(origin)) return true;
-  if (directive === "font-src" && sources.includes("https:") && origin.startsWith("https://")) {
+  if (
+    (directive === "font-src" || directive === "img-src") &&
+    sources.includes("https:") &&
+    origin.startsWith("https://")
+  ) {
     return true;
   }
   return false;
@@ -54,6 +63,9 @@ describe("getStaffSpaSecurityHeaders", () => {
       expect(csp).toContain(src);
     }
     for (const src of STAFF_SPA_FONT_SRC) {
+      expect(csp).toContain(src);
+    }
+    for (const src of STAFF_SPA_IMG_SRC) {
       expect(csp).toContain(src);
     }
   });
@@ -93,5 +105,11 @@ describe("getStaffSpaSecurityHeaders", () => {
     expect(csp).toContain("font-src 'self' https:");
     // Regression: wildcard must allow a configured branding host (not branding logic itself).
     expect(cspAllowsOrigin(csp, "font-src", "https://cdn.example.com")).toBe(true);
+  });
+
+  it("keeps img-src https: for optional superadmin branding logos (regression guard)", () => {
+    const csp = getStaffSpaSecurityHeaders()["Content-Security-Policy"]!;
+    expect(csp).toContain("img-src 'self' data: https:");
+    expect(cspAllowsOrigin(csp, "img-src", "https://cdn.example.com")).toBe(true);
   });
 });
