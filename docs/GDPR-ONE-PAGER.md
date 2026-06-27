@@ -48,8 +48,9 @@ If you rely on **legitimate interest** (Art. 6(1)(f) GDPR), your DPO should docu
 | Data | Policy (default design intent) |
 |------|-------------------------------|
 | Event attendee PII | Delete or anonymise **30–60 days after event end** |
+| Email delivery snapshots (`rendered_html`, `rendered_subject`) | Nullified **60 days** after terminal delivery (sent/delivered/failed); delivery log metadata retained |
 | Audit logs | Per customer security policy; minimise personal data in log lines |
-| Automated purge | **Planned** — policy documented now; scheduled job in a future release |
+| Automated purge | **Partial** — auth-state and email snapshot cleanup at container startup; full attendee purge scheduled for a future release |
 
 Organizers can export attendee lists before retention cutoff (spreadsheet / PDF export in admin UI).
 

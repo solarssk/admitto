@@ -62,6 +62,10 @@ Expired or revoked session and trusted-device rows are purged best-effort during
 after migrations/backfills with a 120-second timeout. Operators can also run
 `npm run cli -w @admitto/auth -- purge-auth-retention` (use `--dry-run` first
 to preview counts).
+Frozen email delivery bodies (`EmailDelivery.rendered_html` / `rendered_subject`) are nullified
+best-effort during container startup once a delivery is terminal and older than 60 days
+(configurable via `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`). Preview with
+`npm run cli -w @admitto/mail-delivery -- nullify-delivery-snapshots --dry-run`.
 
 ### Implemented in codebase (v0.4.3)
 
@@ -230,7 +234,8 @@ Be explicit with auditors about what is **out of product scope** today:
 - No built-in SIEM or central log platform (forward container logs if required).
 - No HA / multi-region failover in the default compose topology.
 - No always-on scheduler for all long-term PII purge domains yet (retention **policy** documented;
-  auth-state purge runs best-effort at container startup and is also available as a CLI maintenance command).
+  auth-state purge and email delivery snapshot nullification run best-effort at container startup
+  and are also available as CLI maintenance commands).
 - Disk/volume encryption for PostgreSQL and Redis is an **infrastructure** control.
 - No automated entropy check on `CHECKIN_OPERATOR_TOKEN` / `OPS_HEALTH_TOKEN` at boot — minimum
   length only; operators should generate with `openssl rand -hex 32` (documented in `.env.example`).
