@@ -153,8 +153,9 @@ export async function nullifyDeliverySnapshots(
 export function resolveDeliverySnapshotRetentionDays(
   env: NodeJS.ProcessEnv = process.env,
 ): number {
-  const raw = env["EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS"];
+  const raw = env["EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS"]?.trim();
   if (!raw) return DEFAULT_RETENTION_DAYS;
-  const parsed = Number.parseInt(raw, 10);
+  if (!/^\d+$/.test(raw)) return DEFAULT_RETENTION_DAYS;
+  const parsed = Number(raw);
   return normalizeRetentionDays(parsed);
 }

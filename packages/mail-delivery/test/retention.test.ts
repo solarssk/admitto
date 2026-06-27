@@ -213,6 +213,11 @@ describe("nullifyDeliverySnapshots", () => {
     ).toBe(60);
     expect(
       resolveDeliverySnapshotRetentionDays({
+        EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS: "30days",
+      }),
+    ).toBe(60);
+    expect(
+      resolveDeliverySnapshotRetentionDays({
         EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS: "0",
       }),
     ).toBe(60);
