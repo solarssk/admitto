@@ -40,19 +40,25 @@ If you rely on **legitimate interest** (Art. 6(1)(f) GDPR), your DPO should docu
 | Access token | Random QR / opaque ID | Not PII in the QR itself |
 | Operational | Check-in time, ticket type | Operational |
 | Technical | IP address, user-agent (sessions / throttling) | Personal data (online identifier) |
+| OIDC access metadata | IdP group membership stored on `ExternalIdentity.groups` | Personal data (access metadata) |
 
 ---
 
 ## Retention
 
+Two layers: **product-automated** (container startup, best-effort) vs **operator policy**
+(export/delete, log retention). Periods differ by design.
+
 | Data | Policy (default design intent) |
 |------|-------------------------------|
-| Event attendee PII | Delete or anonymise **30–60 days after event end** |
-| Email delivery snapshots (`rendered_html`, `rendered_subject`) | Nullified **60 days** after terminal delivery (sent/delivered/failed); delivery log metadata retained |
-| Audit logs | Per customer security policy; minimise personal data in log lines |
-| Automated purge | **Partial** — auth-state and email snapshot cleanup at container startup; full attendee purge scheduled for a future release |
+| Login sessions, trusted devices | Purged automatically when expired/revoked (container startup) |
+| Email delivery snapshots (`rendered_html`, `rendered_subject`) | Nullified **60 days** after terminal delivery; delivery log metadata retained |
+| IP in admin audit / check-in logs | **30 days or operator corporate log retention policy** — not auto-purged by product |
+| Event attendee PII | Operator export + manual delete; automated post-event purge planned for **v1.0** |
+| Audit logs (general) | Per customer security policy; minimise personal data in log lines |
 
-Organizers can export attendee lists before retention cutoff (spreadsheet / PDF export in admin UI).
+Organizers can export attendee lists before deletion (spreadsheet / PDF export in admin UI).
+Per-attendee erasure is available via admin UI / API (v0.4.6+).
 
 ---
 

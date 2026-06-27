@@ -50,6 +50,11 @@ Container image scanning fails the release pipeline on **CRITICAL** vulnerabilit
 with a known fix (`ignore-unfixed: true`). **HIGH** findings are reported (SARIF in the
 Security tab) but do not block the pipeline.
 
+**Remediation SLA (v0.4.6+):** **CRITICAL** with an available fix blocks the next release until
+patched. **HIGH** with an available fix: remediate within **30 days** (tracked in backlog).
+**HIGH** with no upstream fix: accepted risk, documented in the Security tab. A blocking CI gate
+on HIGH+fixable (`--ignore-unfixed`) is planned before **v1.0**.
+
 Build provenance attestations (SLSA, `actions/attest-build-provenance`) are published for images
 pushed to GHCR on release tags.
 

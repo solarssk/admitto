@@ -1,6 +1,13 @@
 import { Button } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInScanResponse, CheckInStatus } from "../api/types.js";
 
+function formatAlreadyCheckedInSubtitle(admittedAt?: string): string {
+  if (!admittedAt) return "Already checked in";
+  const when = new Date(admittedAt);
+  if (Number.isNaN(when.getTime())) return "Already checked in";
+  return `Entered ${when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
+}
+
 function statusMeta(status: CheckInStatus): {
   icon: string;
   title: string;
@@ -19,7 +26,7 @@ function statusMeta(status: CheckInStatus): {
       return {
         icon: "ti-clock-exclamation",
         title: "Already checked in",
-        subtitle: "Entered earlier today",
+        subtitle: "Already checked in",
         tone: "warn",
       };
     case "INVALID":
@@ -76,13 +83,18 @@ export function CheckInCameraResultPanel({
   className,
 }: CheckInCameraResultPanelProps) {
   const meta = statusMeta(scanResult.status);
+  const subtitle =
+    scanResult.status === "ALREADY_CHECKED_IN"
+      ? formatAlreadyCheckedInSubtitle(scanResult.admittedAt)
+      : meta.subtitle;
+
   const isPreview = scanResult.status === "PREVIEW";
 
   return (
     <div className={`ck-overlay__result ck-overlay__result--${meta.tone}${className ? ` ${className}` : ""}`}>
       <i className={`ti ${meta.icon} ck-overlay__result-icon`} aria-hidden="true" />
       <h2 className="ck-overlay__result-title">{meta.title}</h2>
-      <p className="ck-overlay__result-sub">{meta.subtitle}</p>
+      <p className="ck-overlay__result-sub">{subtitle}</p>
       {card && (
         <div className="ck-overlay__result-card">
           <strong>{card.name}</strong>

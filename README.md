@@ -68,7 +68,7 @@ Then choose how to run the staff UI:
 | **SPA hot reload** (UI work) | Terminal 1: `npm run dev -w @admitto/web`<br>Terminal 2: `npm run dev -w @admitto/admin` | http://localhost:5173 |
 | **Single server** (prod-like) | `npm run build -w @admitto/admin` then `npm run dev -w @admitto/web` | http://localhost:3000/login |
 
-Sign in with the bootstrapped account. MFA enrollment is required for admin/superadmin roles on first login.
+Sign in with the bootstrapped account. MFA enrollment is required for admin/superadmin roles on first login (HTML flow: TOTP QR → backup codes acknowledgment → full session; backup-code acknowledgment is persisted in the database, not an in-memory stash).
 SSR settings (Identity providers, Cloudflare Access) live under `/admin/auth/*` on the web server port.
 
 See [apps/web/README.md](apps/web/README.md) and [apps/admin/README.md](apps/admin/README.md).

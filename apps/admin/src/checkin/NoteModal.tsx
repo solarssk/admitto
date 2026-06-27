@@ -39,6 +39,9 @@ export function NoteModal({ open, onClose, onSubmit }: NoteModalProps) {
     <div className="note-modal" role="dialog" aria-modal="true" aria-label="Add note">
       <div className="note-modal__backdrop" role="presentation" onClick={handleClose} />
       <div ref={panelRef} className="note-modal__panel">
+        <p className="note-modal__hint">
+          Do not record medical, dietary, or other sensitive personal data.
+        </p>
         <textarea
           className="note-modal__textarea"
           value={value}

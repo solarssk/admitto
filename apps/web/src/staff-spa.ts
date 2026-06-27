@@ -25,12 +25,19 @@ export const STAFF_SPA_STYLE_SRC = ["'self'", "'unsafe-inline'"] as const;
  */
 export const STAFF_SPA_FONT_SRC = ["'self'", "https:"] as const;
 
+/**
+ * Image origins for bundled staff UI assets and optional org branding logo URLs.
+ * `https:` allows arbitrary HTTPS logo hosts validated in branding forms (opt-in superadmin).
+ * Intentionally aligned with `STAFF_SPA_FONT_SRC`; upload-based assets (ADR 0008) will tighten this.
+ */
+export const STAFF_SPA_IMG_SRC = ["'self'", "data:", "https:"] as const;
+
 function buildStaffSpaContentSecurityPolicy(): string {
   return [
     "default-src 'self'",
     "script-src 'self'",
     `style-src ${STAFF_SPA_STYLE_SRC.join(" ")}`,
-    "img-src 'self' data:",
+    `img-src ${STAFF_SPA_IMG_SRC.join(" ")}`,
     "connect-src 'self'",
     `font-src ${STAFF_SPA_FONT_SRC.join(" ")}`,
     "object-src 'none'",
