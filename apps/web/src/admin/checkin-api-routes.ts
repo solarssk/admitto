@@ -32,6 +32,7 @@ export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Prom
       title: e.title,
       slug: e.slug,
       date: e.date.toISOString(),
+      timezone: e.timezone,
       location: e.location,
       organization_id: e.organization_id,
     })),

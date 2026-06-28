@@ -4,9 +4,9 @@ import { Button, Card } from "@admitto/ui";
 import {
   ApiError,
   fetchAttendeeCard,
+  fetchCheckInEvents,
   fetchCheckInHistory,
   fetchCheckInStats,
-  fetchEventSettings,
   lookupCheckInAttendees,
   submitAttendeeNote,
   submitCheckInAdmit,
@@ -97,9 +97,10 @@ export function CheckInPage({
     }
     if (!eventId) return;
     let cancelled = false;
-    fetchEventSettings(eventId)
-      .then((settings) => {
-        if (!cancelled) setEventTimezone(settings.timezone);
+    fetchCheckInEvents()
+      .then((events) => {
+        const found = events.find((e) => e.id === eventId);
+        if (!cancelled) setEventTimezone(found?.timezone ?? "UTC");
       })
       .catch(() => {
         if (!cancelled) setEventTimezone("UTC");
