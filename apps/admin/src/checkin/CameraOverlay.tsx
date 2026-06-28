@@ -12,6 +12,7 @@ import { CkRecentScans } from "./CkRecentScans.js";
 type CameraOverlayProps = {
   open: boolean;
   eventTitle: string;
+  eventTimezone: string;
   admittedCount: number;
   history: CheckInHistoryEntry[];
   wedgeActive: boolean;
@@ -31,6 +32,7 @@ type CameraOverlayProps = {
 export function CameraOverlay({
   open,
   eventTitle,
+  eventTimezone,
   admittedCount,
   history,
   wedgeActive,
@@ -114,6 +116,7 @@ export function CameraOverlay({
               card={card}
               pending={pending}
               canAct={canAct}
+              eventTimezone={eventTimezone}
               onConfirm={onConfirm}
               onReset={onReset}
             />

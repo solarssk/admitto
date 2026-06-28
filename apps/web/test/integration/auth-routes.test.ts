@@ -180,8 +180,13 @@ describe("GET /api/auth/me", () => {
       headers: { Cookie: cookie! },
     });
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { user: { email: string }; assignments: unknown[] };
+    const json = (await res.json()) as {
+      user: { email: string; preferred_locale: string | null };
+      assignments: unknown[];
+    };
     expect(json.user.email).toBe(OPERATOR_EMAIL);
+    expect(json.user).toHaveProperty("preferred_locale");
+    expect(json.user.preferred_locale).toBeNull();
     expect(json.assignments.length).toBeGreaterThan(0);
   });
 

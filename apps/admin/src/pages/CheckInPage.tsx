@@ -6,6 +6,7 @@ import {
   fetchAttendeeCard,
   fetchCheckInHistory,
   fetchCheckInStats,
+  fetchEventSettings,
   lookupCheckInAttendees,
   submitAttendeeNote,
   submitCheckInAdmit,
@@ -34,16 +35,19 @@ const WEDGE_DEBOUNCE_MS = 50;
 
 export interface CheckInPageProps {
   eventTitle?: string;
+  eventTimezone?: string;
   useCamera?: boolean;
   onUseCameraChange?: (open: boolean) => void;
 }
 
 export function CheckInPage({
   eventTitle = "Event",
+  eventTimezone: eventTimezoneProp,
   useCamera = false,
   onUseCameraChange,
 }: CheckInPageProps) {
   const { eventId } = useParams();
+  const [eventTimezone, setEventTimezone] = useState(eventTimezoneProp ?? "UTC");
   const { deviceLabel } = useAuth();
   const { state: connectionState, reportApiError } = useConnectionState();
   const canAct = canMutateCheckin(connectionState);
@@ -85,6 +89,25 @@ export function CheckInPage({
   const [overlayManualError, setOverlayManualError] = useState<string | null>(null);
 
   const deviceId = deviceLabel ?? undefined;
+
+  useEffect(() => {
+    if (eventTimezoneProp) {
+      setEventTimezone(eventTimezoneProp);
+      return;
+    }
+    if (!eventId) return;
+    let cancelled = false;
+    fetchEventSettings(eventId)
+      .then((settings) => {
+        if (!cancelled) setEventTimezone(settings.timezone);
+      })
+      .catch(() => {
+        if (!cancelled) setEventTimezone("UTC");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, eventTimezoneProp]);
 
   const focusScan = useCallback(() => {
     if (showMobileOverlay) return;
@@ -513,6 +536,7 @@ export function CheckInPage({
                 card={card}
                 pending={pending}
                 canAct={canAct && !busy}
+                eventTimezone={eventTimezone}
                 onConfirm={
                   showCompactFeedback &&
                   card &&
@@ -601,6 +625,7 @@ export function CheckInPage({
         <CameraOverlay
           open
           eventTitle={eventTitle}
+          eventTimezone={eventTimezone}
           admittedCount={admittedCount}
           history={history}
           wedgeActive={buffer.trim().length > 0}

@@ -16,10 +16,12 @@ import {
 } from "./customData.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
 
 export interface AttendeeDetailDrawerProps {
   eventId: string;
   attendeeId: string;
+  eventTimezone: string;
   onClose: () => void;
   onUpdated: () => void;
 }
@@ -88,15 +90,9 @@ function mergeFormAfterReload(
   };
 }
 
-function formatDateTime(iso: string | null): string {
+function formatDateTime(iso: string | null, timezone: string): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatEventDateTime(iso, timezone);
 }
 
 /** Load attendee detail; event items are best-effort so core fields stay editable on items API failure. */
@@ -131,6 +127,7 @@ async function loadDrawerData(
 export function AttendeeDetailDrawer({
   eventId,
   attendeeId,
+  eventTimezone,
   onClose,
   onUpdated,
 }: AttendeeDetailDrawerProps) {
@@ -453,7 +450,7 @@ export function AttendeeDetailDrawer({
                     <dd>
                       <StatusBadge status={detail.check_in_status} />
                       {detail.admitted_at && (
-                        <span> · {formatDateTime(detail.admitted_at)}</span>
+                        <span> · {formatDateTime(detail.admitted_at, eventTimezone)}</span>
                       )}
                     </dd>
                   </dl>
@@ -486,7 +483,11 @@ export function AttendeeDetailDrawer({
                         <div className="attendee-delivery__meta">
                           <StatusBadge status={d.status} />
                           <span>{d.recipient_email ?? "—"}</span>
-                          <span>{formatDateTime(d.sent_at ?? d.queued_at)}</span>
+                          <span>
+                            {(d.sent_at ?? d.queued_at)
+                              ? formatUtcDateTime(d.sent_at ?? d.queued_at!)
+                              : "—"}
+                          </span>
                         </div>
                         {d.status === "failed" && d.error_code && (
                           <div className="attendee-delivery__error">Error: {d.error_code}</div>

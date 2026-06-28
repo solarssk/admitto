@@ -7,7 +7,7 @@
   "main": "./dist/src/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "pretest": "npm run build -w @admitto/ui && npm run build -w @admitto/admin",
+    "pretest": "npm run build -w @admitto/shared && npm run build -w @admitto/ui && npm run build -w @admitto/admin",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
@@ -22,6 +22,7 @@
     "@admitto/mail-delivery": "*",
     "@admitto/mail-templates": "*",
     "@admitto/mailer": "*",
+    "@admitto/shared": "*",
     "@admitto/tickets": "*",
     "@admitto/ui": "*",
     "@hono/node-server": "^2.0.5",

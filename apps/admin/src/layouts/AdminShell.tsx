@@ -3,6 +3,7 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin, isAdmin } from "../auth/capabilities.js";
 import type { EventDto } from "../api/types.js";
 import { StaffShell } from "./StaffShell.js";
+import { formatEventCalendarDate } from "../utils/event-dates.js";
 
 const LIFECYCLE_NAV = [
   { segment: "overview", icon: "layout-dashboard", label: "Overview" },
@@ -30,11 +31,7 @@ const LIVE_SEGMENTS = new Set([
 
 /** Format event date and optional location for the sidebar event switcher. */
 function formatEventMeta(event: EventDto): string {
-  const date = new Date(event.date).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  const date = formatEventCalendarDate(event.date);
   return event.location ? `${date} · ${event.location}` : date;
 }
 

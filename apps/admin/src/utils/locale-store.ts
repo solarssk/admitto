@@ -1,3 +1,5 @@
+import { isSupportedLocale, SUPPORTED_LOCALE_TAGS } from "@admitto/shared";
+
 /**
  * Module-level locale preference for date formatting.
  *
@@ -10,7 +12,11 @@
 let _locale: string | undefined = undefined;
 
 export function setPreferredLocale(locale: string | null | undefined): void {
-  _locale = locale ?? undefined;
+  if (locale == null || locale === "") {
+    _locale = undefined;
+    return;
+  }
+  _locale = isSupportedLocale(locale) ? locale : undefined;
 }
 
 export function getPreferredLocale(): string | undefined {
@@ -22,6 +28,25 @@ export interface LocaleOption {
   label: string;
   example: string;
 }
+
+const LOCALE_LABELS: Record<(typeof SUPPORTED_LOCALE_TAGS)[number], string> = {
+  "en-GB": "English (UK)",
+  "en-US": "English (US)",
+  "pl-PL": "Polski",
+  "de-DE": "Deutsch",
+  "fr-FR": "Français",
+  "es-ES": "Español",
+  "it-IT": "Italiano",
+  "pt-BR": "Português (Brasil)",
+  "nl-NL": "Nederlands",
+  "ru-RU": "Русский",
+  "ja-JP": "日本語",
+  "zh-CN": "中文（简体）",
+  "ko-KR": "한국어",
+  "cs-CZ": "Čeština",
+  "uk-UA": "Українська",
+  "tr-TR": "Türkçe",
+};
 
 const PREVIEW_DATE = new Date("2026-06-28T12:00:00Z");
 
@@ -36,20 +61,9 @@ function preview(locale: string | undefined): string {
 
 export const LOCALE_OPTIONS: LocaleOption[] = [
   { value: null, label: "System default (browser)", example: preview(undefined) },
-  { value: "en-GB", label: "English (UK)", example: preview("en-GB") },
-  { value: "en-US", label: "English (US)", example: preview("en-US") },
-  { value: "pl-PL", label: "Polski", example: preview("pl-PL") },
-  { value: "de-DE", label: "Deutsch", example: preview("de-DE") },
-  { value: "fr-FR", label: "Français", example: preview("fr-FR") },
-  { value: "es-ES", label: "Español", example: preview("es-ES") },
-  { value: "it-IT", label: "Italiano", example: preview("it-IT") },
-  { value: "pt-BR", label: "Português (Brasil)", example: preview("pt-BR") },
-  { value: "nl-NL", label: "Nederlands", example: preview("nl-NL") },
-  { value: "ru-RU", label: "Русский", example: preview("ru-RU") },
-  { value: "uk-UA", label: "Українська", example: preview("uk-UA") },
-  { value: "cs-CZ", label: "Čeština", example: preview("cs-CZ") },
-  { value: "tr-TR", label: "Türkçe", example: preview("tr-TR") },
-  { value: "ja-JP", label: "日本語", example: preview("ja-JP") },
-  { value: "zh-CN", label: "中文（简体）", example: preview("zh-CN") },
-  { value: "ko-KR", label: "한국어", example: preview("ko-KR") },
+  ...SUPPORTED_LOCALE_TAGS.map((value) => ({
+    value,
+    label: LOCALE_LABELS[value],
+    example: preview(value),
+  })),
 ];

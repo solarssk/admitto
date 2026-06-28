@@ -3,6 +3,7 @@ import {
   fetchEventItems,
 } from "../api/client.js";
 import type { AttendeeDetailDto } from "../api/types.js";
+import { formatEventDateTime } from "../utils/event-dates.js";
 import {
   flattenCustomDataFieldsFromItems,
   readCustomDataField,
@@ -102,13 +103,7 @@ export async function loadAttendeeDetailData(
   };
 }
 
-export function formatDateTime(iso: string | null): string {
+export function formatDateTime(iso: string | null, timezone?: string): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatEventDateTime(iso, timezone);
 }

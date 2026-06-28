@@ -39,6 +39,26 @@ export function formatEventDateTime(iso: string, timezone?: string): string {
   });
 }
 
+/** Category 1 — time-only with timezone abbreviation (e.g. admitted_at in tables). */
+export function formatEventTime(iso: string, timezone?: string): string {
+  return new Date(iso).toLocaleString(getPreferredLocale(), {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: timezone ?? "UTC",
+    timeZoneName: "short",
+  });
+}
+
+/** Start of a calendar day in UTC as ISO string (for audit log date filters). */
+export function utcDayStartIso(yyyyMmDd: string): string {
+  return `${yyyyMmDd}T00:00:00.000Z`;
+}
+
+/** End of a calendar day in UTC as ISO string (inclusive upper bound). */
+export function utcDayEndIso(yyyyMmDd: string): string {
+  return `${yyyyMmDd}T23:59:59.999Z`;
+}
+
 /** Category 2 — admin/system timestamps always in UTC with explicit label. */
 export function formatUtcDateTime(iso: string): string {
   return new Date(iso).toLocaleString(getPreferredLocale(), {

@@ -9,7 +9,7 @@ import {
 } from "../api/client.js";
 import type { EventReportsResponse } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { formatEventCalendarDate } from "../utils/event-dates.js";
+import { formatEventCalendarDate, formatEventDateTime, formatEventTime } from "../utils/event-dates.js";
 import "./reports-page.css";
 
 const LOG_PAGE_SIZE = 50;
@@ -32,16 +32,8 @@ function admissionLogSpansMultipleDates(
 }
 
 function formatAdmittedTime(iso: string, timeZone: string, includeDate: boolean): string {
-  return new Intl.DateTimeFormat(undefined, {
-    timeZone,
-    ...(includeDate
-      ? { year: "numeric", month: "short", day: "numeric" }
-      : {}),
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(new Date(iso));
+  if (includeDate) return formatEventDateTime(iso, timeZone);
+  return formatEventTime(iso, timeZone);
 }
 
 function visibleHourRange(byHour: EventReportsResponse["by_hour"]): EventReportsResponse["by_hour"] {

@@ -14,6 +14,7 @@ type CkInlineCameraProps = {
   card: AttendeeCardDto | null;
   pending: boolean;
   canAct: boolean;
+  eventTimezone: string;
   onConfirm?: () => void;
   onReset: () => void;
 };
@@ -27,6 +28,7 @@ export function CkInlineCamera({
   card,
   pending,
   canAct,
+  eventTimezone,
   onConfirm,
   onReset,
 }: CkInlineCameraProps) {
@@ -64,6 +66,7 @@ export function CkInlineCamera({
             card={card}
             pending={pending}
             canAct={canAct}
+            eventTimezone={eventTimezone}
             onConfirm={onConfirm}
             onReset={onReset}
             onCancel={dismiss}

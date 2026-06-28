@@ -14,6 +14,10 @@ import {
 } from "@admitto/auth";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
+import {
+  isSupportedLocale,
+  sanitizePreferredLocale,
+} from "@admitto/shared";
 
 function hasLocalPassword(passwordHash: string | null): boolean {
   return passwordHash !== null;
@@ -106,7 +110,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
     id: user.id,
     email: user.email,
     display_name: user.display_name,
-    preferred_locale: user.preferred_locale,
+    preferred_locale: sanitizePreferredLocale(user.preferred_locale),
     is_active: user.is_active,
     must_change_password: user.must_change_password,
     has_local_password: hasLocalPassword(user.password_hash),
@@ -125,36 +129,13 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
   });
 }
 
-const SUPPORTED_LOCALES = [
-  { value: "en-GB" },
-  { value: "en-US" },
-  { value: "pl-PL" },
-  { value: "de-DE" },
-  { value: "fr-FR" },
-  { value: "es-ES" },
-  { value: "it-IT" },
-  { value: "pt-BR" },
-  { value: "nl-NL" },
-  { value: "ru-RU" },
-  { value: "ja-JP" },
-  { value: "zh-CN" },
-  { value: "ko-KR" },
-  { value: "cs-CZ" },
-  { value: "uk-UA" },
-  { value: "tr-TR" },
-] as const;
-
-export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number]["value"];
-
 const profileSchema = z
   .object({
     display_name: z.string().max(120).optional(),
     preferred_locale: z
       .string()
       .max(20)
-      .refine((v) => SUPPORTED_LOCALES.map((l) => l.value).includes(v as SupportedLocale), {
-        message: "Unsupported locale",
-      })
+      .refine((v) => isSupportedLocale(v), { message: "Unsupported locale" })
       .nullable()
       .optional(),
   })

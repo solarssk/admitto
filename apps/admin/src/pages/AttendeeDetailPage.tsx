@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import {
   Badge,
   Button,
@@ -19,7 +19,7 @@ import {
   resendTicket,
   updateAttendee,
 } from "../api/client.js";
-import type { AttendeeDetailDto, RsvpStatus, UpdateAttendeePatch } from "../api/types.js";
+import type { AttendeeDetailDto, EventDto, RsvpStatus, UpdateAttendeePatch } from "../api/types.js";
 import {
   formatDateTime,
   loadAttendeeDetailData,
@@ -28,6 +28,7 @@ import {
   type AttendeeFormState,
 } from "../attendees/attendeeDetailForm.js";
 import { getTimelineDetail, getTimelineIcon, getTimelineLabel } from "../attendees/attendeeTimeline.js";
+import { formatUtcDateTime } from "../utils/event-dates.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { readCustomDataField } from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
@@ -39,6 +40,7 @@ type TabId = "overview" | "activity";
 
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
+  const { event } = useOutletContext<{ event: EventDto }>();
   const navigate = useNavigate();
   const { addToast } = useToast();
   const resendTitleId = useId();
@@ -432,7 +434,7 @@ export function AttendeeDetailPage() {
                 <div className="status-stats-grid__item">
                   <span className="status-stats-grid__label">Check-in</span>
                   {detail.admitted_at ? (
-                    <span className="attendee-detail-checkin">{formatDateTime(detail.admitted_at)}</span>
+                    <span className="attendee-detail-checkin">{formatDateTime(detail.admitted_at, event.timezone)}</span>
                   ) : (
                     <span className="attendee-readonly">—</span>
                   )}
@@ -472,7 +474,7 @@ export function AttendeeDetailPage() {
                     <span>{getTimelineDetail(entry)}</span>
                   </div>
                   <time className="at-tl-time" dateTime={entry.created_at}>
-                    {formatDateTime(entry.created_at)}
+                    {formatUtcDateTime(entry.created_at)}
                   </time>
                 </li>
               ))}

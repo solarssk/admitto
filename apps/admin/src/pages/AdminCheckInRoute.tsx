@@ -52,6 +52,7 @@ export function AdminCheckInRoute() {
       />
       <CheckInPage
         eventTitle={event.title}
+        eventTimezone={event.timezone}
         useCamera={useCamera}
         onUseCameraChange={setUseCamera}
       />

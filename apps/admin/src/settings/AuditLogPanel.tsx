@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@admitto/ui";
 import { ApiError, fetchAuditLog } from "../api/client.js";
 import type { AuditLogEntryDto } from "../api/types.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
+import { formatUtcDateTime, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
 
 /** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
@@ -35,16 +35,6 @@ const ACTION_OPTIONS = Object.keys(ACTION_LABELS).sort((a, b) =>
 );
 
 const PAGE_SIZE = 25;
-
-/** Local calendar-day start as an ISO instant for the audit log start filter. */
-function localDayStartIso(date: string): string {
-  return new Date(`${date}T00:00:00`).toISOString();
-}
-
-/** Local calendar-day end as an ISO instant for the audit log end filter. */
-function localDayEndIso(date: string): string {
-  return new Date(`${date}T23:59:59.999`).toISOString();
-}
 
 /** Format an ISO timestamp for the audit log table. */
 function formatTimestamp(iso: string): string {
@@ -98,8 +88,8 @@ export function AuditLogPanel() {
           page,
           pageSize: PAGE_SIZE,
           actionType: filters.actionType || undefined,
-          start: filters.start ? localDayStartIso(filters.start) : undefined,
-          end: filters.end ? localDayEndIso(filters.end) : undefined,
+          start: filters.start ? utcDayStartIso(filters.start) : undefined,
+          end: filters.end ? utcDayEndIso(filters.end) : undefined,
         },
         ac.signal,
       );

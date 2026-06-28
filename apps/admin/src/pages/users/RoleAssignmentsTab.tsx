@@ -5,6 +5,7 @@ import type { RoleAssignmentListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { useAuth } from "../../auth/AuthProvider.js";
 import { isSuperadmin } from "../../auth/capabilities.js";
+import { formatUtcDateTime } from "../../utils/event-dates.js";
 
 const SKELETON_ROWS = 4;
 
@@ -46,7 +47,7 @@ function AssignmentTableRow({ row, canRevoke, onRevoke }: AssignmentRowProps) {
           </span>
         )}
       </td>
-      <td>{new Date(row.granted_at).toLocaleDateString()}</td>
+      <td>{formatUtcDateTime(row.granted_at)}</td>
       <td>
         {canRevoke ? (
           <Button type="button" variant="danger" onClick={() => onRevoke(row)}>
@@ -77,7 +78,7 @@ function AssignmentCard({ row, canRevoke, onRevoke }: AssignmentRowProps) {
         </div>
         <div>
           <dt>Granted</dt>
-          <dd>{new Date(row.granted_at).toLocaleDateString()}</dd>
+          <dd>{formatUtcDateTime(row.granted_at)}</dd>
         </div>
         {row.is_oidc && (
           <div>

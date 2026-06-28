@@ -1,11 +1,12 @@
 import { Button } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInScanResponse, CheckInStatus } from "../api/types.js";
+import { formatEventDateTime } from "../utils/event-dates.js";
 
-function formatAlreadyCheckedInSubtitle(admittedAt?: string): string {
+function formatAlreadyCheckedInSubtitle(admittedAt: string | undefined, eventTimezone: string): string {
   if (!admittedAt) return "Already checked in";
   const when = new Date(admittedAt);
   if (Number.isNaN(when.getTime())) return "Already checked in";
-  return `Entered ${when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
+  return `Entered ${formatEventDateTime(admittedAt, eventTimezone)}`;
 }
 
 function statusMeta(status: CheckInStatus): {
@@ -65,6 +66,7 @@ type CheckInCameraResultPanelProps = {
   card: AttendeeCardDto | null;
   pending: boolean;
   canAct: boolean;
+  eventTimezone: string;
   onConfirm?: () => void;
   onReset: () => void;
   /** When set, Cancel exits camera mode; otherwise Cancel clears the result only. */
@@ -77,6 +79,7 @@ export function CheckInCameraResultPanel({
   card,
   pending,
   canAct,
+  eventTimezone,
   onConfirm,
   onReset,
   onCancel,
@@ -85,7 +88,7 @@ export function CheckInCameraResultPanel({
   const meta = statusMeta(scanResult.status);
   const subtitle =
     scanResult.status === "ALREADY_CHECKED_IN"
-      ? formatAlreadyCheckedInSubtitle(scanResult.admittedAt)
+      ? formatAlreadyCheckedInSubtitle(scanResult.admittedAt, eventTimezone)
       : meta.subtitle;
 
   const isPreview = scanResult.status === "PREVIEW";
