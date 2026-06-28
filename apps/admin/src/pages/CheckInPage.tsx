@@ -606,6 +606,7 @@ export function CheckInPage({
               admittedCount={admittedCount}
               totalCount={totalCount}
               history={history}
+              eventTimezone={eventTimezone}
             />
             <ManualLookupPanel
               open={manualOpen}

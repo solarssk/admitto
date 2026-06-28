@@ -7,8 +7,12 @@ import {
   CK_RECENT_SCANS_SIDEBAR_LIMIT,
   ScanHistoryList,
 } from "../../src/checkin/ScanHistoryList.js";
+import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  setPreferredLocale(null);
+});
 
 function makeEntry(id: string, name: string, status = "admitted"): CheckInHistoryEntry {
   return {
@@ -28,7 +32,12 @@ describe("CkRecentScans", () => {
   it("caps sidebar rows at CK_RECENT_SCANS_SIDEBAR_LIMIT via ScanHistoryList", () => {
     const history = Array.from({ length: 12 }, (_, i) => makeEntry(String(i), `Guest ${i}`));
     const { container } = render(
-      <ScanHistoryList admittedCount={0} totalCount={12} history={history} />,
+      <ScanHistoryList
+        admittedCount={0}
+        totalCount={12}
+        history={history}
+        eventTimezone="UTC"
+      />,
     );
 
     expect(container.querySelectorAll(".ck-recent__row")).toHaveLength(CK_RECENT_SCANS_SIDEBAR_LIMIT);
@@ -37,11 +46,27 @@ describe("CkRecentScans", () => {
 
   it("renders revoked scans with a distinct grey dot class", () => {
     const { container } = render(
-      <CkRecentScans history={[makeEntry("1", "Revoked guest", "revoked")]} limit={8} />,
+      <CkRecentScans
+        history={[makeEntry("1", "Revoked guest", "revoked")]}
+        eventTimezone="UTC"
+        limit={8}
+      />,
     );
 
     expect(screen.getByText("Ticket rev.")).toBeTruthy();
     expect(container.querySelector(".rec-dot--revoked")).toBeTruthy();
     expect(container.querySelector(".rec-dot--invalid")).toBeNull();
+  });
+
+  it("formats checked_in_at in event timezone", () => {
+    setPreferredLocale("en-GB");
+    render(
+      <CkRecentScans
+        history={[makeEntry("1", "Guest One")]}
+        eventTimezone="Europe/Warsaw"
+        limit={8}
+      />,
+    );
+    expect(screen.getByText(/14:00/)).toBeTruthy();
   });
 });

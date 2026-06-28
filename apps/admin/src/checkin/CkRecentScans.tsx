@@ -1,10 +1,5 @@
 import type { CheckInHistoryEntry } from "../api/types.js";
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
+import { formatEventTime } from "../utils/event-dates.js";
 
 function statusLabel(status: string): string {
   const normalized = status.toLowerCase();
@@ -25,11 +20,12 @@ function dotClass(status: string): string {
 
 type CkRecentScansProps = {
   history: CheckInHistoryEntry[];
+  eventTimezone: string;
   compact?: boolean;
   limit?: number;
 };
 
-export function CkRecentScans({ history, compact = false, limit }: CkRecentScansProps) {
+export function CkRecentScans({ history, eventTimezone, compact = false, limit }: CkRecentScansProps) {
   const rows = limit != null ? history.slice(0, limit) : history;
   const count = history.length;
 
@@ -50,7 +46,7 @@ export function CkRecentScans({ history, compact = false, limit }: CkRecentScans
                 <div className="ck-recent__line">
                   <strong>{row.attendee.name}</strong>
                   <span className="ck-recent__status">{statusLabel(row.status)}</span>
-                  <time>{formatTime(row.checked_in_at)}</time>
+                  <time>{formatEventTime(row.checked_in_at, eventTimezone)}</time>
                 </div>
                 {row.attendee.ticket_type && (
                   <span className="ck-recent__ticket">{row.attendee.ticket_type}</span>
