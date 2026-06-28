@@ -53,6 +53,50 @@ describe("parseAttendees — header normalisation", () => {
   });
 });
 
+describe("parseAttendees — event attribute columns", () => {
+  const shirtField = {
+    label: "Shirt size",
+    source_field: "shirt_size",
+    type: "select" as const,
+    required: true,
+    options: ["S", "M", "L"],
+  };
+
+  it("parses and validates custom attribute columns by source_field slug", () => {
+    const result = parseAttendees(
+      `first_name,last_name,email,shirt_size\nJan,K,jan@example.com,M`,
+      { attributeFields: [shirtField] },
+    );
+    expect(result.validRows).toHaveLength(1);
+    expect(result.validRows[0]?.custom_data).toEqual({ shirt_size: "M" });
+    expect(result.warnings.some((w) => w.includes("shirt_size"))).toBe(false);
+  });
+
+  it("accepts export-style label headers for round-trip", () => {
+    const result = parseAttendees(
+      `first_name,last_name,email,Shirt size\nJan,K,jan@example.com,L`,
+      { attributeFields: [shirtField] },
+    );
+    expect(result.validRows[0]?.custom_data).toEqual({ shirt_size: "L" });
+  });
+
+  it("rejects invalid select option", () => {
+    const result = parseAttendees(
+      `first_name,last_name,email,shirt_size\nJan,K,jan@example.com,XL`,
+      { attributeFields: [shirtField] },
+    );
+    expect(result.validRows).toHaveLength(0);
+    expect(result.invalidRows[0]?.reason).toMatch(/invalid value for shirt size/i);
+  });
+
+  it("rejects missing required attribute", () => {
+    const result = parseAttendees(`${VALID_HEADER}\nJan,K,jan@example.com`, {
+      attributeFields: [shirtField],
+    });
+    expect(result.invalidRows[0]?.reason).toMatch(/missing required attribute/i);
+  });
+});
+
 describe("parseAttendees — invalid rows", () => {
   it("rejects a row with invalid email", () => {
     const result = parseAttendees(`${VALID_HEADER}\nJan,K,not-an-email`);

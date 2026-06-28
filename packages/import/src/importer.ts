@@ -14,13 +14,13 @@ type AttendeeCreateData = {
   event_id: string;
   email: string;
   name: string;
-  // token_hash intentionally absent — set during ticket issuance (Step 4), not import.
   ticket_type?: string;
   external_uuid?: string;
   qr_payload?: string;
   public_ref?: string;
   company?: string;
   department?: string;
+  custom_data?: Prisma.InputJsonValue;
 };
 
 type AttendeeUpdateArgs = {
@@ -30,8 +30,22 @@ type AttendeeUpdateArgs = {
     ticket_type?: string;
     company?: string;
     department?: string;
+    custom_data?: Prisma.InputJsonValue;
   };
 };
+
+function cloneCustomData(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return { ...(raw as Record<string, unknown>) };
+}
+
+function mergeCustomData(existing: unknown, incoming: Record<string, string>): Prisma.InputJsonValue {
+  const merged = cloneCustomData(existing);
+  for (const [key, value] of Object.entries(incoming)) {
+    merged[key] = value;
+  }
+  return merged as Prisma.InputJsonValue;
+}
 
 type ImportDb = PrismaClient | Prisma.TransactionClient;
 
@@ -191,6 +205,9 @@ export async function commitImport(
           ...(row.ticket_type !== undefined && { ticket_type: row.ticket_type }),
           ...(row.company !== undefined && { company: row.company }),
           ...(row.department !== undefined && { department: row.department }),
+          ...(row.custom_data !== undefined && {
+            custom_data: mergeCustomData(found.custom_data, row.custom_data),
+          }),
         },
       });
     } else {
@@ -206,6 +223,9 @@ export async function commitImport(
         ...(isAgency && { public_ref: generateToken() }),
         ...(row.company !== undefined && { company: row.company }),
         ...(row.department !== undefined && { department: row.department }),
+        ...(row.custom_data !== undefined && {
+          custom_data: row.custom_data as Prisma.InputJsonValue,
+        }),
       });
     }
   }

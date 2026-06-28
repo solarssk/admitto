@@ -114,6 +114,30 @@ describe("commitImport — create", () => {
     });
     expect(att?.public_ref).toBeNull();
   });
+
+  it("persists custom_data attributes on create", async () => {
+    await prisma.attendee.deleteMany({
+      where: { event_id: EVENT_ID, email: "socks@example.com" },
+    });
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        {
+          first_name: "Socks",
+          last_name: "Fan",
+          email: "socks@example.com",
+          custom_data: { sock_size: "42", cap_size: "L" },
+        },
+      ],
+      {},
+      prisma,
+    );
+    expect(summary.created).toBe(1);
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "socks@example.com" } },
+    });
+    expect(att?.custom_data).toEqual({ sock_size: "42", cap_size: "L" });
+  });
 });
 
 describe("commitImport — overwrite=false (re-import)", () => {

@@ -146,6 +146,20 @@ async function seed(client: PrismaClient) {
       company: "Old Co",
     },
   });
+
+  await client.eventItem.create({
+    data: {
+      event_id: EVENT_A,
+      key: "swag",
+      label: "Swag pack",
+      config: {
+        contents: [
+          { label: "Sock size", source_field: "sock_size", type: "text" },
+          { label: "Cap size", source_field: "cap_size", type: "select", options: ["S", "M", "L"] },
+        ],
+      },
+    },
+  });
 }
 
 /** Create a full-session cookie string for the given user id. */
@@ -397,6 +411,40 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     expect(crossRes.status).toBe(403);
   });
 
+  it("parses custom attribute columns into custom_data", async () => {
+    const csv = [
+      "first_name,last_name,email,sock_size,cap_size",
+      "Gina,Gear,gina@example.com,42,L",
+    ].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { parse: { validCount: number }; summary: { toCreate: number } };
+    expect(body.parse.validCount).toBe(1);
+    expect(body.summary.toCreate).toBe(1);
+  });
+
+  it("rejects invalid custom attribute values in preview", async () => {
+    const csv = [
+      "first_name,last_name,email,cap_size",
+      "Bad,Cap,bad@example.com,XL",
+    ].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      parse: { validCount: number; invalidRows: { reason: string }[] };
+    };
+    expect(body.parse.validCount).toBe(0);
+    expect(body.parse.invalidRows[0]?.reason).toMatch(/invalid value/i);
+  });
+
   it("parses XLSX uploaded as multipart", async () => {
     const fd = await xlsxFormData([
       ["first_name", "last_name", "email"],
@@ -456,6 +504,30 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     expect(meta.filename).toBe("batch.csv");
     expect(meta).not.toHaveProperty("rows");
     expect(JSON.stringify(meta)).not.toMatch(/eve@example.com/);
+  });
+
+  it("persists custom_data from attribute columns on create", async () => {
+    await prisma.attendee.deleteMany({
+      where: { event_id: EVENT_A, email: "swag@example.com" },
+    });
+
+    const csv = [
+      "first_name,last_name,email,sock_size,cap_size",
+      "Swag,User,swag@example.com,39,M",
+    ].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/commit`,
+      csvFormData(csv, "swag.csv"),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { created: number };
+    expect(body.created).toBe(1);
+
+    const row = await prisma.attendee.findFirst({
+      where: { event_id: EVENT_A, email: "swag@example.com" },
+    });
+    expect(row?.custom_data).toEqual({ sock_size: "39", cap_size: "M" });
   });
 
   it("re-import overwrite=false skips all existing", async () => {
@@ -530,7 +602,7 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
 });
 
 describe("GET /api/admin/events/:eventId/import/template", () => {
-  it("returns CSV header row with attachment headers", async () => {
+  it("returns CSV header row with base columns and event attribute slugs", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_A}/import/template`,
       { headers: { Cookie: adminCookie } },
@@ -540,7 +612,7 @@ describe("GET /api/admin/events/:eventId/import/template", () => {
     expect(res.headers.get("content-disposition")).toMatch(/admitto-import-template\.csv/);
     const body = await res.text();
     expect(body).toBe(
-      "first_name,last_name,email,ticket_type,company,department,external_uuid,qr_payload\n",
+      "first_name,last_name,email,ticket_type,company,department,external_uuid,qr_payload,sock_size,cap_size\n",
     );
   });
 

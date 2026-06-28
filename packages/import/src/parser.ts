@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { splitCsvLine } from "@admitto/shared";
-import type { AttendeeRow, InvalidRow, ParseResult } from "./types.js";
+import {
+  buildAttributeHeaderKeys,
+  extractCustomDataFromRow,
+} from "./custom-data-import.js";
+import type { AttendeeRow, InvalidRow, ParseAttendeesOptions, ParseResult } from "./types.js";
 
 const CANONICAL_COLUMNS = [
   "first_name",
@@ -32,12 +36,15 @@ function buildRow(
   return record;
 }
 
-export function parseAttendees(csvString: string): ParseResult {
+export function parseAttendees(csvString: string, options: ParseAttendeesOptions = {}): ParseResult {
+  const attributeFields = options.attributeFields ?? [];
+  const { allowedHeaders: attributeHeaderKeys, duplicateLabels } =
+    buildAttributeHeaderKeys(attributeFields);
+
   const validRows: AttendeeRow[] = [];
   const invalidRows: InvalidRow[] = [];
   const warnings: string[] = [];
 
-  // Strip UTF-8 BOM — present in CSV files exported from Excel/Windows.
   const lines = csvString.replace(/^\uFEFF/, "").split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.trim().length > 0);
 
   if (lines.length === 0) {
@@ -48,24 +55,21 @@ export function parseAttendees(csvString: string): ParseResult {
   const headerLine = lines[0]!;
   const rawHeaders = splitCsvLine(headerLine).map(normalizeHeader);
 
-  // Warn about duplicate headers — first occurrence wins in buildRow.
   const dupHeaders = [...new Set(rawHeaders.filter((h, i) => rawHeaders.indexOf(h) !== i))];
   if (dupHeaders.length > 0) {
     warnings.push(`Duplicate column(s) detected (first value used): ${dupHeaders.join(", ")}`);
   }
 
-  // Warn about unrecognised columns
   for (const h of rawHeaders) {
-    if (!(CANONICAL_COLUMNS as readonly string[]).includes(h)) {
-      warnings.push(`Unknown column ignored: "${h}"`);
-    }
+    if ((CANONICAL_COLUMNS as readonly string[]).includes(h)) continue;
+    if (attributeHeaderKeys.has(h)) continue;
+    warnings.push(`Unknown column ignored: "${h}"`);
   }
 
   if (!rawHeaders.includes("email")) {
     warnings.push("CSV has no 'email' column — all rows will be invalid");
   }
 
-  // Track duplicates within the file
   const seenEmails = new Set<string>();
   const seenUUIDs = new Set<string>();
   const seenQrPayloads = new Set<string>();
@@ -83,7 +87,6 @@ export function parseAttendees(csvString: string): ParseResult {
     const company = (raw["company"] ?? "").trim() || undefined;
     const department = (raw["department"] ?? "").trim() || undefined;
 
-    // Resolve name: accept either first_name+last_name or a single name column
     const rawFirstName = (raw["first_name"] ?? "").trim();
     const rawLastName = (raw["last_name"] ?? "").trim();
     const rawName = (raw["name"] ?? "").trim();
@@ -113,7 +116,6 @@ export function parseAttendees(csvString: string): ParseResult {
       continue;
     }
 
-    // Validate email
     if (!email) {
       invalidRows.push({ rowIndex: rowIdx, raw, reason: "Missing email" });
       continue;
@@ -123,7 +125,6 @@ export function parseAttendees(csvString: string): ParseResult {
       continue;
     }
 
-    // Detect in-file duplicates
     if (seenEmails.has(email)) {
       invalidRows.push({ rowIndex: rowIdx, raw, reason: `Duplicate email in file: "${email}"` });
       continue;
@@ -153,6 +154,12 @@ export function parseAttendees(csvString: string): ParseResult {
       continue;
     }
 
+    const customResult = extractCustomDataFromRow(raw, attributeFields, duplicateLabels);
+    if (!customResult.ok) {
+      invalidRows.push({ rowIndex: rowIdx, raw, reason: customResult.reason });
+      continue;
+    }
+
     seenEmails.add(email);
     if (externalUUID) seenUUIDs.add(externalUUID);
     if (qrPayload) seenQrPayloads.add(qrPayload);
@@ -168,6 +175,7 @@ export function parseAttendees(csvString: string): ParseResult {
       ...(qrPayload !== undefined && { qr_payload: qrPayload }),
       ...(company !== undefined && { company }),
       ...(department !== undefined && { department }),
+      ...(customResult.custom_data !== undefined && { custom_data: customResult.custom_data }),
     });
   }
 
