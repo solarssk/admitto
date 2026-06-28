@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { PrismaClient } from "@prisma/client";
 import { describeMailConfigForOrg } from "@admitto/mailer-config";
+import { sanitizePreferredLocale } from "@admitto/shared";
 import { resolveInstanceOrganizationId } from "../admin/instance-org.js";
 import {
   SESSION_COOKIE_NAME,
@@ -194,6 +195,7 @@ export async function handleMe(
       id: true,
       email: true,
       display_name: true,
+      preferred_locale: true,
       is_active: true,
       created_at: true,
     },
@@ -229,7 +231,10 @@ export async function handleMe(
     mailer_status?: MailerStatusPayload;
     setup_complete?: boolean;
   } = {
-    user,
+    user: {
+      ...user,
+      preferred_locale: sanitizePreferredLocale(user.preferred_locale),
+    },
     assignments,
     device_label,
     session_active: !!auth.sessionId,

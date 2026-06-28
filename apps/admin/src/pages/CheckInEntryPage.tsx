@@ -4,13 +4,10 @@ import { Card, PageHeader } from "@admitto/ui";
 import { ApiError, fetchCheckInEvents } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { formatEventCalendarDate } from "../utils/event-dates.js";
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return formatEventCalendarDate(iso);
 }
 
 export function CheckInEntryPage() {

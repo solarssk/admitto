@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Button, PageHeader, useToast } from "@admitto/ui";
 import { ApiError, exportAttendees, fetchEventAttendees, fetchTicketTypes } from "../api/client.js";
-import type { AttendeeDetailDto, AttendeeRowDto, RsvpStatus } from "../api/types.js";
+import type { AttendeeDetailDto, AttendeeRowDto, EventDto, RsvpStatus } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
@@ -12,6 +12,7 @@ const DEBOUNCE_MS = 300;
 
 export function AttendeesPage() {
   const { eventId } = useParams();
+  const { event } = useOutletContext<{ event: EventDto }>();
   const navigate = useNavigate();
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
@@ -248,6 +249,7 @@ export function AttendeesPage() {
         }}
         onViewAttendee={(id) => navigate(`/admin/events/${eventId}/attendees/${id}`)}
         onPageChange={setPage}
+        eventTimezone={event.timezone}
       />
 
       <AddAttendeeModal

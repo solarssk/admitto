@@ -3,7 +3,7 @@ import { Link, useOutletContext } from "react-router-dom";
 import { Badge, Card, PageHeader, Stat } from "@admitto/ui";
 import { ApiError, fetchEventOverview } from "../api/client.js";
 import type { EventDto, EventOverviewDto } from "../api/types.js";
-import { formatEventCalendarDate, formatEventDateTime } from "../utils/event-dates.js";
+import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates.js";
 import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 
@@ -146,7 +146,7 @@ export function EventOverviewPage() {
 
       {event.archived_at && (
         <p className="overview-archived-note">
-          Archived on {formatEventDateTime(event.archived_at, eventTimezone)}. Restore from event
+          Archived on {formatUtcDateTime(event.archived_at)}. Restore from event
           settings if you need to edit again.
         </p>
       )}

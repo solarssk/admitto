@@ -223,6 +223,92 @@ describe("POST /api/account/mfa/totp/*", () => {
   });
 });
 
+describe("PATCH /api/account/profile — preferred_locale", () => {
+  it("GET /api/account returns null preferred_locale before user sets one", async () => {
+    await prisma.user.update({ where: { id: userId }, data: { preferred_locale: null } });
+    const res = await app.request("/api/account", {
+      headers: { Cookie: userCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { preferred_locale: string | null };
+    expect(body.preferred_locale).toBeNull();
+  });
+
+  it("sets preferred_locale to a supported locale", async () => {
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_locale: "pl-PL" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { preferred_locale: string | null };
+    expect(body.preferred_locale).toBe("pl-PL");
+
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(row.preferred_locale).toBe("pl-PL");
+  });
+
+  it("PATCH profile response sanitizes legacy invalid preferred_locale", async () => {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { preferred_locale: " xx-ZZ " },
+    });
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: "Sanitize Test" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { preferred_locale: string | null };
+    expect(body.preferred_locale).toBeNull();
+  });
+
+  it("clears preferred_locale with null", async () => {
+    await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_locale: "de-DE" }),
+    });
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_locale: null }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { preferred_locale: string | null };
+    expect(body.preferred_locale).toBeNull();
+  });
+
+  it("returns 400 for unsupported locale string", async () => {
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_locale: "xx-ZZ" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("GET /api/account returns preferred_locale", async () => {
+    await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_locale: "ja-JP" }),
+    });
+    const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    const body = (await res.json()) as { preferred_locale: string | null };
+    expect(body.preferred_locale).toBe("ja-JP");
+  });
+
+  it("returns 400 when body is empty object (nothing to update)", async () => {
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("CSRF", () => {
   it("rejects PATCH without Origin", async () => {
     const res = await app.request("/api/account/profile", {

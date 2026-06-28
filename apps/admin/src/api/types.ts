@@ -9,6 +9,7 @@ export interface AuthUser {
   id: string;
   email: string;
   display_name: string | null;
+  preferred_locale?: string | null;
   is_active: boolean;
   created_at: string;
   mailer_status?: MailerStatus | null;
@@ -610,6 +611,7 @@ export interface AccountDto {
   id: string;
   email: string;
   display_name: string | null;
+  preferred_locale: string | null;
   is_active: boolean;
   must_change_password: boolean;
   has_local_password: boolean;
@@ -618,7 +620,8 @@ export interface AccountDto {
 }
 
 export interface PatchAccountProfileBody {
-  display_name: string;
+  display_name?: string;
+  preferred_locale?: string | null;
 }
 
 export interface PatchAccountPasswordBody {

@@ -226,8 +226,11 @@ describe("GET /api/checkin/events", () => {
       headers: { Cookie: await sessionCookieFor(opId) },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { events: Array<{ id: string }> };
+    const body = (await res.json()) as {
+      events: Array<{ id: string; timezone: string }>;
+    };
     expect(body.events.map((e) => e.id)).toEqual([EVENT_A]);
+    expect(body.events[0]!.timezone).toBeTruthy();
   });
 
   it("still lists archived event for operator (late check-in after admin archive)", async () => {

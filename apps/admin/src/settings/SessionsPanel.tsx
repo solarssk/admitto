@@ -9,6 +9,7 @@ import {
 } from "../api/client.js";
 import type { EventDto, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { formatUtcDateTime } from "../utils/event-dates.js";
 
 function parseUserAgent(ua: string | null): string {
   if (!ua) return "Unknown";
@@ -41,10 +42,7 @@ function parseUserAgent(ua: string | null): string {
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
+  return formatUtcDateTime(iso);
 }
 
 type FilterValue = "all" | "admin" | "operator";

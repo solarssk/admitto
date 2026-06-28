@@ -45,6 +45,7 @@ function renderDrawer(onClose = vi.fn()) {
     <AttendeeDetailDrawer
       eventId="evt-1"
       attendeeId="att-1"
+      eventTimezone="Europe/Warsaw"
       onClose={onClose}
       onUpdated={() => {}}
     />,

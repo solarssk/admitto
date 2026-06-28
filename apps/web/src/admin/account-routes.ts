@@ -14,6 +14,10 @@ import {
 } from "@admitto/auth";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
+import {
+  isSupportedLocale,
+  sanitizePreferredLocale,
+} from "@admitto/shared";
 
 function hasLocalPassword(passwordHash: string | null): boolean {
   return passwordHash !== null;
@@ -77,6 +81,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       id: true,
       email: true,
       display_name: true,
+      preferred_locale: true,
       is_active: true,
       must_change_password: true,
       password_hash: true,
@@ -105,6 +110,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
     id: user.id,
     email: user.email,
     display_name: user.display_name,
+    preferred_locale: sanitizePreferredLocale(user.preferred_locale),
     is_active: user.is_active,
     must_change_password: user.must_change_password,
     has_local_password: hasLocalPassword(user.password_hash),
@@ -123,9 +129,22 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
   });
 }
 
-const profileSchema = z.object({ display_name: z.string().max(120) }).strict();
+const profileSchema = z
+  .object({
+    display_name: z.string().max(120).optional(),
+    preferred_locale: z
+      .string()
+      .max(20)
+      .refine((v) => isSupportedLocale(v), { message: "Unsupported locale" })
+      .nullable()
+      .optional(),
+  })
+  .strict()
+  .refine((d) => d.display_name !== undefined || d.preferred_locale !== undefined, {
+    message: "Nothing to update",
+  });
 
-/** PATCH /api/account/profile — update display name (no re-auth). */
+/** PATCH /api/account/profile — update display name and/or preferred locale (no re-auth). */
 export async function handlePatchAccountProfile(c: Context, db: PrismaClient): Promise<Response> {
   const userId = c.get("auth").userId;
 
@@ -139,9 +158,24 @@ export async function handlePatchAccountProfile(c: Context, db: PrismaClient): P
   const parsed = profileSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  const display_name = parsed.data.display_name.trim() || null;
-  await db.user.update({ where: { id: userId }, data: { display_name } });
-  return c.json({ display_name });
+  const data: { display_name?: string | null; preferred_locale?: string | null } = {};
+  if (parsed.data.display_name !== undefined) {
+    data.display_name = parsed.data.display_name.trim() || null;
+  }
+  if (parsed.data.preferred_locale !== undefined) {
+    data.preferred_locale = parsed.data.preferred_locale;
+  }
+
+  const updated = await db.user.update({
+    where: { id: userId },
+    data,
+    select: { display_name: true, preferred_locale: true },
+  });
+
+  return c.json({
+    display_name: updated.display_name,
+    preferred_locale: sanitizePreferredLocale(updated.preferred_locale),
+  });
 }
 
 const passwordSchema = z

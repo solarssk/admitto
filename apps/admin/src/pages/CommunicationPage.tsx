@@ -15,6 +15,7 @@ import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import "../communication/communication.css";
 import { isTemplateDirty } from "../communication/templateDirty.js";
+import { formatUtcDateTime } from "../utils/event-dates.js";
 
 type ActiveField = "subject" | "body";
 type TemplateFormat = "mjml" | "html";
@@ -22,7 +23,7 @@ type TemplateFormat = "mjml" | "html";
 /** Format an ISO timestamp for the delivery log table. */
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString();
+  return formatUtcDateTime(iso);
 }
 
 /** Insert placeholder text at the textarea cursor selection. */

@@ -4,6 +4,7 @@ import { Button, Card } from "@admitto/ui";
 import {
   ApiError,
   fetchAttendeeCard,
+  fetchCheckInEvents,
   fetchCheckInHistory,
   fetchCheckInStats,
   lookupCheckInAttendees,
@@ -34,16 +35,19 @@ const WEDGE_DEBOUNCE_MS = 50;
 
 export interface CheckInPageProps {
   eventTitle?: string;
+  eventTimezone?: string;
   useCamera?: boolean;
   onUseCameraChange?: (open: boolean) => void;
 }
 
 export function CheckInPage({
   eventTitle = "Event",
+  eventTimezone: eventTimezoneProp,
   useCamera = false,
   onUseCameraChange,
 }: CheckInPageProps) {
   const { eventId } = useParams();
+  const [eventTimezone, setEventTimezone] = useState(eventTimezoneProp ?? "UTC");
   const { deviceLabel } = useAuth();
   const { state: connectionState, reportApiError } = useConnectionState();
   const canAct = canMutateCheckin(connectionState);
@@ -85,6 +89,26 @@ export function CheckInPage({
   const [overlayManualError, setOverlayManualError] = useState<string | null>(null);
 
   const deviceId = deviceLabel ?? undefined;
+
+  useEffect(() => {
+    if (eventTimezoneProp) {
+      setEventTimezone(eventTimezoneProp);
+      return;
+    }
+    if (!eventId) return;
+    let cancelled = false;
+    fetchCheckInEvents()
+      .then((events) => {
+        const found = events.find((e) => e.id === eventId);
+        if (!cancelled) setEventTimezone(found?.timezone ?? "UTC");
+      })
+      .catch(() => {
+        if (!cancelled) setEventTimezone("UTC");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, eventTimezoneProp]);
 
   const focusScan = useCallback(() => {
     if (showMobileOverlay) return;
@@ -513,6 +537,7 @@ export function CheckInPage({
                 card={card}
                 pending={pending}
                 canAct={canAct && !busy}
+                eventTimezone={eventTimezone}
                 onConfirm={
                   showCompactFeedback &&
                   card &&
@@ -526,6 +551,7 @@ export function CheckInPage({
                 <AttendeeCard
                   key={card.id}
                   card={card}
+                  eventTimezone={eventTimezone}
                   scanStatus={scanResult?.status}
                   confirmed={scanResult?.confirmed}
                   pending={pending}
@@ -553,6 +579,7 @@ export function CheckInPage({
                 <AttendeeCard
                   key={card.id}
                   card={card}
+                  eventTimezone={eventTimezone}
                   scanStatus={scanResult?.status}
                   confirmed={scanResult?.confirmed}
                   pending={pending}
@@ -581,6 +608,7 @@ export function CheckInPage({
               admittedCount={admittedCount}
               totalCount={totalCount}
               history={history}
+              eventTimezone={eventTimezone}
             />
             <ManualLookupPanel
               open={manualOpen}
@@ -601,6 +629,7 @@ export function CheckInPage({
         <CameraOverlay
           open
           eventTitle={eventTitle}
+          eventTimezone={eventTimezone}
           admittedCount={admittedCount}
           history={history}
           wedgeActive={buffer.trim().length > 0}

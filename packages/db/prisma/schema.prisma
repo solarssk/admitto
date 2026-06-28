@@ -325,6 +325,7 @@ model User {
   email                String              @unique
   password_hash        String?
   display_name         String?
+  preferred_locale     String?              // IETF BCP 47 tag, e.g. "pl-PL"; null = browser default
   is_active            Boolean             @default(true)
   must_change_password Boolean             @default(false)
   created_at           DateTime            @default(now())

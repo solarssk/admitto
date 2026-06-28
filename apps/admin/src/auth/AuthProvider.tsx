@@ -10,6 +10,7 @@ import {
 import { ApiError, fetchMe, fetchStaffTheme } from "../api/client.js";
 import type { AuthUser, RoleAssignment } from "../api/types.js";
 import { applyThemeVars } from "@admitto/ui";
+import { setPreferredLocale } from "../utils/locale-store.js";
 
 export interface AuthContextValue {
   user: AuthUser;
@@ -38,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthError(null);
     try {
       const me = await fetchMe();
+      setPreferredLocale(me.user.preferred_locale ?? undefined);
       setUser({ ...me.user, mailer_status: me.mailer_status ?? null });
       setAssignments(me.assignments);
       setDeviceLabel(me.device_label ?? null);
