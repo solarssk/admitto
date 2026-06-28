@@ -181,6 +181,7 @@ model EventItem {
   label      String
   type       String   @default("item")
   enabled    Boolean  @default(true)
+  icon       String?  @db.VarChar(64)
   config     Json?
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt

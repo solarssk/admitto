@@ -56,7 +56,13 @@ export type CheckInScanParams = {
   ip?: string;
 };
 
-export type EventItemContent = { label: string; source_field: string };
+export type EventItemContent = {
+  label: string;
+  source_field: string;
+  type?: "text" | "select" | "boolean";
+  required?: boolean;
+  options?: string[];
+};
 
 /** Per-item JSON config: operator hints and issuance behaviour flags (ADR 0025). */
 export type EventItemConfig = {

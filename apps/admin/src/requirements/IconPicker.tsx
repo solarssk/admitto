@@ -1,0 +1,100 @@
+import { useState } from "react";
+
+/** Tabler icon names used for event items — ordered by frequency of use. */
+export const ITEM_ICONS: ReadonlyArray<{ name: string; label: string }> = [
+  { name: "package", label: "Package (default)" },
+  { name: "gift", label: "Gift" },
+  { name: "id-badge-2", label: "Badge" },
+  { name: "headphones", label: "Headphones" },
+  { name: "shirt", label: "T-shirt" },
+  { name: "ticket", label: "Ticket" },
+  { name: "notebook", label: "Notebook" },
+  { name: "cup", label: "Cup" },
+  { name: "tool", label: "Tool" },
+  { name: "backpack", label: "Backpack" },
+  { name: "briefcase", label: "Briefcase" },
+  { name: "certificate", label: "Certificate" },
+  { name: "crown", label: "Crown (VIP)" },
+  { name: "star", label: "Star" },
+  { name: "bookmark", label: "Bookmark" },
+  { name: "key", label: "Key" },
+  { name: "lock", label: "Lock" },
+  { name: "map-pin", label: "Location" },
+  { name: "calendar", label: "Calendar" },
+  { name: "clock", label: "Clock" },
+  { name: "camera", label: "Camera" },
+  { name: "phone", label: "Phone" },
+  { name: "mail", label: "Mail" },
+  { name: "printer", label: "Printer" },
+  { name: "scan", label: "Scan" },
+  { name: "qrcode", label: "QR code" },
+  { name: "user", label: "Person" },
+  { name: "users", label: "Group" },
+  { name: "car", label: "Car (parking)" },
+  { name: "bus", label: "Bus (transport)" },
+  { name: "pizza", label: "Food" },
+  { name: "coffee", label: "Coffee" },
+  { name: "wine", label: "Drink" },
+  { name: "plant", label: "Plant" },
+  { name: "ball-football", label: "Ball" },
+  { name: "music", label: "Music" },
+  { name: "palette", label: "Art" },
+  { name: "device-laptop", label: "Laptop" },
+  { name: "device-mobile", label: "Mobile" },
+];
+
+export interface IconPickerProps {
+  value: string | null;
+  onChange: (icon: string | null) => void;
+}
+
+/** Grid picker for Tabler item icons with search. */
+export function IconPicker({ value, onChange }: IconPickerProps) {
+  const [search, setSearch] = useState("");
+  const filtered = ITEM_ICONS.filter(
+    (ic) => !search || ic.label.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  return (
+    <div className="icon-picker">
+      <input
+        type="search"
+        className="icon-picker__search"
+        placeholder="Search icons…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        aria-label="Search icons"
+      />
+      <div className="icon-picker__grid" role="listbox" aria-label="Choose icon">
+        <button
+          type="button"
+          className={`icon-picker__item${!value ? " icon-picker__item--selected" : ""}`}
+          onClick={() => onChange(null)}
+          aria-selected={!value}
+          role="option"
+          title="Default (package)"
+        >
+          <i className="ti ti-package" aria-hidden="true" />
+          <span>Default</span>
+        </button>
+        {filtered.map((ic) => (
+          <button
+            key={ic.name}
+            type="button"
+            className={`icon-picker__item${value === ic.name ? " icon-picker__item--selected" : ""}`}
+            onClick={() => onChange(ic.name)}
+            aria-selected={value === ic.name}
+            role="option"
+            title={ic.label}
+          >
+            <i className={`ti ti-${ic.name}`} aria-hidden="true" />
+            <span>{ic.label}</span>
+          </button>
+        ))}
+        {filtered.length === 0 && (
+          <p className="icon-picker__empty">No icons match &quot;{search}&quot;</p>
+        )}
+      </div>
+    </div>
+  );
+}

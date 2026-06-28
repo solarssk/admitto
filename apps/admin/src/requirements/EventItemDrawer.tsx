@@ -5,11 +5,17 @@ import {
   deleteEventItem,
   updateEventItem,
 } from "../api/client.js";
-import type { EventItemConfigDto, EventItemDto } from "../api/types.js";
-import { isValidSourceFieldSlug, validateContentsRows } from "./eventItemContentsForm.js";
+import type { EventItemConfigDto, EventItemContentDto, EventItemDto } from "../api/types.js";
+import {
+  type ContentRow,
+  isValidSourceFieldSlug,
+  validateContentsRows,
+} from "./eventItemContentsForm.js";
+import { IconPicker } from "./IconPicker.js";
 import { slugifyItemKey } from "./itemKey.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import "../attendees/attendees.css";
+import "./requirements.css";
 
 export interface EventItemDrawerProps {
   eventId: string;
@@ -23,20 +29,35 @@ type FormState = {
   enabled: boolean;
   requires_return: boolean;
   issue_on_checkin: boolean;
-  contents: { label: string; source_field: string }[];
+  icon: string | null;
+  contents: ContentRow[];
 };
 
+function emptyContentRow(): ContentRow {
+  return { label: "", source_field: "", type: "text", required: false, options: "" };
+}
+
+function contentRowFromDto(c: EventItemContentDto): ContentRow {
+  return {
+    label: c.label,
+    source_field: c.source_field,
+    type: c.type ?? "text",
+    required: c.required ?? false,
+    options: c.options?.join(", ") ?? "",
+  };
+}
+
 /** Resolve contents rows from API config, including legacy `size_field`. */
-function contentsFromConfig(cfg: EventItemConfigDto | null): { label: string; source_field: string }[] {
+function contentsFromConfig(cfg: EventItemConfigDto | null): ContentRow[] {
   if (!cfg) return [];
   if (cfg.contents?.length) {
-    return cfg.contents.map((c) => ({ label: c.label, source_field: c.source_field }));
+    return cfg.contents.map(contentRowFromDto);
   }
   const legacy = cfg as EventItemConfigDto & { size_field?: string };
   if (typeof legacy.size_field === "string" && legacy.size_field.trim()) {
     const source_field = legacy.size_field.trim();
     if (isValidSourceFieldSlug(source_field)) {
-      return [{ label: "Shirt size", source_field }];
+      return [{ label: "Shirt size", source_field, type: "text", required: false, options: "" }];
     }
   }
   return [];
@@ -50,6 +71,7 @@ function toForm(item: EventItemDto): FormState {
     enabled: item.enabled,
     requires_return: cfg?.requires_return ?? false,
     issue_on_checkin: cfg?.issue_on_checkin ?? false,
+    icon: item.icon ?? null,
     contents: contentsFromConfig(cfg),
   };
 }
@@ -58,7 +80,7 @@ function toForm(item: EventItemDto): FormState {
 function toConfig(
   form: FormState,
   itemKey: string,
-  contents: { label: string; source_field: string }[],
+  contents: EventItemContentDto[],
 ): EventItemConfigDto {
   const config: EventItemConfigDto = {
     requires_return: form.requires_return,
@@ -111,6 +133,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
       await updateEventItem(eventId, item.id, {
         label: form.label.trim(),
         enabled: form.enabled,
+        icon: form.icon,
         config: toConfig(form, item.key, contentsResult.contents),
       });
       onUpdated();
@@ -160,6 +183,22 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
         if (!currentField || currentField === prevSlug) {
           row.source_field = slugifyItemKey(value);
         }
+      }
+      contents[index] = row;
+      return { ...f, contents };
+    });
+  }
+
+  function updateContentMeta(
+    index: number,
+    field: "type" | "required" | "options",
+    value: string | boolean,
+  ) {
+    setForm((f) => {
+      const contents = [...f.contents];
+      const row = { ...contents[index], [field]: value };
+      if (field === "type" && value !== "select") {
+        row.options = "";
       }
       contents[index] = row;
       return { ...f, contents };
@@ -217,6 +256,21 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
           </div>
 
           <div>
+            <h3 className="attendee-drawer__section-title">Icon</h3>
+            <p className="requirements-section-hint">
+              Shown next to the item label in the operator check-in view.
+            </p>
+            <div className="item-icon-preview">
+              <i className={`ti ti-${form.icon ?? "package"}`} aria-hidden="true" />
+              <span>{form.icon ?? "Default (package)"}</span>
+            </div>
+            <IconPicker
+              value={form.icon}
+              onChange={(icon) => setForm((f) => ({ ...f, icon }))}
+            />
+          </div>
+
+          <div>
             <h3 className="attendee-drawer__section-title">Operator hints</h3>
             <p className="requirements-section-hint">
               Optional fields shown on the attendee card for this item (e.g. shirt size from import
@@ -239,6 +293,42 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                     pattern="[a-z0-9_]+"
                     title="Lowercase letters, numbers, and underscores only"
                   />
+                  <div className="contents-row__meta">
+                    <select
+                      value={row.type}
+                      onChange={(e) =>
+                        updateContentMeta(
+                          i,
+                          "type",
+                          e.target.value as ContentRow["type"],
+                        )
+                      }
+                      className="contents-row__type"
+                      aria-label="Field type"
+                    >
+                      <option value="text">Text</option>
+                      <option value="select">Select</option>
+                      <option value="boolean">Boolean</option>
+                    </select>
+                    {row.type === "select" && (
+                      <input
+                        type="text"
+                        placeholder="Options (comma-separated)"
+                        value={row.options}
+                        onChange={(e) => updateContentMeta(i, "options", e.target.value)}
+                        className="contents-row__options"
+                        aria-label="Select options"
+                      />
+                    )}
+                    <label className="contents-row__required">
+                      <input
+                        type="checkbox"
+                        checked={row.required}
+                        onChange={(e) => updateContentMeta(i, "required", e.target.checked)}
+                      />
+                      Required
+                    </label>
+                  </div>
                   <IconButton
                     label="Remove row"
                     type="button"
@@ -260,7 +350,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                 onClick={() =>
                   setForm((f) => ({
                     ...f,
-                    contents: [...f.contents, { label: "", source_field: "" }],
+                    contents: [...f.contents, emptyContentRow()],
                   }))
                 }
               >

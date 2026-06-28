@@ -154,7 +154,7 @@ export function RequirementsPage() {
   }
 
   async function handleOpsToggle(
-    field: "badge_at_entry" | "require_confirm_on_scan",
+    field: keyof OpsConfigDto,
     value: boolean,
   ) {
     if (!eventId || !opsConfig) return;
@@ -335,6 +335,32 @@ export function RequirementsPage() {
                     void handleOpsToggle("require_confirm_on_scan", e.target.checked)
                   }
                   aria-label="Require confirmation on scan"
+                />
+              </div>
+              <div className="requirements-behaviour-row">
+                <div className="requirements-behaviour-row__text">
+                  <strong>Allow manual lookup</strong>
+                  <p>Operators can search attendees by name when scan is unavailable.</p>
+                </div>
+                <Switch
+                  checked={opsConfig.allow_manual_lookup}
+                  disabled={opsSaving}
+                  onChange={(e) => void handleOpsToggle("allow_manual_lookup", e.target.checked)}
+                  aria-label="Allow manual lookup"
+                />
+              </div>
+              <div className="requirements-behaviour-row">
+                <div className="requirements-behaviour-row__text">
+                  <strong>Auto-advance on valid scan</strong>
+                  <p>After a successful scan, move to the next attendee automatically.</p>
+                </div>
+                <Switch
+                  checked={opsConfig.auto_advance_on_valid}
+                  disabled={opsSaving}
+                  onChange={(e) =>
+                    void handleOpsToggle("auto_advance_on_valid", e.target.checked)
+                  }
+                  aria-label="Auto-advance on valid scan"
                 />
               </div>
             </>
