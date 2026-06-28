@@ -7,11 +7,11 @@ vi.mock("@hono/node-server/conninfo", () => ({
   getConnInfo: vi.fn(),
 }));
 
-vi.mock("../src/config.js", () => ({
+vi.mock("../src/env-flags.js", () => ({
   resolveTrustProxy: vi.fn(() => false),
 }));
 
-import { resolveTrustProxy } from "../src/config.js";
+import { resolveTrustProxy } from "../src/env-flags.js";
 
 const mockedGetConnInfo = vi.mocked(getConnInfo);
 const mockedResolveTrustProxy = vi.mocked(resolveTrustProxy);
