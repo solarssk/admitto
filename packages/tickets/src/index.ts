@@ -17,7 +17,7 @@ export { undoLastCheckIn, UndoNotAllowedError } from "./undo.js";
 export { parseCustomData, customDataValue } from "./custom-data.js";
 export { buildItemDetail, resolveEventItemContents, collectEventCustomDataFields } from "./event-item-contents.js";
 export { DEFAULT_EVENT_ITEM_KEYS } from "./event-items.js";
-export { parseEventOpsConfig } from "./ops-config.js";
+export { parseEventOpsConfig, loadEventOpsConfig } from "./ops-config.js";
 export { writeActionLog, writeBulkActionLog } from "./ops-audit.js";
 export { writeAdminAuditLog } from "./admin-audit.js";
 export type { OpsAuditContext } from "./ops-audit.js";

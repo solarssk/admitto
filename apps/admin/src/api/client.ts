@@ -395,6 +395,14 @@ export async function fetchCheckInStats(eventId: string): Promise<CheckInStatsRe
   return parseJson<CheckInStatsResponse>(res);
 }
 
+export async function fetchCheckInOpsConfig(eventId: string): Promise<OpsConfigDto> {
+  const res = await fetch(
+    `/api/checkin/ops-config?eventId=${encodeURIComponent(eventId)}`,
+    { credentials: "same-origin" },
+  );
+  return parseJson<OpsConfigDto>(res);
+}
+
 function attendeesListQuery(eventId: string, params: AttendeesListParams = {}): string {
   const q = new URLSearchParams();
   if (params.page != null) q.set("page", String(params.page));

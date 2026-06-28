@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { ensureAttendeeItemStates, issueBadgeOnCheckIn } from "./item-states.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
-import { parseEventOpsConfig } from "./ops-config.js";
+import { parseEventOpsConfig, loadEventOpsConfig } from "./ops-config.js";
 import { isAdmittable, ADMITTABLE_STATUS_LIST } from "./admittable.js";
 import { getAttendeeCard } from "./attendee-card.js";
 import type { AdmitResult, AttendeeCardDto } from "./types.js";
@@ -142,9 +142,5 @@ export async function shouldRequireConfirmOnScan(
   eventId: string,
   prisma: PrismaClient,
 ): Promise<boolean> {
-  const event = await prisma.event.findUnique({
-    where: { id: eventId },
-    select: { ops_config: true },
-  });
-  return parseEventOpsConfig(event?.ops_config).require_confirm_on_scan;
+  return (await loadEventOpsConfig(eventId, prisma)).require_confirm_on_scan;
 }

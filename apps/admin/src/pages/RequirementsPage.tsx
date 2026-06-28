@@ -341,8 +341,8 @@ export function RequirementsPage() {
                 <div className="requirements-behaviour-row__text">
                   <strong>Allow manual lookup</strong>
                   <p>
-                    Saved for this event. Operator name search enforcement ships in a follow-up
-                    release — lookup stays available in check-in for now.
+                    When disabled, operators can only check in via QR scan — name search and
+                    short-query lookup are blocked in check-in.
                   </p>
                 </div>
                 <Switch
@@ -356,8 +356,8 @@ export function RequirementsPage() {
                 <div className="requirements-behaviour-row__text">
                   <strong>Auto-advance on valid scan</strong>
                   <p>
-                    Saved for this event. Auto-clearing the card after a valid scan ships in a
-                    follow-up release — check-in behaviour is unchanged for now.
+                    After a successful scan (VALID), the check-in screen clears automatically so
+                    the next attendee can be scanned without tapping Next.
                   </p>
                 </div>
                 <Switch

@@ -76,6 +76,7 @@ export type CheckInStatus =
 export interface AttendeeCardItemDto {
   key: string;
   label: string;
+  icon: string | null;
   state: string;
   actions: string[];
   detail?: string | null;

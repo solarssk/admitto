@@ -74,6 +74,7 @@ export type EventItemConfig = {
 export type AttendeeCardItemDto = {
   key: string;
   label: string;
+  icon: string | null;
   state: string;
   actions: string[];
   /** Optional operator hint (e.g. shirt size for giftbag contents). */

@@ -163,6 +163,7 @@ export async function getAttendeeCard(
       return {
         key: item.key,
         label: item.label,
+        icon: item.icon ?? null,
         state,
         actions: operatorItemActions(state, item.config as EventItemConfig | null),
         detail: buildItemDetail(item.config, attendee.custom_data),
