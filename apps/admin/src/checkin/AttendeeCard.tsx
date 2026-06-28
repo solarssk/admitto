@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Button, Card } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInStatus } from "../api/types.js";
+import { formatEventTime } from "../utils/event-dates.js";
 import { NoteModal } from "./NoteModal.js";
 
 type Props = {
   card: AttendeeCardDto;
+  eventTimezone: string;
   scanStatus?: CheckInStatus;
   confirmed?: boolean;
   pending?: boolean;
@@ -77,6 +79,7 @@ function itemStripClass(state: string): string {
 
 export function AttendeeCard({
   card,
+  eventTimezone,
   scanStatus,
   confirmed,
   pending,
@@ -152,7 +155,7 @@ export function AttendeeCard({
               {card.notes.map((n, i) => (
                 <li key={`${n.created_at}-${i}`}>
                   <span className="checkin-card__note-meta">
-                    {n.author_display} · {new Date(n.created_at).toLocaleTimeString()}
+                    {n.author_display} · {formatEventTime(n.created_at, eventTimezone)}
                   </span>
                   <p>{n.body}</p>
                 </li>

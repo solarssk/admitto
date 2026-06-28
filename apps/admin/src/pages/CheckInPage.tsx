@@ -551,6 +551,7 @@ export function CheckInPage({
                 <AttendeeCard
                   key={card.id}
                   card={card}
+                  eventTimezone={eventTimezone}
                   scanStatus={scanResult?.status}
                   confirmed={scanResult?.confirmed}
                   pending={pending}
@@ -578,6 +579,7 @@ export function CheckInPage({
                 <AttendeeCard
                   key={card.id}
                   card={card}
+                  eventTimezone={eventTimezone}
                   scanStatus={scanResult?.status}
                   confirmed={scanResult?.confirmed}
                   pending={pending}

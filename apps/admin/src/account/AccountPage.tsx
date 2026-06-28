@@ -221,7 +221,7 @@ export function AccountPage() {
         {profileStatus && <p className="text-success" role="status">{profileStatus}</p>}
         {localeSaved && (
           <p className="mail-field-hint" style={{ color: "var(--success)" }}>
-            Saved. Navigate to another page to see the new date format everywhere.
+            Saved. Most views use the new format immediately; reload this page to refresh session timestamps below.
           </p>
         )}
       </Card>
