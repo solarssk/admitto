@@ -9,9 +9,11 @@ import {
   updateAttendee,
 } from "../api/client.js";
 import type { AttendeeDetailDto, DeliveryDto, UpdateAttendeePatch } from "../api/types.js";
+import { CustomDataFieldInput } from "./CustomDataFieldInput.js";
 import {
   flattenCustomDataFieldsFromItems,
   readCustomDataField,
+  validateCustomFieldsForm,
   type CustomDataFieldDef,
 } from "./customData.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
@@ -243,6 +245,12 @@ export function AttendeeDetailDrawer({
 
     if (Object.keys(patch).length === 0) return;
 
+    const customValidation = validateCustomFieldsForm(attributeFields, form.customFields);
+    if (customValidation) {
+      setError(customValidation);
+      return;
+    }
+
     patch.expected_updated_at = detail.updated_at;
     const target = { eventId, attendeeId };
 
@@ -430,16 +438,17 @@ export function AttendeeDetailDrawer({
                     onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
                   />
                   {attributeFields.map((field) => (
-                    <Input
+                    <CustomDataFieldInput
                       key={field.source_field}
-                      label={field.label}
+                      field={field}
                       value={form.customFields[field.source_field] ?? ""}
-                      onChange={(e) =>
+                      disabled={saving || reloading || staleWrite}
+                      onChange={(next) =>
                         setForm({
                           ...form,
                           customFields: {
                             ...form.customFields,
-                            [field.source_field]: e.target.value,
+                            [field.source_field]: next,
                           },
                         })
                       }

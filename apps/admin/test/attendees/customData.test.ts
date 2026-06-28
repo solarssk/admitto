@@ -11,6 +11,7 @@ function item(
   return {
     type: "physical",
     enabled: true,
+    icon: null,
     config: null,
     ...partial,
   };
@@ -46,6 +47,37 @@ describe("flattenCustomDataFieldsFromItems", () => {
         }),
       ]),
     ).toEqual([{ label: "Shirt size", source_field: "shirt_size" }]);
+  });
+
+  it("preserves content metadata from event items", () => {
+    expect(
+      flattenCustomDataFieldsFromItems([
+        item({
+          id: "1",
+          key: "giftbag",
+          label: "Gift bag",
+          config: {
+            contents: [
+              {
+                label: "Size",
+                source_field: "size",
+                type: "select",
+                required: true,
+                options: ["S", "M", "L"],
+              },
+            ],
+          },
+        }),
+      ]),
+    ).toEqual([
+      {
+        label: "Size",
+        source_field: "size",
+        type: "select",
+        required: true,
+        options: ["S", "M", "L"],
+      },
+    ]);
   });
 
   it("merges fields from multiple items", () => {

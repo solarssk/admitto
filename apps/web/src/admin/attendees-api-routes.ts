@@ -13,6 +13,8 @@ import {
 import { formatEventDate, resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
   collectEventCustomDataFields,
+  buildCustomDataFromInput,
+  validateCustomDataPatch,
   customDataValue,
   parseCustomData,
   writeActionLog,
@@ -1129,25 +1131,13 @@ function computeRsvpChange(
   };
 }
 
-function buildCreateCustomData(
-  allowedFields: EventItemContent[],
-  input?: Record<string, unknown>,
-): Prisma.InputJsonValue | undefined {
-  if (!input || Object.keys(input).length === 0) return undefined;
-  const allowed = new Set(allowedFields.map((f) => f.source_field));
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(input)) {
-    if (!allowed.has(key)) {
-      throw new Error(`unknown_custom_data_field:${key}`);
-    }
-    if (value === null || value === undefined || value === "") continue;
-    if (typeof value !== "string") {
-      throw new Error("validation_failed");
-    }
-    const trimmed = value.trim();
-    if (trimmed) out[key] = trimmed.slice(0, 100);
+function customDataErrorCode(err: unknown): string {
+  const message = err instanceof Error ? err.message : "";
+  if (message.startsWith("unknown_custom_data_field:")) return "unknown_custom_data_field";
+  if (message.startsWith("required_custom_data_field_missing:")) {
+    return "required_custom_data_field_missing";
   }
-  return Object.keys(out).length > 0 ? (out as Prisma.InputJsonValue) : undefined;
+  return "validation_failed";
 }
 
 /** PATCH /api/admin/events/:eventId/attendees/:id */
@@ -1185,11 +1175,10 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
 
   if (profilePatch.custom_data_fields) {
     const allowedFields = await loadEventCustomDataFields(db, eventId);
-    const allowed = new Set(allowedFields.map((f) => f.source_field));
-    for (const key of Object.keys(profilePatch.custom_data_fields)) {
-      if (!allowed.has(key)) {
-        return c.json({ error: "unknown_custom_data_field" }, 400);
-      }
+    try {
+      validateCustomDataPatch(allowedFields, existing.custom_data, profilePatch.custom_data_fields);
+    } catch (err) {
+      return c.json({ error: customDataErrorCode(err) }, 400);
     }
   }
 
@@ -1353,13 +1342,10 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
   const allowedFields = await loadEventCustomDataFields(db, eventId);
   let customData: Prisma.InputJsonValue | undefined;
   try {
-    customData = buildCreateCustomData(allowedFields, custom_data);
+    const built = buildCustomDataFromInput(allowedFields, custom_data);
+    customData = built as Prisma.InputJsonValue | undefined;
   } catch (err) {
-    const message = err instanceof Error ? err.message : "";
-    if (message.startsWith("unknown_custom_data_field:")) {
-      return c.json({ error: "unknown_custom_data_field" }, 400);
-    }
-    return c.json({ error: "validation_failed" }, 400);
+    return c.json({ error: customDataErrorCode(err) }, 400);
   }
 
   try {

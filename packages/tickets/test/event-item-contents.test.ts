@@ -3,6 +3,30 @@ import { buildItemDetail, collectEventCustomDataFields, resolveEventItemContents
 import { customDataValue } from "../src/custom-data.js";
 
 describe("resolveEventItemContents", () => {
+  it("preserves content metadata from config", () => {
+    expect(
+      resolveEventItemContents({
+        contents: [
+          {
+            label: "Size",
+            source_field: "size",
+            type: "select",
+            required: true,
+            options: ["S", "M", "L"],
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        label: "Size",
+        source_field: "size",
+        type: "select",
+        required: true,
+        options: ["S", "M", "L"],
+      },
+    ]);
+  });
+
   it("returns contents from config", () => {
     expect(
       resolveEventItemContents({
@@ -88,6 +112,27 @@ describe("collectEventCustomDataFields", () => {
 });
 
 describe("buildItemDetail", () => {
+  it("formats boolean values and required markers", () => {
+    expect(
+      buildItemDetail(
+        {
+          contents: [
+            { label: "Lunch", source_field: "lunch", type: "boolean", required: true },
+            { label: "Size", source_field: "size", type: "select", required: true, options: ["S", "M"] },
+          ],
+        },
+        { lunch: "true", size: "M" },
+      ),
+    ).toBe("Lunch*: Yes · Size*: M");
+
+    expect(
+      buildItemDetail(
+        { contents: [{ label: "Size", source_field: "size", required: true }] },
+        {},
+      ),
+    ).toBe("Size*: —");
+  });
+
   it("joins multiple attributes with middle dot", () => {
     const detail = buildItemDetail(
       {

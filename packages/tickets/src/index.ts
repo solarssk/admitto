@@ -16,6 +16,11 @@ export { addAttendeeNote, NoteTooLongError, OperatorRequiredError, MAX_ATTENDEE_
 export { undoLastCheckIn, UndoNotAllowedError } from "./undo.js";
 export { parseCustomData, customDataValue } from "./custom-data.js";
 export { buildItemDetail, resolveEventItemContents, collectEventCustomDataFields } from "./event-item-contents.js";
+export {
+  buildCustomDataFromInput,
+  normalizeCustomDataFieldValue,
+  validateCustomDataPatch,
+} from "./validate-custom-data.js";
 export { DEFAULT_EVENT_ITEM_KEYS } from "./event-items.js";
 export { parseEventOpsConfig, loadEventOpsConfig } from "./ops-config.js";
 export { writeActionLog, writeBulkActionLog } from "./ops-audit.js";

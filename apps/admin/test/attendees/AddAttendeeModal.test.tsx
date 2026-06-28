@@ -12,6 +12,7 @@ vi.mock("../../src/api/client.js", () => ({
     }
   },
   createAttendee: vi.fn(),
+  fetchEventItems: vi.fn().mockResolvedValue([]),
 }));
 
 afterEach(cleanup);

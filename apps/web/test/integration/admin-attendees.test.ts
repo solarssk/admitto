@@ -643,6 +643,49 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(body.error).toBe("unknown_custom_data_field");
   });
 
+  it("rejects invalid select option and missing required field", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [
+            {
+              label: "Size",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      },
+    });
+
+    const invalidOption = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields: { shirt_size: "XL" },
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(invalidOption.status).toBe(400);
+    expect((await invalidOption.json()) as { error: string }).toEqual({ error: "validation_failed" });
+
+    const clearRequired = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields: { shirt_size: null },
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(clearRequired.status).toBe(400);
+    expect((await clearRequired.json()) as { error: string }).toEqual({
+      error: "required_custom_data_field_missing",
+    });
+  });
+
   it("audits custom_data field names without PII values", async () => {
     await prisma.eventItem.updateMany({
       where: { event_id: EVENT_A, key: "giftbag" },

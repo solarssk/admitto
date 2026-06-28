@@ -1,7 +1,13 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input } from "@admitto/ui";
-import { ApiError, createAttendee } from "../api/client.js";
+import { ApiError, createAttendee, fetchEventItems } from "../api/client.js";
 import type { AttendeeDetailDto } from "../api/types.js";
+import { CustomDataFieldInput } from "./CustomDataFieldInput.js";
+import {
+  flattenCustomDataFieldsFromItems,
+  validateCustomFieldsForm,
+  type CustomDataFieldDef,
+} from "./customData.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import "./add-attendee-modal.css";
 
@@ -24,8 +30,28 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
   const [company, setCompany] = useState("");
   const [department, setDepartment] = useState("");
   const [ticketType, setTicketType] = useState("");
+  const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
+  const [customFields, setCustomFields] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetchEventItems(eventId)
+      .then((items) => {
+        if (cancelled) return;
+        const fields = flattenCustomDataFieldsFromItems(items);
+        setAttributeFields(fields);
+        setCustomFields(Object.fromEntries(fields.map((field) => [field.source_field, ""])));
+      })
+      .catch(() => {
+        if (!cancelled) setAttributeFields([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, open]);
 
   const resetForm = () => {
     setEmail("");
@@ -33,6 +59,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
     setCompany("");
     setDepartment("");
     setTicketType("");
+    setCustomFields(Object.fromEntries(attributeFields.map((field) => [field.source_field, ""])));
     setError(null);
   };
 
@@ -48,15 +75,27 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
+    const customValidation = validateCustomFieldsForm(attributeFields, customFields);
+    if (customValidation) {
+      setError(customValidation);
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     try {
+      const custom_data: Record<string, string> = {};
+      for (const field of attributeFields) {
+        const value = customFields[field.source_field]?.trim();
+        if (value) custom_data[field.source_field] = value;
+      }
       const attendee = await createAttendee(eventId, {
         email: email.trim(),
         name: name.trim(),
         company: company.trim() || undefined,
         department: department.trim() || undefined,
         ticket_type: ticketType.trim() || undefined,
+        ...(Object.keys(custom_data).length > 0 ? { custom_data } : {}),
       });
       onCreated(attendee);
       resetForm();
@@ -64,6 +103,12 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setError("This email is already registered for this event.");
+      } else if (
+        err instanceof ApiError &&
+        err.status === 400 &&
+        (err.message === "required_custom_data_field_missing" || err.message === "validation_failed")
+      ) {
+        setError("Check required attribute fields and option values.");
       } else {
         setError(err instanceof ApiError ? err.message : "Failed to add attendee. Try again.");
       }
@@ -135,6 +180,18 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
               setError(null);
             }}
           />
+          {attributeFields.map((field) => (
+            <CustomDataFieldInput
+              key={field.source_field}
+              field={field}
+              value={customFields[field.source_field] ?? ""}
+              disabled={submitting}
+              onChange={(next) => {
+                setCustomFields((current) => ({ ...current, [field.source_field]: next }));
+                setError(null);
+              }}
+            />
+          ))}
         </div>
         <div className="add-attendee-modal__actions">
           <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
