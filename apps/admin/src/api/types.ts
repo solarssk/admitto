@@ -34,6 +34,7 @@ export interface EventDto {
   title: string;
   slug: string;
   date: string;
+  timezone: string;
   location: string | null;
   organization_id: string;
   attendee_count?: number;
@@ -45,6 +46,7 @@ export interface EventSettingsDto {
   title: string;
   slug: string;
   date: string;
+  timezone: string;
   location: string | null;
   capacity: number | null;
   status: "active" | "archived";
@@ -654,6 +656,7 @@ export interface EventOverviewDto {
     title: string;
     slug: string;
     date: string;
+    timezone: string;
     location: string | null;
     capacity: number | null;
     archived_at: string | null;

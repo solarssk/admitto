@@ -216,7 +216,7 @@ async function renderDraftPreview(
   const vars = {
     ...DEFAULT_SAMPLE_VARS,
     event_name: event.title,
-    event_date: formatEventDate(event.date, resolvePreviewEventTimeZone()),
+    event_date: formatEventDate(event.date, resolvePreviewEventTimeZone(event.timezone)),
     event_location: event.location ?? "",
     logo_url: branding.logo_url,
     header_image_url: branding.header_image_url,

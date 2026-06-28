@@ -6,6 +6,7 @@ import { canManageInstance, listAdminEvents } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import { timezoneField } from "./timezone.js";
 
 const slugField = z
   .string()
@@ -24,6 +25,7 @@ const createEventSchema = z.object({
   slug: slugField,
   date: z.union([z.string().datetime({ offset: true }), dateOnlyField]),
   location: z.string().trim().max(300).optional(),
+  timezone: timezoneField,
 });
 
 type EventJsonRow = {
@@ -31,6 +33,7 @@ type EventJsonRow = {
   title: string;
   slug: string;
   date: Date;
+  timezone: string;
   location: string | null;
   organization_id: string;
   archived_at: Date | null;
@@ -59,6 +62,7 @@ function serializeEventDto(event: EventJsonRow, count?: number) {
     title: event.title,
     slug: event.slug,
     date: event.date.toISOString(),
+    timezone: event.timezone,
     location: event.location,
     organization_id: event.organization_id,
     archived_at: event.archived_at?.toISOString() ?? null,
@@ -134,7 +138,7 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
     return c.json({ error: message }, 400);
   }
 
-  const { title, slug, date, location } = parsed.data;
+  const { title, slug, date, location, timezone } = parsed.data;
   const dateValue = parseEventDateInput(date);
 
   const isSuperadmin = await canManageInstance(db, auth.userId);
@@ -156,6 +160,7 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
           title,
           slug,
           date: dateValue,
+          timezone,
           location: location?.trim() ? location.trim() : null,
           organization_id: orgId,
         },

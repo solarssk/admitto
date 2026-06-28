@@ -160,6 +160,7 @@ describe("POST /api/admin/events", () => {
       title: "Autumn Summit 2026",
       slug: "autumn-summit-2026",
       date: "2026-09-29",
+      timezone: "UTC",
       location: "Convention Center, Warsaw",
     });
 
@@ -190,6 +191,7 @@ describe("POST /api/admin/events", () => {
       title: "Admin Created",
       slug: "admin-created-event",
       date: "2026-10-15",
+      timezone: "UTC",
     });
 
     expect(res.status).toBe(201);
@@ -203,6 +205,7 @@ describe("POST /api/admin/events", () => {
       title: "Blocked",
       slug: "blocked-event",
       date: "2026-10-15",
+      timezone: "UTC",
     });
     expect(res.status).toBe(403);
   });
@@ -212,6 +215,7 @@ describe("POST /api/admin/events", () => {
       title: "Duplicate",
       slug: "taken_slug",
       date: "2026-10-15",
+      timezone: "UTC",
     });
     expect(res.status).toBe(409);
     const body = (await res.json()) as { code: string; error: string };
@@ -224,6 +228,7 @@ describe("POST /api/admin/events", () => {
       title: "Bad Slug",
       slug: "INVALID",
       date: "2026-10-15",
+      timezone: "UTC",
     });
     expect(res.status).toBe(400);
   });
@@ -233,6 +238,7 @@ describe("POST /api/admin/events", () => {
       title: "   ",
       slug: "valid-slug",
       date: "2026-10-15",
+      timezone: "UTC",
     });
     expect(res.status).toBe(400);
   });
@@ -242,6 +248,38 @@ describe("POST /api/admin/events", () => {
       title: "Bad Date",
       slug: "bad-date",
       date: "2026-02-30",
+      timezone: "UTC",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("creates event with explicit timezone", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Tokyo Summit",
+      slug: "tokyo-summit",
+      date: "2026-09-01",
+      timezone: "Asia/Tokyo",
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { event: { timezone: string } };
+    expect(body.event.timezone).toBe("Asia/Tokyo");
+  });
+
+  it("returns 400 when timezone is missing", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Default TZ Event",
+      slug: "default-tz-event",
+      date: "2026-09-02",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects invalid IANA timezone", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Bad TZ",
+      slug: "bad-tz",
+      date: "2026-09-03",
+      timezone: "Mars/Olympus",
     });
     expect(res.status).toBe(400);
   });

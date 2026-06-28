@@ -128,6 +128,7 @@ export interface EventSummary {
   title: string;
   slug: string;
   date: Date;
+  timezone: string;
   location: string | null;
   organization_id: string;
   archived_at: Date | null;
@@ -138,6 +139,7 @@ const eventSelect = {
   title: true,
   slug: true,
   date: true,
+  timezone: true,
   location: true,
   organization_id: true,
   archived_at: true,

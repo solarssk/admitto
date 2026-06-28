@@ -950,18 +950,19 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   const format = formatRaw;
 
   const { q, status, ticket_type, rsvp_status } = parseListQuery(c);
-  const timeZone = resolvePreviewEventTimeZone();
 
   const filterParams = { q, status, ticket_type, rsvp_status };
 
   const event = await db.event.findUnique({
     where: { id: eventId },
-    select: { title: true, date: true },
+    select: { title: true, date: true, timezone: true },
   });
 
   if (!event) {
     return c.json({ error: "forbidden" }, 403);
   }
+
+  const timeZone = resolvePreviewEventTimeZone(event.timezone);
 
   const total = await countFilteredAttendees(db, eventId, filterParams);
   if (total > EXPORT_ROW_CAP) {

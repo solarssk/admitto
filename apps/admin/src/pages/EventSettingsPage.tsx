@@ -13,11 +13,13 @@ import type { EventSettingsDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import "./event-settings-page.css";
 
 type SettingsForm = {
   title: string;
   date: string;
+  timezone: string;
   location: string;
   capacity: string;
 };
@@ -26,6 +28,7 @@ function toForm(data: EventSettingsDto): SettingsForm {
   return {
     title: data.title,
     date: data.date.split("T")[0] ?? "",
+    timezone: data.timezone,
     location: data.location ?? "",
     capacity: data.capacity?.toString() ?? "",
   };
@@ -45,12 +48,13 @@ function parseCapacityInput(raw: string): number | null {
 function buildSettingsPatch(
   form: SettingsForm,
   original: SettingsForm,
-): Partial<{ title: string; date: string; location: string | null; capacity: number | null }> {
-  const patch: Partial<{ title: string; date: string; location: string | null; capacity: number | null }> =
+): Partial<{ title: string; date: string; timezone: string; location: string | null; capacity: number | null }> {
+  const patch: Partial<{ title: string; date: string; timezone: string; location: string | null; capacity: number | null }> =
     {};
   const title = form.title.trim();
   if (title !== original.title.trim()) patch.title = title;
   if (form.date !== original.date) patch.date = form.date;
+  if (form.timezone !== original.timezone) patch.timezone = form.timezone;
   const location = form.location.trim() || null;
   const originalLocation = original.location.trim() || null;
   if (location !== originalLocation) patch.location = location;
@@ -271,6 +275,21 @@ export function EventSettingsPage() {
           disabled={isArchived || saving}
           onChange={(e) => setForm({ ...form, date: e.target.value })}
         />
+
+        <div className="event-settings-timezone">
+          <label className="input-label" htmlFor="event-timezone">
+            Event timezone
+          </label>
+          <TimezoneSelect
+            id="event-timezone"
+            value={form.timezone}
+            onChange={(tz) => setForm({ ...form, timezone: tz })}
+            disabled={isArchived || saving}
+          />
+          <p className="field-hint">
+            All check-in timestamps and reports will use this timezone.
+          </p>
+        </div>
 
         <Input
           label="Location"

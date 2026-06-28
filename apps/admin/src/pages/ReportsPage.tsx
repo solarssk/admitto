@@ -317,7 +317,7 @@ export function ReportsPage() {
   if (!eventId) return <p>Missing event.</p>;
 
   const subtitle = data
-    ? `${data.event.title} · ${formatEventDate(data.event.date)}`
+    ? `${data.event.title} · ${formatEventDate(data.event.date, data.timezone)}`
     : "Admission statistics and export";
 
   return (

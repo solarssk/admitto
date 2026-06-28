@@ -92,9 +92,9 @@ export function EventArchivingPanel() {
                   <div>{event.title}</div>
                   <div className="archiving-subdued">{event.slug}</div>
                 </td>
-                <td>{formatEventDate(event.date)}</td>
+                <td>{formatEventDate(event.date, event.timezone)}</td>
                 {mode === "archived" && (
-                  <td>{event.archived_at ? formatEventDateTime(event.archived_at) : "—"}</td>
+                  <td>{event.archived_at ? formatEventDateTime(event.archived_at, event.timezone) : "—"}</td>
                 )}
                 <td>
                   {mode === "active" ? (

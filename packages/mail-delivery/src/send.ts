@@ -6,6 +6,7 @@ import {
   materializeStoredDeliveryMessage,
   renderTemplateTrustedForStorage,
   resolveBrandingFromEvent,
+  resolvePreviewEventTimeZone,
   resolveTemplateForEvent,
 } from "@admitto/mail-templates";
 import { createMailer, sendBatch, type ExportSink, type MailMessage } from "@admitto/mailer";
@@ -170,7 +171,7 @@ export async function sendTicketEmails(
           full_name: attendee.name,
           email: attendee.email,
           event_name: event.title,
-          event_date: formatEventDate(event.date),
+          event_date: formatEventDate(event.date, resolvePreviewEventTimeZone(event.timezone)),
           event_location: event.location ?? "",
           logo_url: branding.logo_url,
           header_image_url: branding.header_image_url,

@@ -4,39 +4,8 @@ import { Badge, Card, PageHeader, Stat } from "@admitto/ui";
 import { ApiError, fetchEventOverview } from "../api/client.js";
 import type { EventDto, EventOverviewDto } from "../api/types.js";
 import { formatEventDate, formatEventDateTime } from "../utils/event-dates.js";
+import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-
-function computeLabel(iso: string | null): string {
-  if (!iso) return "—";
-  const diff = new Date(iso).getTime() - Date.now();
-  const absMs = Math.abs(diff);
-  const days = Math.floor(absMs / 86_400_000);
-  const hours = Math.floor((absMs % 86_400_000) / 3_600_000);
-  if (diff < 0) {
-    if (days === 0) return "Ended today";
-    if (days === 1) return "Ended yesterday";
-    return `Ended ${days} days ago`;
-  }
-  if (days === 0 && hours === 0) return "Starting soon";
-  if (days === 0) return `Today in ${hours}h`;
-  if (days === 1) return "Tomorrow";
-  if (days <= 7) return `In ${days} days`;
-  return formatEventDate(iso);
-}
-
-function useCountdown(targetDateIso: string | null): string {
-  const [label, setLabel] = useState<string>(() => computeLabel(targetDateIso));
-
-  useEffect(() => {
-    const tick = () => setLabel(computeLabel(targetDateIso));
-    tick();
-    if (!targetDateIso) return;
-    const id = setInterval(tick, 60_000);
-    return () => clearInterval(id);
-  }, [targetDateIso]);
-
-  return label;
-}
 
 function AdmissionBar({ admitted, total }: { admitted: number; total: number }) {
   const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
@@ -73,7 +42,9 @@ export function EventOverviewPage() {
   const [error, setError] = useState<string | null>(null);
 
   const currentOverview = overview?.event.id === event.id ? overview : null;
-  const countdown = useCountdown(currentOverview?.event.date ?? event.date);
+  const eventTimezone = currentOverview?.event.timezone ?? event.timezone;
+  const eventDateIso = currentOverview?.event.date ?? event.date;
+  const countdown = useCountdown(eventDateIso, eventTimezone);
 
   useEffect(() => {
     abortRef.current?.abort();
@@ -104,7 +75,9 @@ export function EventOverviewPage() {
     return () => ac.abort();
   }, [event.id, reportApiError]);
 
-  const meta = [formatEventDate(event.date), event.location].filter(Boolean).join(" · ");
+  const meta = [formatEventDate(eventDateIso, eventTimezone), event.location]
+    .filter(Boolean)
+    .join(" · ");
 
   const attendeeCount = currentOverview?.attendee_count ?? event.attendee_count ?? null;
   const admittedCount = currentOverview?.admitted_count ?? null;
@@ -161,7 +134,11 @@ export function EventOverviewPage() {
           />
         </Card>
         <Card>
-          <Stat label="Event date" value={countdown} sub={formatEventDate(event.date)} />
+          <Stat
+            label="Event date"
+            value={countdown}
+            sub={formatEventDate(eventDateIso, eventTimezone)}
+          />
         </Card>
       </div>
 
@@ -169,8 +146,8 @@ export function EventOverviewPage() {
 
       {event.archived_at && (
         <p className="overview-archived-note">
-          Archived on {formatEventDateTime(event.archived_at)}. Restore from event settings if you need to edit
-          again.
+          Archived on {formatEventDateTime(event.archived_at, eventTimezone)}. Restore from event
+          settings if you need to edit again.
         </p>
       )}
 

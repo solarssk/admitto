@@ -230,7 +230,7 @@ export function EventsPickerPage() {
               <h2 className="event-card__title">{event.title}</h2>
               <p className="event-card__meta">
                 <i className="ti ti-calendar" aria-hidden="true" />
-                <span>{formatEventDate(event.date)}</span>
+                <span>{formatEventDate(event.date, event.timezone)}</span>
                 {event.location && (
                   <>
                     <span aria-hidden="true">·</span>
@@ -251,7 +251,7 @@ export function EventsPickerPage() {
               {event.archived_at && (
                 <p className="event-card__archived">
                   <Badge variant="neutral">Archived · read-only</Badge>
-                  <span>{formatEventDateTime(event.archived_at)}</span>
+                  <span>{formatEventDateTime(event.archived_at, event.timezone)}</span>
                 </p>
               )}
             </>

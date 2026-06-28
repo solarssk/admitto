@@ -77,6 +77,7 @@ async function seed(client: PrismaClient) {
         title: "Overview Main Event",
         slug: "overview-main",
         date: new Date("2026-10-01T12:00:00.000Z"),
+        timezone: "Europe/Warsaw",
         organization_id: ORG_OV,
       },
       {
@@ -324,6 +325,7 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as EventOverviewResponse;
+    expect(body.event.timezone).toBe("Europe/Warsaw");
     const stats = await getCheckInStats(EVENT_MAIN, prisma);
     expect(body.admitted_count).toBe(4);
     expect(body.admitted_count).toBe(stats.admitted_count);
