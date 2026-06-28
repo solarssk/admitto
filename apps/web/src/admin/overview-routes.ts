@@ -13,6 +13,7 @@ export interface EventOverviewResponse {
     capacity: number | null;
     archived_at: string | null;
     organization_id: string;
+    timezone: string;
   };
   attendee_count: number;
   admitted_count: number;
@@ -37,6 +38,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       title: true,
       slug: true,
       date: true,
+      timezone: true,
       location: true,
       capacity: true,
       archived_at: true,
@@ -73,6 +75,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       title: event.title,
       slug: event.slug,
       date: event.date.toISOString(),
+      timezone: event.timezone,
       location: event.location,
       capacity: event.capacity,
       archived_at: event.archived_at?.toISOString() ?? null,

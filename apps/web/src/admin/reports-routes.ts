@@ -301,11 +301,11 @@ export async function handleGetReports(c: Context, db: PrismaClient): Promise<Re
 
   const event = await db.event.findUnique({
     where: { id: eventId },
-    select: { id: true, title: true, date: true, capacity: true },
+    select: { id: true, title: true, date: true, capacity: true, timezone: true },
   });
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const timeZone = resolvePreviewEventTimeZone();
+  const timeZone = resolvePreviewEventTimeZone(event.timezone);
   const aggregates = await loadReportsAggregates(db, eventId, ADMISSION_LOG_LIMIT, timeZone);
 
   const body: EventReportsResponse = {
@@ -350,11 +350,11 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
 
   const event = await db.event.findUnique({
     where: { id: eventId },
-    select: { id: true, title: true, date: true, slug: true, capacity: true },
+    select: { id: true, title: true, date: true, slug: true, capacity: true, timezone: true },
   });
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const timeZone = resolvePreviewEventTimeZone();
+  const timeZone = resolvePreviewEventTimeZone(event.timezone);
 
   const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
 

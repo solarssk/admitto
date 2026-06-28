@@ -79,6 +79,7 @@ async function seed(client: PrismaClient) {
         title: "Export Event",
         slug: "export-event",
         date: new Date("2026-10-01"),
+        timezone: "Asia/Tokyo",
         organization_id: ORG_EX,
       },
       {
@@ -505,7 +506,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     expect(admittedCol).not.toContain("Z");
     const expected = formatAdmittedAtLocal(
       new Date("2026-10-01T10:00:00Z"),
-      resolvePreviewEventTimeZone(),
+      resolvePreviewEventTimeZone("Asia/Tokyo"),
     );
     expect(admittedCol).toBe(expected);
   });

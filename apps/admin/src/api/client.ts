@@ -222,6 +222,7 @@ export async function createEvent(body: {
   title: string;
   slug: string;
   date: string;
+  timezone: string;
   location?: string;
 }): Promise<EventDto> {
   const res = await fetch("/api/admin/events", jsonPostInit(body));
@@ -256,7 +257,7 @@ export async function fetchEventSettings(
 /** Patch basic event fields (title, date, location, capacity). */
 export async function patchEvent(
   eventId: string,
-  body: Partial<{ title: string; date: string; location: string | null; capacity: number | null }>,
+  body: Partial<{ title: string; date: string; timezone: string; location: string | null; capacity: number | null }>,
 ): Promise<{ event: EventSettingsDto }> {
   const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}`, jsonPatchInit(body));
   return parseJson<{ event: EventSettingsDto }>(res);

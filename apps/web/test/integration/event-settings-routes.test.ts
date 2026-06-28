@@ -155,6 +155,7 @@ afterEach(async () => {
       title: "Settings Event",
       date: new Date("2026-10-01T12:00:00.000Z"),
       location: "Warsaw",
+      timezone: "UTC",
       capacity: null,
       archived_at: null,
     },
@@ -195,6 +196,7 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       title: string;
       slug: string;
       date: string;
+      timezone: string;
       location: string | null;
       capacity: number | null;
       status: string;
@@ -205,6 +207,7 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.title).toBe("Settings Event");
     expect(body.slug).toBe("event-settings");
     expect(body.location).toBe("Warsaw");
+    expect(body.timezone).toBe("UTC");
     expect(body.capacity).toBeNull();
     expect(body.status).toBe("active");
     expect(body.organization_name).toBe("Settings Org");
@@ -278,6 +281,34 @@ describe("PATCH /api/admin/events/:eventId", () => {
     const meta = audit!.metadata as { eventId?: string; fields?: string[] };
     expect(meta.eventId).toBe(EVENT_SET);
     expect(meta.fields).toContain("title");
+  });
+
+  it("updates timezone", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ timezone: "Asia/Tokyo" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { event: { timezone: string } };
+    expect(body.event.timezone).toBe("Asia/Tokyo");
+
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.timezone).toBe("Asia/Tokyo");
+  });
+
+  it("returns 400 for invalid timezone", async () => {
+    const before = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ timezone: "Mars/Olympus" }),
+    });
+    expect(res.status).toBe(400);
+
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.timezone).toBe(before.timezone);
   });
 
   it("updates capacity and clears capacity with null", async () => {

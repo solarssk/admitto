@@ -3,18 +3,11 @@ import { useOutletContext } from "react-router-dom";
 import { Button, Card, PageHeader } from "@admitto/ui";
 import type { EventDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
+import { formatEventCalendarDate } from "../utils/event-dates.js";
 import { CheckInPage } from "./CheckInPage.js";
 
-function formatEventDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
 function formatEventSubtitle(event: EventDto): string {
-  const date = formatEventDate(event.date);
+  const date = formatEventCalendarDate(event.date);
   return event.location ? `${event.title} · ${date} · ${event.location}` : `${event.title} · ${date}`;
 }
 

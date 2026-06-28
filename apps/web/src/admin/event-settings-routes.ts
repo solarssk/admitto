@@ -8,6 +8,7 @@ import { writeAdminAuditLog } from "@admitto/tickets";
 import { z } from "zod";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
+import { timezoneField } from "./timezone.js";
 
 const dateOnlyField = z
   .string()
@@ -26,6 +27,7 @@ const patchEventSchema = z
     date: z.union([z.string().datetime(), dateOnlyField]).optional(),
     location: z.string().trim().max(300).nullish(),
     capacity: z.number().int().positive().max(PG_INT_MAX).nullish(),
+    timezone: timezoneField.optional(),
   })
   .strict();
 
@@ -34,6 +36,7 @@ export type EventSettingsDto = {
   title: string;
   slug: string;
   date: string;
+  timezone: string;
   location: string | null;
   capacity: number | null;
   status: "active" | "archived";
@@ -46,6 +49,7 @@ type EventSettingsRow = {
   title: string;
   slug: string;
   date: Date;
+  timezone: string;
   location: string | null;
   capacity: number | null;
   archived_at: Date | null;
@@ -75,6 +79,7 @@ function serializeEventSettings(event: EventSettingsRow): EventSettingsDto {
     title: event.title,
     slug: event.slug,
     date: event.date.toISOString(),
+    timezone: event.timezone,
     location: event.location,
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
@@ -98,6 +103,7 @@ async function loadEventSettingsRow(
       title: true,
       slug: true,
       date: true,
+      timezone: true,
       location: true,
       capacity: true,
       archived_at: true,
@@ -159,12 +165,14 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
   const data: {
     title?: string;
     date?: Date;
+    timezone?: string;
     location?: string | null;
     capacity?: number | null;
   } = {};
 
   if (patch.title !== undefined) data.title = patch.title.trim();
   if (patch.date !== undefined) data.date = parseEventDateInput(patch.date);
+  if (patch.timezone !== undefined) data.timezone = patch.timezone;
   if (patch.location !== undefined) {
     data.location = patch.location?.trim() ? patch.location.trim() : null;
   }
@@ -182,6 +190,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
           title: true,
           slug: true,
           date: true,
+          timezone: true,
           location: true,
           capacity: true,
           archived_at: true,

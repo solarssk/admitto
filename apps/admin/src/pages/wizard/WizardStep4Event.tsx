@@ -6,6 +6,7 @@ import {
 } from "react";
 import { Input, useToast } from "@admitto/ui";
 import { ApiError, createEvent, fetchAdminEvents } from "../../api/client.js";
+import { TimezoneSelect } from "../../components/TimezoneSelect.js";
 import { slugFromTitle } from "../../events/slug.js";
 import { useWizard } from "./WizardContext.js";
 
@@ -28,6 +29,9 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
     const { setSelectedEventId, setSummary } = useWizard();
     const [title, setTitle] = useState("");
     const [date, setDate] = useState("");
+    const [timezone, setTimezone] = useState(
+      () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    );
     const [location, setLocation] = useState("");
     const [existingEvents, setExistingEvents] = useState<{ id: string; title: string }[]>([]);
     const [loadingEvents, setLoadingEvents] = useState(true);
@@ -35,7 +39,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
     const [error, setError] = useState<string | null>(null);
 
     const slug = slugFromTitle(title, 80);
-    const canSubmit = Boolean(title.trim() && date && slug.length > 0);
+    const canSubmit = Boolean(title.trim() && date && slug.length > 0 && timezone);
 
     useEffect(() => {
       onCanContinueChange(canSubmit);
@@ -73,6 +77,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
           title: title.trim(),
           slug: slug.trim(),
           date,
+          timezone,
           location: location.trim() || undefined,
         });
         setSelectedEventId(event.id);
@@ -147,6 +152,23 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
               setError(null);
               onDirtyChange?.(true);
             }}
+          />
+        </div>
+
+        <div className="setup-wizard__field">
+          <label className="input-label" htmlFor="wizard-event-timezone">
+            Event timezone <span aria-hidden="true">*</span>
+          </label>
+          <TimezoneSelect
+            id="wizard-event-timezone"
+            value={timezone}
+            onChange={(tz) => {
+              setTimezone(tz);
+              setError(null);
+              onDirtyChange?.(true);
+            }}
+            disabled={submitting}
+            required
           />
         </div>
 

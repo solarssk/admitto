@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@admitto/ui";
 import { ApiError, createEvent } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
+import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { slugFromTitle } from "./slug.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import "./create-event-modal.css";
@@ -12,13 +13,19 @@ type CreateEventModalProps = {
   onCreated: (event: EventDto) => void;
 };
 
+function defaultBrowserTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
 export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalProps) {
   const titleId = useId();
+  const timezoneId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
   const [date, setDate] = useState("");
+  const [timezone, setTimezone] = useState(defaultBrowserTimezone);
   const [location, setLocation] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +41,7 @@ export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalP
     setSlug("");
     setSlugTouched(false);
     setDate("");
+    setTimezone(defaultBrowserTimezone());
     setLocation("");
     setError(null);
   };
@@ -46,8 +54,10 @@ export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalP
 
   useModalFocusTrap(panelRef, open, handleClose);
 
+  const canSubmit = Boolean(title.trim() && slug.trim() && date && timezone);
+
   const handleSubmit = async () => {
-    if (submitting || !title.trim() || !slug.trim() || !date) return;
+    if (submitting || !canSubmit) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -55,6 +65,7 @@ export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalP
         title: title.trim(),
         slug: slug.trim(),
         date,
+        timezone,
         location: location.trim() || undefined,
       });
       onCreated(event);
@@ -145,6 +156,18 @@ export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalP
             />
           </div>
           <div className="create-event-modal__field">
+            <label htmlFor={timezoneId}>
+              Event timezone <span aria-hidden="true">*</span>
+            </label>
+            <TimezoneSelect
+              id={timezoneId}
+              value={timezone}
+              onChange={setTimezone}
+              disabled={submitting}
+              required
+            />
+          </div>
+          <div className="create-event-modal__field">
             <label htmlFor="ce-location">
               Location <span className="form-optional">(optional)</span>
             </label>
@@ -166,7 +189,7 @@ export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalP
           <Button
             type="button"
             variant="primary"
-            disabled={submitting || !title.trim() || !slug.trim() || !date}
+            disabled={submitting || !canSubmit}
             onClick={() => void handleSubmit()}
           >
             {submitting ? "Creating…" : "Create event"}

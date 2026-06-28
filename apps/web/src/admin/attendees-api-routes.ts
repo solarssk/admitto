@@ -463,7 +463,7 @@ async function buildExportPdfBuffer(
   doc.registerFont(PDF_FONT_BOLD, resolvePdfFontFile(true));
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
 
-  const eventDateStr = formatEventDate(eventMeta.date, timeZone);
+  const eventDateStr = formatEventDate(eventMeta.date, "UTC");
   doc.fontSize(14).font(PDF_FONT_BOLD).text(`${eventMeta.title} — ${eventDateStr}`);
   doc.moveDown(0.5);
 
@@ -950,18 +950,19 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   const format = formatRaw;
 
   const { q, status, ticket_type, rsvp_status } = parseListQuery(c);
-  const timeZone = resolvePreviewEventTimeZone();
 
   const filterParams = { q, status, ticket_type, rsvp_status };
 
   const event = await db.event.findUnique({
     where: { id: eventId },
-    select: { title: true, date: true },
+    select: { title: true, date: true, timezone: true },
   });
 
   if (!event) {
-    return c.json({ error: "forbidden" }, 403);
+    return c.json({ error: "not_found" }, 404);
   }
+
+  const timeZone = resolvePreviewEventTimeZone(event.timezone);
 
   const total = await countFilteredAttendees(db, eventId, filterParams);
   if (total > EXPORT_ROW_CAP) {
