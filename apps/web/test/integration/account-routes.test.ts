@@ -248,6 +248,21 @@ describe("PATCH /api/account/profile — preferred_locale", () => {
     expect(row.preferred_locale).toBe("pl-PL");
   });
 
+  it("PATCH profile response sanitizes legacy invalid preferred_locale", async () => {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { preferred_locale: " xx-ZZ " },
+    });
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: "Sanitize Test" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { preferred_locale: string | null };
+    expect(body.preferred_locale).toBeNull();
+  });
+
   it("clears preferred_locale with null", async () => {
     await app.request("/api/account/profile", {
       method: "PATCH",

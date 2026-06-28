@@ -174,7 +174,7 @@ export async function handlePatchAccountProfile(c: Context, db: PrismaClient): P
 
   return c.json({
     display_name: updated.display_name,
-    preferred_locale: updated.preferred_locale,
+    preferred_locale: sanitizePreferredLocale(updated.preferred_locale),
   });
 }
 
