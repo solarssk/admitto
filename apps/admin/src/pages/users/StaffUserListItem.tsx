@@ -109,7 +109,7 @@ function UserActions({ user, onEdit, onRevokeSessions }: StaffUserListItemProps)
         className="users-page__action-btn"
         onClick={() => onRevokeSessions(user)}
       >
-        <i className="ti ti-arrows-clockwise" aria-hidden="true" />
+        <i className="ti ti-refresh" aria-hidden="true" />
         <span className="users-page__action-btn-label">Reset sessions</span>
         <span className="sr-only"> for {label}</span>
       </Button>
