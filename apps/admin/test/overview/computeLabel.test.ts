@@ -45,4 +45,11 @@ describe("computeLabel", () => {
     const iso = "2026-07-15T12:00:00.000Z";
     expect(computeLabel(iso, TZ)).toMatch(/15 Jul 2026|Jul 15, 2026/);
   });
+
+  it('returns "Ended yesterday" when event TZ calendar is ahead of UTC-noon sentinel', () => {
+    const kiritimati = "Pacific/Kiritimati"; // UTC+14
+    vi.setSystemTime(new Date("2026-07-01T11:00:00.000Z")); // July 2 01:00 local, 1h before stored noon
+    const iso = "2026-07-01T12:00:00.000Z";
+    expect(computeLabel(iso, kiritimati)).toBe("Ended yesterday");
+  });
 });

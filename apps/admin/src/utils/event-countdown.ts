@@ -38,15 +38,22 @@ export function computeLabel(iso: string | null, timezone: string): string {
   const daysUntil = calendarDaysBetween(todayStr, eventDay);
   const daysSince = calendarDaysBetween(eventDay, todayStr);
 
+  // Event TZ calendar already past the stored day while UTC-noon sentinel is still ahead (+14 edge case).
+  if (daysSince > 0) {
+    if (eventDay === yesterdayStr) return "Ended yesterday";
+    return `Ended ${daysSince} days ago`;
+  }
+
   if (diff < 0) {
     if (eventDay === todayStr) return "Ended today";
     if (eventDay === yesterdayStr) return "Ended yesterday";
     return `Ended ${daysSince} days ago`;
   }
+
   const h = Math.floor((diff % 86_400_000) / 3_600_000);
-  if (eventDay === todayStr) return h === 0 ? "Starting soon" : `Today in ${h}h`;
-  if (eventDay === tomorrowStr) return "Tomorrow";
-  if (daysUntil <= 7) return `In ${daysUntil} days`;
+  if (daysUntil === 0) return h === 0 ? "Starting soon" : `Today in ${h}h`;
+  if (daysUntil === 1) return "Tomorrow";
+  if (daysUntil <= 7 && daysUntil > 0) return `In ${daysUntil} days`;
   return formatEventCalendarDate(iso);
 }
 
