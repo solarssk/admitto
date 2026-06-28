@@ -2057,8 +2057,36 @@
 
 .overview-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+@media (max-width: 900px) {
+  .overview-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .overview-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+.overview-admission-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-sunken);
+  margin-top: var(--space-2);
+  overflow: hidden;
+}
+
+.overview-admission-bar__fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 3px;
+  transition: width 0.4s ease;
 }
 
 .overview-archived-note {

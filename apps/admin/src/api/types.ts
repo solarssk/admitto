@@ -648,6 +648,24 @@ export interface ResetMfaResponse {
   sessions_revoked: number;
 }
 
+export interface EventOverviewDto {
+  event: {
+    id: string;
+    title: string;
+    slug: string;
+    date: string;
+    location: string | null;
+    capacity: number | null;
+    archived_at: string | null;
+    organization_id: string;
+  };
+  attendee_count: number;
+  admitted_count: number;
+  email_sent: number;
+  email_failed: number;
+  email_queued: number;
+}
+
 export interface EventReportsResponse {
   timezone: string;
   event: {
