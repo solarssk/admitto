@@ -8,10 +8,11 @@ import {
 import type { EventItemConfigDto, EventItemContentDto, EventItemDto } from "../api/types.js";
 import {
   type ContentRow,
+  contentRowFromDto,
   isValidSourceFieldSlug,
   validateContentsRows,
 } from "./eventItemContentsForm.js";
-import { IconPicker } from "./IconPicker.js";
+import { DEFAULT_EVENT_ITEM_ICON, IconPicker, normalizeEventItemIconForForm } from "./IconPicker.js";
 import { slugifyItemKey } from "./itemKey.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import "../attendees/attendees.css";
@@ -35,16 +36,6 @@ type FormState = {
 
 function emptyContentRow(): ContentRow {
   return { label: "", source_field: "", type: "text", required: false, options: "" };
-}
-
-function contentRowFromDto(c: EventItemContentDto): ContentRow {
-  return {
-    label: c.label,
-    source_field: c.source_field,
-    type: c.type ?? "text",
-    required: c.required ?? false,
-    options: c.options?.join(", ") ?? "",
-  };
 }
 
 /** Resolve contents rows from API config, including legacy `size_field`. */
@@ -71,7 +62,7 @@ function toForm(item: EventItemDto): FormState {
     enabled: item.enabled,
     requires_return: cfg?.requires_return ?? false,
     issue_on_checkin: cfg?.issue_on_checkin ?? false,
-    icon: item.icon ?? null,
+    icon: normalizeEventItemIconForForm(item.icon),
     contents: contentsFromConfig(cfg),
   };
 }
@@ -261,8 +252,8 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
               Stored on the item for a future check-in update — not shown to operators yet.
             </p>
             <div className="item-icon-preview">
-              <i className={`ti ti-${form.icon ?? "package"}`} aria-hidden="true" />
-              <span>{form.icon ?? "Default (package)"}</span>
+              <i className={`ti ti-${form.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
+              <span>{form.icon ? form.icon : "Default"}</span>
             </div>
             <IconPicker
               key={item.id}

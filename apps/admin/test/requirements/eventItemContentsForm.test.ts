@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  contentRowFromDto,
   parseOptionsText,
   validateContentsRows,
 } from "../../src/requirements/eventItemContentsForm.js";
@@ -143,5 +144,23 @@ describe("parseOptionsText", () => {
     expect(parseOptionsText("A, B, C")).toEqual(["A", "B", "C"]);
     expect(parseOptionsText("only")).toEqual(["only"]);
     expect(parseOptionsText("  ,  , ")).toEqual([]);
+  });
+});
+
+describe("contentRowFromDto round-trip", () => {
+  it("preserves select options through join and parse", () => {
+    const dto = {
+      label: "Size",
+      source_field: "size",
+      type: "select" as const,
+      required: true,
+      options: ["S", "M", "L"],
+    };
+    const row = contentRowFromDto(dto);
+    expect(row.options).toBe("S, M, L");
+    expect(validateContentsRows([row])).toEqual({
+      ok: true,
+      contents: [dto],
+    });
   });
 });

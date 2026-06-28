@@ -256,6 +256,39 @@ describe("POST /api/admin/events/:eventId/items", () => {
     expect(row.icon).toBe("crown");
   });
 
+  it("creates item with icon and config together", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        key: "combo_item",
+        label: "Combo",
+        icon: "star",
+        config: { requires_return: true },
+      }),
+    });
+    expect(res.status).toBe(201);
+    const row = (await res.json()) as {
+      key: string;
+      icon: string | null;
+      config: { requires_return?: boolean };
+    };
+    expect(row.key).toBe("combo_item");
+    expect(row.icon).toBe("star");
+    expect(row.config.requires_return).toBe(true);
+  });
+
+  it("stores null when icon is the default package name", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ key: "default_icon", label: "Default icon", icon: "package" }),
+    });
+    expect(res.status).toBe(201);
+    const row = (await res.json()) as { icon: string | null };
+    expect(row.icon).toBeNull();
+  });
+
   it("creates item without icon as null", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
       method: "POST",
@@ -274,6 +307,13 @@ describe("POST /api/admin/events/:eventId/items", () => {
       body: JSON.stringify({ key: "bad_icon", label: "Bad icon", icon: "<script>" }),
     });
     expect(res.status).toBe(400);
+
+    const trailingHyphen = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ key: "bad_icon2", label: "Bad icon 2", icon: "arrow-" }),
+    });
+    expect(trailingHyphen.status).toBe(400);
   });
 });
 

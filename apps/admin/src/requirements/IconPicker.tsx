@@ -2,7 +2,6 @@ import { useState } from "react";
 
 /** Tabler icon names used for event items — ordered by frequency of use. */
 export const ITEM_ICONS: ReadonlyArray<{ name: string; label: string }> = [
-  { name: "package", label: "Package (default)" },
   { name: "gift", label: "Gift" },
   { name: "id-badge-2", label: "Badge" },
   { name: "headphones", label: "Headphones" },
@@ -34,7 +33,7 @@ export const ITEM_ICONS: ReadonlyArray<{ name: string; label: string }> = [
   { name: "bus", label: "Bus (transport)" },
   { name: "pizza", label: "Food" },
   { name: "coffee", label: "Coffee" },
-  { name: "wine", label: "Drink" },
+  { name: "glass-full", label: "Drink" },
   { name: "plant", label: "Plant" },
   { name: "ball-football", label: "Ball" },
   { name: "music", label: "Music" },
@@ -42,6 +41,15 @@ export const ITEM_ICONS: ReadonlyArray<{ name: string; label: string }> = [
   { name: "device-laptop", label: "Laptop" },
   { name: "device-mobile", label: "Mobile" },
 ];
+
+/** Default Tabler icon when `EventItem.icon` is null — not stored as a string. */
+export const DEFAULT_EVENT_ITEM_ICON = "package";
+
+/** Map stored icon to picker value (`null` = default package). */
+export function normalizeEventItemIconForForm(icon: string | null | undefined): string | null {
+  if (!icon || icon === DEFAULT_EVENT_ITEM_ICON) return null;
+  return icon;
+}
 
 export interface IconPickerProps {
   value: string | null;
@@ -65,16 +73,16 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
         onChange={(e) => setSearch(e.target.value)}
         aria-label="Search icons"
       />
-      <div className="icon-picker__grid" role="listbox" aria-label="Choose icon">
+      <div className="icon-picker__grid" aria-label="Choose icon">
         <button
           type="button"
           className={`icon-picker__item${!value ? " icon-picker__item--selected" : ""}`}
           onClick={() => onChange(null)}
-          aria-selected={!value}
-          role="option"
+          aria-pressed={!value}
+          aria-label="Default icon (package)"
           title="Default (package)"
         >
-          <i className="ti ti-package" aria-hidden="true" />
+          <i className={`ti ti-${DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
           <span>Default</span>
         </button>
         {filtered.map((ic) => (
@@ -83,8 +91,8 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
             type="button"
             className={`icon-picker__item${value === ic.name ? " icon-picker__item--selected" : ""}`}
             onClick={() => onChange(ic.name)}
-            aria-selected={value === ic.name}
-            role="option"
+            aria-pressed={value === ic.name}
+            aria-label={ic.label}
             title={ic.label}
           >
             <i className={`ti ti-${ic.name}`} aria-hidden="true" />

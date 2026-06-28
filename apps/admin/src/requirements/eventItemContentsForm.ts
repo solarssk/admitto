@@ -22,6 +22,17 @@ export function parseOptionsText(text: string): string[] {
     .filter(Boolean);
 }
 
+/** Map API contents row to editable drawer row (options as comma-separated text). */
+export function contentRowFromDto(c: EventItemContentDto): ContentRow {
+  return {
+    label: c.label,
+    source_field: c.source_field,
+    type: c.type ?? "text",
+    required: c.required ?? false,
+    options: c.options?.join(", ") ?? "",
+  };
+}
+
 export type ContentsValidationResult =
   | { ok: true; contents: EventItemContentDto[] }
   | { ok: false; message: string };

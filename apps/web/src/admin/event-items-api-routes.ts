@@ -18,11 +18,22 @@ import {
 
 const slugField = z.string().trim().regex(/^[a-z0-9_]+$/, "invalid slug");
 
+const tablerIconNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 const iconNameSchema = z
   .string()
   .trim()
   .max(64)
-  .regex(/^[a-z0-9-]+$/, "invalid icon");
+  .regex(tablerIconNamePattern, "invalid icon");
+
+/** null and explicit "package" both mean the default icon at display time — store null. */
+function normalizeEventItemIconForStorage(
+  icon: string | null | undefined,
+): string | null | undefined {
+  if (icon === undefined) return undefined;
+  if (icon === null || icon === "package") return null;
+  return icon;
+}
 
 const eventItemContentSchema = z
   .object({
@@ -58,7 +69,7 @@ const createEventItemSchema = z
   .object({
     key: slugField.min(1).max(60),
     label: z.string().trim().min(1).max(100),
-    icon: iconNameSchema.optional(),
+    icon: iconNameSchema.optional().transform((icon) => normalizeEventItemIconForStorage(icon)),
     config: eventItemConfigSchema.optional(),
   })
   .strict();
@@ -70,7 +81,11 @@ const patchEventItemSchema = z
     icon: z
       .union([iconNameSchema, z.literal(""), z.null()])
       .optional()
-      .transform((v) => (v === "" ? null : v)),
+      .transform((v) => {
+        if (v === undefined) return undefined;
+        if (v === "") return null;
+        return normalizeEventItemIconForStorage(v);
+      }),
     config: eventItemConfigSchema.optional(),
   })
   .strict();
@@ -261,7 +276,7 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
           label: parsed.data.label,
           type: "item",
           enabled: true,
-          icon: parsed.data.icon ?? null,
+          icon: normalizeEventItemIconForStorage(parsed.data.icon) ?? null,
           config: (parsed.data.config ?? undefined) as Prisma.InputJsonValue | undefined,
         },
         select: {
