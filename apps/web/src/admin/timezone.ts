@@ -1,17 +1,28 @@
 import { z } from "zod";
 
-/** Validate IANA timezone — rejects offset aliases like +05:30 when canonical list is available. */
+function resolveCanonicalTimeZone(tz: string): string | null {
+  try {
+    return new Intl.DateTimeFormat(undefined, { timeZone: tz }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+}
+
+/** Validate IANA timezone — accepts Intl-valid aliases; rejects offset strings like +05:30. */
 export function isValidIanaTimezone(tz: string): boolean {
   if (tz === "UTC") return true;
-  try {
-    Intl.DateTimeFormat(undefined, { timeZone: tz });
-  } catch {
-    return false;
-  }
+
+  const canonical = resolveCanonicalTimeZone(tz);
+  if (!canonical) return false;
+
+  // Offset identifiers (+05:30) pass Intl but are not canonical IANA zones.
+  if (/^[+-]/.test(canonical)) return false;
+
   if (typeof Intl.supportedValuesOf === "function") {
-    return Intl.supportedValuesOf("timeZone").includes(tz);
+    return Intl.supportedValuesOf("timeZone").includes(canonical);
   }
-  return !/^[+-]/.test(tz) && !/^GMT/i.test(tz);
+
+  return !/^GMT/i.test(canonical);
 }
 
 export const timezoneField = z

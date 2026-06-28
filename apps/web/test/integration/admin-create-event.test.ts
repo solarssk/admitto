@@ -268,6 +268,18 @@ describe("POST /api/admin/events", () => {
     expect(row.timezone).toBe("Asia/Tokyo");
   });
 
+  it("accepts IANA alias canonicalized by ICU (Asia/Kolkata)", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Kolkata Summit",
+      slug: "kolkata-summit",
+      date: "2026-09-01",
+      timezone: "Asia/Kolkata",
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { event: { timezone: string } };
+    expect(body.event.timezone).toBe("Asia/Kolkata");
+  });
+
   it("returns 400 when timezone is missing", async () => {
     const res = await postCreateEvent(superCookie, {
       title: "Default TZ Event",
@@ -290,6 +302,19 @@ describe("POST /api/admin/events", () => {
     expect(res.status).toBe(400);
 
     const row = await prisma.event.findFirst({ where: { slug: "bad-tz" } });
+    expect(row).toBeNull();
+  });
+
+  it("rejects offset-style timezone strings", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Offset TZ",
+      slug: "offset-tz",
+      date: "2026-09-04",
+      timezone: "+05:30",
+    });
+    expect(res.status).toBe(400);
+
+    const row = await prisma.event.findFirst({ where: { slug: "offset-tz" } });
     expect(row).toBeNull();
   });
 });
