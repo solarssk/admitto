@@ -8,7 +8,7 @@ import type { EventDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { CreateEventModal } from "../events/CreateEventModal.js";
-import { formatEventDate, formatEventDateTime } from "../utils/event-dates.js";
+import { formatEventCalendarDate, formatEventDateTime } from "../utils/event-dates.js";
 import { filterEventsBySearch } from "../utils/event-search.js";
 
 type PickerTab = "active" | "archived";
@@ -230,7 +230,7 @@ export function EventsPickerPage() {
               <h2 className="event-card__title">{event.title}</h2>
               <p className="event-card__meta">
                 <i className="ti ti-calendar" aria-hidden="true" />
-                <span>{formatEventDate(event.date, event.timezone)}</span>
+                <span>{formatEventCalendarDate(event.date)}</span>
                 {event.location && (
                   <>
                     <span aria-hidden="true">·</span>

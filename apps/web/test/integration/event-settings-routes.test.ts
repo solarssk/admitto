@@ -298,12 +298,17 @@ describe("PATCH /api/admin/events/:eventId", () => {
   });
 
   it("returns 400 for invalid timezone", async () => {
+    const before = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+
     const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({ timezone: "Mars/Olympus" }),
     });
     expect(res.status).toBe(400);
+
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.timezone).toBe(before.timezone);
   });
 
   it("updates capacity and clears capacity with null", async () => {

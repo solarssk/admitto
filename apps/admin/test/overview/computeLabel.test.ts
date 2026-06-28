@@ -10,27 +10,27 @@ describe("computeLabel", () => {
     expect(computeLabel(null, TZ)).toBe("—");
   });
 
-  it('returns "Starting soon" when event is within the hour on the same calendar day', () => {
-    vi.setSystemTime(new Date("2026-07-01T07:00:00Z")); // 09:00 CEST
-    const iso = "2026-07-01T07:05:00.000Z"; // 09:05 CEST
+  it('returns "Starting soon" when event is on the same calendar day', () => {
+    vi.setSystemTime(new Date("2026-07-01T11:30:00Z"));
+    const iso = "2026-07-01T12:00:00.000Z";
     expect(computeLabel(iso, TZ)).toBe("Starting soon");
   });
 
   it('returns "Today in Xh" on the same calendar day', () => {
     vi.setSystemTime(new Date("2026-07-01T07:00:00Z")); // 09:00 CEST
-    const iso = "2026-07-01T14:00:00.000Z"; // 16:00 CEST
-    expect(computeLabel(iso, TZ)).toBe("Today in 7h");
+    const iso = "2026-07-01T12:00:00.000Z";
+    expect(computeLabel(iso, TZ)).toBe("Today in 5h");
   });
 
-  it('returns "Tomorrow" at midnight boundary (not 24h bucket)', () => {
-    vi.setSystemTime(new Date("2026-07-01T21:30:00Z")); // 23:30 CEST
-    const iso = "2026-07-01T23:00:00.000Z"; // 01:00 CEST next day
+  it('returns "Tomorrow" at midnight boundary (calendar day, not 24h bucket)', () => {
+    vi.setSystemTime(new Date("2026-07-01T21:30:00Z")); // 23:30 CEST on July 1
+    const iso = "2026-07-02T12:00:00.000Z"; // July 2 event (UTC noon storage)
     expect(computeLabel(iso, TZ)).toBe("Tomorrow");
   });
 
   it('returns "Ended yesterday" across midnight boundary', () => {
-    vi.setSystemTime(new Date("2026-07-02T22:30:00Z")); // 00:30 CEST on Jul 3
-    const iso = "2026-07-02T21:00:00.000Z"; // 23:00 CEST on Jul 2
+    vi.setSystemTime(new Date("2026-07-02T22:30:00Z")); // 00:30 CEST on July 3
+    const iso = "2026-07-02T12:00:00.000Z"; // July 2 event
     expect(computeLabel(iso, TZ)).toBe("Ended yesterday");
   });
 

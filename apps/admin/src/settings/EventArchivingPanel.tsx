@@ -3,7 +3,7 @@ import { Button, Card } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { ApiError, archiveEvent, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
-import { formatEventDate, formatEventDateTime } from "../utils/event-dates.js";
+import { formatEventCalendarDate, formatEventDateTime } from "../utils/event-dates.js";
 
 type ConfirmAction = { type: "archive" | "unarchive"; event: EventDto };
 
@@ -92,7 +92,7 @@ export function EventArchivingPanel() {
                   <div>{event.title}</div>
                   <div className="archiving-subdued">{event.slug}</div>
                 </td>
-                <td>{formatEventDate(event.date, event.timezone)}</td>
+                <td>{formatEventCalendarDate(event.date)}</td>
                 {mode === "archived" && (
                   <td>{event.archived_at ? formatEventDateTime(event.archived_at, event.timezone) : "—"}</td>
                 )}

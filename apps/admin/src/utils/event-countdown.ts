@@ -1,31 +1,53 @@
 import { useEffect, useState } from "react";
-import { formatEventDate } from "./event-dates.js";
+import { formatEventCalendarDate } from "./event-dates.js";
+
+function calendarDayInTz(ms: number, timezone: string): string {
+  return new Date(ms).toLocaleDateString("en-CA", { timeZone: timezone });
+}
+
+/** UTC calendar day from stored event date (date-only values are persisted at UTC noon). */
+function eventCalendarDay(iso: string): string {
+  return new Date(iso).toISOString().slice(0, 10);
+}
+
+function addCalendarDays(dayStr: string, days: number): string {
+  const [y, m, d] = dayStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+function calendarDaysBetween(from: string, to: string): number {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  const fromUtc = Date.UTC(fy, fm - 1, fd);
+  const toUtc = Date.UTC(ty, tm - 1, td);
+  return Math.round((toUtc - fromUtc) / 86_400_000);
+}
 
 /**
  * Countdown label for event overview — calendar-day comparison in event timezone.
- * Uses en-CA date strings (YYYY-MM-DD) in the event TZ, not 24h millisecond buckets.
+ * Event day comes from the stored UTC calendar date; “today” is evaluated in event TZ.
  */
 export function computeLabel(iso: string | null, timezone: string): string {
   if (!iso) return "—";
   const diff = new Date(iso).getTime() - Date.now();
-  const toDay = (ms: number) =>
-    new Date(ms).toLocaleDateString("en-CA", { timeZone: timezone });
 
-  const eventDay = toDay(new Date(iso).getTime());
-  const todayStr = toDay(Date.now());
-  const tomorrowStr = toDay(Date.now() + 86_400_000);
-  const yesterdayStr = toDay(Date.now() - 86_400_000);
+  const eventDay = eventCalendarDay(iso);
+  const todayStr = calendarDayInTz(Date.now(), timezone);
+  const tomorrowStr = addCalendarDays(todayStr, 1);
+  const yesterdayStr = addCalendarDays(todayStr, -1);
+  const daysUntil = calendarDaysBetween(todayStr, eventDay);
+  const daysSince = calendarDaysBetween(eventDay, todayStr);
 
   if (diff < 0) {
     if (eventDay === todayStr) return "Ended today";
     if (eventDay === yesterdayStr) return "Ended yesterday";
-    return `Ended ${Math.floor(-diff / 86_400_000)} days ago`;
+    return `Ended ${daysSince} days ago`;
   }
   const h = Math.floor((diff % 86_400_000) / 3_600_000);
   if (eventDay === todayStr) return h === 0 ? "Starting soon" : `Today in ${h}h`;
   if (eventDay === tomorrowStr) return "Tomorrow";
-  if (diff <= 7 * 86_400_000) return `In ${Math.floor(diff / 86_400_000)} days`;
-  return formatEventDate(iso, timezone);
+  if (daysUntil <= 7) return `In ${daysUntil} days`;
+  return formatEventCalendarDate(iso);
 }
 
 /** Live countdown label; refreshes every minute. */

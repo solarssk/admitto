@@ -9,7 +9,7 @@ import {
 } from "../api/client.js";
 import type { EventReportsResponse } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { formatEventDate } from "../utils/event-dates.js";
+import { formatEventCalendarDate } from "../utils/event-dates.js";
 import "./reports-page.css";
 
 const LOG_PAGE_SIZE = 50;
@@ -317,7 +317,7 @@ export function ReportsPage() {
   if (!eventId) return <p>Missing event.</p>;
 
   const subtitle = data
-    ? `${data.event.title} · ${formatEventDate(data.event.date, data.timezone)}`
+    ? `${data.event.title} · ${formatEventCalendarDate(data.event.date)}`
     : "Admission statistics and export";
 
   return (

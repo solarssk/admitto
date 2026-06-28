@@ -68,7 +68,8 @@ function buildTzEntry(iana: string, now: Date): TzEntry {
     offsetLabel.replace("GMT", ""),
   ]
     .join(" ")
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/\s/g, "");
 
   return { iana, city, abbr, offsetLabel, offsetHours, searchText };
 }
@@ -161,7 +162,7 @@ export function TimezoneSelect({
         onChange={(e) => setQuery(e.target.value)}
         disabled={disabled}
         aria-label="Search timezones"
-        aria-controls={id ? `${id}-list` : undefined}
+        aria-controls={id}
         autoComplete="off"
       />
       <select

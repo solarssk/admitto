@@ -463,7 +463,7 @@ async function buildExportPdfBuffer(
   doc.registerFont(PDF_FONT_BOLD, resolvePdfFontFile(true));
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
 
-  const eventDateStr = formatEventDate(eventMeta.date, timeZone);
+  const eventDateStr = formatEventDate(eventMeta.date, "UTC");
   doc.fontSize(14).font(PDF_FONT_BOLD).text(`${eventMeta.title} — ${eventDateStr}`);
   doc.moveDown(0.5);
 
@@ -959,7 +959,7 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   });
 
   if (!event) {
-    return c.json({ error: "forbidden" }, 403);
+    return c.json({ error: "not_found" }, 404);
   }
 
   const timeZone = resolvePreviewEventTimeZone(event.timezone);

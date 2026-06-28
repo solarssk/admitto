@@ -3,7 +3,7 @@ import { Link, useOutletContext } from "react-router-dom";
 import { Badge, Card, PageHeader, Stat } from "@admitto/ui";
 import { ApiError, fetchEventOverview } from "../api/client.js";
 import type { EventDto, EventOverviewDto } from "../api/types.js";
-import { formatEventDate, formatEventDateTime } from "../utils/event-dates.js";
+import { formatEventCalendarDate, formatEventDateTime } from "../utils/event-dates.js";
 import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 
@@ -75,7 +75,7 @@ export function EventOverviewPage() {
     return () => ac.abort();
   }, [event.id, reportApiError]);
 
-  const meta = [formatEventDate(eventDateIso, eventTimezone), event.location]
+  const meta = [formatEventCalendarDate(eventDateIso), event.location]
     .filter(Boolean)
     .join(" · ");
 
@@ -137,7 +137,7 @@ export function EventOverviewPage() {
           <Stat
             label="Event date"
             value={countdown}
-            sub={formatEventDate(eventDateIso, eventTimezone)}
+            sub={formatEventCalendarDate(eventDateIso)}
           />
         </Card>
       </div>

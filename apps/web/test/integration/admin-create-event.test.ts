@@ -261,8 +261,11 @@ describe("POST /api/admin/events", () => {
       timezone: "Asia/Tokyo",
     });
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { event: { timezone: string } };
+    const body = (await res.json()) as { event: { id: string; timezone: string } };
     expect(body.event.timezone).toBe("Asia/Tokyo");
+
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: body.event.id } });
+    expect(row.timezone).toBe("Asia/Tokyo");
   });
 
   it("returns 400 when timezone is missing", async () => {
@@ -272,6 +275,9 @@ describe("POST /api/admin/events", () => {
       date: "2026-09-02",
     });
     expect(res.status).toBe(400);
+
+    const row = await prisma.event.findFirst({ where: { slug: "default-tz-event" } });
+    expect(row).toBeNull();
   });
 
   it("rejects invalid IANA timezone", async () => {
@@ -282,5 +288,8 @@ describe("POST /api/admin/events", () => {
       timezone: "Mars/Olympus",
     });
     expect(res.status).toBe(400);
+
+    const row = await prisma.event.findFirst({ where: { slug: "bad-tz" } });
+    expect(row).toBeNull();
   });
 });
