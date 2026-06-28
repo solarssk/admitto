@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@admitto/ui";
 import { ApiError, fetchAuditLog } from "../api/client.js";
 import type { AuditLogEntryDto } from "../api/types.js";
+import { formatUtcDateTime } from "../utils/event-dates.js";
 
 /** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
@@ -47,10 +48,7 @@ function localDayEndIso(date: string): string {
 
 /** Format an ISO timestamp for the audit log table. */
 function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
+  return formatUtcDateTime(iso);
 }
 
 /** Primary actor label; deleted users show a readable fallback (id in cell title). */
@@ -217,7 +215,7 @@ export function AuditLogPanel() {
           <table className="table audit-log-table">
             <thead>
               <tr>
-                <th scope="col">Timestamp</th>
+                <th scope="col">Time (UTC)</th>
                 <th scope="col">Action</th>
                 <th scope="col">Actor</th>
                 <th scope="col">IP</th>

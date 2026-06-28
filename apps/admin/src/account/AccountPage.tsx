@@ -13,6 +13,8 @@ import {
 } from "../api/client.js";
 import type { AccountDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { formatUtcDateTime } from "../utils/event-dates.js";
+import { LOCALE_OPTIONS, setPreferredLocale as setPreferredLocaleStore } from "../utils/locale-store.js";
 
 function parseUserAgent(ua: string | null): string {
   if (!ua) return "Unknown";
@@ -23,7 +25,7 @@ function parseUserAgent(ua: string | null): string {
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+  return formatUtcDateTime(iso);
 }
 
 function isTotpEnrolled(account: AccountDto): boolean {
@@ -44,6 +46,8 @@ export function AccountPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
+  const [preferredLocale, setPreferredLocale] = useState<string | null>(null);
+  const [localeSaved, setLocaleSaved] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileStatus, setProfileStatus] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -81,6 +85,8 @@ export function AccountPage() {
       const data = await fetchAccount(signal);
       setAccount(data);
       setDisplayName(data.display_name ?? "");
+      setPreferredLocale(data.preferred_locale);
+      setPreferredLocaleStore(data.preferred_locale ?? undefined);
     } catch (err) {
       if (signal?.aborted) return;
       if (redirectToLoginIfUnauthorized(err)) return;
@@ -132,7 +138,9 @@ export function AccountPage() {
 
   const totpEnrolled = isTotpEnrolled(account);
   const otherSessions = sessions.filter((s) => !s.isCurrent);
-  const profileDirty = displayName !== (account.display_name ?? "");
+  const profileDirty =
+    displayName !== (account.display_name ?? "") ||
+    preferredLocale !== account.preferred_locale;
   const passwordMismatch =
     confirmPassword.length > 0 && newPassword.length > 0 && confirmPassword !== newPassword;
   const passwordFormValid =
@@ -144,11 +152,17 @@ export function AccountPage() {
   return (
     <>
       <Card title="Profile" footer={<div className="mail-transport-footer"><Button type="button" variant="primary" disabled={profileSaving || !profileDirty} onClick={async () => {
-        setProfileSaving(true); setProfileError(null); setProfileStatus(null);
+        setProfileSaving(true); setProfileError(null); setProfileStatus(null); setLocaleSaved(false);
         try {
-          const { display_name } = await patchAccountProfile({ display_name: displayName });
-          setDisplayName(display_name ?? "");
+          const result = await patchAccountProfile({
+            ...(displayName !== (account.display_name ?? "") && { display_name: displayName }),
+            ...(preferredLocale !== account.preferred_locale && { preferred_locale: preferredLocale }),
+          });
+          setDisplayName(result.display_name ?? "");
+          setPreferredLocale(result.preferred_locale);
+          setPreferredLocaleStore(result.preferred_locale ?? undefined);
           setProfileStatus("Profile saved.");
+          if (preferredLocale !== account.preferred_locale) setLocaleSaved(true);
           await loadAccount();
         } catch (err) {
           setProfileError(err instanceof ApiError ? err.message : "Failed to save profile.");
@@ -158,6 +172,34 @@ export function AccountPage() {
           <label className="mail-field-label" htmlFor="account-display-name">Display name</label>
           <Input id="account-display-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={120} />
           <p className="mail-field-hint">{displayName.length}/120 characters</p>
+        </div>
+        <div className="mail-field-row">
+          <label className="mail-field-label" htmlFor="account-locale">Date format</label>
+          <select
+            id="account-locale"
+            className="form-select"
+            value={preferredLocale ?? ""}
+            onChange={(e) => {
+              setLocaleSaved(false);
+              setPreferredLocale(e.target.value || null);
+            }}
+            disabled={profileSaving}
+          >
+            {LOCALE_OPTIONS.map((opt) => (
+              <option key={opt.value ?? "_system"} value={opt.value ?? ""}>
+                {opt.label} — {opt.example}
+              </option>
+            ))}
+          </select>
+          <p className="mail-field-hint">
+            How dates are displayed in the admin panel. Example:{" "}
+            <strong>
+              {new Date("2026-06-28T12:00:00Z").toLocaleDateString(
+                preferredLocale ?? undefined,
+                { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" },
+              )}
+            </strong>
+          </p>
         </div>
         <div className="mail-field-row">
           <span className="mail-field-label">Email</span>
@@ -177,6 +219,11 @@ export function AccountPage() {
         )}
         {profileError && <p className="text-error" role="alert">{profileError}</p>}
         {profileStatus && <p className="text-success" role="status">{profileStatus}</p>}
+        {localeSaved && (
+          <p className="mail-field-hint" style={{ color: "var(--success)" }}>
+            Saved. Navigate to another page to see the new date format everywhere.
+          </p>
+        )}
       </Card>
 
       <Card title="Password">

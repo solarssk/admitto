@@ -194,6 +194,7 @@ export async function handleMe(
       id: true,
       email: true,
       display_name: true,
+      preferred_locale: true,
       is_active: true,
       created_at: true,
     },

@@ -8,7 +8,7 @@ import type { EventDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { CreateEventModal } from "../events/CreateEventModal.js";
-import { formatEventCalendarDate, formatEventDateTime } from "../utils/event-dates.js";
+import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates.js";
 import { filterEventsBySearch } from "../utils/event-search.js";
 
 type PickerTab = "active" | "archived";
@@ -251,7 +251,7 @@ export function EventsPickerPage() {
               {event.archived_at && (
                 <p className="event-card__archived">
                   <Badge variant="neutral">Archived · read-only</Badge>
-                  <span>{formatEventDateTime(event.archived_at, event.timezone)}</span>
+                  <span>{formatUtcDateTime(event.archived_at)}</span>
                 </p>
               )}
             </>
