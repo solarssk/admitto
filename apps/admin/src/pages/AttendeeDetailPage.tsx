@@ -27,8 +27,7 @@ import {
   toAttendeeForm,
   type AttendeeFormState,
 } from "../attendees/attendeeDetailForm.js";
-import { getTimelineDetail, getTimelineIcon, getTimelineLabel } from "../attendees/attendeeTimeline.js";
-import { formatUtcDateTime } from "../utils/event-dates.js";
+import { getTimelineDetail, getTimelineIcon, getTimelineLabel, formatActivityTimestamp } from "../attendees/attendeeTimeline.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { readCustomDataField } from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
@@ -474,7 +473,7 @@ export function AttendeeDetailPage() {
                     <span>{getTimelineDetail(entry)}</span>
                   </div>
                   <time className="at-tl-time" dateTime={entry.created_at}>
-                    {formatUtcDateTime(entry.created_at)}
+                    {formatActivityTimestamp(entry.created_at, entry.action_type, event.timezone)}
                   </time>
                 </li>
               ))}

@@ -1,5 +1,35 @@
 import type { AttendeeActionLogEntryDto, RsvpStatus } from "../api/types.js";
+import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
 import { RSVP_LABELS } from "./rsvpStatusBadge.js";
+
+/** Event-day operational actions — show in event timezone (Category 1). */
+const EVENT_OPERATIONAL_ACTIONS = new Set([
+  "check_in",
+  "admitted",
+  "check_in_undo",
+  "check_in_undone",
+  "note_added",
+  "item_issued",
+  "item_state_changed",
+  "item_returned",
+  "scan_preview",
+]);
+
+export function isEventOperationalActivity(actionType: string): boolean {
+  return EVENT_OPERATIONAL_ACTIONS.has(actionType);
+}
+
+/** Activity row timestamp: event TZ for on-site ops, UTC for mail/import/admin rows. */
+export function formatActivityTimestamp(
+  iso: string,
+  actionType: string,
+  eventTimezone: string,
+): string {
+  if (isEventOperationalActivity(actionType)) {
+    return formatEventDateTime(iso, eventTimezone);
+  }
+  return formatUtcDateTime(iso);
+}
 
 function formatRsvpStatus(value: unknown): string {
   const key = String(value);
