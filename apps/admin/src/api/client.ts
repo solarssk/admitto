@@ -47,6 +47,7 @@ import type {
   SetupOrgBrandingDto,
   PatchSetupOrgBrandingBody,
   AuditLogResponse,
+  EventOverviewDto,
   EventReportsResponse,
   AccountDto,
   PatchAccountProfileBody,
@@ -962,6 +963,17 @@ export async function resetMfa(body: ResetMfaBody): Promise<ResetMfaResponse> {
 }
 
 /** Load aggregated admission report for an event. */
+export async function fetchEventOverview(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventOverviewDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/overview`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<EventOverviewDto>(res);
+}
+
 export async function fetchEventReports(
   eventId: string,
   signal?: AbortSignal,
