@@ -26,16 +26,27 @@ export type ContentsValidationResult =
   | { ok: true; contents: EventItemContentDto[] }
   | { ok: false; message: string };
 
+/** True when the row has no user-editable content (including metadata). */
+function isBlankContentRow(row: ContentRow): boolean {
+  return (
+    !row.label.trim() &&
+    !row.source_field.trim() &&
+    row.type === "text" &&
+    !row.required &&
+    !row.options.trim()
+  );
+}
+
 /** Validate contents hint rows; skip fully empty rows, reject partial or invalid slugs. */
 export function validateContentsRows(rows: ContentRow[]): ContentsValidationResult {
   const contents: EventItemContentDto[] = [];
   const seenFields = new Set<string>();
 
   for (const row of rows) {
+    if (isBlankContentRow(row)) continue;
+
     const label = row.label.trim();
     const source_field = row.source_field.trim();
-
-    if (!label && !source_field) continue;
 
     if (!label || !source_field) {
       return {

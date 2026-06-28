@@ -101,6 +101,17 @@ describe("validateContentsRows", () => {
     });
   });
 
+  it("does not skip rows with metadata but no label/source_field", () => {
+    expect(
+      validateContentsRows([
+        { label: "", source_field: "", type: "select", required: false, options: "S, M" },
+      ]),
+    ).toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/both a label and a source field/i),
+    });
+  });
+
   it("parses select options and preserves type/required", () => {
     expect(
       validateContentsRows([

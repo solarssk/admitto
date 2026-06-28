@@ -258,13 +258,14 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
           <div>
             <h3 className="attendee-drawer__section-title">Icon</h3>
             <p className="requirements-section-hint">
-              Shown next to the item label in the operator check-in view.
+              Stored on the item for a future check-in update — not shown to operators yet.
             </p>
             <div className="item-icon-preview">
               <i className={`ti ti-${form.icon ?? "package"}`} aria-hidden="true" />
               <span>{form.icon ?? "Default (package)"}</span>
             </div>
             <IconPicker
+              key={item.id}
               value={form.icon}
               onChange={(icon) => setForm((f) => ({ ...f, icon }))}
             />

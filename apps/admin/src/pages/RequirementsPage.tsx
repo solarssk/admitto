@@ -340,7 +340,10 @@ export function RequirementsPage() {
               <div className="requirements-behaviour-row">
                 <div className="requirements-behaviour-row__text">
                   <strong>Allow manual lookup</strong>
-                  <p>Operators can search attendees by name when scan is unavailable.</p>
+                  <p>
+                    Saved for this event. Operator name search enforcement ships in a follow-up
+                    release — lookup stays available in check-in for now.
+                  </p>
                 </div>
                 <Switch
                   checked={opsConfig.allow_manual_lookup}
@@ -352,7 +355,10 @@ export function RequirementsPage() {
               <div className="requirements-behaviour-row">
                 <div className="requirements-behaviour-row__text">
                   <strong>Auto-advance on valid scan</strong>
-                  <p>After a successful scan, move to the next attendee automatically.</p>
+                  <p>
+                    Saved for this event. Auto-clearing the card after a valid scan ships in a
+                    follow-up release — check-in behaviour is unchanged for now.
+                  </p>
                 </div>
                 <Switch
                   checked={opsConfig.auto_advance_on_valid}

@@ -477,6 +477,35 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("GET preserves item flags when legacy contents fail strict parse", async () => {
+    await prisma.eventItem.update({
+      where: { id: ITEM_SOCKS },
+      data: {
+        config: {
+          requires_return: true,
+          issue_on_checkin: false,
+          contents: [
+            { label: "A", source_field: "dup_field" },
+            { label: "B", source_field: "dup_field" },
+          ],
+        },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const socks = ((await res.json()) as { items: { key: string; config: EventItemConfigBody }[] })
+      .items.find((i) => i.key === "socks");
+    expect(socks?.config?.requires_return).toBe(true);
+    expect(socks?.config?.issue_on_checkin).toBe(false);
+    expect(socks?.config?.contents).toEqual([
+      { label: "A", source_field: "dup_field" },
+      { label: "B", source_field: "dup_field" },
+    ]);
+  });
 });
 
 describe("DELETE /api/admin/events/:eventId/items/:itemId", () => {
@@ -643,6 +672,18 @@ describe("ops-config", () => {
   });
 
   it("PATCH partial merge preserves other ops flags", async () => {
+    const seedRes = await app.request(`/api/admin/events/${EVENT_EI_A}/ops-config`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        require_confirm_on_scan: true,
+        badge_at_entry: true,
+        allow_manual_lookup: true,
+        auto_advance_on_valid: true,
+      }),
+    });
+    expect(seedRes.status).toBe(200);
+
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/ops-config`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
@@ -662,4 +703,10 @@ type OpsConfigBody = {
   require_confirm_on_scan: boolean;
   allow_manual_lookup: boolean;
   auto_advance_on_valid: boolean;
+};
+
+type EventItemConfigBody = {
+  requires_return?: boolean;
+  issue_on_checkin?: boolean;
+  contents?: Array<{ label: string; source_field: string }>;
 };

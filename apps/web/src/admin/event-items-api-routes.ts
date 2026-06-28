@@ -8,6 +8,7 @@ import {
   resolveEventItemContents,
   writeBulkActionLog,
   type EventItemConfig,
+  type EventItemContent,
 } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -94,6 +95,25 @@ export type EventItemDto = {
   config: EventItemConfig | null;
 };
 
+/** Legacy read path: label + source_field only (no metadata refine). */
+const legacyContentRowSchema = z
+  .object({
+    label: z.string().trim().min(1).max(60),
+    source_field: slugField.min(1).max(60),
+  })
+  .strict();
+
+/** Contents for GET when strict parse failed — legacy `size_field` or loose row shape only. */
+function legacyContentsFromRaw(o: Record<string, unknown>): EventItemContent[] | undefined {
+  if (!Array.isArray(o.contents)) {
+    const resolved = resolveEventItemContents(o);
+    return resolved.length > 0 ? resolved : undefined;
+  }
+  if (o.contents.length === 0) return [];
+  const loose = z.array(legacyContentRowSchema).safeParse(o.contents);
+  return loose.success ? loose.data : undefined;
+}
+
 /** Normalize stored JSON config for API responses (strict fields + legacy contents). */
 function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -103,15 +123,25 @@ function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
     requires_return: o.requires_return,
     issue_on_checkin: o.issue_on_checkin,
   });
-  const config: EventItemConfig = parsed.success ? { ...parsed.data } : {};
-  if (parsed.success && parsed.data.contents?.length) {
-    config.contents = parsed.data.contents;
-  } else {
-    const resolved = resolveEventItemContents(raw);
-    if (resolved.length > 0) {
-      config.contents = resolved;
+
+  if (parsed.success) {
+    const config: EventItemConfig = { ...parsed.data };
+    if (parsed.data.contents?.length) {
+      config.contents = parsed.data.contents;
+    } else {
+      const resolved = resolveEventItemContents(raw);
+      if (resolved.length > 0) config.contents = resolved;
     }
+    return Object.keys(config).length > 0 ? config : null;
   }
+
+  const config: EventItemConfig = {};
+  if (typeof o.requires_return === "boolean") config.requires_return = o.requires_return;
+  if (typeof o.issue_on_checkin === "boolean") config.issue_on_checkin = o.issue_on_checkin;
+
+  const legacyContents = legacyContentsFromRaw(o);
+  if (legacyContents !== undefined) config.contents = legacyContents;
+
   return Object.keys(config).length > 0 ? config : null;
 }
 
