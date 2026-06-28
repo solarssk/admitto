@@ -27,6 +27,9 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
   if (eventIdParam instanceof Response) return eventIdParam;
   const eventId = eventIdParam;
 
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
   const event = await db.event.findUnique({
     where: { id: eventId },
     select: {
@@ -41,9 +44,6 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     },
   });
   if (!event) return c.json({ error: "not_found" }, 404);
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
 
   const [checkInStats, deliveryStats] = await Promise.all([
     getCheckInStats(eventId, db),

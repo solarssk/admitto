@@ -256,6 +256,8 @@ describe("GET /api/admin/events/:eventId/overview", () => {
   it("returns 401 without auth", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_MAIN}/overview`);
     expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("authentication_required");
   });
 
   it("returns 403 for operator (staff admin gate)", async () => {
@@ -263,6 +265,8 @@ describe("GET /api/admin/events/:eventId/overview", () => {
       headers: { Cookie: opCookie },
     });
     expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
   });
 
   it("returns 403 for admin without event org access", async () => {
@@ -270,20 +274,31 @@ describe("GET /api/admin/events/:eventId/overview", () => {
       headers: { Cookie: adminBCookie },
     });
     expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
+  });
+
+  it("returns 403 for missing event (no existence leak to org admins)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_MISSING}/overview`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
+  });
+
+  it("returns 403 for cross-org admin on missing event (same as forbidden)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_MISSING}/overview`, {
+      headers: { Cookie: adminBCookie },
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
   });
 
   it("returns 404 for non-existent event (superadmin)", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_MISSING}/overview`, {
       headers: { Cookie: superCookie },
-    });
-    expect(res.status).toBe(404);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("not_found");
-  });
-
-  it("returns 404 for non-existent event (org admin)", async () => {
-    const res = await app.request(`/api/admin/events/${EVENT_MISSING}/overview`, {
-      headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: string };

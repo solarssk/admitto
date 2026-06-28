@@ -21,15 +21,16 @@ function computeLabel(iso: string | null): string {
   if (days === 0) return `Today in ${hours}h`;
   if (days === 1) return "Tomorrow";
   if (days <= 7) return `In ${days} days`;
-  return `In ${days} days`;
+  return formatEventDate(iso);
 }
 
 function useCountdown(targetDateIso: string | null): string {
   const [label, setLabel] = useState<string>(() => computeLabel(targetDateIso));
 
   useEffect(() => {
-    if (!targetDateIso) return;
     const tick = () => setLabel(computeLabel(targetDateIso));
+    tick();
+    if (!targetDateIso) return;
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
   }, [targetDateIso]);
@@ -43,6 +44,7 @@ function AdmissionBar({ admitted, total }: { admitted: number; total: number }) 
     <div
       className="overview-admission-bar"
       role="progressbar"
+      aria-label="Admission progress"
       aria-valuenow={pct}
       aria-valuemin={0}
       aria-valuemax={100}
@@ -70,7 +72,8 @@ export function EventOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const countdown = useCountdown(overview?.event.date ?? event.date);
+  const currentOverview = overview?.event.id === event.id ? overview : null;
+  const countdown = useCountdown(currentOverview?.event.date ?? event.date);
 
   useEffect(() => {
     abortRef.current?.abort();
@@ -78,6 +81,7 @@ export function EventOverviewPage() {
     abortRef.current = ac;
     setLoading(true);
     setError(null);
+    setOverview(null);
 
     fetchEventOverview(event.id, ac.signal)
       .then((data) => {
@@ -102,8 +106,8 @@ export function EventOverviewPage() {
 
   const meta = [formatEventDate(event.date), event.location].filter(Boolean).join(" · ");
 
-  const attendeeCount = overview?.attendee_count ?? event.attendee_count ?? null;
-  const admittedCount = overview?.admitted_count ?? null;
+  const attendeeCount = currentOverview?.attendee_count ?? event.attendee_count ?? null;
+  const admittedCount = currentOverview?.admitted_count ?? null;
   const admitPct =
     attendeeCount != null && admittedCount != null && attendeeCount > 0
       ? Math.round((admittedCount / attendeeCount) * 100)
@@ -123,8 +127,8 @@ export function EventOverviewPage() {
             label="Attendees"
             value={attendeeCount != null ? String(attendeeCount) : "—"}
             sub={
-              overview?.event.capacity != null
-                ? `of ${overview.event.capacity} capacity`
+              currentOverview?.event.capacity != null
+                ? `of ${currentOverview.event.capacity} capacity`
                 : "Registered"
             }
           />
@@ -142,13 +146,17 @@ export function EventOverviewPage() {
         <Card>
           <Stat
             label="Emails sent"
-            value={overview != null ? String(overview.email_sent) : loading ? "…" : "—"}
+            value={currentOverview != null ? String(currentOverview.email_sent) : loading ? "…" : "—"}
             sub={
-              overview?.email_failed
-                ? `${overview.email_failed} failed`
-                : overview?.email_queued
-                  ? `${overview.email_queued} queued`
-                  : "Delivered"
+              currentOverview == null
+                ? loading
+                  ? "Loading delivery stats"
+                  : "Delivery stats unavailable"
+                : currentOverview.email_failed
+                  ? `${currentOverview.email_failed} failed`
+                  : currentOverview.email_queued
+                    ? `${currentOverview.email_queued} queued`
+                    : "Delivered"
             }
           />
         </Card>
