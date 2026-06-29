@@ -76,6 +76,22 @@ describe("resolveEventItemContents", () => {
       }),
     ).toEqual([]);
   });
+
+  it("drops select fields without options", () => {
+    expect(
+      resolveEventItemContents({
+        contents: [{ label: "Size", source_field: "size", type: "select" }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("drops source_field slugs longer than 60 characters", () => {
+    expect(
+      resolveEventItemContents({
+        contents: [{ label: "Long", source_field: `a_${"x".repeat(60)}` }],
+      }),
+    ).toEqual([]);
+  });
 });
 
 describe("collectEventCustomDataFields", () => {
@@ -124,6 +140,13 @@ describe("buildItemDetail", () => {
         { lunch: "true", size: "M" },
       ),
     ).toBe("Lunch*: Yes · Size*: M");
+
+    expect(
+      buildItemDetail(
+        { contents: [{ label: "Lunch", source_field: "lunch", type: "boolean" }] },
+        { lunch: "yes" },
+      ),
+    ).toBe("Lunch: Yes");
 
     expect(
       buildItemDetail(

@@ -172,6 +172,15 @@ describe("validateCustomFieldsForm", () => {
     ).toMatch(/yes or no/i);
   });
 
+  it("accepts boolean aliases used by the API", () => {
+    expect(
+      validateCustomFieldsForm(
+        [{ label: "Lunch", source_field: "lunch", type: "boolean" }],
+        { lunch: "yes" },
+      ),
+    ).toBeNull();
+  });
+
   it("returns null when all values are valid", () => {
     expect(validateCustomFieldsForm([sizeField], { size: "M" })).toBeNull();
   });

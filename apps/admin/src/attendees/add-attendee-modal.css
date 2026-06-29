@@ -43,6 +43,12 @@
   font-size: 0.875rem;
 }
 
+.add-attendee-modal__hint {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
 .add-attendee-modal__actions {
   display: flex;
   justify-content: flex-end;

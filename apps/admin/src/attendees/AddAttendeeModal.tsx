@@ -33,6 +33,8 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
   const [ticketType, setTicketType] = useState("");
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
   const [customFields, setCustomFields] = useState<Record<string, string>>({});
+  const [attributeFieldsLoading, setAttributeFieldsLoading] = useState(false);
+  const [attributeFieldsError, setAttributeFieldsError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,6 +42,8 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
     if (!open) return;
     setAttributeFields([]);
     setCustomFields({});
+    setAttributeFieldsLoading(true);
+    setAttributeFieldsError(null);
     let cancelled = false;
     fetchEventItems(eventId)
       .then((items) => {
@@ -49,7 +53,13 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
         setCustomFields(initialCustomFieldValues(fields));
       })
       .catch(() => {
-        if (!cancelled) setAttributeFields([]);
+        if (!cancelled) {
+          setAttributeFields([]);
+          setAttributeFieldsError("Failed to load attribute fields. Try reopening the dialog.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAttributeFieldsLoading(false);
       });
     return () => {
       cancelled = true;
@@ -74,7 +84,13 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
 
   useModalFocusTrap(panelRef, open, handleClose);
 
-  const canSubmit = email.trim() && name.trim() && isValidEmail(email.trim()) && !submitting;
+  const canSubmit =
+    email.trim() &&
+    name.trim() &&
+    isValidEmail(email.trim()) &&
+    !submitting &&
+    !attributeFieldsLoading &&
+    !attributeFieldsError;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -133,6 +149,14 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
           <p className="add-attendee-modal__error" role="alert">
             {error}
           </p>
+        )}
+        {attributeFieldsError && (
+          <p className="add-attendee-modal__error" role="alert">
+            {attributeFieldsError}
+          </p>
+        )}
+        {attributeFieldsLoading && (
+          <p className="add-attendee-modal__hint">Loading attribute fields…</p>
         )}
         <div className="add-attendee-modal__fields">
           <Input

@@ -1136,6 +1136,15 @@ describe("Attendees v2 — RSVP and manual create", () => {
   });
 
   it("POST create rejects custom_data values over 100 characters", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [{ label: "Shirt size", source_field: "shirt_size", type: "text" }],
+        },
+      },
+    });
+
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },

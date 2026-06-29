@@ -7,6 +7,10 @@ const DETAIL_SEPARATOR = " · ";
 type LegacyEventItemConfig = EventItemConfig & { size_field?: string };
 
 const SLUG_PATTERN = /^[a-z0-9_]+$/;
+const SOURCE_FIELD_MAX_LENGTH = 60;
+
+const BOOLEAN_TRUE = new Set(["true", "yes", "1"]);
+const BOOLEAN_FALSE = new Set(["false", "no", "0"]);
 
 function parseContentRow(raw: unknown): EventItemContent | null {
   if (!raw || typeof raw !== "object") return null;
@@ -14,10 +18,17 @@ function parseContentRow(raw: unknown): EventItemContent | null {
   if (typeof row.label !== "string" || typeof row.source_field !== "string") return null;
   const label = row.label.trim();
   const source_field = row.source_field.trim();
-  if (!label || !source_field || !SLUG_PATTERN.test(source_field)) return null;
+  if (
+    !label ||
+    !source_field ||
+    source_field.length > SOURCE_FIELD_MAX_LENGTH ||
+    !SLUG_PATTERN.test(source_field)
+  ) {
+    return null;
+  }
 
   const out: EventItemContent = { label, source_field };
-  if (row.type === "text" || row.type === "select" || row.type === "boolean") {
+  if (row.type === "text" || row.type === "boolean") {
     out.type = row.type;
   }
   if (row.required === true) out.required = true;
@@ -28,13 +39,18 @@ function parseContentRow(raw: unknown): EventItemContent | null {
       .filter(Boolean);
     if (options.length > 0) out.options = options;
   }
+  if (row.type === "select") {
+    if (!out.options?.length) return null;
+    out.type = "select";
+  }
   return out;
 }
 
 function formatContentValue(type: EventItemContent["type"], value: string): string {
   if (type === "boolean") {
-    if (value === "true") return "Yes";
-    if (value === "false") return "No";
+    const lower = value.trim().toLowerCase();
+    if (BOOLEAN_TRUE.has(lower)) return "Yes";
+    if (BOOLEAN_FALSE.has(lower)) return "No";
   }
   return value;
 }
@@ -55,7 +71,10 @@ export function resolveEventItemContents(config: unknown): EventItemContent[] {
   }
   if (typeof o.size_field === "string" && o.size_field.trim()) {
     const source_field = o.size_field.trim();
-    if (SLUG_PATTERN.test(source_field)) {
+    if (
+      source_field.length <= SOURCE_FIELD_MAX_LENGTH &&
+      SLUG_PATTERN.test(source_field)
+    ) {
       return [{ label: "Shirt size", source_field }];
     }
   }

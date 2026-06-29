@@ -49,6 +49,18 @@ export function initialCustomFieldValues(fields: CustomDataFieldDef[]): Record<s
 }
 
 /** Client-side validation before save/create; returns user-facing message or null. */
+function isAcceptedBooleanValue(value: string): boolean {
+  const lower = value.trim().toLowerCase();
+  return (
+    lower === "true" ||
+    lower === "false" ||
+    lower === "yes" ||
+    lower === "no" ||
+    lower === "1" ||
+    lower === "0"
+  );
+}
+
 export function validateCustomFieldsForm(
   fields: CustomDataFieldDef[],
   values: Record<string, string>,
@@ -69,7 +81,7 @@ export function validateCustomFieldsForm(
         return `${field.label} must be one of: ${options.join(", ")}.`;
       }
     }
-    if (type === "boolean" && trimmed !== "true" && trimmed !== "false") {
+    if (type === "boolean" && !isAcceptedBooleanValue(trimmed)) {
       return `${field.label} must be Yes or No.`;
     }
   }
