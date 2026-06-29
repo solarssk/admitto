@@ -86,12 +86,14 @@ function effectiveContentType(field: EventItemContent): "text" | "select" | "boo
   return field.type ?? "text";
 }
 
-function mergeSelectOptions(left: string[], right: string[]): string[] {
+function mergeSelectOptions(left: string[], right: string[], sourceField: string): string[] {
   if (left.length === 0) return right;
   if (right.length === 0) return left;
   const intersection = left.filter((option) => right.includes(option));
-  if (intersection.length > 0) return intersection;
-  return [...new Set([...left, ...right])];
+  if (intersection.length === 0) {
+    throw new Error(`conflicting_custom_data_field_options:${sourceField}`);
+  }
+  return intersection;
 }
 
 /** Merge duplicate source_field rows across items (first label wins; stricter metadata wins). */
@@ -125,7 +127,7 @@ export function mergeEventItemContentFields(
   if (mergedType === "select") {
     const leftOpts = leftType === "select" ? (existing.options ?? []) : [];
     const rightOpts = rightType === "select" ? (incoming.options ?? []) : [];
-    const options = mergeSelectOptions(leftOpts, rightOpts);
+    const options = mergeSelectOptions(leftOpts, rightOpts, existing.source_field);
     if (options.length === 0) {
       mergedType = "text";
     } else {

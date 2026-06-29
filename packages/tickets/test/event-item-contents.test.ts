@@ -167,6 +167,23 @@ describe("collectEventCustomDataFields", () => {
     ]);
   });
 
+  it("rejects disjoint select options for the same source_field", () => {
+    expect(() =>
+      collectEventCustomDataFields([
+        {
+          contents: [
+            { label: "Size", source_field: "size", type: "select", options: ["S"] },
+          ],
+        },
+        {
+          contents: [
+            { label: "Size dup", source_field: "size", type: "select", options: ["XL"] },
+          ],
+        },
+      ]),
+    ).toThrow("conflicting_custom_data_field_options:size");
+  });
+
   it("merges fields from multiple items", () => {
     expect(
       collectEventCustomDataFields([

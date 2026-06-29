@@ -1205,6 +1205,33 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(body.error).toBe("validation_failed");
   });
 
+  it("POST create ignores null custom_data values", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [{ label: "Lunch", source_field: "lunch", type: "boolean" }],
+        },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "null-field@example.com",
+        name: "Null Field",
+        custom_data: { lunch: null },
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string };
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: body.id } });
+    expect(row.custom_data).toBeNull();
+
+    await prisma.attendee.delete({ where: { id: body.id } });
+  });
+
   it("POST create merges duplicate source_field metadata across items", async () => {
     await prisma.eventItem.updateMany({
       where: { event_id: EVENT_A, key: "giftbag" },
