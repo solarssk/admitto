@@ -42,6 +42,19 @@ function assertRequiredFieldsPresent(
   }
 }
 
+function assertStoredCustomDataValid(
+  fields: EventItemContent[],
+  values: Record<string, string | null | undefined>,
+): void {
+  for (const field of fields) {
+    const raw = values[field.source_field];
+    if (raw) {
+      normalizeCustomDataFieldValue(field, raw);
+    }
+  }
+  assertRequiredFieldsPresent(fields, values);
+}
+
 /** Build validated custom_data for attendee create. */
 export function buildCustomDataFromInput(
   fields: EventItemContent[],
@@ -91,11 +104,11 @@ export function validateCustomDataPatch(
     normalizedPatch[key] = normalized;
   }
 
-  assertRequiredFieldsPresent(fields, merged);
+  assertStoredCustomDataValid(fields, merged);
   return normalizedPatch;
 }
 
-/** Ensure stored custom_data satisfies required field rules (any PATCH path). */
+/** Ensure stored custom_data satisfies configured field rules (any PATCH path). */
 export function assertCustomDataMeetsRequirements(
   fields: EventItemContent[],
   customData: unknown,
@@ -104,5 +117,5 @@ export function assertCustomDataMeetsRequirements(
   for (const field of fields) {
     values[field.source_field] = customDataValue(customData, field.source_field);
   }
-  assertRequiredFieldsPresent(fields, values);
+  assertStoredCustomDataValid(fields, values);
 }

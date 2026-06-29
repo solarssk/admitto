@@ -76,6 +76,12 @@ describe("assertCustomDataMeetsRequirements", () => {
       "required_custom_data_field_missing:size",
     );
   });
+
+  it("rejects stored values outside configured options", () => {
+    expect(() => assertCustomDataMeetsRequirements([sizeField], { size: "XL" })).toThrow(
+      "invalid_custom_data_value",
+    );
+  });
 });
 
 describe("validateCustomDataPatch", () => {
@@ -92,5 +98,11 @@ describe("validateCustomDataPatch", () => {
     expect(
       validateCustomDataPatch([sizeField], { size: "M" }, { size: "L" }),
     ).toEqual({ size: "L" });
+  });
+
+  it("rejects patch when existing stored value is invalid for current config", () => {
+    expect(() => validateCustomDataPatch([sizeField], { size: "XL" }, {})).toThrow(
+      "invalid_custom_data_value",
+    );
   });
 });
