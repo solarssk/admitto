@@ -154,6 +154,29 @@ describe("POST /api/checkin/lookup (Lock #3)", () => {
     const res = await post("/api/checkin/lookup", { eventId: EVENT_B, q: "jan" });
     expect(res.status).toBe(403);
   });
+
+  it("returns 403 when manual lookup is disabled for the event", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_A },
+      data: {
+        ops_config: {
+          allow_manual_lookup: false,
+          badge_at_entry: true,
+          require_confirm_on_scan: false,
+        },
+      },
+    });
+    try {
+      const res = await post("/api/checkin/lookup", { eventId: EVENT_A, q: "jan" });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "manual_lookup_disabled" });
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_A },
+        data: { ops_config: {} },
+      });
+    }
+  });
 });
 
 describe("POST /api/checkin/admit — session_id audit (Lock #5)", () => {

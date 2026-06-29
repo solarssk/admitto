@@ -6,6 +6,7 @@ import {
   fetchAttendeeCard,
   fetchCheckInEvents,
   fetchCheckInHistory,
+  fetchCheckInOpsConfig,
   fetchCheckInStats,
   lookupCheckInAttendees,
   submitAttendeeNote,
@@ -14,7 +15,7 @@ import {
   submitItemAction,
   undoLastCheckIn,
 } from "../api/client.js";
-import type { AttendeeCardDto, CheckInHistoryEntry, CheckInScanResponse } from "../api/types.js";
+import type { AttendeeCardDto, CheckInHistoryEntry, CheckInScanResponse, OpsConfigDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { CHECKIN_DUPLICATE_DEBOUNCE_MS, normalizeScannedInput } from "../checkin/normalize.js";
@@ -32,6 +33,15 @@ import { ScanHistoryList } from "../checkin/ScanHistoryList.js";
 const PENDING_MS = 5000;
 const WEDGE_AUTO_SUBMIT_LEN = 20;
 const WEDGE_DEBOUNCE_MS = 50;
+const LOOKUP_DISABLED_MSG =
+  "Manual lookup is disabled for this event — use QR scan only.";
+
+const DEFAULT_OPS_CONFIG: OpsConfigDto = {
+  require_confirm_on_scan: false,
+  badge_at_entry: true,
+  allow_manual_lookup: true,
+  auto_advance_on_valid: true,
+};
 
 export interface CheckInPageProps {
   eventTitle?: string;
@@ -87,8 +97,11 @@ export function CheckInPage({
   const [manualOpen, setManualOpen] = useState(false);
   const [admitOrigin, setAdmitOrigin] = useState<"scan" | "manual">("manual");
   const [overlayManualError, setOverlayManualError] = useState<string | null>(null);
+  const [opsConfig, setOpsConfig] = useState<OpsConfigDto>(DEFAULT_OPS_CONFIG);
 
   const deviceId = deviceLabel ?? undefined;
+  const allowManualLookup = opsConfig.allow_manual_lookup;
+  const autoAdvanceOnValid = opsConfig.auto_advance_on_valid;
 
   useEffect(() => {
     if (eventTimezoneProp) {
@@ -109,6 +122,21 @@ export function CheckInPage({
       cancelled = true;
     };
   }, [eventId, eventTimezoneProp]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    let cancelled = false;
+    fetchCheckInOpsConfig(eventId)
+      .then((ops) => {
+        if (!cancelled) setOpsConfig(ops);
+      })
+      .catch(() => {
+        if (!cancelled) setOpsConfig(DEFAULT_OPS_CONFIG);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId]);
 
   const focusScan = useCallback(() => {
     if (showMobileOverlay) return;
@@ -168,6 +196,28 @@ export function CheckInPage({
     }
   };
 
+  const resetScan = useCallback(() => {
+    if (wedgeTimerRef.current != null) {
+      window.clearTimeout(wedgeTimerRef.current);
+      wedgeTimerRef.current = null;
+    }
+    setScanResult(null);
+    setCard(null);
+    setTransportError(null);
+    setOverlayManualError(null);
+    setBuffer("");
+    focusScan();
+  }, [focusScan]);
+
+  const maybeAutoAdvance = useCallback(
+    (response: CheckInScanResponse) => {
+      if (autoAdvanceOnValid && response.status === "VALID" && response.confirmed) {
+        resetScan();
+      }
+    },
+    [autoAdvanceOnValid, resetScan],
+  );
+
   const runWithPending = async <T,>(fn: () => Promise<T>): Promise<T | null> => {
     clearPendingTimer();
     pendingTimerRef.current = window.setTimeout(() => {
@@ -215,6 +265,7 @@ export function CheckInPage({
         const response = await runWithPending(() => submitCheckInScan(eventId, scanned, deviceId));
         if (!response) return;
         applyResponse(response);
+        maybeAutoAdvance(response);
         setAdmitOrigin("scan");
         if (response.status === "PREVIEW" && response.attendeeId && !response.card) {
           const loaded = await fetchAttendeeCard(eventId, response.attendeeId);
@@ -230,21 +281,8 @@ export function CheckInPage({
         focusScan();
       }
     },
-    [canAct, deviceId, eventId, focusScan, refreshSidebar, reportApiError],
+    [canAct, deviceId, eventId, focusScan, maybeAutoAdvance, refreshSidebar, reportApiError],
   );
-
-  const resetScan = useCallback(() => {
-    if (wedgeTimerRef.current != null) {
-      window.clearTimeout(wedgeTimerRef.current);
-      wedgeTimerRef.current = null;
-    }
-    setScanResult(null);
-    setCard(null);
-    setTransportError(null);
-    setOverlayManualError(null);
-    setBuffer("");
-    focusScan();
-  }, [focusScan]);
 
   const closeInlineCamera = useCallback(() => {
     returnFocusUseCameraRef.current = isOperatorShell;
@@ -262,7 +300,10 @@ export function CheckInPage({
       const response = await runWithPending(() =>
         submitCheckInAdmit(eventId, attendeeId, deviceId, method),
       );
-      if (response) applyResponse(response);
+      if (response) {
+        applyResponse(response);
+        maybeAutoAdvance(response);
+      }
       void refreshSidebar();
     } catch (err) {
       handleApiFailure(err);
@@ -291,6 +332,10 @@ export function CheckInPage({
 
   const runLookup = async () => {
     if (!eventId || !canAct || !lookupQ.trim()) return;
+    if (!allowManualLookup) {
+      setTransportError(LOOKUP_DISABLED_MSG);
+      return;
+    }
     setBusy(true);
     try {
       const results = await lookupCheckInAttendees(eventId, lookupQ);
@@ -313,6 +358,13 @@ export function CheckInPage({
       }
 
       if (!eventId || !canAct) return false;
+
+      if (!allowManualLookup) {
+        const message = LOOKUP_DISABLED_MSG;
+        if (showMobileOverlay) setOverlayManualError(message);
+        else setTransportError(message);
+        return false;
+      }
 
       setBusy(true);
       setTransportError(null);
@@ -350,7 +402,7 @@ export function CheckInPage({
         setBusy(false);
       }
     },
-    [canAct, eventId, reportApiError, runScan, showMobileOverlay],
+    [allowManualLookup, canAct, eventId, reportApiError, runScan, showMobileOverlay],
   );
 
   const onItemAction = async (itemKey: string, targetState: string) => {
@@ -610,17 +662,19 @@ export function CheckInPage({
               history={history}
               eventTimezone={eventTimezone}
             />
-            <ManualLookupPanel
-              open={manualOpen}
-              query={lookupQ}
-              results={lookupResults}
-              busy={busy}
-              canAct={canAct}
-              onToggle={() => setManualOpen((v) => !v)}
-              onQueryChange={setLookupQ}
-              onSearch={() => void runLookup()}
-              onSelect={(id) => void openLookupResult(id)}
-            />
+            {allowManualLookup ? (
+              <ManualLookupPanel
+                open={manualOpen}
+                query={lookupQ}
+                results={lookupResults}
+                busy={busy}
+                canAct={canAct}
+                onToggle={() => setManualOpen((v) => !v)}
+                onQueryChange={setLookupQ}
+                onSearch={() => void runLookup()}
+                onSelect={(id) => void openLookupResult(id)}
+              />
+            ) : null}
           </Card>
         </aside>
       </div>

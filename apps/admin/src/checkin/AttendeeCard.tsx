@@ -123,7 +123,13 @@ export function AttendeeCard({
         <div className="checkin-card__items">
           {card.items.map((item) => (
             <div key={item.key} className="checkin-card__item-row">
-              <span className="checkin-card__item-label">{item.label}</span>
+              <span className="checkin-card__item-label">
+                <i
+                  className={`ti ti-${item.icon ?? "package"} checkin-card__item-icon`}
+                  aria-hidden="true"
+                />
+                {item.label}
+              </span>
               {item.actions.length > 0 ? (
                 <div className="checkin-card__item-actions">
                   {item.actions.map((action) => (

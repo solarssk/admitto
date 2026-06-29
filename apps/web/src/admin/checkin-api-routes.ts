@@ -10,6 +10,7 @@ import {
   getCheckInStats,
   transitionItemState,
   addAttendeeNote,
+  loadEventOpsConfig,
   undoLastCheckIn,
   IllegalItemTransitionError,
   NoteTooLongError,
@@ -119,6 +120,10 @@ export async function handleCheckinLookup(c: Context, db: PrismaClient): Promise
   if (typeof q !== "string" || !q.trim()) return c.json({ error: "q required" }, 400);
 
   try {
+    const ops = await loadEventOpsConfig(eventId, db);
+    if (!ops.allow_manual_lookup) {
+      return c.json({ error: "manual_lookup_disabled" }, 403);
+    }
     const results = await lookupAttendees(eventId, q, db);
     return c.json({ results }, 200);
   } catch (err) {
@@ -267,6 +272,19 @@ export async function handleCheckinUndo(c: Context, db: PrismaClient): Promise<R
       return c.json({ error: err.message }, 409);
     }
     console.error("undoLastCheckIn failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
+}
+
+/** GET /api/checkin/ops-config */
+export async function handleCheckinOpsConfig(c: Context, db: PrismaClient): Promise<Response> {
+  const eventId = c.req.query("eventId");
+  if (!eventId) return c.json({ error: "eventId required" }, 400);
+  try {
+    const ops = await loadEventOpsConfig(eventId, db);
+    return c.json(ops, 200);
+  } catch (err) {
+    console.error("loadEventOpsConfig failed:", err);
     return c.json({ error: "server error" }, 500);
   }
 }

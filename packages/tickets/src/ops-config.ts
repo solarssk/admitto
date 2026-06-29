@@ -1,3 +1,5 @@
+import type { PrismaClient } from "@prisma/client";
+
 export type EventOpsConfig = {
   require_confirm_on_scan: boolean;
   badge_at_entry: boolean;
@@ -21,4 +23,16 @@ export function parseEventOpsConfig(raw: unknown): EventOpsConfig {
     allow_manual_lookup: o.allow_manual_lookup !== false,
     auto_advance_on_valid: o.auto_advance_on_valid !== false,
   };
+}
+
+/** Load parsed ops config for an event (check-in and admin). */
+export async function loadEventOpsConfig(
+  eventId: string,
+  prisma: PrismaClient,
+): Promise<EventOpsConfig> {
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { ops_config: true },
+  });
+  return parseEventOpsConfig(event?.ops_config);
 }

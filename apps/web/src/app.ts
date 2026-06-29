@@ -144,6 +144,7 @@ import {
   handleCheckinNote,
   handleCheckinUndo,
   handleCheckinStats,
+  handleCheckinOpsConfig,
   handleCheckinHistory,
   eventIdFromCheckinBody,
 } from "./admin/checkin-api-routes.js";
@@ -891,6 +892,14 @@ export function createApp(options: CreateAppOptions = {}) {
     parseScanBodyMiddleware,
     createCheckinEventScope(checkinAuthDeps, eventIdFromCheckinBody),
     (c) => handleCheckinUndo(c, db),
+  );
+
+  app.get(
+    "/api/checkin/ops-config",
+    createCheckinPreAuth(checkinAuthDeps),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "history"),
+    createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
+    (c) => handleCheckinOpsConfig(c, db),
   );
 
   app.get(

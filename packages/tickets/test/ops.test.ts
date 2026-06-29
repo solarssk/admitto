@@ -166,6 +166,16 @@ describe("getAttendeeCard — item detail from contents", () => {
     const card = await getAttendeeCard(EVENT_ID, attendeeId, prisma);
     expect(card!.items.some((i) => i.key === "socks")).toBe(false);
   });
+
+  it("includes item icon when configured on EventItem", async () => {
+    await prisma.eventItem.update({
+      where: { event_id_key: { event_id: EVENT_ID, key: "badge" } },
+      data: { icon: "badge" },
+    });
+    const card = await getAttendeeCard(EVENT_ID, attendeeId, prisma);
+    const badge = card!.items.find((i) => i.key === "badge");
+    expect(badge?.icon).toBe("badge");
+  });
 });
 
 describe("ensureDefaultEventItems (Lock #7 lazy seed)", () => {
