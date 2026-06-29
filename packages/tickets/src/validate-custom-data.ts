@@ -94,3 +94,15 @@ export function validateCustomDataPatch(
   assertRequiredFieldsPresent(fields, merged);
   return normalizedPatch;
 }
+
+/** Ensure stored custom_data satisfies required field rules (any PATCH path). */
+export function assertCustomDataMeetsRequirements(
+  fields: EventItemContent[],
+  customData: unknown,
+): void {
+  const values: Record<string, string | null | undefined> = {};
+  for (const field of fields) {
+    values[field.source_field] = customDataValue(customData, field.source_field);
+  }
+  assertRequiredFieldsPresent(fields, values);
+}

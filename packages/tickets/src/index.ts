@@ -20,6 +20,7 @@ export {
   buildCustomDataFromInput,
   normalizeCustomDataFieldValue,
   validateCustomDataPatch,
+  assertCustomDataMeetsRequirements,
 } from "./validate-custom-data.js";
 export { DEFAULT_EVENT_ITEM_KEYS } from "./event-items.js";
 export { parseEventOpsConfig, loadEventOpsConfig } from "./ops-config.js";

@@ -15,6 +15,7 @@ import {
   collectEventCustomDataFields,
   buildCustomDataFromInput,
   validateCustomDataPatch,
+  assertCustomDataMeetsRequirements,
   customDataValue,
   parseCustomData,
   writeActionLog,
@@ -1199,6 +1200,22 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   }
 
   const profileChanges = computePatchChanges(existing, profilePatch);
+
+  if (profileChanges) {
+    const allowedFields = await loadEventCustomDataFields(db, eventId);
+    if (allowedFields.length > 0) {
+      try {
+        const nextCustomData =
+          profileChanges.data.custom_data !== undefined
+            ? profileChanges.data.custom_data
+            : existing.custom_data;
+        assertCustomDataMeetsRequirements(allowedFields, nextCustomData);
+      } catch (err) {
+        return c.json({ error: customDataErrorCode(err) }, 400);
+      }
+    }
+  }
+
   const rsvpChange = computeRsvpChange(existing.rsvp_status, patchRsvp);
 
   if (!profileChanges && !rsvpChange) {

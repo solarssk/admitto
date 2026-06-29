@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertCustomDataMeetsRequirements,
   buildCustomDataFromInput,
   normalizeCustomDataFieldValue,
   validateCustomDataPatch,
@@ -60,6 +61,20 @@ describe("buildCustomDataFromInput", () => {
 
   it("returns undefined when no custom_data values are provided", () => {
     expect(buildCustomDataFromInput([noteField], {})).toBeUndefined();
+  });
+});
+
+describe("assertCustomDataMeetsRequirements", () => {
+  it("passes when required fields are present", () => {
+    expect(() =>
+      assertCustomDataMeetsRequirements([sizeField], { size: "M" }),
+    ).not.toThrow();
+  });
+
+  it("throws when required fields are missing", () => {
+    expect(() => assertCustomDataMeetsRequirements([sizeField], {})).toThrow(
+      "required_custom_data_field_missing:size",
+    );
   });
 });
 

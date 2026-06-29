@@ -546,6 +546,45 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
       { label: "B", source_field: "dup_field" },
     ]);
   });
+
+  it("GET preserves content metadata when strict config parse fails", async () => {
+    await prisma.eventItem.update({
+      where: { id: ITEM_SOCKS },
+      data: {
+        config: {
+          requires_return: true,
+          contents: [
+            {
+              label: "Size",
+              source_field: "size",
+              type: "select",
+              required: true,
+              options: ["S", "M"],
+            },
+            {
+              label: "Size dup",
+              source_field: "size",
+              type: "text",
+            },
+          ],
+        },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const socks = ((await res.json()) as { items: { key: string; config: EventItemConfigBody }[] })
+      .items.find((i) => i.key === "socks");
+    expect(socks?.config?.contents?.[0]).toEqual({
+      label: "Size",
+      source_field: "size",
+      type: "select",
+      required: true,
+      options: ["S", "M"],
+    });
+  });
 });
 
 describe("DELETE /api/admin/events/:eventId/items/:itemId", () => {
