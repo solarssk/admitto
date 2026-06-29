@@ -1,5 +1,10 @@
 /* Staff SPA layout helpers */
 
+/* Author display utilities must not override the HTML hidden attribute. */
+[hidden] {
+  display: none !important;
+}
+
 .sidebar__brand-mark {
   width: 28px;
   height: 28px;
