@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { Badge, Card, PageHeader } from "@admitto/ui";
+import { useState, type ReactNode } from "react";
+import { Badge, Card, PageHeader, Tabs } from "@admitto/ui";
 import { BrandingPanel } from "../settings/BrandingPanel.js";
 import { MailTransportPanel } from "../settings/MailTransportPanel.js";
 import { SessionsPanel } from "../settings/SessionsPanel.js";
@@ -7,11 +7,14 @@ import { EventArchivingPanel } from "../settings/EventArchivingPanel.js";
 import { SecurityPanel } from "../settings/SecurityPanel.js";
 import { AuditLogPanel } from "../settings/AuditLogPanel.js";
 
-interface SettingsPlaceholderProps {
-  title: string;
-  description: string;
-  badge: string;
-}
+type SettingsTab = "general" | "security" | "archiving" | "identity";
+
+const SETTINGS_TABS = [
+  { id: "general", label: "General" },
+  { id: "security", label: "Security" },
+  { id: "archiving", label: "Archiving" },
+  { id: "identity", label: "Identity" },
+] as const;
 
 /** Secondary action link — Button primitive has no native href support yet. */
 function SettingsManageLink({ href, children }: { href: string; children: ReactNode }) {
@@ -19,14 +22,6 @@ function SettingsManageLink({ href, children }: { href: string; children: ReactN
     <a className="at-btn at-btn--secondary" href={href}>
       <span>{children}</span>
     </a>
-  );
-}
-
-function SettingsPlaceholderCard({ title, description, badge }: SettingsPlaceholderProps) {
-  return (
-    <Card title={title} actions={<Badge variant="neutral">{badge}</Badge>}>
-      <p>{description}</p>
-    </Card>
   );
 }
 
@@ -51,23 +46,44 @@ function IdentityProvidersCard() {
   );
 }
 
-/** Instance-level settings shell content (branding, mail transport, roadmap placeholders, identity links). */
+/** Instance-level settings: grouped in-app tabs (branding, security, archiving, identity links). */
 export function SettingsPage() {
+  const [tab, setTab] = useState<SettingsTab>("general");
+
   return (
-    <>
+    <div className="settings-page">
       <PageHeader
         title="Settings"
-        subtitle="Instance branding, mail transport, sessions, security policies, and identity providers."
+        subtitle="Instance configuration, security policies, and identity providers."
       />
-      <div className="settings-sections">
-        <BrandingPanel />
-        <MailTransportPanel />
-        <SessionsPanel />
-        <SecurityPanel />
-        <AuditLogPanel />
-        <EventArchivingPanel />
-        <IdentityProvidersCard />
-      </div>
-    </>
+      <Tabs
+        value={tab}
+        onChange={(id) => setTab(id as SettingsTab)}
+        tabs={[...SETTINGS_TABS]}
+      />
+      {tab === "general" && (
+        <div className="settings-sections" role="tabpanel" aria-label="General">
+          <BrandingPanel />
+          <MailTransportPanel />
+          <SessionsPanel />
+        </div>
+      )}
+      {tab === "security" && (
+        <div className="settings-sections" role="tabpanel" aria-label="Security">
+          <SecurityPanel />
+          <AuditLogPanel />
+        </div>
+      )}
+      {tab === "archiving" && (
+        <div role="tabpanel" aria-label="Archiving">
+          <EventArchivingPanel />
+        </div>
+      )}
+      {tab === "identity" && (
+        <div role="tabpanel" aria-label="Identity">
+          <IdentityProvidersCard />
+        </div>
+      )}
+    </div>
   );
 }

@@ -2209,3 +2209,14 @@
   color: var(--text-secondary);
 }
 
+/* Settings — horizontal tab scroll on narrow viewports */
+.settings-page .at-tabs {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  flex-wrap: nowrap;
+}
+
+.settings-page .at-tab {
+  flex-shrink: 0;
+}
+
