@@ -99,6 +99,18 @@ const resendBodySchema = z
   })
   .strict();
 
+const customDataFieldValueSchema = z.string().trim().max(100);
+
+const customDataFieldsRecordSchema = z.record(
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(60)
+    .regex(/^[a-z0-9_]+$/),
+  customDataFieldValueSchema,
+);
+
 const createAttendeeSchema = z
   .object({
     email: z.string().trim().email().max(254),
@@ -106,7 +118,7 @@ const createAttendeeSchema = z
     company: z.string().trim().max(200).optional(),
     department: z.string().trim().max(200).optional(),
     ticket_type: z.string().trim().max(100).optional(),
-    custom_data: z.record(z.string(), z.unknown()).optional(),
+    custom_data: customDataFieldsRecordSchema.optional(),
   })
   .strict();
 
@@ -1176,7 +1188,11 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   if (profilePatch.custom_data_fields) {
     const allowedFields = await loadEventCustomDataFields(db, eventId);
     try {
-      validateCustomDataPatch(allowedFields, existing.custom_data, profilePatch.custom_data_fields);
+      profilePatch.custom_data_fields = validateCustomDataPatch(
+        allowedFields,
+        existing.custom_data,
+        profilePatch.custom_data_fields,
+      );
     } catch (err) {
       return c.json({ error: customDataErrorCode(err) }, 400);
     }

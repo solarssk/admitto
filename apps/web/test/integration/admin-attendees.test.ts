@@ -1034,6 +1034,87 @@ describe("Attendees v2 — RSVP and manual create", () => {
     await prisma.attendee.delete({ where: { id: body.id } });
   });
 
+  it("POST create rejects invalid custom_data select option", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [
+            {
+              label: "Shirt size",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "bad-select@example.com",
+        name: "Bad Select",
+        custom_data: { shirt_size: "XL" },
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_failed");
+  });
+
+  it("POST create rejects custom_data values over 100 characters", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "long-field@example.com",
+        name: "Long Field",
+        custom_data: { shirt_size: "x".repeat(101) },
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_failed");
+  });
+
+  it("PATCH normalizes boolean custom_data aliases to true/false", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [
+            {
+              label: "Lunch",
+              source_field: "lunch",
+              type: "boolean",
+            },
+          ],
+        },
+      },
+    });
+    await prisma.attendee.update({
+      where: { id: ATT_A1 },
+      data: { custom_data: { lunch: "false" } },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A1}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        expected_updated_at: (await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A1 } }))
+          .updated_at.toISOString(),
+        custom_data_fields: { lunch: "yes" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A1 } });
+    expect((row.custom_data as { lunch?: string }).lunch).toBe("true");
+  });
+
   it("POST create duplicate email returns 409 email_taken", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       method: "POST",

@@ -43,6 +43,20 @@ function fieldLabel(field: CustomDataFieldDef): string {
   return field.required ? `${field.label} *` : field.label;
 }
 
+/** Initial form values for event-item attribute fields (required select pre-selects first option). */
+export function initialCustomFieldValues(fields: CustomDataFieldDef[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const field of fields) {
+    const type = field.type ?? "text";
+    if (field.required && type === "select") {
+      out[field.source_field] = field.options?.[0] ?? "";
+    } else {
+      out[field.source_field] = "";
+    }
+  }
+  return out;
+}
+
 /** Client-side validation before save/create; returns user-facing message or null. */
 export function validateCustomFieldsForm(
   fields: CustomDataFieldDef[],

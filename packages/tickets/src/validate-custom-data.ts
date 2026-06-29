@@ -65,13 +65,15 @@ export function buildCustomDataFromInput(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-/** Validate merged custom_data after a PATCH to custom_data_fields. */
+/** Validate merged custom_data after a PATCH to custom_data_fields. Returns normalized patch values for persistence. */
 export function validateCustomDataPatch(
   fields: EventItemContent[],
   existing: unknown,
   patch: Record<string, string | null>,
-): void {
+): Record<string, string | null> {
   const merged: Record<string, string | null> = {};
+  const normalizedPatch: Record<string, string | null> = {};
+
   for (const field of fields) {
     merged[field.source_field] = customDataValue(existing, field.source_field);
   }
@@ -81,10 +83,14 @@ export function validateCustomDataPatch(
     if (!field) throw new Error(`unknown_custom_data_field:${key}`);
     if (value === null || value === "") {
       merged[key] = null;
+      normalizedPatch[key] = null;
       continue;
     }
-    merged[key] = normalizeCustomDataFieldValue(field, value);
+    const normalized = normalizeCustomDataFieldValue(field, value);
+    merged[key] = normalized;
+    normalizedPatch[key] = normalized;
   }
 
   assertRequiredFieldsPresent(fields, merged);
+  return normalizedPatch;
 }

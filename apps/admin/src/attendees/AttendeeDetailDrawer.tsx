@@ -275,8 +275,18 @@ export function AttendeeDetailDrawer({
         } else {
           setError("Could not save changes. Reload and try again.");
         }
-      } else if (err instanceof ApiError && err.status === 400 && err.message === "unknown_custom_data_field") {
-        setError("Event configuration changed — close and reopen this attendee to edit attributes.");
+      } else if (
+        err instanceof ApiError &&
+        err.status === 400 &&
+        (err.message === "unknown_custom_data_field" ||
+          err.message === "required_custom_data_field_missing" ||
+          err.message === "validation_failed")
+      ) {
+        setError(
+          err.message === "unknown_custom_data_field"
+            ? "Event configuration changed — close and reopen this attendee to edit attributes."
+            : "Could not save attribute fields — check required values and options.",
+        );
       } else {
         setError(err instanceof ApiError ? err.message : "Failed to save changes.");
       }

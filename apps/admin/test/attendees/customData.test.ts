@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   flattenCustomDataFieldsFromItems,
+  initialCustomFieldValues,
   readCustomDataField,
+  validateCustomFieldsForm,
 } from "../../src/attendees/customData.js";
 import type { EventItemDto } from "../../src/api/types.js";
 
@@ -117,5 +119,60 @@ describe("readCustomDataField", () => {
 
   it("ignores non-string values", () => {
     expect(readCustomDataField({ jacket_size: 42 }, "jacket_size")).toBeNull();
+  });
+});
+
+describe("initialCustomFieldValues", () => {
+  it("pre-selects first option for required select fields", () => {
+    expect(
+      initialCustomFieldValues([
+        {
+          label: "Size",
+          source_field: "size",
+          type: "select",
+          required: true,
+          options: ["S", "M", "L"],
+        },
+      ]),
+    ).toEqual({ size: "S" });
+  });
+
+  it("starts optional fields empty", () => {
+    expect(
+      initialCustomFieldValues([
+        { label: "Note", source_field: "note", type: "text" },
+      ]),
+    ).toEqual({ note: "" });
+  });
+});
+
+describe("validateCustomFieldsForm", () => {
+  const sizeField = {
+    label: "Size",
+    source_field: "size",
+    type: "select" as const,
+    required: true,
+    options: ["S", "M", "L"],
+  };
+
+  it("requires non-empty values for required fields", () => {
+    expect(validateCustomFieldsForm([sizeField], { size: "" })).toMatch(/required/i);
+  });
+
+  it("rejects invalid select options", () => {
+    expect(validateCustomFieldsForm([sizeField], { size: "XL" })).toMatch(/must be one of/i);
+  });
+
+  it("rejects invalid boolean values", () => {
+    expect(
+      validateCustomFieldsForm(
+        [{ label: "Lunch", source_field: "lunch", type: "boolean", required: true }],
+        { lunch: "maybe" },
+      ),
+    ).toMatch(/yes or no/i);
+  });
+
+  it("returns null when all values are valid", () => {
+    expect(validateCustomFieldsForm([sizeField], { size: "M" })).toBeNull();
   });
 });

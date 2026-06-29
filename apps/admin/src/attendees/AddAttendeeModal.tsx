@@ -5,6 +5,7 @@ import type { AttendeeDetailDto } from "../api/types.js";
 import { CustomDataFieldInput } from "./CustomDataFieldInput.js";
 import {
   flattenCustomDataFieldsFromItems,
+  initialCustomFieldValues,
   validateCustomFieldsForm,
   type CustomDataFieldDef,
 } from "./customData.js";
@@ -37,13 +38,15 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
 
   useEffect(() => {
     if (!open) return;
+    setAttributeFields([]);
+    setCustomFields({});
     let cancelled = false;
     fetchEventItems(eventId)
       .then((items) => {
         if (cancelled) return;
         const fields = flattenCustomDataFieldsFromItems(items);
         setAttributeFields(fields);
-        setCustomFields(Object.fromEntries(fields.map((field) => [field.source_field, ""])));
+        setCustomFields(initialCustomFieldValues(fields));
       })
       .catch(() => {
         if (!cancelled) setAttributeFields([]);
@@ -59,7 +62,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
     setCompany("");
     setDepartment("");
     setTicketType("");
-    setCustomFields(Object.fromEntries(attributeFields.map((field) => [field.source_field, ""])));
+    setCustomFields(initialCustomFieldValues(attributeFields));
     setError(null);
   };
 
