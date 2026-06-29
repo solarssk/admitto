@@ -114,6 +114,30 @@ describe("commitImport — create", () => {
     });
     expect(att?.public_ref).toBeNull();
   });
+
+  it("persists custom_data attributes on create", async () => {
+    await prisma.attendee.deleteMany({
+      where: { event_id: EVENT_ID, email: "socks@example.com" },
+    });
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        {
+          first_name: "Socks",
+          last_name: "Fan",
+          email: "socks@example.com",
+          custom_data: { sock_size: "42", cap_size: "L" },
+        },
+      ],
+      {},
+      prisma,
+    );
+    expect(summary.created).toBe(1);
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "socks@example.com" } },
+    });
+    expect(att?.custom_data).toEqual({ sock_size: "42", cap_size: "L" });
+  });
 });
 
 describe("commitImport — overwrite=false (re-import)", () => {
@@ -189,6 +213,145 @@ describe("commitImport — overwrite=true", () => {
       where: { event_id_email: { event_id: EVENT_ID, email: "jan@example.com" } },
     });
     expect(att?.status).toBe("confirmed");
+  });
+
+  it("merges imported custom_data with existing attributes on overwrite", async () => {
+    const attributeFields = [
+      { label: "Sock size", source_field: "sock_size", type: "text" as const },
+      { label: "Cap size", source_field: "cap_size", type: "select" as const, options: ["S", "M", "L"] },
+    ];
+    await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "merge-cd@example.com",
+        name: "Merge CD",
+        custom_data: { sock_size: "42" },
+      },
+    });
+
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        {
+          first_name: "Merge",
+          last_name: "CD",
+          email: "merge-cd@example.com",
+          custom_data: { cap_size: "L" },
+        },
+      ],
+      { overwrite: true, attributeFields },
+      prisma,
+    );
+    expect(summary.updated).toBe(1);
+
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "merge-cd@example.com" } },
+    });
+    expect(att?.custom_data).toEqual({ sock_size: "42", cap_size: "L" });
+  });
+
+  it("allows overwrite when required attributes are satisfied by existing custom_data", async () => {
+    const attributeFields = [
+      {
+        label: "Cap size",
+        source_field: "cap_size",
+        type: "select" as const,
+        required: true,
+        options: ["S", "M", "L"],
+      },
+    ];
+    await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "partial-cap@example.com",
+        name: "Partial Cap",
+        custom_data: { cap_size: "M" },
+      },
+    });
+
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        {
+          first_name: "Partial",
+          last_name: "Cap",
+          email: "partial-cap@example.com",
+          company: "New Co",
+        },
+      ],
+      { overwrite: true, attributeFields },
+      prisma,
+    );
+    expect(summary.updated).toBe(1);
+
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "partial-cap@example.com" } },
+    });
+    expect(att?.company).toBe("New Co");
+    expect(att?.custom_data).toEqual({ cap_size: "M" });
+  });
+
+  it("skips create when required attributes are missing at commit", async () => {
+    const attributeFields = [
+      {
+        label: "Cap size",
+        source_field: "cap_size",
+        type: "select" as const,
+        required: true,
+        options: ["S", "M", "L"],
+      },
+    ];
+
+    const summary = await commitImport(
+      EVENT_ID,
+      [{ first_name: "No", last_name: "Cap", email: "no-cap@example.com" }],
+      { attributeFields },
+      prisma,
+    );
+    expect(summary.toSkip).toBe(1);
+    expect(summary.skipped[0]?.reason).toMatch(/missing required attribute/i);
+  });
+
+  it("coalesces custom_data across duplicate attendee rows in one overwrite import", async () => {
+    const attributeFields = [
+      { label: "Sock size", source_field: "sock_size", type: "text" as const },
+      { label: "Cap size", source_field: "cap_size", type: "select" as const, options: ["S", "M", "L"] },
+    ];
+    await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "dup-rows@example.com",
+        name: "Dup Rows",
+        custom_data: {},
+      },
+    });
+
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        {
+          first_name: "Dup",
+          last_name: "One",
+          email: "dup-rows@example.com",
+          custom_data: { sock_size: "42" },
+        },
+        {
+          first_name: "Dup",
+          last_name: "Two",
+          email: "dup-rows@example.com",
+          custom_data: { cap_size: "L" },
+        },
+      ],
+      { overwrite: true, attributeFields },
+      prisma,
+    );
+    expect(summary.updated).toBe(1);
+
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "dup-rows@example.com" } },
+    });
+    expect(att?.name).toBe("Dup Two");
+    expect(att?.custom_data).toEqual({ sock_size: "42", cap_size: "L" });
   });
 });
 

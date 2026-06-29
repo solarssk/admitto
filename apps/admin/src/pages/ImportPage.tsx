@@ -1,8 +1,12 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button, Card, PageHeader } from "@admitto/ui";
-import { ApiError, commitImport, previewImport } from "../api/client.js";
+import { ApiError, commitImport, fetchEventItems, previewImport } from "../api/client.js";
 import type { ImportCommitResponse, ImportPreviewResponse } from "../api/types.js";
+import {
+  flattenCustomDataFieldsFromItems,
+  type CustomDataFieldDef,
+} from "../attendees/customData.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import "../attendees/attendees.css";
 import "./import.css";
@@ -22,6 +26,22 @@ export function ImportPage() {
   const [result, setResult] = useState<ImportCommitResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    let cancelled = false;
+    fetchEventItems(eventId)
+      .then((items) => {
+        if (!cancelled) setAttributeFields(flattenCustomDataFieldsFromItems(items));
+      })
+      .catch(() => {
+        if (!cancelled) setAttributeFields([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId]);
 
   const handleApiError = (err: unknown) => {
     if (err instanceof ApiError) {
@@ -119,12 +139,35 @@ export function ImportPage() {
                   <tr><td><code>department</code></td><td>No</td><td>Department or team</td></tr>
                   <tr><td><code>external_uuid</code></td><td>No</td><td>External ID for deduplication</td></tr>
                   <tr><td><code>qr_payload</code></td><td>No</td><td>Custom QR code payload (auto-generated if empty)</td></tr>
+                  {attributeFields.map((field) => (
+                    <tr key={field.source_field}>
+                      <td>
+                        <code>{field.source_field}</code>
+                      </td>
+                      <td>{field.required ? "Yes" : "No"}</td>
+                      <td>
+                        {field.label}
+                        {field.type === "select" && field.options?.length
+                          ? ` — select: ${field.options.join(", ")}`
+                          : field.type === "boolean"
+                            ? " — Yes/No or true/false"
+                            : ""}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </details>
             <p className="import-hint import-hint--limits">
               <strong>Limits:</strong> max 5 MB · max 50 000 data rows · .csv or .xlsx only.
             </p>
+            {attributeFields.length > 0 ? (
+              <p className="import-hint">
+                Event attribute columns use the <code>source_field</code> slug (included in the
+                downloadable template). Export files may use human-readable labels — re-import accepts
+                those too.
+              </p>
+            ) : null}
             <a
               href={`/api/admin/events/${eventId}/import/template`}
               download="admitto-import-template.csv"

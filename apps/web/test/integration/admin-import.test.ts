@@ -146,6 +146,20 @@ async function seed(client: PrismaClient) {
       company: "Old Co",
     },
   });
+
+  await client.eventItem.create({
+    data: {
+      event_id: EVENT_A,
+      key: "swag",
+      label: "Swag pack",
+      config: {
+        contents: [
+          { label: "Sock size", source_field: "sock_size", type: "text" },
+          { label: "Cap size", source_field: "cap_size", type: "select", options: ["S", "M", "L"] },
+        ],
+      },
+    },
+  });
 }
 
 /** Create a full-session cookie string for the given user id. */
@@ -397,6 +411,40 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     expect(crossRes.status).toBe(403);
   });
 
+  it("parses custom attribute columns into custom_data", async () => {
+    const csv = [
+      "first_name,last_name,email,sock_size,cap_size",
+      "Gina,Gear,gina@example.com,42,L",
+    ].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { parse: { validCount: number }; summary: { toCreate: number } };
+    expect(body.parse.validCount).toBe(1);
+    expect(body.summary.toCreate).toBe(1);
+  });
+
+  it("rejects invalid custom attribute values in preview", async () => {
+    const csv = [
+      "first_name,last_name,email,cap_size",
+      "Bad,Cap,bad@example.com,XL",
+    ].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      parse: { validCount: number; invalidRows: { reason: string }[] };
+    };
+    expect(body.parse.validCount).toBe(0);
+    expect(body.parse.invalidRows[0]?.reason).toMatch(/invalid value/i);
+  });
+
   it("parses XLSX uploaded as multipart", async () => {
     const fd = await xlsxFormData([
       ["first_name", "last_name", "email"],
@@ -458,6 +506,30 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     expect(JSON.stringify(meta)).not.toMatch(/eve@example.com/);
   });
 
+  it("persists custom_data from attribute columns on create", async () => {
+    await prisma.attendee.deleteMany({
+      where: { event_id: EVENT_A, email: "swag@example.com" },
+    });
+
+    const csv = [
+      "first_name,last_name,email,sock_size,cap_size",
+      "Swag,User,swag@example.com,39,M",
+    ].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/commit`,
+      csvFormData(csv, "swag.csv"),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { created: number };
+    expect(body.created).toBe(1);
+
+    const row = await prisma.attendee.findFirst({
+      where: { event_id: EVENT_A, email: "swag@example.com" },
+    });
+    expect(row?.custom_data).toEqual({ sock_size: "39", cap_size: "M" });
+  });
+
   it("re-import overwrite=false skips all existing", async () => {
     const res = await postImport(
       `/api/admin/events/${EVENT_A}/import/commit`,
@@ -499,6 +571,96 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     expect(eve?.company).toBe("New Co");
   });
 
+  it("overwrite=true updates profile when required attributes exist only in DB", async () => {
+    await prisma.attendee.update({
+      where: { id: EXISTING_ATT },
+      data: { custom_data: { cap_size: "M" } },
+    });
+    await prisma.eventItem.update({
+      where: { event_id_key: { event_id: EVENT_A, key: "swag" } },
+      data: {
+        config: {
+          contents: [
+            { label: "Cap size", source_field: "cap_size", type: "select", required: true, options: ["S", "M", "L"] },
+          ],
+        },
+      },
+    });
+
+    const csv = [
+      "first_name,last_name,email,company",
+      "Existing,Person,existing@example.com,Updated Co",
+    ].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/commit`,
+      csvFormData(csv, "existing-overwrite.csv", true),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { updated: number };
+    expect(body.updated).toBe(1);
+
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: EXISTING_ATT } });
+    expect(row.company).toBe("Updated Co");
+    expect(row.custom_data).toEqual({ cap_size: "M" });
+
+    await prisma.eventItem.update({
+      where: { event_id_key: { event_id: EVENT_A, key: "swag" } },
+      data: {
+        config: {
+          contents: [
+            { label: "Sock size", source_field: "sock_size", type: "text" },
+            { label: "Cap size", source_field: "cap_size", type: "select", options: ["S", "M", "L"] },
+          ],
+        },
+      },
+    });
+    await prisma.attendee.update({
+      where: { id: EXISTING_ATT },
+      data: { custom_data: {} },
+    });
+  });
+
+  it("returns 400 when event attribute config has conflicting select options", async () => {
+    await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_A,
+        key: "merch",
+        label: "Merch",
+        config: {
+          contents: [
+            { label: "Size A", source_field: "size", type: "select", options: ["S"] },
+          ],
+        },
+      },
+    });
+    await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_A,
+        key: "gear",
+        label: "Gear",
+        config: {
+          contents: [
+            { label: "Size B", source_field: "size", type: "select", options: ["XL"] },
+          ],
+        },
+      },
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/import/template`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toEqual({
+      error: "conflicting_custom_data_field_options",
+    });
+
+    await prisma.eventItem.deleteMany({
+      where: { event_id: EVENT_A, key: { in: ["merch", "gear"] } },
+    });
+  });
+
   it("rejects operator on commit", async () => {
     const res = await postImport(
       `/api/admin/events/${EVENT_A}/import/commit`,
@@ -530,7 +692,7 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
 });
 
 describe("GET /api/admin/events/:eventId/import/template", () => {
-  it("returns CSV header row with attachment headers", async () => {
+  it("returns CSV header row with base columns and event attribute slugs", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_A}/import/template`,
       { headers: { Cookie: adminCookie } },
@@ -540,7 +702,7 @@ describe("GET /api/admin/events/:eventId/import/template", () => {
     expect(res.headers.get("content-disposition")).toMatch(/admitto-import-template\.csv/);
     const body = await res.text();
     expect(body).toBe(
-      "first_name,last_name,email,ticket_type,company,department,external_uuid,qr_payload\n",
+      "first_name,last_name,email,ticket_type,company,department,external_uuid,qr_payload,sock_size,cap_size\n",
     );
   });
 
@@ -550,5 +712,42 @@ describe("GET /api/admin/events/:eventId/import/template", () => {
       { headers: { Cookie: opCookie } },
     );
     expect(res.status).toBe(403);
+  });
+
+  it("ignores legacy reserved source_field slugs when building attribute columns", async () => {
+    await prisma.eventItem.update({
+      where: { event_id_key: { event_id: EVENT_A, key: "swag" } },
+      data: {
+        config: {
+          contents: [
+            { label: "Email copy", source_field: "email", type: "text" },
+            { label: "Sock size", source_field: "sock_size", type: "text" },
+          ],
+        },
+      },
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/import/template`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toBe(
+      "first_name,last_name,email,ticket_type,company,department,external_uuid,qr_payload,sock_size\n",
+    );
+    expect(body.match(/email/g)?.length).toBe(1);
+
+    await prisma.eventItem.update({
+      where: { event_id_key: { event_id: EVENT_A, key: "swag" } },
+      data: {
+        config: {
+          contents: [
+            { label: "Sock size", source_field: "sock_size", type: "text" },
+            { label: "Cap size", source_field: "cap_size", type: "select", options: ["S", "M", "L"] },
+          ],
+        },
+      },
+    });
   });
 });

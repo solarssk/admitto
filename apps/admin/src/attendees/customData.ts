@@ -1,4 +1,4 @@
-import { collectEventCustomDataFields } from "@admitto/tickets";
+import { collectEventCustomDataFields, filterCustomDataAttributeFields } from "@admitto/tickets";
 import type { EventItemDto } from "../api/types.js";
 
 export type CustomDataFieldDef = {
@@ -11,7 +11,9 @@ export type CustomDataFieldDef = {
 
 /** Flatten API-normalized item contents and merge duplicate source_field metadata. */
 export function flattenCustomDataFieldsFromItems(items: EventItemDto[]): CustomDataFieldDef[] {
-  return collectEventCustomDataFields(items.map((item) => item.config));
+  return filterCustomDataAttributeFields(
+    collectEventCustomDataFields(items.map((item) => item.config)),
+  );
 }
 
 /** Read a single custom_data string field (mirrors server customDataValue semantics). */

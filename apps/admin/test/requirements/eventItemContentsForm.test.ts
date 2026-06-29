@@ -91,6 +91,17 @@ describe("validateContentsRows", () => {
     });
   });
 
+  it("rejects reserved import column slugs as source_field", () => {
+    expect(
+      validateContentsRows([
+        { label: "Email copy", source_field: "email", type: "text", required: false, options: "" },
+      ]),
+    ).toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/reserved for a standard import column/i),
+    });
+  });
+
   it("rejects select type without options", () => {
     expect(
       validateContentsRows([

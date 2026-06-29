@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
+import {
+  assertCustomDataMeetsRequirements,
+  filterCustomDataAttributeFields,
+  type EventItemContent,
+} from "@admitto/tickets";
 import type { AttendeeRow, ImportOptions, ImportSummary, SkippedRow } from "./types.js";
+import { importCustomDataSkipReason } from "./custom-data-import.js";
 import { generateToken } from "@admitto/crypto";
 
 /** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token_hash. */
@@ -14,13 +20,13 @@ type AttendeeCreateData = {
   event_id: string;
   email: string;
   name: string;
-  // token_hash intentionally absent — set during ticket issuance (Step 4), not import.
   ticket_type?: string;
   external_uuid?: string;
   qr_payload?: string;
   public_ref?: string;
   company?: string;
   department?: string;
+  custom_data?: Prisma.InputJsonValue;
 };
 
 type AttendeeUpdateArgs = {
@@ -30,8 +36,41 @@ type AttendeeUpdateArgs = {
     ticket_type?: string;
     company?: string;
     department?: string;
+    custom_data?: Prisma.InputJsonValue;
   };
 };
+
+function cloneCustomData(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return { ...(raw as Record<string, unknown>) };
+}
+
+function mergeCustomData(existing: unknown, incoming: Record<string, string>): Prisma.InputJsonValue {
+  const merged = cloneCustomData(existing);
+  for (const [key, value] of Object.entries(incoming)) {
+    merged[key] = value;
+  }
+  return merged as Prisma.InputJsonValue;
+}
+
+function resolveAttributeFields(
+  options: ImportOptions,
+): EventItemContent[] {
+  return filterCustomDataAttributeFields(options.attributeFields ?? []);
+}
+
+function validateImportCustomData(
+  fields: EventItemContent[],
+  customData: unknown,
+): string | null {
+  if (fields.length === 0) return null;
+  try {
+    assertCustomDataMeetsRequirements(fields, customData);
+    return null;
+  } catch (err) {
+    return importCustomDataSkipReason(err, fields);
+  }
+}
 
 type ImportDb = PrismaClient | Prisma.TransactionClient;
 
@@ -93,6 +132,7 @@ export async function commitImport(
   db?: ImportDb,
 ): Promise<ImportSummary> {
   const { overwrite = false, dryRun = false, ownedTransaction = false } = options;
+  const attributeFields = resolveAttributeFields(options);
 
   // Lazy-load to keep the package usable without @admitto/db when dry-running with mocks.
   const prisma = db ?? (await import("@admitto/db")).prisma;
@@ -136,7 +176,7 @@ export async function commitImport(
 
   // Classify rows — pure in-memory, no DB calls inside loop.
   const creates: AttendeeCreateData[] = [];
-  const updates: AttendeeUpdateArgs[] = [];
+  const updatesById = new Map<string, AttendeeUpdateArgs>();
   const skipped: SkippedRow[] = [];
 
   for (const row of rows) {
@@ -182,18 +222,40 @@ export async function commitImport(
         skipped.push({ email: row.email, reason: "Attendee already exists (overwrite=false)" });
         continue;
       }
+      const pendingUpdate = updatesById.get(found.id);
+      const priorCustomData = pendingUpdate?.data.custom_data ?? found.custom_data;
+      const mergedCustomData =
+        row.custom_data !== undefined
+          ? mergeCustomData(priorCustomData, row.custom_data)
+          : priorCustomData;
+      const customDataError = validateImportCustomData(attributeFields, mergedCustomData);
+      if (customDataError) {
+        skipped.push({ email: row.email, reason: customDataError });
+        continue;
+      }
+      const customDataTouched =
+        row.custom_data !== undefined || pendingUpdate?.data.custom_data !== undefined;
       // overwrite=true — update presentation/profile fields only.
       // Never touch: status, qr_payload, external_uuid, token_hash.
-      updates.push({
+      updatesById.set(found.id, {
         id: found.id,
         data: {
+          ...(pendingUpdate?.data ?? {}),
           name,
           ...(row.ticket_type !== undefined && { ticket_type: row.ticket_type }),
           ...(row.company !== undefined && { company: row.company }),
           ...(row.department !== undefined && { department: row.department }),
+          ...(customDataTouched && {
+            custom_data: mergedCustomData as Prisma.InputJsonValue,
+          }),
         },
       });
     } else {
+      const customDataError = validateImportCustomData(attributeFields, row.custom_data ?? {});
+      if (customDataError) {
+        skipped.push({ email: row.email, reason: customDataError });
+        continue;
+      }
       const isAgency = row.external_uuid !== undefined || row.qr_payload !== undefined;
       creates.push({
         id: randomUUID(),
@@ -206,9 +268,14 @@ export async function commitImport(
         ...(isAgency && { public_ref: generateToken() }),
         ...(row.company !== undefined && { company: row.company }),
         ...(row.department !== undefined && { department: row.department }),
+        ...(row.custom_data !== undefined && {
+          custom_data: row.custom_data as Prisma.InputJsonValue,
+        }),
       });
     }
   }
+
+  const updates = [...updatesById.values()];
 
   const summary: ImportSummary = {
     toCreate: creates.length,

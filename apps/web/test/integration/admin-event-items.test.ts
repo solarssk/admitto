@@ -350,6 +350,17 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects reserved source_field slugs that collide with import columns", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        config: { contents: [{ label: "Email copy", source_field: "email" }] },
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("persists issue_on_checkin false explicitly", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
       method: "PATCH",

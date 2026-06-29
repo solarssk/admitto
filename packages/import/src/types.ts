@@ -7,6 +7,21 @@ export type AttendeeRow = {
   qr_payload?: string;
   company?: string;
   department?: string;
+  /** Event-item attribute values keyed by source_field slug. */
+  custom_data?: Record<string, string>;
+};
+
+/** Event-item contents row shape for CSV attribute columns (mirrors @admitto/tickets). */
+export type ImportAttributeField = {
+  label: string;
+  source_field: string;
+  type?: "text" | "select" | "boolean";
+  required?: boolean;
+  options?: string[];
+};
+
+export type ParseAttendeesOptions = {
+  attributeFields?: ImportAttributeField[];
 };
 
 export type InvalidRow = {
@@ -28,6 +43,8 @@ export type ImportOptions = {
   dryRun?: boolean;
   /** When true: caller owns the transaction (no nested $transaction wrapper). */
   ownedTransaction?: boolean;
+  /** Event-item attribute definitions — required for custom_data validation at commit. */
+  attributeFields?: ImportAttributeField[];
 };
 
 export type SkippedRow = { email: string; reason: string };
