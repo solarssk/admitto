@@ -1206,15 +1206,35 @@ describe("Attendees v2 — RSVP and manual create", () => {
   });
 
   it("POST create merges duplicate source_field metadata across items", async () => {
-    await prisma.eventItem.create({
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
       data: {
+        config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
+      },
+    });
+    await prisma.eventItem.upsert({
+      where: { event_id_key: { event_id: EVENT_A, key: "merch" } },
+      create: {
         event_id: EVENT_A,
-        key: "socks",
-        label: "Socks",
+        key: "merch",
+        label: "Merch",
         config: {
           contents: [
             {
-              label: "Shirt size (socks)",
+              label: "Shirt size (merch)",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      },
+      update: {
+        config: {
+          contents: [
+            {
+              label: "Shirt size (merch)",
               source_field: "shirt_size",
               type: "select",
               required: true,
