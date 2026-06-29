@@ -643,6 +643,188 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(body.error).toBe("unknown_custom_data_field");
   });
 
+  it("rejects invalid select option and missing required field", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [
+            {
+              label: "Size",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      },
+    });
+
+    const invalidOption = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields: { shirt_size: "XL" },
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(invalidOption.status).toBe(400);
+    expect((await invalidOption.json()) as { error: string }).toEqual({ error: "validation_failed" });
+
+    const clearRequired = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        custom_data_fields: { shirt_size: null },
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(clearRequired.status).toBe(400);
+    expect((await clearRequired.json()) as { error: string }).toEqual({
+      error: "required_custom_data_field_missing",
+    });
+  });
+
+  it("rejects profile-only PATCH when required custom_data is missing", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [
+            {
+              label: "Size",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      },
+    });
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { custom_data: {} },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Bob Renamed",
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toEqual({
+      error: "required_custom_data_field_missing",
+    });
+  });
+
+  it("rejects RSVP-only PATCH when required custom_data is missing", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [
+            {
+              label: "Size",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      },
+    });
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { custom_data: {}, rsvp_status: "none" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rsvp_status: "confirmed",
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toEqual({
+      error: "required_custom_data_field_missing",
+    });
+  });
+
+  it("rejects profile-only PATCH when stored custom_data is invalid for config", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [
+            {
+              label: "Size",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      },
+    });
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { custom_data: { shirt_size: "XL" } },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Bob With Legacy Size",
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toEqual({ error: "validation_failed" });
+  });
+
+  it("PATCH normalizes boolean custom_data aliases to true/false", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [
+            {
+              label: "Lunch",
+              source_field: "lunch",
+              type: "boolean",
+            },
+          ],
+        },
+      },
+    });
+    await prisma.attendee.update({
+      where: { id: ATT_A1 },
+      data: { custom_data: { lunch: "false" } },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A1}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        expected_updated_at: await currentUpdatedAt(ATT_A1),
+        custom_data_fields: { lunch: "yes" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A1 } });
+    expect((row.custom_data as { lunch?: string }).lunch).toBe("true");
+  });
+
   it("audits custom_data field names without PII values", async () => {
     await prisma.eventItem.updateMany({
       where: { event_id: EVENT_A, key: "giftbag" },
@@ -989,6 +1171,143 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(log).not.toBeNull();
 
     await prisma.attendee.delete({ where: { id: body.id } });
+  });
+
+  it("POST create rejects invalid custom_data select option", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [
+            {
+              label: "Shirt size",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "bad-select@example.com",
+        name: "Bad Select",
+        custom_data: { shirt_size: "XL" },
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_failed");
+  });
+
+  it("POST create ignores null custom_data values", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [{ label: "Lunch", source_field: "lunch", type: "boolean" }],
+        },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "null-field@example.com",
+        name: "Null Field",
+        custom_data: { lunch: null },
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string };
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: body.id } });
+    expect(row.custom_data).toBeNull();
+
+    await prisma.attendee.delete({ where: { id: body.id } });
+  });
+
+  it("POST create merges duplicate source_field metadata across items", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
+      },
+    });
+    await prisma.eventItem.upsert({
+      where: { event_id_key: { event_id: EVENT_A, key: "merch" } },
+      create: {
+        event_id: EVENT_A,
+        key: "merch",
+        label: "Merch",
+        config: {
+          contents: [
+            {
+              label: "Shirt size (merch)",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      },
+      update: {
+        config: {
+          contents: [
+            {
+              label: "Shirt size (merch)",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "missing-size@example.com",
+        name: "Missing Size",
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toEqual({
+      error: "required_custom_data_field_missing",
+    });
+  });
+
+  it("POST create rejects custom_data values over 100 characters", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [{ label: "Shirt size", source_field: "shirt_size", type: "text" }],
+        },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "long-field@example.com",
+        name: "Long Field",
+        custom_data: { shirt_size: "x".repeat(101) },
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_failed");
   });
 
   it("POST create duplicate email returns 409 email_taken", async () => {

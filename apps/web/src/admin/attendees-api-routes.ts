@@ -13,6 +13,9 @@ import {
 import { formatEventDate, resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
   collectEventCustomDataFields,
+  buildCustomDataFromInput,
+  validateCustomDataPatch,
+  assertCustomDataMeetsRequirements,
   customDataValue,
   parseCustomData,
   writeActionLog,
@@ -97,6 +100,18 @@ const resendBodySchema = z
   })
   .strict();
 
+const customDataFieldValueSchema = z.string().trim().max(100).nullable();
+
+const customDataFieldsRecordSchema = z.record(
+  z
+    .string()
+    .trim()
+    .min(1)
+    .max(60)
+    .regex(/^[a-z0-9_]+$/),
+  customDataFieldValueSchema,
+);
+
 const createAttendeeSchema = z
   .object({
     email: z.string().trim().email().max(254),
@@ -104,7 +119,7 @@ const createAttendeeSchema = z
     company: z.string().trim().max(200).optional(),
     department: z.string().trim().max(200).optional(),
     ticket_type: z.string().trim().max(100).optional(),
-    custom_data: z.record(z.string(), z.unknown()).optional(),
+    custom_data: customDataFieldsRecordSchema.optional(),
   })
   .strict();
 
@@ -969,10 +984,14 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
     return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
   }
 
-  const [rows, attributeFields] = await Promise.all([
+  const [rows, attributeFieldsResult] = await Promise.all([
     findFilteredAttendeesForExport(db, eventId, filterParams),
-    loadEventCustomDataFields(db, eventId),
+    loadEventCustomDataFields(db, eventId).catch((err) => err),
   ]);
+  if (attributeFieldsResult instanceof Error) {
+    return c.json({ error: customDataErrorCode(attributeFieldsResult) }, 400);
+  }
+  const attributeFields = attributeFieldsResult;
 
   const exportColumns = buildExportColumns(attributeFields);
   const exportRows = buildSanitizedExportRows(rows, attributeFields, timeZone);
@@ -1129,25 +1148,16 @@ function computeRsvpChange(
   };
 }
 
-function buildCreateCustomData(
-  allowedFields: EventItemContent[],
-  input?: Record<string, unknown>,
-): Prisma.InputJsonValue | undefined {
-  if (!input || Object.keys(input).length === 0) return undefined;
-  const allowed = new Set(allowedFields.map((f) => f.source_field));
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(input)) {
-    if (!allowed.has(key)) {
-      throw new Error(`unknown_custom_data_field:${key}`);
-    }
-    if (value === null || value === undefined || value === "") continue;
-    if (typeof value !== "string") {
-      throw new Error("validation_failed");
-    }
-    const trimmed = value.trim();
-    if (trimmed) out[key] = trimmed.slice(0, 100);
+function customDataErrorCode(err: unknown): string {
+  const message = err instanceof Error ? err.message : "";
+  if (message.startsWith("unknown_custom_data_field:")) return "unknown_custom_data_field";
+  if (message.startsWith("required_custom_data_field_missing:")) {
+    return "required_custom_data_field_missing";
   }
-  return Object.keys(out).length > 0 ? (out as Prisma.InputJsonValue) : undefined;
+  if (message.startsWith("conflicting_custom_data_field_options:")) {
+    return "conflicting_custom_data_field_options";
+  }
+  return "validation_failed";
 }
 
 /** PATCH /api/admin/events/:eventId/attendees/:id */
@@ -1184,12 +1194,20 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   } = parsed.data;
 
   if (profilePatch.custom_data_fields) {
-    const allowedFields = await loadEventCustomDataFields(db, eventId);
-    const allowed = new Set(allowedFields.map((f) => f.source_field));
-    for (const key of Object.keys(profilePatch.custom_data_fields)) {
-      if (!allowed.has(key)) {
-        return c.json({ error: "unknown_custom_data_field" }, 400);
-      }
+    let allowedFields: EventItemContent[];
+    try {
+      allowedFields = await loadEventCustomDataFields(db, eventId);
+    } catch (err) {
+      return c.json({ error: customDataErrorCode(err) }, 400);
+    }
+    try {
+      profilePatch.custom_data_fields = validateCustomDataPatch(
+        allowedFields,
+        existing.custom_data,
+        profilePatch.custom_data_fields,
+      );
+    } catch (err) {
+      return c.json({ error: customDataErrorCode(err) }, 400);
     }
   }
 
@@ -1199,6 +1217,26 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   if (!profileChanges && !rsvpChange) {
     const dto = await buildAttendeeDetailDto(db, eventId, existing);
     return c.json(dto);
+  }
+
+  if (profileChanges || rsvpChange) {
+    let allowedFields: EventItemContent[];
+    try {
+      allowedFields = await loadEventCustomDataFields(db, eventId);
+    } catch (err) {
+      return c.json({ error: customDataErrorCode(err) }, 400);
+    }
+    if (allowedFields.length > 0) {
+      try {
+        const nextCustomData =
+          profileChanges?.data.custom_data !== undefined
+            ? profileChanges.data.custom_data
+            : existing.custom_data;
+        assertCustomDataMeetsRequirements(allowedFields, nextCustomData);
+      } catch (err) {
+        return c.json({ error: customDataErrorCode(err) }, 400);
+      }
+    }
   }
 
   if (!expectedUpdatedAtRaw) {
@@ -1350,16 +1388,18 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
     );
   }
 
-  const allowedFields = await loadEventCustomDataFields(db, eventId);
+  let allowedFields: EventItemContent[];
+  try {
+    allowedFields = await loadEventCustomDataFields(db, eventId);
+  } catch (err) {
+    return c.json({ error: customDataErrorCode(err) }, 400);
+  }
   let customData: Prisma.InputJsonValue | undefined;
   try {
-    customData = buildCreateCustomData(allowedFields, custom_data);
+    const built = buildCustomDataFromInput(allowedFields, custom_data);
+    customData = built as Prisma.InputJsonValue | undefined;
   } catch (err) {
-    const message = err instanceof Error ? err.message : "";
-    if (message.startsWith("unknown_custom_data_field:")) {
-      return c.json({ error: "unknown_custom_data_field" }, 400);
-    }
-    return c.json({ error: "validation_failed" }, 400);
+    return c.json({ error: customDataErrorCode(err) }, 400);
   }
 
   try {

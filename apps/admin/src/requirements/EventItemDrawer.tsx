@@ -265,8 +265,8 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
           <div>
             <h3 className="attendee-drawer__section-title">Operator hints</h3>
             <p className="requirements-section-hint">
-              Optional fields shown on the attendee card for this item (e.g. shirt size from import
-              data).
+              Shown on the attendee profile and check-in card. Type, required, and select options are
+              enforced when admins create or edit attendees.
             </p>
             <div className="requirements-field-stack">
               {form.contents.map((row, i) => (

@@ -29,7 +29,8 @@ import {
 } from "../attendees/attendeeDetailForm.js";
 import { getTimelineDetail, getTimelineIcon, getTimelineLabel, formatActivityTimestamp } from "../attendees/attendeeTimeline.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
-import { readCustomDataField } from "../attendees/customData.js";
+import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
+import { readCustomDataField, validateCustomFieldsForm } from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
@@ -179,6 +180,12 @@ export function AttendeeDetailPage() {
     if (Object.keys(customDataPatch).length > 0) patch.custom_data_fields = customDataPatch;
     if (Object.keys(patch).length === 0) return;
 
+    const customValidation = validateCustomFieldsForm(attributeFields, form.customFields);
+    if (customValidation) {
+      setError(customValidation);
+      return;
+    }
+
     patch.expected_updated_at = detail.updated_at;
     const target = { eventId, attendeeId };
     setSaving(true);
@@ -201,8 +208,18 @@ export function AttendeeDetailPage() {
           addToast("Someone else updated this attendee — page will reload", "warning");
           void handleReload();
         } else setError("Could not save changes.");
-      } else if (err instanceof ApiError && err.status === 400 && err.message === "unknown_custom_data_field") {
-        setError("Event configuration changed — reload this page to edit attributes.");
+      } else if (
+        err instanceof ApiError &&
+        err.status === 400 &&
+        (err.message === "unknown_custom_data_field" ||
+          err.message === "required_custom_data_field_missing" ||
+          err.message === "validation_failed")
+      ) {
+        setError(
+          err.message === "unknown_custom_data_field"
+            ? "Event configuration changed — reload this page to edit attributes."
+            : "Could not save attribute fields — check required values and options.",
+        );
       } else {
         setError(err instanceof ApiError ? err.message : "Failed to save changes.");
       }
@@ -377,14 +394,15 @@ export function AttendeeDetailPage() {
               <Input label="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
               <Input label="Ticket type" value={form.ticket_type} onChange={(e) => setForm({ ...form, ticket_type: e.target.value })} />
               {attributeFields.map((field) => (
-                <Input
+                <CustomDataFieldInput
                   key={field.source_field}
-                  label={field.label}
+                  field={field}
                   value={form.customFields[field.source_field] ?? ""}
-                  onChange={(e) =>
+                  disabled={saving || reloading || staleWrite}
+                  onChange={(next) =>
                     setForm({
                       ...form,
-                      customFields: { ...form.customFields, [field.source_field]: e.target.value },
+                      customFields: { ...form.customFields, [field.source_field]: next },
                     })
                   }
                 />

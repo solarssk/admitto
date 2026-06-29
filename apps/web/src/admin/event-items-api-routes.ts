@@ -118,12 +118,11 @@ const legacyContentRowSchema = z
   })
   .strict();
 
-/** Contents for GET when strict parse failed — legacy `size_field` or loose row shape only. */
+/** Contents for GET when strict parse failed — resolveEventItemContents first, then loose rows. */
 function legacyContentsFromRaw(o: Record<string, unknown>): EventItemContent[] | undefined {
-  if (!Array.isArray(o.contents)) {
-    const resolved = resolveEventItemContents(o);
-    return resolved.length > 0 ? resolved : undefined;
-  }
+  const resolved = resolveEventItemContents(o);
+  if (resolved.length > 0) return resolved;
+  if (!Array.isArray(o.contents)) return undefined;
   if (o.contents.length === 0) return [];
   const loose = z.array(legacyContentRowSchema).safeParse(o.contents);
   return loose.success ? loose.data : undefined;

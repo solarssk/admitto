@@ -3,6 +3,30 @@ import { buildItemDetail, collectEventCustomDataFields, resolveEventItemContents
 import { customDataValue } from "../src/custom-data.js";
 
 describe("resolveEventItemContents", () => {
+  it("preserves content metadata from config", () => {
+    expect(
+      resolveEventItemContents({
+        contents: [
+          {
+            label: "Size",
+            source_field: "size",
+            type: "select",
+            required: true,
+            options: ["S", "M", "L"],
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        label: "Size",
+        source_field: "size",
+        type: "select",
+        required: true,
+        options: ["S", "M", "L"],
+      },
+    ]);
+  });
+
   it("returns contents from config", () => {
     expect(
       resolveEventItemContents({
@@ -52,6 +76,22 @@ describe("resolveEventItemContents", () => {
       }),
     ).toEqual([]);
   });
+
+  it("drops select fields without options", () => {
+    expect(
+      resolveEventItemContents({
+        contents: [{ label: "Size", source_field: "size", type: "select" }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("drops source_field slugs longer than 60 characters", () => {
+    expect(
+      resolveEventItemContents({
+        contents: [{ label: "Long", source_field: `a_${"x".repeat(60)}` }],
+      }),
+    ).toEqual([]);
+  });
 });
 
 describe("collectEventCustomDataFields", () => {
@@ -62,6 +102,86 @@ describe("collectEventCustomDataFields", () => {
         { contents: [{ label: "Shirt (dup)", source_field: "shirt_size" }] },
       ]),
     ).toEqual([{ label: "Shirt size", source_field: "shirt_size" }]);
+  });
+
+  it("merges stricter metadata when source_field is shared across items", () => {
+    expect(
+      collectEventCustomDataFields([
+        { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
+        {
+          contents: [
+            {
+              label: "Shirt (dup)",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      ]),
+    ).toEqual([
+      {
+        label: "Shirt size",
+        source_field: "shirt_size",
+        type: "select",
+        required: true,
+        options: ["S", "M", "L"],
+      },
+    ]);
+  });
+
+  it("intersects select options when both items define the same source_field", () => {
+    expect(
+      collectEventCustomDataFields([
+        {
+          contents: [
+            {
+              label: "Size",
+              source_field: "size",
+              type: "select",
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+        {
+          contents: [
+            {
+              label: "Size dup",
+              source_field: "size",
+              type: "select",
+              required: true,
+              options: ["S", "M"],
+            },
+          ],
+        },
+      ]),
+    ).toEqual([
+      {
+        label: "Size",
+        source_field: "size",
+        type: "select",
+        required: true,
+        options: ["S", "M"],
+      },
+    ]);
+  });
+
+  it("rejects disjoint select options for the same source_field", () => {
+    expect(() =>
+      collectEventCustomDataFields([
+        {
+          contents: [
+            { label: "Size", source_field: "size", type: "select", options: ["S"] },
+          ],
+        },
+        {
+          contents: [
+            { label: "Size dup", source_field: "size", type: "select", options: ["XL"] },
+          ],
+        },
+      ]),
+    ).toThrow("conflicting_custom_data_field_options:size");
   });
 
   it("merges fields from multiple items", () => {
@@ -88,6 +208,34 @@ describe("collectEventCustomDataFields", () => {
 });
 
 describe("buildItemDetail", () => {
+  it("formats boolean values and required markers", () => {
+    expect(
+      buildItemDetail(
+        {
+          contents: [
+            { label: "Lunch", source_field: "lunch", type: "boolean", required: true },
+            { label: "Size", source_field: "size", type: "select", required: true, options: ["S", "M"] },
+          ],
+        },
+        { lunch: "true", size: "M" },
+      ),
+    ).toBe("Lunch*: Yes · Size*: M");
+
+    expect(
+      buildItemDetail(
+        { contents: [{ label: "Lunch", source_field: "lunch", type: "boolean" }] },
+        { lunch: "yes" },
+      ),
+    ).toBe("Lunch: Yes");
+
+    expect(
+      buildItemDetail(
+        { contents: [{ label: "Size", source_field: "size", required: true }] },
+        {},
+      ),
+    ).toBe("Size*: —");
+  });
+
   it("joins multiple attributes with middle dot", () => {
     const detail = buildItemDetail(
       {

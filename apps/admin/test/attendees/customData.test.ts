@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   flattenCustomDataFieldsFromItems,
+  initialCustomFieldValues,
   readCustomDataField,
+  validateCustomFieldsForm,
 } from "../../src/attendees/customData.js";
 import type { EventItemDto } from "../../src/api/types.js";
 
@@ -11,6 +13,7 @@ function item(
   return {
     type: "physical",
     enabled: true,
+    icon: null,
     config: null,
     ...partial,
   };
@@ -46,6 +49,74 @@ describe("flattenCustomDataFieldsFromItems", () => {
         }),
       ]),
     ).toEqual([{ label: "Shirt size", source_field: "shirt_size" }]);
+  });
+
+  it("merges stricter metadata when source_field is shared across items", () => {
+    expect(
+      flattenCustomDataFieldsFromItems([
+        item({
+          id: "1",
+          key: "giftbag",
+          label: "Gift bag",
+          config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
+        }),
+        item({
+          id: "2",
+          key: "socks",
+          label: "Socks",
+          config: {
+            contents: [
+              {
+                label: "Shirt (dup)",
+                source_field: "shirt_size",
+                type: "select",
+                required: true,
+                options: ["S", "M", "L"],
+              },
+            ],
+          },
+        }),
+      ]),
+    ).toEqual([
+      {
+        label: "Shirt size",
+        source_field: "shirt_size",
+        type: "select",
+        required: true,
+        options: ["S", "M", "L"],
+      },
+    ]);
+  });
+
+  it("preserves content metadata from event items", () => {
+    expect(
+      flattenCustomDataFieldsFromItems([
+        item({
+          id: "1",
+          key: "giftbag",
+          label: "Gift bag",
+          config: {
+            contents: [
+              {
+                label: "Size",
+                source_field: "size",
+                type: "select",
+                required: true,
+                options: ["S", "M", "L"],
+              },
+            ],
+          },
+        }),
+      ]),
+    ).toEqual([
+      {
+        label: "Size",
+        source_field: "size",
+        type: "select",
+        required: true,
+        options: ["S", "M", "L"],
+      },
+    ]);
   });
 
   it("merges fields from multiple items", () => {
@@ -85,5 +156,69 @@ describe("readCustomDataField", () => {
 
   it("ignores non-string values", () => {
     expect(readCustomDataField({ jacket_size: 42 }, "jacket_size")).toBeNull();
+  });
+});
+
+describe("initialCustomFieldValues", () => {
+  it("starts all fields empty including required select", () => {
+    expect(
+      initialCustomFieldValues([
+        {
+          label: "Size",
+          source_field: "size",
+          type: "select",
+          required: true,
+          options: ["S", "M", "L"],
+        },
+      ]),
+    ).toEqual({ size: "" });
+  });
+
+  it("starts optional fields empty", () => {
+    expect(
+      initialCustomFieldValues([
+        { label: "Note", source_field: "note", type: "text" },
+      ]),
+    ).toEqual({ note: "" });
+  });
+});
+
+describe("validateCustomFieldsForm", () => {
+  const sizeField = {
+    label: "Size",
+    source_field: "size",
+    type: "select" as const,
+    required: true,
+    options: ["S", "M", "L"],
+  };
+
+  it("requires non-empty values for required fields", () => {
+    expect(validateCustomFieldsForm([sizeField], { size: "" })).toMatch(/required/i);
+  });
+
+  it("rejects invalid select options", () => {
+    expect(validateCustomFieldsForm([sizeField], { size: "XL" })).toMatch(/must be one of/i);
+  });
+
+  it("rejects invalid boolean values", () => {
+    expect(
+      validateCustomFieldsForm(
+        [{ label: "Lunch", source_field: "lunch", type: "boolean", required: true }],
+        { lunch: "maybe" },
+      ),
+    ).toMatch(/yes or no/i);
+  });
+
+  it("accepts boolean aliases used by the API", () => {
+    expect(
+      validateCustomFieldsForm(
+        [{ label: "Lunch", source_field: "lunch", type: "boolean" }],
+        { lunch: "yes" },
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null when all values are valid", () => {
+    expect(validateCustomFieldsForm([sizeField], { size: "M" })).toBeNull();
   });
 });
