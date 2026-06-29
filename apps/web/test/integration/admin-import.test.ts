@@ -571,6 +571,96 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     expect(eve?.company).toBe("New Co");
   });
 
+  it("overwrite=true updates profile when required attributes exist only in DB", async () => {
+    await prisma.attendee.update({
+      where: { id: EXISTING_ATT },
+      data: { custom_data: { cap_size: "M" } },
+    });
+    await prisma.eventItem.update({
+      where: { event_id_key: { event_id: EVENT_A, key: "swag" } },
+      data: {
+        config: {
+          contents: [
+            { label: "Cap size", source_field: "cap_size", type: "select", required: true, options: ["S", "M", "L"] },
+          ],
+        },
+      },
+    });
+
+    const csv = [
+      "first_name,last_name,email,company",
+      "Existing,Person,existing@example.com,Updated Co",
+    ].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/commit`,
+      csvFormData(csv, "existing-overwrite.csv", true),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { updated: number };
+    expect(body.updated).toBe(1);
+
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: EXISTING_ATT } });
+    expect(row.company).toBe("Updated Co");
+    expect(row.custom_data).toEqual({ cap_size: "M" });
+
+    await prisma.eventItem.update({
+      where: { event_id_key: { event_id: EVENT_A, key: "swag" } },
+      data: {
+        config: {
+          contents: [
+            { label: "Sock size", source_field: "sock_size", type: "text" },
+            { label: "Cap size", source_field: "cap_size", type: "select", options: ["S", "M", "L"] },
+          ],
+        },
+      },
+    });
+    await prisma.attendee.update({
+      where: { id: EXISTING_ATT },
+      data: { custom_data: {} },
+    });
+  });
+
+  it("returns 400 when event attribute config has conflicting select options", async () => {
+    await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_A,
+        key: "merch",
+        label: "Merch",
+        config: {
+          contents: [
+            { label: "Size A", source_field: "size", type: "select", options: ["S"] },
+          ],
+        },
+      },
+    });
+    await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_A,
+        key: "gear",
+        label: "Gear",
+        config: {
+          contents: [
+            { label: "Size B", source_field: "size", type: "select", options: ["XL"] },
+          ],
+        },
+      },
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/import/template`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toEqual({
+      error: "conflicting_custom_data_field_options",
+    });
+
+    await prisma.eventItem.deleteMany({
+      where: { event_id: EVENT_A, key: { in: ["merch", "gear"] } },
+    });
+  });
+
   it("rejects operator on commit", async () => {
     const res = await postImport(
       `/api/admin/events/${EVENT_A}/import/commit`,

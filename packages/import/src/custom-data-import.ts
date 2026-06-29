@@ -1,5 +1,4 @@
 import {
-  buildCustomDataFromInput,
   filterCustomDataAttributeFields,
   normalizeCustomDataFieldValue,
   type EventItemContent,
@@ -43,6 +42,40 @@ function readAttributeCell(
   return (raw[labelKey] ?? "").trim();
 }
 
+/** Validate and normalize only attribute cells present in the CSV row (no required-field check). */
+function buildPartialCustomDataFromInput(
+  fields: EventItemContent[],
+  input: Record<string, string>,
+): Record<string, string> | undefined {
+  const fieldByKey = new Map(fields.map((field) => [field.source_field, field]));
+  const out: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(input)) {
+    const field = fieldByKey.get(key);
+    if (!field) throw new Error(`unknown_custom_data_field:${key}`);
+    const normalized = normalizeCustomDataFieldValue(field, value);
+    if (normalized) out[key] = normalized;
+  }
+
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+export function importCustomDataSkipReason(
+  err: unknown,
+  fields: ImportAttributeField[],
+): string {
+  const message = err instanceof Error ? err.message : "";
+  if (message.startsWith("required_custom_data_field_missing:")) {
+    const slug = message.slice("required_custom_data_field_missing:".length);
+    const field = fields.find((row) => row.source_field === slug);
+    return `Missing required attribute: ${field?.label ?? slug}`;
+  }
+  if (message === "invalid_custom_data_value") {
+    return "Invalid custom attribute data";
+  }
+  return "Invalid custom attribute data";
+}
+
 export function extractCustomDataFromRow(
   raw: Record<string, string>,
   attributeFields: ImportAttributeField[],
@@ -58,20 +91,15 @@ export function extractCustomDataFromRow(
   }
 
   try {
-    const custom_data = buildCustomDataFromInput(
+    const custom_data = buildPartialCustomDataFromInput(
       fields as EventItemContent[],
       input,
     );
     return { ok: true, custom_data };
   } catch (err) {
     const message = err instanceof Error ? err.message : "";
-    if (message.startsWith("required_custom_data_field_missing:")) {
-      const slug = message.slice("required_custom_data_field_missing:".length);
-      const field = fields.find((row) => row.source_field === slug);
-      return {
-        ok: false,
-        reason: `Missing required attribute: ${field?.label ?? slug}`,
-      };
+    if (message.startsWith("unknown_custom_data_field:")) {
+      return { ok: false, reason: "Invalid custom attribute data" };
     }
     if (message === "invalid_custom_data_value") {
       for (const field of fields) {

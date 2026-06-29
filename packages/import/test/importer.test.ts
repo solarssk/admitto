@@ -216,6 +216,10 @@ describe("commitImport — overwrite=true", () => {
   });
 
   it("merges imported custom_data with existing attributes on overwrite", async () => {
+    const attributeFields = [
+      { label: "Sock size", source_field: "sock_size", type: "text" as const },
+      { label: "Cap size", source_field: "cap_size", type: "select" as const, options: ["S", "M", "L"] },
+    ];
     await prisma.attendee.create({
       data: {
         event_id: EVENT_ID,
@@ -235,7 +239,7 @@ describe("commitImport — overwrite=true", () => {
           custom_data: { cap_size: "L" },
         },
       ],
-      { overwrite: true },
+      { overwrite: true, attributeFields },
       prisma,
     );
     expect(summary.updated).toBe(1);
@@ -244,6 +248,68 @@ describe("commitImport — overwrite=true", () => {
       where: { event_id_email: { event_id: EVENT_ID, email: "merge-cd@example.com" } },
     });
     expect(att?.custom_data).toEqual({ sock_size: "42", cap_size: "L" });
+  });
+
+  it("allows overwrite when required attributes are satisfied by existing custom_data", async () => {
+    const attributeFields = [
+      {
+        label: "Cap size",
+        source_field: "cap_size",
+        type: "select" as const,
+        required: true,
+        options: ["S", "M", "L"],
+      },
+    ];
+    await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "partial-cap@example.com",
+        name: "Partial Cap",
+        custom_data: { cap_size: "M" },
+      },
+    });
+
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        {
+          first_name: "Partial",
+          last_name: "Cap",
+          email: "partial-cap@example.com",
+          company: "New Co",
+        },
+      ],
+      { overwrite: true, attributeFields },
+      prisma,
+    );
+    expect(summary.updated).toBe(1);
+
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "partial-cap@example.com" } },
+    });
+    expect(att?.company).toBe("New Co");
+    expect(att?.custom_data).toEqual({ cap_size: "M" });
+  });
+
+  it("skips create when required attributes are missing at commit", async () => {
+    const attributeFields = [
+      {
+        label: "Cap size",
+        source_field: "cap_size",
+        type: "select" as const,
+        required: true,
+        options: ["S", "M", "L"],
+      },
+    ];
+
+    const summary = await commitImport(
+      EVENT_ID,
+      [{ first_name: "No", last_name: "Cap", email: "no-cap@example.com" }],
+      { attributeFields },
+      prisma,
+    );
+    expect(summary.toSkip).toBe(1);
+    expect(summary.skipped[0]?.reason).toMatch(/missing required attribute/i);
   });
 });
 

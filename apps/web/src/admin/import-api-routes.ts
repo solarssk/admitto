@@ -297,12 +297,19 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
     const upload = await parseImportUpload(c, uploadCtx);
     if (upload instanceof Response) return upload;
 
-    const attributeFields = await loadImportAttributeFields(db, eventId);
+    let attributeFields: ImportAttributeField[];
+    try {
+      attributeFields = await loadImportAttributeFields(db, eventId);
+    } catch (err) {
+      const code = importAttributeConfigError(err);
+      if (code) return c.json({ error: code }, 400);
+      throw err;
+    }
     const parsed = parseAttendees(upload.csv, { attributeFields });
     const summary = await commitImport(
       eventId,
       parsed.validRows,
-      { dryRun: true, overwrite: upload.overwrite },
+      { dryRun: true, overwrite: upload.overwrite, attributeFields },
       db,
     );
 
@@ -372,7 +379,14 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
     const upload = await parseImportUpload(c, uploadCtx);
     if (upload instanceof Response) return upload;
 
-    const attributeFields = await loadImportAttributeFields(db, eventId);
+    let attributeFields: ImportAttributeField[];
+    try {
+      attributeFields = await loadImportAttributeFields(db, eventId);
+    } catch (err) {
+      const code = importAttributeConfigError(err);
+      if (code) return c.json({ error: code }, 400);
+      throw err;
+    }
     const parsed = parseAttendees(upload.csv, { attributeFields });
 
     const summary = await db.$transaction(
@@ -384,7 +398,7 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
         const result = await commitImport(
           eventId,
           parsed.validRows,
-          { dryRun: false, overwrite: upload.overwrite, ownedTransaction: true },
+          { dryRun: false, overwrite: upload.overwrite, ownedTransaction: true, attributeFields },
           tx,
         );
 
@@ -447,6 +461,14 @@ const IMPORT_TEMPLATE_BASE_COLUMNS = [
   "first_name", "last_name", "email", "ticket_type", "company", "department", "external_uuid", "qr_payload",
 ] as const;
 
+function importAttributeConfigError(err: unknown): string | null {
+  const message = err instanceof Error ? err.message : "";
+  if (message.startsWith("conflicting_custom_data_field_options:")) {
+    return "conflicting_custom_data_field_options";
+  }
+  return null;
+}
+
 async function loadImportAttributeFields(
   db: PrismaClient,
   eventId: string,
@@ -475,7 +497,14 @@ export async function handleGetImportTemplate(c: Context, db: PrismaClient): Pro
   const eventId = eventIdOrRes;
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
-  const attributeFields = await loadImportAttributeFields(db, eventId);
+  let attributeFields: ImportAttributeField[];
+  try {
+    attributeFields = await loadImportAttributeFields(db, eventId);
+  } catch (err) {
+    const code = importAttributeConfigError(err);
+    if (code) return c.json({ error: code }, 400);
+    throw err;
+  }
   const csv = buildImportTemplateCsv(attributeFields);
   return new Response(csv, {
     headers: {

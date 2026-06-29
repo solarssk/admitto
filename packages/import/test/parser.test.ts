@@ -89,11 +89,12 @@ describe("parseAttendees — event attribute columns", () => {
     expect(result.invalidRows[0]?.reason).toMatch(/invalid value for shirt size/i);
   });
 
-  it("rejects missing required attribute", () => {
+  it("allows rows omitting required attribute columns (validated at commit)", () => {
     const result = parseAttendees(`${VALID_HEADER}\nJan,K,jan@example.com`, {
       attributeFields: [shirtField],
     });
-    expect(result.invalidRows[0]?.reason).toMatch(/missing required attribute/i);
+    expect(result.validRows).toHaveLength(1);
+    expect(result.validRows[0]?.custom_data).toBeUndefined();
   });
 });
 

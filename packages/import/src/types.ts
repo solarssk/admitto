@@ -43,6 +43,8 @@ export type ImportOptions = {
   dryRun?: boolean;
   /** When true: caller owns the transaction (no nested $transaction wrapper). */
   ownedTransaction?: boolean;
+  /** Event-item attribute definitions — required for custom_data validation at commit. */
+  attributeFields?: ImportAttributeField[];
 };
 
 export type SkippedRow = { email: string; reason: string };
