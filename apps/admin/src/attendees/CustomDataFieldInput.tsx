@@ -27,7 +27,7 @@ export function CustomDataFieldInput({
         required={field.required}
         onChange={(e) => onChange(e.target.value)}
       >
-        {!field.required ? <option value="">—</option> : null}
+        <option value="">{field.required ? "Choose…" : "—"}</option>
         {(field.options ?? []).map((option) => (
           <option key={option} value={option}>
             {option}
@@ -46,7 +46,7 @@ export function CustomDataFieldInput({
         required={field.required}
         onChange={(e) => onChange(e.target.value)}
       >
-        {!field.required ? <option value="">—</option> : null}
+        <option value="">{field.required ? "Choose…" : "—"}</option>
         <option value="true">Yes</option>
         <option value="false">No</option>
       </Select>

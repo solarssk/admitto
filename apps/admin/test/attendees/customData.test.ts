@@ -123,7 +123,7 @@ describe("readCustomDataField", () => {
 });
 
 describe("initialCustomFieldValues", () => {
-  it("pre-selects first option for required select fields", () => {
+  it("starts all fields empty including required select", () => {
     expect(
       initialCustomFieldValues([
         {
@@ -134,7 +134,7 @@ describe("initialCustomFieldValues", () => {
           options: ["S", "M", "L"],
         },
       ]),
-    ).toEqual({ size: "S" });
+    ).toEqual({ size: "" });
   });
 
   it("starts optional fields empty", () => {
