@@ -1,4 +1,5 @@
 import type { EventItemContentDto } from "../api/types.js";
+import { isReservedCustomDataSourceField } from "@admitto/tickets";
 
 export type ContentRow = {
   label: string;
@@ -71,6 +72,13 @@ export function validateContentsRows(rows: ContentRow[]): ContentsValidationResu
         ok: false,
         message:
           "Source field must use lowercase letters, numbers, and underscores only (e.g. shirt_size).",
+      };
+    }
+
+    if (isReservedCustomDataSourceField(source_field)) {
+      return {
+        ok: false,
+        message: `"${source_field}" is reserved for a standard import column and cannot be used as a source field.`,
       };
     }
 

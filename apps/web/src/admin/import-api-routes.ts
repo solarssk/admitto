@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { parseAttendees, commitImport, type ImportAttributeField } from "@admitto/import";
-import { collectEventCustomDataFields, writeBulkActionLog } from "@admitto/tickets";
+import { collectEventCustomDataFields, filterCustomDataAttributeFields, writeBulkActionLog } from "@admitto/tickets";
 import { xlsxBufferToCsv, ImportRowLimitError, ImportZipBombError, MAX_CSV_CHARS, MAX_IMPORT_ROWS } from "./xlsx-to-csv.js";
 import { logger } from "../logger.js";
 import {
@@ -455,7 +455,9 @@ async function loadImportAttributeFields(
     where: { event_id: eventId },
     select: { config: true },
   });
-  return collectEventCustomDataFields(items.map((item) => item.config));
+  return filterCustomDataAttributeFields(
+    collectEventCustomDataFields(items.map((item) => item.config)),
+  );
 }
 
 function buildImportTemplateCsv(attributeFields: ImportAttributeField[]): string {

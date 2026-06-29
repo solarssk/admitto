@@ -1,22 +1,13 @@
 import { z } from "zod";
 import { splitCsvLine } from "@admitto/shared";
+import { RESERVED_CUSTOM_DATA_SOURCE_FIELDS } from "@admitto/tickets";
 import {
   buildAttributeHeaderKeys,
   extractCustomDataFromRow,
 } from "./custom-data-import.js";
 import type { AttendeeRow, InvalidRow, ParseAttendeesOptions, ParseResult } from "./types.js";
 
-const CANONICAL_COLUMNS = [
-  "first_name",
-  "last_name",
-  "name",
-  "email",
-  "ticket_type",
-  "external_uuid",
-  "qr_payload",
-  "company",
-  "department",
-] as const;
+const CANONICAL_COLUMNS = RESERVED_CUSTOM_DATA_SOURCE_FIELDS;
 
 const emailSchema = z.string().email();
 

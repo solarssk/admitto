@@ -1,5 +1,6 @@
 import {
   buildCustomDataFromInput,
+  filterCustomDataAttributeFields,
   normalizeCustomDataFieldValue,
   type EventItemContent,
 } from "@admitto/tickets";
@@ -47,17 +48,18 @@ export function extractCustomDataFromRow(
   attributeFields: ImportAttributeField[],
   duplicateLabels: Set<string>,
 ): { ok: true; custom_data?: Record<string, string> } | { ok: false; reason: string } {
-  if (attributeFields.length === 0) return { ok: true };
+  const fields = filterCustomDataAttributeFields(attributeFields);
+  if (fields.length === 0) return { ok: true };
 
   const input: Record<string, string> = {};
-  for (const field of attributeFields) {
+  for (const field of fields) {
     const value = readAttributeCell(raw, field, duplicateLabels);
     if (value) input[field.source_field] = value;
   }
 
   try {
     const custom_data = buildCustomDataFromInput(
-      attributeFields as EventItemContent[],
+      fields as EventItemContent[],
       input,
     );
     return { ok: true, custom_data };
@@ -65,14 +67,14 @@ export function extractCustomDataFromRow(
     const message = err instanceof Error ? err.message : "";
     if (message.startsWith("required_custom_data_field_missing:")) {
       const slug = message.slice("required_custom_data_field_missing:".length);
-      const field = attributeFields.find((row) => row.source_field === slug);
+      const field = fields.find((row) => row.source_field === slug);
       return {
         ok: false,
         reason: `Missing required attribute: ${field?.label ?? slug}`,
       };
     }
     if (message === "invalid_custom_data_value") {
-      for (const field of attributeFields) {
+      for (const field of fields) {
         const value = readAttributeCell(raw, field, duplicateLabels);
         if (!value) continue;
         try {

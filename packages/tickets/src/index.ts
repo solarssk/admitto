@@ -22,6 +22,11 @@ export {
   validateCustomDataPatch,
   assertCustomDataMeetsRequirements,
 } from "./validate-custom-data.js";
+export {
+  RESERVED_CUSTOM_DATA_SOURCE_FIELDS,
+  isReservedCustomDataSourceField,
+  filterCustomDataAttributeFields,
+} from "./custom-data-reserved.js";
 export { DEFAULT_EVENT_ITEM_KEYS } from "./event-items.js";
 export { parseEventOpsConfig, loadEventOpsConfig } from "./ops-config.js";
 export { writeActionLog, writeBulkActionLog } from "./ops-audit.js";

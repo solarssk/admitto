@@ -623,4 +623,41 @@ describe("GET /api/admin/events/:eventId/import/template", () => {
     );
     expect(res.status).toBe(403);
   });
+
+  it("ignores legacy reserved source_field slugs when building attribute columns", async () => {
+    await prisma.eventItem.update({
+      where: { event_id_key: { event_id: EVENT_A, key: "swag" } },
+      data: {
+        config: {
+          contents: [
+            { label: "Email copy", source_field: "email", type: "text" },
+            { label: "Sock size", source_field: "sock_size", type: "text" },
+          ],
+        },
+      },
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/import/template`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toBe(
+      "first_name,last_name,email,ticket_type,company,department,external_uuid,qr_payload,sock_size\n",
+    );
+    expect(body.match(/email/g)?.length).toBe(1);
+
+    await prisma.eventItem.update({
+      where: { event_id_key: { event_id: EVENT_A, key: "swag" } },
+      data: {
+        config: {
+          contents: [
+            { label: "Sock size", source_field: "sock_size", type: "text" },
+            { label: "Cap size", source_field: "cap_size", type: "select", options: ["S", "M", "L"] },
+          ],
+        },
+      },
+    });
+  });
 });

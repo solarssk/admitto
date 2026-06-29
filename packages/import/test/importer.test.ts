@@ -214,6 +214,37 @@ describe("commitImport — overwrite=true", () => {
     });
     expect(att?.status).toBe("confirmed");
   });
+
+  it("merges imported custom_data with existing attributes on overwrite", async () => {
+    await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "merge-cd@example.com",
+        name: "Merge CD",
+        custom_data: { sock_size: "42" },
+      },
+    });
+
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        {
+          first_name: "Merge",
+          last_name: "CD",
+          email: "merge-cd@example.com",
+          custom_data: { cap_size: "L" },
+        },
+      ],
+      { overwrite: true },
+      prisma,
+    );
+    expect(summary.updated).toBe(1);
+
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "merge-cd@example.com" } },
+    });
+    expect(att?.custom_data).toEqual({ sock_size: "42", cap_size: "L" });
+  });
 });
 
 describe("commitImport — Mode B matching by external_uuid", () => {

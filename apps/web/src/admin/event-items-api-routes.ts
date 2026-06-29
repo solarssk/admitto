@@ -7,6 +7,7 @@ import {
   parseEventOpsConfig,
   resolveEventItemContents,
   writeBulkActionLog,
+  isReservedCustomDataSourceField,
   type EventItemConfig,
   type EventItemContent,
 } from "@admitto/tickets";
@@ -47,7 +48,10 @@ const eventItemContentSchema = z
   .refine(
     (row) => row.type !== "select" || (row.options != null && row.options.length > 0),
     { message: "select type requires options" },
-  );
+  )
+  .refine((row) => !isReservedCustomDataSourceField(row.source_field), {
+    message: "reserved source_field",
+  });
 
 const eventItemConfigSchema = z
   .object({
