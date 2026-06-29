@@ -1,12 +1,17 @@
 import {
   filterCustomDataAttributeFields,
+  isReservedCustomDataSourceField,
   normalizeCustomDataFieldValue,
   type EventItemContent,
 } from "@admitto/tickets";
 import type { ImportAttributeField } from "./types.js";
 
+function normalizedLabelKey(label: string): string {
+  return label.trim().toLowerCase();
+}
+
 function exportStyleLabel(field: ImportAttributeField, duplicateLabels: Set<string>): string {
-  return duplicateLabels.has(field.label)
+  return duplicateLabels.has(normalizedLabelKey(field.label))
     ? `${field.label} (${field.source_field})`
     : field.label;
 }
@@ -17,7 +22,8 @@ export function buildAttributeHeaderKeys(
 ): { allowedHeaders: Set<string>; duplicateLabels: Set<string> } {
   const labelCounts = new Map<string, number>();
   for (const field of fields) {
-    labelCounts.set(field.label, (labelCounts.get(field.label) ?? 0) + 1);
+    const key = normalizedLabelKey(field.label);
+    labelCounts.set(key, (labelCounts.get(key) ?? 0) + 1);
   }
   const duplicateLabels = new Set(
     [...labelCounts.entries()].filter(([, count]) => count > 1).map(([label]) => label),
@@ -39,6 +45,7 @@ function readAttributeCell(
   const direct = raw[field.source_field];
   if (direct !== undefined) return direct.trim();
   const labelKey = exportStyleLabel(field, duplicateLabels).trim().toLowerCase();
+  if (isReservedCustomDataSourceField(labelKey)) return "";
   return (raw[labelKey] ?? "").trim();
 }
 

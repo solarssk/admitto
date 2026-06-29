@@ -176,7 +176,7 @@ export async function commitImport(
 
   // Classify rows — pure in-memory, no DB calls inside loop.
   const creates: AttendeeCreateData[] = [];
-  const updates: AttendeeUpdateArgs[] = [];
+  const updatesById = new Map<string, AttendeeUpdateArgs>();
   const skipped: SkippedRow[] = [];
 
   for (const row of rows) {
@@ -222,25 +222,30 @@ export async function commitImport(
         skipped.push({ email: row.email, reason: "Attendee already exists (overwrite=false)" });
         continue;
       }
+      const pendingUpdate = updatesById.get(found.id);
+      const priorCustomData = pendingUpdate?.data.custom_data ?? found.custom_data;
       const mergedCustomData =
         row.custom_data !== undefined
-          ? mergeCustomData(found.custom_data, row.custom_data)
-          : found.custom_data;
+          ? mergeCustomData(priorCustomData, row.custom_data)
+          : priorCustomData;
       const customDataError = validateImportCustomData(attributeFields, mergedCustomData);
       if (customDataError) {
         skipped.push({ email: row.email, reason: customDataError });
         continue;
       }
+      const customDataTouched =
+        row.custom_data !== undefined || pendingUpdate?.data.custom_data !== undefined;
       // overwrite=true — update presentation/profile fields only.
       // Never touch: status, qr_payload, external_uuid, token_hash.
-      updates.push({
+      updatesById.set(found.id, {
         id: found.id,
         data: {
+          ...(pendingUpdate?.data ?? {}),
           name,
           ...(row.ticket_type !== undefined && { ticket_type: row.ticket_type }),
           ...(row.company !== undefined && { company: row.company }),
           ...(row.department !== undefined && { department: row.department }),
-          ...(row.custom_data !== undefined && {
+          ...(customDataTouched && {
             custom_data: mergedCustomData as Prisma.InputJsonValue,
           }),
         },
@@ -269,6 +274,8 @@ export async function commitImport(
       });
     }
   }
+
+  const updates = [...updatesById.values()];
 
   const summary: ImportSummary = {
     toCreate: creates.length,

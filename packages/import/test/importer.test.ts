@@ -311,6 +311,48 @@ describe("commitImport — overwrite=true", () => {
     expect(summary.toSkip).toBe(1);
     expect(summary.skipped[0]?.reason).toMatch(/missing required attribute/i);
   });
+
+  it("coalesces custom_data across duplicate attendee rows in one overwrite import", async () => {
+    const attributeFields = [
+      { label: "Sock size", source_field: "sock_size", type: "text" as const },
+      { label: "Cap size", source_field: "cap_size", type: "select" as const, options: ["S", "M", "L"] },
+    ];
+    await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "dup-rows@example.com",
+        name: "Dup Rows",
+        custom_data: {},
+      },
+    });
+
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        {
+          first_name: "Dup",
+          last_name: "One",
+          email: "dup-rows@example.com",
+          custom_data: { sock_size: "42" },
+        },
+        {
+          first_name: "Dup",
+          last_name: "Two",
+          email: "dup-rows@example.com",
+          custom_data: { cap_size: "L" },
+        },
+      ],
+      { overwrite: true, attributeFields },
+      prisma,
+    );
+    expect(summary.updated).toBe(1);
+
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "dup-rows@example.com" } },
+    });
+    expect(att?.name).toBe("Dup Two");
+    expect(att?.custom_data).toEqual({ sock_size: "42", cap_size: "L" });
+  });
 });
 
 describe("commitImport — Mode B matching by external_uuid", () => {
