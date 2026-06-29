@@ -249,7 +249,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
           <div>
             <h3 className="attendee-drawer__section-title">Icon</h3>
             <p className="requirements-section-hint">
-              Stored on the item for a future check-in update — not shown to operators yet.
+              Shown on check-in item rows for operators (Tabler outline icon).
             </p>
             <div className="item-icon-preview">
               <i className={`ti ti-${form.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
