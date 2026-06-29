@@ -4,6 +4,9 @@ import {
   validateCfAccessBootConfigFromResolved,
   ensureCloudflareAccessProvider,
 } from "@admitto/auth";
+import { parseEnvFlag, resolveTrustProxy } from "./env-flags.js";
+
+export { resolveTrustProxy } from "./env-flags.js";
 
 type EnvLike = Record<string, string | undefined>;
 
@@ -54,20 +57,6 @@ export function resolveBaseUrl(env: EnvLike = process.env): string {
     throw new Error("BASE_URL is required in non-development environments");
   }
   return "http://localhost:3000";
-}
-
-function parseEnvFlag(value: string | undefined): boolean {
-  if (!value) return false;
-  const normalized = value.trim().toLowerCase();
-  return normalized === "true" || normalized === "1";
-}
-
-/**
- * Trust reverse-proxy forwarded headers (`X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`).
- * Required in production behind nginx/traefik that overwrites client-supplied values.
- */
-export function resolveTrustProxy(env: EnvLike = process.env): boolean {
-  return parseEnvFlag(env["TRUST_PROXY"]);
 }
 
 /**

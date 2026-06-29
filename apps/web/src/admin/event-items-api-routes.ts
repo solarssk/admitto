@@ -8,6 +8,7 @@ import {
   resolveEventItemContents,
   writeBulkActionLog,
   type EventItemConfig,
+  type EventItemContent,
 } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -17,12 +18,36 @@ import {
 
 const slugField = z.string().trim().regex(/^[a-z0-9_]+$/, "invalid slug");
 
+const tablerIconNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const iconNameSchema = z
+  .string()
+  .trim()
+  .max(64)
+  .regex(tablerIconNamePattern, "invalid icon");
+
+/** null and explicit "package" both mean the default icon at display time — store null. */
+function normalizeEventItemIconForStorage(
+  icon: string | null | undefined,
+): string | null | undefined {
+  if (icon === undefined) return undefined;
+  if (icon === null || icon === "package") return null;
+  return icon;
+}
+
 const eventItemContentSchema = z
   .object({
     label: z.string().trim().min(1).max(60),
     source_field: slugField.min(1).max(60),
+    type: z.enum(["text", "select", "boolean"]).optional(),
+    required: z.boolean().optional(),
+    options: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (row) => row.type !== "select" || (row.options != null && row.options.length > 0),
+    { message: "select type requires options" },
+  );
 
 const eventItemConfigSchema = z
   .object({
@@ -30,12 +55,21 @@ const eventItemConfigSchema = z
     requires_return: z.boolean().optional(),
     issue_on_checkin: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (cfg) => {
+      if (!cfg.contents?.length) return true;
+      const slugs = cfg.contents.map((c) => c.source_field);
+      return new Set(slugs).size === slugs.length;
+    },
+    { message: "duplicate source_field" },
+  );
 
 const createEventItemSchema = z
   .object({
     key: slugField.min(1).max(60),
     label: z.string().trim().min(1).max(100),
+    icon: iconNameSchema.optional().transform((icon) => normalizeEventItemIconForStorage(icon)),
     config: eventItemConfigSchema.optional(),
   })
   .strict();
@@ -44,6 +78,14 @@ const patchEventItemSchema = z
   .object({
     label: z.string().trim().min(1).max(100).optional(),
     enabled: z.boolean().optional(),
+    icon: z
+      .union([iconNameSchema, z.literal(""), z.null()])
+      .optional()
+      .transform((v) => {
+        if (v === undefined) return undefined;
+        if (v === "") return null;
+        return normalizeEventItemIconForStorage(v);
+      }),
     config: eventItemConfigSchema.optional(),
   })
   .strict();
@@ -52,6 +94,8 @@ const patchOpsConfigSchema = z
   .object({
     require_confirm_on_scan: z.boolean().optional(),
     badge_at_entry: z.boolean().optional(),
+    allow_manual_lookup: z.boolean().optional(),
+    auto_advance_on_valid: z.boolean().optional(),
   })
   .strict();
 
@@ -62,8 +106,28 @@ export type EventItemDto = {
   label: string;
   type: string;
   enabled: boolean;
+  icon: string | null;
   config: EventItemConfig | null;
 };
+
+/** Legacy read path: label + source_field only (no metadata refine). */
+const legacyContentRowSchema = z
+  .object({
+    label: z.string().trim().min(1).max(60),
+    source_field: slugField.min(1).max(60),
+  })
+  .strict();
+
+/** Contents for GET when strict parse failed — legacy `size_field` or loose row shape only. */
+function legacyContentsFromRaw(o: Record<string, unknown>): EventItemContent[] | undefined {
+  if (!Array.isArray(o.contents)) {
+    const resolved = resolveEventItemContents(o);
+    return resolved.length > 0 ? resolved : undefined;
+  }
+  if (o.contents.length === 0) return [];
+  const loose = z.array(legacyContentRowSchema).safeParse(o.contents);
+  return loose.success ? loose.data : undefined;
+}
 
 /** Normalize stored JSON config for API responses (strict fields + legacy contents). */
 function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
@@ -74,11 +138,25 @@ function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
     requires_return: o.requires_return,
     issue_on_checkin: o.issue_on_checkin,
   });
-  const config: EventItemConfig = parsed.success ? { ...parsed.data } : {};
-  const resolved = resolveEventItemContents(raw);
-  if (resolved.length > 0) {
-    config.contents = resolved;
+
+  if (parsed.success) {
+    const config: EventItemConfig = { ...parsed.data };
+    if (parsed.data.contents?.length) {
+      config.contents = parsed.data.contents;
+    } else {
+      const resolved = resolveEventItemContents(raw);
+      if (resolved.length > 0) config.contents = resolved;
+    }
+    return Object.keys(config).length > 0 ? config : null;
   }
+
+  const config: EventItemConfig = {};
+  if (typeof o.requires_return === "boolean") config.requires_return = o.requires_return;
+  if (typeof o.issue_on_checkin === "boolean") config.issue_on_checkin = o.issue_on_checkin;
+
+  const legacyContents = legacyContentsFromRaw(o);
+  if (legacyContents !== undefined) config.contents = legacyContents;
+
   return Object.keys(config).length > 0 ? config : null;
 }
 
@@ -89,6 +167,7 @@ function serializeEventItem(row: {
   label: string;
   type: string;
   enabled: boolean;
+  icon: string | null;
   config: unknown;
 }): EventItemDto {
   return {
@@ -97,6 +176,7 @@ function serializeEventItem(row: {
     label: row.label,
     type: row.type,
     enabled: row.enabled,
+    icon: row.icon ?? null,
     config: serializeEventItemConfig(row.config),
   };
 }
@@ -119,6 +199,7 @@ async function loadEventItemInEvent(db: PrismaClient, eventId: string, itemId: s
       label: true,
       type: true,
       enabled: true,
+      icon: true,
       config: true,
     },
   });
@@ -157,6 +238,7 @@ export async function handleListEventItems(c: Context, db: PrismaClient): Promis
       label: true,
       type: true,
       enabled: true,
+      icon: true,
       config: true,
     },
   });
@@ -194,6 +276,7 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
           label: parsed.data.label,
           type: "item",
           enabled: true,
+          icon: normalizeEventItemIconForStorage(parsed.data.icon) ?? null,
           config: (parsed.data.config ?? undefined) as Prisma.InputJsonValue | undefined,
         },
         select: {
@@ -202,6 +285,7 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
           label: true,
           type: true,
           enabled: true,
+          icon: true,
           config: true,
         },
       });
@@ -268,6 +352,10 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
     data.config = parsed.data.config as Prisma.InputJsonValue;
     fields.push("config");
   }
+  if (parsed.data.icon !== undefined && parsed.data.icon !== existing.icon) {
+    data.icon = parsed.data.icon;
+    fields.push("icon");
+  }
 
   if (fields.length === 0) {
     return c.json(serializeEventItem(existing));
@@ -291,6 +379,7 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
           label: true,
           type: true,
           enabled: true,
+          icon: true,
           config: true,
         },
       });
@@ -406,11 +495,15 @@ export async function handlePatchEventOpsConfig(c: Context, db: PrismaClient): P
     require_confirm_on_scan:
       parsed.data.require_confirm_on_scan ?? current.require_confirm_on_scan,
     badge_at_entry: parsed.data.badge_at_entry ?? current.badge_at_entry,
+    allow_manual_lookup: parsed.data.allow_manual_lookup ?? current.allow_manual_lookup,
+    auto_advance_on_valid: parsed.data.auto_advance_on_valid ?? current.auto_advance_on_valid,
   };
 
   const fields: string[] = [];
   if (parsed.data.require_confirm_on_scan !== undefined) fields.push("require_confirm_on_scan");
   if (parsed.data.badge_at_entry !== undefined) fields.push("badge_at_entry");
+  if (parsed.data.allow_manual_lookup !== undefined) fields.push("allow_manual_lookup");
+  if (parsed.data.auto_advance_on_valid !== undefined) fields.push("auto_advance_on_valid");
 
   if (fields.length === 0) {
     return c.json(current);

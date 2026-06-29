@@ -257,6 +257,9 @@ export interface ImportCommitResponse {
 export interface EventItemContentDto {
   label: string;
   source_field: string;
+  type?: "text" | "select" | "boolean";
+  required?: boolean;
+  options?: string[];
 }
 
 export interface EventItemConfigDto {
@@ -271,6 +274,7 @@ export interface EventItemDto {
   label: string;
   type: string;
   enabled: boolean;
+  icon: string | null;
   config: EventItemConfigDto | null;
 }
 
@@ -281,23 +285,29 @@ export interface EventItemsListResponse {
 export interface CreateEventItemBody {
   key: string;
   label: string;
+  icon?: string;
   config?: EventItemConfigDto;
 }
 
 export interface UpdateEventItemPatch {
   label?: string;
   enabled?: boolean;
+  icon?: string | null;
   config?: EventItemConfigDto;
 }
 
 export interface OpsConfigDto {
   require_confirm_on_scan: boolean;
   badge_at_entry: boolean;
+  allow_manual_lookup: boolean;
+  auto_advance_on_valid: boolean;
 }
 
 export interface UpdateOpsConfigPatch {
   require_confirm_on_scan?: boolean;
   badge_at_entry?: boolean;
+  allow_manual_lookup?: boolean;
+  auto_advance_on_valid?: boolean;
 }
 
 /** Admin SPA DTOs for event mail template editing and delivery log (mirror of web API). */

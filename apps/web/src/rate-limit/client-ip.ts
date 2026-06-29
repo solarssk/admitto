@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { isIP } from "node:net";
-import { resolveTrustProxy } from "../config.js";
+import { resolveTrustProxy } from "../env-flags.js";
 
 /**
  * First X-Forwarded-For hop — safe only behind a reverse proxy that
