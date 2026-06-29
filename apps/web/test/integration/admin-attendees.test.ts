@@ -722,6 +722,42 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     });
   });
 
+  it("rejects RSVP-only PATCH when required custom_data is missing", async () => {
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: {
+        config: {
+          contents: [
+            {
+              label: "Size",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      },
+    });
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { custom_data: {}, rsvp_status: "none" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rsvp_status: "confirmed",
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toEqual({
+      error: "required_custom_data_field_missing",
+    });
+  });
+
   it("PATCH normalizes boolean custom_data aliases to true/false", async () => {
     await prisma.eventItem.updateMany({
       where: { event_id: EVENT_A, key: "giftbag" },

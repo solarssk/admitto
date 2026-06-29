@@ -1200,13 +1200,19 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   }
 
   const profileChanges = computePatchChanges(existing, profilePatch);
+  const rsvpChange = computeRsvpChange(existing.rsvp_status, patchRsvp);
 
-  if (profileChanges) {
+  if (!profileChanges && !rsvpChange) {
+    const dto = await buildAttendeeDetailDto(db, eventId, existing);
+    return c.json(dto);
+  }
+
+  if (profileChanges || rsvpChange) {
     const allowedFields = await loadEventCustomDataFields(db, eventId);
     if (allowedFields.length > 0) {
       try {
         const nextCustomData =
-          profileChanges.data.custom_data !== undefined
+          profileChanges?.data.custom_data !== undefined
             ? profileChanges.data.custom_data
             : existing.custom_data;
         assertCustomDataMeetsRequirements(allowedFields, nextCustomData);
@@ -1214,13 +1220,6 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
         return c.json({ error: customDataErrorCode(err) }, 400);
       }
     }
-  }
-
-  const rsvpChange = computeRsvpChange(existing.rsvp_status, patchRsvp);
-
-  if (!profileChanges && !rsvpChange) {
-    const dto = await buildAttendeeDetailDto(db, eventId, existing);
-    return c.json(dto);
   }
 
   if (!expectedUpdatedAtRaw) {

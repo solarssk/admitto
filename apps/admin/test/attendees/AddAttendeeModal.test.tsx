@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AddAttendeeModal } from "../../src/attendees/AddAttendeeModal.js";
 
@@ -18,7 +18,7 @@ vi.mock("../../src/api/client.js", () => ({
 afterEach(cleanup);
 
 describe("AddAttendeeModal", () => {
-  it("keeps submit disabled until email and name are valid", () => {
+  it("keeps submit disabled until email, name, and attribute fields are ready", async () => {
     render(
       <AddAttendeeModal
         eventId="evt-1"
@@ -37,6 +37,9 @@ describe("AddAttendeeModal", () => {
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "jan@example.com" },
     });
-    expect(submit.disabled).toBe(false);
+
+    await waitFor(() => {
+      expect(submit.disabled).toBe(false);
+    });
   });
 });
