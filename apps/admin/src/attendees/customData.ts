@@ -1,3 +1,4 @@
+import { collectEventCustomDataFields } from "@admitto/tickets";
 import type { EventItemDto } from "../api/types.js";
 
 export type CustomDataFieldDef = {
@@ -8,26 +9,9 @@ export type CustomDataFieldDef = {
   options?: string[];
 };
 
-/** Flatten API-normalized item contents and dedupe by source_field (first label wins). */
+/** Flatten API-normalized item contents and merge duplicate source_field metadata. */
 export function flattenCustomDataFieldsFromItems(items: EventItemDto[]): CustomDataFieldDef[] {
-  const seen = new Set<string>();
-  const out: CustomDataFieldDef[] = [];
-  for (const item of items) {
-    const contents = item.config?.contents;
-    if (!contents?.length) continue;
-    for (const row of contents) {
-      if (seen.has(row.source_field)) continue;
-      seen.add(row.source_field);
-      out.push({
-        label: row.label,
-        source_field: row.source_field,
-        type: row.type,
-        required: row.required,
-        options: row.options,
-      });
-    }
-  }
-  return out;
+  return collectEventCustomDataFields(items.map((item) => item.config));
 }
 
 /** Read a single custom_data string field (mirrors server customDataValue semantics). */

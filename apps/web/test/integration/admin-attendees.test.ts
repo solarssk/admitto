@@ -1205,6 +1205,40 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(body.error).toBe("validation_failed");
   });
 
+  it("POST create merges duplicate source_field metadata across items", async () => {
+    await prisma.eventItem.create({
+      data: {
+        event_id: EVENT_A,
+        key: "socks",
+        label: "Socks",
+        config: {
+          contents: [
+            {
+              label: "Shirt size (socks)",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "missing-size@example.com",
+        name: "Missing Size",
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toEqual({
+      error: "required_custom_data_field_missing",
+    });
+  });
+
   it("POST create rejects custom_data values over 100 characters", async () => {
     await prisma.eventItem.updateMany({
       where: { event_id: EVENT_A, key: "giftbag" },

@@ -51,6 +51,43 @@ describe("flattenCustomDataFieldsFromItems", () => {
     ).toEqual([{ label: "Shirt size", source_field: "shirt_size" }]);
   });
 
+  it("merges stricter metadata when source_field is shared across items", () => {
+    expect(
+      flattenCustomDataFieldsFromItems([
+        item({
+          id: "1",
+          key: "giftbag",
+          label: "Gift bag",
+          config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
+        }),
+        item({
+          id: "2",
+          key: "socks",
+          label: "Socks",
+          config: {
+            contents: [
+              {
+                label: "Shirt (dup)",
+                source_field: "shirt_size",
+                type: "select",
+                required: true,
+                options: ["S", "M", "L"],
+              },
+            ],
+          },
+        }),
+      ]),
+    ).toEqual([
+      {
+        label: "Shirt size",
+        source_field: "shirt_size",
+        type: "select",
+        required: true,
+        options: ["S", "M", "L"],
+      },
+    ]);
+  });
+
   it("preserves content metadata from event items", () => {
     expect(
       flattenCustomDataFieldsFromItems([

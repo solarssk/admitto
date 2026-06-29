@@ -8,12 +8,13 @@
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "pretest": "npm run build -w @admitto/shared && npm run build -w @admitto/ui",
+    "pretest": "npm run build -w @admitto/shared && npm run build -w @admitto/tickets && npm run build -w @admitto/ui",
     "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
     "@admitto/shared": "*",
+    "@admitto/tickets": "*",
     "@admitto/ui": "*",
     "@tabler/icons-webfont": "3.44.0",
     "@zxing/browser": "^0.2.0",

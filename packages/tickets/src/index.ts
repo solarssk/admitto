@@ -15,7 +15,7 @@ export {
 export { addAttendeeNote, NoteTooLongError, OperatorRequiredError, MAX_ATTENDEE_NOTE_LENGTH } from "./notes.js";
 export { undoLastCheckIn, UndoNotAllowedError } from "./undo.js";
 export { parseCustomData, customDataValue } from "./custom-data.js";
-export { buildItemDetail, resolveEventItemContents, collectEventCustomDataFields } from "./event-item-contents.js";
+export { buildItemDetail, resolveEventItemContents, collectEventCustomDataFields, mergeEventItemContentFields } from "./event-item-contents.js";
 export {
   buildCustomDataFromInput,
   normalizeCustomDataFieldValue,

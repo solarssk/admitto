@@ -81,18 +81,76 @@ export function resolveEventItemContents(config: unknown): EventItemContent[] {
   return [];
 }
 
-/** Collect unique custom_data attribute fields across multiple EventItem configs (first label wins). */
+/** Collect unique custom_data attribute fields across multiple EventItem configs (merged metadata). */
+function effectiveContentType(field: EventItemContent): "text" | "select" | "boolean" {
+  return field.type ?? "text";
+}
+
+function mergeSelectOptions(left: string[], right: string[]): string[] {
+  if (left.length === 0) return right;
+  if (right.length === 0) return left;
+  const intersection = left.filter((option) => right.includes(option));
+  if (intersection.length > 0) return intersection;
+  return [...new Set([...left, ...right])];
+}
+
+/** Merge duplicate source_field rows across items (first label wins; stricter metadata wins). */
+export function mergeEventItemContentFields(
+  existing: EventItemContent,
+  incoming: EventItemContent,
+): EventItemContent {
+  const leftType = effectiveContentType(existing);
+  const rightType = effectiveContentType(incoming);
+
+  const merged: EventItemContent = {
+    label: existing.label,
+    source_field: existing.source_field,
+  };
+
+  if (existing.required === true || incoming.required === true) {
+    merged.required = true;
+  }
+
+  let mergedType: "text" | "select" | "boolean";
+  if (leftType === rightType) {
+    mergedType = leftType;
+  } else if (leftType === "text") {
+    mergedType = rightType;
+  } else if (rightType === "text") {
+    mergedType = leftType;
+  } else {
+    mergedType = "select";
+  }
+
+  if (mergedType === "select") {
+    const leftOpts = leftType === "select" ? (existing.options ?? []) : [];
+    const rightOpts = rightType === "select" ? (incoming.options ?? []) : [];
+    const options = mergeSelectOptions(leftOpts, rightOpts);
+    if (options.length === 0) {
+      mergedType = "text";
+    } else {
+      merged.type = "select";
+      merged.options = options;
+    }
+  } else if (mergedType === "boolean") {
+    merged.type = "boolean";
+  }
+
+  return merged;
+}
+
 export function collectEventCustomDataFields(itemConfigs: unknown[]): EventItemContent[] {
-  const seen = new Set<string>();
-  const out: EventItemContent[] = [];
+  const byField = new Map<string, EventItemContent>();
   for (const config of itemConfigs) {
     for (const field of resolveEventItemContents(config)) {
-      if (seen.has(field.source_field)) continue;
-      seen.add(field.source_field);
-      out.push(field);
+      const existing = byField.get(field.source_field);
+      byField.set(
+        field.source_field,
+        existing ? mergeEventItemContentFields(existing, field) : field,
+      );
     }
   }
-  return out;
+  return [...byField.values()];
 }
 
 /** Build operator hint detail from item config + attendee custom_data. */
