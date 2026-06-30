@@ -10,7 +10,7 @@ import {
   assertEventManageAccess,
   requireEventId,
 } from "./admin-helpers.js";
-import { assertEventCapacityForIncoming } from "./event-capacity.js";
+import { assertEventCapacityForIncoming, acquireEventCapacityLock } from "./event-capacity.js";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 /** Multipart framing overhead allowed on top of the file cap (body-limit middleware). */
@@ -450,9 +450,7 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
 
     const summary = await db.$transaction(
       async (tx) => {
-        await tx.$executeRaw(
-          Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`event-import:${eventId}`}))`,
-        );
+        await acquireEventCapacityLock(tx, eventId);
 
         const dry = await commitImport(
           eventId,
@@ -475,6 +473,8 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
         if (capacityResult instanceof Response) {
           throw capacityResult;
         }
+        const capacityForced =
+          capacityResult && "forced" in capacityResult ? capacityResult : undefined;
 
         const result = await commitImport(
           eventId,
@@ -492,6 +492,13 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
             updated: result.updated,
             skipped: result.skipped.length,
             filename: upload.filename,
+            ...(capacityForced
+              ? {
+                  forced: true,
+                  capacity: capacityForced.capacity,
+                  current: capacityForced.current,
+                }
+              : {}),
           },
         });
 

@@ -1,8 +1,22 @@
 import type { Context } from "hono";
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
 
 type CapacityDb = PrismaClient | Prisma.TransactionClient;
+
+export function eventCapacityLockKey(eventId: string): string {
+  return `event-capacity:${eventId}`;
+}
+
+/** Serialize manual create, restore, and import commit against the same event capacity. */
+export async function acquireEventCapacityLock(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+): Promise<void> {
+  await tx.$executeRaw(
+    Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${eventCapacityLockKey(eventId)}))`,
+  );
+}
 
 export async function countActiveAttendees(db: CapacityDb, eventId: string): Promise<number> {
   return db.attendee.count({

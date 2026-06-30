@@ -1687,4 +1687,50 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(restoredLog).not.toBeNull();
     await prisma.attendee.update({ where: { id: ATT_A2 }, data: { status: "registered" } });
   });
+
+  it("PATCH restore returns 409 event_full when capacity is full", async () => {
+    await resetEventACustomFields();
+    const current = await countActiveEventAAttendees();
+    await prisma.event.update({ where: { id: EVENT_A }, data: { capacity: current } });
+
+    const getRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      headers: { Cookie: adminCookie },
+    });
+    const detail = (await getRes.json()) as { updated_at: string };
+
+    const revokeRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "revoked", expected_updated_at: detail.updated_at }),
+    });
+    expect(revokeRes.status).toBe(200);
+
+    const fillRes = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "fills-slot@example.com", name: "Fills Slot" }),
+    });
+    expect(fillRes.status).toBe(201);
+    const filler = (await fillRes.json()) as { id: string };
+
+    const revokedRow = await prisma.attendee.findUniqueOrThrow({
+      where: { id: ATT_A2 },
+      select: { updated_at: true },
+    });
+    const restoreRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "registered",
+        expected_updated_at: revokedRow.updated_at.toISOString(),
+      }),
+    });
+    expect(restoreRes.status).toBe(409);
+    const body = (await restoreRes.json()) as { code: string };
+    expect(body.code).toBe("event_full");
+
+    await prisma.attendee.delete({ where: { id: filler.id } });
+    await prisma.attendee.update({ where: { id: ATT_A2 }, data: { status: "registered" } });
+    await prisma.event.update({ where: { id: EVENT_A }, data: { capacity: null } });
+  });
 });

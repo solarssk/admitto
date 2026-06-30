@@ -331,9 +331,32 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     const body = (await res.json()) as EventOverviewResponse;
     expect(body.event.timezone).toBe("Europe/Warsaw");
     const stats = await getCheckInStats(EVENT_MAIN, prisma);
+    const activeCount = await prisma.attendee.count({
+      where: { event_id: EVENT_MAIN, status: { not: "revoked" } },
+    });
     expect(body.admitted_count).toBe(4);
     expect(body.admitted_count).toBe(stats.admitted_count);
-    expect(body.attendee_count).toBe(stats.total_count);
+    expect(body.attendee_count).toBe(activeCount);
+  });
+
+  it("excludes revoked attendees from attendee_count", async () => {
+    await prisma.attendee.update({
+      where: { id: ATT_MAIN[0] },
+      data: { status: "revoked" },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_MAIN}/overview`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventOverviewResponse;
+    const activeCount = await prisma.attendee.count({
+      where: { event_id: EVENT_MAIN, status: { not: "revoked" } },
+    });
+    expect(body.attendee_count).toBe(activeCount);
+    await prisma.attendee.update({
+      where: { id: ATT_MAIN[0] },
+      data: { status: "registered" },
+    });
   });
 
   it("aggregates email delivery stats", async () => {
