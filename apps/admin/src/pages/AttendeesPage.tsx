@@ -64,7 +64,7 @@ function SendTicketsDialog({
             <span>
               <strong>Undelivered only</strong>
               <span className="mail-field-hint">
-                Skip attendees who have already received a ticket (accepted, sent, or delivered).
+                Skip attendees who already have a ticket email accepted, sent, delivered, or queued.
               </span>
             </span>
           </label>
@@ -270,7 +270,9 @@ export function AttendeesPage() {
       setSendTicketsOpen(false);
       if (result.queued === 0) {
         addToast(
-          "No tickets to send — all attendees already have a delivery queued or sent.",
+          result.skipped > 0
+            ? `No tickets were queued (${result.skipped} skipped).`
+            : "No tickets to send.",
           "info",
         );
       } else {
@@ -283,7 +285,17 @@ export function AttendeesPage() {
       }
       setReloadToken((n) => n + 1);
     } catch (err) {
-      setSendError(err instanceof ApiError ? err.message : "Failed to queue tickets.");
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        if (err.status === 401) {
+          const next = encodeURIComponent(window.location.pathname);
+          window.location.assign(`/login?next=${next}`);
+          return;
+        }
+        setSendError(err.message);
+      } else {
+        setSendError("Failed to queue tickets.");
+      }
     } finally {
       setSendBusy(false);
     }

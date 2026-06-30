@@ -14,6 +14,12 @@ const GLOBAL_RESEND_WINDOW_MS = 3_600_000;
 /** Max resends per admin user per hour across all attendees (bulk exfiltration bound). */
 const GLOBAL_RESEND_PER_USER_HOUR = 30;
 
+/** Sliding window for bulk ticket send (ms). */
+const BULK_RESEND_WINDOW_MS = 600_000;
+
+/** Max bulk send requests per admin user per window. */
+const BULK_RESEND_MAX_REQUESTS = 3;
+
 /**
  * Rate-limit admin ticket resend after `staffAdminGate`.
  * Per-attendee key: user + attendee so unauthenticated clients cannot consume the bucket.
@@ -42,6 +48,25 @@ export function createAdminResendRateLimit(store: RateLimitStore) {
       );
       if (!global.allowed) return c.json({ error: "resend_global_limit" }, 429);
     }
+
+    await next();
+  };
+}
+
+/**
+ * Rate-limit bulk ticket send after `staffAdminGate`.
+ * Caps repeated 500-attendee batches per authenticated admin (ADR 0021).
+ */
+export function createAdminBulkResendRateLimit(store: RateLimitStore) {
+  return async (c: Context, next: Next): Promise<Response | void> => {
+    const auth = c.get("auth");
+    const userId = auth?.userId;
+    const key = userId
+      ? `admin:resend:bulk:user:${userId}`
+      : `admin:resend:bulk:ip:${resolveClientIp(c)}`;
+
+    const { allowed } = await store.hit(key, BULK_RESEND_WINDOW_MS, BULK_RESEND_MAX_REQUESTS);
+    if (!allowed) return c.json({ error: "too many requests" }, 429);
 
     await next();
   };

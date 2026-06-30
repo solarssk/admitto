@@ -1543,7 +1543,13 @@ export async function handleResendEventAttendeeTicket(
   return c.json(toDeliveryDto(latest));
 }
 
-/** POST /api/admin/events/:eventId/attendees/bulk-resend */
+/**
+ * Queue ticket emails for many attendees in one batch.
+ *
+ * `target: "unsent"` selects attendees without accepted/sent/delivered/queued delivery
+ * and sends via `purpose: "initial"` (atomic claim). `target: "all"` resends to every
+ * attendee up to {@link BULK_RESEND_LIMIT}. Audit metadata is counts only (no PII).
+ */
 export async function handleBulkResendTickets(
   c: Context,
   db: PrismaClient,
@@ -1579,20 +1585,14 @@ export async function handleBulkResendTickets(
       take: BULK_RESEND_LIMIT + 1,
     });
   } else {
-    // TODO v0.5: add take + cursor pagination for large events
-    const successOrQueued = await db.emailDelivery.findMany({
-      where: {
-        event_id: eventId,
-        status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES, "queued"] },
-      },
-      select: { attendee_id: true },
-      distinct: ["attendee_id"],
-    });
-    const excludeIds = successOrQueued.map((row) => row.attendee_id);
     attendees = await db.attendee.findMany({
       where: {
         event_id: eventId,
-        ...(excludeIds.length > 0 ? { id: { notIn: excludeIds } } : {}),
+        email_deliveries: {
+          none: {
+            status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES, "queued"] },
+          },
+        },
       },
       select: { id: true },
       take: BULK_RESEND_LIMIT + 1,
@@ -1608,9 +1608,10 @@ export async function handleBulkResendTickets(
   }
 
   const attendeeIds = attendees.map((row) => row.id);
+  const mailPurpose = target === "unsent" ? "initial" : "resend";
   const sendResult = await sendTicketEmails(
     eventId,
-    { attendeeIds, purpose: "resend" },
+    { attendeeIds, purpose: mailPurpose },
     db,
     process.env,
     mailDeps,
@@ -1619,12 +1620,16 @@ export async function handleBulkResendTickets(
   const queued = sendResult.deliveries.length;
   const skipped = sendResult.skipped.length;
 
-  await writeBulkActionLog(db as Prisma.TransactionClient, {
-    event_id: eventId,
-    action_type: "mail_bulk_resend",
-    audit: adminAuditFromContext(c),
-    metadata: { target, queued, skipped },
-  });
+  try {
+    await writeBulkActionLog(db as Prisma.TransactionClient, {
+      event_id: eventId,
+      action_type: "mail_bulk_resend",
+      audit: adminAuditFromContext(c),
+      metadata: { target, queued, skipped },
+    });
+  } catch (err) {
+    console.error("bulk resend audit log failed:", err);
+  }
 
   return c.json({ queued, skipped } satisfies BulkResendDto);
 }

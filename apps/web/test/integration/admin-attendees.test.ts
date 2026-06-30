@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -9,7 +9,7 @@ import { setMailSettings } from "@admitto/mailer-config";
 import { generateToken, getAttendeeCard, hashToken } from "@admitto/tickets";
 import type { ExportPayload } from "@admitto/mailer";
 import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -32,6 +32,7 @@ const ATT_B1 = "att-admin-b1";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
+let rateLimitStore: InMemoryRateLimitStore;
 let adminId: string;
 let opId: string;
 let adminCookie = "";
@@ -190,12 +191,13 @@ async function sessionCookieFor(userId: string): Promise<string> {
 beforeAll(async () => {
   prisma = new PrismaClient();
   await seed(prisma);
+  rateLimitStore = createRateLimitStore() as InMemoryRateLimitStore;
   app = createApp({
     prisma,
     checkinToken: CHECKIN_TOKEN,
     allowCheckinBearer: true,
     baseUrl: "https://tickets.example.com",
-    rateLimitStore: createRateLimitStore(),
+    rateLimitStore,
     skipCheckinBootValidation: true,
     adminDistRoot,
     mailDeliveryDeps: { exportSink: (p) => { exported.push(p); } },
@@ -1055,6 +1057,10 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
 describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
   const bulkUrl = `/api/admin/events/${EVENT_A}/attendees/bulk-resend`;
 
+  beforeEach(() => {
+    rateLimitStore.reset();
+  });
+
   async function postBulkResend(
     target: "unsent" | "all" = "unsent",
     cookie = adminCookie,
@@ -1148,16 +1154,17 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
       where: { id: EVENT_A },
       data: { archived_at: new Date() },
     });
-
-    const res = await postBulkResend("unsent");
-    expect(res.status).toBe(403);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("event_archived");
-
-    await prisma.event.update({
-      where: { id: EVENT_A },
-      data: { archived_at: null },
-    });
+    try {
+      const res = await postBulkResend("unsent");
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("event_archived");
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_A },
+        data: { archived_at: null },
+      });
+    }
   });
 
   it("rejects operator without manage access", async () => {
@@ -1168,14 +1175,15 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
   it("returns 400 too_many_attendees when attendee count exceeds limit", async () => {
     const stubIds = Array.from({ length: 501 }, (_, i) => ({ id: `stub-${i}` }));
     const spy = vi.spyOn(prisma.attendee, "findMany").mockResolvedValue(stubIds as never);
-
-    const res = await postBulkResend("all");
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string; limit: number };
-    expect(body.error).toBe("too_many_attendees");
-    expect(body.limit).toBe(500);
-
-    spy.mockRestore();
+    try {
+      const res = await postBulkResend("all");
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; limit: number };
+      expect(body.error).toBe("too_many_attendees");
+      expect(body.limit).toBe(500);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
