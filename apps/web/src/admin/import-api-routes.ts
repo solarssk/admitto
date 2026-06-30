@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { parseAttendees, commitImport, type ImportAttributeField } from "@admitto/import";
+import { parseAttendees, commitImport, type AttendeeRow, type ImportAttributeField } from "@admitto/import";
 import { collectEventCustomDataFields, filterCustomDataAttributeFields, writeBulkActionLog } from "@admitto/tickets";
 import { xlsxBufferToCsv, ImportRowLimitError, ImportZipBombError, MAX_CSV_CHARS, MAX_IMPORT_ROWS } from "./xlsx-to-csv.js";
 import { logger } from "../logger.js";
@@ -26,6 +26,20 @@ export type ImportInvalidRowDto = {
   reason: string;
 };
 
+/** Max valid rows returned in preview sample (data sanity check before commit). */
+const SAMPLE_LIMIT = 20;
+
+export type ImportSampleRow = {
+  rowIndex: number;
+  name: string;
+  email: string;
+  ticket_type: string;
+  company: string;
+  department: string;
+  external_uuid: string;
+  custom_data: Record<string, string>;
+};
+
 export type ImportPreviewDto = {
   importId: string;
   parse: {
@@ -38,6 +52,8 @@ export type ImportPreviewDto = {
     toUpdate: number;
     toSkip: number;
   };
+  sampleRows: ImportSampleRow[];
+  attributeFieldLabels: Array<{ source_field: string; label: string }>;
 };
 
 export type ImportCommitDto = {
@@ -167,6 +183,31 @@ function groupInvalidByType(invalidRows: { reason: string }[]): Record<string, n
     counts[key] = (counts[key] ?? 0) + 1;
   }
   return counts;
+}
+
+function buildSampleRows(
+  rows: AttendeeRow[],
+  attributeFields: ImportAttributeField[],
+): ImportSampleRow[] {
+  return rows.slice(0, SAMPLE_LIMIT).map((row) => {
+    const custom_data: Record<string, string> = {};
+    for (const field of attributeFields) {
+      custom_data[field.source_field] = row.custom_data?.[field.source_field] ?? "";
+    }
+    const firstName = row.first_name ?? "";
+    const lastName = row.last_name ?? "";
+    const name = [firstName, lastName].filter(Boolean).join(" ") || row.email;
+    return {
+      rowIndex: row.rowIndex,
+      name,
+      email: row.email,
+      ticket_type: row.ticket_type ?? "",
+      company: row.company ?? "",
+      department: row.department ?? "",
+      external_uuid: row.external_uuid ?? "",
+      custom_data,
+    };
+  });
 }
 
 /** Log and return a 400 response for rejected uploads. */
@@ -313,6 +354,12 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
       db,
     );
 
+    const sampleRows = buildSampleRows(parsed.validRows, attributeFields);
+    const attributeFieldLabels = attributeFields.map((f) => ({
+      source_field: f.source_field,
+      label: f.label,
+    }));
+
     logger.info("Import preview complete", {
       importId,
       eventId,
@@ -328,6 +375,7 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
       toCreate: summary.toCreate,
       toUpdate: summary.toUpdate,
       toSkip: summary.toSkip,
+      sampleCount: sampleRows.length,
       durationMs: Date.now() - startTime,
     });
 
@@ -346,6 +394,8 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
         toUpdate: summary.toUpdate,
         toSkip: summary.toSkip,
       },
+      sampleRows,
+      attributeFieldLabels,
     };
 
     return c.json(body);

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button, Card, PageHeader } from "@admitto/ui";
 import { ApiError, commitImport, fetchEventItems, previewImport } from "../api/client.js";
-import type { ImportCommitResponse, ImportPreviewResponse } from "../api/types.js";
+import type { ImportCommitResponse, ImportPreviewResponse, ImportSampleRow } from "../api/types.js";
 import {
   flattenCustomDataFieldsFromItems,
   type CustomDataFieldDef,
@@ -12,6 +12,89 @@ import "../attendees/attendees.css";
 import "./import.css";
 
 type Step = "upload" | "preview" | "done";
+
+const SAMPLE_DISPLAY_LIMIT = 20;
+
+interface ImportSampleTableProps {
+  rows: ImportSampleRow[];
+  totalValid: number;
+  attributeFieldLabels: Array<{ source_field: string; label: string }>;
+}
+
+function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSampleTableProps) {
+  const displayRows = rows.slice(0, SAMPLE_DISPLAY_LIMIT);
+  if (displayRows.length === 0) return null;
+
+  const hasTicketType = displayRows.some((r) => r.ticket_type);
+  const hasCompany = displayRows.some((r) => r.company);
+  const hasDepartment = displayRows.some((r) => r.department);
+  const hasExtUuid = displayRows.some((r) => r.external_uuid);
+  const hasCustom = attributeFieldLabels.length > 0;
+
+  return (
+    <div className="import-sample">
+      <h3 className="import-subtitle">
+        Data preview
+        {totalValid > displayRows.length && (
+          <span className="import-sample__note">
+            {" "}
+            — showing first {displayRows.length} of {totalValid} valid rows
+          </span>
+        )}
+      </h3>
+      <div className="import-sample-wrap">
+        <table className="table import-sample-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Name</th>
+              <th>Email</th>
+              {hasTicketType && <th>Ticket type</th>}
+              {hasCompany && <th>Company</th>}
+              {hasDepartment && <th>Department</th>}
+              {hasExtUuid && <th>External UUID</th>}
+              {hasCustom &&
+                attributeFieldLabels.map((f) => (
+                  <th key={f.source_field}>{f.label}</th>
+                ))}
+            </tr>
+          </thead>
+          <tbody>
+            {displayRows.map((row) => (
+              <tr key={row.rowIndex}>
+                <td className="import-sample__row-num">{row.rowIndex}</td>
+                <td>{row.name || <span className="import-sample__empty">—</span>}</td>
+                <td>{row.email}</td>
+                {hasTicketType && (
+                  <td>{row.ticket_type || <span className="import-sample__empty">—</span>}</td>
+                )}
+                {hasCompany && (
+                  <td>{row.company || <span className="import-sample__empty">—</span>}</td>
+                )}
+                {hasDepartment && (
+                  <td>{row.department || <span className="import-sample__empty">—</span>}</td>
+                )}
+                {hasExtUuid && (
+                  <td className="import-sample__uuid">
+                    {row.external_uuid || <span className="import-sample__empty">—</span>}
+                  </td>
+                )}
+                {hasCustom &&
+                  attributeFieldLabels.map((f) => (
+                    <td key={f.source_field}>
+                      {row.custom_data[f.source_field] || (
+                        <span className="import-sample__empty">—</span>
+                      )}
+                    </td>
+                  ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 /** Admin flow: upload CSV/XLSX → preview counts → commit import. */
 export function ImportPage() {
@@ -242,6 +325,12 @@ export function ImportPage() {
               <span className="import-stat__label">To skip</span>
             </div>
           </div>
+
+          <ImportSampleTable
+            rows={preview.sampleRows}
+            totalValid={preview.parse.validCount}
+            attributeFieldLabels={preview.attributeFieldLabels}
+          />
 
           {preview.parse.validCount === 0 && (
             <p className="import-warn">

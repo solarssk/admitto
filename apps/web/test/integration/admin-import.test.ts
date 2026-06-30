@@ -460,6 +460,135 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     expect(body.parse.validCount).toBe(1);
     expect(body.summary.toCreate).toBe(1);
   });
+
+  type PreviewBody = {
+    importId: string;
+    parse: { validCount: number; invalidRows: { rowIndex: number; reason: string }[]; warnings: string[] };
+    summary: { toCreate: number; toUpdate: number; toSkip: number };
+    sampleRows: Array<{
+      rowIndex: number;
+      name: string;
+      email: string;
+      ticket_type: string;
+      company: string;
+      department: string;
+      external_uuid: string;
+      custom_data: Record<string, string>;
+    }>;
+    attributeFieldLabels: Array<{ source_field: string; label: string }>;
+  };
+
+  function validRowsCsv(count: number): string {
+    const header = "first_name,last_name,email";
+    const rows = Array.from(
+      { length: count },
+      (_, i) => `User${i},Test${i},sample${i}@example.com`,
+    );
+    return [header, ...rows].join("\n");
+  }
+
+  it("returns sampleRows capped at 20 for large valid files", async () => {
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(validRowsCsv(25)),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PreviewBody;
+    expect(body.parse.validCount).toBe(25);
+    expect(body.sampleRows).toHaveLength(20);
+    expect(body.sampleRows[0]!.email).toBe("sample0@example.com");
+    expect(body.sampleRows[19]!.email).toBe("sample19@example.com");
+  });
+
+  it("returns all sampleRows when fewer than 20 valid rows", async () => {
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(validRowsCsv(5)),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PreviewBody;
+    expect(body.sampleRows).toHaveLength(5);
+  });
+
+  it("returns empty sampleRows when no valid rows", async () => {
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(INVALID_CSV),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PreviewBody;
+    expect(body.parse.validCount).toBe(0);
+    expect(body.sampleRows).toEqual([]);
+  });
+
+  it("includes shaped sampleRows with joined name and empty optional fields", async () => {
+    const csv = ["first_name,last_name,email", "Jan,Kowalski,jan@example.com"].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PreviewBody;
+    expect(body.sampleRows).toHaveLength(1);
+    const row = body.sampleRows[0]!;
+    expect(row).toMatchObject({
+      rowIndex: 1,
+      name: "Jan Kowalski",
+      email: "jan@example.com",
+      ticket_type: "",
+      company: "",
+      department: "",
+      external_uuid: "",
+      custom_data: {},
+    });
+    expect(body.importId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(body.summary).toMatchObject({ toCreate: 1, toUpdate: 0, toSkip: 0 });
+  });
+
+  it("preserves file rowIndex in sampleRows when invalid rows appear between valid rows", async () => {
+    const csv = [
+      "first_name,last_name,email",
+      "Jan,Kowalski,jan@example.com",
+      "Bad,,bad@example.com",
+      "Eve,Example,eve@example.com",
+    ].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PreviewBody;
+    expect(body.sampleRows).toHaveLength(2);
+    expect(body.sampleRows[0]!.rowIndex).toBe(1);
+    expect(body.sampleRows[1]!.rowIndex).toBe(3);
+    expect(body.parse.invalidRows[0]!.rowIndex).toBe(2);
+  });
+
+  it("returns custom_data and attributeFieldLabels in sampleRows", async () => {
+    const csv = [
+      "first_name,last_name,email,sock_size,cap_size",
+      "Gina,Gear,gina@example.com,42,L",
+    ].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/preview`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PreviewBody;
+    expect(body.sampleRows[0]!.custom_data).toEqual({ sock_size: "42", cap_size: "L" });
+    expect(body.attributeFieldLabels).toEqual(
+      expect.arrayContaining([
+        { source_field: "sock_size", label: "Sock size" },
+        { source_field: "cap_size", label: "Cap size" },
+      ]),
+    );
+  });
 });
 
 describe("POST /api/admin/events/:eventId/import/commit", () => {
