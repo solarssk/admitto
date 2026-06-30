@@ -2,22 +2,30 @@ import { NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin, isAdmin } from "../auth/capabilities.js";
 import type { EventDto } from "../api/types.js";
+import type { RoleAssignment } from "../api/types.js";
 import { StaffShell } from "./StaffShell.js";
 import { formatEventCalendarDate } from "../utils/event-dates.js";
 
-const LIFECYCLE_NAV = [
+type NavItem = {
+  segment: string;
+  icon: string;
+  label: string;
+  soon?: string;
+};
+
+const LIFECYCLE_NAV: NavItem[] = [
   { segment: "overview", icon: "layout-dashboard", label: "Overview" },
   { segment: "attendees", icon: "users", label: "Attendees" },
   { segment: "requirements", icon: "clipboard-list", label: "Requirements" },
-  { segment: "approval", icon: "user-check", label: "Approval" },
+  { segment: "approval", icon: "user-check", label: "Approval", soon: "v0.4.9" },
   { segment: "communication", icon: "mail", label: "Communication" },
-  { segment: "wallet", icon: "wallet", label: "Wallet" },
   { segment: "checkin", icon: "qrcode", label: "Check-in" },
-  { segment: "fulfilment", icon: "package", label: "Fulfilment" },
-  { segment: "thank-you", icon: "heart", label: "Thank you" },
+  { segment: "wallet", icon: "wallet", label: "Passes", soon: "v0.6" },
+  { segment: "fulfilment", icon: "package", label: "Fulfilment", soon: "future" },
+  { segment: "thank-you", icon: "heart", label: "Post-event", soon: "future" },
   { segment: "reports", icon: "chart-bar", label: "Reports" },
   { segment: "settings", icon: "adjustments", label: "Event settings" },
-] as const;
+];
 
 const LIVE_SEGMENTS = new Set([
   "overview",
@@ -46,6 +54,31 @@ const BRAND_MARK = (
     <rect x="22.5" y="6" width="4" height="4" rx="1" fill="#ffffff" fillOpacity="0.55" />
   </svg>
 );
+
+function administrationFoot(assignments: RoleAssignment[]) {
+  if (!isAdmin(assignments)) return null;
+  return (
+    <>
+      <div className="sidebar__section-label">Administration</div>
+      <NavLink
+        to="/admin/users"
+        className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
+      >
+        <i className="ti ti-users-group" aria-hidden="true" />
+        <span>Users & roles</span>
+      </NavLink>
+      {isSuperadmin(assignments) && (
+        <NavLink
+          to="/admin/settings"
+          className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
+        >
+          <i className="ti ti-settings" aria-hidden="true" />
+          <span>Settings</span>
+        </NavLink>
+      )}
+    </>
+  );
+}
 
 /** Event-scoped admin layout: lifecycle sidebar, top bar, and nested route outlet. */
 export function AdminShell({ event }: AdminShellProps) {
@@ -87,11 +120,11 @@ export function AdminShell({ event }: AdminShellProps) {
               type="button"
               disabled
               className="nav-item nav-item--soon"
-              title="Coming soon"
+              title={item.soon !== "future" ? `Planned for ${item.soon}` : "Planned for a future version"}
             >
               <i className={`ti ti-${item.icon}`} aria-hidden="true" />
               <span>{item.label}</span>
-              <span className="nav-item__badge">Soon</span>
+              <span className="nav-item__badge">{item.soon !== "future" ? item.soon! : "Soon"}</span>
             </button>
           );
         })}
@@ -101,24 +134,7 @@ export function AdminShell({ event }: AdminShellProps) {
           <i className="ti ti-calendar-event" aria-hidden="true" />
           <span>All events</span>
         </NavLink>
-        {isAdmin(assignments) && (
-          <NavLink
-            to="/admin/users"
-            className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
-          >
-            <i className="ti ti-users-group" aria-hidden="true" />
-            <span>Users & roles</span>
-          </NavLink>
-        )}
-        {isSuperadmin(assignments) && (
-          <NavLink
-            to="/admin/settings"
-            className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
-          >
-            <i className="ti ti-settings" aria-hidden="true" />
-            <span>Settings</span>
-          </NavLink>
-        )}
+        {administrationFoot(assignments)}
       </div>
     </>
   );

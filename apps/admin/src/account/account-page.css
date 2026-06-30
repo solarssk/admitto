@@ -35,6 +35,34 @@
   margin: var(--space-2, 0.5rem) 0;
 }
 
+.account-totp-qr {
+  display: flex;
+  justify-content: flex-start;
+  margin: 8px 0;
+}
+
+.account-totp-qr canvas {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  padding: 8px;
+  background: #fff;
+}
+
+.account-uri-details {
+  margin-top: 4px;
+}
+
+.account-uri-details__toggle {
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.account-uri-details[open] .account-uri-details__toggle {
+  margin-bottom: 6px;
+}
+
 .account-role-list {
   display: flex;
   flex-wrap: wrap;

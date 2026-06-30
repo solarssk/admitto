@@ -60,17 +60,34 @@ import type {
   ResetMfaResponse,
 } from "./types.js";
 
+export type EventFullMeta = {
+  capacity: number;
+  current: number;
+  incoming?: number;
+  projected?: number;
+};
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly code?: string,
+    public readonly eventFull?: EventFullMeta,
   ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
-type ApiErrorBody = { error?: string; detail?: string; code?: string };
+type ApiErrorBody = {
+  error?: string;
+  detail?: string;
+  code?: string;
+  capacity?: number;
+  current?: number;
+  incoming?: number;
+  projected?: number;
+};
 
 function messageFromApiErrorBody(body: ApiErrorBody): string | undefined {
   const detail = body.detail?.trim();
@@ -82,16 +99,30 @@ function messageFromApiErrorBody(body: ApiErrorBody): string | undefined {
   return undefined;
 }
 
+function eventFullFromBody(body: ApiErrorBody): EventFullMeta | undefined {
+  if (body.code !== "event_full" || body.capacity == null || body.current == null) return undefined;
+  return {
+    capacity: body.capacity,
+    current: body.current,
+    incoming: body.incoming,
+    projected: body.projected,
+  };
+}
+
 async function parseJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = res.statusText || `HTTP ${res.status}`;
+    let code: string | undefined;
+    let eventFull: EventFullMeta | undefined;
     try {
       const body = (await res.json()) as ApiErrorBody;
       message = messageFromApiErrorBody(body) ?? message;
+      code = body.code;
+      eventFull = eventFullFromBody(body);
     } catch {
       /* ignore */
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, code, eventFull);
   }
   return (await res.json()) as T;
 }
@@ -185,9 +216,11 @@ export async function commitImport(
   eventId: string,
   file: File,
   overwrite: boolean,
+  options?: { force?: boolean },
 ): Promise<ImportCommitResponse> {
+  const forceQuery = options?.force ? "?force=1" : "";
   const res = await fetch(
-    `/api/admin/events/${encodeURIComponent(eventId)}/import/commit`,
+    `/api/admin/events/${encodeURIComponent(eventId)}/import/commit${forceQuery}`,
     multipartPostInit(importFormData(file, overwrite)),
   );
   return parseJson<ImportCommitResponse>(res);

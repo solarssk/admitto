@@ -213,7 +213,17 @@ export interface UpdateAttendeePatch {
   ticket_type?: string | null;
   custom_data_fields?: Record<string, string | null>;
   rsvp_status?: RsvpStatus;
+  status?: "registered" | "revoked";
   expected_updated_at?: string;
+}
+
+export interface EventFullErrorBody {
+  code: "event_full";
+  error: string;
+  capacity: number;
+  current: number;
+  incoming?: number;
+  projected?: number;
 }
 
 export interface ResendTicketBody {

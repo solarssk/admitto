@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Card, PageHeader } from "@admitto/ui";
 import { ApiError, submitSessionDeviceLabel } from "../api/client.js";
+import { parseDeviceName } from "../utils/parseDeviceName.js";
 
 type DeviceLabelStepProps = {
   onSaved: () => void | Promise<void>;
@@ -8,7 +9,8 @@ type DeviceLabelStepProps = {
 };
 
 export function DeviceLabelStep({ onSaved, onSkip }: DeviceLabelStepProps) {
-  const [label, setLabel] = useState("");
+  const detectedLabel = parseDeviceName();
+  const [label, setLabel] = useState(() => detectedLabel);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,6 +54,9 @@ export function DeviceLabelStep({ onSaved, onSkip }: DeviceLabelStepProps) {
             autoComplete="off"
             disabled={busy}
           />
+          {detectedLabel && (
+            <p className="at-hint">Detected from your browser. Edit if needed.</p>
+          )}
         </div>
         {error && (
           <p className="text-error" role="alert">

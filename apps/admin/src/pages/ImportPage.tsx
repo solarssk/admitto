@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button, Card, PageHeader } from "@admitto/ui";
-import { ApiError, commitImport, fetchEventItems, previewImport } from "../api/client.js";
+import { ApiError, commitImport, fetchEventItems, previewImport, type EventFullMeta } from "../api/client.js";
 import type { ImportCommitResponse, ImportPreviewResponse, ImportSampleRow } from "../api/types.js";
 import {
   flattenCustomDataFieldsFromItems,
   type CustomDataFieldDef,
 } from "../attendees/customData.js";
+import { useAuth } from "../auth/AuthProvider.js";
+import { isSuperadmin } from "../auth/capabilities.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import "../attendees/attendees.css";
 import "./import.css";
@@ -100,8 +102,10 @@ function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSam
 /** Admin flow: upload CSV/XLSX → preview counts → commit import. */
 export function ImportPage() {
   const { eventId } = useParams();
+  const { assignments } = useAuth();
   const { reportApiError } = useConnectionState();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const superadmin = isSuperadmin(assignments);
 
   const [step, setStep] = useState<Step>("upload");
   const [file, setFile] = useState<File | null>(null);
@@ -110,6 +114,8 @@ export function ImportPage() {
   const [result, setResult] = useState<ImportCommitResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [capacityBlocked, setCapacityBlocked] = useState<EventFullMeta | null>(null);
+  const [forceCapacity, setForceCapacity] = useState(false);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
 
   useEffect(() => {
@@ -165,16 +171,23 @@ export function ImportPage() {
     }
   };
 
-  const onCommit = async () => {
+  const onCommit = async (opts?: { force?: boolean }) => {
     if (!eventId || !file || !preview) return;
     setLoading(true);
     setError(null);
+    setCapacityBlocked(null);
     try {
-      const data = await commitImport(eventId, file, overwrite);
+      const data = await commitImport(eventId, file, overwrite, { force: opts?.force });
       setResult(data);
       setStep("done");
+      setForceCapacity(false);
     } catch (err) {
-      handleApiError(err);
+      if (err instanceof ApiError && err.status === 409 && err.code === "event_full" && err.eventFull) {
+        setCapacityBlocked(err.eventFull);
+        setError(err.message);
+      } else {
+        handleApiError(err);
+      }
     } finally {
       setLoading(false);
     }
@@ -374,6 +387,28 @@ export function ImportPage() {
             </div>
           )}
 
+          {capacityBlocked && (
+            <div className="import-warn import-capacity-banner" role="alert">
+              <p>
+                Event is at capacity ({capacityBlocked.current}/{capacityBlocked.capacity}).
+                {capacityBlocked.incoming != null && (
+                  <> Import would add {capacityBlocked.incoming} new attendee{capacityBlocked.incoming === 1 ? "" : "s"}.</>
+                )}
+              </p>
+              {superadmin && preview.summary.toCreate > 0 && (
+                <label className="import-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={forceCapacity}
+                    onChange={(e) => setForceCapacity(e.target.checked)}
+                    disabled={loading}
+                  />
+                  <span>Override capacity limit (superadmin)</span>
+                </label>
+              )}
+            </div>
+          )}
+
           <div className="import-actions">
             <Button
               variant="secondary"
@@ -381,6 +416,8 @@ export function ImportPage() {
               onClick={() => {
                 setStep("upload");
                 setPreview(null);
+                setCapacityBlocked(null);
+                setForceCapacity(false);
               }}
             >
               Choose another file
@@ -388,7 +425,7 @@ export function ImportPage() {
             <Button
               variant="primary"
               disabled={!canCommit}
-              onClick={() => void onCommit()}
+              onClick={() => void onCommit({ force: forceCapacity && superadmin })}
             >
               {loading
                 ? "Importing…"

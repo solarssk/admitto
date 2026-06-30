@@ -66,6 +66,9 @@ export function AttendeeDetailPage() {
   const [resending, setResending] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
+  const [revokeOpen, setRevokeOpen] = useState(false);
+  const [revokeBusy, setRevokeBusy] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   /** Guards async handlers when route params change before a request completes. */
   const selectionRef = useRef({ eventId, attendeeId });
@@ -300,6 +303,41 @@ export function AttendeeDetailPage() {
     }
   }
 
+  async function handlePassStatusChange(nextStatus: "registered" | "revoked") {
+    if (!eventId || !attendeeId || !detail) return;
+    const target = { eventId, attendeeId };
+    setRevokeBusy(true);
+    setRevokeError(null);
+    try {
+      const updated = await updateAttendee(eventId, attendeeId, {
+        status: nextStatus,
+        expected_updated_at: detail.updated_at,
+      });
+      if (!isStillSelected(target)) return;
+      setDetail(updated);
+      setForm(toAttendeeForm(updated, attributeFields));
+      setRevokeOpen(false);
+      addToast(nextStatus === "revoked" ? "Pass revoked" : "Pass restored", "success");
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      if (err instanceof ApiError && err.status === 409) {
+        if (err.code === "event_full" && err.eventFull) {
+          const { current, capacity } = err.eventFull;
+          setRevokeError(`Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before restoring this pass.`);
+        } else if (err.message === "stale_write") {
+          addToast("Someone else updated this attendee — page will reload", "warning");
+          void handleReload();
+        } else {
+          setRevokeError("Could not update pass status.");
+        }
+      } else {
+        setRevokeError(err instanceof ApiError ? err.message : "Could not update pass status.");
+      }
+    } finally {
+      if (isStillSelected(target)) setRevokeBusy(false);
+    }
+  }
+
   if (!eventId || !attendeeId) return <p>Missing event or attendee.</p>;
 
   if (loading && !detail) {
@@ -331,6 +369,7 @@ export function AttendeeDetailPage() {
 
   const lastMail = detail.deliveries[0]?.status ?? null;
   const emailChanged = form.email !== initialEmail;
+  const isRevoked = detail.status === "revoked";
 
   return (
     <div className="attendee-detail-page">
@@ -339,6 +378,7 @@ export function AttendeeDetailPage() {
         title={detail.name}
         actions={
           <>
+            {isRevoked && <Badge variant="error">Revoked</Badge>}
             <Button
               variant="ghost"
               icon={<i className="ti ti-refresh" aria-hidden="true" />}
@@ -346,9 +386,15 @@ export function AttendeeDetailPage() {
             >
               Resend ticket
             </Button>
-            <Button variant="danger" disabled title="Coming soon">
-              Revoke pass
-            </Button>
+            {isRevoked ? (
+              <Button variant="primary" onClick={() => void handlePassStatusChange("registered")} disabled={revokeBusy}>
+                {revokeBusy ? "Restoring…" : "Restore pass"}
+              </Button>
+            ) : (
+              <Button variant="danger" onClick={() => { setRevokeError(null); setRevokeOpen(true); }}>
+                Revoke pass
+              </Button>
+            )}
             <Button variant="secondary" onClick={handleBack}>
               Back
             </Button>
@@ -357,6 +403,7 @@ export function AttendeeDetailPage() {
       />
 
       {error && <p className="text-error">{error}</p>}
+      {revokeError && !revokeOpen && <p className="text-error">{revokeError}</p>}
       {itemsWarning && <p className="attendee-form__warn">{itemsWarning}</p>}
 
       <Tabs
@@ -537,6 +584,23 @@ export function AttendeeDetailPage() {
           goBack();
         }}
         onCancel={() => setDiscardOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={revokeOpen}
+        title="Revoke pass?"
+        message="This attendee will no longer be able to check in. You can restore the pass later if capacity allows."
+        confirmLabel="Revoke pass"
+        confirmVariant="danger"
+        loading={revokeBusy}
+        errorMessage={revokeError ?? undefined}
+        onConfirm={() => void handlePassStatusChange("revoked")}
+        onCancel={() => {
+          if (!revokeBusy) {
+            setRevokeOpen(false);
+            setRevokeError(null);
+          }
+        }}
       />
     </div>
   );
