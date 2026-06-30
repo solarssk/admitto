@@ -1,8 +1,8 @@
 name: Release
 
-# After a `release: …` commit on main bumps package.json, create the git tag, GitHub
-# Release (from committed notes), and close the matching milestone. Tag push then
-# triggers publish-container.yml (GHCR image + SBOM).
+# After a `release: vX.Y.Z` commit on main bumps package.json, create the git tag,
+# GitHub Release (notes + optional .title tagline), close the milestone, and trigger
+# publish-container.yml (GITHUB_TOKEN tag pushes do not start other workflows).
 
 on:
   push:
@@ -11,6 +11,7 @@ on:
 permissions:
   contents: write
   issues: write
+  actions: write
 
 concurrency:
   group: release-${{ github.repository }}
@@ -30,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           SUBJECT="$(git log -1 --format=%s)"
-          if ! printf '%s' "$SUBJECT" | grep -qiE '^release:'; then
+          if ! printf '%s' "$SUBJECT" | grep -qiE '^release:[[:space:]]+v[0-9]+\.[0-9]+\.[0-9]+'; then
             echo "Latest commit is not a release cut — skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -73,6 +74,7 @@ jobs:
           VERSION='${{ steps.bump.outputs.version }}'
           TAG="v${VERSION}"
           NOTES=".github/release-notes/v${VERSION}.md"
+          DISPLAY_TITLE="$(bash scripts/release-display-title.sh "$VERSION")"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists — skipping create."
@@ -86,10 +88,23 @@ jobs:
           fi
 
           gh release create "$TAG" \
-            --title "$TAG" \
+            --title "$DISPLAY_TITLE" \
             --notes-file "$NOTES" \
             "${PRERELEASE_ARGS[@]}"
-          echo "Created $TAG (container publish runs on tag push)."
+          echo "Created $TAG ($DISPLAY_TITLE)."
+
+      - name: Trigger container publish
+        if: steps.bump.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.bump.outputs.version }}'
+          TAG="v${VERSION}"
+          gh workflow run publish-container.yml \
+            --ref "$TAG" \
+            -f "ref=refs/tags/${TAG}"
+          echo "Triggered publish-container for ${TAG}."
 
       - name: Close matching GitHub milestone
         if: steps.bump.outputs.skip != 'true'

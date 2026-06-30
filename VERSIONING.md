@@ -72,18 +72,18 @@ Do not bump per-package versions unless we start publishing libraries separately
 4. Set root `package.json` `"version"` to `0.x.y` (no `v` prefix)
 5. Generate release artifacts and sync doc markers before opening the release PR:
    ```bash
-   python3 scripts/generate-release-notes.py 0.x.y
+   python3 scripts/generate-release-notes.py 0.x.y "short tagline for GitHub Release title"
    python3 scripts/sync-release-docs.py
    npm install --package-lock-only
    ```
-   `sync-release-docs.py` updates `<!-- admitto:latest-patch -->` markers (e.g. in `SECURITY.md`) from `package.json`. CI runs `python3 scripts/sync-release-docs.py --check` on every PR.
+   `generate-release-notes.py` writes `.github/release-notes/v0.x.y.md` and `.github/release-notes/v0.x.y.title` (tagline only — workflow composes `v0.x.y — tagline`, same pattern as earlier releases). `sync-release-docs.py` updates `<!-- admitto:latest-patch -->` markers (e.g. in `SECURITY.md`) from `package.json`. CI runs `python3 scripts/sync-release-docs.py --check` on every PR.
    Release notes follow the same [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) typed sections as `CHANGELOG.md` for that version, plus a short **Deploy** footer (container image, migration policy). Do not use the deprecated v0.3.x emoji template. See [`.github/release-notes/v0.4.4.md`](.github/release-notes/v0.4.4.md) as reference.
-6. Commit on `main` — include `CHANGELOG.md`, `package.json`, `package-lock.json`, synced docs, and `.github/release-notes/v0.x.y.md` in one release commit (message must start with `release:`).
+6. Commit on `main` — include `CHANGELOG.md`, `package.json`, `package-lock.json`, synced docs, `.github/release-notes/v0.x.y.md`, and `.github/release-notes/v0.x.y.title` in one release commit (subject exactly `release: v0.x.y`).
 7. **Merge the release PR** — GitHub Actions [`.github/workflows/release.yml`](.github/workflows/release.yml) on `main` then:
    - verifies release artifacts (`sync-release-docs.py --check`, notes file, CHANGELOG section),
-   - creates git tag `v0.x.y` and GitHub Release from `.github/release-notes/v0.x.y.md` (pre-release when major is `0`),
+   - creates git tag `v0.x.y` and GitHub Release from `.github/release-notes/v0.x.y.md` with title `v0.x.y — …` from the `.title` file (pre-release when major is `0`),
+   - triggers [`publish-container.yml`](.github/workflows/publish-container.yml) (GHCR image, SBOM upload),
    - closes the open milestone titled `v0.x.y`.
-   Tag push triggers [`publish-container.yml`](.github/workflows/publish-container.yml) (GHCR image, SBOM upload).
 
    Local [`scripts/release-tag.sh`](scripts/release-tag.sh) remains for emergency **GPG/SSH-signed** tags only (see below) — not the default path.
 

@@ -180,7 +180,8 @@ jobs:
           else
             NOTES=".github/release-notes/v${VERSION}.md"
             if [ -f "$NOTES" ]; then
-              gh release create "$TAG" --title "$TAG" --notes-file "$NOTES" "${PRERELEASE_ARGS[@]}" "$SBOM"
+              DISPLAY_TITLE="$(bash scripts/release-display-title.sh "$VERSION")"
+              gh release create "$TAG" --title "$DISPLAY_TITLE" --notes-file "$NOTES" "${PRERELEASE_ARGS[@]}" "$SBOM"
             else
               gh release create "$TAG" --title "$TAG" --generate-notes "${PRERELEASE_ARGS[@]}" "$SBOM"
             fi
