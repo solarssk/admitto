@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { bodyLimit } from "hono/body-limit";
 import { Prisma } from "@prisma/client";
@@ -742,7 +742,7 @@ export function createApp(options: CreateAppOptions = {}) {
   );
 
   app.get("/assets/*", staffSpa.serveAsset);
-  app.get("/uploads/*", (c) => {
+  app.get("/uploads/*", async (c) => {
     const uploadDir = resolveUploadDir();
     const relPath = c.req.path.slice("/uploads/".length);
     if (relPath.includes("..") || relPath.startsWith("/")) {
@@ -751,7 +751,7 @@ export function createApp(options: CreateAppOptions = {}) {
     const filePath = join(uploadDir, relPath);
     let buf: Buffer;
     try {
-      buf = readFileSync(filePath);
+      buf = await readFile(filePath);
     } catch {
       return c.notFound();
     }

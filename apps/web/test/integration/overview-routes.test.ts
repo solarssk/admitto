@@ -59,7 +59,7 @@ async function seed(client: PrismaClient) {
     where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_OP] } },
   });
   await client.roleAssignment.deleteMany({
-    where: { role: "superadmin", scope_type: "instance" },
+    where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_OP] } } },
   });
   await client.event.deleteMany({ where: { id: { in: eventIds } } });
   await client.organization.deleteMany({ where: { id: { in: [ORG_OV, ORG_OV_B] } } });
@@ -127,12 +127,26 @@ async function seed(client: PrismaClient) {
 
   await client.roleAssignment.createMany({
     data: [
-      { user_id: superId, role: "superadmin", scope_type: "instance", scope_id: null },
       { user_id: adminId, role: "admin", scope_type: "organization", scope_id: ORG_OV },
       { user_id: adminBId, role: "admin", scope_type: "organization", scope_id: ORG_OV_B },
       { user_id: opId, role: "operator", scope_type: "event", scope_id: EVENT_MAIN },
     ],
   });
+
+  const existingInstanceSuper = await client.roleAssignment.findFirst({
+    where: { role: "superadmin", scope_type: "instance" },
+    select: { id: true },
+  });
+  if (existingInstanceSuper) {
+    await client.roleAssignment.update({
+      where: { id: existingInstanceSuper.id },
+      data: { user_id: superId },
+    });
+  } else {
+    await client.roleAssignment.create({
+      data: { user_id: superId, role: "superadmin", scope_type: "instance", scope_id: null },
+    });
+  }
 
   for (const userId of [superId, adminId, adminBId]) {
     await client.userMfaMethod.create({

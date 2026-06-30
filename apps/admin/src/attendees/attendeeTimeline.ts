@@ -59,6 +59,7 @@ export function getTimelineIcon(actionType: string): string {
     item_state_changed: "package",
     item_returned: "package",
     pass_revoked: "ban",
+    pass_restored: "refresh",
     attendee_edited: "pencil",
     scan_preview: "scan",
   };

@@ -18,6 +18,7 @@ export async function acquireEventCapacityLock(
   );
 }
 
+/** Count attendees that consume event capacity (excludes revoked). */
 export async function countActiveAttendees(db: CapacityDb, eventId: string): Promise<number> {
   return db.attendee.count({
     where: { event_id: eventId, status: { not: "revoked" } },
@@ -40,6 +41,8 @@ export async function assertEventCapacityForIncoming(
   eventId: string,
   incomingCount: number,
 ): Promise<Response | CapacityOverrideMeta | null> {
+  if (incomingCount <= 0) return null;
+
   const event = await db.event.findUnique({
     where: { id: eventId },
     select: { capacity: true },

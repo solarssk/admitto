@@ -38,18 +38,26 @@ beforeAll(async () => {
     where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
   });
   await prisma.roleAssignment.deleteMany({
-    where: { role: "superadmin", scope_type: "instance" },
-  });
-  await prisma.roleAssignment.deleteMany({
     where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
   });
   await prisma.user.deleteMany({ where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } });
 
   const superUser = await prisma.user.create({ data: { email: EMAIL_SUPER, password_hash } });
   const adminUser = await prisma.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
-  await prisma.roleAssignment.create({
-    data: { user_id: superUser.id, role: "superadmin", scope_type: "instance", scope_id: null },
+  const existingInstanceSuper = await prisma.roleAssignment.findFirst({
+    where: { role: "superadmin", scope_type: "instance" },
+    select: { id: true },
   });
+  if (existingInstanceSuper) {
+    await prisma.roleAssignment.update({
+      where: { id: existingInstanceSuper.id },
+      data: { user_id: superUser.id },
+    });
+  } else {
+    await prisma.roleAssignment.create({
+      data: { user_id: superUser.id, role: "superadmin", scope_type: "instance", scope_id: null },
+    });
+  }
   await prisma.roleAssignment.create({
     data: { user_id: adminUser.id, role: "admin", scope_type: "organization", scope_id: "org-uploads" },
   });

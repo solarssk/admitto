@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Event capacity: pass restore (`status: registered`) respects capacity limits; manual create and import share an advisory lock to prevent concurrent over-capacity writes
 - Event overview `attendee_count` excludes revoked attendees (aligned with capacity enforcement)
 - CSV import capacity override (`?force=1`) records `forced: true` in `attendees_imported` audit metadata
+- Import overwrite-only commits allowed when `toCreate === 0` even if event is already over capacity
+- Event overview email card surfaces `email_bounced` separately from failed deliveries
+- Branding upload validates magic bytes and uses async filesystem I/O
 
 ### Added
 - Event capacity enforcement on manual attendee create and CSV import commit: returns `409 event_full` when the limit would be exceeded; instance superadmin may override with `?force=1` (audited)
