@@ -1695,6 +1695,51 @@ describe("Attendees v2 — RSVP and manual create", () => {
     }
   });
 
+  it("PATCH cancelled to registered returns 409 event_full when capacity is full", async () => {
+    await resetEventACustomFields();
+    const priorStatus = (
+      await prisma.attendee.findUniqueOrThrow({
+        where: { id: ATT_A2 },
+        select: { status: true },
+      })
+    ).status;
+    let fillerId: string | undefined;
+    try {
+      const activeBefore = await countActiveEventAAttendees();
+      await withSavedEventCapacity(activeBefore, async () => {
+        await prisma.attendee.update({
+          where: { id: ATT_A2 },
+          data: { status: "cancelled" },
+        });
+        const fillRes = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ email: "fills-cancel-slot@example.com", name: "Fills Cancel Slot" }),
+        });
+        expect(fillRes.status).toBe(201);
+        fillerId = ((await fillRes.json()) as { id: string }).id;
+
+        const cancelledRow = await prisma.attendee.findUniqueOrThrow({
+          where: { id: ATT_A2 },
+          select: { updated_at: true },
+        });
+        const restoreRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+          method: "PATCH",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: "registered",
+            expected_updated_at: cancelledRow.updated_at.toISOString(),
+          }),
+        });
+        expect(restoreRes.status).toBe(409);
+        expect(((await restoreRes.json()) as { code: string }).code).toBe("event_full");
+      });
+    } finally {
+      if (fillerId) await prisma.attendee.delete({ where: { id: fillerId } }).catch(() => undefined);
+      await prisma.attendee.update({ where: { id: ATT_A2 }, data: { status: priorStatus } });
+    }
+  });
+
   it("PATCH status revoked writes pass_revoked and pass_restored audit logs", async () => {
     const priorStatus = (
       await prisma.attendee.findUniqueOrThrow({

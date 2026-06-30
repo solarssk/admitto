@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Event capacity: pass restore (`status: registered`) respects capacity limits; manual create and import share an advisory lock to prevent concurrent over-capacity writes
+- PATCH reactivation from `cancelled` or `revoked` to `registered` enforces capacity the same way as manual create
 - Event overview `attendee_count` excludes revoked attendees (aligned with capacity enforcement)
 - Event overview `admitted_count` uses the same active scope as `attendee_count` (excludes revoked/cancelled)
 - Event capacity counts exclude `cancelled` as well as `revoked` passes

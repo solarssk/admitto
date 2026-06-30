@@ -30,7 +30,7 @@ import {
   positiveIntQuery,
   requireEventId,
 } from "./admin-helpers.js";
-import { assertEventCapacityForIncoming, acquireEventCapacityLock } from "./event-capacity.js";
+import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
 import { randomUUID } from "node:crypto";
 import { decryptFromString } from "@admitto/crypto";
@@ -1291,7 +1291,7 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
 
   try {
     const updated = await db.$transaction(async (tx) => {
-      const isRestore = statusChange === "registered" && existing.status === "revoked";
+      const isRestore = isCapacityReactivation(existing.status, statusChange);
       let restoreCapacityForced: { forced: true; capacity: number; current: number } | undefined;
 
       if (isRestore) {

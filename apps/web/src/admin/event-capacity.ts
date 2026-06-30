@@ -50,6 +50,14 @@ export type CapacityOverrideMeta = {
   current: number;
 };
 
+/** True when a status PATCH moves an attendee back into the capacity-consuming pool. */
+export function isCapacityReactivation(fromStatus: string, toStatus: string | undefined): boolean {
+  return (
+    toStatus === "registered" &&
+    (CAPACITY_EXCLUDED_STATUSES as readonly string[]).includes(fromStatus)
+  );
+}
+
 /**
  * Returns a 409 Response when capacity would be exceeded, null when OK,
  * or override metadata when superadmin uses ?force=1.
