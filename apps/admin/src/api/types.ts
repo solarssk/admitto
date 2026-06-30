@@ -225,6 +225,7 @@ export interface ImportInvalidRow {
   reason: string;
 }
 
+/** One valid CSV row in the import preview sample (mirrors web ImportSampleRow). */
 export interface ImportSampleRow {
   rowIndex: number;
   name: string;

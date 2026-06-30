@@ -29,6 +29,7 @@ export type ImportInvalidRowDto = {
 /** Max valid rows returned in preview sample (data sanity check before commit). */
 const SAMPLE_LIMIT = 20;
 
+/** One valid CSV row shaped for the import preview sample table (max SAMPLE_LIMIT per response). */
 export type ImportSampleRow = {
   rowIndex: number;
   name: string;
@@ -185,6 +186,13 @@ function groupInvalidByType(invalidRows: { reason: string }[]): Record<string, n
   return counts;
 }
 
+/**
+ * Map parsed attendee rows to preview DTOs (first SAMPLE_LIMIT only).
+ * PII is intentional — returned only to the admin who uploaded the file.
+ *
+ * @param rows - Valid rows from parseAttendees (includes file rowIndex).
+ * @param attributeFields - Event custom attribute defs; keys populate custom_data on each sample row.
+ */
 function buildSampleRows(
   rows: AttendeeRow[],
   attributeFields: ImportAttributeField[],

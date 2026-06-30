@@ -21,6 +21,7 @@ interface ImportSampleTableProps {
   attributeFieldLabels: Array<{ source_field: string; label: string }>;
 }
 
+/** Preview table for the first valid import rows (optional columns shown when any row has data). */
 function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSampleTableProps) {
   const displayRows = rows.slice(0, SAMPLE_DISPLAY_LIMIT);
   if (displayRows.length === 0) return null;
