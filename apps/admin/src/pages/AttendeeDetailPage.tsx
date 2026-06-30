@@ -18,6 +18,7 @@ import {
   fetchAttendeeDetail,
   resendTicket,
   updateAttendee,
+  type EventFullMeta,
 } from "../api/client.js";
 import type { AttendeeDetailDto, EventDto, RsvpStatus, UpdateAttendeePatch } from "../api/types.js";
 import {
@@ -34,6 +35,8 @@ import { readCustomDataField, validateCustomFieldsForm } from "../attendees/cust
 import type { CustomDataFieldDef } from "../attendees/customData.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useAuth } from "../auth/AuthProvider.js";
+import { isSuperadmin } from "../auth/capabilities.js";
 import "../attendees/attendees.css";
 
 type TabId = "overview" | "activity";
@@ -41,6 +44,8 @@ type TabId = "overview" | "activity";
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
+  const { assignments } = useAuth();
+  const superadmin = isSuperadmin(assignments);
   const navigate = useNavigate();
   const { addToast } = useToast();
   const resendTitleId = useId();
@@ -69,6 +74,8 @@ export function AttendeeDetailPage() {
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [revokeBusy, setRevokeBusy] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [restoreCapacityBlocked, setRestoreCapacityBlocked] = useState<EventFullMeta | null>(null);
+  const [restoreForceCapacity, setRestoreForceCapacity] = useState(false);
 
   /** Guards async handlers when route params change before a request completes. */
   const selectionRef = useRef({ eventId, attendeeId });
@@ -303,27 +310,44 @@ export function AttendeeDetailPage() {
     }
   }
 
-  async function handlePassStatusChange(nextStatus: "registered" | "revoked") {
-    if (!eventId || !attendeeId || !detail) return;
+  async function handlePassStatusChange(
+    nextStatus: "registered" | "revoked",
+    opts?: { force?: boolean },
+  ) {
+    if (!eventId || !attendeeId || !detail || !form) return;
     const target = { eventId, attendeeId };
+    const previousDetail = detail;
     setRevokeBusy(true);
     setRevokeError(null);
     try {
-      const updated = await updateAttendee(eventId, attendeeId, {
-        status: nextStatus,
-        expected_updated_at: detail.updated_at,
-      });
+      const updated = await updateAttendee(
+        eventId,
+        attendeeId,
+        {
+          status: nextStatus,
+          expected_updated_at: detail.updated_at,
+        },
+        { force: opts?.force },
+      );
       if (!isStillSelected(target)) return;
       setDetail(updated);
-      setForm(toAttendeeForm(updated, attributeFields));
+      setForm((currentForm) => {
+        if (!currentForm) return toAttendeeForm(updated, attributeFields);
+        return mergeFormAfterReload(currentForm, previousDetail, updated, attributeFields);
+      });
       setRevokeOpen(false);
+      setRestoreCapacityBlocked(null);
+      setRestoreForceCapacity(false);
       addToast(nextStatus === "revoked" ? "Pass revoked" : "Pass restored", "success");
     } catch (err) {
       if (!isStillSelected(target)) return;
       if (err instanceof ApiError && err.status === 409) {
         if (err.code === "event_full" && err.eventFull) {
+          setRestoreCapacityBlocked(err.eventFull);
           const { current, capacity } = err.eventFull;
-          setRevokeError(`Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before restoring this pass.`);
+          setRevokeError(
+            `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before restoring this pass.`,
+          );
         } else if (err.message === "stale_write") {
           addToast("Someone else updated this attendee — page will reload", "warning");
           void handleReload();
@@ -387,7 +411,15 @@ export function AttendeeDetailPage() {
               Resend ticket
             </Button>
             {isRevoked ? (
-              <Button variant="primary" onClick={() => void handlePassStatusChange("registered")} disabled={revokeBusy}>
+              <Button
+                variant="primary"
+                onClick={() =>
+                  void handlePassStatusChange("registered", {
+                    force: restoreForceCapacity && superadmin,
+                  })
+                }
+                disabled={revokeBusy}
+              >
                 {revokeBusy ? "Restoring…" : "Restore pass"}
               </Button>
             ) : (
@@ -403,7 +435,22 @@ export function AttendeeDetailPage() {
       />
 
       {error && <p className="text-error">{error}</p>}
-      {revokeError && !revokeOpen && <p className="text-error">{revokeError}</p>}
+      {revokeError && !revokeOpen && (
+        <div className="attendee-form__warn">
+          <p className="text-error">{revokeError}</p>
+          {isRevoked && restoreCapacityBlocked && superadmin && (
+            <label className="attendee-restore-force">
+              <input
+                type="checkbox"
+                checked={restoreForceCapacity}
+                onChange={(e) => setRestoreForceCapacity(e.target.checked)}
+                disabled={revokeBusy}
+              />
+              <span>Override capacity limit (superadmin)</span>
+            </label>
+          )}
+        </div>
+      )}
       {itemsWarning && <p className="attendee-form__warn">{itemsWarning}</p>}
 
       <Tabs

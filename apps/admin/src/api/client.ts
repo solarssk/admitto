@@ -502,9 +502,11 @@ export async function updateAttendee(
   eventId: string,
   attendeeId: string,
   patch: UpdateAttendeePatch,
+  options?: { force?: boolean },
 ): Promise<AttendeeDetailDto> {
+  const forceQuery = options?.force ? "?force=1" : "";
   const res = await fetch(
-    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}`,
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}${forceQuery}`,
     jsonPatchInit(patch),
   );
   return parseJson<AttendeeDetailDto>(res);
