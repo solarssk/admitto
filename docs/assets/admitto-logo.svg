@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="168" height="36" viewBox="0 0 168 36" fill="none" role="img" aria-label="Admitto">
+  
+  <rect x="2" y="4" width="28" height="28" rx="7" fill="#066fd1"></rect>
+  <path d="M11 18.5l4 4 7-8.5" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"></path>
+  
+  <rect x="22.5" y="8" width="4" height="4" rx="1" fill="#ffffff" fill-opacity="0.55"></rect>
+  
+  <text x="40" y="24.5" font-family="Inter, -apple-system, Segoe UI, Roboto, sans-serif" font-size="20" font-weight="700" letter-spacing="-0.4" fill="#1d273b">Admitto</text>
+</svg>
