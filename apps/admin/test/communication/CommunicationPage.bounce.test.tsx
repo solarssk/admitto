@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, RouterProvider, createMemoryRouter } from "react-router-dom";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 
 const fetchEventOverview = vi.fn();
@@ -46,14 +46,18 @@ const templatePayload = {
   template_format: "html" as const,
 };
 
-function renderPage() {
+function renderPageAt(eventId: string) {
   return render(
-    <MemoryRouter initialEntries={["/admin/events/evt-1/communication"]}>
+    <MemoryRouter initialEntries={[`/admin/events/${eventId}/communication`]}>
       <Routes>
         <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
       </Routes>
     </MemoryRouter>,
   );
+}
+
+function renderPage() {
+  return renderPageAt("evt-1");
 }
 
 afterEach(() => {
@@ -133,5 +137,51 @@ describe("CommunicationPage bounce banner", () => {
       expect(screen.getByRole("tab", { name: /Compose/i })).toBeTruthy();
     });
     expect(screen.queryByText(/emails bounced/i)).toBeNull();
+  });
+
+  it("clears stale bounce banner when navigating to another event", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    let resolveSecondOverview: (value: unknown) => void;
+    const secondOverview = new Promise((resolve) => {
+      resolveSecondOverview = resolve;
+    });
+    fetchEventOverview.mockImplementation((eventId: string) => {
+      if (eventId === "evt-1") {
+        return Promise.resolve({
+          email_bounced: 3,
+          email_failed: 0,
+          email_sent: 10,
+          email_queued: 0,
+        });
+      }
+      return secondOverview;
+    });
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/communication", element: <CommunicationPage /> }],
+      { initialEntries: ["/admin/events/evt-1/communication"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/3 emails bounced/i)).toBeTruthy();
+    });
+
+    await router.navigate("/admin/events/evt-2/communication");
+
+    await waitFor(() => {
+      expect(screen.queryByText(/3 emails bounced/i)).toBeNull();
+    });
+
+    resolveSecondOverview!({
+      email_bounced: 0,
+      email_failed: 0,
+      email_sent: 1,
+      email_queued: 0,
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/emails bounced/i)).toBeNull();
+    });
   });
 });

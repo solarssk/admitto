@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBlocker, useParams } from "react-router-dom";
 import { Badge, Button, Card, Input, PageHeader, Select, StatusBadge, Tabs } from "@admitto/ui";
 import {
@@ -185,6 +185,10 @@ export function CommunicationPage() {
     };
   }, [eventId, reportApiError]);
 
+  useLayoutEffect(() => {
+    setEmailBounced(0);
+  }, [eventId]);
+
   useEffect(() => {
     if (!eventId) return;
     const ac = new AbortController();
@@ -195,6 +199,7 @@ export function CommunicationPage() {
       .catch((err) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         if (ac.signal.aborted) return;
+        setEmailBounced(0);
         if (err instanceof ApiError) {
           reportApiError(err.status);
         }
