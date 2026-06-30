@@ -268,7 +268,18 @@ export function AttendeesPage() {
     try {
       const result = await bulkResendTickets(eventId, sendTarget);
       setSendTicketsOpen(false);
-      if (result.queued === 0) {
+      if (result.failed > 0) {
+        addToast(
+          result.queued > 0
+            ? `Sent ${result.queued} ticket${result.queued === 1 ? "" : "s"}; ${result.failed} failed${
+                result.skipped > 0 ? `; ${result.skipped} skipped` : ""
+              }.`
+            : `Bulk send failed — ${result.failed} ticket${result.failed === 1 ? "" : "s"} could not be sent${
+                result.skipped > 0 ? ` (${result.skipped} skipped)` : ""
+              }.`,
+          result.queued > 0 ? "warning" : "error",
+        );
+      } else if (result.queued === 0) {
         addToast(
           result.skipped > 0
             ? `No tickets were queued (${result.skipped} skipped).`

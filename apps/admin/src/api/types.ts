@@ -270,8 +270,11 @@ export interface ImportCommitResponse {
 
 /** Bulk ticket send queue summary from POST .../attendees/bulk-resend. */
 export interface BulkResendResponse {
+  /** Deliveries accepted by the mail provider. */
   queued: number;
   skipped: number;
+  /** Delivery rows created but not accepted by the provider. */
+  failed: number;
 }
 
 /** Admin SPA DTOs for event item configuration (mirror of web API). */

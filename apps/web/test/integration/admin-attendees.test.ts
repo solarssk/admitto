@@ -7,6 +7,7 @@ import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { setMailSettings } from "@admitto/mailer-config";
 import { generateToken, getAttendeeCard, hashToken } from "@admitto/tickets";
+import * as mailDelivery from "@admitto/mail-delivery";
 import type { ExportPayload } from "@admitto/mailer";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
@@ -1077,16 +1078,22 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
 
     const res = await postBulkResend("unsent");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { queued: number; skipped: number };
+    const body = (await res.json()) as { queued: number; skipped: number; failed: number };
     expect(body.queued).toBeGreaterThan(0);
     expect(body.skipped).toBe(0);
+    expect(body.failed).toBe(0);
 
     const log = await prisma.attendeeActionLog.findFirst({
       where: { event_id: EVENT_A, action_type: "mail_bulk_resend" },
       orderBy: { created_at: "desc" },
     });
     expect(log).not.toBeNull();
-    expect(log!.metadata).toEqual({ target: "unsent", queued: body.queued, skipped: 0 });
+    expect(log!.metadata).toEqual({
+      target: "unsent",
+      queued: body.queued,
+      skipped: 0,
+      failed: 0,
+    });
   });
 
   it("returns queued 0 when all attendees already have delivered mail", async () => {
@@ -1112,15 +1119,15 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
 
     const res = await postBulkResend("unsent");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { queued: number; skipped: number };
-    expect(body).toEqual({ queued: 0, skipped: 0 });
+    const body = (await res.json()) as { queued: number; skipped: number; failed: number };
+    expect(body).toEqual({ queued: 0, skipped: 0, failed: 0 });
 
     const log = await prisma.attendeeActionLog.findFirst({
       where: { event_id: EVENT_A, action_type: "mail_bulk_resend" },
       orderBy: { created_at: "desc" },
     });
     expect(log).not.toBeNull();
-    expect(log!.metadata).toEqual({ target: "unsent", queued: 0, skipped: 0 });
+    expect(log!.metadata).toEqual({ target: "unsent", queued: 0, skipped: 0, failed: 0 });
   });
 
   it("queues tickets for all attendees when target is all", async () => {
@@ -1129,9 +1136,10 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
 
     const res = await postBulkResend("all");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { queued: number; skipped: number };
+    const body = (await res.json()) as { queued: number; skipped: number; failed: number };
     expect(body.queued).toBe(attendeeCount);
     expect(body.skipped).toBe(0);
+    expect(body.failed).toBe(0);
   });
 
   it("skips attendees with queued delivery when target is unsent", async () => {
@@ -1152,10 +1160,37 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
 
     const res = await postBulkResend("unsent");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { queued: number; skipped: number };
+    const body = (await res.json()) as { queued: number; skipped: number; failed: number };
     const attendeeCount = await prisma.attendee.count({ where: { event_id: EVENT_A } });
     expect(body.queued).toBe(attendeeCount - 1);
     expect(body.skipped).toBe(0);
+    expect(body.failed).toBe(0);
+  });
+
+  it("reports failed when deliveries exist but provider accepted none", async () => {
+    const spy = vi.spyOn(mailDelivery, "sendTicketEmails").mockResolvedValueOnce({
+      batchId: "bulk-fail-batch",
+      sent: 0,
+      skipped: [],
+      deliveries: [
+        { attendeeId: ATT_A1, deliveryId: "del-fail-1" },
+        { attendeeId: ATT_A2, deliveryId: "del-fail-2" },
+      ],
+    });
+    try {
+      const res = await postBulkResend("all");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { queued: number; skipped: number; failed: number };
+      expect(body).toEqual({ queued: 0, skipped: 0, failed: 2 });
+
+      const log = await prisma.attendeeActionLog.findFirst({
+        where: { event_id: EVENT_A, action_type: "mail_bulk_resend" },
+        orderBy: { created_at: "desc" },
+      });
+      expect(log!.metadata).toEqual({ target: "all", queued: 0, skipped: 0, failed: 2 });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("returns 403 when event is archived", async () => {
