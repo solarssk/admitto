@@ -34,6 +34,23 @@ const QUICK_LINKS = [
   { segment: "reports", icon: "chart-bar", label: "Reports", desc: "Attendance stats and export" },
 ] as const;
 
+function formatEmailDeliverySub(overview: EventOverviewDto): string {
+  const parts: string[] = [];
+  if (overview.email_bounced > 0) {
+    parts.push(`${overview.email_bounced} bounced`);
+  }
+  if (overview.email_failed > 0) {
+    parts.push(`${overview.email_failed} failed`);
+  }
+  if (parts.length > 0) {
+    return parts.join(" · ");
+  }
+  if (overview.email_queued > 0) {
+    return `${overview.email_queued} queued`;
+  }
+  return "Delivered";
+}
+
 /** Event-scoped dashboard — metrics, countdown, and shortcuts. */
 export function EventOverviewPage() {
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -139,13 +156,7 @@ export function EventOverviewPage() {
                 ? loading
                   ? "Loading delivery stats"
                   : "Delivery stats unavailable"
-                : currentOverview.email_failed
-                  ? `${currentOverview.email_failed} failed`
-                  : currentOverview.email_bounced
-                    ? `${currentOverview.email_bounced} bounced`
-                    : currentOverview.email_queued
-                      ? `${currentOverview.email_queued} queued`
-                      : "Delivered"
+                : formatEmailDeliverySub(currentOverview)
             }
           />
         </Card>

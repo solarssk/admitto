@@ -59,16 +59,6 @@ describe("resolveBranding", () => {
 });
 
 describe("setBranding", () => {
-  it("rejects non-http(s) URLs", async () => {
-    await expect(
-      setBranding(
-        { scopeType: "organization", scopeId: "org-br" },
-        { logoUrl: "ftp://bad.example/logo.png" },
-        prisma,
-      ),
-    ).rejects.toThrow("Logo URL must be a full http:// or https:// URL.");
-  });
-
   it("updates only fields provided in partial input", async () => {
     await prisma.organization.update({
       where: { id: "org-br" },
@@ -87,6 +77,27 @@ describe("setBranding", () => {
     const org = await prisma.organization.findUniqueOrThrow({ where: { id: "org-br" } });
     expect(org.logo_url).toBe("https://cdn.example.com/new-logo.png");
     expect(org.header_image_url).toBe("https://cdn.example.com/org-header.png");
+  });
+
+  it("rejects non-http(s) URLs", async () => {
+    await expect(
+      setBranding(
+        { scopeType: "organization", scopeId: "org-br" },
+        { logoUrl: "ftp://bad.example/logo.png" },
+        prisma,
+      ),
+    ).rejects.toThrow("Logo URL must be a full http:// or https:// URL.");
+  });
+
+  it("accepts local upload paths for logo_url", async () => {
+    await setBranding(
+      { scopeType: "organization", scopeId: "org-br" },
+      { logoUrl: "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png" },
+      prisma,
+    );
+
+    const org = await prisma.organization.findUniqueOrThrow({ where: { id: "org-br" } });
+    expect(org.logo_url).toBe("/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png");
   });
 });
 

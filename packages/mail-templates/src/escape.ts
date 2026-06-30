@@ -71,6 +71,22 @@ export function escapeHtmlAttribute(value: string): string {
   return escapeWithMap(value, HTML_ATTR_ESCAPE);
 }
 
+const BRANDING_UPLOAD_PATH =
+  /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}(\/events\/[a-z0-9][a-z0-9_-]{0,127})?\/[^/]+\.(png|jpe?g|webp)$/i;
+
+/** Validate http(s) URL or local branding upload path; throws InvalidHttpUrlError when invalid. */
+export function validateBrandingUrl(field: string, value: string): string {
+  if (value === "") return "";
+  const trimmed = value.trim();
+  if (trimmed.startsWith("/uploads/")) {
+    if (trimmed.includes("..") || !BRANDING_UPLOAD_PATH.test(trimmed)) {
+      throw new InvalidHttpUrlError(field, value, "branding");
+    }
+    return trimmed;
+  }
+  return validateHttpUrl(field, trimmed, "branding");
+}
+
 /** Validate http(s) URL; throws InvalidHttpUrlError when non-empty and invalid. */
 export function validateHttpUrl(
   field: string,

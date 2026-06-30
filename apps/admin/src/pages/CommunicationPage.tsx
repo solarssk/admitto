@@ -4,6 +4,7 @@ import { Badge, Button, Card, Input, PageHeader, Select, StatusBadge, Tabs } fro
 import {
   ApiError,
   fetchEventDeliveries,
+  fetchEventOverview,
   fetchEventTemplate,
   previewEventTemplate,
   saveEventTemplate,
@@ -79,6 +80,7 @@ export function CommunicationPage() {
   const [deliveryPurpose, setDeliveryPurpose] = useState<EventDeliveriesListParams["purpose"]>("all");
   const [deliveriesLoading, setDeliveriesLoading] = useState(false);
   const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
+  const [emailBounced, setEmailBounced] = useState(0);
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
@@ -182,6 +184,19 @@ export function CommunicationPage() {
       cancelled = true;
     };
   }, [eventId, reportApiError]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    const ac = new AbortController();
+    void fetchEventOverview(eventId, ac.signal)
+      .then((data) => {
+        if (!ac.signal.aborted) setEmailBounced(data.email_bounced);
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setEmailBounced(0);
+      });
+    return () => ac.abort();
+  }, [eventId]);
 
   useEffect(() => {
     if (tab !== "log") return;
@@ -346,6 +361,29 @@ export function CommunicationPage() {
         title="Communication"
         subtitle="Outlook-safe ticket email · Microsoft Graph transport"
       />
+
+      {emailBounced > 0 && (
+        <div className="bounce-banner" role="alert">
+          <i className="ti ti-alert-triangle" aria-hidden="true" />
+          <span>
+            <strong>
+              {emailBounced} email{emailBounced !== 1 ? "s" : ""} bounced
+            </strong>
+            {" — these addresses will not receive future mail. "}
+            <button
+              type="button"
+              className="bounce-banner__link"
+              onClick={() => {
+                setTab("log");
+                setDeliveryStatus("bounced");
+                setDeliveryPage(1);
+              }}
+            >
+              View delivery log
+            </button>
+          </span>
+        </div>
+      )}
 
       <Tabs
         value={tab}

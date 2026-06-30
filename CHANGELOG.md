@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Branding upload validates magic bytes and uses async filesystem I/O
 
 ### Added
+- Admin: logo upload zone in setup wizard (drop zone + HTTPS URL fallback)
+- Admin: bounce alert on Communication page with link to delivery log
+- Backend: `saveEventUpload` helper for event-scoped branding paths (`/uploads/{orgId}/events/{eventId}/…`; no HTTP endpoint yet)
+- Branding save accepts validated `/uploads/…` logo paths in addition to HTTPS URLs
 - Admin: revoke and restore pass on attendee detail (PATCH `status`, capacity-aware restore)
 - Admin: CSV import shows `event_full` capacity banner; superadmin can override with force commit
 - Admin: TOTP enrollment QR code on Account page

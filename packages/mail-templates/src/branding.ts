@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import type { BrandingUrls } from "./types.js";
-import { validateHttpUrl, InvalidHttpUrlError } from "./escape.js";
+import { validateBrandingUrl, InvalidHttpUrlError } from "./escape.js";
 
 function pickUrl(eventValue: string | null | undefined, orgValue: string | null | undefined): string {
   const event = eventValue?.trim() ?? "";
@@ -48,7 +48,7 @@ function normalizeOptionalUrl(field: string, value: string | null | undefined): 
   if (value === undefined || value === null) return null;
   const trimmed = value.trim();
   if (trimmed === "") return null;
-  validateHttpUrl(field, trimmed, "branding");
+  validateBrandingUrl(field, trimmed);
   return trimmed;
 }
 
