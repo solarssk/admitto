@@ -3,13 +3,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/solarssk/admitto/actions/workflows/ci.yml">
-    <img src="https://github.com/solarssk/admitto/actions/workflows/ci.yml/badge.svg" alt="CI">
-  </a>
-  <a href="https://github.com/solarssk/admitto/releases">
-    <img src="https://img.shields.io/github/v/tag/solarssk/admitto?sort=semver&label=release&color=066fd1" alt="release">
-  </a>
+  <a href="https://github.com/solarssk/admitto/actions/workflows/ci.yml"><img src="https://github.com/solarssk/admitto/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  &nbsp;
+  <a href="https://github.com/solarssk/admitto/releases"><img src="https://img.shields.io/github/v/tag/solarssk/admitto?sort=semver&label=release&color=066fd1" alt="release"></a>
+  &nbsp;
   <img src="https://img.shields.io/badge/node-24-brightgreen" alt="Node 24">
+  &nbsp;
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
 </p>
 
@@ -29,31 +28,33 @@
 
 ## How it works
 
-```
-Import attendees (CSV / XLSX / agency UUIDs)
-  → generate secure, single-use QR tokens
-  → deliver personalised tickets via M365 Graph, SMTP, or Power Automate
-  → staff scan on any tablet — atomic check-in, no double-entry
-  → paper fallback (PDF / XLSX) for offline operation
-  → Apple & Google Wallet passes coming in v0.5
+```mermaid
+flowchart LR
+    A("📥 Import\nCSV / XLSX / UUIDs") --> B("🎫 Generate\nsecure QR token")
+    B --> C("📧 Deliver ticket\nM365 · SMTP · Power Automate")
+    C --> D("📱 Wallet pass\nApple & Google — v0.5")
+    C --> E("✅ Check-in\ntablet scan · no double-entry")
+    E --> F("📄 Paper fallback\nPDF / XLSX export")
 ```
 
 ## Features
 
-- **One source of truth** — Admitto owns state; email, Wallet, and PDF only reflect it
-- **Secure QR tickets** — unpredictable tokens, single-use, replay-safe
-- **Flexible mail delivery** — M365 Graph, SMTP, or Power Automate; Outlook-safe HTML templates
-- **Operator-first check-in** — scanner-driven, tablet-ready, manual lookup, works offline with paper fallback
-- **Strong security defaults** — 2FA (TOTP), OIDC, Cloudflare Access (ZTNA), AES-256-GCM at-rest, audit logs
-- **Self-hosted, RBAC** — superadmin / admin / operator roles; one instance, multiple organisations
+- 🎫 **Secure QR tickets** — unpredictable tokens, single-use, replay-safe
+- 📧 **Flexible mail delivery** — M365 Graph, SMTP, or Power Automate; Outlook-safe HTML templates
+- 📱 **Wallet passes** — Apple & Google Wallet via PassCreator *(v0.5)*
+- ✅ **Operator-first check-in** — scanner-driven, tablet-ready, manual lookup, offline-safe
+- 🔒 **Strong security defaults** — 2FA (TOTP), OIDC, Cloudflare Access, AES-256-GCM at-rest, audit logs
+- 🏢 **Self-hosted, multi-org** — superadmin / admin / operator RBAC; one instance, multiple organisations
 
 ## Stack
 
-```
-Node.js 24 · Hono 4 · React 19 · TypeScript · PostgreSQL · Redis · Docker
-Mail:  M365 Graph · SMTP · Power Automate
-Auth:  local accounts · OIDC (Authentik) · Cloudflare Access (ZTNA)
-```
+| Layer | Technologies |
+|-------|-------------|
+| Runtime | Node.js 24, TypeScript, Docker |
+| Backend | Hono 4, PostgreSQL (Prisma), Redis |
+| Frontend | React 19, react-router 7, Vite, Tabler design tokens |
+| Mail | M365 Graph · SMTP · Power Automate |
+| Auth | Local accounts · OIDC (Authentik) · Cloudflare Access (ZTNA) · 2FA (TOTP) |
 
 ## Prerequisites
 
@@ -123,11 +124,11 @@ See [deploy/README.md](deploy/README.md).
 
 | Milestone | What ships |
 |-----------|------------|
-| v0.5 | Apple & Google Wallet passes (PassCreator) |
-| v0.6 | RSVP intake via external forms |
-| v0.7–0.9 | Hardening, stress testing, dry run |
-| **v1.0** | **First event go-live** |
-| v1.1+ | Self-service registration, multi-language, multi-track |
+| v0.5 | 📱 Apple & Google Wallet passes (PassCreator) |
+| v0.6 | 📋 RSVP intake via external forms |
+| v0.7–0.9 | 🔧 Hardening, stress testing, dry run |
+| **v1.0** | **🚀 First event go-live** |
+| v1.1+ | 🌍 Self-service registration, multi-language, multi-track |
 
 ## Security & data
 
