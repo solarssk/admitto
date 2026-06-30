@@ -1,12 +1,5 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { isSettingsSubnavActive } from "./settings-nav.js";
 import { StaffShell } from "./StaffShell.js";
-
-const SETTINGS_TABS = [
-  { label: "General", href: "/admin/settings" },
-  { label: "Identity providers", href: "/admin/auth/providers" },
-  { label: "Cloudflare Access", href: "/admin/auth/cf-access" },
-] as const;
 
 const BRAND_MARK = (
   <svg className="sidebar__brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -45,22 +38,8 @@ export function InstanceSettingsShell() {
     </>
   );
 
-  const subnav = (
-    <nav className="adm-subnav" aria-label="Settings sections">
-      {SETTINGS_TABS.map((tab) => (
-        <a
-          key={tab.href}
-          href={tab.href}
-          className={`adm-subnav-item${isSettingsSubnavActive(pathname, tab.href) ? " adm-subnav-item--active" : ""}`}
-        >
-          {tab.label}
-        </a>
-      ))}
-    </nav>
-  );
-
   return (
-    <StaffShell sidebar={sidebar} subnav={subnav}>
+    <StaffShell sidebar={sidebar}>
       <Outlet />
     </StaffShell>
   );

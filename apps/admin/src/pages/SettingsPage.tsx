@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { Badge, Card, PageHeader } from "@admitto/ui";
+import { useCallback, useState, type ReactNode } from "react";
+import { Card, PageHeader, Tabs } from "@admitto/ui";
 import { BrandingPanel } from "../settings/BrandingPanel.js";
 import { MailTransportPanel } from "../settings/MailTransportPanel.js";
 import { SessionsPanel } from "../settings/SessionsPanel.js";
@@ -7,10 +7,19 @@ import { EventArchivingPanel } from "../settings/EventArchivingPanel.js";
 import { SecurityPanel } from "../settings/SecurityPanel.js";
 import { AuditLogPanel } from "../settings/AuditLogPanel.js";
 
-interface SettingsPlaceholderProps {
-  title: string;
-  description: string;
-  badge: string;
+type SettingsTab = "general" | "security" | "archiving" | "identity";
+
+const SETTINGS_TABS = [
+  { id: "general", label: "General" },
+  { id: "security", label: "Security" },
+  { id: "archiving", label: "Archiving" },
+  { id: "identity", label: "Identity" },
+] as const;
+
+const INITIAL_VISITED_TABS: SettingsTab[] = ["general"];
+
+function isSettingsTab(id: string): id is SettingsTab {
+  return SETTINGS_TABS.some((tab) => tab.id === id);
 }
 
 /** Secondary action link — Button primitive has no native href support yet. */
@@ -19,14 +28,6 @@ function SettingsManageLink({ href, children }: { href: string; children: ReactN
     <a className="at-btn at-btn--secondary" href={href}>
       <span>{children}</span>
     </a>
-  );
-}
-
-function SettingsPlaceholderCard({ title, description, badge }: SettingsPlaceholderProps) {
-  return (
-    <Card title={title} actions={<Badge variant="neutral">{badge}</Badge>}>
-      <p>{description}</p>
-    </Card>
   );
 }
 
@@ -51,23 +52,72 @@ function IdentityProvidersCard() {
   );
 }
 
-/** Instance-level settings shell content (branding, mail transport, roadmap placeholders, identity links). */
-export function SettingsPage() {
+interface SettingsTabPanelProps {
+  tab: SettingsTab;
+  activeTab: SettingsTab;
+  visited: ReadonlySet<SettingsTab>;
+  label: string;
+  className?: string;
+  children: ReactNode;
+}
+
+/** Mount on first visit; stay mounted so drafts and filter state survive tab switches. */
+function SettingsTabPanel({ tab, activeTab, visited, label, className, children }: SettingsTabPanelProps) {
+  if (!visited.has(tab)) return null;
   return (
-    <>
+    <div role="tabpanel" aria-label={label} hidden={activeTab !== tab} className={className}>
+      {children}
+    </div>
+  );
+}
+
+/** Instance-level settings: grouped in-app tabs (branding, security, archiving, identity links). */
+export function SettingsPage() {
+  const [tab, setTab] = useState<SettingsTab>("general");
+  const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<SettingsTab>>(
+    () => new Set(INITIAL_VISITED_TABS),
+  );
+
+  const handleTabChange = useCallback((id: string) => {
+    if (!isSettingsTab(id)) return;
+    setTab(id);
+    setVisitedTabs((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+  }, []);
+
+  return (
+    <div className="settings-page">
       <PageHeader
         title="Settings"
-        subtitle="Instance branding, mail transport, sessions, security policies, and identity providers."
+        subtitle="Instance configuration, security policies, and identity providers."
       />
-      <div className="settings-sections">
+      <Tabs value={tab} onChange={handleTabChange} tabs={[...SETTINGS_TABS]} />
+      <SettingsTabPanel
+        tab="general"
+        activeTab={tab}
+        visited={visitedTabs}
+        label="General"
+        className="settings-sections"
+      >
         <BrandingPanel />
         <MailTransportPanel />
         <SessionsPanel />
+      </SettingsTabPanel>
+      <SettingsTabPanel
+        tab="security"
+        activeTab={tab}
+        visited={visitedTabs}
+        label="Security"
+        className="settings-sections"
+      >
         <SecurityPanel />
         <AuditLogPanel />
+      </SettingsTabPanel>
+      <SettingsTabPanel tab="archiving" activeTab={tab} visited={visitedTabs} label="Archiving">
         <EventArchivingPanel />
+      </SettingsTabPanel>
+      <SettingsTabPanel tab="identity" activeTab={tab} visited={visitedTabs} label="Identity">
         <IdentityProvidersCard />
-      </div>
-    </>
+      </SettingsTabPanel>
+    </div>
   );
 }
