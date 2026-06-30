@@ -1482,10 +1482,9 @@ export async function handleResendEventAttendeeTicket(
   const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
   if (!existing) return c.json({ error: "forbidden" }, 403);
 
-  let body: unknown = {};
+  let body: unknown;
   try {
-    const text = await c.req.text();
-    if (text.trim()) body = JSON.parse(text);
+    body = await c.req.json();
   } catch {
     return c.json({ error: "invalid json" }, 400);
   }
@@ -1584,10 +1583,9 @@ export async function handleBulkResendTickets(
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  let body: unknown = {};
+  let body: unknown;
   try {
-    const text = await c.req.text();
-    if (text.trim()) body = JSON.parse(text);
+    body = await c.req.json();
   } catch {
     return c.json({ error: "invalid json" }, 400);
   }

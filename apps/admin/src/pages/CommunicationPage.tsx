@@ -123,7 +123,6 @@ export function CommunicationPage() {
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) {
         return;
       }
-      if (err instanceof Error && err.name === "AbortError") return;
       if (err instanceof ApiError) {
         reportApiError(err.status);
         if (err.status === 401) {
@@ -216,8 +215,7 @@ export function CommunicationPage() {
       const el = subjectRef.current;
       const start = el?.selectionStart ?? subject.length;
       const end = el?.selectionEnd ?? subject.length;
-      const newVal = subject.slice(0, start) + token + subject.slice(end);
-      setSubject(newVal);
+      setSubject(insertAtCursor(subject, token, start, end));
       requestAnimationFrame(() => {
         if (el) {
           el.focus();
@@ -230,6 +228,12 @@ export function CommunicationPage() {
     const start = el?.selectionStart ?? body.length;
     const end = el?.selectionEnd ?? body.length;
     setBody(insertAtCursor(body, token, start, end));
+    requestAnimationFrame(() => {
+      if (el) {
+        el.focus();
+        el.setSelectionRange(start + token.length, start + token.length);
+      }
+    });
   };
 
   const handlePreview = async () => {

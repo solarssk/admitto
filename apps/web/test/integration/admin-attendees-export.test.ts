@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import ExcelJS from "exceljs";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -9,7 +9,7 @@ import { encryptToString } from "@admitto/crypto";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { generateToken, hashToken } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const CHECKIN_TOKEN = "admin-export-checkin-token-32chars!!";
@@ -40,6 +40,7 @@ const ATT_INJ_HEADER = "att-export-inj-header";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
+let rateLimitStore: InMemoryRateLimitStore;
 let adminId: string;
 let opId: string;
 let adminCookie = "";
@@ -320,12 +321,13 @@ function formatAdmittedAtLocal(date: Date, timeZone: string): string {
 beforeAll(async () => {
   prisma = new PrismaClient();
   await seed(prisma);
+  rateLimitStore = new InMemoryRateLimitStore();
   app = createApp({
     prisma,
     checkinToken: CHECKIN_TOKEN,
     allowCheckinBearer: true,
     baseUrl: "https://tickets.example.com",
-    rateLimitStore: createRateLimitStore(),
+    rateLimitStore,
     skipCheckinBootValidation: true,
     adminDistRoot,
   });
@@ -415,6 +417,27 @@ describe("GET /api/admin/events/:eventId/attendees — ticket_type filter", () =
 });
 
 describe("GET /api/admin/events/:eventId/attendees/export", () => {
+  beforeEach(() => {
+    rateLimitStore.reset();
+  });
+
+  it("returns 429 after 10 exports per hour per admin user", async () => {
+    for (let i = 0; i < 10; i++) {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_EX}/attendees/export?format=csv`,
+        { headers: { Cookie: adminCookie } },
+      );
+      expect(res.status).toBe(200);
+    }
+
+    const limited = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toEqual({ error: "too many requests" });
+  });
+
   it("format=xlsx → 200, Content-Type xlsx, Content-Disposition attachment", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx&ticket_type=vip`,

@@ -1,13 +1,13 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -26,6 +26,7 @@ const PASSWORD = "event-settings-pass-123";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
+let rateLimitStore: InMemoryRateLimitStore;
 let superId: string;
 let adminId: string;
 let opId: string;
@@ -132,9 +133,10 @@ async function seed(client: PrismaClient) {
 beforeAll(async () => {
   prisma = new PrismaClient();
   await seed(prisma);
+  rateLimitStore = new InMemoryRateLimitStore();
   app = createApp({
     prisma,
-    rateLimitStore: createRateLimitStore(),
+    rateLimitStore,
     skipCheckinBootValidation: true,
     adminDistRoot,
   });
@@ -354,6 +356,10 @@ describe("PATCH /api/admin/events/:eventId", () => {
 });
 
 describe("GET /api/admin/events/:eventId/export-pii", () => {
+  beforeEach(() => {
+    rateLimitStore.reset();
+  });
+
   it("returns 403 for org admin", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_SET}/export-pii`, {
       headers: { Cookie: adminCookie },
@@ -399,5 +405,20 @@ describe("GET /api/admin/events/:eventId/export-pii", () => {
     expect(meta.rowCount).toBeGreaterThan(0);
     expect(meta.totalCount).toBe(meta.rowCount);
     expect(meta.truncated).toBe(false);
+  });
+
+  it("returns 429 after 5 PII exports per hour per superadmin", async () => {
+    for (let i = 0; i < 5; i++) {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/export-pii`, {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+    }
+
+    const limited = await app.request(`/api/admin/events/${EVENT_SET}/export-pii`, {
+      headers: { Cookie: superCookie },
+    });
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toEqual({ error: "too many requests" });
   });
 });
