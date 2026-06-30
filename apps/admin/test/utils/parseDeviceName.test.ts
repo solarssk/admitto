@@ -24,6 +24,12 @@ describe("parseDeviceName", () => {
     expect(parseDeviceName("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")).toBe("Mac");
   });
 
+  it("detects iPadOS desktop-class Safari before Mac fallback", () => {
+    const ua =
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+    expect(parseDeviceName(ua, 5)).toBe("iPad · Safari");
+  });
+
   it("returns Windows PC for Windows UA", () => {
     expect(parseDeviceName("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")).toBe("Windows PC");
   });

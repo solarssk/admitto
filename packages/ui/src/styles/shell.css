@@ -467,6 +467,16 @@ body {
   .shell--sidebar-unpinned:not(.shell--sidebar-expanded) {
     grid-template-columns: var(--sidebar-w-collapsed) 1fr;
   }
+
+  .shell--sidebar-unpinned:not(.shell--sidebar-expanded) .sidebar .sidebar__event {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .shell--sidebar-unpinned.shell--sidebar-expanded .sidebar .sidebar__event {
+    visibility: visible;
+    pointer-events: auto;
+  }
 }
 
 @media (max-width: 1024px) {

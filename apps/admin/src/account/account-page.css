@@ -48,6 +48,12 @@
   background: #fff;
 }
 
+.account-totp-qr__error {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--status-error, #dc2626);
+}
+
 .account-uri-details {
   margin-top: 4px;
 }

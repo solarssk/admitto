@@ -1,5 +1,12 @@
 /** Extract a human-readable device name from navigator.userAgent. */
-export function parseDeviceName(ua: string = typeof navigator !== "undefined" ? navigator.userAgent : ""): string {
+export function parseDeviceName(
+  ua: string = typeof navigator !== "undefined" ? navigator.userAgent : "",
+  maxTouchPoints: number = typeof navigator !== "undefined" ? navigator.maxTouchPoints : 0,
+): string {
+  // iPadOS desktop-class Safari reports Macintosh without "iPad" in the UA string.
+  if (/Macintosh/i.test(ua) && maxTouchPoints > 1) {
+    return "iPad · Safari";
+  }
   if (/iPad/i.test(ua)) {
     const match = ua.match(/iPad.*OS ([\d_]+)/);
     const version = match?.[1]?.replace(/_/g, ".") ?? "";

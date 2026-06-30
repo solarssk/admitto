@@ -184,7 +184,7 @@ export function ImportPage() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && err.code === "event_full" && err.eventFull) {
         setCapacityBlocked(err.eventFull);
-        setError(err.message);
+        setError(null);
       } else {
         handleApiError(err);
       }
