@@ -141,9 +141,11 @@ export function EventOverviewPage() {
                   : "Delivery stats unavailable"
                 : currentOverview.email_failed
                   ? `${currentOverview.email_failed} failed`
-                  : currentOverview.email_queued
-                    ? `${currentOverview.email_queued} queued`
-                    : "Delivered"
+                  : currentOverview.email_bounced
+                    ? `${currentOverview.email_bounced} bounced`
+                    : currentOverview.email_queued
+                      ? `${currentOverview.email_queued} queued`
+                      : "Delivered"
             }
           />
         </Card>

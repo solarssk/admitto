@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Event capacity: pass restore (`status: registered`) respects capacity limits; manual create and import share an advisory lock to prevent concurrent over-capacity writes
+- PATCH reactivation from `cancelled` or `revoked` to `registered` enforces capacity the same way as manual create
+- Event overview `attendee_count` excludes revoked attendees (aligned with capacity enforcement)
+- Event overview `admitted_count` uses the same active scope as `attendee_count` (excludes revoked/cancelled)
+- Event capacity counts exclude `cancelled` as well as `revoked` passes
+- CSV import capacity override (`?force=1`) records `forced: true` in `attendees_imported` audit metadata
+- Import overwrite-only commits allowed when `toCreate === 0` even if event is already over capacity
+- Event overview email card surfaces `email_bounced` separately from failed deliveries
+- Branding upload validates magic bytes and uses async filesystem I/O
+
+### Added
+- Event capacity enforcement on manual attendee create and CSV import commit: returns `409 event_full` when the limit would be exceeded; instance superadmin may override with `?force=1` (audited)
+- `PATCH /api/admin/events/:eventId/attendees/:id` supports `status: registered | revoked` with `pass_revoked` / `pass_restored` attendee action log entries
+- Local branding upload API: `POST /api/admin/uploads` (PNG/JPG/WebP, max 2 MB, superadmin-only) and `GET /uploads/*` static serve; Docker Compose volume for `./uploads`
+- Event overview: separate `email_bounced` count distinct from `email_failed` (failed + rejected only)
+- Attendee status `revoked` in database (migration) — revoked passes are not admittable at check-in
+
 ## [0.4.7] - 2026-06-30
 
 ### Security

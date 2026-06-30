@@ -4,10 +4,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
-import { getCheckInStats } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import type { EventOverviewResponse } from "../../src/admin/overview-routes.js";
+import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 
@@ -57,6 +57,9 @@ async function seed(client: PrismaClient) {
   });
   await client.user.deleteMany({
     where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_OP] } },
+  });
+  await client.roleAssignment.deleteMany({
+    where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_OP] } } },
   });
   await client.event.deleteMany({ where: { id: { in: eventIds } } });
   await client.organization.deleteMany({ where: { id: { in: [ORG_OV, ORG_OV_B] } } });
@@ -124,12 +127,26 @@ async function seed(client: PrismaClient) {
 
   await client.roleAssignment.createMany({
     data: [
-      { user_id: superId, role: "superadmin", scope_type: "instance", scope_id: null },
       { user_id: adminId, role: "admin", scope_type: "organization", scope_id: ORG_OV },
       { user_id: adminBId, role: "admin", scope_type: "organization", scope_id: ORG_OV_B },
       { user_id: opId, role: "operator", scope_type: "event", scope_id: EVENT_MAIN },
     ],
   });
+
+  const existingInstanceSuper = await client.roleAssignment.findFirst({
+    where: { role: "superadmin", scope_type: "instance" },
+    select: { id: true },
+  });
+  if (existingInstanceSuper) {
+    await client.roleAssignment.update({
+      where: { id: existingInstanceSuper.id },
+      data: { user_id: superId },
+    });
+  } else {
+    await client.roleAssignment.create({
+      data: { user_id: superId, role: "superadmin", scope_type: "instance", scope_id: null },
+    });
+  }
 
   for (const userId of [superId, adminId, adminBId]) {
     await client.userMfaMethod.create({
@@ -316,20 +333,62 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     expect(body.attendee_count).toBe(0);
     expect(body.email_sent).toBe(0);
     expect(body.email_failed).toBe(0);
+    expect(body.email_bounced).toBe(0);
     expect(body.email_queued).toBe(0);
   });
 
-  it("returns admitted_count matching getCheckInStats", async () => {
+  it("returns admitted_count scoped to active attendees", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_MAIN}/overview`, {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as EventOverviewResponse;
     expect(body.event.timezone).toBe("Europe/Warsaw");
-    const stats = await getCheckInStats(EVENT_MAIN, prisma);
+    const activeWhere = {
+      event_id: EVENT_MAIN,
+      status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },
+    };
+    const activeAdmitted = await prisma.attendee.count({
+      where: { ...activeWhere, admitted_at: { not: null } },
+    });
     expect(body.admitted_count).toBe(4);
-    expect(body.admitted_count).toBe(stats.admitted_count);
-    expect(body.attendee_count).toBe(stats.total_count);
+    expect(body.admitted_count).toBe(activeAdmitted);
+    expect(body.admitted_count).toBeLessThanOrEqual(body.attendee_count);
+    expect(body.attendee_count).toBe(await prisma.attendee.count({ where: activeWhere }));
+  });
+
+  it("excludes revoked attendees from attendee_count and admitted_count", async () => {
+    const prior = await prisma.attendee.findUniqueOrThrow({
+      where: { id: ATT_MAIN[0] },
+      select: { status: true },
+    });
+    try {
+      await prisma.attendee.update({
+        where: { id: ATT_MAIN[0] },
+        data: { status: "revoked" },
+      });
+      const res = await app.request(`/api/admin/events/${EVENT_MAIN}/overview`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as EventOverviewResponse;
+      const activeWhere = {
+        event_id: EVENT_MAIN,
+        status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },
+      };
+      expect(body.attendee_count).toBe(await prisma.attendee.count({ where: activeWhere }));
+      expect(body.admitted_count).toBe(
+        await prisma.attendee.count({
+          where: { ...activeWhere, admitted_at: { not: null } },
+        }),
+      );
+      expect(body.admitted_count).toBeLessThanOrEqual(body.attendee_count);
+    } finally {
+      await prisma.attendee.update({
+        where: { id: ATT_MAIN[0] },
+        data: { status: prior.status },
+      });
+    }
   });
 
   it("aggregates email delivery stats", async () => {
@@ -339,7 +398,8 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as EventOverviewResponse;
     expect(body.email_sent).toBe(8);
-    expect(body.email_failed).toBe(2);
+    expect(body.email_failed).toBe(1);
+    expect(body.email_bounced).toBe(1);
     expect(body.email_queued).toBe(3);
   });
 
@@ -370,6 +430,7 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     const body = (await res.json()) as EventOverviewResponse;
     expect(body.email_sent).toBe(0);
     expect(body.email_failed).toBe(0);
+    expect(body.email_bounced).toBe(0);
     expect(body.email_queued).toBe(0);
   });
 });

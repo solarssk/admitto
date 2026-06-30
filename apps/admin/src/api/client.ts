@@ -193,6 +193,12 @@ export async function commitImport(
   return parseJson<ImportCommitResponse>(res);
 }
 
+/** Upload a branding image (superadmin); returns public `/uploads/...` URL. */
+export async function uploadFile(formData: FormData): Promise<{ url: string }> {
+  const res = await fetch("/api/admin/uploads", multipartPostInit(formData));
+  return parseJson<{ url: string }>(res);
+}
+
 export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {
   const url = isAdminAppPath() ? "/api/admin/me" : "/api/auth/me";
   const res = await fetch(url, { credentials: "same-origin", signal });

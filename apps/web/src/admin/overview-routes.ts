@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
-import { getCheckInStats } from "@admitto/tickets";
 import { assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import { countActiveAdmittedAttendees, countActiveAttendees } from "./event-capacity.js";
 
 export interface EventOverviewResponse {
   event: {
@@ -19,6 +19,7 @@ export interface EventOverviewResponse {
   admitted_count: number;
   email_sent: number;
   email_failed: number;
+  email_bounced: number;
   email_queued: number;
 }
 
@@ -47,8 +48,9 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
   });
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const [checkInStats, deliveryStats] = await Promise.all([
-    getCheckInStats(eventId, db),
+  const [activeAttendeeCount, activeAdmittedCount, deliveryStats] = await Promise.all([
+    countActiveAttendees(db, eventId),
+    countActiveAdmittedAttendees(db, eventId),
     db.emailDelivery.groupBy({
       by: ["status"],
       where: { event_id: eventId },
@@ -63,9 +65,9 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     (emailByStatus["accepted"] ?? 0) +
     (emailByStatus["sent"] ?? 0) +
     (emailByStatus["delivered"] ?? 0);
+  const emailBounced = emailByStatus["bounced"] ?? 0;
   const emailFailed =
     (emailByStatus["failed"] ?? 0) +
-    (emailByStatus["bounced"] ?? 0) +
     (emailByStatus["rejected"] ?? 0);
   const emailQueued = emailByStatus["queued"] ?? 0;
 
@@ -81,10 +83,11 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       archived_at: event.archived_at?.toISOString() ?? null,
       organization_id: event.organization_id,
     },
-    attendee_count: checkInStats.total_count,
-    admitted_count: checkInStats.admitted_count,
+    attendee_count: activeAttendeeCount,
+    admitted_count: activeAdmittedCount,
     email_sent: emailSent,
     email_failed: emailFailed,
+    email_bounced: emailBounced,
     email_queued: emailQueued,
   };
 

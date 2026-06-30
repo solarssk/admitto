@@ -1,4 +1,4 @@
-export type AttendeeStatus = 'registered' | 'confirmed' | 'cancelled';
+export type AttendeeStatus = 'registered' | 'confirmed' | 'cancelled' | 'revoked';
 
 export type EmailDeliveryPurpose = 'initial' | 'resend';
 
@@ -25,7 +25,7 @@ export type CheckInStatus =
   | 'UNKNOWN_EVENT'
   | 'NETWORK_ERROR';
 
-export const ATTENDEE_STATUS = ['registered', 'confirmed', 'cancelled'] as const satisfies AttendeeStatus[];
+export const ATTENDEE_STATUS = ['registered', 'confirmed', 'cancelled', 'revoked'] as const satisfies AttendeeStatus[];
 
 export const EMAIL_DELIVERY_PURPOSE = ['initial', 'resend'] as const satisfies EmailDeliveryPurpose[];
 
@@ -85,7 +85,9 @@ export type AttendeeActionType =
   | 'reports_exported'
   | 'rsvp_status_changed'
   | 'attendee_created_manual'
-  | 'attendee_erased';
+  | 'attendee_erased'
+  | 'pass_revoked'
+  | 'pass_restored';
 
 export const ATTENDEE_ACTION_TYPE = [
   'check_in',
@@ -103,6 +105,8 @@ export const ATTENDEE_ACTION_TYPE = [
   'rsvp_status_changed',
   'attendee_created_manual',
   'attendee_erased',
+  'pass_revoked',
+  'pass_restored',
 ] as const satisfies AttendeeActionType[];
 
 /** Maximum note body length (API validation — Lock #8). */

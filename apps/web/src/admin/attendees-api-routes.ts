@@ -30,6 +30,7 @@ import {
   positiveIntQuery,
   requireEventId,
 } from "./admin-helpers.js";
+import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
 import { randomUUID } from "node:crypto";
 import { decryptFromString } from "@admitto/crypto";
@@ -88,6 +89,7 @@ const patchAttendeeFieldsSchema = z
       )
       .optional(),
     rsvp_status: rsvpStatusSchema.optional(),
+    status: z.enum(["registered", "revoked"]).optional(),
   })
   .strict();
 
@@ -1220,6 +1222,7 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   const {
     expected_updated_at: expectedUpdatedAtRaw,
     rsvp_status: patchRsvp,
+    status: patchStatus,
     ...profilePatch
   } = parsed.data;
 
@@ -1243,8 +1246,10 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
 
   const profileChanges = computePatchChanges(existing, profilePatch);
   const rsvpChange = computeRsvpChange(existing.rsvp_status, patchRsvp);
+  const statusChange =
+    patchStatus !== undefined && patchStatus !== existing.status ? patchStatus : undefined;
 
-  if (!profileChanges && !rsvpChange) {
+  if (!profileChanges && !rsvpChange && !statusChange) {
     const dto = await buildAttendeeDetailDto(db, eventId, existing);
     return c.json(dto);
   }
@@ -1281,10 +1286,23 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   const updateData: Prisma.AttendeeUpdateInput = {
     ...(profileChanges?.data ?? {}),
     ...(rsvpChange?.data ?? {}),
+    ...(statusChange !== undefined ? { status: statusChange } : {}),
   };
 
   try {
     const updated = await db.$transaction(async (tx) => {
+      const isRestore = isCapacityReactivation(existing.status, statusChange);
+      let restoreCapacityForced: { forced: true; capacity: number; current: number } | undefined;
+
+      if (isRestore) {
+        await acquireEventCapacityLock(tx, eventId);
+        const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);
+        if (capacityResult instanceof Response) throw capacityResult;
+        if (capacityResult && "forced" in capacityResult) {
+          restoreCapacityForced = capacityResult;
+        }
+      }
+
       const result = await optimisticAttendeeUpdate(tx, {
         id: attendeeId,
         expectedUpdatedAt,
@@ -1318,12 +1336,32 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
         });
       }
 
+      if (statusChange !== undefined) {
+        await writeActionLog(tx, {
+          event_id: eventId,
+          attendee_id: attendeeId,
+          action_type: statusChange === "revoked" ? "pass_revoked" : "pass_restored",
+          audit: adminAuditFromContext(c),
+          metadata: {
+            previous_status: existing.status,
+            ...(restoreCapacityForced
+              ? {
+                  forced: true,
+                  capacity: restoreCapacityForced.capacity,
+                  current: restoreCapacityForced.current,
+                }
+              : {}),
+          },
+        });
+      }
+
       return result.row;
     });
 
     const dto = await buildAttendeeDetailDto(db, eventId, updated);
     return c.json(dto);
   } catch (err) {
+    if (err instanceof Response) return err;
     if (err instanceof StaleWriteError) {
       return c.json({ error: "stale_write" }, 409);
     }
@@ -1434,6 +1472,12 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
 
   try {
     const created = await db.$transaction(async (tx) => {
+      await acquireEventCapacityLock(tx, eventId);
+      const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);
+      if (capacityResult instanceof Response) throw capacityResult;
+      const capacityForced =
+        capacityResult && "forced" in capacityResult ? capacityResult : undefined;
+
       const row = await tx.attendee.create({
         data: {
           id: randomUUID(),
@@ -1455,6 +1499,15 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
         attendee_id: row.id,
         action_type: "attendee_created_manual",
         audit: adminAuditFromContext(c),
+        ...(capacityForced
+          ? {
+              metadata: {
+                forced: true,
+                capacity: capacityForced.capacity,
+                current: capacityForced.current,
+              },
+            }
+          : {}),
       });
 
       return row;
@@ -1463,6 +1516,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
     const dto = await buildAttendeeDetailDto(db, eventId, created);
     return c.json(dto, 201);
   } catch (err) {
+    if (err instanceof Response) return err;
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return c.json(
         { code: "email_taken", error: "This email is already registered for this event." },

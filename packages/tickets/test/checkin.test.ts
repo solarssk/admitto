@@ -106,6 +106,7 @@ describe("isAdmittable", () => {
   it("registered is admittable", () => expect(isAdmittable("registered")).toBe(true));
   it("confirmed is admittable", () => expect(isAdmittable("confirmed")).toBe(true));
   it("cancelled is not admittable", () => expect(isAdmittable("cancelled")).toBe(false));
+  it("revoked is not admittable", () => expect(isAdmittable("revoked")).toBe(false));
 });
 
 describe("checkInScan — Mode A (raw token)", () => {

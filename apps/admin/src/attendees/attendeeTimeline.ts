@@ -59,6 +59,7 @@ export function getTimelineIcon(actionType: string): string {
     item_state_changed: "package",
     item_returned: "package",
     pass_revoked: "ban",
+    pass_restored: "refresh",
     attendee_edited: "pencil",
     scan_preview: "scan",
   };
@@ -103,6 +104,10 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
       return "Item returned";
     case "attendee_edited":
       return "Profile updated";
+    case "pass_revoked":
+      return "Pass revoked";
+    case "pass_restored":
+      return "Pass restored";
     case "scan_preview":
       return "Scan preview";
     default:

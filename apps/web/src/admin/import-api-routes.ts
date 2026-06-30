@@ -10,6 +10,7 @@ import {
   assertEventManageAccess,
   requireEventId,
 } from "./admin-helpers.js";
+import { assertEventCapacityForIncoming, acquireEventCapacityLock } from "./event-capacity.js";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 /** Multipart framing overhead allowed on top of the file cap (body-limit middleware). */
@@ -449,9 +450,31 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
 
     const summary = await db.$transaction(
       async (tx) => {
-        await tx.$executeRaw(
-          Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`event-import:${eventId}`}))`,
+        await acquireEventCapacityLock(tx, eventId);
+
+        const dry = await commitImport(
+          eventId,
+          parsed.validRows,
+          {
+            dryRun: true,
+            overwrite: upload.overwrite,
+            ownedTransaction: true,
+            attributeFields,
+          },
+          tx,
         );
+
+        const capacityResult = await assertEventCapacityForIncoming(
+          c,
+          tx,
+          eventId,
+          dry.toCreate,
+        );
+        if (capacityResult instanceof Response) {
+          throw capacityResult;
+        }
+        const capacityForced =
+          capacityResult && "forced" in capacityResult ? capacityResult : undefined;
 
         const result = await commitImport(
           eventId,
@@ -469,6 +492,13 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
             updated: result.updated,
             skipped: result.skipped.length,
             filename: upload.filename,
+            ...(capacityForced
+              ? {
+                  forced: true,
+                  capacity: capacityForced.capacity,
+                  current: capacityForced.current,
+                }
+              : {}),
           },
         });
 
@@ -503,6 +533,7 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
 
     return c.json(body);
   } catch (err) {
+    if (err instanceof Response) return err;
     logger.error("Import commit failed", {
       importId,
       eventId,
