@@ -1,0 +1,110 @@
+name: Release
+
+# After a `release: …` commit on main bumps package.json, create the git tag, GitHub
+# Release (from committed notes), and close the matching milestone. Tag push then
+# triggers publish-container.yml (GHCR image + SBOM).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  publish-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Detect product version bump
+        id: bump
+        run: |
+          set -euo pipefail
+          SUBJECT="$(git log -1 --format=%s)"
+          if ! printf '%s' "$SUBJECT" | grep -qiE '^release:'; then
+            echo "Latest commit is not a release cut — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          NEW="$(jq -r .version package.json)"
+          if ! printf '%s' "$NEW" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Invalid package.json version: $NEW" >&2
+            exit 1
+          fi
+
+          OLD="$(git show HEAD~1:package.json 2>/dev/null | jq -r .version || echo 0.0.0)"
+          if [ "$NEW" = "$OLD" ]; then
+            echo "package.json version unchanged ($NEW) — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "Product version bump: $OLD → $NEW (commit: $SUBJECT)"
+
+      - name: Verify release artifacts
+        if: steps.bump.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.bump.outputs.version }}'
+          NOTES=".github/release-notes/v${VERSION}.md"
+          test -f "$NOTES"
+          grep -q "## \\[${VERSION}\\]" CHANGELOG.md
+          python3 scripts/sync-release-docs.py --check
+          echo "Release artifacts OK for v${VERSION}"
+
+      - name: Create GitHub Release and tag
+        if: steps.bump.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.bump.outputs.version }}'
+          TAG="v${VERSION}"
+          NOTES=".github/release-notes/v${VERSION}.md"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — skipping create."
+            exit 0
+          fi
+
+          PRERELEASE_ARGS=()
+          MAJOR="${VERSION%%.*}"
+          if [ "$MAJOR" = "0" ]; then
+            PRERELEASE_ARGS=(--prerelease)
+          fi
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file "$NOTES" \
+            "${PRERELEASE_ARGS[@]}"
+          echo "Created $TAG (container publish runs on tag push)."
+
+      - name: Close matching GitHub milestone
+        if: steps.bump.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.bump.outputs.version }}'
+          TITLE="v${VERSION}"
+          MID="$(gh api "repos/${GITHUB_REPOSITORY}/milestones" \
+            --jq ".[] | select(.title == \"${TITLE}\" and .state == \"open\") | .number" \
+            | head -n 1)"
+          if [ -z "$MID" ]; then
+            echo "No open milestone titled ${TITLE} — skipping."
+            exit 0
+          fi
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/milestones/${MID}" -f state=closed
+          echo "Closed milestone ${TITLE} (#${MID})"

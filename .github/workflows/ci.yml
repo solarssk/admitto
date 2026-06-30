@@ -85,6 +85,8 @@ jobs:
           node-version: "24.17.0"
           cache: "npm"
       - run: npm ci
+      - name: Release doc version markers match package.json
+        run: python3 scripts/sync-release-docs.py --check
       - run: npm run lint
 
   secret-scan:

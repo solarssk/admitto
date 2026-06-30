@@ -178,5 +178,10 @@ jobs:
               gh release edit "$TAG" --prerelease
             fi
           else
-            gh release create "$TAG" --title "$TAG" --generate-notes "${PRERELEASE_ARGS[@]}" "$SBOM"
+            NOTES=".github/release-notes/v${VERSION}.md"
+            if [ -f "$NOTES" ]; then
+              gh release create "$TAG" --title "$TAG" --notes-file "$NOTES" "${PRERELEASE_ARGS[@]}" "$SBOM"
+            else
+              gh release create "$TAG" --title "$TAG" --generate-notes "${PRERELEASE_ARGS[@]}" "$SBOM"
+            fi
           fi
