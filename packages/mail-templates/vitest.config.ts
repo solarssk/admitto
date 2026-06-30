@@ -7,6 +7,7 @@ export default defineConfig({
     fileParallelism: false,
     env: {
       DATABASE_URL: "postgresql://admitto:admitto@localhost:5432/admitto_mail_templates_test",
+      BASE_URL: "https://tickets.example.com",
     },
   },
 });

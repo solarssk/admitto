@@ -14,6 +14,7 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showUrlInput, setShowUrlInput] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   const isUploadedFile = value.startsWith("/uploads/");
 
@@ -35,6 +36,7 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    setDragging(false);
     const file = e.dataTransfer.files[0];
     if (file) void handleFile(file);
   };
@@ -60,9 +62,19 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
       )}
       {!value && (
         <div
-          className={`logo-upload__zone${uploading ? " logo-upload__zone--busy" : ""}`}
+          className={[
+            "logo-upload__zone",
+            uploading && "logo-upload__zone--busy",
+            dragging && "logo-upload__zone--dragging",
+          ]
+            .filter(Boolean)
+            .join(" ")}
           onDrop={(e) => void onDrop(e)}
-          onDragOver={(e) => e.preventDefault()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
           onClick={() => fileRef.current?.click()}
           role="button"
           tabIndex={0}

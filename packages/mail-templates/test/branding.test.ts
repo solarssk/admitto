@@ -99,6 +99,20 @@ describe("setBranding", () => {
     const org = await prisma.organization.findUniqueOrThrow({ where: { id: "org-br" } });
     expect(org.logo_url).toBe("/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png");
   });
+
+  it("renders uploaded logo as absolute URL when baseUrl is provided", () => {
+    const html = renderTemplate(
+      {
+        subject: "T",
+        compiledHtml: '<img src="{{logo_url}}" alt="Logo" width="120" height="40" />',
+      },
+      { logo_url: "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png" },
+      { baseUrl: "https://tickets.example.com" },
+    );
+    expect(html.html).toContain(
+      'src="https://tickets.example.com/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"',
+    );
+  });
 });
 
 describe("empty logo in custom template", () => {

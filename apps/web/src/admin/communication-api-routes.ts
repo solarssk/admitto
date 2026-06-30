@@ -41,6 +41,7 @@ import {
   positiveIntQuery,
   requireEventId,
 } from "./admin-helpers.js";
+import { resolveBaseUrl } from "../config.js";
 
 /** Max character length for `body_template` (schema); shared with wire byte cap below. */
 export const TEMPLATE_BODY_CHAR_LIMIT = 200_000;
@@ -200,6 +201,7 @@ async function renderDraftPreview(
   subject: string,
   body: string,
   format: TemplateFormat,
+  baseUrl: string,
 ) {
   const compiledHtml = await compileTemplate(body, format);
   if (format === "mjml") {
@@ -221,7 +223,7 @@ async function renderDraftPreview(
     header_image_url: branding.header_image_url,
   };
 
-  return renderTemplate({ subject, compiledHtml }, vars);
+  return renderTemplate({ subject, compiledHtml }, vars, { baseUrl });
 }
 
 /** GET /api/admin/events/:eventId/template */
@@ -336,6 +338,7 @@ export async function handlePreviewEventTemplate(c: Context, db: PrismaClient): 
       body.subject_template,
       body.body_template,
       body.template_format,
+      resolveBaseUrl(process.env),
     );
     return c.json({ subject: rendered.subject, html: rendered.html });
   } catch (err) {

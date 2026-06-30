@@ -87,6 +87,30 @@ export function validateBrandingUrl(field: string, value: string): string {
   return validateHttpUrl(field, trimmed, "branding");
 }
 
+/** Branding asset placeholders that may be stored as `/uploads/…` paths. */
+export const BRANDING_ASSET_FIELDS = new Set(["logo_url", "header_image_url"]);
+
+/**
+ * Validate and absolutize a branding asset URL for email HTML (Outlook/Gmail need absolute https).
+ * Relative `/uploads/…` paths require `baseUrl` (typically from `BASE_URL` env).
+ */
+export function resolveBrandingAssetUrlForRender(
+  field: string,
+  value: string,
+  baseUrl?: string,
+): string {
+  if (value === "") return "";
+  const validated = validateBrandingUrl(field, value);
+  if (validated.startsWith("/uploads/")) {
+    const base = baseUrl?.replace(/\/$/, "") ?? "";
+    if (!base) {
+      throw new InvalidHttpUrlError(field, value, "template");
+    }
+    return validateHttpUrl(field, `${base}${validated}`, "template");
+  }
+  return validateHttpUrl(field, validated, "template");
+}
+
 /** Validate http(s) URL; throws InvalidHttpUrlError when non-empty and invalid. */
 export function validateHttpUrl(
   field: string,

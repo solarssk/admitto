@@ -1,7 +1,20 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../src/api/client.js";
 import { LogoUploadZone } from "../../src/components/LogoUploadZone.js";
+
+vi.mock("../../src/api/client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/api/client.js")>();
+  return {
+    ...actual,
+    uploadFile: vi.fn(),
+  };
+});
+
+import { uploadFile } from "../../src/api/client.js";
+
+const mockUploadFile = vi.mocked(uploadFile);
 
 afterEach(cleanup);
 
@@ -25,5 +38,16 @@ describe("LogoUploadZone", () => {
     render(<LogoUploadZone value="/uploads/default/abc.png" onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: "Remove logo" }));
     expect(onChange).toHaveBeenCalledWith("");
+  });
+
+  it("shows upload error when uploadFile fails", async () => {
+    mockUploadFile.mockRejectedValue(new ApiError(415, "unsupported_file_type"));
+    render(<LogoUploadZone value="" onChange={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["x"], "bad.exe", { type: "application/octet-stream" });
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toContain("unsupported_file_type");
+    });
   });
 });

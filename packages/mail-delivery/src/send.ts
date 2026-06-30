@@ -178,6 +178,7 @@ export async function sendTicketEmails(
           google_wallet_url: "",
           download_page_url: "",
         },
+        { baseUrl },
       );
 
       const claimInput = {

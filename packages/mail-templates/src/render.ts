@@ -2,6 +2,8 @@ import {
   escapeHtmlAttribute,
   escapeHtmlText,
   validateHttpUrl,
+  BRANDING_ASSET_FIELDS,
+  resolveBrandingAssetUrlForRender,
 } from "./escape.js";
 import { isInsideQuotedAttribute } from "./htmlContext.js";
 import {
@@ -35,14 +37,27 @@ function assertRequiredUrlValue(name: string, value: string): void {
   }
 }
 
+export interface RenderOptions {
+  /** Public instance URL (`BASE_URL`) — required to absolutize `/uploads/…` branding assets in email HTML. */
+  baseUrl?: string;
+}
+
+function validateUrlPlaceholder(name: string, value: string, baseUrl?: string): string {
+  if (BRANDING_ASSET_FIELDS.has(name)) {
+    return resolveBrandingAssetUrlForRender(name, value, baseUrl);
+  }
+  return validateHttpUrl(name, value);
+}
+
 function formatPlaceholderValue(
   name: string,
   value: string,
   inAttribute: boolean,
+  baseUrl?: string,
 ): string {
   if (URL_PLACEHOLDERS.has(name)) {
     assertRequiredUrlValue(name, value);
-    const validated = validateHttpUrl(name, value);
+    const validated = validateUrlPlaceholder(name, value, baseUrl);
     if (validated === "") return "";
     return escapeHtmlAttribute(validated);
   }
@@ -57,43 +72,59 @@ export function stripEmptyUrlAttributes(html: string): string {
     .replace(new RegExp(`\\s(${attrs})=(?:""|'')`, "gi"), "");
 }
 
-function formatSubjectPlaceholderValue(name: string, value: string): string {
+function formatSubjectPlaceholderValue(name: string, value: string, baseUrl?: string): string {
   if (URL_PLACEHOLDERS.has(name)) {
     assertRequiredUrlValue(name, value);
-    return validateHttpUrl(name, value);
+    return validateUrlPlaceholder(name, value, baseUrl);
   }
   return value;
 }
 
-function substituteSubjectPlaceholders(template: string, vars: TemplateVars): string {
+function substituteSubjectPlaceholders(
+  template: string,
+  vars: TemplateVars,
+  baseUrl?: string,
+): string {
   return template.replace(VALID_PLACEHOLDER_RE, (_match, name: string) => {
     const value = resolveVarValue(name, vars);
-    return formatSubjectPlaceholderValue(name, value);
+    return formatSubjectPlaceholderValue(name, value, baseUrl);
   });
 }
 
-function substituteSubjectPlaceholdersDeferred(template: string, vars: TemplateVars): string {
+function substituteSubjectPlaceholdersDeferred(
+  template: string,
+  vars: TemplateVars,
+  baseUrl?: string,
+): string {
   return template.replace(VALID_PLACEHOLDER_RE, (match, name: string) => {
     if (STORAGE_DEFERRED_LINK_PLACEHOLDERS.has(name)) return match;
     const value = resolveVarValue(name, vars);
-    return formatSubjectPlaceholderValue(name, value);
+    return formatSubjectPlaceholderValue(name, value, baseUrl);
   });
 }
 
-function substituteHtmlPlaceholders(template: string, vars: TemplateVars): string {
+function substituteHtmlPlaceholders(
+  template: string,
+  vars: TemplateVars,
+  baseUrl?: string,
+): string {
   return template.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
     const inAttribute = isInsideQuotedAttribute(template, offset);
     const value = resolveVarValue(name, vars);
-    return formatPlaceholderValue(name, value, inAttribute);
+    return formatPlaceholderValue(name, value, inAttribute, baseUrl);
   });
 }
 
-function substituteHtmlPlaceholdersDeferred(template: string, vars: TemplateVars): string {
+function substituteHtmlPlaceholdersDeferred(
+  template: string,
+  vars: TemplateVars,
+  baseUrl?: string,
+): string {
   return template.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
     if (STORAGE_DEFERRED_LINK_PLACEHOLDERS.has(name)) return match;
     const inAttribute = isInsideQuotedAttribute(template, offset);
     const value = resolveVarValue(name, vars);
-    return formatPlaceholderValue(name, value, inAttribute);
+    return formatPlaceholderValue(name, value, inAttribute, baseUrl);
   });
 }
 
@@ -101,15 +132,16 @@ function applyDeferredLinkPlaceholders(
   text: string,
   links: Pick<TemplateVars, "ticket_url" | "qr_image_url">,
   mode: "html" | "subject",
+  baseUrl?: string,
 ): string {
   return text.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
     if (!STORAGE_DEFERRED_LINK_PLACEHOLDERS.has(name)) return match;
     const value = links[name as keyof Pick<TemplateVars, "ticket_url" | "qr_image_url">] ?? "";
     if (mode === "subject") {
-      return formatSubjectPlaceholderValue(name, value);
+      return formatSubjectPlaceholderValue(name, value, baseUrl);
     }
     const inAttribute = isInsideQuotedAttribute(text, offset);
-    return formatPlaceholderValue(name, value, inAttribute);
+    return formatPlaceholderValue(name, value, inAttribute, baseUrl);
   });
 }
 
@@ -121,7 +153,9 @@ export interface RenderTemplateInput {
 export function renderTemplate(
   input: RenderTemplateInput,
   vars: TemplateVars,
+  options?: RenderOptions,
 ): RenderedTemplate {
+  const baseUrl = options?.baseUrl;
   const unknown = findUnknownPlaceholders(input.subject, input.compiledHtml);
   if (unknown.length > 0) {
     throw new UnknownPlaceholdersError(unknown);
@@ -137,9 +171,9 @@ export function renderTemplate(
     throw new UnquotedAttributePlaceholderError(unquotedAttrs);
   }
 
-  const subject = substituteSubjectPlaceholders(input.subject, vars);
+  const subject = substituteSubjectPlaceholders(input.subject, vars, baseUrl);
   const html = stripEmptyUrlAttributes(
-    substituteHtmlPlaceholders(input.compiledHtml, vars),
+    substituteHtmlPlaceholders(input.compiledHtml, vars, baseUrl),
   );
 
   return { subject, html };
@@ -152,10 +186,12 @@ export function renderTemplate(
 export function renderTemplateTrusted(
   input: RenderTemplateInput,
   vars: TemplateVars,
+  options?: RenderOptions,
 ): RenderedTemplate {
-  const subject = substituteSubjectPlaceholders(input.subject, vars);
+  const baseUrl = options?.baseUrl;
+  const subject = substituteSubjectPlaceholders(input.subject, vars, baseUrl);
   const html = stripEmptyUrlAttributes(
-    substituteHtmlPlaceholders(input.compiledHtml, vars),
+    substituteHtmlPlaceholders(input.compiledHtml, vars, baseUrl),
   );
   return { subject, html };
 }
@@ -167,10 +203,12 @@ export function renderTemplateTrusted(
 export function renderTemplateTrustedForStorage(
   input: RenderTemplateInput,
   vars: TemplateVars,
+  options?: RenderOptions,
 ): RenderedTemplate {
-  const subject = substituteSubjectPlaceholdersDeferred(input.subject, vars);
+  const baseUrl = options?.baseUrl;
+  const subject = substituteSubjectPlaceholdersDeferred(input.subject, vars, baseUrl);
   const html = stripEmptyUrlAttributes(
-    substituteHtmlPlaceholdersDeferred(input.compiledHtml, vars),
+    substituteHtmlPlaceholdersDeferred(input.compiledHtml, vars, baseUrl),
   );
   return { subject, html };
 }
@@ -179,11 +217,13 @@ export function renderTemplateTrustedForStorage(
 export function materializeStoredDeliveryMessage(
   frozen: RenderedTemplate,
   links: Pick<TemplateVars, "ticket_url" | "qr_image_url">,
+  options?: RenderOptions,
 ): RenderedTemplate {
+  const baseUrl = options?.baseUrl;
   return {
-    subject: applyDeferredLinkPlaceholders(frozen.subject, links, "subject"),
+    subject: applyDeferredLinkPlaceholders(frozen.subject, links, "subject", baseUrl),
     html: stripEmptyUrlAttributes(
-      applyDeferredLinkPlaceholders(frozen.html, links, "html"),
+      applyDeferredLinkPlaceholders(frozen.html, links, "html", baseUrl),
     ),
   };
 }

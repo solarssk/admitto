@@ -8,6 +8,8 @@ import type { RenderedTemplate, TemplateVars } from "./types.js";
 export interface PreviewTemplateOptions {
   /** IANA timezone for calendar `event_date` (e.g. Europe/Warsaw). Falls back to ADMITTO_DEFAULT_EVENT_TIMEZONE or UTC. */
   timeZone?: string;
+  /** Public instance URL — absolutizes `/uploads/…` branding assets in rendered HTML. Falls back to `BASE_URL` env. */
+  baseUrl?: string;
 }
 
 export const DEFAULT_SAMPLE_VARS: TemplateVars = {
@@ -26,6 +28,12 @@ export const DEFAULT_SAMPLE_VARS: TemplateVars = {
   google_wallet_url: "",
   download_page_url: "",
 };
+
+function resolvePreviewBaseUrl(options?: PreviewTemplateOptions): string {
+  const raw = options?.baseUrl?.trim() || process.env.BASE_URL?.trim();
+  if (raw) return raw.replace(/\/$/, "");
+  return "http://localhost:3000";
+}
 
 /**
  * Renders the resolved template with sample data — no mail send.
@@ -62,5 +70,6 @@ export async function previewTemplate(
       compiledHtml: resolved.compiledHtmlTemplate,
     },
     vars,
+    { baseUrl: resolvePreviewBaseUrl(options) },
   );
 }

@@ -134,9 +134,6 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
                 }}
                 onDirty={() => onDirtyChange?.(true)}
               />
-              <p className="setup-wizard__hint">
-                Recommended: transparent PNG or WebP, max 160×48px. Shown on the ticket page.
-              </p>
               {logoError && (
                 <p className="setup-wizard__hint" style={{ color: "var(--status-error)" }} role="alert">
                   {logoError}

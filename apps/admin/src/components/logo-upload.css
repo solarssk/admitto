@@ -31,6 +31,11 @@
   pointer-events: none;
 }
 
+.logo-upload__zone--dragging {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
 .logo-upload__zone i {
   font-size: 1.5rem;
   color: var(--text-muted);
