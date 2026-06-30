@@ -13,6 +13,7 @@ export interface StaffShellProps {
 
 const SIDEBAR_PIN_KEY = "admitto_sidebar_pinned";
 
+/** Read sidebar pin preference from localStorage (defaults to pinned). */
 function readPinned(): boolean {
   try {
     return localStorage.getItem(SIDEBAR_PIN_KEY) !== "false";

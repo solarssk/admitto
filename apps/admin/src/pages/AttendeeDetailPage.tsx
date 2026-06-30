@@ -41,6 +41,7 @@ import "../attendees/attendees.css";
 
 type TabId = "overview" | "activity";
 
+/** Event attendee detail: profile edit, pass revoke/restore, resend, and activity log. */
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -313,6 +314,7 @@ export function AttendeeDetailPage() {
     }
   }
 
+  /** Revoke or restore wallet pass; preserves unsaved profile edits in the form. */
   async function handlePassStatusChange(
     nextStatus: "registered" | "revoked",
     opts?: { force?: boolean },

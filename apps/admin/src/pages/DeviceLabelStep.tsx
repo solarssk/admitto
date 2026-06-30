@@ -8,6 +8,7 @@ type DeviceLabelStepProps = {
   onSkip: () => void;
 };
 
+/** Post-login step: optional device label for operator sessions (prefilled from UA). */
 export function DeviceLabelStep({ onSaved, onSkip }: DeviceLabelStepProps) {
   const detectedLabel = parseDeviceName();
   const [label, setLabel] = useState(() => detectedLabel);

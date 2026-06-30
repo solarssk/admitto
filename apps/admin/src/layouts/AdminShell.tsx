@@ -10,6 +10,7 @@ type NavItem = {
   segment: string;
   icon: string;
   label: string;
+  /** Planned release label for disabled lifecycle segments (`"future"` → generic Soon badge). */
   soon?: string;
 };
 
@@ -55,6 +56,7 @@ const BRAND_MARK = (
   </svg>
 );
 
+/** Administration links rendered in the sidebar foot for admin+ users. */
 function administrationFoot(assignments: RoleAssignment[]) {
   if (!isAdmin(assignments)) return null;
   return (

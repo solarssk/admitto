@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 
 export type TotpQrCodeProps = {
+  /** `otpauth://` URI returned by the TOTP enrollment API. */
   uri: string;
 };
 

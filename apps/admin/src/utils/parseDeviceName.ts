@@ -1,6 +1,7 @@
 /** Extract a human-readable device name from navigator.userAgent. */
 export function parseDeviceName(
   ua: string = typeof navigator !== "undefined" ? navigator.userAgent : "",
+  /** Touch point count from `navigator.maxTouchPoints` (detects iPadOS desktop-class Safari). */
   maxTouchPoints: number = typeof navigator !== "undefined" ? navigator.maxTouchPoints : 0,
 ): string {
   // iPadOS desktop-class Safari reports Macintosh without "iPad" in the UA string.

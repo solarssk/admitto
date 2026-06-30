@@ -61,12 +61,17 @@ import type {
 } from "./types.js";
 
 export type EventFullMeta = {
+  /** Event capacity limit when a 409 `event_full` response includes structured metadata. */
   capacity: number;
+  /** Active attendee count at the time of the capacity check. */
   current: number;
+  /** New rows an import would add (import commit only). */
   incoming?: number;
+  /** Projected total after import (import commit only). */
   projected?: number;
 };
 
+/** Thrown when an admin API request fails; may include structured `event_full` metadata on 409. */
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -99,6 +104,7 @@ function messageFromApiErrorBody(body: ApiErrorBody): string | undefined {
   return undefined;
 }
 
+/** Parse structured capacity fields from a 409 `event_full` API error body. */
 function eventFullFromBody(body: ApiErrorBody): EventFullMeta | undefined {
   if (body.code !== "event_full" || body.capacity == null || body.current == null) return undefined;
   return {
@@ -216,6 +222,7 @@ export async function commitImport(
   eventId: string,
   file: File,
   overwrite: boolean,
+  /** When true, appends `?force=1` for superadmin capacity override (audited server-side). */
   options?: { force?: boolean },
 ): Promise<ImportCommitResponse> {
   const forceQuery = options?.force ? "?force=1" : "";
@@ -498,6 +505,7 @@ export async function createAttendee(
   return parseJson<AttendeeDetailDto>(res);
 }
 
+/** Patch attendee profile, RSVP, or pass status; optional `force` bypasses capacity on restore. */
 export async function updateAttendee(
   eventId: string,
   attendeeId: string,
