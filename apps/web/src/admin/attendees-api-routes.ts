@@ -1543,6 +1543,25 @@ export async function handleResendEventAttendeeTicket(
   return c.json(toDeliveryDto(latest));
 }
 
+/** Best-effort bulk send audit — must not fail the HTTP response after mail is queued. */
+async function auditBulkTicketSend(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  metadata: { target: "unsent" | "all"; queued: number; skipped: number },
+): Promise<void> {
+  try {
+    await writeBulkActionLog(db, {
+      event_id: eventId,
+      action_type: "mail_bulk_resend",
+      audit: adminAuditFromContext(c),
+      metadata,
+    });
+  } catch (err) {
+    console.error("bulk resend audit log failed:", err);
+  }
+}
+
 /**
  * Queue ticket emails for many attendees in one batch.
  *
@@ -1600,6 +1619,7 @@ export async function handleBulkResendTickets(
   }
 
   if (attendees.length === 0) {
+    await auditBulkTicketSend(db, c, eventId, { target, queued: 0, skipped: 0 });
     return c.json({ queued: 0, skipped: 0 } satisfies BulkResendDto);
   }
 
@@ -1620,16 +1640,7 @@ export async function handleBulkResendTickets(
   const queued = sendResult.deliveries.length;
   const skipped = sendResult.skipped.length;
 
-  try {
-    await writeBulkActionLog(db as Prisma.TransactionClient, {
-      event_id: eventId,
-      action_type: "mail_bulk_resend",
-      audit: adminAuditFromContext(c),
-      metadata: { target, queued, skipped },
-    });
-  } catch (err) {
-    console.error("bulk resend audit log failed:", err);
-  }
+  await auditBulkTicketSend(db, c, eventId, { target, queued, skipped });
 
   return c.json({ queued, skipped } satisfies BulkResendDto);
 }

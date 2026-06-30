@@ -1114,6 +1114,13 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { queued: number; skipped: number };
     expect(body).toEqual({ queued: 0, skipped: 0 });
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_A, action_type: "mail_bulk_resend" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    expect(log!.metadata).toEqual({ target: "unsent", queued: 0, skipped: 0 });
   });
 
   it("queues tickets for all attendees when target is all", async () => {
@@ -1124,6 +1131,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { queued: number; skipped: number };
     expect(body.queued).toBe(attendeeCount);
+    expect(body.skipped).toBe(0);
   });
 
   it("skips attendees with queued delivery when target is unsent", async () => {
@@ -1147,6 +1155,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
     const body = (await res.json()) as { queued: number; skipped: number };
     const attendeeCount = await prisma.attendee.count({ where: { event_id: EVENT_A } });
     expect(body.queued).toBe(attendeeCount - 1);
+    expect(body.skipped).toBe(0);
   });
 
   it("returns 403 when event is archived", async () => {
