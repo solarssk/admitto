@@ -64,6 +64,7 @@ export function EventOverviewPage() {
         .then((data) => {
           if (ac.signal.aborted) return;
           setOverview(data);
+          setError(null);
         })
         .catch((err) => {
           if (err instanceof DOMException && err.name === "AbortError") return;

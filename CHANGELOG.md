@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Event settings PATCH: `audit_failed` 500 uses `{ error }` shape
-- Communication template editor: cursor restored after inserting placeholder into body
+- Communication template editor: cursor restored after inserting placeholders into subject/body fields
 - Event overview: auto-refresh stats every 30s during event
 - CSV import: ignore `source_field` slugs that collide with standard import columns (`email`, `company`, etc.); event item contents API and admin form reject those reserved slugs on save
 - CSV import: validate merged `custom_data` at commit (including overwrite with existing attributes); return 400 when event attribute config has conflicting select options

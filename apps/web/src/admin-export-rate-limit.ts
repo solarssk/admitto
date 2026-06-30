@@ -14,6 +14,8 @@ const PII_EXPORT_MAX_REQUESTS = 5;
  * Rate-limit admin data export endpoints after `staffAdminGate`.
  * Keyed by userId + `routePath` (Hono route pattern) so limits apply globally
  * across events, not per `:eventId` instance.
+ *
+ * @returns Hono middleware that returns 429 when the per-user per-route limit is exceeded.
  */
 export function createAdminExportRateLimit(
   store: RateLimitStore,
@@ -29,7 +31,11 @@ export function createAdminExportRateLimit(
   };
 }
 
-/** Stricter export rate limit for superadmin PII CSV download. */
+/**
+ * Stricter export rate limit for superadmin PII CSV download (5 req/h per user per route).
+ *
+ * @returns Hono middleware that returns 429 when the PII export limit is exceeded.
+ */
 export function createAdminPiiExportRateLimit(store: RateLimitStore) {
   return createAdminExportRateLimit(store, PII_EXPORT_MAX_REQUESTS);
 }
