@@ -64,15 +64,26 @@ def write_release_note(version: str, date: str, body: str) -> Path:
     return path
 
 
+def write_release_title(version: str, tagline: str) -> Path:
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUT_DIR / f"v{version}.title"
+    path.write_text(f"{tagline.strip()}\n")
+    return path
+
+
 def main() -> int:
-    if len(sys.argv) not in (1, 2):
-        print(f"Usage: {sys.argv[0]} [0.x.y]", file=sys.stderr)
+    if len(sys.argv) not in (1, 2, 3):
+        print(
+            f"Usage: {sys.argv[0]} [0.x.y] [\"tagline for GitHub Release title\"]",
+            file=sys.stderr,
+        )
         return 1
 
     sections = parse_sections(CHANGELOG.read_text())
-    targets = [sys.argv[1].lstrip("v")] if len(sys.argv) == 2 else sorted(
+    targets = [sys.argv[1].lstrip("v")] if len(sys.argv) >= 2 else sorted(
         sections.keys(), key=lambda v: tuple(int(x) for x in v.split("."))
     )
+    tagline = sys.argv[2].strip() if len(sys.argv) == 3 else ""
 
     missing = [v for v in targets if v not in sections]
     if missing:
@@ -83,6 +94,9 @@ def main() -> int:
         date, body = sections[version]
         path = write_release_note(version, date, body)
         print(path)
+        if tagline:
+            title_path = write_release_title(version, tagline)
+            print(title_path)
 
     return 0
 
