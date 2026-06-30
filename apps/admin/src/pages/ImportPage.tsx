@@ -25,10 +25,10 @@ function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSam
   const displayRows = rows.slice(0, SAMPLE_DISPLAY_LIMIT);
   if (displayRows.length === 0) return null;
 
-  const hasTicketType = displayRows.some((r) => r.ticket_type);
-  const hasCompany = displayRows.some((r) => r.company);
-  const hasDepartment = displayRows.some((r) => r.department);
-  const hasExtUuid = displayRows.some((r) => r.external_uuid);
+  const hasTicketType = rows.some((r) => r.ticket_type);
+  const hasCompany = rows.some((r) => r.company);
+  const hasDepartment = rows.some((r) => r.department);
+  const hasExtUuid = rows.some((r) => r.external_uuid);
   const hasCustom = attributeFieldLabels.length > 0;
 
   return (

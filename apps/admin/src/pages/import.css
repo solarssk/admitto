@@ -177,8 +177,24 @@
 }
 
 .import-sample-table {
+  table-layout: fixed;
   min-width: 480px;
   width: 100%;
+}
+
+.import-sample-table th:nth-child(1),
+.import-sample-table td:nth-child(1) {
+  width: 2.5rem;
+}
+
+.import-sample-table th:nth-child(2),
+.import-sample-table td:nth-child(2) {
+  width: 22%;
+}
+
+.import-sample-table th:nth-child(3),
+.import-sample-table td:nth-child(3) {
+  width: 28%;
 }
 
 .import-sample-table th,

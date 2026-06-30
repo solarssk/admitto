@@ -543,7 +543,7 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
       company: "",
       department: "",
       external_uuid: "",
-      custom_data: {},
+      custom_data: { sock_size: "", cap_size: "" },
     });
     expect(body.importId).toMatch(/^[0-9a-f-]{36}$/i);
     expect(body.summary).toMatchObject({ toCreate: 1, toUpdate: 0, toSkip: 0 });
