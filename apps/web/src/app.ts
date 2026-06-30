@@ -1,4 +1,6 @@
 import { Hono, type Context } from "hono";
+import { readFileSync } from "node:fs";
+import { join, extname } from "node:path";
 import { bodyLimit } from "hono/body-limit";
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
@@ -133,6 +135,8 @@ import {
 } from "./admin/event-items-api-routes.js";
 import { handleGetReports, handleExportReports } from "./admin/reports-routes.js";
 import { handleGetEventOverview } from "./admin/overview-routes.js";
+import { handlePostUpload } from "./admin/uploads-api-routes.js";
+import { resolveUploadDir } from "./admin/branding-upload.js";
 import {
   handleGetEventTemplate,
   handlePutEventTemplate,
@@ -347,6 +351,10 @@ export function createApp(options: CreateAppOptions = {}) {
   const mailSettingsBodyLimit = bodyLimit({
     maxSize: MAX_MAIL_SETTINGS_BODY_BYTES,
     onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const uploadBodyLimit = bodyLimit({
+    maxSize: Math.ceil(2.1 * 1024 * 1024),
+    onError: (c) => c.json({ error: "file too large" }, 413),
   });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
   const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot });
@@ -615,6 +623,9 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePatchSystemSettings(c, db),
   );
   app.post("/api/admin/client-errors", jsonPostCsrf, staffAdminGate, (c) => handlePostClientError(c));
+  app.post("/api/admin/uploads", jsonPostCsrf, staffAdminGate, uploadBodyLimit, (c) =>
+    handlePostUpload(c, db),
+  );
 
   app.get("/api/account", requireSession, (c) => handleGetAccount(c, db));
   app.patch("/api/account/profile", jsonPostCsrf, requireSession, (c) =>
@@ -731,6 +742,32 @@ export function createApp(options: CreateAppOptions = {}) {
   );
 
   app.get("/assets/*", staffSpa.serveAsset);
+  app.get("/uploads/*", (c) => {
+    const uploadDir = resolveUploadDir();
+    const relPath = c.req.path.slice("/uploads/".length);
+    if (relPath.includes("..") || relPath.startsWith("/")) {
+      return c.notFound();
+    }
+    const filePath = join(uploadDir, relPath);
+    let buf: Buffer;
+    try {
+      buf = readFileSync(filePath);
+    } catch {
+      return c.notFound();
+    }
+    const ext = extname(filePath).toLowerCase();
+    const contentTypeMap: Record<string, string> = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".webp": "image/webp",
+    };
+    const ct = contentTypeMap[ext] ?? "application/octet-stream";
+    c.header("Content-Type", ct);
+    c.header("Cache-Control", "public, max-age=86400");
+    c.header("X-Content-Type-Options", "nosniff");
+    return c.body(new Uint8Array(buf));
+  });
   app.get("/vendor/tabler-icons/*", serveTablerIcons);
   app.get("/admin", staffAdminGate, staffSpa.serveSpaIndex);
   app.get("/admin/*", staffAdminGate, staffSpa.serveSpaIndex);

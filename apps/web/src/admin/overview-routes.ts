@@ -19,6 +19,7 @@ export interface EventOverviewResponse {
   admitted_count: number;
   email_sent: number;
   email_failed: number;
+  email_bounced: number;
   email_queued: number;
 }
 
@@ -63,9 +64,9 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     (emailByStatus["accepted"] ?? 0) +
     (emailByStatus["sent"] ?? 0) +
     (emailByStatus["delivered"] ?? 0);
+  const emailBounced = emailByStatus["bounced"] ?? 0;
   const emailFailed =
     (emailByStatus["failed"] ?? 0) +
-    (emailByStatus["bounced"] ?? 0) +
     (emailByStatus["rejected"] ?? 0);
   const emailQueued = emailByStatus["queued"] ?? 0;
 
@@ -85,6 +86,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     admitted_count: checkInStats.admitted_count,
     email_sent: emailSent,
     email_failed: emailFailed,
+    email_bounced: emailBounced,
     email_queued: emailQueued,
   };
 

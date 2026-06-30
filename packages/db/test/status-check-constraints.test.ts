@@ -90,6 +90,12 @@ describe("status DB check constraints", () => {
     );
   });
 
+  it("allows Attendee.status revoked", async () => {
+    await prisma!.$executeRaw`UPDATE "Attendee" SET "status" = 'revoked' WHERE "id" = ${attendeeId}`;
+    const row = await prisma!.attendee.findUnique({ where: { id: attendeeId }, select: { status: true } });
+    expect(row?.status).toBe("revoked");
+  });
+
   it("rejects non-persisted CheckIn.status values", async () => {
     await prisma!.checkIn.create({
       data: {

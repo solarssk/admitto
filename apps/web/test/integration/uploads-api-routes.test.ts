@@ -1,0 +1,132 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { PrismaClient } from "@prisma/client";
+import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
+import { createApp } from "../../src/app.js";
+import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
+
+const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
+const sameOrigin = { Origin: "http://localhost" };
+
+const EMAIL_SUPER = "uploads-super@example.com";
+const EMAIL_ADMIN = "uploads-admin@example.com";
+const PASSWORD = "uploads-pass-123";
+
+let prisma: PrismaClient;
+let app: ReturnType<typeof createApp>;
+let uploadDir: string;
+let superCookie = "";
+let adminCookie = "";
+
+beforeAll(async () => {
+  uploadDir = mkdtempSync(join(tmpdir(), "admitto-uploads-"));
+  process.env.UPLOAD_DIR = uploadDir;
+
+  prisma = new PrismaClient();
+  const rateLimitStore = new InMemoryRateLimitStore();
+  app = createApp({ prisma, rateLimitStore, adminDistRoot });
+
+  const password_hash = await hashPassword(PASSWORD);
+  await prisma.session.deleteMany({
+    where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
+  });
+  await prisma.userMfaMethod.deleteMany({
+    where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
+  });
+  await prisma.roleAssignment.deleteMany({
+    where: { role: "superadmin", scope_type: "instance" },
+  });
+  await prisma.roleAssignment.deleteMany({
+    where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
+  });
+  await prisma.user.deleteMany({ where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } });
+
+  const superUser = await prisma.user.create({ data: { email: EMAIL_SUPER, password_hash } });
+  const adminUser = await prisma.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
+  await prisma.roleAssignment.create({
+    data: { user_id: superUser.id, role: "superadmin", scope_type: "instance", scope_id: null },
+  });
+  await prisma.roleAssignment.create({
+    data: { user_id: adminUser.id, role: "admin", scope_type: "organization", scope_id: "org-uploads" },
+  });
+  await prisma.organization.upsert({
+    where: { id: "org-uploads" },
+    create: { id: "org-uploads", name: "Uploads Org", slug: "uploads-org" },
+    update: {},
+  });
+  for (const userId of [superUser.id, adminUser.id]) {
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
+    });
+  }
+
+  const superSession = await createSession(prisma, {
+    userId: superUser.id,
+    stage: SESSION_STAGE.FULL,
+  });
+  const adminSession = await createSession(prisma, {
+    userId: adminUser.id,
+    stage: SESSION_STAGE.FULL,
+  });
+  superCookie = `admitto_session=${superSession.rawToken}`;
+  adminCookie = `admitto_session=${adminSession.rawToken}`;
+});
+
+afterAll(async () => {
+  await prisma.$disconnect();
+  rmSync(uploadDir, { recursive: true, force: true });
+  delete process.env.UPLOAD_DIR;
+});
+
+function uploadForm(file: Blob, filename: string): FormData {
+  const fd = new FormData();
+  fd.append("file", file, filename);
+  return fd;
+}
+
+describe("POST /api/admin/uploads", () => {
+  it("accepts PNG and returns public URL", async () => {
+    const png = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+    ]);
+    const res = await app.request("/api/admin/uploads", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { url: string };
+    expect(body.url).toMatch(/^\/uploads\/default\/[0-9a-f-]+\.png$/);
+
+    const getRes = await app.request(body.url);
+    expect(getRes.status).toBe(200);
+    expect(getRes.headers.get("content-type")).toBe("image/png");
+  });
+
+  it("rejects unsupported file type with 415", async () => {
+    const res = await app.request("/api/admin/uploads", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob(["MZ"], { type: "application/octet-stream" }), "bad.exe"),
+    });
+    expect(res.status).toBe(415);
+  });
+
+  it("returns 403 for non-superadmin", async () => {
+    const res = await app.request("/api/admin/uploads", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+      body: uploadForm(new Blob([new Uint8Array(8)], { type: "image/png" }), "logo.png"),
+    });
+    expect(res.status).toBe(403);
+  });
+});

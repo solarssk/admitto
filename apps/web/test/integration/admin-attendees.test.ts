@@ -1264,6 +1264,20 @@ describe("Attendees v2 — RSVP and manual create", () => {
     return row.updated_at.toISOString();
   }
 
+  async function resetEventACustomFields(): Promise<void> {
+    await prisma.eventItem.deleteMany({ where: { event_id: EVENT_A, key: "merch" } });
+    await prisma.eventItem.updateMany({
+      where: { event_id: EVENT_A, key: "giftbag" },
+      data: { config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] } },
+    });
+  }
+
+  async function countActiveEventAAttendees(): Promise<number> {
+    return prisma.attendee.count({
+      where: { event_id: EVENT_A, status: { not: "revoked" } },
+    });
+  }
+
   it("list rows include rsvp_status and admitted_at", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       headers: { Cookie: adminCookie },
@@ -1542,5 +1556,135 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(text).not.toContain("token_enc");
     expect(text).not.toContain("token_hash");
     expect(text).not.toContain("ticket_ref");
+  });
+
+  it("POST create returns 409 event_full when at capacity", async () => {
+    await resetEventACustomFields();
+    const current = await countActiveEventAAttendees();
+    await prisma.event.update({
+      where: { id: EVENT_A },
+      data: { capacity: current },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "full@example.com", name: "Full Event" }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; capacity: number; current: number };
+    expect(body.code).toBe("event_full");
+    expect(body.capacity).toBe(current);
+    expect(body.current).toBe(current);
+    await prisma.event.update({ where: { id: EVENT_A }, data: { capacity: null } });
+  });
+
+  it("POST create allows superadmin force when at capacity", async () => {
+    await resetEventACustomFields();
+    const password_hash = await hashPassword(PASSWORD);
+    const superEmail = "admin-attendees-super@example.com";
+    await prisma.session.deleteMany({ where: { user: { email: superEmail } } });
+    await prisma.userMfaMethod.deleteMany({ where: { user: { email: superEmail } } });
+    await prisma.roleAssignment.deleteMany({ where: { user: { email: superEmail } } });
+    await prisma.user.deleteMany({ where: { email: superEmail } });
+    const priorSuper = await prisma.roleAssignment.findFirst({
+      where: { role: "superadmin", scope_type: "instance" },
+      select: { id: true, user_id: true },
+    });
+    const superUser = await prisma.user.create({ data: { email: superEmail, password_hash } });
+    if (priorSuper) {
+      await prisma.roleAssignment.update({
+        where: { id: priorSuper.id },
+        data: { user_id: superUser.id },
+      });
+    } else {
+      await prisma.roleAssignment.create({
+        data: { user_id: superUser.id, role: "superadmin", scope_type: "instance", scope_id: null },
+      });
+    }
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: superUser.id,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
+    });
+    const superSession = await createSession(prisma, {
+      userId: superUser.id,
+      stage: SESSION_STAGE.FULL,
+    });
+    const superCookie = `admitto_session=${superSession.rawToken}`;
+
+    const current = await countActiveEventAAttendees();
+    await prisma.event.update({ where: { id: EVENT_A }, data: { capacity: current } });
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?force=1`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "forced@example.com", name: "Forced Guest" }),
+    });
+    expect(res.status).toBe(201);
+    const created = (await res.json()) as { id: string };
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: created.id, action_type: "attendee_created_manual" },
+    });
+    expect(log?.metadata).toMatchObject({ forced: true, capacity: current, current });
+
+    await prisma.attendee.delete({ where: { id: created.id } });
+    await prisma.event.update({ where: { id: EVENT_A }, data: { capacity: null } });
+    if (priorSuper) {
+      await prisma.roleAssignment.update({
+        where: { id: priorSuper.id },
+        data: { user_id: priorSuper.user_id },
+      });
+    } else {
+      await prisma.roleAssignment.deleteMany({
+        where: { user_id: superUser.id, role: "superadmin", scope_type: "instance" },
+      });
+    }
+    await prisma.session.deleteMany({ where: { user_id: superUser.id } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: superUser.id } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: superUser.id } });
+    await prisma.user.delete({ where: { id: superUser.id } });
+  });
+
+  it("PATCH status revoked writes pass_revoked and pass_restored audit logs", async () => {
+    const getRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(getRes.status).toBe(200);
+    const detail = (await getRes.json()) as { updated_at: string };
+
+    const patchRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "revoked", expected_updated_at: detail.updated_at }),
+    });
+    expect(patchRes.status).toBe(200);
+    const patched = (await patchRes.json()) as { status: string; updated_at: string };
+    expect(patched.status).toBe("revoked");
+
+    const revokeLog = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_A2, action_type: "pass_revoked" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(revokeLog).not.toBeNull();
+    expect(revokeLog?.metadata).toMatchObject({ previous_status: "registered" });
+
+    const restoreRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "registered",
+        expected_updated_at: patched.updated_at,
+      }),
+    });
+    expect(restoreRes.status).toBe(200);
+
+    const restoredLog = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_A2, action_type: "pass_restored" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(restoredLog).not.toBeNull();
+    await prisma.attendee.update({ where: { id: ATT_A2 }, data: { status: "registered" } });
   });
 });

@@ -58,6 +58,9 @@ async function seed(client: PrismaClient) {
   await client.user.deleteMany({
     where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_OP] } },
   });
+  await client.roleAssignment.deleteMany({
+    where: { role: "superadmin", scope_type: "instance" },
+  });
   await client.event.deleteMany({ where: { id: { in: eventIds } } });
   await client.organization.deleteMany({ where: { id: { in: [ORG_OV, ORG_OV_B] } } });
 
@@ -316,6 +319,7 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     expect(body.attendee_count).toBe(0);
     expect(body.email_sent).toBe(0);
     expect(body.email_failed).toBe(0);
+    expect(body.email_bounced).toBe(0);
     expect(body.email_queued).toBe(0);
   });
 
@@ -339,7 +343,8 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as EventOverviewResponse;
     expect(body.email_sent).toBe(8);
-    expect(body.email_failed).toBe(2);
+    expect(body.email_failed).toBe(1);
+    expect(body.email_bounced).toBe(1);
     expect(body.email_queued).toBe(3);
   });
 
@@ -370,6 +375,7 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     const body = (await res.json()) as EventOverviewResponse;
     expect(body.email_sent).toBe(0);
     expect(body.email_failed).toBe(0);
+    expect(body.email_bounced).toBe(0);
     expect(body.email_queued).toBe(0);
   });
 });

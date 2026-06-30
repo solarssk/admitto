@@ -1,4 +1,4 @@
-type AttendeeStatus = "registered" | "confirmed" | "cancelled";
+import type { AttendeeStatus } from "@admitto/db";
 
 const ADMITTABLE_STATUSES: AttendeeStatus[] = ["registered", "confirmed"];
 

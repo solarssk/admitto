@@ -703,6 +703,7 @@ export interface EventOverviewDto {
   admitted_count: number;
   email_sent: number;
   email_failed: number;
+  email_bounced: number;
   email_queued: number;
 }
 

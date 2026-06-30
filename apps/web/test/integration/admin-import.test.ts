@@ -818,6 +818,49 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       expect(row.reason).not.toMatch(/@/);
     }
   });
+
+  it("returns 409 event_full when import would exceed capacity", async () => {
+    const current = await prisma.attendee.count({
+      where: { event_id: EVENT_A, status: { not: "revoked" } },
+    });
+    await prisma.event.update({ where: { id: EVENT_A }, data: { capacity: current } });
+    const csv = [
+      "first_name,last_name,email",
+      "New,One,cap-one@example.com",
+      "New,Two,cap-two@example.com",
+    ].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/commit`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; projected: number };
+    expect(body.code).toBe("event_full");
+    expect(body.projected).toBeGreaterThan(current);
+    await prisma.event.update({ where: { id: EVENT_A }, data: { capacity: null } });
+    await prisma.attendee.deleteMany({
+      where: { event_id: EVENT_A, email: { in: ["cap-one@example.com", "cap-two@example.com"] } },
+    });
+  });
+
+  it("allows import within capacity when one slot remains", async () => {
+    const current = await prisma.attendee.count({
+      where: { event_id: EVENT_A, status: { not: "revoked" } },
+    });
+    await prisma.event.update({ where: { id: EVENT_A }, data: { capacity: current + 1 } });
+    const csv = ["first_name,last_name,email", "Slot,Left,slot-left@example.com"].join("\n");
+    const res = await postImport(
+      `/api/admin/events/${EVENT_A}/import/commit`,
+      csvFormData(csv),
+      adminCookie,
+    );
+    expect(res.status).toBe(200);
+    await prisma.event.update({ where: { id: EVENT_A }, data: { capacity: null } });
+    await prisma.attendee.deleteMany({
+      where: { event_id: EVENT_A, email: "slot-left@example.com" },
+    });
+  });
 });
 
 describe("GET /api/admin/events/:eventId/import/template", () => {

@@ -103,6 +103,10 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
       return "Item returned";
     case "attendee_edited":
       return "Profile updated";
+    case "pass_revoked":
+      return "Pass revoked";
+    case "pass_restored":
+      return "Pass restored";
     case "scan_preview":
       return "Scan preview";
     default:
