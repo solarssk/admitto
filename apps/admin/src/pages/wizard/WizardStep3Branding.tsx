@@ -9,7 +9,7 @@ import {
 import { Input, useToast } from "@admitto/ui";
 import { LogoUploadZone } from "../../components/LogoUploadZone.js";
 import { ApiError, fetchOrgBranding, patchOrgBranding } from "../../api/client.js";
-import { safeBrandingLogoHref } from "../../utils/safeBrandingLogoHref.js";
+import { brandingLogoImgSrc, safeBrandingLogoHref } from "../../utils/safeBrandingLogoHref.js";
 import { useWizard } from "./WizardContext.js";
 
 export type WizardStep3BrandingHandle = {
@@ -91,7 +91,7 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
       saveAndContinue: saveBranding,
     }));
 
-    const previewLogo = useMemo(() => safeBrandingLogoHref(logoUrl), [logoUrl]);
+    const previewLogo = useMemo(() => brandingLogoImgSrc(logoUrl), [logoUrl]);
 
     return (
       <>

@@ -521,7 +521,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePutEventTemplate(c, db),
   ));
   app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, adminTemplatePreviewRateLimit, templateBodyLimit, guardArchivedEvent((c) =>
-    handlePreviewEventTemplate(c, db),
+    handlePreviewEventTemplate(c, db, baseUrl),
   ));
   app.post(
     "/api/admin/events/:eventId/template/test-send",

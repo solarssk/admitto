@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { ApiError, uploadFile } from "../api/client.js";
-import { safeBrandingLogoHref } from "../utils/safeBrandingLogoHref.js";
+import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import "./logo-upload.css";
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
@@ -20,7 +20,7 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
   const [dragging, setDragging] = useState(false);
 
   const isUploadedFile = value.startsWith("/uploads/");
-  const previewSrc = useMemo(() => safeBrandingLogoHref(value), [value]);
+  const previewSrc = useMemo(() => brandingLogoImgSrc(value), [value]);
 
   const handleFile = async (file: File) => {
     setError(null);

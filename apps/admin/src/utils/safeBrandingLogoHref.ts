@@ -18,3 +18,21 @@ export function safeBrandingLogoHref(url: string): string | null {
     return null;
   }
 }
+
+/** Like {@link safeBrandingLogoHref}, but normalized for `<img src>` (CodeQL-safe). */
+export function brandingLogoImgSrc(url: string): string | null {
+  const safe = safeBrandingLogoHref(url);
+  if (!safe) return null;
+  if (safe.startsWith("/uploads/")) {
+    try {
+      return new URL(safe, "https://local.invalid").pathname;
+    } catch {
+      return null;
+    }
+  }
+  try {
+    return new URL(safe).href;
+  } catch {
+    return null;
+  }
+}

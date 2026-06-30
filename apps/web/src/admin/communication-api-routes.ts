@@ -41,7 +41,6 @@ import {
   positiveIntQuery,
   requireEventId,
 } from "./admin-helpers.js";
-import { resolveBaseUrl } from "../config.js";
 
 /** Max character length for `body_template` (schema); shared with wire byte cap below. */
 export const TEMPLATE_BODY_CHAR_LIMIT = 200_000;
@@ -312,7 +311,11 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
 }
 
 /** POST /api/admin/events/:eventId/template/preview */
-export async function handlePreviewEventTemplate(c: Context, db: PrismaClient): Promise<Response> {
+export async function handlePreviewEventTemplate(
+  c: Context,
+  db: PrismaClient,
+  baseUrl: string,
+): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
 
@@ -338,7 +341,7 @@ export async function handlePreviewEventTemplate(c: Context, db: PrismaClient): 
       body.subject_template,
       body.body_template,
       body.template_format,
-      resolveBaseUrl(process.env),
+      baseUrl,
     );
     return c.json({ subject: rendered.subject, html: rendered.html });
   } catch (err) {
