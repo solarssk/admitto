@@ -102,6 +102,17 @@ const resendBodySchema = z
   })
   .strict();
 
+/** Empty or whitespace-only POST body parses as `{}`; malformed JSON returns 400. */
+async function parseOptionalJsonBody(c: Context): Promise<unknown | Response> {
+  try {
+    const text = await c.req.text();
+    if (!text.trim()) return {};
+    return JSON.parse(text);
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+}
+
 /** Hard cap on attendees in one bulk-resend to avoid request timeout. */
 const BULK_RESEND_LIMIT = 500;
 
@@ -1482,13 +1493,10 @@ export async function handleResendEventAttendeeTicket(
   const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
   if (!existing) return c.json({ error: "forbidden" }, 403);
 
-  let body: unknown = {};
-  try {
-    const text = await c.req.text();
-    if (text.trim()) body = JSON.parse(text);
-  } catch {
-    return c.json({ error: "invalid json" }, 400);
-  }
+  let body: unknown;
+  const parsedBody = await parseOptionalJsonBody(c);
+  if (parsedBody instanceof Response) return parsedBody;
+  body = parsedBody;
 
   const parsed = resendBodySchema.safeParse(body);
   if (!parsed.success) {
@@ -1584,13 +1592,10 @@ export async function handleBulkResendTickets(
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  let body: unknown = {};
-  try {
-    const text = await c.req.text();
-    if (text.trim()) body = JSON.parse(text);
-  } catch {
-    return c.json({ error: "invalid json" }, 400);
-  }
+  let body: unknown;
+  const parsedBody = await parseOptionalJsonBody(c);
+  if (parsedBody instanceof Response) return parsedBody;
+  body = parsedBody;
 
   const parsed = bulkResendBodySchema.safeParse(body);
   if (!parsed.success) {

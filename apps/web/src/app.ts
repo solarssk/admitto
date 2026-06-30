@@ -67,6 +67,10 @@ import {
   createAdminBulkResendRateLimit,
   createAdminResendRateLimit,
 } from "./admin-resend-rate-limit.js";
+import {
+  createAdminExportRateLimit,
+  createAdminPiiExportRateLimit,
+} from "./admin-export-rate-limit.js";
 import { createAdminCommunicationRateLimit } from "./admin-communication-rate-limit.js";
 import { createAdminMailSettingsRateLimit } from "./admin-mail-settings-rate-limit.js";
 import {
@@ -320,6 +324,8 @@ export function createApp(options: CreateAppOptions = {}) {
     withEventArchiveGuard(db, handler);
   const adminResendRateLimit = createAdminResendRateLimit(rateLimitStore);
   const adminBulkResendRateLimit = createAdminBulkResendRateLimit(rateLimitStore);
+  const adminPiiExportRateLimit = createAdminPiiExportRateLimit(rateLimitStore);
+  const adminExportRateLimit = createAdminExportRateLimit(rateLimitStore);
   const adminCommunicationRateLimit = createAdminCommunicationRateLimit(rateLimitStore);
   const adminMailSettingsRateLimit = createAdminMailSettingsRateLimit(rateLimitStore);
   const adminImportPreviewRateLimit = createAdminImportPreviewRateLimit(rateLimitStore);
@@ -459,11 +465,13 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     guardArchivedEvent((c) => handlePatchEvent(c, db)),
   );
-  app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, (c) => handleExportEventPii(c, db));
+  app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
+    handleExportEventPii(c, db),
+  );
   app.get("/api/admin/events/:eventId/attendees/ticket-types", staffAdminGate, (c) =>
     handleListTicketTypes(c, db),
   );
-  app.get("/api/admin/events/:eventId/attendees/export", staffAdminGate, (c) =>
+  app.get("/api/admin/events/:eventId/attendees/export", staffAdminGate, adminExportRateLimit, (c) =>
     handleExportAttendees(c, db),
   );
   app.get("/api/admin/events/:eventId/attendees", staffAdminGate, (c) =>
@@ -545,7 +553,9 @@ export function createApp(options: CreateAppOptions = {}) {
     handleGetEventOverview(c, db),
   );
   app.get("/api/admin/events/:eventId/reports", staffAdminGate, (c) => handleGetReports(c, db));
-  app.get("/api/admin/events/:eventId/reports/export", staffAdminGate, (c) => handleExportReports(c, db));
+  app.get("/api/admin/events/:eventId/reports/export", staffAdminGate, adminExportRateLimit, (c) =>
+    handleExportReports(c, db),
+  );
   app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
   app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));
   app.get("/api/admin/mail-settings", staffAdminGate, (c) => handleGetMailSettings(c, db));

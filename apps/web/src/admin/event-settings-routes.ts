@@ -218,7 +218,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     return c.json({ event: serializeEventSettings(updated) });
   } catch (err) {
     console.error("[audit] event_updated transaction failed", err);
-    return c.json({ code: "audit_failed" }, 500);
+    return c.json({ error: "audit_failed" }, 500);
   }
 }
 

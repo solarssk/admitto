@@ -1012,6 +1012,14 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
     expect(res.status).toBe(403);
   });
 
+  it("accepts empty POST body without JSON payload", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A1}/resend`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("returns 422 when resend is skipped (cancelled attendee)", async () => {
     await prisma.attendee.update({
       where: { id: ATT_A2 },
@@ -1094,6 +1102,22 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
       skipped: 0,
       failed: 0,
     });
+  });
+
+  it("accepts empty POST body and defaults target to unsent", async () => {
+    const res = await app.request(bulkUrl, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { queued: number; skipped: number; failed: number };
+    expect(body.queued).toBeGreaterThanOrEqual(0);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_A, action_type: "mail_bulk_resend" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log!.metadata).toMatchObject({ target: "unsent" });
   });
 
   it("returns queued 0 when all attendees already have delivered mail", async () => {

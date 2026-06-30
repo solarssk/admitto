@@ -7,6 +7,9 @@ import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates
 import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 
+/** Auto-refresh interval for event overview stats (ms). */
+const OVERVIEW_REFRESH_MS = 30_000;
+
 function AdmissionBar({ admitted, total }: { admitted: number; total: number }) {
   const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
   return (
@@ -48,31 +51,42 @@ export function EventOverviewPage() {
 
   useEffect(() => {
     abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
     setLoading(true);
     setError(null);
     setOverview(null);
 
-    fetchEventOverview(event.id, ac.signal)
-      .then((data) => {
-        if (ac.signal.aborted) return;
-        setOverview(data);
-      })
-      .catch((err) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        if (err instanceof ApiError) {
-          reportApiError(err.status);
-          setError("Failed to load event stats.");
-        } else {
-          setError("Failed to load event stats.");
-        }
-      })
-      .finally(() => {
-        if (!ac.signal.aborted) setLoading(false);
-      });
+    const load = () => {
+      abortRef.current?.abort();
+      const ac = new AbortController();
+      abortRef.current = ac;
 
-    return () => ac.abort();
+      fetchEventOverview(event.id, ac.signal)
+        .then((data) => {
+          if (ac.signal.aborted) return;
+          setOverview(data);
+          setError(null);
+        })
+        .catch((err) => {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          if (err instanceof ApiError) {
+            reportApiError(err.status);
+            setError("Failed to load event stats.");
+          } else {
+            setError("Failed to load event stats.");
+          }
+        })
+        .finally(() => {
+          if (!ac.signal.aborted) setLoading(false);
+        });
+    };
+
+    load();
+    const intervalId = setInterval(load, OVERVIEW_REFRESH_MS);
+
+    return () => {
+      clearInterval(intervalId);
+      abortRef.current?.abort();
+    };
   }, [event.id, reportApiError]);
 
   const meta = [formatEventCalendarDate(eventDateIso), event.location]
