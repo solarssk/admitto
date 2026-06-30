@@ -15,6 +15,7 @@ import type { AccountDto, MfaEnrollResponse, SessionListDto } from "../api/types
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 import { LOCALE_OPTIONS, setPreferredLocale as setPreferredLocaleStore } from "../utils/locale-store.js";
+import { TotpQrCode } from "./TotpQrCode.js";
 
 function parseUserAgent(ua: string | null): string {
   if (!ua) return "Unknown";
@@ -288,8 +289,12 @@ export function AccountPage() {
         )}
         {enrollData && (
           <>
-            <p className="mail-field-hint">Scan this URI in your authenticator app:</p>
-            <code className="account-uri-code">{enrollData.otpauthUri}</code>
+            <p className="mail-field-hint">Scan this code in your authenticator app:</p>
+            <TotpQrCode uri={enrollData.otpauthUri} />
+            <details className="account-uri-details">
+              <summary className="account-uri-details__toggle">Show raw URI (advanced)</summary>
+              <code className="account-uri-code">{enrollData.otpauthUri}</code>
+            </details>
             {enrollData.backupCodes.length > 0 ? (
               <div className="account-auth-backup">
                 <strong>Backup codes</strong>

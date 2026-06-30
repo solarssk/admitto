@@ -133,6 +133,15 @@
   color: var(--text);
 }
 
+.attendee-restore-force {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
 .attendee-form__error {
   color: var(--status-error);
   font-size: var(--fs-sm);

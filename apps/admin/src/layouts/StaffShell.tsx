@@ -11,16 +11,50 @@ export interface StaffShellProps {
   children: ReactNode;
 }
 
+const SIDEBAR_PIN_KEY = "admitto_sidebar_pinned";
+
+/** Read sidebar pin preference from localStorage (defaults to pinned). */
+function readPinned(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_PIN_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
 /** App shell: fixed sidebar + topbar chrome, scrollable main content area. */
 export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
   const { user, assignments } = useAuth();
   const displayName = user.display_name || user.email.split("@")[0] || "Staff";
   const [navOpen, setNavOpen] = useState(false);
+  const [pinned, setPinned] = useState(readPinned);
+  const [hovered, setHovered] = useState(false);
 
   const closeNav = useCallback(() => setNavOpen(false), []);
 
+  const togglePin = () => {
+    const next = !pinned;
+    setPinned(next);
+    try {
+      localStorage.setItem(SIDEBAR_PIN_KEY, String(next));
+    } catch {
+      /* ignore storage errors */
+    }
+  };
+
+  const sidebarExpanded = pinned || hovered;
+
   return (
-    <div className={`shell${navOpen ? " shell--nav-open" : ""}`}>
+    <div
+      className={[
+        "shell",
+        navOpen ? "shell--nav-open" : "",
+        !pinned ? "shell--sidebar-unpinned" : "",
+        sidebarExpanded ? "shell--sidebar-expanded" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <button
         type="button"
         className="shell__backdrop"
@@ -28,8 +62,25 @@ export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
         tabIndex={navOpen ? 0 : -1}
         onClick={closeNav}
       />
-      <aside className="sidebar" onClick={closeNav}>
+      <aside
+        className="sidebar"
+        onClick={closeNav}
+        onMouseEnter={() => !pinned && setHovered(true)}
+        onMouseLeave={() => !pinned && setHovered(false)}
+      >
         {sidebar}
+        <button
+          type="button"
+          className="sidebar__pin-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            togglePin();
+          }}
+          title={pinned ? "Unpin sidebar" : "Pin sidebar"}
+          aria-label={pinned ? "Unpin sidebar" : "Pin sidebar"}
+        >
+          <i className={`ti ti-${pinned ? "pin-filled" : "pin"}`} aria-hidden="true" />
+        </button>
       </aside>
       <div className="main">
         <header className="topbar">

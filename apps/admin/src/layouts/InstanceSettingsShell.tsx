@@ -1,4 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { isAdmin, isSuperadmin } from "../auth/capabilities.js";
+import { useAuth } from "../auth/AuthProvider.js";
 import { StaffShell } from "./StaffShell.js";
 
 const BRAND_MARK = (
@@ -12,6 +14,7 @@ const BRAND_MARK = (
 /** Instance-scoped admin layout for superadmin settings (no event context). */
 export function InstanceSettingsShell() {
   const { pathname } = useLocation();
+  const { assignments } = useAuth();
   const settingsActive =
     pathname.startsWith("/admin/settings") || pathname.startsWith("/admin/auth/");
 
@@ -27,13 +30,27 @@ export function InstanceSettingsShell() {
           <i className="ti ti-calendar-event" aria-hidden="true" />
           <span>All events</span>
         </NavLink>
-        <NavLink
-          to="/admin/settings"
-          className={`nav-item${settingsActive ? " nav-item--active" : ""}`}
-        >
-          <i className="ti ti-settings" aria-hidden="true" />
-          <span>Settings</span>
-        </NavLink>
+        {isAdmin(assignments) && (
+          <>
+            <div className="sidebar__section-label">Administration</div>
+            <NavLink
+              to="/admin/users"
+              className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
+            >
+              <i className="ti ti-users-group" aria-hidden="true" />
+              <span>Users & roles</span>
+            </NavLink>
+            {isSuperadmin(assignments) && (
+              <NavLink
+                to="/admin/settings"
+                className={`nav-item${settingsActive ? " nav-item--active" : ""}`}
+              >
+                <i className="ti ti-settings" aria-hidden="true" />
+                <span>Settings</span>
+              </NavLink>
+            )}
+          </>
+        )}
       </div>
     </>
   );

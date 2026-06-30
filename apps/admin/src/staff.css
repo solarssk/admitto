@@ -22,6 +22,57 @@
   letter-spacing: 0.04em;
 }
 
+.sidebar__section-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 12px 8px 4px;
+  margin-top: 4px;
+}
+
+@media (min-width: 1025px) {
+  .sidebar__pin-btn {
+    position: absolute;
+    bottom: 12px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--dur-fast);
+    z-index: 1;
+  }
+
+  .sidebar:hover .sidebar__pin-btn,
+  .sidebar:focus-within .sidebar__pin-btn {
+    opacity: 1;
+  }
+
+  .sidebar__pin-btn:focus-visible {
+    opacity: 1;
+  }
+
+  .sidebar__pin-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+}
+
+@media (max-width: 1024px) {
+  .sidebar__pin-btn {
+    display: none;
+  }
+}
+
 .event-grid {
   display: grid;
   grid-template-columns: 1fr;

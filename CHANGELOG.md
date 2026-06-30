@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Branding upload validates magic bytes and uses async filesystem I/O
 
 ### Added
+- Admin: revoke and restore pass on attendee detail (PATCH `status`, capacity-aware restore)
+- Admin: CSV import shows `event_full` capacity banner; superadmin can override with force commit
+- Admin: TOTP enrollment QR code on Account page
+- Admin: device label pre-filled from browser user agent
+- Admin: sidebar pin/unpin (desktop), lifecycle nav labels (Passes, Post-event), Administration section
 - Event capacity enforcement on manual attendee create and CSV import commit: returns `409 event_full` when the limit would be exceeded; instance superadmin may override with `?force=1` (audited)
 - `PATCH /api/admin/events/:eventId/attendees/:id` supports `status: registered | revoked` with `pass_revoked` / `pass_restored` attendee action log entries
 - Local branding upload API: `POST /api/admin/uploads` (PNG/JPG/WebP, max 2 MB, superadmin-only) and `GET /uploads/*` static serve; Docker Compose volume for `./uploads`

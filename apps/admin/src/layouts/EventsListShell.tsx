@@ -28,22 +28,25 @@ export function EventsListShell() {
           <span>All events</span>
         </NavLink>
         {isAdmin(assignments) && (
-          <NavLink
-            to="/admin/users"
-            className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
-          >
-            <i className="ti ti-users-group" aria-hidden="true" />
-            <span>Users & roles</span>
-          </NavLink>
-        )}
-        {isSuperadmin(assignments) && (
-          <NavLink
-            to="/admin/settings"
-            className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
-          >
-            <i className="ti ti-settings" aria-hidden="true" />
-            <span>Settings</span>
-          </NavLink>
+          <>
+            <div className="sidebar__section-label">Administration</div>
+            <NavLink
+              to="/admin/users"
+              className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
+            >
+              <i className="ti ti-users-group" aria-hidden="true" />
+              <span>Users & roles</span>
+            </NavLink>
+            {isSuperadmin(assignments) && (
+              <NavLink
+                to="/admin/settings"
+                className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
+              >
+                <i className="ti ti-settings" aria-hidden="true" />
+                <span>Settings</span>
+              </NavLink>
+            )}
+          </>
         )}
       </div>
     </>
