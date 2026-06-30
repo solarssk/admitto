@@ -92,6 +92,9 @@ export function AttendeeDetailPage() {
     setLoading(true);
     setError(null);
     setNotFound(false);
+    setRestoreCapacityBlocked(null);
+    setRestoreForceCapacity(false);
+    setRevokeError(null);
     try {
       const { detail: d, attributeFields: fields, itemsWarning: warn } =
         await loadAttendeeDetailData(eventId, attendeeId);
