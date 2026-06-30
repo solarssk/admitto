@@ -56,6 +56,10 @@
     opacity: 1;
   }
 
+  .sidebar__pin-btn:focus-visible {
+    opacity: 1;
+  }
+
   .sidebar__pin-btn:hover {
     background: var(--surface-hover);
     color: var(--text-primary);

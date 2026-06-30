@@ -194,7 +194,10 @@ export function ImportPage() {
   };
 
   const canCommit =
-    preview !== null && preview.parse.validCount > 0 && !loading;
+    preview !== null &&
+    preview.parse.validCount > 0 &&
+    !loading &&
+    !(capacityBlocked != null && !(superadmin && forceCapacity));
 
   const importCount =
     preview !== null ? preview.summary.toCreate + preview.summary.toUpdate : 0;

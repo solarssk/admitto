@@ -14,6 +14,16 @@ describe("parseDeviceName", () => {
     expect(parseDeviceName(ua)).toBe("Pixel 8");
   });
 
+  it("detects iPhone with iOS version", () => {
+    const ua =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+    expect(parseDeviceName(ua)).toBe("iPhone (iOS 17.4)");
+  });
+
+  it("returns Mac for Macintosh UA", () => {
+    expect(parseDeviceName("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")).toBe("Mac");
+  });
+
   it("returns Windows PC for Windows UA", () => {
     expect(parseDeviceName("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")).toBe("Windows PC");
   });

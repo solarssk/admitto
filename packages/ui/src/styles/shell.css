@@ -425,6 +425,10 @@ body {
 }
 
 @media (min-width: 1025px) {
+  .shell {
+    transition: grid-template-columns var(--dur-fast);
+  }
+
   .sidebar {
     position: relative;
   }
