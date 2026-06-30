@@ -1,3 +1,4 @@
+export { resolvePublicBaseUrl } from "./baseUrl.js";
 export {
   escapeHtmlText,
   escapeHtmlAttribute,

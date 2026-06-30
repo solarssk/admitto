@@ -45,7 +45,7 @@ describe("sendTestEmail", () => {
     const result = await sendTestEmail(
       { eventId: EVENT_ID, toAddress: "operator@example.com" },
       prisma,
-      { NODE_ENV: "test" },
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       { exportSink: (p) => exported.push(p) },
     );
 

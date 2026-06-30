@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { previewTemplate } from "@admitto/mail-templates";
 import { closeMailer, createMailer, type SendResult } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
+import { resolveBaseUrl } from "./baseUrl.js";
 import type { MailDeliveryDeps } from "./send.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
 
@@ -24,7 +25,9 @@ export async function sendTestEmail(
   const mailer = createMailer(mailConfig, { exportSink: deps.exportSink });
 
   try {
-    const rendered = await previewTemplate(params.eventId, prisma);
+    const rendered = await previewTemplate(params.eventId, prisma, undefined, {
+      baseUrl: resolveBaseUrl(env),
+    });
     const result = await mailer.send({
       to: params.toAddress,
       subject: rendered.subject,

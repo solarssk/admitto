@@ -140,9 +140,17 @@ describe("previewTemplate", () => {
       prisma,
     );
 
-    const result = await previewTemplate("evt-br", prisma);
+    const result = await previewTemplate("evt-br", prisma, undefined, {
+      baseUrl: "https://tickets.example.com",
+    });
     expect(result.subject).toContain("Brand Event");
     expect(result.html).toContain("Alex");
     expect(result.html).toMatch(/@example\.com/i);
+  });
+
+  it("requires BASE_URL outside development when resolving preview base URL", async () => {
+    await expect(
+      previewTemplate("evt-br", prisma, undefined, { env: { NODE_ENV: "production" } }),
+    ).rejects.toThrow("BASE_URL is required in non-development environments");
   });
 });
