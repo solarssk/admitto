@@ -18,6 +18,7 @@ let prisma: PrismaClient;
 const EVENT_ID = "test-event-001";
 
 const rowA: AttendeeRow = {
+  rowIndex: 1,
   first_name: "Jan",
   last_name: "Kowalski",
   email: "jan@example.com",
@@ -25,6 +26,7 @@ const rowA: AttendeeRow = {
 };
 
 const rowB: AttendeeRow = {
+  rowIndex: 1,
   first_name: "Ana",
   last_name: "Nowak",
   email: "ana@example.com",
@@ -123,6 +125,7 @@ describe("commitImport — create", () => {
       EVENT_ID,
       [
         {
+          rowIndex: 1,
           first_name: "Socks",
           last_name: "Fan",
           email: "socks@example.com",
@@ -233,6 +236,7 @@ describe("commitImport — overwrite=true", () => {
       EVENT_ID,
       [
         {
+          rowIndex: 1,
           first_name: "Merge",
           last_name: "CD",
           email: "merge-cd@example.com",
@@ -273,6 +277,7 @@ describe("commitImport — overwrite=true", () => {
       EVENT_ID,
       [
         {
+          rowIndex: 1,
           first_name: "Partial",
           last_name: "Cap",
           email: "partial-cap@example.com",
@@ -304,7 +309,7 @@ describe("commitImport — overwrite=true", () => {
 
     const summary = await commitImport(
       EVENT_ID,
-      [{ first_name: "No", last_name: "Cap", email: "no-cap@example.com" }],
+      [{ rowIndex: 1, first_name: "No", last_name: "Cap", email: "no-cap@example.com" }],
       { attributeFields },
       prisma,
     );
@@ -330,12 +335,14 @@ describe("commitImport — overwrite=true", () => {
       EVENT_ID,
       [
         {
+          rowIndex: 1,
           first_name: "Dup",
           last_name: "One",
           email: "dup-rows@example.com",
           custom_data: { sock_size: "42" },
         },
         {
+          rowIndex: 2,
           first_name: "Dup",
           last_name: "Two",
           email: "dup-rows@example.com",
@@ -370,6 +377,7 @@ describe("commitImport — Mode B matching by external_uuid", () => {
 
   it("matches existing attendee by qr_payload when external_uuid is missing", async () => {
     const rowWithQrOnly: AttendeeRow = {
+      rowIndex: 1,
       first_name: "Qr",
       last_name: "Only",
       email: "qr-only@example.com",
@@ -392,6 +400,7 @@ describe("commitImport — Mode B matching by external_uuid", () => {
       EVENT_ID,
       [
         {
+          rowIndex: 1,
           first_name: "Existing",
           last_name: "Qr",
           email: "existing-qr@example.com",
@@ -403,6 +412,7 @@ describe("commitImport — Mode B matching by external_uuid", () => {
     );
 
     const conflictingImport: AttendeeRow = {
+      rowIndex: 1,
       first_name: "Incoming",
       last_name: "Uuid",
       email: "incoming-uuid@example.com",
@@ -437,12 +447,14 @@ describe("commitImport — UUID/email fallback", () => {
       EVENT_ID,
       [
         {
+          rowIndex: 1,
           first_name: "Uuid",
           last_name: "Holder",
           email: "uuid-holder@example.com",
           external_uuid: "conflict-uuid-001",
         },
         {
+          rowIndex: 2,
           first_name: "Qr",
           last_name: "Holder",
           email: "qr-holder@example.com",
@@ -454,6 +466,7 @@ describe("commitImport — UUID/email fallback", () => {
     );
 
     const conflictingRow: AttendeeRow = {
+      rowIndex: 1,
       first_name: "Conflict",
       last_name: "Row",
       email: "uuid-holder@example.com",
@@ -482,7 +495,7 @@ describe("commitImport — case-insensitive email matching", () => {
 
     const summary = await commitImport(
       EVENT_ID,
-      [{ first_name: "Mixed", last_name: "Case", email: "mixedcase@example.com" }],
+      [{ rowIndex: 1, first_name: "Mixed", last_name: "Case", email: "mixedcase@example.com" }],
       { overwrite: false },
       prisma,
     );
@@ -495,7 +508,7 @@ describe("commitImport — case-insensitive email matching", () => {
 
 describe("commitImport — idempotency", () => {
   it("re-importing same file twice is idempotent (overwrite=false)", async () => {
-    const newRow: AttendeeRow = { first_name: "New", last_name: "User", email: "new@example.com" };
+    const newRow: AttendeeRow = { rowIndex: 1, first_name: "New", last_name: "User", email: "new@example.com" };
     await commitImport(EVENT_ID, [newRow], {}, prisma);
     const summary = await commitImport(EVENT_ID, [newRow], {}, prisma);
     expect(summary.toSkip).toBe(1);

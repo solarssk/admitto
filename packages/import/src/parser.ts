@@ -158,6 +158,7 @@ export function parseAttendees(csvString: string, options: ParseAttendeesOptions
     if (qrPayload) seenAgencyIdentifiers.add(qrPayload);
 
     validRows.push({
+      rowIndex: rowIdx,
       first_name: firstName,
       last_name: lastName,
       email,

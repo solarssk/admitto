@@ -37,6 +37,20 @@ describe("parseAttendees — basic valid rows", () => {
     const result = parseAttendees(`${VALID_HEADER}\n  Jan ,  K , jan@example.com `);
     expect(result.validRows[0]?.first_name).toBe("Jan");
   });
+
+  it("assigns rowIndex matching file line index for valid rows", () => {
+    const csv = [
+      VALID_HEADER,
+      "Jan,Kowalski,jan@example.com",
+      "Bad,,bad@example.com",
+      "Eve,Example,eve@example.com",
+    ].join("\n");
+    const result = parseAttendees(csv);
+    expect(result.validRows).toHaveLength(2);
+    expect(result.validRows[0]?.rowIndex).toBe(1);
+    expect(result.validRows[1]?.rowIndex).toBe(3);
+    expect(result.invalidRows[0]?.rowIndex).toBe(2);
+  });
 });
 
 describe("parseAttendees — header normalisation", () => {

@@ -225,6 +225,18 @@ export interface ImportInvalidRow {
   reason: string;
 }
 
+/** One valid CSV row in the import preview sample (mirrors web ImportSampleRow). */
+export interface ImportSampleRow {
+  rowIndex: number;
+  name: string;
+  email: string;
+  ticket_type: string;
+  company: string;
+  department: string;
+  external_uuid: string;
+  custom_data: Record<string, string>;
+}
+
 export interface ImportPreviewResponse {
   importId: string;
   parse: {
@@ -237,6 +249,8 @@ export interface ImportPreviewResponse {
     toUpdate: number;
     toSkip: number;
   };
+  sampleRows: ImportSampleRow[];
+  attributeFieldLabels: Array<{ source_field: string; label: string }>;
 }
 
 export interface ImportSkippedRow {
