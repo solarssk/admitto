@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-06-30
+
 ### Security
 - Rate-limit admin export endpoints: PII export 5/h, attendees/reports export 10/h per user per route (global across events)
 
@@ -17,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Check-in runtime: enforces `allow_manual_lookup` (403 on lookup API; UI hides manual lookup and blocks short-query lookup); `auto_advance_on_valid` clears scan state after VALID admission; `GET /api/checkin/ops-config`; item icons on AttendeeCard (Tabler)
 - Contents metadata runtime: enforce `type`/`select`/`boolean`/`required`/`options` on attendee create and patch; type-aware admin fields; required markers and formatted values on check-in item detail
 - CSV import: dynamic event-item attribute columns (`source_field` slugs) validated and stored in `custom_data`; template includes configured fields; export-style label headers accepted on re-import
+- Per-user preferred locale (`User.preferred_locale`) with date-format picker on Account page; admin SPA date displays respect the stored locale via module-level locale store
+- Per-event IANA timezone on events — create/settings/wizard picker, reports/exports/mail preview use event timezone
+- Event overview dashboard at `/admin/events/:id/overview` with admission rate, email delivery stats, event countdown, and dedicated `GET /api/admin/events/:eventId/overview` endpoint
 
 ### Fixed
 - Event settings PATCH: `audit_failed` 500 uses `{ error }` shape
@@ -25,9 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CSV import: ignore `source_field` slugs that collide with standard import columns (`email`, `company`, etc.); event item contents API and admin form reject those reserved slugs on save
 - CSV import: validate merged `custom_data` at commit (including overwrite with existing attributes); return 400 when event attribute config has conflicting select options
 - Settings tabs preserve in-progress panel state (drafts, filters) when switching tabs without eager-loading every panel on first visit
-- Per-user preferred locale (`User.preferred_locale`) with date-format picker on Account page; admin SPA date displays respect the stored locale via module-level locale store
-- Per-event IANA timezone on events — create/settings/wizard picker, reports/exports/mail preview use event timezone
-- Event overview dashboard at `/admin/events/:id/overview` with admission rate, email delivery stats, event countdown, and dedicated `GET /api/admin/events/:eventId/overview` endpoint
 
 ### Changed
 - Settings: replace mixed SPA/SSR horizontal tabs with four grouped in-app tabs (General, Security, Archiving, Identity); OIDC and Cloudflare Access remain server-rendered manage links
@@ -36,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shared `@admitto/shared` locale whitelist (`SUPPORTED_LOCALE_TAGS`) used by API validation and Account picker; invalid DB values sanitized on read
 - Audit log date filters use UTC calendar-day bounds (aligned with UTC table display)
 - Existing events migrated to UTC — update timezone in Event Settings after deploy
+- Known limitation: Account page TOTP enrollment still shows an `otpauth://` URI string (HTML `/mfa/enroll` shows QR; SPA QR deferred to v0.5)
 
 ## [0.4.6] - 2026-06-27
 
@@ -461,7 +464,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.6...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.7...HEAD
+[0.4.7]: https://github.com/solarssk/admitto/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/solarssk/admitto/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/solarssk/admitto/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/solarssk/admitto/compare/v0.4.3...v0.4.4

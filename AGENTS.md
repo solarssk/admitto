@@ -3,7 +3,7 @@
 Instructions for AI agents in this repository (Cursor, Claude Code, Codex, Copilot, and others).
 
 Repo: https://github.com/solarssk/admitto  
-**Active milestone:** v0.4.5+ — settings and session management; wallet passes → v0.5.  
+**Active milestone:** v0.5 — wallet passes (PassCreator). Product line **v0.4.7** closes settings/overview/requirements/import hardening.  
 **Product version:** git tag `v0.x.y` + root `package.json` + [CHANGELOG.md](CHANGELOG.md) — see [VERSIONING.md](VERSIONING.md).
 
 ## Project
@@ -65,11 +65,11 @@ Before handoff: assignee @solarssk, current milestone when it exists, labels —
 
 1. Move `[Unreleased]` → `## [0.x.y] - YYYY-MM-DD`; update comparison links.
 2. Bump root `package.json` `"version"`.
-3. **Before** the release commit: `python3 scripts/generate-release-notes.py 0.x.y`
-4. One release commit: `CHANGELOG.md`, `package.json`, `.github/release-notes/v0.x.y.md`.
-5. `./scripts/release-tag.sh` → `gh release create` or `gh release edit` with `--notes-file`.
+3. **Before** the release commit: `python3 scripts/generate-release-notes.py 0.x.y` then `python3 scripts/sync-release-docs.py` (and `npm install --package-lock-only` so `package-lock.json` matches).
+4. One release commit: `CHANGELOG.md`, `package.json`, `package-lock.json`, synced docs, `.github/release-notes/v0.x.y.md` (commit subject `release: v0.x.y`).
+5. **Merge the release PR** — Actions creates tag, GitHub Release, and closes the milestone; `publish-container` pushes the image on tag.
 
-Do **not** use the deprecated v0.3.x emoji GitHub Release template. Use the generator — do not hand-write release bodies that diverge from `CHANGELOG.md`.
+Local `./scripts/release-tag.sh` is emergency-only (signed tag). Do **not** use the deprecated v0.3.x emoji GitHub Release template.
 
 ## Compounding rules
 

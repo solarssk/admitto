@@ -70,35 +70,26 @@ Do not bump per-package versions unless we start publishing libraries separately
 2. Update the `[Unreleased]` comparison link at the bottom of `CHANGELOG.md` to point to the new tag
 3. Add the new comparison link for the release (e.g. `[0.x.y]: https://github.com/solarssk/admitto/compare/v0.x.z...v0.x.y`)
 4. Set root `package.json` `"version"` to `0.x.y` (no `v` prefix)
-5. Generate the release notes file and add it to the **same release commit** as `CHANGELOG.md` and `package.json` — do this before tagging (`release-tag.sh` refuses to run when the working tree has uncommitted changes):
+5. Generate release artifacts and sync doc markers before opening the release PR:
    ```bash
    python3 scripts/generate-release-notes.py 0.x.y
+   python3 scripts/sync-release-docs.py
+   npm install --package-lock-only
    ```
+   `sync-release-docs.py` updates `<!-- admitto:latest-patch -->` markers (e.g. in `SECURITY.md`) from `package.json`. CI runs `python3 scripts/sync-release-docs.py --check` on every PR.
    Release notes follow the same [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) typed sections as `CHANGELOG.md` for that version, plus a short **Deploy** footer (container image, migration policy). Do not use the deprecated v0.3.x emoji template. See [`.github/release-notes/v0.4.4.md`](.github/release-notes/v0.4.4.md) as reference.
-6. Commit on `main` — include `CHANGELOG.md`, `package.json`, and `.github/release-notes/v0.x.y.md` in one release commit (no second commit after the tag)
-7. Create a **signed** annotated tag and push it:
-   ```bash
-   ./scripts/release-tag.sh 0.x.y -m "v0.x.y — one-line summary" --push
-   ```
-   (`git tag -s` — never lightweight or unsigned `git tag -a`.)
-8. Publish the GitHub Release from the committed notes file:
-   ```bash
-   # v0.x.y → pre-release (product not go-live ready until v1.0.0)
-   gh release create v0.x.y --title "v0.x.y — one-line summary" \
-     --notes-file .github/release-notes/v0.x.y.md --prerelease
-   ```
-   For **`v1.0.0` and later**, omit `--prerelease`.
+6. Commit on `main` — include `CHANGELOG.md`, `package.json`, `package-lock.json`, synced docs, and `.github/release-notes/v0.x.y.md` in one release commit (message must start with `release:`).
+7. **Merge the release PR** — GitHub Actions [`.github/workflows/release.yml`](.github/workflows/release.yml) on `main` then:
+   - verifies release artifacts (`sync-release-docs.py --check`, notes file, CHANGELOG section),
+   - creates git tag `v0.x.y` and GitHub Release from `.github/release-notes/v0.x.y.md` (pre-release when major is `0`),
+   - closes the open milestone titled `v0.x.y`.
+   Tag push triggers [`publish-container.yml`](.github/workflows/publish-container.yml) (GHCR image, SBOM upload).
 
-   If CI already created a release on tag push (`publish-container.yml`), edit it instead:
-   ```bash
-   gh release edit v0.x.y --notes-file .github/release-notes/v0.x.y.md --prerelease
-   ```
-   (`publish-container.yml` sets `--prerelease` automatically when the major version is `0`.)
-9. Close the matching GitHub milestone
+   Local [`scripts/release-tag.sh`](scripts/release-tag.sh) remains for emergency **GPG/SSH-signed** tags only (see below) — not the default path.
 
-### Tag signing (one-time maintainer setup)
+### Tag signing (optional — emergency manual releases)
 
-Tags must be signed so GitHub shows **Verified** on the tag (same trust model as signed commits).
+CI-created tags from `release.yml` are ordinary GitHub tags (not GPG/SSH-signed). For a **Verified** signed tag, delete the CI tag and use `release-tag.sh` instead — rare.
 
 **SSH signing** (if commits already use `gpg.format ssh`):
 
