@@ -1,14 +1,102 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Button, PageHeader, useToast } from "@admitto/ui";
-import { ApiError, exportAttendees, fetchEventAttendees, fetchTicketTypes } from "../api/client.js";
+import { ApiError, bulkResendTickets, exportAttendees, fetchEventAttendees, fetchTicketTypes } from "../api/client.js";
 import type { AttendeeDetailDto, AttendeeRowDto, EventDto, RsvpStatus } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
+import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
 
 const DEBOUNCE_MS = 300;
+
+interface SendTicketsDialogProps {
+  open: boolean;
+  busy: boolean;
+  target: "unsent" | "all";
+  error: string | null;
+  onTargetChange: (t: "unsent" | "all") => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+/** Confirm bulk ticket email send with undelivered vs all attendees target. */
+function SendTicketsDialog({
+  open,
+  busy,
+  target,
+  error,
+  onTargetChange,
+  onConfirm,
+  onClose,
+}: SendTicketsDialogProps) {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(panelRef, open, onClose);
+
+  if (!open) return null;
+
+  return (
+    <div className="add-attendee-modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className="add-attendee-modal__backdrop" role="presentation" onClick={onClose} />
+      <div className="add-attendee-modal__panel" ref={panelRef}>
+        <h2 className="add-attendee-modal__title" id={titleId}>
+          Send tickets
+        </h2>
+        {error && (
+          <p className="add-attendee-modal__error" role="alert">
+            {error}
+          </p>
+        )}
+        <p className="mail-field-hint">Choose who should receive a ticket email in this batch.</p>
+        <div className="mail-field-row">
+          <label className="send-tickets-radio">
+            <input
+              type="radio"
+              name="send-target"
+              value="unsent"
+              checked={target === "unsent"}
+              disabled={busy}
+              onChange={() => onTargetChange("unsent")}
+            />
+            <span>
+              <strong>Undelivered only</strong>
+              <span className="mail-field-hint">
+                Skip attendees who have already received a ticket (accepted, sent, or delivered).
+              </span>
+            </span>
+          </label>
+          <label className="send-tickets-radio">
+            <input
+              type="radio"
+              name="send-target"
+              value="all"
+              checked={target === "all"}
+              disabled={busy}
+              onChange={() => onTargetChange("all")}
+            />
+            <span>
+              <strong>All attendees</strong>
+              <span className="mail-field-hint">
+                Resend to everyone — including those who already received a ticket.
+              </span>
+            </span>
+          </label>
+        </div>
+        <div className="add-attendee-modal__actions">
+          <Button type="button" variant="primary" disabled={busy} onClick={onConfirm}>
+            {busy ? "Sending…" : "Send tickets"}
+          </Button>
+          <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function AttendeesPage() {
   const { eventId } = useParams();
@@ -34,6 +122,10 @@ export function AttendeesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [sendTicketsOpen, setSendTicketsOpen] = useState(false);
+  const [sendTarget, setSendTarget] = useState<"unsent" | "all">("unsent");
+  const [sendBusy, setSendBusy] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
@@ -169,6 +261,34 @@ export function AttendeesPage() {
     setReloadToken((n) => n + 1);
   };
 
+  const handleSendTicketsConfirm = async () => {
+    if (!eventId) return;
+    setSendBusy(true);
+    setSendError(null);
+    try {
+      const result = await bulkResendTickets(eventId, sendTarget);
+      setSendTicketsOpen(false);
+      if (result.queued === 0) {
+        addToast(
+          "No tickets to send — all attendees already have a delivery queued or sent.",
+          "info",
+        );
+      } else {
+        addToast(
+          `Sending tickets to ${result.queued} attendee${result.queued === 1 ? "" : "s"}${
+            result.skipped > 0 ? ` (${result.skipped} skipped)` : ""
+          }.`,
+          "success",
+        );
+      }
+      setReloadToken((n) => n + 1);
+    } catch (err) {
+      setSendError(err instanceof ApiError ? err.message : "Failed to queue tickets.");
+    } finally {
+      setSendBusy(false);
+    }
+  };
+
   const emptyMessage =
     total === 0 && !searchQuery && statusFilter === "all" && !ticketTypeFilter && !rsvpStatusFilter
       ? "No attendees yet. Import a CSV or XLSX file to get started."
@@ -213,8 +333,16 @@ export function AttendeesPage() {
             <Button variant="primary" onClick={() => setAddOpen(true)}>
               + Add attendee
             </Button>
-            <Button variant="secondary" disabled title="Coming soon">
-              Send tickets
+            <Button
+              variant="secondary"
+              disabled={sendBusy}
+              onClick={() => {
+                setSendTarget("unsent");
+                setSendError(null);
+                setSendTicketsOpen(true);
+              }}
+            >
+              {sendBusy ? "Sending…" : "Send tickets"}
             </Button>
           </>
         }
@@ -257,6 +385,18 @@ export function AttendeesPage() {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onCreated={handleCreated}
+      />
+
+      <SendTicketsDialog
+        open={sendTicketsOpen}
+        busy={sendBusy}
+        target={sendTarget}
+        error={sendError}
+        onTargetChange={setSendTarget}
+        onConfirm={() => void handleSendTicketsConfirm()}
+        onClose={() => {
+          if (!sendBusy) setSendTicketsOpen(false);
+        }}
       />
     </>
   );

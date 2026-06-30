@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -1049,6 +1049,133 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
     expect(limited.status).toBe(429);
     const body = (await limited.json()) as { error: string };
     expect(body.error).toBe("too many requests");
+  });
+});
+
+describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
+  const bulkUrl = `/api/admin/events/${EVENT_A}/attendees/bulk-resend`;
+
+  async function postBulkResend(
+    target: "unsent" | "all" = "unsent",
+    cookie = adminCookie,
+  ): Promise<Response> {
+    return app.request(bulkUrl, {
+      method: "POST",
+      headers: { Cookie: cookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ target }),
+    });
+  }
+
+  it("queues tickets for unsent attendees without prior delivery", async () => {
+    await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_A } });
+
+    const res = await postBulkResend("unsent");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { queued: number; skipped: number };
+    expect(body.queued).toBeGreaterThan(0);
+    expect(body.skipped).toBe(0);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_A, action_type: "mail_bulk_resend" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    expect(log!.metadata).toEqual({ target: "unsent", queued: body.queued, skipped: 0 });
+  });
+
+  it("returns queued 0 when all attendees already have delivered mail", async () => {
+    await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_A } });
+    const attendees = await prisma.attendee.findMany({
+      where: { event_id: EVENT_A },
+      select: { id: true, email: true },
+    });
+    await prisma.emailDelivery.createMany({
+      data: attendees.map((a) => ({
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        attendee_id: a.id,
+        purpose: "initial",
+        provider: "export_only",
+        status: "delivered",
+        recipient_email: a.email,
+        rendered_subject: "Ticket",
+        rendered_html: "<p>ticket</p>",
+        sent_at: new Date(),
+      })),
+    });
+
+    const res = await postBulkResend("unsent");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { queued: number; skipped: number };
+    expect(body).toEqual({ queued: 0, skipped: 0 });
+  });
+
+  it("queues tickets for all attendees when target is all", async () => {
+    await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_A } });
+    const attendeeCount = await prisma.attendee.count({ where: { event_id: EVENT_A } });
+
+    const res = await postBulkResend("all");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { queued: number; skipped: number };
+    expect(body.queued).toBe(attendeeCount);
+  });
+
+  it("skips attendees with queued delivery when target is unsent", async () => {
+    await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_A } });
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        attendee_id: ATT_A2,
+        purpose: "resend",
+        provider: "export_only",
+        status: "queued",
+        recipient_email: "bob@example.com",
+        rendered_subject: "Queued",
+        rendered_html: "<p>queued</p>",
+      },
+    });
+
+    const res = await postBulkResend("unsent");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { queued: number; skipped: number };
+    const attendeeCount = await prisma.attendee.count({ where: { event_id: EVENT_A } });
+    expect(body.queued).toBe(attendeeCount - 1);
+  });
+
+  it("returns 403 when event is archived", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_A },
+      data: { archived_at: new Date() },
+    });
+
+    const res = await postBulkResend("unsent");
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("event_archived");
+
+    await prisma.event.update({
+      where: { id: EVENT_A },
+      data: { archived_at: null },
+    });
+  });
+
+  it("rejects operator without manage access", async () => {
+    const res = await postBulkResend("unsent", opCookie);
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 400 too_many_attendees when attendee count exceeds limit", async () => {
+    const stubIds = Array.from({ length: 501 }, (_, i) => ({ id: `stub-${i}` }));
+    const spy = vi.spyOn(prisma.attendee, "findMany").mockResolvedValue(stubIds as never);
+
+    const res = await postBulkResend("all");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; limit: number };
+    expect(body.error).toBe("too_many_attendees");
+    expect(body.limit).toBe(500);
+
+    spy.mockRestore();
   });
 });
 

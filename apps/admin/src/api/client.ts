@@ -17,6 +17,7 @@ import type {
   UpdateAttendeePatch,
   ImportPreviewResponse,
   ImportCommitResponse,
+  BulkResendResponse,
   EventItemDto,
   EventItemsListResponse,
   CreateEventItemBody,
@@ -480,6 +481,18 @@ export async function resendTicket(
     jsonPostInit(body),
   );
   return parseJson<DeliveryDto>(res);
+}
+
+/** Queue ticket emails for many attendees (undelivered or all). */
+export async function bulkResendTickets(
+  eventId: string,
+  target: "unsent" | "all",
+): Promise<BulkResendResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-resend`,
+    jsonPostInit({ target }),
+  );
+  return parseJson<BulkResendResponse>(res);
 }
 
 /** Fetch all event items for the Requirements admin screen. */

@@ -81,6 +81,7 @@ export type AttendeeActionType =
   | 'ticket_resent'
   | 'attendees_imported'
   | 'attendees_exported'
+  | 'mail_bulk_resend'
   | 'reports_exported'
   | 'rsvp_status_changed'
   | 'attendee_created_manual'
@@ -97,6 +98,7 @@ export const ATTENDEE_ACTION_TYPE = [
   'ticket_resent',
   'attendees_imported',
   'attendees_exported',
+  'mail_bulk_resend',
   'reports_exported',
   'rsvp_status_changed',
   'attendee_created_manual',

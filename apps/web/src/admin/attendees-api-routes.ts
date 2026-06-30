@@ -6,10 +6,12 @@ import { z } from "zod";
 import {
   listDeliveries,
   resendTicketEmail,
+  sendTicketEmails,
   toDeliveryDto,
   type DeliveryDto,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
+import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
 import { formatEventDate, resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
   collectEventCustomDataFields,
@@ -99,6 +101,20 @@ const resendBodySchema = z
     to: z.string().trim().email().optional(),
   })
   .strict();
+
+/** Hard cap on attendees in one bulk-resend to avoid request timeout. */
+const BULK_RESEND_LIMIT = 500;
+
+const bulkResendBodySchema = z
+  .object({
+    target: z.enum(["unsent", "all"]).default("unsent"),
+  })
+  .strict();
+
+export type BulkResendDto = {
+  queued: number;
+  skipped: number;
+};
 
 const customDataFieldValueSchema = z.string().trim().max(100).nullable();
 
@@ -1525,4 +1541,90 @@ export async function handleResendEventAttendeeTicket(
   });
 
   return c.json(toDeliveryDto(latest));
+}
+
+/** POST /api/admin/events/:eventId/attendees/bulk-resend */
+export async function handleBulkResendTickets(
+  c: Context,
+  db: PrismaClient,
+  mailDeps: MailDeliveryDeps = {},
+): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown = {};
+  try {
+    const text = await c.req.text();
+    if (text.trim()) body = JSON.parse(text);
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+
+  const parsed = bulkResendBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
+  const target = parsed.data.target;
+  let attendees: { id: string }[];
+
+  if (target === "all") {
+    attendees = await db.attendee.findMany({
+      where: { event_id: eventId },
+      select: { id: true },
+      take: BULK_RESEND_LIMIT + 1,
+    });
+  } else {
+    // TODO v0.5: add take + cursor pagination for large events
+    const successOrQueued = await db.emailDelivery.findMany({
+      where: {
+        event_id: eventId,
+        status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES, "queued"] },
+      },
+      select: { attendee_id: true },
+      distinct: ["attendee_id"],
+    });
+    const excludeIds = successOrQueued.map((row) => row.attendee_id);
+    attendees = await db.attendee.findMany({
+      where: {
+        event_id: eventId,
+        ...(excludeIds.length > 0 ? { id: { notIn: excludeIds } } : {}),
+      },
+      select: { id: true },
+      take: BULK_RESEND_LIMIT + 1,
+    });
+  }
+
+  if (attendees.length === 0) {
+    return c.json({ queued: 0, skipped: 0 } satisfies BulkResendDto);
+  }
+
+  if (attendees.length > BULK_RESEND_LIMIT) {
+    return c.json({ error: "too_many_attendees", limit: BULK_RESEND_LIMIT }, 400);
+  }
+
+  const attendeeIds = attendees.map((row) => row.id);
+  const sendResult = await sendTicketEmails(
+    eventId,
+    { attendeeIds, purpose: "resend" },
+    db,
+    process.env,
+    mailDeps,
+  );
+
+  const queued = sendResult.deliveries.length;
+  const skipped = sendResult.skipped.length;
+
+  await writeBulkActionLog(db as Prisma.TransactionClient, {
+    event_id: eventId,
+    action_type: "mail_bulk_resend",
+    audit: adminAuditFromContext(c),
+    metadata: { target, queued, skipped },
+  });
+
+  return c.json({ queued, skipped } satisfies BulkResendDto);
 }

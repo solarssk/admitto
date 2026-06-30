@@ -111,6 +111,7 @@ import {
   handlePatchEventAttendee,
   handleDeleteEventAttendee,
   handleResendEventAttendeeTicket,
+  handleBulkResendTickets,
   handleListTicketTypes,
   handleExportAttendees,
 } from "./admin/attendees-api-routes.js";
@@ -469,6 +470,12 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleCreateEventAttendee(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-resend",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleBulkResendTickets(c, db, mailDeliveryDeps)),
   );
   app.get("/api/admin/events/:eventId/attendees/:id", staffAdminGate, (c) =>
     handleGetEventAttendee(c, db),

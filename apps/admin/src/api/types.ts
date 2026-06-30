@@ -268,6 +268,12 @@ export interface ImportCommitResponse {
   skipped: ImportSkippedRow[];
 }
 
+/** Bulk ticket send queue summary from POST .../attendees/bulk-resend. */
+export interface BulkResendResponse {
+  queued: number;
+  skipped: number;
+}
+
 /** Admin SPA DTOs for event item configuration (mirror of web API). */
 export interface EventItemContentDto {
   label: string;
