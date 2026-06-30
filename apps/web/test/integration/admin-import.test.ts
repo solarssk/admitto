@@ -6,6 +6,7 @@ import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { buildXlsxBuffer } from "../../src/admin/xlsx-to-csv.js";
 import { createApp } from "../../src/app.js";
+import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
@@ -840,7 +841,7 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
 
   it("returns 409 event_full when import would exceed capacity", async () => {
     const current = await prisma.attendee.count({
-      where: { event_id: EVENT_A, status: { not: "revoked" } },
+      where: { event_id: EVENT_A, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
     });
     const csv = [
       "first_name,last_name,email",
@@ -865,7 +866,7 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
 
   it("allows overwrite-only import when event is already over capacity", async () => {
     const current = await prisma.attendee.count({
-      where: { event_id: EVENT_A, status: { not: "revoked" } },
+      where: { event_id: EVENT_A, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
     });
     expect(current).toBeGreaterThan(0);
     const csv = ["first_name,last_name,email", "Updated,Name,existing@example.com"].join("\n");
@@ -881,7 +882,7 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
 
   it("allows import within capacity when one slot remains", async () => {
     const current = await prisma.attendee.count({
-      where: { event_id: EVENT_A, status: { not: "revoked" } },
+      where: { event_id: EVENT_A, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
     });
     const csv = ["first_name,last_name,email", "Slot,Left,slot-left@example.com"].join("\n");
     await withSavedEventCapacity(current + 1, async () => {

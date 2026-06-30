@@ -11,6 +11,7 @@ import * as mailDelivery from "@admitto/mail-delivery";
 import type { ExportPayload } from "@admitto/mailer";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
+import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -1274,7 +1275,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
 
   async function countActiveEventAAttendees(): Promise<number> {
     return prisma.attendee.count({
-      where: { event_id: EVENT_A, status: { not: "revoked" } },
+      where: { event_id: EVENT_A, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
     });
   }
 
@@ -1662,6 +1663,35 @@ describe("Attendees v2 — RSVP and manual create", () => {
       await prisma.userMfaMethod.deleteMany({ where: { user_id: superUser.id } });
       await prisma.roleAssignment.deleteMany({ where: { user_id: superUser.id } });
       await prisma.user.delete({ where: { id: superUser.id } });
+    }
+  });
+
+  it("POST create succeeds when cancelled attendee frees a capacity slot", async () => {
+    await resetEventACustomFields();
+    const priorStatus = (
+      await prisma.attendee.findUniqueOrThrow({
+        where: { id: ATT_A2 },
+        select: { status: true },
+      })
+    ).status;
+    try {
+      const activeBefore = await countActiveEventAAttendees();
+      await withSavedEventCapacity(activeBefore, async () => {
+        await prisma.attendee.update({
+          where: { id: ATT_A2 },
+          data: { status: "cancelled" },
+        });
+        const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ email: "after-cancel@example.com", name: "After Cancel" }),
+        });
+        expect(res.status).toBe(201);
+        const created = (await res.json()) as { id: string };
+        await prisma.attendee.delete({ where: { id: created.id } });
+      });
+    } finally {
+      await prisma.attendee.update({ where: { id: ATT_A2 }, data: { status: priorStatus } });
     }
   });
 

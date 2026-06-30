@@ -4,10 +4,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
-import { getCheckInStats } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import type { EventOverviewResponse } from "../../src/admin/overview-routes.js";
+import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 
@@ -337,40 +337,58 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     expect(body.email_queued).toBe(0);
   });
 
-  it("returns admitted_count matching getCheckInStats", async () => {
+  it("returns admitted_count scoped to active attendees", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_MAIN}/overview`, {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as EventOverviewResponse;
     expect(body.event.timezone).toBe("Europe/Warsaw");
-    const stats = await getCheckInStats(EVENT_MAIN, prisma);
-    const activeCount = await prisma.attendee.count({
-      where: { event_id: EVENT_MAIN, status: { not: "revoked" } },
+    const activeWhere = {
+      event_id: EVENT_MAIN,
+      status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },
+    };
+    const activeAdmitted = await prisma.attendee.count({
+      where: { ...activeWhere, admitted_at: { not: null } },
     });
     expect(body.admitted_count).toBe(4);
-    expect(body.admitted_count).toBe(stats.admitted_count);
-    expect(body.attendee_count).toBe(activeCount);
+    expect(body.admitted_count).toBe(activeAdmitted);
+    expect(body.admitted_count).toBeLessThanOrEqual(body.attendee_count);
+    expect(body.attendee_count).toBe(await prisma.attendee.count({ where: activeWhere }));
   });
 
-  it("excludes revoked attendees from attendee_count", async () => {
-    await prisma.attendee.update({
+  it("excludes revoked attendees from attendee_count and admitted_count", async () => {
+    const prior = await prisma.attendee.findUniqueOrThrow({
       where: { id: ATT_MAIN[0] },
-      data: { status: "revoked" },
+      select: { status: true },
     });
-    const res = await app.request(`/api/admin/events/${EVENT_MAIN}/overview`, {
-      headers: { Cookie: adminCookie },
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as EventOverviewResponse;
-    const activeCount = await prisma.attendee.count({
-      where: { event_id: EVENT_MAIN, status: { not: "revoked" } },
-    });
-    expect(body.attendee_count).toBe(activeCount);
-    await prisma.attendee.update({
-      where: { id: ATT_MAIN[0] },
-      data: { status: "registered" },
-    });
+    try {
+      await prisma.attendee.update({
+        where: { id: ATT_MAIN[0] },
+        data: { status: "revoked" },
+      });
+      const res = await app.request(`/api/admin/events/${EVENT_MAIN}/overview`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as EventOverviewResponse;
+      const activeWhere = {
+        event_id: EVENT_MAIN,
+        status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },
+      };
+      expect(body.attendee_count).toBe(await prisma.attendee.count({ where: activeWhere }));
+      expect(body.admitted_count).toBe(
+        await prisma.attendee.count({
+          where: { ...activeWhere, admitted_at: { not: null } },
+        }),
+      );
+      expect(body.admitted_count).toBeLessThanOrEqual(body.attendee_count);
+    } finally {
+      await prisma.attendee.update({
+        where: { id: ATT_MAIN[0] },
+        data: { status: prior.status },
+      });
+    }
   });
 
   it("aggregates email delivery stats", async () => {

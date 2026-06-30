@@ -1,8 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
-import { getCheckInStats } from "@admitto/tickets";
 import { assertEventManageAccess, requireEventId } from "./admin-helpers.js";
-import { countActiveAttendees } from "./event-capacity.js";
+import { countActiveAdmittedAttendees, countActiveAttendees } from "./event-capacity.js";
 
 export interface EventOverviewResponse {
   event: {
@@ -49,9 +48,9 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
   });
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const [checkInStats, activeAttendeeCount, deliveryStats] = await Promise.all([
-    getCheckInStats(eventId, db),
+  const [activeAttendeeCount, activeAdmittedCount, deliveryStats] = await Promise.all([
     countActiveAttendees(db, eventId),
+    countActiveAdmittedAttendees(db, eventId),
     db.emailDelivery.groupBy({
       by: ["status"],
       where: { event_id: eventId },
@@ -85,7 +84,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       organization_id: event.organization_id,
     },
     attendee_count: activeAttendeeCount,
-    admitted_count: checkInStats.admitted_count,
+    admitted_count: activeAdmittedCount,
     email_sent: emailSent,
     email_failed: emailFailed,
     email_bounced: emailBounced,

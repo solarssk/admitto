@@ -1,8 +1,17 @@
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@prisma/client";
+import type { AttendeeStatus } from "@admitto/db";
 import { canManageInstance } from "@admitto/auth";
 
 type CapacityDb = PrismaClient | Prisma.TransactionClient;
+
+/** Attendee statuses that do not consume event capacity. */
+export const CAPACITY_EXCLUDED_STATUSES = ["revoked", "cancelled"] as const satisfies readonly AttendeeStatus[];
+
+const activeAttendeeWhere = (eventId: string) => ({
+  event_id: eventId,
+  status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },
+});
 
 export function eventCapacityLockKey(eventId: string): string {
   return `event-capacity:${eventId}`;
@@ -18,10 +27,15 @@ export async function acquireEventCapacityLock(
   );
 }
 
-/** Count attendees that consume event capacity (excludes revoked). */
+/** Count attendees that consume event capacity (excludes revoked and cancelled). */
 export async function countActiveAttendees(db: CapacityDb, eventId: string): Promise<number> {
+  return db.attendee.count({ where: activeAttendeeWhere(eventId) });
+}
+
+/** Admitted attendees that still consume capacity (same scope as countActiveAttendees). */
+export async function countActiveAdmittedAttendees(db: CapacityDb, eventId: string): Promise<number> {
   return db.attendee.count({
-    where: { event_id: eventId, status: { not: "revoked" } },
+    where: { ...activeAttendeeWhere(eventId), admitted_at: { not: null } },
   });
 }
 
