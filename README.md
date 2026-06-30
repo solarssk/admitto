@@ -1,112 +1,141 @@
-# Admitto
+<p align="center">
+  <img src="docs/assets/admitto-logo.svg" alt="Admitto" height="40">
+</p>
+
+<p align="center">
+  <a href="https://github.com/solarssk/admitto/actions/workflows/ci.yml"><img src="https://github.com/solarssk/admitto/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  &nbsp;
+  <a href="https://github.com/solarssk/admitto/releases"><img src="https://img.shields.io/github/v/tag/solarssk/admitto?sort=semver&label=release&color=066fd1" alt="release"></a>
+  &nbsp;
+  <img src="https://img.shields.io/badge/node-24-brightgreen" alt="Node 24">
+  &nbsp;
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
+</p>
+
+<p align="center">
+  Self-hosted registration-to-check-in for internal corporate events.<br>
+  One source of truth. No SaaS. No recurring fees.
+</p>
+
+---
 
 > **Status: pre-MVP / early development — internal use only.**
-> Not ready for production use with real personal data until DPO confirms lawful basis and DSAR model.
-> See [DATA-PROTECTION.md](DATA-PROTECTION.md) and [docs/GDPR-ONE-PAGER.md](docs/GDPR-ONE-PAGER.md).
+> Not ready for production with real personal data until the data protection review is complete.
+> See [DATA-PROTECTION.md](DATA-PROTECTION.md) and [SECURITY.md](SECURITY.md) before deploying.
+>
+> This repository contains only generic code and synthetic data (`@example.com`).
+> No secrets, no real personal data are ever committed here.
 
-A self-hostable event access gateway: attendee import, QR tickets, wallet passes, M365 mail,
-and check-in scanning. See [SECURITY.md](SECURITY.md) before deploying with real data.
+## How it works
 
-**This repository contains only generic code and synthetic data (`@example.com`).
-No secrets, no real personal data are ever committed here.**
+```mermaid
+flowchart LR
+    A("📥 Import\nCSV / XLSX / UUIDs") --> B("🎫 Generate\nsecure QR token")
+    B --> C("📧 Deliver ticket\nM365 · SMTP · Power Automate")
+    C --> D("📱 Wallet pass\nApple & Google — v0.5")
+    C --> E("✅ Check-in\ntablet scan · no double-entry")
+    E --> F("📄 Paper fallback\nPDF / XLSX export")
+```
 
-**Release version:** git tags and root `package.json` are the source of truth (see [VERSIONING.md](VERSIONING.md)). [CHANGELOG.md](CHANGELOG.md) is the human-readable release history, not the version number itself.
-Workspace packages stay at `0.0.1` — only the product version is bumped per release.
+## Features
 
-**AI agents:** start from [AGENTS.md](AGENTS.md) (all tools) and [CLAUDE.md](CLAUDE.md) (Claude Code).
+- 🎫 **Secure QR tickets** — unpredictable tokens, single-use, replay-safe
+- 📧 **Flexible mail delivery** — M365 Graph, SMTP, or Power Automate; Outlook-safe HTML templates
+- 📱 **Wallet passes** — Apple & Google Wallet via PassCreator *(v0.5)*
+- ✅ **Operator-first check-in** — scanner-driven, tablet-ready, manual lookup, offline-safe
+- 🔒 **Strong security defaults** — 2FA (TOTP), OIDC, Cloudflare Access, AES-256-GCM at-rest, audit logs
+- 🏢 **Self-hosted, multi-org** — superadmin / admin / operator RBAC; one instance, multiple organisations
+
+## Stack
+
+| Layer | Technologies |
+|-------|-------------|
+| Runtime | Node.js 24, TypeScript, Docker |
+| Backend | Hono 4, PostgreSQL (Prisma), Redis |
+| Frontend | React 19, react-router 7, Vite, Tabler design tokens |
+| Mail | M365 Graph · SMTP · Power Automate |
+| Auth | Local accounts · OIDC (Authentik) · Cloudflare Access (ZTNA) · 2FA (TOTP) |
 
 ## Prerequisites
 
 - Node.js `>=24.17.0 <25` (see root `package.json` `engines`)
 - [Docker](https://docs.docker.com/get-docker/) — required to run PostgreSQL locally (and optional Redis)
 
-## Setup (database and tests)
+## Quick start
 
 Local **development** uses [`infra/docker-compose.yml`](infra/docker-compose.yml) (loopback Postgres/Redis).
-**Production** uses a separate stack in [`deploy/`](deploy/README.md) — do not reuse dev credentials there.
+**Production** uses a separate stack — see [deploy/README.md](deploy/README.md) and do not reuse dev credentials there.
 
 ```bash
 # 1. Start Postgres (+ optional Redis for shared rate limits)
 docker compose -f infra/docker-compose.yml up -d db redis
 
-# 2. Database connection (matches compose defaults)
+# 2. Configure database connection
 cp packages/db/.env.example packages/db/.env
-# Recommended before MFA/OIDC: set ENCRYPTION_KEY (openssl rand -base64 32)
+# Set ENCRYPTION_KEY before enrolling MFA or OIDC: openssl rand -base64 32
 
-# 3. Install dependencies
+# 3. Install, migrate, seed, prepare test databases
 npm install
-
-# 4. Migrate, seed sample event data, and create isolated test databases
 npm run db:migrate
 npm run db:seed
 npm run db:test-setup
 
-# 5. Run tests
+# 4. Run tests
 npm test
-```
 
-More detail: [infra/README.md](infra/README.md), [packages/db/README.md](packages/db/README.md).
-
-## Run locally
-
-After the database steps above, start the **staff UI** (login, admin SPA, SSR settings):
-
-```bash
-# ENCRYPTION_KEY in packages/db/.env (setup step above) — required before MFA/OIDC secrets.
-# Prisma and auth CLI load that file automatically; npm run dev does not read apps/web/.env.
-
-# First platform superadmin (password read from stdin — never pass on argv)
+# 5. Bootstrap the first superadmin (password read from stdin — never pass on argv)
 npm run auth:bootstrap -- --email admin@example.com
 ```
 
-Optional: copy [`apps/web/.env.example`](apps/web/.env.example) when tuning mail, `BASE_URL`, or ops tokens — export those vars in your shell or use the single-server flow on `:3000` only.
+Then start the staff UI:
 
-Then choose how to run the staff UI:
-
-| Mode | Commands | Open |
-|------|----------|------|
-| **SPA hot reload** (UI work) | Terminal 1: `npm run dev -w @admitto/web`<br>Terminal 2: `npm run dev -w @admitto/admin` | http://localhost:5173 |
+| Mode | Commands | URL |
+|------|----------|-----|
+| **SPA hot reload** (UI work) | `npm run dev -w @admitto/web` + `npm run dev -w @admitto/admin` | http://localhost:5173 |
 | **Single server** (prod-like) | `npm run build -w @admitto/admin` then `npm run dev -w @admitto/web` | http://localhost:3000/login |
 
-Sign in with the bootstrapped account. MFA enrollment is required for admin/superadmin roles on first login (HTML flow: TOTP QR → backup codes acknowledgment → full session; backup-code acknowledgment is persisted in the database, not an in-memory stash).
-SSR settings (Identity providers, Cloudflare Access) live under `/admin/auth/*` on the web server port.
+Sign in with the bootstrapped account. MFA enrolment is required on first login for admin and superadmin roles.
 
-See [apps/web/README.md](apps/web/README.md) and [apps/admin/README.md](apps/admin/README.md).
+More detail: [infra/README.md](infra/README.md) · [apps/web/README.md](apps/web/README.md) · [apps/admin/README.md](apps/admin/README.md)
 
 ## Production deployment
 
-Self-hosted **Docker Compose** only (not bare metal, not Kubernetes). See [deploy/README.md](deploy/README.md).
-
-Images are published to `ghcr.io/solarssk/admitto` on each git tag `vX.Y.Z`. Vercel Git deploys are disabled (`vercel.json`); disconnect the project in the Vercel dashboard if PR checks still appear.
+Self-hosted **Docker Compose** only. Images are published to `ghcr.io/solarssk/admitto` on each `vX.Y.Z` git tag.
+See [deploy/README.md](deploy/README.md).
 
 ## Packages
 
-| Package | Description |
-|---------|-------------|
-| [`apps/web`](apps/web/README.md) | HTTP server — Hono routes, HTML, rate limits |
-| [`apps/admin`](apps/admin/README.md) | Staff React SPA — events picker, check-in, event admin |
-| [`packages/auth`](packages/auth/README.md) | Sessions, MFA, OIDC, Cloudflare Access, RBAC |
-| [`packages/crypto`](packages/crypto/README.md) | AES-256-GCM at-rest encryption (`ENCRYPTION_KEY`) |
-| [`packages/db`](packages/db/README.md) | Prisma schema + client (PostgreSQL) |
-| [`packages/import`](packages/import/README.md) | CSV attendee import (Mode A/B) |
-| [`packages/mail-delivery`](packages/mail-delivery/README.md) | Ticket email orchestration + `EmailDelivery` |
-| [`packages/mail-templates`](packages/mail-templates/README.md) | MJML/HTML templates + placeholder whitelist |
-| [`packages/mailer`](packages/mailer/README.md) | Mail transports (Graph, SMTP, Power Automate) |
-| [`packages/mailer-config`](packages/mailer-config/README.md) | Per-scope mail config resolver |
-| [`packages/shared`](packages/shared/README.md) | Tiny shared helpers (CSV parsing) |
-| [`packages/tickets`](packages/tickets/README.md) | Tokens, QR, issuance, check-in domain |
+| Package | Layer | Description |
+|---------|-------|-------------|
+| [`apps/web`](apps/web/README.md) | server | Hono HTTP server — routes, HTML, rate limits |
+| [`apps/admin`](apps/admin/README.md) | frontend | Staff React SPA — events, check-in, admin tooling |
+| [`packages/auth`](packages/auth/README.md) | shared | Sessions, 2FA, OIDC, Cloudflare Access, RBAC |
+| [`packages/crypto`](packages/crypto/README.md) | shared | AES-256-GCM at-rest encryption |
+| [`packages/db`](packages/db/README.md) | shared | Prisma schema + PostgreSQL client |
+| [`packages/import`](packages/import/README.md) | shared | CSV / XLSX attendee import |
+| [`packages/mail-delivery`](packages/mail-delivery/README.md) | shared | Email orchestration + delivery tracking |
+| [`packages/mail-templates`](packages/mail-templates/README.md) | shared | MJML/HTML email templates |
+| [`packages/mailer`](packages/mailer/README.md) | shared | Mail transports (Graph, SMTP, Power Automate) |
+| [`packages/mailer-config`](packages/mailer-config/README.md) | shared | Per-scope mail transport resolver |
+| [`packages/shared`](packages/shared/README.md) | shared | Shared helpers |
+| [`packages/tickets`](packages/tickets/README.md) | shared | Tokens, QR generation, check-in domain |
+
+## Roadmap
+
+| Milestone | What ships |
+|-----------|------------|
+| v0.5 | 📱 Apple & Google Wallet passes (PassCreator) |
+| v0.6 | 📋 RSVP intake via external forms |
+| v0.7–0.9 | 🔧 Hardening, stress testing, dry run |
+| **v1.0** | **🚀 First event go-live** |
+| v1.1+ | 🌍 Self-service registration, multi-language, multi-track |
 
 ## Security & data
 
-This tool processes personal data (name, email, attendance status).
-
-- See [SECURITY.md](SECURITY.md) for how to report vulnerabilities.
-- GDPR / data protection: [DATA-PROTECTION.md](DATA-PROTECTION.md), [docs/](docs/) corp pack
-- Never commit `.env` files, real attendee lists, or any credentials.
-- Public `/t/*` and `/q/*` rate limiting and CSRF on mutating POSTs trust forwarded headers only when
-  `TRUST_PROXY=true` behind a reverse proxy that overwrites or sanitizes `X-Forwarded-*` from clients.
-- When Redis is enabled for shared rate limiting, keep a memory cap and TTL-based eviction policy
-  in deployment config so spoofed-IP floods cannot grow Redis without bound.
+- Report vulnerabilities: [SECURITY.md](SECURITY.md)
+- Data protection & GDPR: [DATA-PROTECTION.md](DATA-PROTECTION.md), [docs/](docs/)
+- Never commit `.env` files, real attendee lists, or credentials
+- **AI agents:** start from [AGENTS.md](AGENTS.md) (all tools) and [CLAUDE.md](CLAUDE.md) (Claude Code)
 
 ## Licence
 

@@ -3,6 +3,8 @@ dist/
 _reference/
 # Local docs — ignore by default; corp compliance pack is versioned (v0.4.3+)
 docs/*
+!docs/assets/
+!docs/assets/**
 !docs/SECURITY-CONTROLS.md
 !docs/CORPORATE-DEPLOYMENT.md
 !docs/ARCHITECTURE-FOR-AUDITORS.md
