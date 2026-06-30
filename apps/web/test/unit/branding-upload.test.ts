@@ -20,14 +20,20 @@ function pngFile(name = "logo.png"): File {
 }
 
 let uploadDir: string;
+let savedUploadDir: string | undefined;
 
 beforeEach(() => {
+  savedUploadDir = process.env.UPLOAD_DIR;
   uploadDir = mkdtempSync(join(tmpdir(), "admitto-branding-upload-"));
   process.env.UPLOAD_DIR = uploadDir;
 });
 
 afterEach(() => {
-  delete process.env.UPLOAD_DIR;
+  if (savedUploadDir === undefined) {
+    delete process.env.UPLOAD_DIR;
+  } else {
+    process.env.UPLOAD_DIR = savedUploadDir;
+  }
   rmSync(uploadDir, { recursive: true, force: true });
 });
 

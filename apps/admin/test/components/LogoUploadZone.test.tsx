@@ -16,7 +16,10 @@ import { uploadFile } from "../../src/api/client.js";
 
 const mockUploadFile = vi.mocked(uploadFile);
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 describe("LogoUploadZone", () => {
   it("shows drop zone when value is empty", () => {
@@ -26,16 +29,29 @@ describe("LogoUploadZone", () => {
 
   it("shows preview and clear button for uploaded path", () => {
     render(
-      <LogoUploadZone value="/uploads/default/abc.png" onChange={() => {}} />,
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        onChange={() => {}}
+      />,
     );
     expect(screen.getByAltText("Organisation logo preview")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Remove logo" })).toBeTruthy();
     expect(screen.queryByText(/drop logo here/i)).toBeNull();
   });
 
+  it("does not preview invalid upload paths or URLs", () => {
+    render(<LogoUploadZone value="/uploads/default/../evil.png" onChange={() => {}} />);
+    expect(screen.queryByAltText("Organisation logo preview")).toBeNull();
+  });
+
   it("calls onChange with empty string when clear is clicked", () => {
     const onChange = vi.fn();
-    render(<LogoUploadZone value="/uploads/default/abc.png" onChange={onChange} />);
+    render(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        onChange={onChange}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Remove logo" }));
     expect(onChange).toHaveBeenCalledWith("");
   });
@@ -49,5 +65,18 @@ describe("LogoUploadZone", () => {
     await waitFor(() => {
       expect(screen.getByRole("alert").textContent).toContain("unsupported_file_type");
     });
+  });
+
+  it("rejects files over 2 MB before upload", async () => {
+    render(<LogoUploadZone value="" onChange={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const big = new File([new Uint8Array(2 * 1024 * 1024 + 1)], "big.png", {
+      type: "image/png",
+    });
+    fireEvent.change(input, { target: { files: [big] } });
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toContain("2 MB");
+    });
+    expect(mockUploadFile).not.toHaveBeenCalled();
   });
 });

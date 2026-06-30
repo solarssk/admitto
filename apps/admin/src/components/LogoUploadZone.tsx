@@ -1,6 +1,9 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ApiError, uploadFile } from "../api/client.js";
+import { safeBrandingLogoHref } from "../utils/safeBrandingLogoHref.js";
 import "./logo-upload.css";
+
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 
 export interface LogoUploadZoneProps {
   value: string;
@@ -8,7 +11,7 @@ export interface LogoUploadZoneProps {
   onDirty?: () => void;
 }
 
-/** Drop zone + optional HTTPS URL fallback for organisation logo upload. */
+/** Upload to server or link an external HTTPS image — both are supported. */
 export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -17,9 +20,14 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
   const [dragging, setDragging] = useState(false);
 
   const isUploadedFile = value.startsWith("/uploads/");
+  const previewSrc = useMemo(() => safeBrandingLogoHref(value), [value]);
 
   const handleFile = async (file: File) => {
     setError(null);
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError("File must be 2 MB or smaller.");
+      return;
+    }
     setUploading(true);
     try {
       const fd = new FormData();
@@ -44,9 +52,12 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
   return (
     <div className="logo-upload">
       <span className="at-label">Organisation logo</span>
-      {value && (
+      <p className="logo-upload__intro">
+        Upload a file to this server, or use an image hosted elsewhere (HTTPS).
+      </p>
+      {previewSrc && (
         <div className="logo-upload__preview">
-          <img src={value} alt="Organisation logo preview" className="logo-upload__img" />
+          <img src={previewSrc} alt="Organisation logo preview" className="logo-upload__img" />
           <button
             type="button"
             className="logo-upload__clear"
@@ -113,15 +124,15 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
         className="logo-upload__toggle"
         onClick={() => setShowUrlInput((v) => !v)}
       >
-        {showUrlInput ? "Hide URL field" : "Or enter image URL instead"}
+        {showUrlInput ? "Hide external URL" : "Use external HTTPS URL"}
       </button>
       {showUrlInput && (
         <div className="at-field">
-          <label className="at-label" htmlFor="logo-url-fallback">
-            Logo URL (HTTPS)
+          <label className="at-label" htmlFor="logo-url-external">
+            External logo URL (HTTPS)
           </label>
           <input
-            id="logo-url-fallback"
+            id="logo-url-external"
             className="at-input"
             type="url"
             value={isUploadedFile ? "" : value}
@@ -129,7 +140,7 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
               onChange(e.target.value);
               onDirty?.();
             }}
-            placeholder="https://example.com/logo.png"
+            placeholder="https://cdn.example.com/logo.png"
           />
         </div>
       )}

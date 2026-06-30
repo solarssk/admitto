@@ -122,4 +122,16 @@ describe("CommunicationPage bounce banner", () => {
       );
     });
   });
+
+  it("does not show bounce banner when overview fetch fails", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockRejectedValue(new Error("network"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /Compose/i })).toBeTruthy();
+    });
+    expect(screen.queryByText(/emails bounced/i)).toBeNull();
+  });
 });

@@ -19,5 +19,7 @@ describe("safeBrandingLogoHref", () => {
     expect(safeBrandingLogoHref("http://example.com/logo.png")).toBeNull();
     expect(safeBrandingLogoHref("logo.png")).toBeNull();
     expect(safeBrandingLogoHref("https://user:pass@example.com/logo.png")).toBeNull();
+    expect(safeBrandingLogoHref("/uploads/default/../evil.png")).toBeNull();
+    expect(safeBrandingLogoHref("/uploads/default/not-an-image.svg")).toBeNull();
   });
 });

@@ -86,7 +86,7 @@ describe("setBranding", () => {
         { logoUrl: "ftp://bad.example/logo.png" },
         prisma,
       ),
-    ).rejects.toThrow("Logo URL must be a full http:// or https:// URL.");
+    ).rejects.toThrow(/Logo URL must be a full http:\/\/ or https:\/\/ URL/);
   });
 
   it("accepts local upload paths for logo_url", async () => {

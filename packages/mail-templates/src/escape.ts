@@ -27,7 +27,7 @@ export function formatInvalidUrlMessage(
 ): string {
   const label = fieldLabel(field, context);
   if (context === "branding") {
-    return `${label} must be a full http:// or https:// URL.`;
+    return `${label} must be a full http:// or https:// URL, or a valid /uploads/… image path.`;
   }
   return `${label} must be a full http:// or https:// URL when rendering the email.`;
 }

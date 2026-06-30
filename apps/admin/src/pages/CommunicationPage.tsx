@@ -192,11 +192,15 @@ export function CommunicationPage() {
       .then((data) => {
         if (!ac.signal.aborted) setEmailBounced(data.email_bounced);
       })
-      .catch(() => {
-        if (!ac.signal.aborted) setEmailBounced(0);
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (ac.signal.aborted) return;
+        if (err instanceof ApiError) {
+          reportApiError(err.status);
+        }
       });
     return () => ac.abort();
-  }, [eventId]);
+  }, [eventId, reportApiError]);
 
   useEffect(() => {
     if (tab !== "log") return;
