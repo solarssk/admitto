@@ -11,6 +11,11 @@ export interface SendTestEmailParams {
   toAddress: string;
 }
 
+export interface SendTestEmailOptions {
+  /** Resolved public instance URL — use when callers inject baseUrl (e.g. createApp) instead of env only. */
+  baseUrl?: string;
+}
+
 /**
  * Sends one test email for an event using sample template data (no live ticket token).
  * Does not create EmailDelivery rows — operator preflight only.
@@ -20,13 +25,15 @@ export async function sendTestEmail(
   prisma: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,
   deps: MailDeliveryDeps = {},
+  options: SendTestEmailOptions = {},
 ): Promise<SendResult> {
   const mailConfig = await resolveMailConfig(params.eventId, prisma, env);
   const mailer = createMailer(mailConfig, { exportSink: deps.exportSink });
+  const baseUrl = options.baseUrl ?? resolveBaseUrl(env);
 
   try {
     const rendered = await previewTemplate(params.eventId, prisma, undefined, {
-      baseUrl: resolveBaseUrl(env),
+      baseUrl,
     });
     const result = await mailer.send({
       to: params.toAddress,

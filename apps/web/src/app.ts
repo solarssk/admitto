@@ -529,7 +529,7 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     templateTestSendBodyLimit,
     adminCommunicationRateLimit,
-    guardArchivedEvent((c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps)),
+    guardArchivedEvent((c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps, baseUrl)),
   );
   app.get("/api/admin/events/:eventId/deliveries", staffAdminGate, (c) =>
     handleListEventDeliveries(c, db),

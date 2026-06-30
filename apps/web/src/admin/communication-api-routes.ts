@@ -369,6 +369,7 @@ export async function handleTestSendEventTemplate(
   c: Context,
   db: PrismaClient,
   mailDeliveryDeps: MailDeliveryDeps = {},
+  baseUrl: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -390,6 +391,7 @@ export async function handleTestSendEventTemplate(
       db,
       process.env,
       mailDeliveryDeps,
+      { baseUrl },
     );
   } catch (err) {
     console.error("[admin] template test-send failed", err);

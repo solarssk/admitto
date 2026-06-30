@@ -59,4 +59,17 @@ describe("sendTestEmail", () => {
     const afterCount = await prisma.emailDelivery.count({ where: { event_id: EVENT_ID } });
     expect(afterCount).toBe(beforeCount);
   });
+
+  it("uses explicit baseUrl without BASE_URL in env", async () => {
+    exported.length = 0;
+    const result = await sendTestEmail(
+      { eventId: EVENT_ID, toAddress: "operator@example.com" },
+      prisma,
+      { NODE_ENV: "test" },
+      { exportSink: (p) => exported.push(p) },
+      { baseUrl: "https://tickets.example.com" },
+    );
+    expect(result.status).toBe("accepted");
+    expect(exported).toHaveLength(1);
+  });
 });
