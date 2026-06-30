@@ -41,6 +41,7 @@ export function getTimelineIcon(actionType: string): string {
   const icons: Record<string, string> = {
     attendee_created_manual: "user-plus",
     attendees_imported: "upload",
+    mail_bulk_resend: "send",
     attendee_imported: "upload",
     attendee_ingested: "plug",
     rsvp_status_changed: "calendar-check",
@@ -72,6 +73,8 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
     case "attendees_imported":
     case "attendee_imported":
       return "Imported from CSV";
+    case "mail_bulk_resend":
+      return "Bulk ticket send";
     case "attendee_ingested":
       return "Ingested via API";
     case "rsvp_status_changed":

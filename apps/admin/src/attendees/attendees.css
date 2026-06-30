@@ -417,3 +417,23 @@
   white-space: nowrap;
   margin-top: 2px;
 }
+
+/* Send tickets dialog */
+.send-tickets-radio {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  cursor: pointer;
+}
+
+.send-tickets-radio input[type="radio"] {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.send-tickets-radio span {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}

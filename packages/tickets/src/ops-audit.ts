@@ -1,4 +1,7 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
+
+/** Prisma client or an active transaction — both support `attendeeActionLog.create`. */
+type OpsAuditDb = PrismaClient | Prisma.TransactionClient;
 
 /** Audit context attached to every event-day mutation (ADR 0010). */
 export type OpsAuditContext = {
@@ -10,7 +13,7 @@ export type OpsAuditContext = {
 
 /** Append an event-scoped audit row without a single attendee (e.g. bulk import). */
 export async function writeBulkActionLog(
-  tx: Prisma.TransactionClient,
+  tx: OpsAuditDb,
   data: {
     event_id: string;
     action_type: string;

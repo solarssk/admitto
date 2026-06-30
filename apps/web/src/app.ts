@@ -63,7 +63,10 @@ import {
 } from "./auth/mfa-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
-import { createAdminResendRateLimit } from "./admin-resend-rate-limit.js";
+import {
+  createAdminBulkResendRateLimit,
+  createAdminResendRateLimit,
+} from "./admin-resend-rate-limit.js";
 import { createAdminCommunicationRateLimit } from "./admin-communication-rate-limit.js";
 import { createAdminMailSettingsRateLimit } from "./admin-mail-settings-rate-limit.js";
 import {
@@ -111,6 +114,7 @@ import {
   handlePatchEventAttendee,
   handleDeleteEventAttendee,
   handleResendEventAttendeeTicket,
+  handleBulkResendTickets,
   handleListTicketTypes,
   handleExportAttendees,
 } from "./admin/attendees-api-routes.js";
@@ -315,6 +319,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const guardArchivedEvent = (handler: (c: Context) => Response | Promise<Response>) =>
     withEventArchiveGuard(db, handler);
   const adminResendRateLimit = createAdminResendRateLimit(rateLimitStore);
+  const adminBulkResendRateLimit = createAdminBulkResendRateLimit(rateLimitStore);
   const adminCommunicationRateLimit = createAdminCommunicationRateLimit(rateLimitStore);
   const adminMailSettingsRateLimit = createAdminMailSettingsRateLimit(rateLimitStore);
   const adminImportPreviewRateLimit = createAdminImportPreviewRateLimit(rateLimitStore);
@@ -469,6 +474,13 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleCreateEventAttendee(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-resend",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminBulkResendRateLimit,
+    guardArchivedEvent((c) => handleBulkResendTickets(c, db, mailDeliveryDeps)),
   );
   app.get("/api/admin/events/:eventId/attendees/:id", staffAdminGate, (c) =>
     handleGetEventAttendee(c, db),

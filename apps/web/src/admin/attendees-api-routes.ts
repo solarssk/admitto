@@ -6,10 +6,12 @@ import { z } from "zod";
 import {
   listDeliveries,
   resendTicketEmail,
+  sendTicketEmails,
   toDeliveryDto,
   type DeliveryDto,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
+import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
 import { formatEventDate, resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
   collectEventCustomDataFields,
@@ -99,6 +101,23 @@ const resendBodySchema = z
     to: z.string().trim().email().optional(),
   })
   .strict();
+
+/** Hard cap on attendees in one bulk-resend to avoid request timeout. */
+const BULK_RESEND_LIMIT = 500;
+
+const bulkResendBodySchema = z
+  .object({
+    target: z.enum(["unsent", "all"]).default("unsent"),
+  })
+  .strict();
+
+export type BulkResendDto = {
+  /** Deliveries accepted by the mail provider (see `sendTicketEmails` `sent`). */
+  queued: number;
+  skipped: number;
+  /** Delivery rows created but not accepted by the provider (failed/rejected batch). */
+  failed: number;
+};
 
 const customDataFieldValueSchema = z.string().trim().max(100).nullable();
 
@@ -1525,4 +1544,107 @@ export async function handleResendEventAttendeeTicket(
   });
 
   return c.json(toDeliveryDto(latest));
+}
+
+/** Best-effort bulk send audit — must not fail the HTTP response after mail is queued. */
+async function auditBulkTicketSend(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  metadata: { target: "unsent" | "all"; queued: number; skipped: number; failed: number },
+): Promise<void> {
+  try {
+    await writeBulkActionLog(db, {
+      event_id: eventId,
+      action_type: "mail_bulk_resend",
+      audit: adminAuditFromContext(c),
+      metadata,
+    });
+  } catch (err) {
+    console.error("bulk resend audit log failed:", err);
+  }
+}
+
+/**
+ * Queue ticket emails for many attendees in one batch.
+ *
+ * `target: "unsent"` selects attendees without accepted/sent/delivered/queued delivery
+ * and sends via `purpose: "initial"` (atomic claim). `target: "all"` resends to every
+ * attendee up to {@link BULK_RESEND_LIMIT}. Audit metadata is counts only (no PII).
+ */
+export async function handleBulkResendTickets(
+  c: Context,
+  db: PrismaClient,
+  mailDeps: MailDeliveryDeps = {},
+): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown = {};
+  try {
+    const text = await c.req.text();
+    if (text.trim()) body = JSON.parse(text);
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+
+  const parsed = bulkResendBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
+  const target = parsed.data.target;
+  let attendees: { id: string }[];
+
+  if (target === "all") {
+    attendees = await db.attendee.findMany({
+      where: { event_id: eventId },
+      select: { id: true },
+      take: BULK_RESEND_LIMIT + 1,
+    });
+  } else {
+    attendees = await db.attendee.findMany({
+      where: {
+        event_id: eventId,
+        email_deliveries: {
+          none: {
+            status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES, "queued"] },
+          },
+        },
+      },
+      select: { id: true },
+      take: BULK_RESEND_LIMIT + 1,
+    });
+  }
+
+  if (attendees.length === 0) {
+    await auditBulkTicketSend(db, c, eventId, { target, queued: 0, skipped: 0, failed: 0 });
+    return c.json({ queued: 0, skipped: 0, failed: 0 } satisfies BulkResendDto);
+  }
+
+  if (attendees.length > BULK_RESEND_LIMIT) {
+    return c.json({ error: "too_many_attendees", limit: BULK_RESEND_LIMIT }, 400);
+  }
+
+  const attendeeIds = attendees.map((row) => row.id);
+  const mailPurpose = target === "unsent" ? "initial" : "resend";
+  const sendResult = await sendTicketEmails(
+    eventId,
+    { attendeeIds, purpose: mailPurpose },
+    db,
+    process.env,
+    mailDeps,
+  );
+
+  const skipped = sendResult.skipped.length;
+  const queued = sendResult.sent;
+  const failed = sendResult.deliveries.length - sendResult.sent;
+
+  await auditBulkTicketSend(db, c, eventId, { target, queued, skipped, failed });
+
+  return c.json({ queued, skipped, failed } satisfies BulkResendDto);
 }
