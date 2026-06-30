@@ -8,11 +8,15 @@ type CapacityDb = PrismaClient | Prisma.TransactionClient;
 /** Attendee statuses that do not consume event capacity. */
 export const CAPACITY_EXCLUDED_STATUSES = ["revoked", "cancelled"] as const satisfies readonly AttendeeStatus[];
 
-const activeAttendeeWhere = (eventId: string) => ({
-  event_id: eventId,
-  status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },
-});
+/** Prisma where-clause for attendees that consume event capacity. */
+function activeAttendeeWhere(eventId: string) {
+  return {
+    event_id: eventId,
+    status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },
+  };
+}
 
+/** Stable PostgreSQL advisory-lock key for per-event capacity serialization. */
 export function eventCapacityLockKey(eventId: string): string {
   return `event-capacity:${eventId}`;
 }
@@ -39,6 +43,7 @@ export async function countActiveAdmittedAttendees(db: CapacityDb, eventId: stri
   });
 }
 
+/** Audit metadata when a superadmin bypasses capacity with `?force=1`. */
 export type CapacityOverrideMeta = {
   forced: true;
   capacity: number;

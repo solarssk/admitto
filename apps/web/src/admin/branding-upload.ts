@@ -11,7 +11,9 @@ const ALLOWED_EXT = new Map([
 ]);
 const ORG_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
+/** Validation error for branding upload requests (maps to HTTP status). */
 export class BrandingUploadError extends Error {
+  /** @param code Machine-readable error code returned in the JSON body. */
   constructor(
     readonly code: string,
     readonly status: number,
@@ -27,6 +29,7 @@ export function resolveUploadDir(): string {
   return process.env.UPLOAD_DIR ?? join(process.cwd(), "uploads");
 }
 
+/** Reject org IDs that could escape the upload directory via path traversal. */
 function assertSafeOrgId(orgId: string): void {
   if (!ORG_ID_PATTERN.test(orgId)) {
     throw new BrandingUploadError("invalid_org_id", 400);
