@@ -1,16 +1,27 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Button, PageHeader, useToast } from "@admitto/ui";
-import { ApiError, bulkResendTickets, exportAttendees, fetchEventAttendees, fetchTicketTypes } from "../api/client.js";
+import { ApiError, bulkResendTickets, exportAttendees, fetchEventAttendees, fetchTicketTypes, updateAttendee } from "../api/client.js";
 import type { AttendeeDetailDto, AttendeeRowDto, EventDto, RsvpStatus } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
 
 const DEBOUNCE_MS = 300;
+
+function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): AttendeeRowDto {
+  return {
+    ...prev,
+    status: updated.status,
+    updated_at: updated.updated_at,
+    check_in_status: updated.check_in_status,
+    admitted_at: updated.admitted_at,
+  };
+}
 
 interface SendTicketsDialogProps {
   open: boolean;
@@ -127,6 +138,15 @@ export function AttendeesPage() {
   const [sendBusy, setSendBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [revokeOpen, setRevokeOpen] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<AttendeeRowDto | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
+  const passActionBusyRef = useRef(new Set<string>());
+  const [passActionBusyVersion, setPassActionBusyVersion] = useState(0);
+  const passActionBusyIds = useMemo(
+    () => new Set(passActionBusyRef.current),
+    [passActionBusyVersion],
+  );
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -260,6 +280,61 @@ export function AttendeesPage() {
     setPage(1);
     setReloadToken((n) => n + 1);
   };
+
+  const handlePassStatusChange = useCallback(
+    async (row: AttendeeRowDto, nextStatus: "registered" | "revoked") => {
+      if (!eventId) return;
+      if (passActionBusyRef.current.has(row.id)) return;
+      passActionBusyRef.current.add(row.id);
+      setPassActionBusyVersion((version) => version + 1);
+      setRevokeError(null);
+      try {
+        const updated = await updateAttendee(eventId, row.id, {
+          status: nextStatus,
+          expected_updated_at: row.updated_at,
+        });
+        setItems((prev) => prev.map((item) => (item.id === row.id ? mergeAttendeeRow(item, updated) : item)));
+        setRevokeOpen(false);
+        setRevokeTarget(null);
+        addToast(nextStatus === "revoked" ? "Pass revoked" : "Pass restored", "success");
+      } catch (err) {
+        if (err instanceof ApiError) {
+          reportApiError(err.status);
+          if (err.status === 401) {
+            const next = encodeURIComponent(window.location.pathname);
+            window.location.assign(`/login?next=${next}`);
+            return;
+          }
+          if (err.status === 409) {
+            if (err.code === "event_full") {
+              addToast("Event is at capacity — pass cannot be restored.", "error");
+            } else if (err.code === "stale_write") {
+              addToast("Someone else updated this attendee — reloading list", "warning");
+              setRevokeOpen(false);
+              setRevokeTarget(null);
+              setRevokeError(null);
+              setReloadToken((n) => n + 1);
+            } else if (revokeOpen) {
+              setRevokeError("Could not update pass status.");
+            } else {
+              addToast("Could not update pass status.", "error");
+            }
+            return;
+          }
+        }
+        if (revokeOpen) {
+          setRevokeError(err instanceof ApiError ? err.message : "Could not update pass status.");
+        } else {
+          addToast(err instanceof ApiError ? err.message : "Could not update pass status.", "error");
+        }
+      } finally {
+        if (passActionBusyRef.current.delete(row.id)) {
+          setPassActionBusyVersion((version) => version + 1);
+        }
+      }
+    },
+    [addToast, eventId, reportApiError, revokeOpen],
+  );
 
   const handleSendTicketsConfirm = async () => {
     if (!eventId) return;
@@ -399,6 +474,13 @@ export function AttendeesPage() {
           setPage(1);
         }}
         onViewAttendee={(id) => navigate(`/admin/events/${eventId}/attendees/${id}`)}
+        onRevokePass={(row) => {
+          setRevokeTarget(row);
+          setRevokeError(null);
+          setRevokeOpen(true);
+        }}
+        onRestorePass={(row) => void handlePassStatusChange(row, "registered")}
+        passActionBusyIds={passActionBusyIds}
         onPageChange={setPage}
         eventTimezone={event.timezone}
       />
@@ -419,6 +501,30 @@ export function AttendeesPage() {
         onConfirm={() => void handleSendTicketsConfirm()}
         onClose={() => {
           if (!sendBusy) setSendTicketsOpen(false);
+        }}
+      />
+
+      <ConfirmDialog
+        open={revokeOpen}
+        title="Revoke pass?"
+        message={
+          revokeTarget
+            ? `Revoke the pass for ${revokeTarget.name}? They will no longer be able to check in until the pass is restored.`
+            : ""
+        }
+        confirmLabel="Revoke pass"
+        confirmVariant="danger"
+        loading={revokeTarget ? passActionBusyIds.has(revokeTarget.id) : false}
+        errorMessage={revokeError ?? undefined}
+        onConfirm={() => {
+          if (revokeTarget) void handlePassStatusChange(revokeTarget, "revoked");
+        }}
+        onCancel={() => {
+          if (!revokeTarget || !passActionBusyIds.has(revokeTarget.id)) {
+            setRevokeOpen(false);
+            setRevokeTarget(null);
+            setRevokeError(null);
+          }
         }}
       />
     </>

@@ -219,7 +219,7 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      items: Record<string, unknown>[];
+      items: { status: string; updated_at: string; last_mail_status: string; check_in_status: string }[];
       total: number;
       page: number;
       pageSize: number;
@@ -234,6 +234,8 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
     expect(item).not.toHaveProperty("qr_payload");
     expect(item.last_mail_status).toBe("sent");
     expect(item.check_in_status).toBe("admitted");
+    expect(item.status).toBe("registered");
+    expect(new Date(item.updated_at).toISOString()).toBe(item.updated_at);
   });
 
   it("filters by q and status", async () => {
@@ -242,9 +244,13 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
       { headers: { Cookie: adminCookie } },
     );
     expect(search.status).toBe(200);
-    const searchBody = (await search.json()) as { items: { email: string }[] };
+    const searchBody = (await search.json()) as {
+      items: { email: string; status: string; updated_at: string }[];
+    };
     expect(searchBody.items).toHaveLength(1);
     expect(searchBody.items[0]!.email).toBe("anna@example.com");
+    expect(searchBody.items[0]!.status).toBe("registered");
+    expect(new Date(searchBody.items[0]!.updated_at).toISOString()).toBe(searchBody.items[0]!.updated_at);
 
     const admitted = await app.request(
       `/api/admin/events/${EVENT_A}/attendees?status=admitted`,
@@ -275,10 +281,14 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
       { headers: { Cookie: adminCookie } },
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { items: { id: string; company: string | null }[] };
+    const body = (await res.json()) as {
+      items: { id: string; company: string | null; status: string; updated_at: string }[];
+    };
     expect(body.items).toHaveLength(1);
     expect(body.items[0]!.id).toBe(ATT_A2);
     expect(body.items[0]!.company).toBe("JSON Only Corp");
+    expect(body.items[0]!.status).toBe("registered");
+    expect(typeof body.items[0]!.updated_at).toBe("string");
   });
 
   it("rejects operator", async () => {

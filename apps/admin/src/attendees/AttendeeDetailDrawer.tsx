@@ -270,7 +270,7 @@ export function AttendeeDetailDrawer({
       if (err instanceof ApiError && err.status === 409) {
         if (err.message === "email_conflict") {
           setEmailConflict(true);
-        } else if (err.message === "stale_write") {
+        } else if (err.code === "stale_write") {
           setStaleWrite(true);
         } else {
           setError("Could not save changes. Reload and try again.");

@@ -926,11 +926,6 @@ export async function handleDeleteEventTemplate(c: Context, db: PrismaClient): P
     return c.json({ error: "template_required" }, 422);
   }
 
-  const used = await db.emailDelivery.count({ where: { template_id: templateId } });
-  if (used > 0) {
-    return c.json({ error: "template_in_use" }, 422);
-  }
-
   await db.mailTemplate.delete({ where: { id: templateId } });
   return c.json({ ok: true });
 }

@@ -212,7 +212,7 @@ describe("multi-template API", () => {
     expect(res.status).toBe(200);
   });
 
-  it("DELETE blocks reminder template when deliveries exist", async () => {
+  it("DELETE allows reminder template when deliveries exist and nullifies template_id", async () => {
     const createRes = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
       method: "POST",
       headers: {
@@ -233,7 +233,7 @@ describe("multi-template API", () => {
         name: "Reminder Del",
       },
     });
-    await prisma.emailDelivery.create({
+    const delivery = await prisma.emailDelivery.create({
       data: {
         organization_id: ORG_A,
         event_id: EVENT_A,
@@ -244,6 +244,7 @@ describe("multi-template API", () => {
         status: "sent",
       },
     });
+    expect(delivery.template_id).toBe(reminder.id);
 
     const res = await app.request(
       `/api/admin/events/${EVENT_A}/templates/${reminder.id}`,
@@ -252,12 +253,18 @@ describe("multi-template API", () => {
         headers: { Cookie: adminCookie, ...sameOrigin },
       },
     );
-    expect(res.status).toBe(422);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("template_in_use");
+    expect(res.status).toBe(200);
+
+    const deleted = await prisma.mailTemplate.findUnique({ where: { id: reminder.id } });
+    expect(deleted).toBeNull();
+
+    const updatedDelivery = await prisma.emailDelivery.findUniqueOrThrow({
+      where: { id: delivery.id },
+    });
+    expect(updatedDelivery.template_id).toBeNull();
   });
 
-  it("DELETE blocks custom template when deliveries exist", async () => {
+  it("DELETE allows custom template when deliveries exist and nullifies template_id", async () => {
     const createRes = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
       method: "POST",
       headers: {
@@ -280,7 +287,7 @@ describe("multi-template API", () => {
         name: "Custom Del",
       },
     });
-    await prisma.emailDelivery.create({
+    const delivery = await prisma.emailDelivery.create({
       data: {
         organization_id: ORG_A,
         event_id: EVENT_A,
@@ -291,6 +298,7 @@ describe("multi-template API", () => {
         status: "sent",
       },
     });
+    expect(delivery.template_id).toBe(custom.id);
 
     const res = await app.request(
       `/api/admin/events/${EVENT_A}/templates/${custom.id}`,
@@ -299,9 +307,15 @@ describe("multi-template API", () => {
         headers: { Cookie: adminCookie, ...sameOrigin },
       },
     );
-    expect(res.status).toBe(422);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("template_in_use");
+    expect(res.status).toBe(200);
+
+    const deleted = await prisma.mailTemplate.findUnique({ where: { id: custom.id } });
+    expect(deleted).toBeNull();
+
+    const updatedDelivery = await prisma.emailDelivery.findUniqueOrThrow({
+      where: { id: delivery.id },
+    });
+    expect(updatedDelivery.template_id).toBeNull();
   });
 
   it("POST /send dryRun returns recipientCount", async () => {

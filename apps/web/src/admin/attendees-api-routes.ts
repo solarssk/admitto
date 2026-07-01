@@ -12,6 +12,7 @@ import {
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
 import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
+import type { AttendeeStatus } from "@admitto/db/status";
 import { formatEventDate, resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
   collectEventCustomDataFields,
@@ -45,7 +46,9 @@ const ATTENDEE_LIST_SELECT = {
   department: true,
   custom_data: true,
   ticket_type: true,
+  status: true,
   admitted_at: true,
+  updated_at: true,
   rsvp_status: true,
 } as const;
 
@@ -325,7 +328,9 @@ type AttendeeListSqlRow = {
   department: string | null;
   custom_data: unknown;
   ticket_type: string | null;
+  status: string;
   admitted_at: Date | null;
+  updated_at: Date;
   rsvp_status: string;
 };
 
@@ -348,7 +353,7 @@ async function findFilteredAttendeesForList(
   }
   const skip = (page - 1) * pageSize;
   return db.$queryRaw<AttendeeListSqlRow[]>`
-    SELECT id, name, email, company, department, custom_data, ticket_type, admitted_at, rsvp_status
+    SELECT id, name, email, company, department, custom_data, ticket_type, status, admitted_at, updated_at, rsvp_status
     FROM "Attendee"
     WHERE event_id = ${eventId}
       ${attendeeStatusSql(status)}
@@ -600,8 +605,10 @@ export type AttendeeRowDto = {
   company: string | null;
   department: string | null;
   ticket_type: string | null;
+  status: AttendeeStatus;
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
+  updated_at: string;
   last_mail_status: string | null;
   rsvp_status: RsvpStatus;
 };
@@ -621,7 +628,7 @@ export type AttendeeDetailDto = {
   company: string | null;
   department: string | null;
   ticket_type: string | null;
-  status: string;
+  status: AttendeeStatus;
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
   updated_at: string;
@@ -862,7 +869,9 @@ function serializeAttendeeRow(
     department: string | null;
     custom_data: unknown;
     ticket_type: string | null;
+    status: string;
     admitted_at: Date | null;
+    updated_at: Date;
     rsvp_status: string;
   },
   lastMail: Map<string, string>,
@@ -875,8 +884,10 @@ function serializeAttendeeRow(
     company,
     department,
     ticket_type: row.ticket_type,
+    status: row.status as AttendeeStatus,
     check_in_status: checkInStatus(row.admitted_at),
     admitted_at: row.admitted_at ? row.admitted_at.toISOString() : null,
+    updated_at: row.updated_at.toISOString(),
     last_mail_status: lastMail.get(row.id) ?? null,
     rsvp_status: row.rsvp_status as RsvpStatus,
   };
@@ -917,7 +928,7 @@ async function buildAttendeeDetailDto(
     company,
     department,
     ticket_type: row.ticket_type,
-    status: row.status,
+    status: row.status as AttendeeStatus,
     check_in_status: checkInStatus(row.admitted_at),
     admitted_at: row.admitted_at ? row.admitted_at.toISOString() : null,
     updated_at: row.updated_at.toISOString(),

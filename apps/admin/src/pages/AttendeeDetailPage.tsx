@@ -217,7 +217,7 @@ export function AttendeeDetailPage() {
       if (!isStillSelected(target)) return;
       if (err instanceof ApiError && err.status === 409) {
         if (err.message === "email_conflict") setEmailConflict(true);
-        else if (err.message === "stale_write") {
+        else if (err.code === "stale_write") {
           setStaleWrite(true);
           addToast("Someone else updated this attendee — page will reload", "warning");
           void handleReload();
@@ -261,7 +261,7 @@ export function AttendeeDetailPage() {
     } catch (err) {
       if (!isStillSelected(target)) return;
       setDetail(previous);
-      if (err instanceof ApiError && err.message === "stale_write") {
+      if (err instanceof ApiError && err.code === "stale_write") {
         addToast("Someone else updated this attendee — page will reload", "warning");
         void handleReload();
       } else {
@@ -353,7 +353,7 @@ export function AttendeeDetailPage() {
           setRevokeError(
             `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before restoring this pass.`,
           );
-        } else if (err.message === "stale_write") {
+        } else if (err.code === "stale_write") {
           addToast("Someone else updated this attendee — page will reload", "warning");
           void handleReload();
         } else {

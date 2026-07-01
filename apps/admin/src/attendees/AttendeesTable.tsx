@@ -1,4 +1,4 @@
-import { Button, Card, IconButton, Input, Select } from "@admitto/ui";
+import { Badge, Button, Card, IconButton, Input, Select } from "@admitto/ui";
 import type { AttendeeRowDto, RsvpStatus } from "../api/types.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { RsvpStatusBadge } from "./rsvpStatusBadge.js";
@@ -27,6 +27,9 @@ export interface AttendeesTableProps {
   onTicketTypeFilterChange: (value: string) => void;
   onRsvpStatusFilterChange: (value: "" | RsvpStatus) => void;
   onViewAttendee: (id: string) => void;
+  onRevokePass?: (row: AttendeeRowDto) => void;
+  onRestorePass?: (row: AttendeeRowDto) => void;
+  passActionBusyIds?: ReadonlySet<string>;
   onPageChange: (page: number) => void;
   eventTimezone: string;
 }
@@ -48,6 +51,9 @@ export function AttendeesTable({
   onTicketTypeFilterChange,
   onRsvpStatusFilterChange,
   onViewAttendee,
+  onRevokePass,
+  onRestorePass,
+  passActionBusyIds = new Set(),
   onPageChange,
   eventTimezone,
 }: AttendeesTableProps) {
@@ -156,7 +162,14 @@ export function AttendeesTable({
                     </div>
                   </td>
                   <td>
-                    <RsvpStatusBadge status={row.rsvp_status} />
+                    <div className="attendees-table-v2__status">
+                      <RsvpStatusBadge status={row.rsvp_status} />
+                      {row.status === "revoked" ? (
+                        <Badge variant="error">Revoked</Badge>
+                      ) : row.status === "cancelled" ? (
+                        <Badge variant="neutral">Cancelled</Badge>
+                      ) : null}
+                    </div>
                   </td>
                   <td>
                     <MailStatusBadge status={row.last_mail_status} />
@@ -174,12 +187,22 @@ export function AttendeesTable({
                       icon={<i className="ti ti-eye" aria-hidden="true" />}
                       onClick={() => onViewAttendee(row.id)}
                     />
-                    <IconButton
-                      label="Revoke pass"
-                      icon={<i className="ti ti-ban" aria-hidden="true" />}
-                      disabled
-                      title="Wallet passes — coming soon"
-                    />
+                    {row.status === "revoked" && onRestorePass ? (
+                      <IconButton
+                        label="Restore pass"
+                        icon={<i className="ti ti-refresh" aria-hidden="true" />}
+                        disabled={passActionBusyIds.has(row.id)}
+                        onClick={() => onRestorePass(row)}
+                      />
+                    ) : null}
+                    {row.status !== "cancelled" && row.status !== "revoked" && onRevokePass ? (
+                      <IconButton
+                        label="Revoke pass"
+                        icon={<i className="ti ti-ban" aria-hidden="true" />}
+                        disabled={passActionBusyIds.has(row.id)}
+                        onClick={() => onRevokePass(row)}
+                      />
+                    ) : null}
                   </td>
                 </tr>
               ))}
