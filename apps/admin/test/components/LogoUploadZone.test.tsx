@@ -67,6 +67,20 @@ describe("LogoUploadZone", () => {
     });
   });
 
+  it("clears value and shows alert when preview image fails to load", () => {
+    const onChange = vi.fn();
+    render(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        onChange={onChange}
+      />,
+    );
+    const img = screen.getByAltText("Organisation logo preview");
+    fireEvent.error(img);
+    expect(onChange).toHaveBeenCalledWith("");
+    expect(screen.getByRole("alert").textContent).toContain("corrupt");
+  });
+
   it("rejects files over 2 MB before upload", async () => {
     render(<LogoUploadZone value="" onChange={() => {}} />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;

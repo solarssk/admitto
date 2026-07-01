@@ -45,6 +45,7 @@ import {
   positiveIntQuery,
   requireEventId,
 } from "./admin-helpers.js";
+import { resolveInstanceBaseUrl } from "../instance-base-url.js";
 
 /** Max character length for `body_template` (schema); shared with wire byte cap below. */
 export const TEMPLATE_BODY_CHAR_LIMIT = 200_000;
@@ -321,7 +322,6 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
 export async function handlePreviewEventTemplate(
   c: Context,
   db: PrismaClient,
-  baseUrl: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -340,6 +340,8 @@ export async function handlePreviewEventTemplate(
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
   }
+
+  const baseUrl = await resolveInstanceBaseUrl(db, process.env);
 
   try {
     const rendered = await renderDraftPreview(
@@ -376,7 +378,6 @@ export async function handleTestSendEventTemplate(
   c: Context,
   db: PrismaClient,
   mailDeliveryDeps: MailDeliveryDeps = {},
-  baseUrl: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -390,6 +391,8 @@ export async function handleTestSendEventTemplate(
   } catch {
     return c.json({ error: "validation_failed" }, 400);
   }
+
+  const baseUrl = await resolveInstanceBaseUrl(db, process.env);
 
   let result;
   try {
@@ -435,7 +438,6 @@ export async function handleTestSendEventTemplateById(
   c: Context,
   db: PrismaClient,
   mailDeliveryDeps: MailDeliveryDeps = {},
-  baseUrl: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -464,6 +466,8 @@ export async function handleTestSendEventTemplateById(
   } catch {
     return c.json({ error: "validation_failed" }, 400);
   }
+
+  const baseUrl = await resolveInstanceBaseUrl(db, process.env);
 
   let result;
   try {
@@ -934,7 +938,6 @@ export async function handleDeleteEventTemplate(c: Context, db: PrismaClient): P
 export async function handlePreviewEventTemplateById(
   c: Context,
   db: PrismaClient,
-  baseUrl: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -961,6 +964,8 @@ export async function handlePreviewEventTemplateById(
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
   }
+
+  const baseUrl = await resolveInstanceBaseUrl(db, process.env);
 
   try {
     const rendered = await renderDraftPreview(db, eventId, subject, templateBody, format, baseUrl);

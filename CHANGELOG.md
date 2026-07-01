@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Admin: Instance URL setting (Settings → General) for email logo absolute URLs when BASE_URL env is unset
 - Backend: live check-in SSE at `GET /api/checkin/events/:eventId/stream` (operator/admin `canPerformCheckIn` auth)
 - Backend: multiple email templates per event (`name`/`label`, CRUD under `/api/admin/events/:eventId/templates`)
 - Backend: bulk send `POST /api/admin/events/:eventId/send` with `templateId`, recipient filters, and `dryRun` recipient count
@@ -20,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Admin SPA: Communication page multi-template editor, bulk send dialog with dry-run and batch polling
 
 ### Fixed
+- Admin: corrupt or unsupported logo uploads clear preview and show an error in LogoUploadZone
 - Admin SPA: event overview reuses check-in TTL dedup map for SSE admits (no full clear on server refresh; TTL prune on poll keeps map bounded)
 - Admin SPA: communication page refetches inherited ticket template on each virtual-ticket selection (avoids stale legacy cache)
 - Admin SPA: communication page clears editor actions after delete when ticket fallback load fails (avoids targeting deleted template; re-select or create reloads editor)

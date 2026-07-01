@@ -41,8 +41,8 @@ import type {
   EventDeliveriesListParams,
   EventDeliveriesListResponse,
   SessionsResponse,
-  SecuritySettingsDto,
-  PatchSecuritySettingsBody,
+  SystemSettingsDto,
+  PatchSystemSettingsBody,
   UserListResponse,
   CreateAdminUserBody,
   PatchAdminUserBody,
@@ -946,16 +946,16 @@ export async function revokeAllOperatorSessions(
   return parseJson<{ revokedCount: number }>(res);
 }
 
-export async function fetchSecuritySettings(signal?: AbortSignal): Promise<SecuritySettingsDto> {
+export async function fetchSecuritySettings(signal?: AbortSignal): Promise<SystemSettingsDto> {
   const res = await fetch("/api/admin/system-settings", { credentials: "same-origin", signal });
-  return parseJson<SecuritySettingsDto>(res);
+  return parseJson<SystemSettingsDto>(res);
 }
 
 export async function patchSecuritySettings(
-  body: PatchSecuritySettingsBody,
-): Promise<SecuritySettingsDto> {
+  body: PatchSystemSettingsBody,
+): Promise<SystemSettingsDto> {
   const res = await fetch("/api/admin/system-settings", jsonPatchInit(body));
-  return parseJson<SecuritySettingsDto>(res);
+  return parseJson<SystemSettingsDto>(res);
 }
 
 function usersListQuery(

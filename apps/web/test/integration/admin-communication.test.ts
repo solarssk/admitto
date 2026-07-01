@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { createSession, hashPassword, SESSION_STAGE, setSetting, SETTING_INSTANCE_URL } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { setMailSettings } from "@admitto/mailer-config";
 import {
@@ -365,6 +365,41 @@ describe("POST /api/admin/events/:eventId/template/preview", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error?: string };
     expect(body.error).toBe("template too large");
+  });
+
+  it("absolutizes uploaded logo using DB instance_url when BASE_URL env is unset", async () => {
+    const logoPath = "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png";
+    const instanceUrl = "https://tickets-from-db.example.com";
+    const prevBase = process.env.BASE_URL;
+    delete process.env.BASE_URL;
+
+    await prisma.organization.update({
+      where: { id: ORG_A },
+      data: { logo_url: logoPath },
+    });
+    await setSetting(prisma, SETTING_INSTANCE_URL, instanceUrl);
+
+    const logoTemplate = {
+      subject_template: "Logo preview {{event_name}}",
+      body_template: `<mjml><mj-body><mj-section><mj-column><mj-image src="{{logo_url}}" alt="Logo" width="120px" /></mj-column></mj-section></mj-body></mjml>`,
+      template_format: "mjml" as const,
+    };
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/template/preview`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify(logoTemplate),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { html: string };
+      expect(body.html).toContain(`${instanceUrl}${logoPath}`);
+    } finally {
+      if (prevBase === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prevBase;
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
+      await prisma.organization.update({ where: { id: ORG_A }, data: { logo_url: null } });
+    }
   });
 
   it("rejects operator", async () => {

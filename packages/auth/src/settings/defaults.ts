@@ -14,6 +14,7 @@ import {
   SETTING_OPERATOR_SESSION_TTL,
   SETTING_SESSION_TTL,
   SETTING_TRUSTED_DEVICE_DAYS,
+  SETTING_INSTANCE_URL,
 } from "./keys.js";
 
 /** Built-in defaults when DB and env are unset. */
@@ -27,6 +28,7 @@ export const SETTING_DEFAULTS: Record<string, unknown> = {
   [SETTING_CF_ACCESS_AUD]: [],
   [SETTING_CF_ACCESS_PROTECTED_PREFIXES]: ["/admin", "/api/admin"],
   [SETTING_BRANDING_THEME]: {},
+  [SETTING_INSTANCE_URL]: null,
 };
 
 /** Env var locks — when set, override DB value. */
@@ -39,4 +41,5 @@ export const SETTING_ENV_LOCKS: Record<string, string> = {
   [SETTING_CF_ACCESS_TEAM_DOMAIN]: "CF_ACCESS_TEAM_DOMAIN",
   [SETTING_CF_ACCESS_AUD]: "CF_ACCESS_AUD",
   [SETTING_CF_ACCESS_PROTECTED_PREFIXES]: "CF_ACCESS_PROTECTED_PREFIXES",
+  [SETTING_INSTANCE_URL]: "BASE_URL",
 };

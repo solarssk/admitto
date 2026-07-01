@@ -6,6 +6,7 @@ import { sendTicketEmails, type MailDeliveryDeps } from "@admitto/mail-delivery"
 import { resolveTemplateById, TemplateNotFoundError } from "@admitto/mail-templates";
 import { writeBulkActionLog } from "@admitto/tickets";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import { resolveInstanceBaseUrl } from "../instance-base-url.js";
 
 export const BULK_SEND_LIMIT = 500;
 
@@ -274,7 +275,12 @@ export async function handleBulkSend(
   try {
     sendResult = await sendTicketEmails(
       eventId,
-      { attendeeIds: ids, templateId: body.templateId, purpose },
+      {
+        attendeeIds: ids,
+        templateId: body.templateId,
+        purpose,
+        baseUrl: await resolveInstanceBaseUrl(db, process.env),
+      },
       db,
       process.env,
       mailDeps,

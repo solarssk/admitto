@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, Checkbox, Input } from "@admitto/ui";
 import { ApiError, fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
-import type { PatchSecuritySettingsBody, SecuritySettingsDto, SettingSource } from "../api/types.js";
+import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
 
 const MS_PER_HOUR = 3_600_000;
 const MFA_ROLES = ["superadmin", "admin", "operator"] as const;
@@ -26,7 +26,7 @@ interface Draft {
   mfaRoles: string[];
 }
 
-function draftFromSettings(s: SecuritySettingsDto): Draft {
+function draftFromSettings(s: SystemSettingsDto): Draft {
   return {
     sessionTtlH: Math.round(s.session_ttl_ms.value / MS_PER_HOUR),
     opTtlH: Math.round(s.operator_session_ttl_ms.value / MS_PER_HOUR),
@@ -37,7 +37,7 @@ function draftFromSettings(s: SecuritySettingsDto): Draft {
 
 /** Settings panel — security policies: session TTL, remember-device duration, and MFA role requirements. Env-locked fields are read-only. */
 export function SecurityPanel() {
-  const [settings, setSettings] = useState<SecuritySettingsDto | null>(null);
+  const [settings, setSettings] = useState<SystemSettingsDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -69,7 +69,7 @@ export function SecurityPanel() {
     setSaveError(null);
     setSaveStatus(null);
 
-    const body: PatchSecuritySettingsBody = {};
+    const body: PatchSystemSettingsBody = {};
     let hasChanges = false;
 
     if (!fieldLocked(settings.session_ttl_ms.source)) {
@@ -123,7 +123,7 @@ export function SecurityPanel() {
     setSaveError(null);
     setSaveStatus(null);
 
-    const body: PatchSecuritySettingsBody = {};
+    const body: PatchSystemSettingsBody = {};
     if (!fieldLocked(settings.session_ttl_ms.source)) body.session_ttl_ms = null;
     if (!fieldLocked(settings.operator_session_ttl_ms.source)) body.operator_session_ttl_ms = null;
     if (!fieldLocked(settings.trusted_device_days.source)) body.trusted_device_days = null;

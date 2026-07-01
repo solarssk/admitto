@@ -195,6 +195,10 @@
   color: var(--status-error);
 }
 
+.setup-wizard__check-icon.is-warn {
+  color: var(--status-warn);
+}
+
 .setup-wizard__check-body {
   flex: 1;
   min-width: 0;
@@ -208,6 +212,10 @@
 
 .setup-wizard__check-title.is-ok {
   color: var(--status-ok);
+}
+
+.setup-wizard__check-title.is-warn {
+  color: var(--status-warn);
 }
 
 .setup-wizard__check-detail {

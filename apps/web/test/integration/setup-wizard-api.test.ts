@@ -7,6 +7,7 @@ import {
   hashPassword,
   SESSION_STAGE,
   SETTING_SETUP_COMPLETE,
+  SETTING_INSTANCE_URL,
   setSetting,
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -131,6 +132,49 @@ describe("GET /api/admin/setup/checks", () => {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("returns warn on base_url when unset in test environment", async () => {
+    const prev = process.env.BASE_URL;
+    delete process.env.BASE_URL;
+    await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
+    try {
+      const res = await app.request("/api/admin/setup/checks", {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        checks: { base_url: { ok: boolean; warn?: boolean; detail: string } };
+      };
+      expect(body.checks.base_url.ok).toBe(true);
+      expect(body.checks.base_url.warn).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prev;
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
+    }
+  });
+
+  it("returns ok on base_url when instance_url is set in DB", async () => {
+    const prev = process.env.BASE_URL;
+    delete process.env.BASE_URL;
+    await setSetting(prisma, SETTING_INSTANCE_URL, "https://wizard-db.example.com");
+    try {
+      const res = await app.request("/api/admin/setup/checks", {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        checks: { base_url: { ok: boolean; warn?: boolean; detail: string } };
+      };
+      expect(body.checks.base_url.ok).toBe(true);
+      expect(body.checks.base_url.warn).toBeUndefined();
+      expect(body.checks.base_url.detail).toContain("wizard-db.example.com");
+    } finally {
+      if (prev === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prev;
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
+    }
   });
 });
 

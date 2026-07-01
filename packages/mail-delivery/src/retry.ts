@@ -7,6 +7,11 @@ import { resolveAttendeeMailLinks } from "./links.js";
 import { mapSendResultToDelivery } from "./mapSendResult.js";
 import type { MailDeliveryDeps } from "./send.js";
 
+export interface RetryDeliveryOptions {
+  /** Resolved public instance URL (env BASE_URL or DB instance_url). */
+  baseUrl?: string;
+}
+
 /**
  * Retry a failed transient delivery — re-sends the frozen snapshot with fresh ticket links.
  */
@@ -15,6 +20,7 @@ export async function retryDelivery(
   prisma: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,
   deps: MailDeliveryDeps = {},
+  options: RetryDeliveryOptions = {},
 ): Promise<{ ok: boolean; reason?: string }> {
   const delivery = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
 
@@ -25,7 +31,7 @@ export async function retryDelivery(
     return { ok: false, reason: "missing_snapshot" };
   }
 
-  const baseUrl = resolveBaseUrl(env);
+  const baseUrl = options.baseUrl ?? resolveBaseUrl(env);
   let links;
   try {
     links = await resolveAttendeeMailLinks(delivery.attendee_id, prisma, baseUrl);

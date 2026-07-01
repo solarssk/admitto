@@ -561,18 +561,20 @@ export interface SecuritySettingField<T> {
   source: SettingSource;
 }
 
-export interface SecuritySettingsDto {
+export interface SystemSettingsDto {
   session_ttl_ms: SecuritySettingField<number>;
   operator_session_ttl_ms: SecuritySettingField<number>;
   trusted_device_days: SecuritySettingField<number>;
   mfa_required_roles: SecuritySettingField<string[]>;
+  instance_url: SecuritySettingField<string | null>;
 }
 
-export interface PatchSecuritySettingsBody {
+export interface PatchSystemSettingsBody {
   session_ttl_ms?: number | null;
   operator_session_ttl_ms?: number | null;
   trusted_device_days?: number | null;
   mfa_required_roles?: string[] | null;
+  instance_url?: string | null;
 }
 
 export interface RoleAssignmentDto {
@@ -659,6 +661,7 @@ export type SetupCheckKey = "database" | "migrations" | "redis" | "encryption" |
 export interface SetupCheckResult {
   ok: boolean;
   detail: string;
+  warn?: boolean;
 }
 
 export interface SetupChecksResponse {

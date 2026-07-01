@@ -57,7 +57,16 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
       </p>
       {previewSrc && (
         <div className="logo-upload__preview">
-          <img src={previewSrc} alt="Organisation logo preview" className="logo-upload__img" />
+          <img
+            src={previewSrc}
+            alt="Organisation logo preview"
+            className="logo-upload__img"
+            onError={() => {
+              onChange("");
+              onDirty?.();
+              setError("Uploaded file appears corrupt or unsupported. Please try another image.");
+            }}
+          />
           <button
             type="button"
             className="logo-upload__clear"
