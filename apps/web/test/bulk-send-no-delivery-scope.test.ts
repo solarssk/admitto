@@ -117,4 +117,14 @@ describe("resolveBulkSendAttendeeIds no_delivery scope", () => {
     );
     expect(ids).toEqual(["att-no-del-scope"]);
   });
+
+  it("ticket_email scope treats resend delivery as sent", async () => {
+    const { ids } = await resolveBulkSendAttendeeIds(
+      prisma,
+      EVENT,
+      { type: "no_delivery" },
+      { mode: "ticket_email" },
+    );
+    expect(ids).toEqual([]);
+  });
 });

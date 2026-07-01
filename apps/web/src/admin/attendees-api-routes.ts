@@ -1660,7 +1660,7 @@ export async function handleBulkResendTickets(
   const target = parsed.data.target;
   const filter =
     target === "unsent" ? ({ type: "no_delivery" } as const) : ({ type: "all" } as const);
-  const noDeliveryScope = target === "unsent" ? ({ mode: "initial_ticket" } as const) : undefined;
+  const noDeliveryScope = target === "unsent" ? ({ mode: "ticket_email" } as const) : undefined;
   const { ids, overLimit } = await resolveBulkSendAttendeeIds(
     db,
     eventId,

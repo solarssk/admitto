@@ -1192,6 +1192,32 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
     expect(body.failed).toBe(0);
   });
 
+  it("skips attendees with successful resend-only delivery when target is unsent", async () => {
+    await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_A } });
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        attendee_id: ATT_A2,
+        purpose: "resend",
+        provider: "export_only",
+        status: "sent",
+        recipient_email: "bob@example.com",
+        rendered_subject: "Ticket resend",
+        rendered_html: "<p>ticket</p>",
+        sent_at: new Date(),
+      },
+    });
+
+    const res = await postBulkResend("unsent");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { queued: number; skipped: number; failed: number };
+    const attendeeCount = await prisma.attendee.count({ where: { event_id: EVENT_A } });
+    expect(body.queued).toBe(attendeeCount - 1);
+    expect(body.skipped).toBe(0);
+    expect(body.failed).toBe(0);
+  });
+
   it("reports failed when deliveries exist but provider accepted none", async () => {
     const spy = vi.spyOn(mailDelivery, "sendTicketEmails").mockResolvedValueOnce({
       batchId: "bulk-fail-batch",

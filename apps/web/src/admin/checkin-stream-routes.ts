@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
+import { releaseCheckinStreamSlot } from "../checkin-stream-limit.js";
 import { subscribe, type SseEvent } from "./sse-channel.js";
 
 const HEARTBEAT_MS = 25_000;
@@ -8,6 +9,7 @@ const HEARTBEAT_MS = 25_000;
 export function handleEventStream(c: Context): Response {
   const eventId = c.req.param("eventId");
   if (!eventId) {
+    releaseCheckinStreamSlot(c);
     return c.json({ error: "eventId required" }, 400);
   }
 
@@ -35,6 +37,7 @@ export function handleEventStream(c: Context): Response {
       stream.onAbort(() => {
         clearInterval(heartbeat);
         unsubscribe();
+        releaseCheckinStreamSlot(c);
         resolve();
       });
     });
