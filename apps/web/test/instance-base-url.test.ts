@@ -24,6 +24,18 @@ describe("normalizePersistedInstanceUrl", () => {
       /trailing slash/i,
     );
   });
+
+  it("rejects query string", () => {
+    expect(() =>
+      normalizePersistedInstanceUrl("https://tickets.example.com?preview=1"),
+    ).toThrow(/query string or fragment/i);
+  });
+
+  it("rejects fragment", () => {
+    expect(() => normalizePersistedInstanceUrl("https://tickets.example.com#section")).toThrow(
+      /query string or fragment/i,
+    );
+  });
 });
 
 describe("normalizeRuntimeBaseUrl", () => {

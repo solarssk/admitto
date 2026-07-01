@@ -21,7 +21,8 @@ function isValidInstanceUrl(value: string): boolean {
   if (!trimmed.startsWith("https://")) return false;
   if (trimmed.endsWith("/")) return false;
   try {
-    new URL(trimmed);
+    const parsed = new URL(trimmed);
+    if (parsed.search || parsed.hash) return false;
     return true;
   } catch {
     return false;
@@ -85,7 +86,9 @@ export function InstanceUrlPanel() {
     }
 
     if (trimmed && !isValidInstanceUrl(trimmed)) {
-      setSaveError("Instance URL must use https:// and must not end with a trailing slash.");
+      setSaveError(
+        "Instance URL must use https://, must not end with a trailing slash, and must not include a query or fragment.",
+      );
       setSaving(false);
       return;
     }

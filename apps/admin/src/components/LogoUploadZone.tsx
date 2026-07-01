@@ -77,6 +77,7 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
             className="logo-upload__clear"
             aria-label="Remove logo"
             onClick={() => {
+              setError(null);
               onChange("");
               onDirty?.();
             }}

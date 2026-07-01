@@ -96,6 +96,21 @@ describe("LogoUploadZone", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("clears preview error when logo is removed", () => {
+    const onChange = vi.fn();
+    render(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        onChange={onChange}
+      />,
+    );
+    fireEvent.error(screen.getByAltText("Organisation logo preview"));
+    expect(screen.getByRole("alert")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove logo" }));
+    expect(onChange).toHaveBeenCalledWith("");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("keeps external URL and shows alert when preview image fails to load", () => {
     const onChange = vi.fn();
     render(

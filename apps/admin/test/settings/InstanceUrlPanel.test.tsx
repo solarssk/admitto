@@ -86,6 +86,22 @@ describe("InstanceUrlPanel", () => {
     expect(mockPatch).not.toHaveBeenCalled();
   });
 
+  it("rejects query string on save without calling API", async () => {
+    mockFetch.mockResolvedValueOnce(emptySettings);
+    render(<InstanceUrlPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Instance URL"), {
+      target: { value: "https://tickets.example.com?preview=1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByText(/query or fragment/i)).toBeTruthy();
+    });
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
   it("clears instance URL via Clear button", async () => {
     mockFetch.mockResolvedValueOnce({
       ...emptySettings,

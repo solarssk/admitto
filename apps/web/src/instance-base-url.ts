@@ -36,11 +36,20 @@ export function normalizeRuntimeBaseUrl(
   return validateHttpUrl("BASE_URL", trimmed);
 }
 
-/** Persisted `instance_url` — always HTTPS, no trailing slash (superadmin DB setting). */
+/** Persisted `instance_url` — always HTTPS, no trailing slash, no query or fragment. */
 export function normalizePersistedInstanceUrl(raw: string): string {
   const trimmed = raw.trim();
   if (trimmed.endsWith("/")) {
     throw new Error("Instance URL must not end with a trailing slash");
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error("Instance URL must be a valid https:// URL");
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error("Instance URL must not include a query string or fragment");
   }
   const validated = validateHttpUrl("BASE_URL", trimmed);
   if (!validated.startsWith("https://")) {
