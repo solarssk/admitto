@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword, createSession, SESSION_STAGE } from "@admitto/auth";
@@ -7,6 +7,7 @@ import {
   createCheckinEventScope,
 } from "../../src/checkin-gate.js";
 import { handleEventStream, HEARTBEAT_MS } from "../../src/admin/checkin-stream-routes.js";
+import { publish, resetSseChannelsForTests, subscriberCount } from "../../src/admin/sse-channel.js";
 
 const ORG_A = "org-stream-a";
 const EVENT_A = "event-stream-a";
@@ -69,6 +70,10 @@ describe("GET /api/checkin/events/:eventId/stream", () => {
     await prisma.$disconnect();
   });
 
+  afterEach(() => {
+    resetSseChannelsForTests();
+  });
+
   it("returns text/event-stream for authorized operator", async () => {
     const app = buildStreamApp();
     const res = await app.request(`/api/checkin/events/${EVENT_A}/stream`, {
@@ -81,12 +86,46 @@ describe("GET /api/checkin/events/:eventId/stream", () => {
 
   it("emits ping events on heartbeat interval", async () => {
     vi.useFakeTimers();
-    const app = buildStreamApp();
+    try {
+      const app = buildStreamApp();
 
+      const res = await app.request(`/api/checkin/events/${EVENT_A}/stream`, {
+        headers: { Cookie: opCookie },
+      });
+      expect(res.status).toBe(200);
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const readChunk = async () => {
+        const { value, done } = await reader.read();
+        if (done) return false;
+        buffer += decoder.decode(value, { stream: true });
+        return true;
+      };
+
+      await readChunk();
+      expect(buffer).toContain('"type":"ping"');
+
+      buffer = "";
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+      await readChunk();
+      expect(buffer).toContain('"type":"ping"');
+
+      await reader.cancel();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("delivers published checkin events and cleans up subscribers on disconnect", async () => {
+    const app = buildStreamApp();
     const res = await app.request(`/api/checkin/events/${EVENT_A}/stream`, {
       headers: { Cookie: opCookie },
     });
     expect(res.status).toBe(200);
+    expect(subscriberCount(EVENT_A)).toBe(1);
 
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
@@ -100,14 +139,23 @@ describe("GET /api/checkin/events/:eventId/stream", () => {
     };
 
     await readChunk();
-    expect(buffer).toContain('"type":"ping"');
-
     buffer = "";
-    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+
+    publish(EVENT_A, {
+      type: "checkin",
+      attendeeId: "att-stream-1",
+      attendeeName: "Stream Guest",
+      ticketType: "GA",
+      admittedAt: "2026-07-01T12:00:00.000Z",
+      operatorId: USER_OP_A,
+      deviceLabel: null,
+    });
+
     await readChunk();
-    expect(buffer).toContain('"type":"ping"');
+    expect(buffer).toContain('"type":"checkin"');
+    expect(buffer).toContain("att-stream-1");
 
     await reader.cancel();
-    vi.useRealTimers();
+    expect(subscriberCount(EVENT_A)).toBe(0);
   });
 });

@@ -176,6 +176,96 @@ describe("multi-template API", () => {
     expect(res.status).toBe(200);
   });
 
+  it("DELETE blocks reminder template when deliveries exist", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
+      method: "POST",
+      headers: {
+        Cookie: adminCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ label: "Reminder", template_format: "mjml" }),
+    });
+    expect(createRes.status).toBe(201);
+    const reminder = (await createRes.json()) as { id: string };
+
+    const attendee = await prisma.attendee.create({
+      data: {
+        id: "att-reminder-del",
+        event_id: EVENT_A,
+        email: "reminder-del@example.com",
+        name: "Reminder Del",
+      },
+    });
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        attendee_id: attendee.id,
+        template_id: reminder.id,
+        purpose: "resend",
+        provider: "export_only",
+        status: "sent",
+      },
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/templates/${reminder.id}`,
+      {
+        method: "DELETE",
+        headers: { Cookie: adminCookie, ...sameOrigin },
+      },
+    );
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("template_in_use");
+  });
+
+  it("DELETE allows custom template even when deliveries exist", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
+      method: "POST",
+      headers: {
+        Cookie: adminCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ label: "Promo blast", template_format: "mjml" }),
+    });
+    expect(createRes.status).toBe(201);
+    const custom = (await createRes.json()) as { id: string; name: string };
+    expect(custom.name).not.toBe("ticket");
+    expect(custom.name).not.toBe("reminder");
+
+    const attendee = await prisma.attendee.create({
+      data: {
+        id: "att-custom-del",
+        event_id: EVENT_A,
+        email: "custom-del@example.com",
+        name: "Custom Del",
+      },
+    });
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        attendee_id: attendee.id,
+        template_id: custom.id,
+        purpose: "resend",
+        provider: "export_only",
+        status: "sent",
+      },
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/templates/${custom.id}`,
+      {
+        method: "DELETE",
+        headers: { Cookie: adminCookie, ...sameOrigin },
+      },
+    );
+    expect(res.status).toBe(200);
+  });
+
   it("POST /send dryRun returns recipientCount", async () => {
     const ticket = await prisma.mailTemplate.findUniqueOrThrow({
       where: {
@@ -200,7 +290,7 @@ describe("multi-template API", () => {
       },
       body: JSON.stringify({
         templateId: ticket.id,
-        filter: { type: "all" },
+        filter: { type: "attendee_ids", ids: ["att-multi-1"] },
         dryRun: true,
       }),
     });

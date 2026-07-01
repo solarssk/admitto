@@ -11,7 +11,7 @@ export type SseEvent =
       operatorId: string | null;
       deviceLabel: string | null;
     }
-  | { type: "checkin_already" }
+  | { type: "checkin_already" } // reserved (PR B / replay); not emitted in PR A
   | { type: "ping" };
 
 type SseListener = (event: SseEvent) => void;

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { publish, resetSseChannelsForTests, subscribe } from "../src/admin/sse-channel.js";
+import { publish, resetSseChannelsForTests, subscribe, subscriberCount } from "../src/admin/sse-channel.js";
 
 describe("sse-channel", () => {
   afterEach(() => {
@@ -31,5 +31,12 @@ describe("sse-channel", () => {
 
     publish("evt-1", { type: "ping" });
     expect(cb).not.toHaveBeenCalled();
+  });
+
+  it("removes channel map entry when last subscriber unsubscribes", () => {
+    const unsub = subscribe("evt-1", vi.fn());
+    expect(subscriberCount("evt-1")).toBe(1);
+    unsub();
+    expect(subscriberCount("evt-1")).toBe(0);
   });
 });

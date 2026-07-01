@@ -117,14 +117,7 @@ export async function sendTicketEmails(
   const mailConfig = await resolveMailConfig(eventId, prisma, env);
   let resolvedTemplate;
   if (options.templateId) {
-    try {
-      resolvedTemplate = await resolveTemplateById(options.templateId, eventId, prisma);
-    } catch (err) {
-      if (err instanceof TemplateNotFoundError) {
-        throw err;
-      }
-      throw err;
-    }
+    resolvedTemplate = await resolveTemplateById(options.templateId, eventId, prisma);
   } else {
     resolvedTemplate = await resolveTemplateForEvent(event, prisma);
   }

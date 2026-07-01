@@ -35,7 +35,7 @@ import { sanitizeCsvCell } from "./csv-sanitize.js";
 import { randomUUID } from "node:crypto";
 import { decryptFromString } from "@admitto/crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
-import { resolveBulkSendAttendeeIds } from "./bulk-send-routes.js";
+import { resolveBulkSendAttendeeIds, BULK_SEND_LIMIT } from "./bulk-send-routes.js";
 
 const ATTENDEE_LIST_SELECT = {
   id: true,
@@ -117,7 +117,7 @@ async function parseOptionalJsonBody(c: Context): Promise<unknown | Response> {
 }
 
 /** Hard cap on attendees in one bulk-resend to avoid request timeout. */
-const BULK_RESEND_LIMIT = 500;
+const BULK_RESEND_LIMIT = BULK_SEND_LIMIT;
 
 const bulkResendBodySchema = z
   .object({

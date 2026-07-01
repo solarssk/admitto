@@ -37,7 +37,7 @@ export type BulkSendFilter = z.infer<typeof bulkSendFilterSchema>;
 export type BulkSendDryRunDto = { recipientCount: number };
 
 export type BulkSendQueuedDto = {
-  batchId: string;
+  batchId: string | null;
   queued: number;
   skipped: number;
   failed: number;
@@ -206,7 +206,7 @@ export async function handleBulkSend(
       failed: 0,
     });
     return c.json({
-      batchId: "",
+      batchId: null,
       queued: 0,
       skipped: 0,
       failed: 0,

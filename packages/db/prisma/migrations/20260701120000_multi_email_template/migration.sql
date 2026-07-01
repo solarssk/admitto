@@ -4,10 +4,6 @@ ALTER TABLE "MailTemplate"
   ADD COLUMN "name" TEXT NOT NULL DEFAULT 'ticket',
   ADD COLUMN "label" TEXT NOT NULL DEFAULT 'Ticket email';
 
-UPDATE "MailTemplate"
-SET "name" = 'ticket', "label" = 'Ticket email'
-WHERE "name" IS NULL OR "name" = '';
-
 DROP INDEX IF EXISTS "MailTemplate_scope_type_scope_id_key";
 
 CREATE UNIQUE INDEX "MailTemplate_scope_type_scope_id_name_key"

@@ -29,16 +29,14 @@ export function handleEventStream(c: Context): Response {
       void writeEvent({ type: "ping" });
     }, HEARTBEAT_MS);
 
-    stream.onAbort(() => {
-      clearInterval(heartbeat);
-      unsubscribe();
-    });
-
     await writeEvent({ type: "ping" });
 
-    // Keep connection open until client disconnects.
     await new Promise<void>((resolve) => {
-      stream.onAbort(() => resolve());
+      stream.onAbort(() => {
+        clearInterval(heartbeat);
+        unsubscribe();
+        resolve();
+      });
     });
   });
 }
