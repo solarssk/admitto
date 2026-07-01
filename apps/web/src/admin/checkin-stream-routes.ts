@@ -31,15 +31,29 @@ export function handleEventStream(c: Context): Response {
       void writeEvent({ type: "ping" });
     }, HEARTBEAT_MS);
 
-    await writeEvent({ type: "ping" });
+    const cleanup = () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+      releaseCheckinStreamSlot(c);
+    };
 
     await new Promise<void>((resolve) => {
-      stream.onAbort(() => {
-        clearInterval(heartbeat);
-        unsubscribe();
-        releaseCheckinStreamSlot(c);
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        cleanup();
         resolve();
-      });
+      };
+
+      stream.onAbort(finish);
+
+      if (stream.aborted) {
+        finish();
+        return;
+      }
+
+      void writeEvent({ type: "ping" });
     });
   });
 }

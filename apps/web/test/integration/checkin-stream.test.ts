@@ -162,6 +162,9 @@ describe("GET /api/checkin/events/:eventId/stream", () => {
     expect(buffer).toContain("att-stream-1");
 
     await reader.cancel();
+    for (let i = 0; i < 20 && subscriberCount(EVENT_A) !== 0; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
     expect(subscriberCount(EVENT_A)).toBe(0);
   });
 });

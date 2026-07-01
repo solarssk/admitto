@@ -37,7 +37,6 @@ export type BulkSendFilter = z.infer<typeof bulkSendFilterSchema>;
 /** How to interpret `no_delivery` when selecting attendees. */
 export type BulkSendNoDeliveryScope =
   | { mode: "initial_ticket" }
-  | { mode: "ticket_email" }
   | { mode: "template"; templateId: string };
 
 const ACTIVE_DELIVERY_STATUSES = [...EMAIL_DELIVERY_SUCCESS_STATUSES, "queued"];
@@ -51,9 +50,6 @@ function noDeliveryDeliveryWhere(
 
   if (scope.mode === "initial_ticket") {
     return { AND: [statusClause, { purpose: "initial" }] };
-  }
-  if (scope.mode === "ticket_email") {
-    return { AND: [statusClause, { purpose: { in: ["initial", "resend"] } }] };
   }
   return { AND: [statusClause, { template_id: scope.templateId }] };
 }

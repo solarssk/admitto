@@ -118,13 +118,43 @@ describe("resolveBulkSendAttendeeIds no_delivery scope", () => {
     expect(ids).toEqual(["att-no-del-scope"]);
   });
 
-  it("ticket_email scope treats resend delivery as sent", async () => {
+  it("initial_ticket scope excludes attendee with initial delivery only", async () => {
     const { ids } = await resolveBulkSendAttendeeIds(
       prisma,
       EVENT,
       { type: "no_delivery" },
-      { mode: "ticket_email" },
+      { mode: "initial_ticket" },
     );
     expect(ids).toEqual([]);
+  });
+
+  it("initial_ticket scope includes attendee with resend-only delivery", async () => {
+    const attendee = await prisma.attendee.create({
+      data: {
+        id: "att-resend-only",
+        event_id: EVENT,
+        email: "resend-only@example.com",
+        name: "Resend Only",
+      },
+    });
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG,
+        event_id: EVENT,
+        attendee_id: attendee.id,
+        template_id: reminderId,
+        purpose: "resend",
+        provider: "export_only",
+        status: "sent",
+      },
+    });
+
+    const { ids } = await resolveBulkSendAttendeeIds(
+      prisma,
+      EVENT,
+      { type: "no_delivery" },
+      { mode: "initial_ticket" },
+    );
+    expect(ids).toEqual([attendee.id]);
   });
 });
