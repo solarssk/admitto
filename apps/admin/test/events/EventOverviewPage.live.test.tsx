@@ -164,6 +164,45 @@ describe("EventOverviewPage live stats", () => {
     vi.useRealTimers();
   });
 
+  it("drops SSE dedup keys after overview refresh", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("5")).toBeTruthy();
+    });
+
+    act(() => {
+      streamHandler?.(liveEvent);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("6")).toBeTruthy();
+    });
+
+    fetchEventOverview.mockResolvedValue(overviewFixture(6));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("6")).toBeTruthy();
+    });
+
+    act(() => {
+      streamHandler?.(liveEvent);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("7")).toBeTruthy();
+    });
+
+    vi.useRealTimers();
+  });
+
   it("deduplicates repeated SSE for the same admit", async () => {
     fetchEventOverview
       .mockResolvedValueOnce(overviewFixture(5))

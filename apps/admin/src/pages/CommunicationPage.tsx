@@ -149,7 +149,7 @@ export function CommunicationPage() {
   const templateSelectionSeqRef = useRef(0);
   const createTemplateSeqRef = useRef(0);
   const createInFlightRef = useRef(false);
-  /** Cached legacy ticket fallback; not refreshed after initial page load (known limitation). */
+  /** Latest legacy ticket snapshot; refreshed on each virtual-ticket selection and after save. */
   const legacyTemplateRef = useRef<EventTemplateDto | null>(null);
 
   const [dirtyConfirmOpen, setDirtyConfirmOpen] = useState(false);
@@ -212,9 +212,7 @@ export function CommunicationPage() {
   const loadTemplateSelection = useCallback(
     async (key: string): Promise<TemplateSelectionLoad> => {
       if (key === "virtual-ticket") {
-        if (!legacyTemplateRef.current) {
-          legacyTemplateRef.current = await fetchEventTemplate(eventId!);
-        }
+        legacyTemplateRef.current = await fetchEventTemplate(eventId!);
         return { kind: "legacy", data: legacyTemplateRef.current };
       }
       const detail = await fetchEventTemplateById(eventId!, key);
@@ -339,9 +337,7 @@ export function CommunicationPage() {
           applyDetailTemplate(detail);
           setActiveKey(ticket.id);
         } else {
-          if (!legacyTemplateRef.current) {
-            legacyTemplateRef.current = await fetchEventTemplate(eventId);
-          }
+          legacyTemplateRef.current = await fetchEventTemplate(eventId);
           applyLegacyTemplate(legacyTemplateRef.current);
           setActiveKey("virtual-ticket");
         }

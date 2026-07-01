@@ -71,6 +71,13 @@ export function EventOverviewPage() {
   const eventDateIso = currentOverview?.event.date ?? event.date;
   const countdown = useCountdown(eventDateIso, eventTimezone);
 
+  const absorbServerOverview = useCallback((data: EventOverviewDto) => {
+    if (data.event.id !== event.id) return;
+    setOverview(data);
+    setOptimisticAdmittedDelta(0);
+    seenCheckinsRef.current.clear();
+  }, [event.id]);
+
   const scheduleReconcile = useCallback(() => {
     if (reconcileTimerRef.current != null) {
       window.clearTimeout(reconcileTimerRef.current);
@@ -79,15 +86,13 @@ export function EventOverviewPage() {
       reconcileTimerRef.current = null;
       void fetchEventOverview(event.id)
         .then((data) => {
-          if (data.event.id !== event.id) return;
-          setOverview(data);
-          setOptimisticAdmittedDelta(0);
+          absorbServerOverview(data);
         })
         .catch(() => {
           /* keep optimistic value until next poll */
         });
     }, 3000);
-  }, [event.id]);
+  }, [absorbServerOverview, event.id]);
 
   const handleLiveCheckin = useCallback(
     (checkin: StreamCheckinEvent) => {
@@ -122,8 +127,7 @@ export function EventOverviewPage() {
       fetchEventOverview(event.id, ac.signal)
         .then((data) => {
           if (ac.signal.aborted) return;
-          setOverview(data);
-          setOptimisticAdmittedDelta(0);
+          absorbServerOverview(data);
           setError(null);
         })
         .catch((err) => {
@@ -151,7 +155,7 @@ export function EventOverviewPage() {
         reconcileTimerRef.current = null;
       }
     };
-  }, [event.id, reportApiError]);
+  }, [absorbServerOverview, event.id, reportApiError]);
 
   const meta = [formatEventCalendarDate(eventDateIso), event.location]
     .filter(Boolean)

@@ -200,6 +200,35 @@ describe("CommunicationPage templates", () => {
     expect(fetchEventTemplateById).toHaveBeenCalledWith("evt-comm", "tpl-rem");
   });
 
+  it("refetches inherited ticket template when re-selecting virtual-ticket", async () => {
+    fetchEventTemplates.mockResolvedValue([reminderRow]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+
+    fetchEventTemplate.mockClear();
+    fetchEventTemplate.mockResolvedValue({
+      ...legacyTemplate,
+      subject_template: "Updated inherited subject",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ticket email (inherited)" }));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Updated inherited subject")).toBeTruthy();
+    });
+    expect(fetchEventTemplate).toHaveBeenCalledWith("evt-comm");
+  });
+
   it("applies only the latest template selection when fetches resolve out of order", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 

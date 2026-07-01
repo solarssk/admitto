@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Admin SPA: Event overview optimistic `admitted_count` from SSE
 - Admin SPA: Communication page multi-template editor, bulk send dialog with dry-run and batch polling
 
+### Fixed
+- Admin SPA: event overview clears live check-in dedup keys when server stats refresh (bounded memory during long sessions)
+- Admin SPA: communication page refetches inherited ticket template on each virtual-ticket selection (avoids stale legacy cache)
+
 ## [0.4.8] - 2026-07-01
 
 ### Fixed
