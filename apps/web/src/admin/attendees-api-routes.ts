@@ -327,7 +327,9 @@ type AttendeeListSqlRow = {
   department: string | null;
   custom_data: unknown;
   ticket_type: string | null;
+  status: string;
   admitted_at: Date | null;
+  updated_at: Date;
   rsvp_status: string;
 };
 
@@ -350,7 +352,7 @@ async function findFilteredAttendeesForList(
   }
   const skip = (page - 1) * pageSize;
   return db.$queryRaw<AttendeeListSqlRow[]>`
-    SELECT id, name, email, company, department, custom_data, ticket_type, admitted_at, rsvp_status
+    SELECT id, name, email, company, department, custom_data, ticket_type, status, admitted_at, updated_at, rsvp_status
     FROM "Attendee"
     WHERE event_id = ${eventId}
       ${attendeeStatusSql(status)}
