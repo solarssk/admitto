@@ -5,6 +5,7 @@ import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { DEFAULT_BODY_MJML, DEFAULT_SUBJECT_TEMPLATE } from "@admitto/mail-templates";
+import { setMailSettings } from "@admitto/mailer-config";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -44,6 +45,11 @@ async function seed(client: PrismaClient) {
   await client.organization.create({
     data: { id: ORG_A, name: "Org", slug: "multi-tpl-org" },
   });
+  await setMailSettings(
+    { scopeType: "organization", scopeId: ORG_A },
+    { provider: "export_only", fromAddress: "events@example.com" },
+    client,
+  );
   await client.event.create({
     data: {
       id: EVENT_A,

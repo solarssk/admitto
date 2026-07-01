@@ -128,6 +128,24 @@ export async function resolveBulkSendAttendeeIds(
   return { ids: rows.map((r) => r.id), overLimit: false };
 }
 
+/** Initial claim is only for ticket template unsent sends; custom templates use resend. */
+export async function resolveBulkSendPurpose(
+  db: PrismaClient,
+  filter: BulkSendFilter,
+  templateId: string,
+): Promise<"initial" | "resend"> {
+  if (filter.type !== "no_delivery") {
+    return "resend";
+  }
+
+  const row = await db.mailTemplate.findUnique({
+    where: { id: templateId },
+    select: { name: true },
+  });
+
+  return row?.name === "ticket" ? "initial" : "resend";
+}
+
 async function assertTemplateForEvent(
   db: PrismaClient,
   eventId: string,
@@ -195,7 +213,7 @@ export async function handleBulkSend(
     } satisfies BulkSendQueuedDto);
   }
 
-  const purpose = body.filter.type === "no_delivery" ? "initial" : "resend";
+  const purpose = await resolveBulkSendPurpose(db, body.filter, body.templateId);
 
   let sendResult;
   try {
