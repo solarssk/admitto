@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, RouterProvider, createMemoryRouter } from "react-router-dom";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 
 const fetchEventOverview = vi.fn();
 const fetchEventTemplate = vi.fn();
+const fetchEventTemplates = vi.fn();
 const fetchEventDeliveries = vi.fn();
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
@@ -23,10 +24,19 @@ vi.mock("../../src/api/client.js", () => ({
   TemplateValidationError: class TemplateValidationError extends Error {},
   fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
   fetchEventTemplate: (...args: unknown[]) => fetchEventTemplate(...args),
+  fetchEventTemplates: (...args: unknown[]) => fetchEventTemplates(...args),
   fetchEventDeliveries: (...args: unknown[]) => fetchEventDeliveries(...args),
+  fetchEventTemplateById: vi.fn(),
   previewEventTemplate: vi.fn(),
+  previewEventTemplateById: vi.fn(),
   saveEventTemplate: vi.fn(),
+  saveEventTemplateById: vi.fn(),
+  createEventTemplate: vi.fn(),
+  deleteEventTemplate: vi.fn(),
   testSendEventTemplate: vi.fn(),
+  testSendEventTemplateById: vi.fn(),
+  sendEventBulk: vi.fn(),
+  fetchBulkSendStatus: vi.fn(),
 }));
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -63,6 +73,10 @@ function renderPage() {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+});
+
+beforeEach(() => {
+  fetchEventTemplates.mockResolvedValue([]);
 });
 
 describe("CommunicationPage bounce banner", () => {

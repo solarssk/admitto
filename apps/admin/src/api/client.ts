@@ -27,6 +27,12 @@ import type {
   EventTemplateDto,
   SaveTemplateBody,
   PreviewTemplateResponse,
+  MailTemplateListItem,
+  MailTemplateDetail,
+  BulkSendBody,
+  BulkSendDryRunResponse,
+  BulkSendQueuedResponse,
+  BulkSendStatusResponse,
   RsvpStatus,
   TestSendBody,
   TestSendResponse,
@@ -85,28 +91,37 @@ export class ApiError extends Error {
 }
 
 type ApiErrorBody = {
-  error?: string;
-  detail?: string;
-  code?: string;
+  error?: unknown;
+  detail?: unknown;
+  code?: unknown;
   capacity?: number;
   current?: number;
   incoming?: number;
   projected?: number;
 };
 
+/** Coerce an API error JSON field to a trimmed string when present. */
+function stringField(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+/** Human-readable message from a failed API JSON body. */
 function messageFromApiErrorBody(body: ApiErrorBody): string | undefined {
-  const detail = body.detail?.trim();
-  if (detail) return detail;
-  const error = body.error?.trim();
-  if (error) return error;
-  const code = body.code?.trim();
-  if (code) return code;
-  return undefined;
+  return stringField(body.detail) ?? stringField(body.error) ?? stringField(body.code);
+}
+
+/** Machine-readable error code from a failed API JSON body. */
+function apiErrorCodeFromBody(body: ApiErrorBody): string | undefined {
+  return stringField(body.code) ?? stringField(body.error);
 }
 
 /** Parse structured capacity fields from a 409 `event_full` API error body. */
 function eventFullFromBody(body: ApiErrorBody): EventFullMeta | undefined {
-  if (body.code !== "event_full" || body.capacity == null || body.current == null) return undefined;
+  if (apiErrorCodeFromBody(body) !== "event_full" || body.capacity == null || body.current == null) {
+    return undefined;
+  }
   return {
     capacity: body.capacity,
     current: body.current,
@@ -123,7 +138,7 @@ async function parseJson<T>(res: Response): Promise<T> {
     try {
       const body = (await res.json()) as ApiErrorBody;
       message = messageFromApiErrorBody(body) ?? message;
-      code = body.code;
+      code = apiErrorCodeFromBody(body);
       eventFull = eventFullFromBody(body);
     } catch {
       /* ignore */
@@ -624,11 +639,16 @@ export class TemplateValidationError extends Error {
 async function parseTemplateActionJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     try {
-      const body = (await res.json()) as { error?: string; errors?: string[] };
+      const body = (await res.json()) as { error?: unknown; errors?: string[] };
       if (body.errors?.length) {
         throw new TemplateValidationError(body.errors);
       }
-      throw new ApiError(res.status, messageFromApiErrorBody(body) ?? body.error ?? res.statusText);
+      const errorCode = stringField(body.error);
+      throw new ApiError(
+        res.status,
+        messageFromApiErrorBody(body) ?? errorCode ?? res.statusText,
+        errorCode,
+      );
     } catch (err) {
       if (err instanceof TemplateValidationError || err instanceof ApiError) throw err;
       throw new ApiError(res.status, res.statusText);
@@ -683,6 +703,125 @@ export async function testSendEventTemplate(
     jsonPostInit(body),
   );
   return parseJson<TestSendResponse>(res);
+}
+
+/** List event-scoped mail templates. */
+export async function fetchEventTemplates(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<MailTemplateListItem[]> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/templates`, {
+    credentials: "same-origin",
+    signal,
+  });
+  const body = await parseJson<{ items: MailTemplateListItem[] }>(res);
+  return body.items;
+}
+
+/** Load one event mail template by id. */
+export async function fetchEventTemplateById(
+  eventId: string,
+  templateId: string,
+  signal?: AbortSignal,
+): Promise<MailTemplateDetail> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/templates/${encodeURIComponent(templateId)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<MailTemplateDetail>(res);
+}
+
+/** Save an event-scoped mail template by id. */
+export async function saveEventTemplateById(
+  eventId: string,
+  templateId: string,
+  body: SaveTemplateBody,
+): Promise<MailTemplateDetail> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/templates/${encodeURIComponent(templateId)}`,
+    jsonPutInit(body),
+  );
+  return parseTemplateActionJson<MailTemplateDetail>(res);
+}
+
+/** Create a new event-scoped mail template. */
+export async function createEventTemplate(
+  eventId: string,
+  body: { label: string; template_format: "mjml" | "html"; subject_template?: string; body_template?: string },
+): Promise<MailTemplateDetail> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/templates`,
+    jsonPostInit(body),
+  );
+  return parseTemplateActionJson<MailTemplateDetail>(res);
+}
+
+/** Delete an event-scoped mail template. */
+export async function deleteEventTemplate(eventId: string, templateId: string): Promise<void> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/templates/${encodeURIComponent(templateId)}`,
+    jsonDeleteInit(),
+  );
+  await parseJson<{ ok: boolean }>(res);
+}
+
+/** Render a draft template by id with sample data (no DB write). */
+export async function previewEventTemplateById(
+  eventId: string,
+  templateId: string,
+  body: SaveTemplateBody,
+): Promise<PreviewTemplateResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/templates/${encodeURIComponent(templateId)}/preview`,
+    jsonPostInit(body),
+  );
+  return parseTemplateActionJson<PreviewTemplateResponse>(res);
+}
+
+/** Send a test mail for a specific event template. */
+export async function testSendEventTemplateById(
+  eventId: string,
+  templateId: string,
+  body: TestSendBody,
+): Promise<TestSendResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/templates/${encodeURIComponent(templateId)}/test-send`,
+    jsonPostInit(body),
+  );
+  return parseJson<TestSendResponse>(res);
+}
+
+/** Queue or dry-run a bulk send for selected attendees. */
+export async function sendEventBulk(
+  eventId: string,
+  body: BulkSendBody & { dryRun: true },
+): Promise<BulkSendDryRunResponse>;
+export async function sendEventBulk(
+  eventId: string,
+  body: Omit<BulkSendBody, "dryRun"> & { dryRun?: false },
+): Promise<BulkSendQueuedResponse>;
+export async function sendEventBulk(
+  eventId: string,
+  body: BulkSendBody,
+): Promise<BulkSendDryRunResponse | BulkSendQueuedResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/send`,
+    jsonPostInit(body),
+  );
+  return parseJson<BulkSendDryRunResponse | BulkSendQueuedResponse>(res);
+}
+
+/** Poll bulk send batch progress. */
+export async function fetchBulkSendStatus(
+  eventId: string,
+  batchId: string,
+  signal?: AbortSignal,
+): Promise<BulkSendStatusResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/send/status/${encodeURIComponent(batchId)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<BulkSendStatusResponse>(res);
 }
 
 /** Build query string for paginated event delivery log requests. */

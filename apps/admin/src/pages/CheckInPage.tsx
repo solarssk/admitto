@@ -27,14 +27,40 @@ import { CheckinConnectionBanner } from "../checkin/ConnectionBanner.js";
 import { CkEmptyState } from "../checkin/CkEmptyState.js";
 import { CkInlineCamera } from "../checkin/CkInlineCamera.js";
 import { isDesktopViewport, useIsDesktop } from "../hooks/useIsDesktop.js";
+import {
+  isAdmitDedupHit,
+  mergeCheckInHistory,
+  registerAdmitDedup,
+  seedAdmitDedupFromHistory,
+} from "../checkin/admitDedup.js";
+import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { ManualLookupPanel } from "../checkin/ManualLookupPanel.js";
 import { ScanHistoryList } from "../checkin/ScanHistoryList.js";
 
 const PENDING_MS = 5000;
 const WEDGE_AUTO_SUBMIT_LEN = 20;
 const WEDGE_DEBOUNCE_MS = 50;
+const HISTORY_CAP = 8;
 const LOOKUP_DISABLED_MSG =
   "Manual lookup is disabled for this event — use QR scan only.";
+
+/** Build a sidebar history row from a live SSE check-in event. */
+function historyEntryFromStream(event: StreamCheckinEvent, eventId: string): CheckInHistoryEntry {
+  return {
+    id: `sse-${event.attendeeId}-${event.admittedAt}`,
+    event_id: eventId,
+    attendee_id: event.attendeeId,
+    status: "admitted",
+    checked_in_at: event.admittedAt,
+    checked_in_by: event.operatorId,
+    device_id: event.deviceLabel,
+    source: null,
+    attendee: {
+      name: event.attendeeName,
+      ticket_type: event.ticketType,
+    },
+  };
+}
 
 const DEFAULT_OPS_CONFIG: OpsConfigDto = {
   require_confirm_on_scan: false,
@@ -82,6 +108,63 @@ export function CheckInPage({
   const lastScanRef = useRef<{ value: string; at: number } | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
   const wedgeTimerRef = useRef<number | null>(null);
+  const recentAdmits = useRef(new Map<string, number>());
+  const historyRef = useRef<CheckInHistoryEntry[]>([]);
+
+  const prependAdmit = useCallback((entry: CheckInHistoryEntry, admittedAt: string) => {
+    if (isAdmitDedupHit(recentAdmits.current, entry.attendee_id, admittedAt)) return;
+
+    const exists = historyRef.current.some(
+      (row) => row.attendee_id === entry.attendee_id && row.checked_in_at === admittedAt,
+    );
+    registerAdmitDedup(recentAdmits.current, entry.attendee_id, admittedAt);
+    if (exists) return;
+
+    const next = [entry, ...historyRef.current].slice(0, HISTORY_CAP);
+    historyRef.current = next;
+    setHistory(next);
+    setAdmittedCount((count) => count + 1);
+  }, []);
+
+  const applyLocalAdmit = useCallback(
+    (response: CheckInScanResponse) => {
+      if (!eventId || response.status !== "VALID" || !response.admittedAt) return;
+      const attendeeId = response.card?.id ?? response.attendeeId;
+      const admittedCard = response.card;
+      if (!attendeeId || !admittedCard) return;
+      if (isAdmitDedupHit(recentAdmits.current, attendeeId, response.admittedAt)) return;
+      prependAdmit(
+        {
+          id: `local-${attendeeId}-${response.admittedAt}`,
+          event_id: eventId,
+          attendee_id: attendeeId,
+          status: "admitted",
+          checked_in_at: response.admittedAt,
+          checked_in_by: null,
+          device_id: deviceLabel ?? null,
+          source: null,
+          attendee: {
+            name: admittedCard.name,
+            ticket_type: admittedCard.ticket_type,
+            company: admittedCard.company,
+            department: admittedCard.department,
+          },
+        },
+        response.admittedAt,
+      );
+    },
+    [deviceLabel, eventId, prependAdmit],
+  );
+
+  const handleRemoteCheckin = useCallback(
+    (event: StreamCheckinEvent) => {
+      if (!eventId) return;
+      prependAdmit(historyEntryFromStream(event, eventId), event.admittedAt);
+    },
+    [eventId, prependAdmit],
+  );
+
+  const { status: streamStatus } = useEventStream(eventId, handleRemoteCheckin);
 
   const [buffer, setBuffer] = useState("");
   const [busy, setBusy] = useState(false);
@@ -92,6 +175,7 @@ export function CheckInPage({
   const [lookupQ, setLookupQ] = useState("");
   const [lookupResults, setLookupResults] = useState<Awaited<ReturnType<typeof lookupCheckInAttendees>>>([]);
   const [history, setHistory] = useState<CheckInHistoryEntry[]>([]);
+  historyRef.current = history;
   const [admittedCount, setAdmittedCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [manualOpen, setManualOpen] = useState(false);
@@ -143,6 +227,17 @@ export function CheckInPage({
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [showMobileOverlay]);
 
+  const refreshStatsOnly = useCallback(async () => {
+    if (!eventId) return;
+    try {
+      const stats = await fetchCheckInStats(eventId);
+      setAdmittedCount(stats.admitted_count);
+      setTotalCount(stats.total_count);
+    } catch {
+      /* read-only context */
+    }
+  }, [eventId]);
+
   const refreshSidebar = useCallback(async () => {
     if (!eventId) return;
     try {
@@ -150,7 +245,12 @@ export function CheckInPage({
         fetchCheckInHistory(eventId, 8),
         fetchCheckInStats(eventId),
       ]);
-      setHistory(h);
+      setHistory((prev) => {
+        const merged = mergeCheckInHistory(h, prev, HISTORY_CAP);
+        historyRef.current = merged;
+        seedAdmitDedupFromHistory(recentAdmits.current, merged);
+        return merged;
+      });
       setAdmittedCount(stats.admitted_count);
       setTotalCount(stats.total_count);
     } catch {
@@ -272,7 +372,12 @@ export function CheckInPage({
           setCard(loaded);
         }
         setBuffer("");
-        void refreshSidebar();
+        if (response.status === "VALID" && response.admittedAt) {
+          applyLocalAdmit(response);
+          void refreshStatsOnly();
+        } else {
+          void refreshSidebar();
+        }
       } catch (err) {
         setScanResult(null);
         handleApiFailure(err);
@@ -281,7 +386,7 @@ export function CheckInPage({
         focusScan();
       }
     },
-    [canAct, deviceId, eventId, focusScan, maybeAutoAdvance, refreshSidebar, reportApiError],
+    [canAct, deviceId, eventId, focusScan, maybeAutoAdvance, applyLocalAdmit, refreshSidebar, refreshStatsOnly, reportApiError],
   );
 
   const closeInlineCamera = useCallback(() => {
@@ -303,8 +408,13 @@ export function CheckInPage({
       if (response) {
         applyResponse(response);
         maybeAutoAdvance(response);
+        if (response.status === "VALID" && response.admittedAt) {
+          applyLocalAdmit(response);
+          void refreshStatsOnly();
+        } else {
+          void refreshSidebar();
+        }
       }
-      void refreshSidebar();
     } catch (err) {
       handleApiFailure(err);
     } finally {
@@ -517,6 +627,17 @@ export function CheckInPage({
   return (
     <>
       {!isOperatorShell && <CheckinConnectionBanner />}
+
+      {streamStatus === "auth_error" && (
+        <p className="check-in__offline-banner" role="status">
+          Live updates unavailable — check access
+        </p>
+      )}
+      {streamStatus === "reconnecting" && (
+        <p className="check-in__offline-banner" role="status">
+          Reconnecting live updates…
+        </p>
+      )}
 
       {!canAct && (
         <p className="checkin-surface__transport-error" role="status">

@@ -5,6 +5,7 @@ import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { DEFAULT_BODY_MJML, DEFAULT_SUBJECT_TEMPLATE } from "@admitto/mail-templates";
+import type { ExportPayload } from "@admitto/mailer";
 import { setMailSettings } from "@admitto/mailer-config";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
@@ -21,6 +22,7 @@ const PASSWORD = "multi-tpl-pass-123";
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let adminCookie = "";
+const exported: ExportPayload[] = [];
 
 const validTemplate = {
   subject_template: DEFAULT_SUBJECT_TEMPLATE,
@@ -90,6 +92,7 @@ describe("multi-template API", () => {
       rateLimitStore: createRateLimitStore(),
       skipCheckinBootValidation: true,
       adminDistRoot,
+      mailDeliveryDeps: { exportSink: (p) => { exported.push(p); } },
     });
   });
 
@@ -433,5 +436,109 @@ describe("multi-template API", () => {
       failed: number;
     };
     expect(body).toEqual({ batchId, total: 4, queued: 1, sent: 1, failed: 2 });
+  });
+
+  it("POST /templates/:id/test-send sends using the selected template", async () => {
+    const TEST_SUBJECT = "BY-ID-CUSTOM-SUBJECT-7f3a";
+    const TEST_BODY =
+      '<p>BY-ID-CUSTOM-BODY-MARKER-7f3a</p><p><a href="{{ticket_url}}">View ticket</a></p><img src="{{qr_image_url}}" alt="QR" />';
+
+    const createRes = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
+      method: "POST",
+      headers: {
+        Cookie: adminCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ label: "Test send by id", template_format: "html" }),
+    });
+    expect(createRes.status).toBe(201);
+    const { id: templateId, name: templateName } = (await createRes.json()) as {
+      id: string;
+      name: string;
+    };
+
+    const putRes = await app.request(
+      `/api/admin/events/${EVENT_A}/templates/${templateId}`,
+      {
+        method: "PUT",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          subject_template: TEST_SUBJECT,
+          body_template: TEST_BODY,
+          template_format: "html",
+        }),
+      },
+    );
+    expect(putRes.status).toBe(200);
+
+    const ticket = await prisma.mailTemplate.findUniqueOrThrow({
+      where: {
+        scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
+      },
+    });
+    expect(ticket.subject_template).not.toBe(TEST_SUBJECT);
+
+    const before = await prisma.emailDelivery.count({ where: { event_id: EVENT_A } });
+    exported.length = 0;
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/templates/${templateId}/test-send`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({ to: "template-by-id-test@example.com" }),
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string };
+    expect(body.status).toBe("sent");
+    expect(exported.length).toBe(1);
+    expect(exported[0]?.message.subject).toContain(TEST_SUBJECT);
+    expect(exported[0]?.message.html).toContain("BY-ID-CUSTOM-BODY-MARKER-7f3a");
+
+    const after = await prisma.emailDelivery.count({ where: { event_id: EVENT_A } });
+    expect(after).toBe(before);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_A, action_type: "mail_test_sent" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    const meta = log!.metadata as { template_id?: string; template_name?: string } | null;
+    expect(meta?.template_id).toBe(templateId);
+    expect(meta?.template_name).toBe(templateName);
+  });
+
+  it("POST /templates/:id/test-send returns 404 for a template from another event", async () => {
+    exported.length = 0;
+
+    const foreignTemplate = await prisma.mailTemplate.findFirstOrThrow({
+      where: { scope_type: "event", scope_id: EVENT_B },
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/templates/${foreignTemplate.id}/test-send`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({ to: "foreign-template-test@example.com" }),
+      },
+    );
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not_found" });
+    expect(exported.length).toBe(0);
   });
 });

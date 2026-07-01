@@ -143,6 +143,7 @@ import {
   handlePutEventTemplate,
   handlePreviewEventTemplate,
   handleTestSendEventTemplate,
+  handleTestSendEventTemplateById,
   handleListEventDeliveries,
   handleListEventTemplates,
   handleGetEventTemplateById,
@@ -573,6 +574,16 @@ export function createApp(options: CreateAppOptions = {}) {
     adminTemplatePreviewRateLimit,
     templateBodyLimit,
     guardArchivedEvent((c) => handlePreviewEventTemplateById(c, db, baseUrl)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/templates/:templateId/test-send",
+    jsonPostCsrf,
+    staffAdminGate,
+    templateTestSendBodyLimit,
+    adminCommunicationRateLimit,
+    guardArchivedEvent((c) =>
+      handleTestSendEventTemplateById(c, db, mailDeliveryDeps, baseUrl),
+    ),
   );
   app.post(
     "/api/admin/events/:eventId/send",

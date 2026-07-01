@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { Badge, Card, PageHeader, Stat } from "@admitto/ui";
 import { ApiError, fetchEventOverview } from "../api/client.js";
@@ -6,6 +6,8 @@ import type { EventDto, EventOverviewDto } from "../api/types.js";
 import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates.js";
 import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { admitDedupKey } from "../checkin/admitDedup.js";
+import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 
 /** Auto-refresh interval for event overview stats (ms). */
 const OVERVIEW_REFRESH_MS = 30_000;
@@ -56,8 +58,11 @@ export function EventOverviewPage() {
   const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
   const abortRef = useRef<AbortController | null>(null);
+  const seenCheckinsRef = useRef(new Set<string>());
+  const reconcileTimerRef = useRef<number | null>(null);
 
   const [overview, setOverview] = useState<EventOverviewDto | null>(null);
+  const [optimisticAdmittedDelta, setOptimisticAdmittedDelta] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,11 +71,48 @@ export function EventOverviewPage() {
   const eventDateIso = currentOverview?.event.date ?? event.date;
   const countdown = useCountdown(eventDateIso, eventTimezone);
 
+  const scheduleReconcile = useCallback(() => {
+    if (reconcileTimerRef.current != null) {
+      window.clearTimeout(reconcileTimerRef.current);
+    }
+    reconcileTimerRef.current = window.setTimeout(() => {
+      reconcileTimerRef.current = null;
+      void fetchEventOverview(event.id)
+        .then((data) => {
+          if (data.event.id !== event.id) return;
+          setOverview(data);
+          setOptimisticAdmittedDelta(0);
+        })
+        .catch(() => {
+          /* keep optimistic value until next poll */
+        });
+    }, 3000);
+  }, [event.id]);
+
+  const handleLiveCheckin = useCallback(
+    (checkin: StreamCheckinEvent) => {
+      const key = admitDedupKey(checkin.attendeeId, checkin.admittedAt);
+      if (seenCheckinsRef.current.has(key)) return;
+      seenCheckinsRef.current.add(key);
+      setOptimisticAdmittedDelta((delta) => delta + 1);
+      scheduleReconcile();
+    },
+    [scheduleReconcile],
+  );
+
+  useEventStream(event.id, handleLiveCheckin);
+
   useEffect(() => {
     abortRef.current?.abort();
+    seenCheckinsRef.current.clear();
+    if (reconcileTimerRef.current != null) {
+      window.clearTimeout(reconcileTimerRef.current);
+      reconcileTimerRef.current = null;
+    }
     setLoading(true);
     setError(null);
     setOverview(null);
+    setOptimisticAdmittedDelta(0);
 
     const load = () => {
       abortRef.current?.abort();
@@ -81,6 +123,7 @@ export function EventOverviewPage() {
         .then((data) => {
           if (ac.signal.aborted) return;
           setOverview(data);
+          setOptimisticAdmittedDelta(0);
           setError(null);
         })
         .catch((err) => {
@@ -103,6 +146,10 @@ export function EventOverviewPage() {
     return () => {
       clearInterval(intervalId);
       abortRef.current?.abort();
+      if (reconcileTimerRef.current != null) {
+        window.clearTimeout(reconcileTimerRef.current);
+        reconcileTimerRef.current = null;
+      }
     };
   }, [event.id, reportApiError]);
 
@@ -111,7 +158,10 @@ export function EventOverviewPage() {
     .join(" · ");
 
   const attendeeCount = currentOverview?.attendee_count ?? event.attendee_count ?? null;
-  const admittedCount = currentOverview?.admitted_count ?? null;
+  const admittedCount =
+    currentOverview?.admitted_count != null
+      ? currentOverview.admitted_count + optimisticAdmittedDelta
+      : null;
   const admitPct =
     attendeeCount != null && admittedCount != null && attendeeCount > 0
       ? Math.round((admittedCount / attendeeCount) * 100)

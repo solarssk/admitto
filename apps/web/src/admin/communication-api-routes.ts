@@ -24,6 +24,8 @@ import {
   MjmlCompileError,
   PlaceholderInHtmlCommentError,
   UnquotedAttributePlaceholderError,
+  resolveTemplateById,
+  TemplateNotFoundError,
   type TemplateFormat,
   type TemplateSource,
 } from "@admitto/mail-templates";
@@ -419,6 +421,84 @@ export async function handleTestSendEventTemplate(
         event_id: eventId,
         action_type: "mail_test_sent",
         audit: adminAuditFromContext(c),
+      });
+    });
+  } catch (auditErr) {
+    console.error("[audit] mail_test_sent log failed", auditErr);
+  }
+
+  return c.json({ status: "sent" } satisfies { status: "sent" });
+}
+
+/** POST /api/admin/events/:eventId/templates/:templateId/test-send */
+export async function handleTestSendEventTemplateById(
+  c: Context,
+  db: PrismaClient,
+  mailDeliveryDeps: MailDeliveryDeps = {},
+  baseUrl: string,
+): Promise<Response> {
+  const eventId = requireEventId(c);
+  if (eventId instanceof Response) return eventId;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const templateId = c.req.param("templateId") ?? "";
+  try {
+    await resolveTemplateById(templateId, eventId, db);
+  } catch (err) {
+    if (err instanceof TemplateNotFoundError) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    throw err;
+  }
+
+  const templateMeta = await db.mailTemplate.findUnique({
+    where: { id: templateId },
+    select: { name: true },
+  });
+
+  let body: z.infer<typeof testSendBodySchema>;
+  try {
+    body = testSendBodySchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
+  let result;
+  try {
+    result = await sendTestEmail(
+      { eventId, toAddress: body.to, templateId },
+      db,
+      process.env,
+      mailDeliveryDeps,
+      { baseUrl },
+    );
+  } catch (err) {
+    console.error("[admin] template test-send failed", err);
+    return c.json({
+      status: "failed",
+      error: clientSafeDeliveryError(err instanceof Error ? err.message : undefined),
+    } satisfies { status: "failed"; error: string });
+  }
+
+  if (!isSendSuccess(result.status) || result.error) {
+    return c.json({
+      status: "failed",
+      error: clientSafeDeliveryError(result.error),
+    } satisfies { status: "failed"; error: string });
+  }
+
+  try {
+    await db.$transaction(async (tx) => {
+      await writeBulkActionLog(tx, {
+        event_id: eventId,
+        action_type: "mail_test_sent",
+        audit: adminAuditFromContext(c),
+        metadata: {
+          template_id: templateId,
+          template_name: templateMeta?.name ?? "unknown",
+        },
       });
     });
   } catch (auditErr) {

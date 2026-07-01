@@ -374,6 +374,60 @@ export interface TestSendResponse {
   error?: string;
 }
 
+/** Multi-template list item from GET .../templates. */
+export interface MailTemplateListItem {
+  id: string;
+  name: string;
+  label: string;
+  template_format: "mjml" | "html";
+  subject_template: string;
+  updated_at: string;
+}
+
+/** Full template row from GET .../templates/:id. */
+export interface MailTemplateDetail extends MailTemplateListItem {
+  body_template: string;
+  /** Present on API responses; admin editor does not consume compiled output. */
+  compiled_html_template?: string;
+}
+
+/** Audience filter for POST `/api/admin/events/:eventId/send`. */
+export type BulkSendFilter =
+  | { type: "all" }
+  | { type: "ticket_type"; value: string }
+  | { type: "rsvp_status"; value: RsvpStatus }
+  | { type: "no_delivery" }
+  | { type: "attendee_ids"; ids: string[] };
+
+/** Request body for bulk mail send (dry-run or queue). */
+export interface BulkSendBody {
+  templateId: string;
+  filter: BulkSendFilter;
+  dryRun?: boolean;
+}
+
+/** Dry-run response with the resolved recipient count only. */
+export interface BulkSendDryRunResponse {
+  recipientCount: number;
+}
+
+/** Queue response after POST `/send` with `dryRun: false`. */
+export interface BulkSendQueuedResponse {
+  batchId: string | null;
+  queued: number;
+  skipped: number;
+  failed: number;
+}
+
+/** Batch progress from GET `/send/:batchId/status`. */
+export interface BulkSendStatusResponse {
+  batchId: string;
+  total: number;
+  queued: number;
+  sent: number;
+  failed: number;
+}
+
 export type MailFieldSource = "env" | "db" | "default";
 
 export interface MailPlainFieldDto<T = string | number | boolean | null> {
