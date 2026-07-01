@@ -1167,14 +1167,14 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
     expect(body.failed).toBe(0);
   });
 
-  it("skips attendees with queued delivery when target is unsent", async () => {
+  it("skips attendees with queued initial delivery when target is unsent", async () => {
     await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_A } });
     await prisma.emailDelivery.create({
       data: {
         organization_id: ORG_A,
         event_id: EVENT_A,
         attendee_id: ATT_A2,
-        purpose: "resend",
+        purpose: "initial",
         provider: "export_only",
         status: "queued",
         recipient_email: "bob@example.com",

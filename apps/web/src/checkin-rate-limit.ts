@@ -11,7 +11,10 @@ const CHECKIN_SCAN_MAX_REQUESTS = 120;
 /** History polling — separate bucket so it cannot block scans on shared venue NAT. */
 const CHECKIN_HISTORY_MAX_REQUESTS = 180;
 
-export type CheckinRateLimitKind = "scan" | "history";
+/** SSE connection opens — low volume; long-lived sockets are capped separately. */
+const CHECKIN_STREAM_MAX_REQUESTS = 12;
+
+export type CheckinRateLimitKind = "scan" | "history" | "stream";
 
 /**
  * Rate-limit authed check-in traffic after `createCheckinPreAuth`.
@@ -21,7 +24,12 @@ export function createCheckinAuthenticatedRateLimit(
   store: RateLimitStore,
   kind: CheckinRateLimitKind,
 ) {
-  const max = kind === "scan" ? CHECKIN_SCAN_MAX_REQUESTS : CHECKIN_HISTORY_MAX_REQUESTS;
+  const max =
+    kind === "scan"
+      ? CHECKIN_SCAN_MAX_REQUESTS
+      : kind === "history"
+        ? CHECKIN_HISTORY_MAX_REQUESTS
+        : CHECKIN_STREAM_MAX_REQUESTS;
 
   return async (c: Context, next: Next): Promise<Response | void> => {
     const key = rateLimitKey(c, kind);

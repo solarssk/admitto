@@ -65,6 +65,7 @@ import {
 } from "./auth/mfa-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
+import { createCheckinStreamConcurrencyLimit } from "./checkin-stream-limit.js";
 import {
   createAdminBulkResendRateLimit,
   createAdminResendRateLimit,
@@ -1024,6 +1025,8 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get(
     "/api/checkin/events/:eventId/stream",
     createCheckinPreAuth(checkinAuthDeps),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "stream"),
+    createCheckinStreamConcurrencyLimit(),
     createCheckinEventScope(checkinAuthDeps, (c) => c.req.param("eventId")),
     (c) => handleEventStream(c),
   );

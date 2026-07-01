@@ -6,6 +6,9 @@ import {
   createCheckinPreAuth,
   createCheckinEventScope,
 } from "../../src/checkin-gate.js";
+import { createCheckinAuthenticatedRateLimit } from "../../src/checkin-rate-limit.js";
+import { createCheckinStreamConcurrencyLimit } from "../../src/checkin-stream-limit.js";
+import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { handleEventStream, HEARTBEAT_MS } from "../../src/admin/checkin-stream-routes.js";
 import { publish, resetSseChannelsForTests, subscriberCount } from "../../src/admin/sse-channel.js";
 
@@ -50,10 +53,13 @@ async function seed(client: PrismaClient) {
 
 function buildStreamApp() {
   const deps = { prisma, config: { allowBearer: false, operatorToken: null } };
+  const rateLimitStore = new InMemoryRateLimitStore();
   const app = new Hono();
   app.get(
     "/api/checkin/events/:eventId/stream",
     createCheckinPreAuth(deps),
+    createCheckinAuthenticatedRateLimit(rateLimitStore, "stream"),
+    createCheckinStreamConcurrencyLimit(),
     createCheckinEventScope(deps, (c) => c.req.param("eventId")),
     (c) => handleEventStream(c),
   );

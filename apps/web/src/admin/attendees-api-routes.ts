@@ -1660,7 +1660,13 @@ export async function handleBulkResendTickets(
   const target = parsed.data.target;
   const filter =
     target === "unsent" ? ({ type: "no_delivery" } as const) : ({ type: "all" } as const);
-  const { ids, overLimit } = await resolveBulkSendAttendeeIds(db, eventId, filter);
+  const noDeliveryScope = target === "unsent" ? ({ mode: "initial_ticket" } as const) : undefined;
+  const { ids, overLimit } = await resolveBulkSendAttendeeIds(
+    db,
+    eventId,
+    filter,
+    noDeliveryScope,
+  );
 
   if (overLimit) {
     return c.json({ error: "too_many_attendees", limit: BULK_RESEND_LIMIT }, 400);

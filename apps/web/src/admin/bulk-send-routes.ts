@@ -34,6 +34,37 @@ const bulkSendBodySchema = z
 
 export type BulkSendFilter = z.infer<typeof bulkSendFilterSchema>;
 
+/** How to interpret `no_delivery` when selecting attendees. */
+export type BulkSendNoDeliveryScope =
+  | { mode: "initial_ticket" }
+  | { mode: "template"; templateId: string };
+
+function noDeliveryDeliveryWhere(
+  scope: BulkSendNoDeliveryScope,
+): Prisma.EmailDeliveryWhereInput {
+  const statusFilter = {
+    status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES, "queued"] as const },
+  };
+  if (scope.mode === "initial_ticket") {
+    return { ...statusFilter, purpose: "initial" };
+  }
+  return { ...statusFilter, template_id: scope.templateId };
+}
+
+export async function resolveBulkSendNoDeliveryScope(
+  db: PrismaClient,
+  templateId: string,
+): Promise<BulkSendNoDeliveryScope> {
+  const row = await db.mailTemplate.findUnique({
+    where: { id: templateId },
+    select: { name: true },
+  });
+  if (row?.name === "ticket") {
+    return { mode: "initial_ticket" };
+  }
+  return { mode: "template", templateId };
+}
+
 export type BulkSendDryRunDto = { recipientCount: number };
 
 export type BulkSendQueuedDto = {
@@ -86,6 +117,7 @@ export async function resolveBulkSendAttendeeIds(
   db: PrismaClient,
   eventId: string,
   filter: BulkSendFilter,
+  noDeliveryScope?: BulkSendNoDeliveryScope,
 ): Promise<{ ids: string[]; overLimit: boolean }> {
   const baseWhere: Prisma.AttendeeWhereInput = { event_id: eventId };
 
@@ -104,9 +136,9 @@ export async function resolveBulkSendAttendeeIds(
       where = {
         ...baseWhere,
         email_deliveries: {
-          none: {
-            status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES, "queued"] },
-          },
+          none: noDeliveryDeliveryWhere(
+            noDeliveryScope ?? { mode: "initial_ticket" },
+          ),
         },
       };
       break;
@@ -188,7 +220,17 @@ export async function handleBulkSend(
   const templateError = await assertTemplateForEvent(db, eventId, body.templateId);
   if (templateError) return templateError;
 
-  const { ids, overLimit } = await resolveBulkSendAttendeeIds(db, eventId, body.filter);
+  const noDeliveryScope =
+    body.filter.type === "no_delivery"
+      ? await resolveBulkSendNoDeliveryScope(db, body.templateId)
+      : undefined;
+
+  const { ids, overLimit } = await resolveBulkSendAttendeeIds(
+    db,
+    eventId,
+    body.filter,
+    noDeliveryScope,
+  );
   if (overLimit) {
     return c.json({ error: "too_many_attendees", limit: BULK_SEND_LIMIT }, 400);
   }
