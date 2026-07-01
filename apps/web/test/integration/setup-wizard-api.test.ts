@@ -177,7 +177,7 @@ describe("GET /api/admin/setup/checks", () => {
     }
   });
 
-  it("returns warn in production when only DB instance_url is set", async () => {
+  it("returns not ok in production when only DB instance_url is set", async () => {
     const prevNode = process.env.NODE_ENV;
     const prevBase = process.env.BASE_URL;
     delete process.env.BASE_URL;
@@ -191,8 +191,8 @@ describe("GET /api/admin/setup/checks", () => {
       const body = (await res.json()) as {
         checks: { base_url: { ok: boolean; warn?: boolean; detail: string } };
       };
-      expect(body.checks.base_url.ok).toBe(true);
-      expect(body.checks.base_url.warn).toBe(true);
+      expect(body.checks.base_url.ok).toBe(false);
+      expect(body.checks.base_url.warn).toBeUndefined();
       expect(body.checks.base_url.detail).toContain("BASE_URL");
     } finally {
       process.env.NODE_ENV = prevNode;

@@ -62,9 +62,9 @@ async function checkInstanceUrl(
       const normalized = normalizePersistedInstanceUrl(dbUrl);
       if (env.NODE_ENV !== "development" && env.NODE_ENV !== "test") {
         return {
-          ok: true,
-          warn: true,
-          detail: `${normalized} (Settings) — set BASE_URL env for server boot/restarts; DB URL is used for mail at runtime`,
+          ok: false,
+          detail:
+            "BASE_URL env is required for server boot in production; Settings instance URL alone is not sufficient",
         };
       }
       return { ok: true, detail: normalized };

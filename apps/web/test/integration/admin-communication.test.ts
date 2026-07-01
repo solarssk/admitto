@@ -381,7 +381,10 @@ describe("POST /api/admin/events/:eventId/template/preview", () => {
 
     const logoTemplate = {
       subject_template: "Logo preview {{event_name}}",
-      body_template: '<p><img src="{{logo_url}}" alt="Logo" width="120" height="40" /></p>',
+      body_template:
+        '<p><img src="{{logo_url}}" alt="Logo" width="120" height="40" /></p>' +
+        '<p><a href="{{ticket_url}}">Ticket</a></p>' +
+        '<p><img src="{{qr_image_url}}" alt="QR" width="80" height="80" /></p>',
       template_format: "html" as const,
     };
 
