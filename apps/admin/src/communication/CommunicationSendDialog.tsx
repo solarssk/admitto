@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Select } from "@admitto/ui";
 import { ApiError, fetchBulkSendStatus, sendEventBulk } from "../api/client.js";
-import type { BulkSendFilter, BulkSendQueuedResponse, RsvpStatus } from "../api/types.js";
+import type { BulkSendFilter, RsvpStatus } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 
 interface CommunicationSendDialogProps {
@@ -147,10 +147,10 @@ export function CommunicationSendDialog({
     setError(null);
     setResultMessage(null);
     try {
-      const body = (await sendEventBulk(eventId, {
+      const body = await sendEventBulk(eventId, {
         templateId,
         filter: buildFilter(),
-      })) as BulkSendQueuedResponse;
+      });
 
       if (runId !== runIdRef.current || !openRef.current) return;
 

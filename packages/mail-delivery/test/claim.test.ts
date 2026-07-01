@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { claimInitialDelivery } from "../src/claim.js";
 import { resetDb } from "./resetDb.js";
 
@@ -7,6 +7,16 @@ const prisma = new PrismaClient();
 const EVENT_ID = "evt-claim-batch";
 const ATT_ID = "att-claim-batch";
 const ORG_ID = "org-claim-batch";
+
+const claimInput = {
+  organizationId: ORG_ID,
+  eventId: EVENT_ID,
+  attendeeId: ATT_ID,
+  provider: "export_only",
+  recipientEmail: "claim@example.com",
+  renderedSubject: "Subject",
+  renderedHtml: "<p>Hi</p>",
+};
 
 beforeAll(async () => {
   await resetDb();
@@ -32,13 +42,82 @@ beforeAll(async () => {
   });
 });
 
+beforeEach(async () => {
+  await prisma.emailDelivery.deleteMany({ where: { attendee_id: ATT_ID } });
+});
+
 afterAll(async () => {
   await prisma.$disconnect();
 });
 
 describe("claimInitialDelivery", () => {
+  it("creates a new queued initial delivery", async () => {
+    const result = await claimInitialDelivery(
+      { ...claimInput, batchId: "fresh-batch" },
+      prisma,
+    );
+
+    expect(result.action).toBe("send");
+    if (result.action !== "send") return;
+    const row = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: ATT_ID, purpose: "initial" },
+    });
+    expect(row?.id).toBe(result.deliveryId);
+    expect(row?.batch_id).toBe("fresh-batch");
+    expect(row?.status).toBe("queued");
+  });
+
+  it("skips when initial delivery is already sent", async () => {
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        attendee_id: ATT_ID,
+        purpose: "initial",
+        batch_id: "sent-batch",
+        provider: "export_only",
+        status: "sent",
+        recipient_email: "claim@example.com",
+        rendered_subject: "Subject",
+        rendered_html: "<p>Hi</p>",
+        queued_at: new Date(),
+      },
+    });
+
+    const result = await claimInitialDelivery(
+      { ...claimInput, batchId: "new-batch" },
+      prisma,
+    );
+
+    expect(result).toEqual({ action: "skip", reason: "already_sent" });
+  });
+
+  it("skips when initial delivery is queued", async () => {
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        attendee_id: ATT_ID,
+        purpose: "initial",
+        batch_id: "queued-batch",
+        provider: "export_only",
+        status: "queued",
+        recipient_email: "claim@example.com",
+        rendered_subject: "Subject",
+        rendered_html: "<p>Hi</p>",
+        queued_at: new Date(),
+      },
+    });
+
+    const result = await claimInitialDelivery(
+      { ...claimInput, batchId: "new-batch" },
+      prisma,
+    );
+
+    expect(result).toEqual({ action: "skip", reason: "in_flight" });
+  });
+
   it("updates batch_id when reclaiming a failed retryable initial delivery", async () => {
-    await prisma.emailDelivery.deleteMany({ where: { attendee_id: ATT_ID } });
     await prisma.emailDelivery.create({
       data: {
         organization_id: ORG_ID,
@@ -58,16 +137,7 @@ describe("claimInitialDelivery", () => {
     });
 
     const result = await claimInitialDelivery(
-      {
-        organizationId: ORG_ID,
-        eventId: EVENT_ID,
-        attendeeId: ATT_ID,
-        batchId: "new-batch",
-        provider: "export_only",
-        recipientEmail: "claim@example.com",
-        renderedSubject: "Subject",
-        renderedHtml: "<p>Hi</p>",
-      },
+      { ...claimInput, batchId: "new-batch" },
       prisma,
     );
 
@@ -77,5 +147,34 @@ describe("claimInitialDelivery", () => {
     });
     expect(row?.batch_id).toBe("new-batch");
     expect(row?.status).toBe("queued");
+  });
+
+  it("returns skip when a concurrent retry claim wins the update", async () => {
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        attendee_id: ATT_ID,
+        purpose: "initial",
+        batch_id: "old-batch",
+        provider: "export_only",
+        status: "failed",
+        retryable: true,
+        attempts: 1,
+        recipient_email: "claim@example.com",
+        rendered_subject: "Subject",
+        rendered_html: "<p>Hi</p>",
+        queued_at: new Date(),
+      },
+    });
+
+    const [first, second] = await Promise.all([
+      claimInitialDelivery({ ...claimInput, batchId: "batch-a" }, prisma),
+      claimInitialDelivery({ ...claimInput, batchId: "batch-b" }, prisma),
+    ]);
+
+    const results = [first, second];
+    expect(results.filter((r) => r.action === "retry_existing")).toHaveLength(1);
+    expect(results.filter((r) => r.action === "skip" && r.reason === "in_flight")).toHaveLength(1);
   });
 });

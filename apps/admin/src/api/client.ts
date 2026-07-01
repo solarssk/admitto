@@ -129,7 +129,7 @@ async function parseJson<T>(res: Response): Promise<T> {
     try {
       const body = (await res.json()) as ApiErrorBody;
       message = messageFromApiErrorBody(body) ?? message;
-      code = body.code;
+      code = body.code ?? body.error;
       eventFull = eventFullFromBody(body);
     } catch {
       /* ignore */
@@ -634,7 +634,11 @@ async function parseTemplateActionJson<T>(res: Response): Promise<T> {
       if (body.errors?.length) {
         throw new TemplateValidationError(body.errors);
       }
-      throw new ApiError(res.status, messageFromApiErrorBody(body) ?? body.error ?? res.statusText);
+      throw new ApiError(
+        res.status,
+        messageFromApiErrorBody(body) ?? body.error ?? res.statusText,
+        body.error,
+      );
     } catch (err) {
       if (err instanceof TemplateValidationError || err instanceof ApiError) throw err;
       throw new ApiError(res.status, res.statusText);
@@ -722,12 +726,12 @@ export async function saveEventTemplateById(
   eventId: string,
   templateId: string,
   body: SaveTemplateBody,
-): Promise<void> {
+): Promise<MailTemplateDetail> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/templates/${encodeURIComponent(templateId)}`,
     jsonPutInit(body),
   );
-  await parseTemplateActionJson<{ ok: boolean }>(res);
+  return parseTemplateActionJson<MailTemplateDetail>(res);
 }
 
 /** Create a new event-scoped mail template. */
@@ -746,12 +750,9 @@ export async function createEventTemplate(
 export async function deleteEventTemplate(eventId: string, templateId: string): Promise<void> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/templates/${encodeURIComponent(templateId)}`,
-    { method: "DELETE", credentials: "same-origin", headers: { Accept: "application/json" } },
+    jsonDeleteInit(),
   );
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new ApiError(res.status, body.error ?? res.statusText);
-  }
+  await parseJson<{ ok: boolean }>(res);
 }
 
 /** Render a draft template by id with sample data (no DB write). */
@@ -781,6 +782,14 @@ export async function testSendEventTemplateById(
 }
 
 /** Queue or dry-run a bulk send for selected attendees. */
+export async function sendEventBulk(
+  eventId: string,
+  body: BulkSendBody & { dryRun: true },
+): Promise<BulkSendDryRunResponse>;
+export async function sendEventBulk(
+  eventId: string,
+  body: Omit<BulkSendBody, "dryRun"> & { dryRun?: false },
+): Promise<BulkSendQueuedResponse>;
 export async function sendEventBulk(
   eventId: string,
   body: BulkSendBody,

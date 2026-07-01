@@ -387,7 +387,8 @@ export interface MailTemplateListItem {
 /** Full template row from GET .../templates/:id. */
 export interface MailTemplateDetail extends MailTemplateListItem {
   body_template: string;
-  compiled_html_template: string;
+  /** Present on API responses; admin editor does not consume compiled output. */
+  compiled_html_template?: string;
 }
 
 export type BulkSendFilter =

@@ -453,6 +453,11 @@ export async function handleTestSendEventTemplateById(
     throw err;
   }
 
+  const templateMeta = await db.mailTemplate.findUnique({
+    where: { id: templateId },
+    select: { name: true },
+  });
+
   let body: z.infer<typeof testSendBodySchema>;
   try {
     body = testSendBodySchema.parse(await c.req.json());
@@ -490,6 +495,10 @@ export async function handleTestSendEventTemplateById(
         event_id: eventId,
         action_type: "mail_test_sent",
         audit: adminAuditFromContext(c),
+        metadata: {
+          template_id: templateId,
+          template_name: templateMeta?.name ?? "unknown",
+        },
       });
     });
   } catch (auditErr) {

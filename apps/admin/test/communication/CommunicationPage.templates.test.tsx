@@ -22,9 +22,11 @@ vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
 vi.mock("../../src/api/client.js", () => ({
   ApiError: class ApiError extends Error {
     status: number;
-    constructor(status: number, message: string) {
+    code?: string;
+    constructor(status: number, message: string, code?: string) {
       super(message);
       this.status = status;
+      this.code = code;
     }
   },
   TemplateValidationError: class TemplateValidationError extends Error {},
@@ -348,6 +350,30 @@ describe("CommunicationPage templates", () => {
     await waitFor(() => {
       expect(deleteEventTemplate).toHaveBeenCalledWith("evt-comm", "tpl-ann");
       expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+  });
+
+  it("shows a friendly message when delete is blocked", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow, announcementRow]);
+    deleteEventTemplate.mockRejectedValue(new ApiError(422, "template_in_use", "template_in_use"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Delete Announcement" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Announcement" }));
+    await waitFor(() => {
+      expect(screen.getByText("Delete template?")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("This template already has deliveries and cannot be deleted."),
+      ).toBeTruthy();
     });
   });
 });

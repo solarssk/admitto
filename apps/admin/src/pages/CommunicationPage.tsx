@@ -22,6 +22,7 @@ import type {
   DeliveryDto,
   EventDeliveriesListParams,
   EventTemplateDto,
+  MailTemplateDetail,
   MailTemplateListItem,
 } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
@@ -55,6 +56,21 @@ type DirtyProtectedAction =
 
 function sortTemplates(items: MailTemplateListItem[]): MailTemplateListItem[] {
   return [...items].sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function templateListItemFromDetail(detail: MailTemplateDetail): MailTemplateListItem {
+  const { body_template: _body, compiled_html_template: _compiled, ...item } = detail;
+  return item;
+}
+
+function mailTemplateDeleteErrorMessage(err: ApiError): string {
+  if (err.code === "template_required") {
+    return "Ticket template cannot be deleted.";
+  }
+  if (err.code === "template_in_use") {
+    return "This template already has deliveries and cannot be deleted.";
+  }
+  return err.message;
 }
 
 /** Minimal client-side email shape check (submit is via button, not native form validation). */
@@ -296,7 +312,7 @@ export function CommunicationPage() {
     } catch (err) {
       if (err instanceof ApiError) {
         reportApiError(err.status);
-        setSaveStatus(err.message);
+        setSaveStatus(mailTemplateDeleteErrorMessage(err));
       } else {
         setSaveStatus("Delete failed.");
       }
@@ -525,21 +541,10 @@ export function CommunicationPage() {
           setSavedFormat(format);
         }
       } else {
-        await saveEventTemplateById(eventId, activeKey, templatePayload());
-        setSavedSubject(subject);
-        setSavedBody(body);
-        setSavedFormat(format);
+        const saved = await saveEventTemplateById(eventId, activeKey, templatePayload());
+        applyDetailTemplate(saved);
         setTemplates((prev) =>
-          prev.map((t) =>
-            t.id === activeKey
-              ? {
-                  ...t,
-                  subject_template: subject,
-                  template_format: format,
-                  updated_at: new Date().toISOString(),
-                }
-              : t,
-          ),
+          sortTemplates(prev.map((t) => (t.id === activeKey ? templateListItemFromDetail(saved) : t))),
         );
       }
       setSaveStatus("Template saved.");
