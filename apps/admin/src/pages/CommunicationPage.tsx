@@ -281,7 +281,7 @@ export function CommunicationPage() {
   const requestDirtyProtectedAction = useCallback(
     (action: DirtyProtectedAction) => {
       if (!eventId) return;
-      if (action.kind === "select" && action.key === activeKey) return;
+      if (action.kind === "select" && action.key === activeKey && !editorSnapshotMissing) return;
       if (action.kind === "delete" && action.name === "ticket") return;
       if (isDirty) {
         setPendingDirtyAction(action);
@@ -290,7 +290,7 @@ export function CommunicationPage() {
       }
       runDirtyProtectedAction(action);
     },
-    [activeKey, eventId, isDirty, runDirtyProtectedAction],
+    [activeKey, editorSnapshotMissing, eventId, isDirty, runDirtyProtectedAction],
   );
 
   const executeCreateTemplate = async (label: string) => {

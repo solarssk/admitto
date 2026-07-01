@@ -493,7 +493,7 @@ describe("CommunicationPage templates", () => {
     fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) => {
       if (id === "tpl-ticket") {
         ticketLoadsAfterMount += 1;
-        if (ticketLoadsAfterMount > 1) {
+        if (ticketLoadsAfterMount === 2 || ticketLoadsAfterMount === 3) {
           throw new ApiError(500, "server_error");
         }
         return {
@@ -542,6 +542,15 @@ describe("CommunicationPage templates", () => {
       expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
       expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", true);
       expect(screen.getByRole("button", { name: "Saved" })).toHaveProperty("disabled", true);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ticket email" }));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+      expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", false);
+      expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", false);
+      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
     });
   });
 
