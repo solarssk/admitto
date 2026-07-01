@@ -1,29 +1,18 @@
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
 import type { AdmitResult } from "@admitto/tickets";
 import { publish } from "./sse-channel.js";
 
 /** Publish SSE check-in event after a successful VALID admit. Failures are non-fatal. */
-export async function publishCheckinIfValid(
+export function publishCheckinIfValid(
   c: Context,
-  db: PrismaClient,
   eventId: string,
   result: AdmitResult,
-): Promise<void> {
+  deviceLabel?: string | null,
+): void {
   if (result.status !== "VALID") return;
 
   try {
     const operatorId = (c.get("operatorUserId") as string | undefined) ?? null;
-    let deviceLabel: string | null = null;
-
-    const sessionId = c.get("checkinSessionId") as string | undefined;
-    if (sessionId) {
-      const session = await db.session.findUnique({
-        where: { id: sessionId },
-        select: { device_label: true },
-      });
-      deviceLabel = session?.device_label ?? null;
-    }
 
     publish(eventId, {
       type: "checkin",
@@ -32,7 +21,7 @@ export async function publishCheckinIfValid(
       ticketType: result.card.ticket_type,
       admittedAt: result.admittedAt.toISOString(),
       operatorId,
-      deviceLabel,
+      deviceLabel: deviceLabel ?? null,
     });
   } catch (err) {
     console.error("SSE publish failed (non-fatal):", err);

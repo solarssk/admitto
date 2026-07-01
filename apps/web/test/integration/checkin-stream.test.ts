@@ -59,8 +59,8 @@ function buildStreamApp() {
     "/api/checkin/events/:eventId/stream",
     createCheckinPreAuth(deps),
     createCheckinAuthenticatedRateLimit(rateLimitStore, "stream"),
-    createCheckinStreamConcurrencyLimit(),
     createCheckinEventScope(deps, (c) => c.req.param("eventId")),
+    createCheckinStreamConcurrencyLimit(),
     (c) => handleEventStream(c),
   );
   return app;

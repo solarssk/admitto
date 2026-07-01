@@ -106,7 +106,7 @@ export async function handleCheckinScan(c: Context, db: PrismaClient): Promise<R
       db,
     );
     if (result.status === "VALID") {
-      await publishCheckinIfValid(c, db, eventId, result);
+      publishCheckinIfValid(c, eventId, result, audit.deviceId ?? null);
     }
     return c.json(serializeScanResult(result), 200);
   } catch (err) {
@@ -168,18 +168,19 @@ export async function handleCheckinAdmit(c: Context, db: PrismaClient): Promise<
   const admitMethod = method === "scan" ? "scan" : "manual";
 
   try {
+    const audit = await opsAuditFromBody(c, db, deviceId);
     const result = await admitAttendee(
       {
         attendeeId,
         eventId,
         method: admitMethod,
-        audit: await opsAuditFromBody(c, db, deviceId),
+        audit,
         notes: typeof notes === "string" ? notes : undefined,
       },
       db,
     );
     if (result.status === "VALID") {
-      await publishCheckinIfValid(c, db, eventId, result);
+      publishCheckinIfValid(c, eventId, result, audit.deviceId ?? null);
     }
     return c.json(serializeScanResult(result), 200);
   } catch (err) {

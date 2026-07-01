@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
 import type { AdmitResult } from "@admitto/tickets";
 import { publishCheckinIfValid } from "../src/admin/checkin-sse-publish.js";
 import * as sseChannel from "../src/admin/sse-channel.js";
@@ -26,24 +25,19 @@ function validResult(): AdmitResult {
 }
 
 describe("publishCheckinIfValid", () => {
-  it("does not throw when session lookup fails", async () => {
+  it("publishes without a database lookup when device label is provided", () => {
     const publishSpy = vi.spyOn(sseChannel, "publish");
-    const db = {
-      session: {
-        findUnique: vi.fn().mockRejectedValue(new Error("db blip")),
-      },
-    } as unknown as PrismaClient;
 
     const c = {
-      get: (key: string) => {
-        if (key === "checkinSessionId") return "sess-1";
-        if (key === "operatorUserId") return "op-1";
-        return undefined;
-      },
+      get: (key: string) => (key === "operatorUserId" ? "op-1" : undefined),
     } as unknown as Context;
 
-    await expect(publishCheckinIfValid(c, db, "evt-1", validResult())).resolves.toBeUndefined();
-    expect(publishSpy).not.toHaveBeenCalled();
+    publishCheckinIfValid(c, "evt-1", validResult(), "Gate A");
+
+    expect(publishSpy).toHaveBeenCalledWith(
+      "evt-1",
+      expect.objectContaining({ deviceLabel: "Gate A", operatorId: "op-1" }),
+    );
     publishSpy.mockRestore();
   });
 });
