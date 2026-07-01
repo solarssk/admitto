@@ -8,7 +8,7 @@ UPDATE "MailTemplate"
 SET "name" = 'ticket', "label" = 'Ticket email'
 WHERE "name" IS NULL OR "name" = '';
 
-DROP INDEX "MailTemplate_scope_type_scope_id_key";
+DROP INDEX IF EXISTS "MailTemplate_scope_type_scope_id_key";
 
 CREATE UNIQUE INDEX "MailTemplate_scope_type_scope_id_name_key"
   ON "MailTemplate" ("scope_type", "scope_id", "name");

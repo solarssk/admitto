@@ -76,9 +76,13 @@ describe("multi-template API", () => {
     prisma = new PrismaClient();
     await seed(prisma);
     app = createApp({
-      db: prisma,
-      adminDistRoot,
+      prisma,
+      checkinToken: "multi-tpl-checkin-token-32chars!!",
+      allowCheckinBearer: true,
+      baseUrl: "https://tickets.example.com",
       rateLimitStore: createRateLimitStore(),
+      skipCheckinBootValidation: true,
+      adminDistRoot,
     });
   });
 

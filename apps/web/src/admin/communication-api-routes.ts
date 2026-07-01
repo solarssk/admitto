@@ -606,7 +606,7 @@ export async function handleGetEventTemplateById(c: Context, db: PrismaClient): 
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const templateId = c.req.param("templateId");
+  const templateId = c.req.param("templateId") ?? "";
   const row = await getEventTemplateRow(db, eventId, templateId);
   if (!row) return c.json({ error: "not_found" }, 404);
 
@@ -635,7 +635,7 @@ export async function handlePutEventTemplateById(
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const templateId = c.req.param("templateId");
+  const templateId = c.req.param("templateId") ?? "";
   const existing = await getEventTemplateRow(db, eventId, templateId);
   if (!existing) return c.json({ error: "not_found" }, 404);
 
@@ -779,7 +779,7 @@ export async function handleDeleteEventTemplate(c: Context, db: PrismaClient): P
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const templateId = c.req.param("templateId");
+  const templateId = c.req.param("templateId") ?? "";
   const row = await getEventTemplateRow(db, eventId, templateId);
   if (!row) return c.json({ error: "not_found" }, 404);
 
@@ -808,7 +808,7 @@ export async function handlePreviewEventTemplateById(
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const templateId = c.req.param("templateId");
+  const templateId = c.req.param("templateId") ?? "";
   const existing = await getEventTemplateRow(db, eventId, templateId);
   if (!existing) return c.json({ error: "not_found" }, 404);
 
