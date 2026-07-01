@@ -8,6 +8,7 @@ import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import {
   isAdmitDedupHit,
+  pruneAdmitDedupMap,
   registerAdmitDedup,
 } from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
@@ -62,6 +63,7 @@ export function EventOverviewPage() {
   const { reportApiError } = useConnectionState();
   const abortRef = useRef<AbortController | null>(null);
   const seenCheckinsRef = useRef(new Map<string, number>());
+  /** Recent admits within admitDedup TTL — not cleared on server refresh (replay dedup); pruned instead. */
   const reconcileTimerRef = useRef<number | null>(null);
   const currentEventIdRef = useRef(event.id);
 
@@ -81,6 +83,7 @@ export function EventOverviewPage() {
 
   const absorbServerOverview = useCallback((data: EventOverviewDto) => {
     if (data.event.id !== currentEventIdRef.current) return;
+    pruneAdmitDedupMap(seenCheckinsRef.current);
     setOverview(data);
     setOptimisticAdmittedDelta(0);
   }, []);

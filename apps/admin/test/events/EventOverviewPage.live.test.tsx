@@ -188,11 +188,12 @@ describe("EventOverviewPage live stats", () => {
       fetchEventOverview.mockResolvedValue(overviewFixture(6));
 
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(30_000);
+        await vi.advanceTimersByTimeAsync(3_000);
       });
 
       await waitFor(() => {
         expect(screen.getByText("6")).toBeTruthy();
+        expect(fetchEventOverview).toHaveBeenCalledTimes(2);
       });
 
       act(() => {

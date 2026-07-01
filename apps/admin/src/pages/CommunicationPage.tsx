@@ -149,7 +149,9 @@ export function CommunicationPage() {
   const subjectRef = useRef<HTMLInputElement>(null);
   const templateSelectionSeqRef = useRef(0);
   const createTemplateSeqRef = useRef(0);
+  const deleteTemplateSeqRef = useRef(0);
   const createInFlightRef = useRef(false);
+  const currentEventIdRef = useRef(eventId);
   /** Latest legacy ticket snapshot; refreshed on each virtual-ticket selection and after save. */
   const legacyTemplateRef = useRef<EventTemplateDto | null>(null);
 
@@ -325,13 +327,19 @@ export function CommunicationPage() {
     }
   };
 
-  const executeDeleteTemplate = async (templateId: string) => {
-    if (!eventId) return;
+  const executeDeleteTemplate = useCallback(async (templateId: string) => {
+    const scopeEventId = eventId;
+    if (!scopeEventId) return;
+    const seq = ++deleteTemplateSeqRef.current;
     const deletedWasActive = templateId === activeKey;
     setTemplateActionBusy(true);
     try {
-      await deleteEventTemplate(eventId, templateId);
-      const items = await fetchEventTemplates(eventId);
+      await deleteEventTemplate(scopeEventId, templateId);
+      if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
+
+      const items = await fetchEventTemplates(scopeEventId);
+      if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
+
       setTemplates(items);
       setDeleteConfirmOpen(false);
       setPendingDelete(null);
@@ -342,8 +350,10 @@ export function CommunicationPage() {
       if (ticket) {
         let loaded = false;
         for (let attempt = 0; attempt < 2 && !loaded; attempt++) {
+          if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
           try {
-            const detail = await fetchEventTemplateById(eventId, ticket.id);
+            const detail = await fetchEventTemplateById(scopeEventId, ticket.id);
+            if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
             applyDetailTemplate(detail);
             setActiveKey(ticket.id);
             loaded = true;
@@ -352,6 +362,7 @@ export function CommunicationPage() {
           }
         }
         if (!loaded) {
+          if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
           setActiveKey(ticket.id);
           setEditorSnapshotMissing(true);
           setSubject("");
@@ -365,10 +376,12 @@ export function CommunicationPage() {
         }
       } else {
         try {
-          legacyTemplateRef.current = await fetchEventTemplate(eventId);
+          legacyTemplateRef.current = await fetchEventTemplate(scopeEventId);
+          if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
           applyLegacyTemplate(legacyTemplateRef.current);
           setActiveKey("virtual-ticket");
         } catch {
+          if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
           if (legacyTemplateRef.current) {
             applyLegacyTemplate(legacyTemplateRef.current);
             setActiveKey("virtual-ticket");
@@ -382,6 +395,7 @@ export function CommunicationPage() {
         }
       }
     } catch (err) {
+      if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
       if (err instanceof ApiError) {
         reportApiError(err.status);
         setSaveStatus(mailTemplateDeleteErrorMessage(err));
@@ -389,9 +403,11 @@ export function CommunicationPage() {
         setSaveStatus("Delete failed.");
       }
     } finally {
-      setTemplateActionBusy(false);
+      if (seq === deleteTemplateSeqRef.current) {
+        setTemplateActionBusy(false);
+      }
     }
-  };
+  }, [activeKey, applyDetailTemplate, applyLegacyTemplate, eventId, reportApiError]);
 
   const sendTemplateId = editorSnapshotMissing
     ? undefined
@@ -436,6 +452,11 @@ export function CommunicationPage() {
       }
     }
   }, [eventId, deliveryPage, deliveryStatus, deliveryPurpose, reportApiError]);
+
+  useEffect(() => {
+    currentEventIdRef.current = eventId;
+    deleteTemplateSeqRef.current += 1;
+  }, [eventId]);
 
   useEffect(() => {
     let cancelled = false;
