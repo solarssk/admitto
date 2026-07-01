@@ -250,7 +250,7 @@ export function CheckInPage({
         seedAdmitDedupFromHistory(recentAdmits.current, merged);
         return merged;
       });
-      setAdmittedCount((prev) => Math.max(prev, stats.admitted_count));
+      setAdmittedCount(stats.admitted_count);
       setTotalCount(stats.total_count);
     } catch {
       /* read-only context */

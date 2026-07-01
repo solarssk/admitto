@@ -27,6 +27,7 @@ export function CreateTemplateDialog({ open, busy, onClose, onCreate }: CreateTe
   if (!open) return null;
 
   const submit = () => {
+    if (busy) return;
     const trimmed = label.trim();
     if (!trimmed) {
       setError("Enter a template label.");

@@ -62,6 +62,7 @@ export function EventOverviewPage() {
   const reconcileTimerRef = useRef<number | null>(null);
 
   const [overview, setOverview] = useState<EventOverviewDto | null>(null);
+  const [optimisticAdmittedDelta, setOptimisticAdmittedDelta] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,6 +81,7 @@ export function EventOverviewPage() {
         .then((data) => {
           if (data.event.id !== event.id) return;
           setOverview(data);
+          setOptimisticAdmittedDelta(0);
         })
         .catch(() => {
           /* keep optimistic value until next poll */
@@ -92,6 +94,7 @@ export function EventOverviewPage() {
       const key = admitDedupKey(checkin.attendeeId, checkin.admittedAt);
       if (seenCheckinsRef.current.has(key)) return;
       seenCheckinsRef.current.add(key);
+      setOptimisticAdmittedDelta((delta) => delta + 1);
       scheduleReconcile();
     },
     [scheduleReconcile],
@@ -109,6 +112,7 @@ export function EventOverviewPage() {
     setLoading(true);
     setError(null);
     setOverview(null);
+    setOptimisticAdmittedDelta(0);
 
     const load = () => {
       abortRef.current?.abort();
@@ -153,7 +157,10 @@ export function EventOverviewPage() {
     .join(" · ");
 
   const attendeeCount = currentOverview?.attendee_count ?? event.attendee_count ?? null;
-  const admittedCount = currentOverview?.admitted_count ?? null;
+  const admittedCount =
+    currentOverview?.admitted_count != null
+      ? currentOverview.admitted_count + optimisticAdmittedDelta
+      : null;
   const admitPct =
     attendeeCount != null && admittedCount != null && attendeeCount > 0
       ? Math.round((admittedCount / attendeeCount) * 100)

@@ -204,4 +204,41 @@ describe("CheckInPage live feed", () => {
       expect(screen.getByText(/Live updates unavailable — check access/i)).toBeTruthy();
     });
   });
+
+  it("sidebar refresh replaces optimistic count with authoritative server stats", async () => {
+    mockPageBootstrap([], 3);
+    submitCheckInScan.mockResolvedValue({
+      status: "PREVIEW",
+      confirmed: false,
+      attendeeId: "att-2",
+      card: null,
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("3")).toBeTruthy();
+    });
+
+    act(() => {
+      streamHandler?.(liveEvent);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("4")).toBeTruthy();
+    });
+
+    fetchCheckInStats.mockResolvedValue({ admitted_count: 2, total_count: 10 });
+    fetchCheckInHistory.mockResolvedValue([]);
+
+    const input = screen.getByLabelText("QR scan or search");
+    fireEvent.change(input, { target: { value: "QRTOKEN-ABCDEFGHIJKLMN" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("2")).toBeTruthy();
+    });
+  });
 });

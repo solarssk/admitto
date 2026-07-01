@@ -191,6 +191,55 @@ describe("CommunicationPage templates", () => {
     expect(fetchEventTemplateById).toHaveBeenCalledWith("evt-comm", "tpl-rem");
   });
 
+  it("applies only the latest template selection when fetches resolve out of order", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+
+    let resolveReminder: (value: unknown) => void = () => {};
+    const reminderDeferred = new Promise((resolve) => {
+      resolveReminder = resolve;
+    });
+
+    fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) => {
+      if (id === "tpl-rem") {
+        await reminderDeferred;
+        return {
+          ...reminderRow,
+          body_template: "<p>Reminder</p>",
+          compiled_html_template: "<p>Reminder</p>",
+        };
+      }
+      return {
+        ...ticketRow,
+        body_template: "<p>Ticket</p>",
+        compiled_html_template: "<p>Ticket</p>",
+      };
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ticket email" }));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+
+    resolveReminder({
+      ...reminderRow,
+      body_template: "<p>Reminder</p>",
+      compiled_html_template: "<p>Reminder</p>",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+      expect(screen.queryByDisplayValue("Reminder subject")).toBeNull();
+    });
+  });
+
   it("shows discard confirm when switching templates with dirty form", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 

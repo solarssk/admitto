@@ -56,6 +56,20 @@ describe("probeStreamAuth", () => {
     const fetchFn = vi.fn().mockResolvedValue({ status: 503 });
     expect(await probeStreamAuth("evt-1", fetchFn)).toBe("ok");
   });
+
+  it("aborts probe and cancels body after reading status", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const fetchFn = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      return Promise.resolve({ status: 200, body: { cancel } });
+    });
+
+    await probeStreamAuth("evt-1", fetchFn);
+
+    expect(cancel).toHaveBeenCalled();
+    const signal = fetchFn.mock.calls[0]?.[1]?.signal as AbortSignal | undefined;
+    expect(signal?.aborted).toBe(true);
+  });
 });
 
 describe("useEventStream", () => {
@@ -166,6 +180,42 @@ describe("useEventStream", () => {
 
     act(() => {
       vi.advanceTimersByTime(STREAM_BACKOFF_MS[1] - STREAM_BACKOFF_MS[0]);
+    });
+    expect(instances.length).toBe(3);
+  });
+
+  it("resets reconnect backoff after a later successful open", async () => {
+    renderHook(() => useEventStream("evt-1", vi.fn()));
+
+    act(() => {
+      instances[0]?.listeners.onopen?.();
+    });
+
+    act(() => {
+      instances[0]?.listeners.onerror?.();
+    });
+    await flushErrorHandler();
+    act(() => {
+      vi.advanceTimersByTime(STREAM_BACKOFF_MS[0]);
+    });
+    expect(instances.length).toBe(2);
+
+    act(() => {
+      instances[1]?.listeners.onopen?.();
+    });
+
+    act(() => {
+      instances[1]?.listeners.onerror?.();
+    });
+    await flushErrorHandler();
+
+    act(() => {
+      vi.advanceTimersByTime(STREAM_BACKOFF_MS[0] - 1);
+    });
+    expect(instances.length).toBe(2);
+
+    act(() => {
+      vi.advanceTimersByTime(1);
     });
     expect(instances.length).toBe(3);
   });

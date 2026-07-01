@@ -130,6 +130,7 @@ export function CommunicationPage() {
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
   const templateSelectionSeqRef = useRef(0);
+  /** Cached legacy ticket fallback; not refreshed after initial page load (known limitation). */
   const legacyTemplateRef = useRef<EventTemplateDto | null>(null);
 
   const [dirtyConfirmOpen, setDirtyConfirmOpen] = useState(false);
@@ -146,7 +147,9 @@ export function CommunicationPage() {
   );
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      isDirty && currentLocation.pathname !== nextLocation.pathname,
+      isDirty &&
+      !dirtyConfirmOpen &&
+      currentLocation.pathname !== nextLocation.pathname,
   );
 
   const templatePayload = useCallback(
@@ -191,13 +194,12 @@ export function CommunicationPage() {
         if (!legacyTemplateRef.current) {
           legacyTemplateRef.current = await fetchEventTemplate(eventId!);
         }
-        applyLegacyTemplate(legacyTemplateRef.current);
-        return;
+        return { kind: "legacy" as const, data: legacyTemplateRef.current };
       }
       const detail = await fetchEventTemplateById(eventId!, key);
-      applyDetailTemplate(detail);
+      return { kind: "detail" as const, data: detail };
     },
-    [applyDetailTemplate, applyLegacyTemplate, eventId],
+    [eventId],
   );
 
   const applySelectTemplate = useCallback(
@@ -210,8 +212,10 @@ export function CommunicationPage() {
       setPreviewHtml(null);
       setTemplateActionBusy(true);
       try {
-        await loadTemplateSelection(key);
+        const result = await loadTemplateSelection(key);
         if (seq !== templateSelectionSeqRef.current) return;
+        if (result.kind === "legacy") applyLegacyTemplate(result.data);
+        else applyDetailTemplate(result.data);
         setActiveKey(key);
       } catch (err) {
         if (seq !== templateSelectionSeqRef.current) return;
@@ -227,7 +231,7 @@ export function CommunicationPage() {
         }
       }
     },
-    [activeKey, eventId, loadTemplateSelection, reportApiError],
+    [activeKey, applyDetailTemplate, applyLegacyTemplate, eventId, loadTemplateSelection, reportApiError],
   );
 
   const runDirtyProtectedAction = useCallback(

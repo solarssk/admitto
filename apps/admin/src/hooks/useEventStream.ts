@@ -20,15 +20,20 @@ export async function probeStreamAuth(
   eventId: string,
   fetchFn: typeof fetch = fetch,
 ): Promise<"ok" | "denied" | "unknown"> {
+  const ac = new AbortController();
   try {
     const res = await fetchFn(`/api/checkin/events/${encodeURIComponent(eventId)}/stream`, {
       method: "GET",
       credentials: "same-origin",
       headers: { Accept: "text/event-stream" },
+      signal: ac.signal,
     });
+    ac.abort();
+    await res.body?.cancel();
     if (res.status === 401 || res.status === 403) return "denied";
     return "ok";
   } catch {
+    ac.abort();
     return "unknown";
   }
 }

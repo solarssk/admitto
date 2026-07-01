@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EventOverviewPage } from "../../src/pages/EventOverviewPage.js";
 import type { EventOverviewDto } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
 
 const fetchEventOverview = vi.fn();
+const reportApiError = vi.fn();
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
 
@@ -18,7 +19,7 @@ vi.mock("../../src/hooks/useEventStream.js", () => ({
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ state: "connected", reportApiError: vi.fn() }),
+  useConnectionState: () => ({ state: "connected", reportApiError }),
 }));
 
 vi.mock("react-router-dom", async () => {
@@ -100,6 +101,10 @@ afterEach(() => {
 });
 
 describe("EventOverviewPage live stats", () => {
+  beforeEach(() => {
+    fetchEventOverview.mockReset();
+  });
+
   it("refetches admitted count after a new SSE check-in", async () => {
     fetchEventOverview
       .mockResolvedValueOnce(overviewFixture(5))
@@ -113,6 +118,10 @@ describe("EventOverviewPage live stats", () => {
 
     act(() => {
       streamHandler?.(liveEvent);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("6")).toBeTruthy();
     });
 
     await waitFor(
@@ -141,8 +150,15 @@ describe("EventOverviewPage live stats", () => {
     });
 
     await waitFor(() => {
-      expect(fetchEventOverview).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("6")).toBeTruthy();
     });
+
+    await waitFor(
+      () => {
+        expect(fetchEventOverview).toHaveBeenCalledTimes(2);
+      },
+      { timeout: 5000 },
+    );
   });
 
   it("does not schedule extra refetches for replayed SSE events", async () => {
