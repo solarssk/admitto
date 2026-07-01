@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 
 const fetchEventTemplates = vi.fn();
@@ -102,6 +102,24 @@ function renderPage() {
     <MemoryRouter initialEntries={["/admin/events/evt-comm/communication"]}>
       <Routes>
         <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+function renderPageWithEventSwitch() {
+  return render(
+    <MemoryRouter initialEntries={["/admin/events/evt-a/communication"]}>
+      <Routes>
+        <Route
+          path="/admin/events/:eventId/communication"
+          element={
+            <>
+              <Link to="/admin/events/evt-b/communication">Switch event</Link>
+              <CommunicationPage />
+            </>
+          }
+        />
       </Routes>
     </MemoryRouter>,
   );
@@ -722,6 +740,37 @@ describe("CommunicationPage templates", () => {
     await waitFor(() => {
       expect(screen.getByText("Delete failed.")).toBeTruthy();
       expect(screen.queryByText("some_new_code")).toBeNull();
+    });
+  });
+
+  it("clears delete busy state when navigating away during in-flight delete", async () => {
+    fetchEventTemplates.mockImplementation(async (id: string) => {
+      if (id === "evt-a") return [ticketRow, reminderRow];
+      return [ticketRow];
+    });
+    deleteEventTemplate.mockImplementation(() => new Promise<void>(() => {}));
+
+    renderPageWithEventSwitch();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Delete Reminder" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    await waitFor(() => {
+      expect(screen.getByText("Delete template?")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "New" })).toHaveProperty("disabled", true);
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "New" })).toHaveProperty("disabled", false);
+      expect(screen.queryByText("Delete template?")).toBeNull();
     });
   });
 });

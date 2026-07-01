@@ -456,6 +456,9 @@ export function CommunicationPage() {
   useEffect(() => {
     currentEventIdRef.current = eventId;
     deleteTemplateSeqRef.current += 1;
+    setTemplateActionBusy(false);
+    setDeleteConfirmOpen(false);
+    setPendingDelete(null);
   }, [eventId]);
 
   useEffect(() => {
