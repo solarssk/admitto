@@ -56,9 +56,7 @@ export function InstanceUrlPanel() {
     void load();
   }, [load]);
 
-  const hasConfiguredUrl =
-    settings?.instance_url.source === "env" ||
-    Boolean(settings?.instance_url.value?.trim());
+  const hasConfiguredUrl = Boolean(settings?.instance_url.value?.trim());
 
   const showWarning =
     settings &&

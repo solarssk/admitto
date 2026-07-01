@@ -19,7 +19,7 @@ import {
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
-import { normalizeInstanceUrl } from "../instance-base-url.js";
+import { normalizePersistedInstanceUrl } from "../instance-base-url.js";
 
 async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response | null> {
   const auth = c.get("auth");
@@ -76,7 +76,7 @@ const instanceUrlSchema = z
   .max(2048)
   .superRefine((value, ctx) => {
     try {
-      normalizeInstanceUrl(value);
+      normalizePersistedInstanceUrl(value);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Invalid instance URL";
       ctx.addIssue({ code: z.ZodIssueCode.custom, message });
@@ -157,7 +157,7 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
       const settingKey = KEY_MAP[bodyKey];
       let value = data[bodyKey];
       if (bodyKey === "instance_url" && typeof value === "string") {
-        value = normalizeInstanceUrl(value);
+        value = normalizePersistedInstanceUrl(value);
       }
       if (value === null || value === undefined) {
         await tx.systemSettings.deleteMany({ where: { key: settingKey } });

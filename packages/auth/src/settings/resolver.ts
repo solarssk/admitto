@@ -24,7 +24,7 @@ function envOverride(key: string): unknown | undefined {
   const envName = SETTING_ENV_LOCKS[key];
   if (!envName) return undefined;
   const raw = process.env[envName];
-  if (raw === undefined || raw === "") return undefined;
+  if (raw === undefined || raw.trim() === "") return undefined;
   return parseEnvValue(raw, SETTING_DEFAULTS[key]);
 }
 

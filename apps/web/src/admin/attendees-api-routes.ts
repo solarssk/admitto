@@ -1546,6 +1546,7 @@ export async function handleResendEventAttendeeTicket(
   c: Context,
   db: PrismaClient,
   mailDeps: MailDeliveryDeps = {},
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -1581,7 +1582,7 @@ export async function handleResendEventAttendeeTicket(
   // personal domain; a hardcoded allowlist would break that use-case without org configuration.
   const sendResult = await resendTicketEmail(attendeeId, db, process.env, mailDeps, {
     to,
-    baseUrl: await resolveInstanceBaseUrl(db, process.env),
+    baseUrl: await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl),
   });
 
   const skipped = sendResult.skipped.find((s) => s.attendeeId === attendeeId);
@@ -1654,6 +1655,7 @@ export async function handleBulkResendTickets(
   c: Context,
   db: PrismaClient,
   mailDeps: MailDeliveryDeps = {},
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -1699,7 +1701,7 @@ export async function handleBulkResendTickets(
     {
       attendeeIds,
       purpose: mailPurpose,
-      baseUrl: await resolveInstanceBaseUrl(db, process.env),
+      baseUrl: await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl),
     },
     db,
     process.env,

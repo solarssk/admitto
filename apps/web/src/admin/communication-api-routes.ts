@@ -322,6 +322,7 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
 export async function handlePreviewEventTemplate(
   c: Context,
   db: PrismaClient,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -341,7 +342,7 @@ export async function handlePreviewEventTemplate(
     return templateValidationResponse(c, sourceErrors);
   }
 
-  const baseUrl = await resolveInstanceBaseUrl(db, process.env);
+  const baseUrl = await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl);
 
   try {
     const rendered = await renderDraftPreview(
@@ -378,6 +379,7 @@ export async function handleTestSendEventTemplate(
   c: Context,
   db: PrismaClient,
   mailDeliveryDeps: MailDeliveryDeps = {},
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -392,7 +394,7 @@ export async function handleTestSendEventTemplate(
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const baseUrl = await resolveInstanceBaseUrl(db, process.env);
+  const baseUrl = await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl);
 
   let result;
   try {
@@ -438,6 +440,7 @@ export async function handleTestSendEventTemplateById(
   c: Context,
   db: PrismaClient,
   mailDeliveryDeps: MailDeliveryDeps = {},
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -467,7 +470,7 @@ export async function handleTestSendEventTemplateById(
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const baseUrl = await resolveInstanceBaseUrl(db, process.env);
+  const baseUrl = await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl);
 
   let result;
   try {
@@ -938,6 +941,7 @@ export async function handleDeleteEventTemplate(c: Context, db: PrismaClient): P
 export async function handlePreviewEventTemplateById(
   c: Context,
   db: PrismaClient,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -965,7 +969,7 @@ export async function handlePreviewEventTemplateById(
     return templateValidationResponse(c, sourceErrors);
   }
 
-  const baseUrl = await resolveInstanceBaseUrl(db, process.env);
+  const baseUrl = await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl);
 
   try {
     const rendered = await renderDraftPreview(db, eventId, subject, templateBody, format, baseUrl);

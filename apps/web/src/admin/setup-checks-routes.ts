@@ -6,7 +6,7 @@ import { validateEncryptionKeyBootConfig } from "../config.js";
 import { checkMigrationsStatus } from "../ops/migrations-check.js";
 import { checkRedis } from "../ops/readyz.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
-import { normalizeInstanceUrl } from "../instance-base-url.js";
+import { normalizePersistedInstanceUrl, normalizeRuntimeBaseUrl } from "../instance-base-url.js";
 
 export type SetupCheckResult = { ok: boolean; detail: string; warn?: boolean };
 
@@ -48,7 +48,7 @@ async function checkInstanceUrl(
       return { ok: false, detail: "BASE_URL must use https:// in production" };
     }
     try {
-      normalizeInstanceUrl(envRaw);
+      normalizeRuntimeBaseUrl(envRaw);
       return { ok: true, detail: envRaw };
     } catch (err) {
       const detail = err instanceof Error ? err.message : "Invalid BASE_URL";
@@ -59,7 +59,7 @@ async function checkInstanceUrl(
   const dbUrl = await getInstanceUrl(db);
   if (dbUrl) {
     try {
-      const normalized = normalizeInstanceUrl(dbUrl);
+      const normalized = normalizePersistedInstanceUrl(dbUrl);
       return { ok: true, detail: normalized };
     } catch (err) {
       const detail = err instanceof Error ? err.message : "Invalid instance URL in settings";

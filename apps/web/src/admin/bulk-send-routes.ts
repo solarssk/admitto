@@ -211,6 +211,7 @@ export async function handleBulkSend(
   c: Context,
   db: PrismaClient,
   mailDeps: MailDeliveryDeps = {},
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -279,7 +280,7 @@ export async function handleBulkSend(
         attendeeIds: ids,
         templateId: body.templateId,
         purpose,
-        baseUrl: await resolveInstanceBaseUrl(db, process.env),
+        baseUrl: await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl),
       },
       db,
       process.env,

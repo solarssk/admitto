@@ -506,7 +506,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminBulkResendRateLimit,
-    guardArchivedEvent((c) => handleBulkResendTickets(c, db, mailDeliveryDeps)),
+    guardArchivedEvent((c) => handleBulkResendTickets(c, db, mailDeliveryDeps, baseUrl)),
   );
   app.get("/api/admin/events/:eventId/attendees/:id", staffAdminGate, (c) =>
     handleGetEventAttendee(c, db),
@@ -522,7 +522,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminResendRateLimit,
-    guardArchivedEvent((c) => handleResendEventAttendeeTicket(c, db, mailDeliveryDeps)),
+    guardArchivedEvent((c) => handleResendEventAttendeeTicket(c, db, mailDeliveryDeps, baseUrl)),
   );
   app.get("/api/admin/events/:eventId/template", staffAdminGate, (c) =>
     handleGetEventTemplate(c, db),
@@ -531,7 +531,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePutEventTemplate(c, db),
   ));
   app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, adminTemplatePreviewRateLimit, templateBodyLimit, guardArchivedEvent((c) =>
-    handlePreviewEventTemplate(c, db),
+    handlePreviewEventTemplate(c, db, baseUrl),
   ));
   app.post(
     "/api/admin/events/:eventId/template/test-send",
@@ -539,7 +539,7 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     templateTestSendBodyLimit,
     adminCommunicationRateLimit,
-    guardArchivedEvent((c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps)),
+    guardArchivedEvent((c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps, baseUrl)),
   );
   app.get("/api/admin/events/:eventId/templates", staffAdminGate, (c) =>
     handleListEventTemplates(c, db),
@@ -573,7 +573,7 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminTemplatePreviewRateLimit,
     templateBodyLimit,
-    guardArchivedEvent((c) => handlePreviewEventTemplateById(c, db)),
+    guardArchivedEvent((c) => handlePreviewEventTemplateById(c, db, baseUrl)),
   );
   app.post(
     "/api/admin/events/:eventId/templates/:templateId/test-send",
@@ -582,7 +582,7 @@ export function createApp(options: CreateAppOptions = {}) {
     templateTestSendBodyLimit,
     adminCommunicationRateLimit,
     guardArchivedEvent((c) =>
-      handleTestSendEventTemplateById(c, db, mailDeliveryDeps),
+      handleTestSendEventTemplateById(c, db, mailDeliveryDeps, baseUrl),
     ),
   );
   app.post(
@@ -590,7 +590,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminBulkResendRateLimit,
-    guardArchivedEvent((c) => handleBulkSend(c, db, mailDeliveryDeps)),
+    guardArchivedEvent((c) => handleBulkSend(c, db, mailDeliveryDeps, baseUrl)),
   );
   app.get("/api/admin/events/:eventId/send/status/:batchId", staffAdminGate, (c) =>
     handleBulkSendStatus(c, db),

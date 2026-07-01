@@ -23,6 +23,7 @@ let adminId: string;
 let superCookie = "";
 let adminCookie = "";
 let prevInstanceOrgId: string | undefined;
+let prevBaseUrlForSuite: string | undefined;
 
 async function seed(client: PrismaClient) {
   await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_SYSSETTINGS } });
@@ -74,6 +75,8 @@ async function seed(client: PrismaClient) {
 
 beforeAll(async () => {
   prevInstanceOrgId = process.env.INSTANCE_ORG_ID;
+  prevBaseUrlForSuite = process.env.BASE_URL;
+  delete process.env.BASE_URL;
   process.env.INSTANCE_ORG_ID = ORG_SYSSETTINGS;
 
   prisma = new PrismaClient();
@@ -104,6 +107,8 @@ afterEach(async () => {
 afterAll(async () => {
   if (prevInstanceOrgId !== undefined) process.env.INSTANCE_ORG_ID = prevInstanceOrgId;
   else delete process.env.INSTANCE_ORG_ID;
+  if (prevBaseUrlForSuite === undefined) delete process.env.BASE_URL;
+  else process.env.BASE_URL = prevBaseUrlForSuite;
   await prisma?.$disconnect();
 });
 
@@ -406,6 +411,21 @@ describe("PATCH /api/admin/system-settings", () => {
         ...sameOrigin,
       },
       body: JSON.stringify({ instance_url: "https://tickets.example.com/" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_error");
+  });
+
+  it("rejects non-HTTPS instance_url", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ instance_url: "http://tickets.example.com" }),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
