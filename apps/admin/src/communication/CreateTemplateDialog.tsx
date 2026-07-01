@@ -13,26 +13,35 @@ export interface CreateTemplateDialogProps {
 export function CreateTemplateDialog({ open, busy, onClose, onCreate }: CreateTemplateDialogProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const submittingRef = useRef(false);
   const [label, setLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useModalFocusTrap(panelRef, open, onClose);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      submittingRef.current = false;
+      return;
+    }
     setLabel("");
     setError(null);
   }, [open]);
 
+  useEffect(() => {
+    if (!busy) submittingRef.current = false;
+  }, [busy]);
+
   if (!open) return null;
 
   const submit = () => {
-    if (busy) return;
+    if (busy || submittingRef.current) return;
     const trimmed = label.trim();
     if (!trimmed) {
       setError("Enter a template label.");
       return;
     }
+    submittingRef.current = true;
     onCreate(trimmed);
   };
 

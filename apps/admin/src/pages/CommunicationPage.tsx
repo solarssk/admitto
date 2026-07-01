@@ -70,8 +70,22 @@ function mailTemplateDeleteErrorMessage(err: ApiError): string {
   if (err.code === "template_in_use") {
     return "This template already has deliveries and cannot be deleted.";
   }
-  return err.message;
+  const detail = err.message.trim();
+  if (detail && !/^[a-z][a-z0-9_]*$/.test(detail)) return detail;
+  return "Delete failed.";
 }
+
+type TemplateSelectionLoad =
+  | { kind: "legacy"; data: EventTemplateDto }
+  | {
+      kind: "detail";
+      data: {
+        name: string;
+        subject_template: string;
+        body_template: string;
+        template_format: TemplateFormat;
+      };
+    };
 
 /** Minimal client-side email shape check (submit is via button, not native form validation). */
 function isValidEmail(value: string): boolean {
@@ -130,6 +144,8 @@ export function CommunicationPage() {
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
   const templateSelectionSeqRef = useRef(0);
+  const createTemplateSeqRef = useRef(0);
+  const createInFlightRef = useRef(false);
   /** Cached legacy ticket fallback; not refreshed after initial page load (known limitation). */
   const legacyTemplateRef = useRef<EventTemplateDto | null>(null);
 
@@ -145,10 +161,12 @@ export function CommunicationPage() {
     { subject, body, format },
     { subject: savedSubject, body: savedBody, format: savedFormat },
   );
+  const localConfirmOpen =
+    dirtyConfirmOpen || deleteConfirmOpen || createDialogOpen || overrideConfirmOpen;
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       isDirty &&
-      !dirtyConfirmOpen &&
+      !localConfirmOpen &&
       currentLocation.pathname !== nextLocation.pathname,
   );
 
@@ -189,17 +207,26 @@ export function CommunicationPage() {
   }, []);
 
   const loadTemplateSelection = useCallback(
-    async (key: string) => {
+    async (key: string): Promise<TemplateSelectionLoad> => {
       if (key === "virtual-ticket") {
         if (!legacyTemplateRef.current) {
           legacyTemplateRef.current = await fetchEventTemplate(eventId!);
         }
-        return { kind: "legacy" as const, data: legacyTemplateRef.current };
+        return { kind: "legacy", data: legacyTemplateRef.current };
       }
       const detail = await fetchEventTemplateById(eventId!, key);
-      return { kind: "detail" as const, data: detail };
+      return { kind: "detail", data: detail };
     },
     [eventId],
+  );
+
+  const applyLoadedTemplateSelection = useCallback(
+    (key: string, result: TemplateSelectionLoad) => {
+      if (result.kind === "legacy") applyLegacyTemplate(result.data);
+      else applyDetailTemplate(result.data);
+      setActiveKey(key);
+    },
+    [applyDetailTemplate, applyLegacyTemplate],
   );
 
   const applySelectTemplate = useCallback(
@@ -214,9 +241,7 @@ export function CommunicationPage() {
       try {
         const result = await loadTemplateSelection(key);
         if (seq !== templateSelectionSeqRef.current) return;
-        if (result.kind === "legacy") applyLegacyTemplate(result.data);
-        else applyDetailTemplate(result.data);
-        setActiveKey(key);
+        applyLoadedTemplateSelection(key, result);
       } catch (err) {
         if (seq !== templateSelectionSeqRef.current) return;
         if (err instanceof ApiError) {
@@ -231,7 +256,7 @@ export function CommunicationPage() {
         }
       }
     },
-    [activeKey, applyDetailTemplate, applyLegacyTemplate, eventId, loadTemplateSelection, reportApiError],
+    [activeKey, applyLoadedTemplateSelection, eventId, loadTemplateSelection, reportApiError],
   );
 
   const runDirtyProtectedAction = useCallback(
@@ -266,18 +291,22 @@ export function CommunicationPage() {
   );
 
   const executeCreateTemplate = async (label: string) => {
-    if (!eventId) return;
+    if (!eventId || createInFlightRef.current) return;
+    createInFlightRef.current = true;
+    const seq = ++createTemplateSeqRef.current;
     setTemplateActionBusy(true);
     try {
       const created = await createEventTemplate(eventId, {
         label,
         template_format: "mjml",
       });
+      if (seq !== createTemplateSeqRef.current) return;
       setTemplates((prev) => sortTemplates([...prev, created]));
       applyDetailTemplate(created);
       setActiveKey(created.id);
       setCreateDialogOpen(false);
     } catch (err) {
+      if (seq !== createTemplateSeqRef.current) return;
       if (err instanceof ApiError) {
         reportApiError(err.status);
         setSaveStatus(err.message);
@@ -285,7 +314,10 @@ export function CommunicationPage() {
         setSaveStatus("Create failed.");
       }
     } finally {
-      setTemplateActionBusy(false);
+      createInFlightRef.current = false;
+      if (seq === createTemplateSeqRef.current) {
+        setTemplateActionBusy(false);
+      }
     }
   };
 
@@ -1056,7 +1088,7 @@ export function CommunicationPage() {
         onConfirm={() => void performSave()}
       />
       <ConfirmDialog
-        open={blocker.state === "blocked"}
+        open={blocker.state === "blocked" && !localConfirmOpen}
         title="Discard unsaved changes?"
         message="You have unsaved template changes. They will be lost if you leave this page."
         confirmLabel="Discard"

@@ -51,9 +51,15 @@ vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
   return {
     ...actual,
-    useBlocker: () => ({ state: "unblocked", proceed: vi.fn(), reset: vi.fn() }),
+    useBlocker: () => blockerState,
   };
 });
+
+const blockerState = {
+  state: "unblocked" as "unblocked" | "blocked",
+  proceed: vi.fn(),
+  reset: vi.fn(),
+};
 
 const legacyTemplate = {
   source: "builtin" as const,
@@ -102,6 +108,9 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  blockerState.state = "unblocked";
+  blockerState.proceed.mockClear();
+  blockerState.reset.mockClear();
   fetchEventOverview.mockResolvedValue({
     email_bounced: 0,
     email_failed: 0,
@@ -226,6 +235,8 @@ describe("CommunicationPage templates", () => {
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+      const active = document.querySelector(".communication-templates__item--active");
+      expect(active?.textContent).toContain("Ticket email");
     });
 
     resolveReminder({
@@ -237,7 +248,49 @@ describe("CommunicationPage templates", () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
       expect(screen.queryByDisplayValue("Reminder subject")).toBeNull();
+      const active = document.querySelector(".communication-templates__item--active");
+      expect(active?.textContent).toContain("Ticket email");
     });
+  });
+
+  it("suppresses route discard dialog while in-page dirty confirm is open", async () => {
+    blockerState.state = "blocked";
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited ticket" } });
+    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+
+    expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
+    expect(screen.queryByText("They will be lost if you leave this page")).toBeNull();
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  });
+
+  it("prevents duplicate create submissions while the first request is in flight", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    createEventTemplate.mockImplementation(() => new Promise(() => {}));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "New" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    const dialog = screen.getByRole("dialog", { name: "New template" });
+    const input = within(dialog).getByLabelText("Template label");
+    fireEvent.change(input, { target: { value: "Announcement" } });
+
+    const createBtn = within(dialog).getByRole("button", { name: "Create" });
+    fireEvent.click(createBtn);
+    fireEvent.click(createBtn);
+
+    expect(createEventTemplate).toHaveBeenCalledTimes(1);
   });
 
   it("shows discard confirm when switching templates with dirty form", async () => {
@@ -423,6 +476,29 @@ describe("CommunicationPage templates", () => {
       expect(
         screen.getByText("This template already has deliveries and cannot be deleted."),
       ).toBeTruthy();
+    });
+  });
+
+  it("shows a generic delete failure for unmapped backend codes", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow, announcementRow]);
+    deleteEventTemplate.mockRejectedValue(new ApiError(422, "some_new_code", "some_new_code"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Delete Announcement" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Announcement" }));
+    await waitFor(() => {
+      expect(screen.getByText("Delete template?")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Delete failed.")).toBeTruthy();
+      expect(screen.queryByText("some_new_code")).toBeNull();
     });
   });
 });
