@@ -5,6 +5,7 @@ import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { DEFAULT_BODY_MJML, DEFAULT_SUBJECT_TEMPLATE } from "@admitto/mail-templates";
+import type { ExportPayload } from "@admitto/mailer";
 import { setMailSettings } from "@admitto/mailer-config";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
@@ -21,6 +22,7 @@ const PASSWORD = "multi-tpl-pass-123";
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let adminCookie = "";
+const exported: ExportPayload[] = [];
 
 const validTemplate = {
   subject_template: DEFAULT_SUBJECT_TEMPLATE,
@@ -90,6 +92,7 @@ describe("multi-template API", () => {
       rateLimitStore: createRateLimitStore(),
       skipCheckinBootValidation: true,
       adminDistRoot,
+      mailDeliveryDeps: { exportSink: (p) => exported.push(p) },
     });
   });
 
@@ -433,5 +436,36 @@ describe("multi-template API", () => {
       failed: number;
     };
     expect(body).toEqual({ batchId, total: 4, queued: 1, sent: 1, failed: 2 });
+  });
+
+  it("POST /templates/:id/test-send sends using the selected template", async () => {
+    const ticket = await prisma.mailTemplate.findUniqueOrThrow({
+      where: {
+        scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
+      },
+    });
+
+    const before = await prisma.emailDelivery.count({ where: { event_id: EVENT_A } });
+    exported.length = 0;
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/templates/${ticket.id}/test-send`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({ to: "template-by-id-test@example.com" }),
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string };
+    expect(body.status).toBe("sent");
+    expect(exported.length).toBe(1);
+
+    const after = await prisma.emailDelivery.count({ where: { event_id: EVENT_A } });
+    expect(after).toBe(before);
   });
 });

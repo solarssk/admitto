@@ -1,5 +1,13 @@
 import type { PrismaClient } from "@prisma/client";
-import { previewTemplate } from "@admitto/mail-templates";
+import {
+  DEFAULT_SAMPLE_VARS,
+  formatEventDate,
+  previewTemplate,
+  renderTemplate,
+  resolveBrandingFromEvent,
+  resolvePreviewEventTimeZone,
+  resolveTemplateById,
+} from "@admitto/mail-templates";
 import { closeMailer, createMailer, type SendResult } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
 import { resolveBaseUrl } from "./baseUrl.js";
@@ -9,6 +17,8 @@ import { sanitizeDeliveryError } from "./sanitizeError.js";
 export interface SendTestEmailParams {
   eventId: string;
   toAddress: string;
+  /** When set, renders this template instead of the event default ticket template. */
+  templateId?: string;
 }
 
 export interface SendTestEmailOptions {
@@ -32,9 +42,35 @@ export async function sendTestEmail(
   const baseUrl = options.baseUrl ?? resolveBaseUrl(env);
 
   try {
-    const rendered = await previewTemplate(params.eventId, prisma, undefined, {
-      baseUrl,
-    });
+    let rendered;
+    if (params.templateId) {
+      const event = await prisma.event.findUniqueOrThrow({
+        where: { id: params.eventId },
+        include: { organization: true },
+      });
+      const resolved = await resolveTemplateById(params.templateId, params.eventId, prisma);
+      const branding = resolveBrandingFromEvent(event);
+      const vars = {
+        ...DEFAULT_SAMPLE_VARS,
+        event_name: event.title,
+        event_date: formatEventDate(event.date, resolvePreviewEventTimeZone()),
+        event_location: event.location ?? "",
+        logo_url: branding.logo_url,
+        header_image_url: branding.header_image_url,
+      };
+      rendered = renderTemplate(
+        {
+          subject: resolved.subjectTemplate,
+          compiledHtml: resolved.compiledHtmlTemplate,
+        },
+        vars,
+        { baseUrl },
+      );
+    } else {
+      rendered = await previewTemplate(params.eventId, prisma, undefined, {
+        baseUrl,
+      });
+    }
     const result = await mailer.send({
       to: params.toAddress,
       subject: rendered.subject,

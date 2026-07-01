@@ -130,6 +130,7 @@ export async function claimInitialDelivery(
       data: {
         status: "queued",
         queued_at: new Date(),
+        batch_id: input.batchId,
       },
     });
     if (claimed.count === 0) {
