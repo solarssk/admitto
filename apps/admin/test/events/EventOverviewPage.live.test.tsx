@@ -135,70 +135,74 @@ describe("EventOverviewPage live stats", () => {
 
   it("clears optimistic delta when the periodic overview refresh succeeds", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    try {
+      fetchEventOverview.mockResolvedValue(overviewFixture(5));
 
-    renderPage();
+      renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByText("5")).toBeTruthy();
-    });
+      await waitFor(() => {
+        expect(screen.getByText("5")).toBeTruthy();
+      });
 
-    act(() => {
-      streamHandler?.(liveEvent);
-    });
+      act(() => {
+        streamHandler?.(liveEvent);
+      });
 
-    await waitFor(() => {
-      expect(screen.getByText("6")).toBeTruthy();
-    });
+      await waitFor(() => {
+        expect(screen.getByText("6")).toBeTruthy();
+      });
 
-    fetchEventOverview.mockResolvedValue(overviewFixture(6));
+      fetchEventOverview.mockResolvedValue(overviewFixture(6));
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000);
-    });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
 
-    await waitFor(() => {
-      expect(screen.getByText("6")).toBeTruthy();
-    });
-
-    vi.useRealTimers();
+      await waitFor(() => {
+        expect(screen.getByText("6")).toBeTruthy();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps SSE dedup after overview refresh so replayed admits do not double-count", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    try {
+      fetchEventOverview.mockResolvedValue(overviewFixture(5));
 
-    renderPage();
+      renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByText("5")).toBeTruthy();
-    });
+      await waitFor(() => {
+        expect(screen.getByText("5")).toBeTruthy();
+      });
 
-    act(() => {
-      streamHandler?.(liveEvent);
-    });
+      act(() => {
+        streamHandler?.(liveEvent);
+      });
 
-    await waitFor(() => {
+      await waitFor(() => {
+        expect(screen.getByText("6")).toBeTruthy();
+      });
+
+      fetchEventOverview.mockResolvedValue(overviewFixture(6));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("6")).toBeTruthy();
+      });
+
+      act(() => {
+        streamHandler?.(liveEvent);
+      });
+
       expect(screen.getByText("6")).toBeTruthy();
-    });
-
-    fetchEventOverview.mockResolvedValue(overviewFixture(6));
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText("6")).toBeTruthy();
-    });
-
-    act(() => {
-      streamHandler?.(liveEvent);
-    });
-
-    expect(screen.getByText("6")).toBeTruthy();
-
-    vi.useRealTimers();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("deduplicates repeated SSE for the same admit", async () => {

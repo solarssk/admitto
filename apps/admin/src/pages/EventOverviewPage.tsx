@@ -63,6 +63,11 @@ export function EventOverviewPage() {
   const abortRef = useRef<AbortController | null>(null);
   const seenCheckinsRef = useRef(new Map<string, number>());
   const reconcileTimerRef = useRef<number | null>(null);
+  const currentEventIdRef = useRef(event.id);
+
+  useEffect(() => {
+    currentEventIdRef.current = event.id;
+  }, [event.id]);
 
   const [overview, setOverview] = useState<EventOverviewDto | null>(null);
   const [optimisticAdmittedDelta, setOptimisticAdmittedDelta] = useState(0);
@@ -75,10 +80,10 @@ export function EventOverviewPage() {
   const countdown = useCountdown(eventDateIso, eventTimezone);
 
   const absorbServerOverview = useCallback((data: EventOverviewDto) => {
-    if (data.event.id !== event.id) return;
+    if (data.event.id !== currentEventIdRef.current) return;
     setOverview(data);
     setOptimisticAdmittedDelta(0);
-  }, [event.id]);
+  }, []);
 
   const scheduleReconcile = useCallback(() => {
     if (reconcileTimerRef.current != null) {

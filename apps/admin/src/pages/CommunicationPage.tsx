@@ -330,7 +330,12 @@ export function CommunicationPage() {
       await deleteEventTemplate(eventId, templateId);
       const items = await fetchEventTemplates(eventId);
       setTemplates(items);
-      if (deletedWasActive) {
+      setDeleteConfirmOpen(false);
+      setPendingDelete(null);
+
+      if (!deletedWasActive) return;
+
+      try {
         const ticket = items.find((t) => t.name === "ticket");
         if (ticket) {
           const detail = await fetchEventTemplateById(eventId, ticket.id);
@@ -341,9 +346,22 @@ export function CommunicationPage() {
           applyLegacyTemplate(legacyTemplateRef.current);
           setActiveKey("virtual-ticket");
         }
+      } catch {
+        const ticket = items.find((t) => t.name === "ticket");
+        if (ticket) {
+          setActiveKey(ticket.id);
+          setSaveStatus("Template deleted. Could not load ticket template — reload the page.");
+        } else if (legacyTemplateRef.current) {
+          applyLegacyTemplate(legacyTemplateRef.current);
+          setActiveKey("virtual-ticket");
+          setSaveStatus(
+            "Template deleted. Inherited ticket could not be refreshed — showing last known copy.",
+          );
+        } else {
+          setActiveKey("virtual-ticket");
+          setSaveStatus("Template deleted. Could not load inherited ticket — reload the page.");
+        }
       }
-      setDeleteConfirmOpen(false);
-      setPendingDelete(null);
     } catch (err) {
       if (err instanceof ApiError) {
         reportApiError(err.status);

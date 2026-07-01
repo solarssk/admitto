@@ -484,6 +484,46 @@ describe("CommunicationPage templates", () => {
     });
   });
 
+  it("falls back to cached inherited ticket when post-delete refresh fails", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplates
+      .mockResolvedValueOnce([reminderRow])
+      .mockResolvedValueOnce([]);
+    fetchEventTemplate
+      .mockResolvedValueOnce(legacyTemplate)
+      .mockRejectedValueOnce(new ApiError(500, "server_error"));
+    deleteEventTemplate.mockResolvedValue(undefined);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    await waitFor(() => {
+      expect(screen.getByText("Delete template?")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(deleteEventTemplate).toHaveBeenCalledWith("evt-comm", "tpl-rem");
+      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+      expect(screen.getByDisplayValue("Hello")).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Template deleted. Inherited ticket could not be refreshed — showing last known copy.",
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByText("Delete failed.")).toBeNull();
+    });
+  });
+
   it("shows a friendly message when delete is blocked", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow, announcementRow]);
