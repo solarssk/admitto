@@ -349,6 +349,7 @@ export function CommunicationPage() {
       const ticket = items.find((t) => t.name === "ticket");
       if (ticket) {
         let loaded = false;
+        let lastErr: unknown;
         for (let attempt = 0; attempt < 2 && !loaded; attempt++) {
           if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
           try {
@@ -357,12 +358,13 @@ export function CommunicationPage() {
             applyDetailTemplate(detail);
             setActiveKey(ticket.id);
             loaded = true;
-          } catch {
-            /* retry once */
+          } catch (err) {
+            lastErr = err;
           }
         }
         if (!loaded) {
           if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
+          if (lastErr instanceof ApiError) reportApiError(lastErr.status);
           setActiveKey(ticket.id);
           setEditorSnapshotMissing(true);
           setSubject("");

@@ -166,7 +166,7 @@ describe("EventOverviewPage live stats", () => {
     }
   });
 
-  it("keeps SSE dedup after overview refresh so replayed admits do not double-count", async () => {
+  it("preserves recent admit dedup across reconcile refresh (TTL prune, not full clear)", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       fetchEventOverview.mockResolvedValue(overviewFixture(5));
@@ -187,6 +187,7 @@ describe("EventOverviewPage live stats", () => {
 
       fetchEventOverview.mockResolvedValue(overviewFixture(6));
 
+      // Reconcile at 3s is within the 5s admit-dedup TTL; absorbServerOverview prunes stale keys only.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(3_000);
       });

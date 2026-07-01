@@ -565,6 +565,7 @@ describe("CommunicationPage templates", () => {
       expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
       expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", true);
       expect(screen.getByRole("button", { name: "Saved" })).toHaveProperty("disabled", true);
+      expect(reportApiError).toHaveBeenCalledWith(500);
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Ticket email" }));
