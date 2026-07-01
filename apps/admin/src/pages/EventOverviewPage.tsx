@@ -6,7 +6,11 @@ import type { EventDto, EventOverviewDto } from "../api/types.js";
 import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates.js";
 import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { admitDedupKey } from "../checkin/admitDedup.js";
+import {
+  isAdmitDedupHit,
+  pruneAdmitDedupMap,
+  registerAdmitDedup,
+} from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 
 /** Auto-refresh interval for event overview stats (ms). */
@@ -58,8 +62,14 @@ export function EventOverviewPage() {
   const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
   const abortRef = useRef<AbortController | null>(null);
-  const seenCheckinsRef = useRef(new Set<string>());
+  const seenCheckinsRef = useRef(new Map<string, number>());
+  /** Recent admits within admitDedup TTL — not cleared on server refresh (replay dedup); pruned instead. */
   const reconcileTimerRef = useRef<number | null>(null);
+  const currentEventIdRef = useRef(event.id);
+
+  useEffect(() => {
+    currentEventIdRef.current = event.id;
+  }, [event.id]);
 
   const [overview, setOverview] = useState<EventOverviewDto | null>(null);
   const [optimisticAdmittedDelta, setOptimisticAdmittedDelta] = useState(0);
@@ -71,6 +81,13 @@ export function EventOverviewPage() {
   const eventDateIso = currentOverview?.event.date ?? event.date;
   const countdown = useCountdown(eventDateIso, eventTimezone);
 
+  const absorbServerOverview = useCallback((data: EventOverviewDto) => {
+    if (data.event.id !== currentEventIdRef.current) return;
+    pruneAdmitDedupMap(seenCheckinsRef.current);
+    setOverview(data);
+    setOptimisticAdmittedDelta(0);
+  }, []);
+
   const scheduleReconcile = useCallback(() => {
     if (reconcileTimerRef.current != null) {
       window.clearTimeout(reconcileTimerRef.current);
@@ -79,21 +96,18 @@ export function EventOverviewPage() {
       reconcileTimerRef.current = null;
       void fetchEventOverview(event.id)
         .then((data) => {
-          if (data.event.id !== event.id) return;
-          setOverview(data);
-          setOptimisticAdmittedDelta(0);
+          absorbServerOverview(data);
         })
         .catch(() => {
           /* keep optimistic value until next poll */
         });
     }, 3000);
-  }, [event.id]);
+  }, [absorbServerOverview, event.id]);
 
   const handleLiveCheckin = useCallback(
     (checkin: StreamCheckinEvent) => {
-      const key = admitDedupKey(checkin.attendeeId, checkin.admittedAt);
-      if (seenCheckinsRef.current.has(key)) return;
-      seenCheckinsRef.current.add(key);
+      if (isAdmitDedupHit(seenCheckinsRef.current, checkin.attendeeId, checkin.admittedAt)) return;
+      registerAdmitDedup(seenCheckinsRef.current, checkin.attendeeId, checkin.admittedAt);
       setOptimisticAdmittedDelta((delta) => delta + 1);
       scheduleReconcile();
     },
@@ -122,8 +136,7 @@ export function EventOverviewPage() {
       fetchEventOverview(event.id, ac.signal)
         .then((data) => {
           if (ac.signal.aborted) return;
-          setOverview(data);
-          setOptimisticAdmittedDelta(0);
+          absorbServerOverview(data);
           setError(null);
         })
         .catch((err) => {
@@ -151,7 +164,7 @@ export function EventOverviewPage() {
         reconcileTimerRef.current = null;
       }
     };
-  }, [event.id, reportApiError]);
+  }, [absorbServerOverview, event.id, reportApiError]);
 
   const meta = [formatEventCalendarDate(eventDateIso), event.location]
     .filter(Boolean)

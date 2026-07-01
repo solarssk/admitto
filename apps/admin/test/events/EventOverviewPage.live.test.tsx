@@ -135,33 +135,76 @@ describe("EventOverviewPage live stats", () => {
 
   it("clears optimistic delta when the periodic overview refresh succeeds", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    try {
+      fetchEventOverview.mockResolvedValue(overviewFixture(5));
 
-    renderPage();
+      renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByText("5")).toBeTruthy();
-    });
+      await waitFor(() => {
+        expect(screen.getByText("5")).toBeTruthy();
+      });
 
-    act(() => {
-      streamHandler?.(liveEvent);
-    });
+      act(() => {
+        streamHandler?.(liveEvent);
+      });
 
-    await waitFor(() => {
+      await waitFor(() => {
+        expect(screen.getByText("6")).toBeTruthy();
+      });
+
+      fetchEventOverview.mockResolvedValue(overviewFixture(6));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("6")).toBeTruthy();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("preserves recent admit dedup across reconcile refresh (TTL prune, not full clear)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText("5")).toBeTruthy();
+      });
+
+      act(() => {
+        streamHandler?.(liveEvent);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("6")).toBeTruthy();
+      });
+
+      fetchEventOverview.mockResolvedValue(overviewFixture(6));
+
+      // Reconcile at 3s is within the 5s admit-dedup TTL; absorbServerOverview prunes stale keys only.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("6")).toBeTruthy();
+        expect(fetchEventOverview).toHaveBeenCalledTimes(2);
+      });
+
+      act(() => {
+        streamHandler?.(liveEvent);
+      });
+
       expect(screen.getByText("6")).toBeTruthy();
-    });
-
-    fetchEventOverview.mockResolvedValue(overviewFixture(6));
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText("6")).toBeTruthy();
-    });
-
-    vi.useRealTimers();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("deduplicates repeated SSE for the same admit", async () => {

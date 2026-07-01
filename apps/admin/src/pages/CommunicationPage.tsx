@@ -109,6 +109,7 @@ export function CommunicationPage() {
   const [activeTemplateName, setActiveTemplateName] = useState("ticket");
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [templateActionBusy, setTemplateActionBusy] = useState(false);
+  const [editorSnapshotMissing, setEditorSnapshotMissing] = useState(false);
 
   const [source, setSource] = useState<EventTemplateDto["source"]>("builtin");
   const [allowedPlaceholders, setAllowedPlaceholders] = useState<string[]>([]);
@@ -148,8 +149,10 @@ export function CommunicationPage() {
   const subjectRef = useRef<HTMLInputElement>(null);
   const templateSelectionSeqRef = useRef(0);
   const createTemplateSeqRef = useRef(0);
+  const deleteTemplateSeqRef = useRef(0);
   const createInFlightRef = useRef(false);
-  /** Cached legacy ticket fallback; not refreshed after initial page load (known limitation). */
+  const currentEventIdRef = useRef(eventId);
+  /** Latest legacy ticket snapshot; refreshed on each virtual-ticket selection and after save. */
   const legacyTemplateRef = useRef<EventTemplateDto | null>(null);
 
   const [dirtyConfirmOpen, setDirtyConfirmOpen] = useState(false);
@@ -183,6 +186,7 @@ export function CommunicationPage() {
   );
 
   const applyLegacyTemplate = useCallback((data: EventTemplateDto) => {
+    setEditorSnapshotMissing(false);
     setSource(data.source);
     setSubject(data.subject_template);
     setBody(data.body_template);
@@ -199,6 +203,7 @@ export function CommunicationPage() {
     body_template: string;
     template_format: TemplateFormat;
   }) => {
+    setEditorSnapshotMissing(false);
     setSource("event");
     setActiveTemplateName(detail.name);
     setSubject(detail.subject_template);
@@ -212,9 +217,7 @@ export function CommunicationPage() {
   const loadTemplateSelection = useCallback(
     async (key: string): Promise<TemplateSelectionLoad> => {
       if (key === "virtual-ticket") {
-        if (!legacyTemplateRef.current) {
-          legacyTemplateRef.current = await fetchEventTemplate(eventId!);
-        }
+        legacyTemplateRef.current = await fetchEventTemplate(eventId!);
         return { kind: "legacy", data: legacyTemplateRef.current };
       }
       const detail = await fetchEventTemplateById(eventId!, key);
@@ -234,7 +237,7 @@ export function CommunicationPage() {
 
   const applySelectTemplate = useCallback(
     async (key: string) => {
-      if (!eventId || key === activeKey) return;
+      if (!eventId || (key === activeKey && !editorSnapshotMissing)) return;
       const seq = ++templateSelectionSeqRef.current;
       setValidationErrors([]);
       setSaveStatus(null);
@@ -259,7 +262,7 @@ export function CommunicationPage() {
         }
       }
     },
-    [activeKey, applyLoadedTemplateSelection, eventId, loadTemplateSelection, reportApiError],
+    [activeKey, applyLoadedTemplateSelection, editorSnapshotMissing, eventId, loadTemplateSelection, reportApiError],
   );
 
   const runDirtyProtectedAction = useCallback(
@@ -281,7 +284,7 @@ export function CommunicationPage() {
   const requestDirtyProtectedAction = useCallback(
     (action: DirtyProtectedAction) => {
       if (!eventId) return;
-      if (action.kind === "select" && action.key === activeKey) return;
+      if (action.kind === "select" && action.key === activeKey && !editorSnapshotMissing) return;
       if (action.kind === "delete" && action.name === "ticket") return;
       if (isDirty) {
         setPendingDirtyAction(action);
@@ -290,7 +293,7 @@ export function CommunicationPage() {
       }
       runDirtyProtectedAction(action);
     },
-    [activeKey, eventId, isDirty, runDirtyProtectedAction],
+    [activeKey, editorSnapshotMissing, eventId, isDirty, runDirtyProtectedAction],
   );
 
   const executeCreateTemplate = async (label: string) => {
@@ -324,31 +327,77 @@ export function CommunicationPage() {
     }
   };
 
-  const executeDeleteTemplate = async (templateId: string) => {
-    if (!eventId) return;
+  const executeDeleteTemplate = useCallback(async (templateId: string) => {
+    const scopeEventId = eventId;
+    if (!scopeEventId) return;
+    const seq = ++deleteTemplateSeqRef.current;
     const deletedWasActive = templateId === activeKey;
     setTemplateActionBusy(true);
     try {
-      await deleteEventTemplate(eventId, templateId);
-      const items = await fetchEventTemplates(eventId);
+      await deleteEventTemplate(scopeEventId, templateId);
+      if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
+
+      const items = await fetchEventTemplates(scopeEventId);
+      if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
+
       setTemplates(items);
-      if (deletedWasActive) {
-        const ticket = items.find((t) => t.name === "ticket");
-        if (ticket) {
-          const detail = await fetchEventTemplateById(eventId, ticket.id);
-          applyDetailTemplate(detail);
-          setActiveKey(ticket.id);
-        } else {
-          if (!legacyTemplateRef.current) {
-            legacyTemplateRef.current = await fetchEventTemplate(eventId);
-          }
-          applyLegacyTemplate(legacyTemplateRef.current);
-          setActiveKey("virtual-ticket");
-        }
-      }
       setDeleteConfirmOpen(false);
       setPendingDelete(null);
+
+      if (!deletedWasActive) return;
+
+      const ticket = items.find((t) => t.name === "ticket");
+      if (ticket) {
+        let loaded = false;
+        let lastErr: unknown;
+        for (let attempt = 0; attempt < 2 && !loaded; attempt++) {
+          if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
+          try {
+            const detail = await fetchEventTemplateById(scopeEventId, ticket.id);
+            if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
+            applyDetailTemplate(detail);
+            setActiveKey(ticket.id);
+            loaded = true;
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+        if (!loaded) {
+          if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
+          if (lastErr instanceof ApiError) reportApiError(lastErr.status);
+          setActiveKey(ticket.id);
+          setEditorSnapshotMissing(true);
+          setSubject("");
+          setBody("");
+          setSavedSubject("");
+          setSavedBody("");
+          setValidationErrors([]);
+          setPreviewSubject(null);
+          setPreviewHtml(null);
+          setSaveStatus("Template deleted. Could not load ticket template — reload the page.");
+        }
+      } else {
+        try {
+          legacyTemplateRef.current = await fetchEventTemplate(scopeEventId);
+          if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
+          applyLegacyTemplate(legacyTemplateRef.current);
+          setActiveKey("virtual-ticket");
+        } catch {
+          if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
+          if (legacyTemplateRef.current) {
+            applyLegacyTemplate(legacyTemplateRef.current);
+            setActiveKey("virtual-ticket");
+            setSaveStatus(
+              "Template deleted. Inherited ticket could not be refreshed — showing last known copy.",
+            );
+          } else {
+            setActiveKey("virtual-ticket");
+            setSaveStatus("Template deleted. Could not load inherited ticket — reload the page.");
+          }
+        }
+      }
     } catch (err) {
+      if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
       if (err instanceof ApiError) {
         reportApiError(err.status);
         setSaveStatus(mailTemplateDeleteErrorMessage(err));
@@ -356,12 +405,15 @@ export function CommunicationPage() {
         setSaveStatus("Delete failed.");
       }
     } finally {
-      setTemplateActionBusy(false);
+      if (seq === deleteTemplateSeqRef.current) {
+        setTemplateActionBusy(false);
+      }
     }
-  };
+  }, [activeKey, applyDetailTemplate, applyLegacyTemplate, eventId, reportApiError]);
 
-  const sendTemplateId =
-    activeKey === "virtual-ticket"
+  const sendTemplateId = editorSnapshotMissing
+    ? undefined
+    : activeKey === "virtual-ticket"
       ? templates.find((t) => t.name === "ticket")?.id
       : activeKey;
 
@@ -402,6 +454,14 @@ export function CommunicationPage() {
       }
     }
   }, [eventId, deliveryPage, deliveryStatus, deliveryPurpose, reportApiError]);
+
+  useEffect(() => {
+    currentEventIdRef.current = eventId;
+    deleteTemplateSeqRef.current += 1;
+    setTemplateActionBusy(false);
+    setDeleteConfirmOpen(false);
+    setPendingDelete(null);
+  }, [eventId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -531,7 +591,7 @@ export function CommunicationPage() {
   };
 
   const handlePreview = async () => {
-    if (!eventId) return;
+    if (!eventId || editorSnapshotMissing) return;
     setPreviewLoading(true);
     setValidationErrors([]);
     setSaveStatus(null);
@@ -603,7 +663,7 @@ export function CommunicationPage() {
   };
 
   const handleSave = () => {
-    if (!eventId) return;
+    if (!eventId || editorSnapshotMissing) return;
     if (activeKey === "virtual-ticket" && source !== "event") {
       setOverrideConfirmOpen(true);
       return;
@@ -617,7 +677,7 @@ export function CommunicationPage() {
       : "This will create an event-specific template override (replacing the default template for this event). Continue?";
 
   const handleTestSend = async () => {
-    if (!eventId) return;
+    if (!eventId || editorSnapshotMissing) return;
     setTestStatus(null);
     setTestSending(true);
     try {
@@ -813,6 +873,7 @@ export function CommunicationPage() {
                 onChange={(e) => setSubject(e.target.value)}
                 onFocus={() => setActiveField("subject")}
                 onClick={() => setActiveField("subject")}
+                disabled={editorSnapshotMissing}
               />
 
               <div className="communication-format-row">
@@ -844,6 +905,7 @@ export function CommunicationPage() {
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
                   onFocus={() => setActiveField("body")}
+                  disabled={editorSnapshotMissing}
                 />
               </div>
 
@@ -873,10 +935,18 @@ export function CommunicationPage() {
               )}
 
               <div className="communication-actions">
-                <Button variant="secondary" onClick={() => void handlePreview()} disabled={previewLoading}>
+                <Button
+                  variant="secondary"
+                  onClick={() => void handlePreview()}
+                  disabled={previewLoading || editorSnapshotMissing}
+                >
                   {previewLoading ? "Previewing…" : "Preview"}
                 </Button>
-                <Button variant="primary" onClick={handleSave} disabled={saving || !isDirty}>
+                <Button
+                  variant="primary"
+                  onClick={handleSave}
+                  disabled={saving || !isDirty || editorSnapshotMissing}
+                >
                   {saving ? "Saving…" : isDirty ? "Save *" : "Saved"}
                 </Button>
               </div>
@@ -914,7 +984,7 @@ export function CommunicationPage() {
               <Button
                 variant="secondary"
                 onClick={() => void handleTestSend()}
-                disabled={testSending || !isValidEmail(testEmail.trim())}
+                disabled={testSending || !isValidEmail(testEmail.trim()) || editorSnapshotMissing}
               >
                 {testSending ? "Sending…" : "Send test"}
               </Button>

@@ -1,9 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { admitDedupKey, mergeCheckInHistory } from "../../src/checkin/admitDedup.js";
+import {
+  admitDedupKey,
+  mergeCheckInHistory,
+  pruneAdmitDedupMap,
+  registerAdmitDedup,
+} from "../../src/checkin/admitDedup.js";
 
 describe("admitDedupKey", () => {
   it("does not collide when values contain hyphens", () => {
     expect(admitDedupKey("att-1", "2026")).not.toBe(admitDedupKey("att", "1-2026"));
+  });
+});
+
+describe("pruneAdmitDedupMap", () => {
+  it("drops entries older than the dedup TTL", () => {
+    const map = new Map<string, number>([
+      ["stale", 0],
+      ["recent", 4000],
+    ]);
+    pruneAdmitDedupMap(map, 6000);
+    expect(map.has("stale")).toBe(false);
+    expect(map.has("recent")).toBe(true);
+  });
+});
+
+describe("registerAdmitDedup", () => {
+  it("prunes stale entries when recording a new admit", () => {
+    const map = new Map<string, number>([["stale", 0]]);
+    registerAdmitDedup(map, "att-1", "2026-06-01T10:00:00.000Z", 6000);
+    expect(map.has("stale")).toBe(false);
+    expect(map.size).toBe(1);
   });
 });
 
