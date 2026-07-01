@@ -1,16 +1,18 @@
 /** Dedup key for the same physical admit (local scan echo + SSE). */
 export function admitDedupKey(attendeeId: string, admittedAt: string): string {
-  return `${attendeeId}-${admittedAt}`;
+  return JSON.stringify([attendeeId, admittedAt]);
 }
 
 const DEDUP_TTL_MS = 5000;
 
+/** Drop admit-dedup entries older than the TTL window. */
 export function pruneAdmitDedupMap(map: Map<string, number>, now = Date.now()): void {
   for (const [key, ts] of map) {
     if (now - ts > DEDUP_TTL_MS) map.delete(key);
   }
 }
 
+/** Record a recent admit so duplicate SSE/local echoes are ignored. */
 export function registerAdmitDedup(
   map: Map<string, number>,
   attendeeId: string,
@@ -21,6 +23,7 @@ export function registerAdmitDedup(
   pruneAdmitDedupMap(map, now);
 }
 
+/** Whether this admit was seen recently (within the dedup TTL). */
 export function isAdmitDedupHit(
   map: Map<string, number>,
   attendeeId: string,
@@ -29,6 +32,7 @@ export function isAdmitDedupHit(
   return map.has(admitDedupKey(attendeeId, admittedAt));
 }
 
+/** Seed dedup keys from an existing sidebar history snapshot. */
 export function seedAdmitDedupFromHistory(
   map: Map<string, number>,
   entries: Array<{ attendee_id: string; checked_in_at: string }>,

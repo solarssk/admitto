@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { mergeCheckInHistory } from "../../src/checkin/admitDedup.js";
+import { admitDedupKey, mergeCheckInHistory } from "../../src/checkin/admitDedup.js";
+
+describe("admitDedupKey", () => {
+  it("does not collide when values contain hyphens", () => {
+    expect(admitDedupKey("att-1", "2026")).not.toBe(admitDedupKey("att", "1-2026"));
+  });
+});
 
 describe("mergeCheckInHistory", () => {
   it("keeps live rows missing from a stale fetched snapshot", () => {

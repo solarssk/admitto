@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
+/** Connection state for the admin check-in SSE subscription. */
 export type StreamStatus = "connecting" | "connected" | "reconnecting" | "auth_error";
 
+/** Payload for a live `checkin` event on the event stream. */
 export interface StreamCheckinEvent {
   type: "checkin";
   attendeeId: string;
@@ -13,6 +15,7 @@ export interface StreamCheckinEvent {
 }
 
 const MAX_INITIAL_FAILURES = 3;
+/** Reconnect backoff schedule (ms) after SSE disconnect. */
 export const STREAM_BACKOFF_MS = [2000, 4000, 8000, 30000] as const;
 
 /** Preflight stream access — EventSource.onerror does not expose HTTP status. */

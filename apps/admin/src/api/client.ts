@@ -100,16 +100,19 @@ type ApiErrorBody = {
   projected?: number;
 };
 
+/** Coerce an API error JSON field to a trimmed string when present. */
 function stringField(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed || undefined;
 }
 
+/** Human-readable message from a failed API JSON body. */
 function messageFromApiErrorBody(body: ApiErrorBody): string | undefined {
   return stringField(body.detail) ?? stringField(body.error) ?? stringField(body.code);
 }
 
+/** Machine-readable error code from a failed API JSON body. */
 function apiErrorCodeFromBody(body: ApiErrorBody): string | undefined {
   return stringField(body.code) ?? stringField(body.error);
 }

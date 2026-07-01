@@ -391,6 +391,7 @@ export interface MailTemplateDetail extends MailTemplateListItem {
   compiled_html_template?: string;
 }
 
+/** Audience filter for POST `/api/admin/events/:eventId/send`. */
 export type BulkSendFilter =
   | { type: "all" }
   | { type: "ticket_type"; value: string }
@@ -398,16 +399,19 @@ export type BulkSendFilter =
   | { type: "no_delivery" }
   | { type: "attendee_ids"; ids: string[] };
 
+/** Request body for bulk mail send (dry-run or queue). */
 export interface BulkSendBody {
   templateId: string;
   filter: BulkSendFilter;
   dryRun?: boolean;
 }
 
+/** Dry-run response with the resolved recipient count only. */
 export interface BulkSendDryRunResponse {
   recipientCount: number;
 }
 
+/** Queue response after POST `/send` with `dryRun: false`. */
 export interface BulkSendQueuedResponse {
   batchId: string | null;
   queued: number;
@@ -415,6 +419,7 @@ export interface BulkSendQueuedResponse {
   failed: number;
 }
 
+/** Batch progress from GET `/send/:batchId/status`. */
 export interface BulkSendStatusResponse {
   batchId: string;
   total: number;

@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input } from "@admitto/ui";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 
+/** Props for {@link CreateTemplateDialog}. */
 export interface CreateTemplateDialogProps {
   open: boolean;
   busy: boolean;

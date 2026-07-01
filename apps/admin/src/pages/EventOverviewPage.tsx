@@ -123,6 +123,7 @@ export function EventOverviewPage() {
         .then((data) => {
           if (ac.signal.aborted) return;
           setOverview(data);
+          setOptimisticAdmittedDelta(0);
           setError(null);
         })
         .catch((err) => {

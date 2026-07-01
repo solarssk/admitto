@@ -44,6 +44,7 @@ const HISTORY_CAP = 8;
 const LOOKUP_DISABLED_MSG =
   "Manual lookup is disabled for this event — use QR scan only.";
 
+/** Build a sidebar history row from a live SSE check-in event. */
 function historyEntryFromStream(event: StreamCheckinEvent, eventId: string): CheckInHistoryEntry {
   return {
     id: `sse-${event.attendeeId}-${event.admittedAt}`,

@@ -54,15 +54,18 @@ type DirtyProtectedAction =
   | { kind: "create" }
   | { kind: "delete"; templateId: string; name: string };
 
+/** Sort template list items by label for the sidebar. */
 function sortTemplates(items: MailTemplateListItem[]): MailTemplateListItem[] {
   return [...items].sort((a, b) => a.label.localeCompare(b.label));
 }
 
+/** Strip editor-only fields from a template detail row for list display. */
 function templateListItemFromDetail(detail: MailTemplateDetail): MailTemplateListItem {
   const { body_template: _body, compiled_html_template: _compiled, ...item } = detail;
   return item;
 }
 
+/** Map API delete errors to operator-facing copy. */
 function mailTemplateDeleteErrorMessage(err: ApiError): string {
   if (err.code === "template_required") {
     return "Ticket template cannot be deleted.";
@@ -563,6 +566,7 @@ export function CommunicationPage() {
     try {
       if (activeKey === "virtual-ticket") {
         await saveEventTemplate(eventId, templatePayload());
+        legacyTemplateRef.current = await fetchEventTemplate(eventId);
         const items = await fetchEventTemplates(eventId);
         setTemplates(items);
         const ticket = items.find((t) => t.name === "ticket");
@@ -571,10 +575,7 @@ export function CommunicationPage() {
           const detail = await fetchEventTemplateById(eventId, ticket.id);
           applyDetailTemplate(detail);
         } else {
-          setSource("event");
-          setSavedSubject(subject);
-          setSavedBody(body);
-          setSavedFormat(format);
+          applyLegacyTemplate(legacyTemplateRef.current);
         }
       } else {
         const saved = await saveEventTemplateById(eventId, activeKey, templatePayload());
