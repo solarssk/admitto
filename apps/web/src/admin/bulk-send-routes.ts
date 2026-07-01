@@ -5,8 +5,7 @@ import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
 import { sendTicketEmails, type MailDeliveryDeps } from "@admitto/mail-delivery";
 import { resolveTemplateById, TemplateNotFoundError } from "@admitto/mail-templates";
 import { writeBulkActionLog } from "@admitto/tickets";
-import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
-import { resolveInstanceBaseUrl } from "../instance-base-url.js";
+import { adminAuditFromContext, assertEventManageAccess, requireEventId, resolveMailInstanceBaseUrl } from "./admin-helpers.js";
 
 export const BULK_SEND_LIMIT = 500;
 
@@ -272,6 +271,9 @@ export async function handleBulkSend(
     } satisfies BulkSendQueuedDto);
   }
 
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+
   let sendResult;
   try {
     sendResult = await sendTicketEmails(
@@ -280,7 +282,7 @@ export async function handleBulkSend(
         attendeeIds: ids,
         templateId: body.templateId,
         purpose,
-        baseUrl: await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl),
+        baseUrl: baseUrlOrRes,
       },
       db,
       process.env,

@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  InstanceUrlRequiredError,
   normalizePersistedInstanceUrl,
   normalizeRuntimeBaseUrl,
+  resolveInstanceBaseUrl,
 } from "../src/instance-base-url.js";
 
 describe("normalizePersistedInstanceUrl", () => {
   it("accepts HTTPS URLs without trailing slash", () => {
-    expect(normalizePersistedInstanceUrl("https://tickets.example.com/")).toBe(
+    expect(normalizePersistedInstanceUrl("https://tickets.example.com")).toBe(
       "https://tickets.example.com",
     );
   });
@@ -17,13 +19,9 @@ describe("normalizePersistedInstanceUrl", () => {
     );
   });
 
-  it("does not accept trailing slash input at validation layer", () => {
-    expect(normalizePersistedInstanceUrl("https://tickets.example.com")).toBe(
-      "https://tickets.example.com",
-    );
-    // Normalizer strips slash; schema rejects trailing slash before normalize is called on PATCH.
-    expect(normalizePersistedInstanceUrl("https://tickets.example.com/")).toBe(
-      "https://tickets.example.com",
+  it("rejects trailing slash", () => {
+    expect(() => normalizePersistedInstanceUrl("https://tickets.example.com/")).toThrow(
+      /trailing slash/i,
     );
   });
 });
@@ -35,9 +33,33 @@ describe("normalizeRuntimeBaseUrl", () => {
     );
   });
 
+  it("strips trailing slash", () => {
+    expect(
+      normalizeRuntimeBaseUrl("https://tickets.example.com/", { NODE_ENV: "test" }),
+    ).toBe("https://tickets.example.com");
+  });
+
   it("rejects non-localhost HTTP outside development", () => {
     expect(() =>
       normalizeRuntimeBaseUrl("http://tickets.example.com", { NODE_ENV: "production" }),
     ).toThrow(/https/i);
+  });
+});
+
+describe("resolveInstanceBaseUrl", () => {
+  it("throws InstanceUrlRequiredError in production when unset", async () => {
+    const prevBase = process.env.BASE_URL;
+    delete process.env.BASE_URL;
+    const db = {
+      systemSettings: { findUnique: async () => null },
+    } as never;
+    try {
+      await expect(
+        resolveInstanceBaseUrl(db, { NODE_ENV: "production", BASE_URL: undefined }),
+      ).rejects.toBeInstanceOf(InstanceUrlRequiredError);
+    } finally {
+      if (prevBase === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prevBase;
+    }
   });
 });

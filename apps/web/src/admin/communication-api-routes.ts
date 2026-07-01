@@ -44,8 +44,8 @@ import {
   assertEventManageAccess,
   positiveIntQuery,
   requireEventId,
+  resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
-import { resolveInstanceBaseUrl } from "../instance-base-url.js";
 
 /** Max character length for `body_template` (schema); shared with wire byte cap below. */
 export const TEMPLATE_BODY_CHAR_LIMIT = 200_000;
@@ -342,7 +342,9 @@ export async function handlePreviewEventTemplate(
     return templateValidationResponse(c, sourceErrors);
   }
 
-  const baseUrl = await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl);
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+  const baseUrl = baseUrlOrRes;
 
   try {
     const rendered = await renderDraftPreview(
@@ -394,7 +396,9 @@ export async function handleTestSendEventTemplate(
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const baseUrl = await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl);
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+  const baseUrl = baseUrlOrRes;
 
   let result;
   try {
@@ -470,7 +474,9 @@ export async function handleTestSendEventTemplateById(
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const baseUrl = await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl);
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+  const baseUrl = baseUrlOrRes;
 
   let result;
   try {
@@ -969,7 +975,9 @@ export async function handlePreviewEventTemplateById(
     return templateValidationResponse(c, sourceErrors);
   }
 
-  const baseUrl = await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl);
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+  const baseUrl = baseUrlOrRes;
 
   try {
     const rendered = await renderDraftPreview(db, eventId, subject, templateBody, format, baseUrl);

@@ -2,6 +2,14 @@ import type { PrismaClient } from "@prisma/client";
 import { getInstanceUrl } from "@admitto/auth";
 import { validateHttpUrl } from "@admitto/mail-templates";
 
+/** Thrown when no env, DB, or injected instance URL is available in production. */
+export class InstanceUrlRequiredError extends Error {
+  constructor() {
+    super("Instance URL is required (set BASE_URL or configure in Settings → General)");
+    this.name = "InstanceUrlRequiredError";
+  }
+}
+
 /** Runtime URL policy aligned with `config.ts` `normalizeBaseUrl`. */
 export function normalizeRuntimeBaseUrl(
   raw: string,
@@ -28,9 +36,12 @@ export function normalizeRuntimeBaseUrl(
   return validateHttpUrl("BASE_URL", trimmed);
 }
 
-/** Persisted `instance_url` — always HTTPS (superadmin DB setting). */
+/** Persisted `instance_url` — always HTTPS, no trailing slash (superadmin DB setting). */
 export function normalizePersistedInstanceUrl(raw: string): string {
-  const trimmed = raw.trim().replace(/\/$/, "");
+  const trimmed = raw.trim();
+  if (trimmed.endsWith("/")) {
+    throw new Error("Instance URL must not end with a trailing slash");
+  }
   const validated = validateHttpUrl("BASE_URL", trimmed);
   if (!validated.startsWith("https://")) {
     throw new Error("Instance URL must use https://");
@@ -60,7 +71,5 @@ export async function resolveInstanceBaseUrl(
     return "http://localhost:3000";
   }
 
-  throw new Error(
-    "Instance URL is required (set BASE_URL or configure in Settings → General)",
-  );
+  throw new InstanceUrlRequiredError();
 }

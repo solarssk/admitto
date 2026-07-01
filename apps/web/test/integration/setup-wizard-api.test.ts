@@ -176,6 +176,31 @@ describe("GET /api/admin/setup/checks", () => {
       await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
     }
   });
+
+  it("returns warn in production when only DB instance_url is set", async () => {
+    const prevNode = process.env.NODE_ENV;
+    const prevBase = process.env.BASE_URL;
+    delete process.env.BASE_URL;
+    process.env.NODE_ENV = "production";
+    await setSetting(prisma, SETTING_INSTANCE_URL, "https://wizard-db.example.com");
+    try {
+      const res = await app.request("/api/admin/setup/checks", {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        checks: { base_url: { ok: boolean; warn?: boolean; detail: string } };
+      };
+      expect(body.checks.base_url.ok).toBe(true);
+      expect(body.checks.base_url.warn).toBe(true);
+      expect(body.checks.base_url.detail).toContain("BASE_URL");
+    } finally {
+      process.env.NODE_ENV = prevNode;
+      if (prevBase === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prevBase;
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
+    }
+  });
 });
 
 describe("GET /api/admin/me setup_complete", () => {

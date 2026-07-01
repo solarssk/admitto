@@ -13,7 +13,7 @@ For single-node dev without Redis, the in-memory store is acceptable — check y
 Then restart the server.`,
   base_url: `Set the Instance URL in Settings → General, or set BASE_URL in your environment, for example:
   BASE_URL=https://tickets.example.com
-In production, the URL must use https:// and must not end with a trailing slash.`,
+In production, BASE_URL env is required for server boot/restarts; the Settings value is used for mail links at runtime.`,
 };
 
 /** Operator-facing remediation copy for a failed setup readiness check. */

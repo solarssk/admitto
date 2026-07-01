@@ -48,8 +48,8 @@ async function checkInstanceUrl(
       return { ok: false, detail: "BASE_URL must use https:// in production" };
     }
     try {
-      normalizeRuntimeBaseUrl(envRaw);
-      return { ok: true, detail: envRaw };
+      const normalized = normalizeRuntimeBaseUrl(envRaw, env);
+      return { ok: true, detail: normalized };
     } catch (err) {
       const detail = err instanceof Error ? err.message : "Invalid BASE_URL";
       return { ok: false, detail };
@@ -60,6 +60,13 @@ async function checkInstanceUrl(
   if (dbUrl) {
     try {
       const normalized = normalizePersistedInstanceUrl(dbUrl);
+      if (env.NODE_ENV !== "development" && env.NODE_ENV !== "test") {
+        return {
+          ok: true,
+          warn: true,
+          detail: `${normalized} (Settings) — set BASE_URL env for server boot/restarts; DB URL is used for mail at runtime`,
+        };
+      }
       return { ok: true, detail: normalized };
     } catch (err) {
       const detail = err instanceof Error ? err.message : "Invalid instance URL in settings";

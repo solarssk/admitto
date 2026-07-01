@@ -30,8 +30,8 @@ import {
   assertEventManageAccess,
   positiveIntQuery,
   requireEventId,
+  resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
-import { resolveInstanceBaseUrl } from "../instance-base-url.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
 import { randomUUID } from "node:crypto";
@@ -1580,9 +1580,11 @@ export async function handleResendEventAttendeeTicket(
   // A domain allowlist per org/event is planned for v0.5 (see follow-up task).
   // Rationale: admins legitimately resend to corporate relay addresses outside the registrant's
   // personal domain; a hardcoded allowlist would break that use-case without org configuration.
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
   const sendResult = await resendTicketEmail(attendeeId, db, process.env, mailDeps, {
     to,
-    baseUrl: await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl),
+    baseUrl: baseUrlOrRes,
   });
 
   const skipped = sendResult.skipped.find((s) => s.attendeeId === attendeeId);
@@ -1696,12 +1698,14 @@ export async function handleBulkResendTickets(
 
   const attendeeIds = ids;
   const mailPurpose = target === "unsent" ? "initial" : "resend";
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
   const sendResult = await sendTicketEmails(
     eventId,
     {
       attendeeIds,
       purpose: mailPurpose,
-      baseUrl: await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl),
+      baseUrl: baseUrlOrRes,
     },
     db,
     process.env,
