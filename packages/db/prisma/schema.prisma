@@ -127,6 +127,7 @@ model EmailDelivery {
   purpose              String       @default("initial") // "initial" | "resend"
   batch_id             String?
   template_id          String?
+  template             MailTemplate? @relation(fields: [template_id], references: [id], onDelete: SetNull)
   provider             String
   provider_message_id  String?
   status               String       @default("queued")
@@ -308,17 +309,20 @@ model MailSettings {
 
 // Per-scope mail template storage (plain text — not encrypted).
 model MailTemplate {
-  id                     String   @id @default(cuid())
-  scope_type             String   // "organization" | "event"
+  id                     String          @id @default(cuid())
+  scope_type             String          // "organization" | "event"
   scope_id               String
+  name                   String          @default("ticket")
+  label                  String          @default("Ticket email")
   subject_template       String
-  body_template          String   @db.Text
-  template_format        String   // "mjml" | "html"
-  compiled_html_template String   @db.Text
-  created_at             DateTime @default(now())
-  updated_at             DateTime @updatedAt
+  body_template          String          @db.Text
+  template_format        String          // "mjml" | "html"
+  compiled_html_template String          @db.Text
+  created_at             DateTime        @default(now())
+  updated_at             DateTime        @updatedAt
+  email_deliveries       EmailDelivery[]
 
-  @@unique([scope_type, scope_id])
+  @@unique([scope_type, scope_id, name])
 }
 
 model User {
