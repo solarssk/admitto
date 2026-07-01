@@ -202,4 +202,105 @@ describe("multi-template API", () => {
     const body = (await res.json()) as { recipientCount: number };
     expect(body.recipientCount).toBe(1);
   });
+
+  it("POST /send dryRun attendee_ids ignores IDs from other events", async () => {
+    const ticket = await prisma.mailTemplate.findUniqueOrThrow({
+      where: {
+        scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: "att-multi-local",
+        event_id: EVENT_A,
+        email: "local@example.com",
+        name: "Local",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+      method: "POST",
+      headers: {
+        Cookie: adminCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        templateId: ticket.id,
+        filter: { type: "attendee_ids", ids: ["att-multi-local", "att-foreign-other-event"] },
+        dryRun: true,
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { recipientCount: number };
+    expect(body.recipientCount).toBe(1);
+  });
+
+  it("GET /send/status counts bounced and rejected as failed", async () => {
+    const batchId = "batch-status-mix";
+    const attendee = await prisma.attendee.create({
+      data: {
+        id: "att-status-mix",
+        event_id: EVENT_A,
+        email: "status@example.com",
+        name: "Status",
+      },
+    });
+    await prisma.emailDelivery.createMany({
+      data: [
+        {
+          id: "del-queued",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          attendee_id: attendee.id,
+          batch_id: batchId,
+          status: "queued",
+          purpose: "resend",
+          provider: "export_only",
+        },
+        {
+          id: "del-sent",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          attendee_id: attendee.id,
+          batch_id: batchId,
+          status: "sent",
+          purpose: "resend",
+          provider: "export_only",
+        },
+        {
+          id: "del-bounced",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          attendee_id: attendee.id,
+          batch_id: batchId,
+          status: "bounced",
+          purpose: "resend",
+          provider: "export_only",
+        },
+        {
+          id: "del-rejected",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          attendee_id: attendee.id,
+          batch_id: batchId,
+          status: "rejected",
+          purpose: "resend",
+          provider: "export_only",
+        },
+      ],
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/send/status/${batchId}`, {
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      total: number;
+      queued: number;
+      sent: number;
+      failed: number;
+    };
+    expect(body).toEqual({ batchId, total: 4, queued: 1, sent: 1, failed: 2 });
+  });
 });

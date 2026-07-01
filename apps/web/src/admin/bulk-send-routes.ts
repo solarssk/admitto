@@ -111,7 +111,8 @@ export async function resolveBulkSendAttendeeIds(
       };
       break;
     case "attendee_ids":
-      return { ids: filter.ids, overLimit: false };
+      where = { ...baseWhere, id: { in: filter.ids } };
+      break;
   }
 
   const rows = await db.attendee.findMany({
@@ -261,7 +262,7 @@ export async function handleBulkSendStatus(c: Context, db: PrismaClient): Promis
     if (row.status === "queued") queued += 1;
     else if (EMAIL_DELIVERY_SUCCESS_STATUSES.includes(row.status as (typeof EMAIL_DELIVERY_SUCCESS_STATUSES)[number])) {
       sent += 1;
-    } else if (row.status === "failed") {
+    } else if (row.status === "failed" || row.status === "bounced" || row.status === "rejected") {
       failed += 1;
     }
   }
