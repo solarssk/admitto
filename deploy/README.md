@@ -188,6 +188,12 @@ Compose nginx trusts **only `127.0.0.1`** as the RealIP peer (NPM on the host â†
 For the future admin SSE metrics path, add a custom location in NPM (or here in `default.conf`):
 
 ```nginx
+location ~ ^/api/checkin/events/[^/]+/stream$ {
+  proxy_buffering off;
+  proxy_read_timeout 3600s;
+  proxy_pass http://admitto_app;
+}
+
 location ~ ^/api/admin/events/[^/]+/metrics/stream$ {
   proxy_buffering off;
   proxy_read_timeout 3600s;

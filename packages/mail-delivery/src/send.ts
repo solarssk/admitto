@@ -7,6 +7,8 @@ import {
   renderTemplateTrustedForStorage,
   resolveBrandingFromEvent,
   resolveTemplateForEvent,
+  resolveTemplateById,
+  TemplateNotFoundError,
 } from "@admitto/mail-templates";
 import { createMailer, sendBatch, type ExportSink, type MailMessage } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
@@ -22,6 +24,8 @@ import type { SendTicketEmailsResult } from "./types.js";
 /** Options for `sendTicketEmails()` batch send. */
 export interface SendTicketEmailsOptions {
   attendeeIds?: string[];
+  /** MailTemplate row id; falls back to event/org ticket template when omitted. */
+  templateId?: string;
   purpose?: "initial" | "resend";
   /** Override delivery recipient for a single-attendee resend (does not mutate Attendee.email). */
   recipientEmail?: string;
@@ -111,7 +115,12 @@ export async function sendTicketEmails(
   });
 
   const mailConfig = await resolveMailConfig(eventId, prisma, env);
-  const resolvedTemplate = await resolveTemplateForEvent(event, prisma);
+  let resolvedTemplate;
+  if (options.templateId) {
+    resolvedTemplate = await resolveTemplateById(options.templateId, eventId, prisma);
+  } else {
+    resolvedTemplate = await resolveTemplateForEvent(event, prisma);
+  }
   const branding = resolveBrandingFromEvent(event);
 
   const attendees = await prisma.attendee.findMany({
@@ -186,7 +195,7 @@ export async function sendTicketEmails(
         eventId: event.id,
         attendeeId: attendee.id,
         batchId,
-        templateId: resolvedTemplate.source === "builtin" ? undefined : `${resolvedTemplate.source}`,
+        templateId: resolvedTemplate.templateId,
         provider: mailer.provider,
         recipientEmail:
           purpose === "resend" && options.recipientEmail ? options.recipientEmail : attendee.email,

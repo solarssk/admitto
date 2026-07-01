@@ -230,7 +230,9 @@ describe("PUT /api/admin/events/:eventId/template", () => {
     expect(res.status).toBe(200);
 
     const row = await prisma.mailTemplate.findUnique({
-      where: { scope_type_scope_id: { scope_type: "event", scope_id: EVENT_A } },
+      where: {
+        scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
+      },
     });
     expect(row).not.toBeNull();
     expect(row!.compiled_html_template.length).toBeGreaterThan(0);

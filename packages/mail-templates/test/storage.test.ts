@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   getBuiltinTemplate,
+  createMailTemplate,
   resolveTemplate,
   setMailTemplate,
   UnknownPlaceholdersError,
@@ -74,6 +75,7 @@ describe("resolveTemplate", () => {
     const resolved = await resolveTemplate("evt-mt", prisma);
     expect(resolved.source).toBe("event");
     expect(resolved.subjectTemplate).toBe("Event {{event_name}}");
+    expect(resolved.templateId).toBeDefined();
   });
 });
 
@@ -124,7 +126,7 @@ describe("setMailTemplate", () => {
 
     const row = await prisma.mailTemplate.findUniqueOrThrow({
       where: {
-        scope_type_scope_id: { scope_type: "organization", scope_id: "org-mt" },
+        scope_type_scope_id_name: { scope_type: "organization", scope_id: "org-mt", name: "ticket" },
       },
     });
     expect(row.compiled_html_template).toContain('href="{{ticket_url}}"');
@@ -142,10 +144,42 @@ describe("setMailTemplate", () => {
     );
 
     const row = await prisma.mailTemplate.findUniqueOrThrow({
-      where: { scope_type_scope_id: { scope_type: "event", scope_id: "evt-mt" } },
+      where: {
+        scope_type_scope_id_name: { scope_type: "event", scope_id: "evt-mt", name: "ticket" },
+      },
     });
     expect(row.compiled_html_template).toContain("{{first_name}}");
     expect(row.compiled_html_template.toLowerCase()).toContain("<table");
     expect(row.body_template).toBe(VALID_MJML);
+  });
+});
+
+describe("createMailTemplate", () => {
+  it("inserts a new row and rejects duplicate scope+name", async () => {
+    const created = await createMailTemplate(
+      { scopeType: "event", scopeId: "evt-create-mt", name: "promo" },
+      {
+        subject: "{{event_name}}",
+        body: VALID_MJML,
+        format: "mjml",
+        label: "Promo",
+      },
+      prisma,
+    );
+    expect(created.name).toBe("promo");
+    expect(created.label).toBe("Promo");
+
+    await expect(
+      createMailTemplate(
+        { scopeType: "event", scopeId: "evt-create-mt", name: "promo" },
+        {
+          subject: "Other",
+          body: VALID_MJML,
+          format: "mjml",
+          label: "Promo 2",
+        },
+        prisma,
+      ),
+    ).rejects.toMatchObject({ code: "P2002" });
   });
 });
