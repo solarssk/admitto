@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBlocker, useParams } from "react-router-dom";
 import { Badge, Button, Card, Input, PageHeader, Select, StatusBadge, Tabs } from "@admitto/ui";
 import {
   ApiError,
   fetchEventDeliveries,
+  fetchEventOverview,
   fetchEventTemplate,
   previewEventTemplate,
   saveEventTemplate,
@@ -79,6 +80,7 @@ export function CommunicationPage() {
   const [deliveryPurpose, setDeliveryPurpose] = useState<EventDeliveriesListParams["purpose"]>("all");
   const [deliveriesLoading, setDeliveriesLoading] = useState(false);
   const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
+  const [emailBounced, setEmailBounced] = useState(0);
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
@@ -181,6 +183,28 @@ export function CommunicationPage() {
     return () => {
       cancelled = true;
     };
+  }, [eventId, reportApiError]);
+
+  useLayoutEffect(() => {
+    setEmailBounced(0);
+  }, [eventId]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    const ac = new AbortController();
+    void fetchEventOverview(eventId, ac.signal)
+      .then((data) => {
+        if (!ac.signal.aborted) setEmailBounced(data.email_bounced);
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (ac.signal.aborted) return;
+        setEmailBounced(0);
+        if (err instanceof ApiError) {
+          reportApiError(err.status);
+        }
+      });
+    return () => ac.abort();
   }, [eventId, reportApiError]);
 
   useEffect(() => {
@@ -346,6 +370,29 @@ export function CommunicationPage() {
         title="Communication"
         subtitle="Outlook-safe ticket email · Microsoft Graph transport"
       />
+
+      {emailBounced > 0 && (
+        <div className="bounce-banner" role="alert">
+          <i className="ti ti-alert-triangle" aria-hidden="true" />
+          <span>
+            <strong>
+              {emailBounced} email{emailBounced !== 1 ? "s" : ""} bounced
+            </strong>
+            {" — these addresses will not receive future mail. "}
+            <button
+              type="button"
+              className="bounce-banner__link"
+              onClick={() => {
+                setTab("log");
+                setDeliveryStatus("bounced");
+                setDeliveryPage(1);
+              }}
+            >
+              View delivery log
+            </button>
+          </span>
+        </div>
+      )}
 
       <Tabs
         value={tab}

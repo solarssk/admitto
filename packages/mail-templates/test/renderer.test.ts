@@ -236,6 +236,32 @@ describe("renderTemplate", () => {
     expect(result.html).toContain('src="https://cdn.example.com/header.png"');
   });
 
+  it("absolutizes uploaded logo paths when baseUrl is provided", () => {
+    const result = renderTemplate(
+      {
+        subject: "T",
+        compiledHtml: '<img src="{{logo_url}}" alt="logo" width="100" height="50" />',
+      },
+      { logo_url: "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png" },
+      { baseUrl: "https://tickets.example.com" },
+    );
+    expect(result.html).toContain(
+      'src="https://tickets.example.com/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"',
+    );
+  });
+
+  it("rejects uploaded logo paths without baseUrl at render time", () => {
+    expect(() =>
+      renderTemplate(
+        {
+          subject: "T",
+          compiledHtml: '<img src="{{logo_url}}" alt="logo" width="100" height="50" />',
+        },
+        { logo_url: "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png" },
+      ),
+    ).toThrow(InvalidHttpUrlError);
+  });
+
   it("strips empty src when logo_url is empty", () => {
     const result = renderTemplate(
       {

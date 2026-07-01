@@ -27,7 +27,7 @@ export function formatInvalidUrlMessage(
 ): string {
   const label = fieldLabel(field, context);
   if (context === "branding") {
-    return `${label} must be a full http:// or https:// URL.`;
+    return `${label} must be a full http:// or https:// URL, or a valid /uploads/… image path.`;
   }
   return `${label} must be a full http:// or https:// URL when rendering the email.`;
 }
@@ -69,6 +69,46 @@ export function escapeHtmlText(value: string): string {
 /** Escape for HTML attribute values. */
 export function escapeHtmlAttribute(value: string): string {
   return escapeWithMap(value, HTML_ATTR_ESCAPE);
+}
+
+const BRANDING_UPLOAD_PATH =
+  /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}(\/events\/[a-z0-9][a-z0-9_-]{0,127})?\/[^/]+\.(png|jpe?g|webp)$/i;
+
+/** Validate http(s) URL or local branding upload path; throws InvalidHttpUrlError when invalid. */
+export function validateBrandingUrl(field: string, value: string): string {
+  if (value === "") return "";
+  const trimmed = value.trim();
+  if (trimmed.startsWith("/uploads/")) {
+    if (trimmed.includes("..") || !BRANDING_UPLOAD_PATH.test(trimmed)) {
+      throw new InvalidHttpUrlError(field, value, "branding");
+    }
+    return trimmed;
+  }
+  return validateHttpUrl(field, trimmed, "branding");
+}
+
+/** Branding asset placeholders that may be stored as `/uploads/…` paths. */
+export const BRANDING_ASSET_FIELDS = new Set(["logo_url", "header_image_url"]);
+
+/**
+ * Validate and absolutize a branding asset URL for email HTML (Outlook/Gmail need absolute https).
+ * Relative `/uploads/…` paths require `baseUrl` (typically from `BASE_URL` env).
+ */
+export function resolveBrandingAssetUrlForRender(
+  field: string,
+  value: string,
+  baseUrl?: string,
+): string {
+  if (value === "") return "";
+  const validated = validateBrandingUrl(field, value);
+  if (validated.startsWith("/uploads/")) {
+    const base = baseUrl?.replace(/\/$/, "") ?? "";
+    if (!base) {
+      throw new InvalidHttpUrlError(field, value, "template");
+    }
+    return validateHttpUrl(field, `${base}${validated}`, "template");
+  }
+  return validateHttpUrl(field, validated, "template");
 }
 
 /** Validate http(s) URL; throws InvalidHttpUrlError when non-empty and invalid. */

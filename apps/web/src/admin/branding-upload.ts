@@ -10,6 +10,7 @@ const ALLOWED_EXT = new Map([
   ["image/webp", ".webp"],
 ]);
 const ORG_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const EVENT_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
 /** Validation error for branding upload requests (maps to HTTP status). */
 export class BrandingUploadError extends Error {
@@ -33,6 +34,13 @@ export function resolveUploadDir(): string {
 function assertSafeOrgId(orgId: string): void {
   if (!ORG_ID_PATTERN.test(orgId)) {
     throw new BrandingUploadError("invalid_org_id", 400);
+  }
+}
+
+/** Reject event IDs that could escape the upload directory via path traversal. */
+function assertSafeEventId(eventId: string): void {
+  if (!EVENT_ID_PATTERN.test(eventId)) {
+    throw new BrandingUploadError("invalid_event_id", 400);
   }
 }
 
@@ -60,10 +68,8 @@ function detectImageMime(buf: Buffer): string | null {
   return null;
 }
 
-/** Local filesystem branding upload (ADR 0008 — future StorageAdapter swap). */
-export async function saveBrandingUpload(file: File, orgId: string): Promise<{ url: string }> {
-  assertSafeOrgId(orgId);
-
+/** Validate image bytes and write to `dir`; returns generated filename with extension. */
+async function validateAndWriteImage(file: File, dir: string): Promise<string> {
   if (file.size > MAX_UPLOAD_BYTES) {
     throw new BrandingUploadError("file_too_large", 413, { maxBytes: MAX_UPLOAD_BYTES });
   }
@@ -85,9 +91,28 @@ export async function saveBrandingUpload(file: File, orgId: string): Promise<{ u
 
   const ext = ALLOWED_EXT.get(detectedMime)!;
   const filename = `${randomUUID()}${ext}`;
-  const dir = join(resolveUploadDir(), orgId);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, filename), buf);
+  return filename;
+}
 
+/** Local filesystem branding upload (ADR 0008 — future StorageAdapter swap). */
+export async function saveBrandingUpload(file: File, orgId: string): Promise<{ url: string }> {
+  assertSafeOrgId(orgId);
+  const dir = join(resolveUploadDir(), orgId);
+  const filename = await validateAndWriteImage(file, dir);
   return { url: `/uploads/${orgId}/${filename}` };
+}
+
+/** Event-scoped branding upload — same validation as org logo; no HTTP caller yet. */
+export async function saveEventUpload(
+  file: File,
+  orgId: string,
+  eventId: string,
+): Promise<{ url: string }> {
+  assertSafeOrgId(orgId);
+  assertSafeEventId(eventId);
+  const dir = join(resolveUploadDir(), orgId, "events", eventId);
+  const filename = await validateAndWriteImage(file, dir);
+  return { url: `/uploads/${orgId}/events/${eventId}/${filename}` };
 }

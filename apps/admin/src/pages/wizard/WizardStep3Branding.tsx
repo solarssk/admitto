@@ -7,7 +7,9 @@ import {
   useState,
 } from "react";
 import { Input, useToast } from "@admitto/ui";
+import { LogoUploadZone } from "../../components/LogoUploadZone.js";
 import { ApiError, fetchOrgBranding, patchOrgBranding } from "../../api/client.js";
+import { brandingLogoImgSrc, safeBrandingLogoHref } from "../../utils/safeBrandingLogoHref.js";
 import { useWizard } from "./WizardContext.js";
 
 export type WizardStep3BrandingHandle = {
@@ -17,19 +19,6 @@ export type WizardStep3BrandingHandle = {
 type WizardStep3BrandingProps = {
   onDirtyChange?: (dirty: boolean) => void;
 };
-
-/** Return a normalized HTTPS logo URL safe for img src, or null when invalid. */
-function safeHttpsLogoHref(url: string): string | null {
-  const trimmed = url.trim();
-  if (!trimmed) return null;
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol !== "https:" || parsed.username || parsed.password) return null;
-    return parsed.href;
-  } catch {
-    return null;
-  }
-}
 
 export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardStep3BrandingProps>(
   function WizardStep3Branding({ onDirtyChange }, ref) {
@@ -76,8 +65,8 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
         setNameError("Organisation name is required.");
         return false;
       }
-      if (logo && !safeHttpsLogoHref(logo)) {
-        setLogoError("Logo URL must be a valid HTTPS URL without embedded credentials.");
+      if (logo && !safeBrandingLogoHref(logo)) {
+        setLogoError("Logo must be a valid HTTPS URL or uploaded image.");
         return false;
       }
 
@@ -102,7 +91,7 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
       saveAndContinue: saveBranding,
     }));
 
-    const previewLogo = useMemo(() => safeHttpsLogoHref(logoUrl), [logoUrl]);
+    const previewLogo = useMemo(() => brandingLogoImgSrc(logoUrl), [logoUrl]);
 
     return (
       <>
@@ -137,20 +126,14 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
             </div>
 
             <div className="setup-wizard__field">
-              <Input
-                label="Logo URL (HTTPS)"
-                type="url"
+              <LogoUploadZone
                 value={logoUrl}
-                placeholder="https://cdn.example.com/logo.png"
-                onChange={(e) => {
-                  setLogoUrl(e.target.value);
+                onChange={(url) => {
+                  setLogoUrl(url);
                   setLogoError(null);
-                  onDirtyChange?.(true);
                 }}
+                onDirty={() => onDirtyChange?.(true)}
               />
-              <p className="setup-wizard__hint">
-                Recommended: transparent PNG or WebP, max 160×48px. Shown on the ticket page.
-              </p>
               {logoError && (
                 <p className="setup-wizard__hint" style={{ color: "var(--status-error)" }} role="alert">
                   {logoError}

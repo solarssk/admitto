@@ -1,7 +1,10 @@
+export { resolvePublicBaseUrl } from "./baseUrl.js";
 export {
   escapeHtmlText,
   escapeHtmlAttribute,
   validateHttpUrl,
+  validateBrandingUrl,
+  resolveBrandingAssetUrlForRender,
   formatInvalidUrlMessage,
   InvalidHttpUrlError,
 } from "./escape.js";
@@ -64,5 +67,5 @@ export type {
   SetMailTemplateInput,
 } from "./types.js";
 export type { SetBrandingInput } from "./branding.js";
-export type { RenderTemplateInput } from "./render.js";
+export type { RenderTemplateInput, RenderOptions } from "./render.js";
 export type { TemplateSourceInput } from "./validate.js";

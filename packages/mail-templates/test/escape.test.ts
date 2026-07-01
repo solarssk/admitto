@@ -8,10 +8,10 @@ import {
 describe("formatInvalidUrlMessage", () => {
   it("uses admin-friendly labels in branding context", () => {
     expect(formatInvalidUrlMessage("logo_url", "branding")).toBe(
-      "Logo URL must be a full http:// or https:// URL.",
+      "Logo URL must be a full http:// or https:// URL, or a valid /uploads/… image path.",
     );
     expect(formatInvalidUrlMessage("header_image_url", "branding")).toBe(
-      "Header image URL must be a full http:// or https:// URL.",
+      "Header image URL must be a full http:// or https:// URL, or a valid /uploads/… image path.",
     );
   });
 
@@ -33,7 +33,7 @@ describe("validateHttpUrl", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(InvalidHttpUrlError);
       expect((err as InvalidHttpUrlError).message).toBe(
-        "Logo URL must be a full http:// or https:// URL.",
+        "Logo URL must be a full http:// or https:// URL, or a valid /uploads/… image path.",
       );
       expect((err as InvalidHttpUrlError).context).toBe("branding");
     }

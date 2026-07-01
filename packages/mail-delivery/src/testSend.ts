@@ -2,12 +2,18 @@ import type { PrismaClient } from "@prisma/client";
 import { previewTemplate } from "@admitto/mail-templates";
 import { closeMailer, createMailer, type SendResult } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
+import { resolveBaseUrl } from "./baseUrl.js";
 import type { MailDeliveryDeps } from "./send.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
 
 export interface SendTestEmailParams {
   eventId: string;
   toAddress: string;
+}
+
+export interface SendTestEmailOptions {
+  /** Resolved public instance URL — use when callers inject baseUrl (e.g. createApp) instead of env only. */
+  baseUrl?: string;
 }
 
 /**
@@ -19,12 +25,16 @@ export async function sendTestEmail(
   prisma: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,
   deps: MailDeliveryDeps = {},
+  options: SendTestEmailOptions = {},
 ): Promise<SendResult> {
   const mailConfig = await resolveMailConfig(params.eventId, prisma, env);
   const mailer = createMailer(mailConfig, { exportSink: deps.exportSink });
+  const baseUrl = options.baseUrl ?? resolveBaseUrl(env);
 
   try {
-    const rendered = await previewTemplate(params.eventId, prisma);
+    const rendered = await previewTemplate(params.eventId, prisma, undefined, {
+      baseUrl,
+    });
     const result = await mailer.send({
       to: params.toAddress,
       subject: rendered.subject,

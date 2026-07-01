@@ -200,6 +200,7 @@ async function renderDraftPreview(
   subject: string,
   body: string,
   format: TemplateFormat,
+  baseUrl: string,
 ) {
   const compiledHtml = await compileTemplate(body, format);
   if (format === "mjml") {
@@ -221,7 +222,7 @@ async function renderDraftPreview(
     header_image_url: branding.header_image_url,
   };
 
-  return renderTemplate({ subject, compiledHtml }, vars);
+  return renderTemplate({ subject, compiledHtml }, vars, { baseUrl });
 }
 
 /** GET /api/admin/events/:eventId/template */
@@ -310,7 +311,11 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
 }
 
 /** POST /api/admin/events/:eventId/template/preview */
-export async function handlePreviewEventTemplate(c: Context, db: PrismaClient): Promise<Response> {
+export async function handlePreviewEventTemplate(
+  c: Context,
+  db: PrismaClient,
+  baseUrl: string,
+): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
 
@@ -336,6 +341,7 @@ export async function handlePreviewEventTemplate(c: Context, db: PrismaClient): 
       body.subject_template,
       body.body_template,
       body.template_format,
+      baseUrl,
     );
     return c.json({ subject: rendered.subject, html: rendered.html });
   } catch (err) {
@@ -363,6 +369,7 @@ export async function handleTestSendEventTemplate(
   c: Context,
   db: PrismaClient,
   mailDeliveryDeps: MailDeliveryDeps = {},
+  baseUrl: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -384,6 +391,7 @@ export async function handleTestSendEventTemplate(
       db,
       process.env,
       mailDeliveryDeps,
+      { baseUrl },
     );
   } catch (err) {
     console.error("[admin] template test-send failed", err);

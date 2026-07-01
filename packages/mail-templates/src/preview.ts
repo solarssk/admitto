@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
+import { resolvePublicBaseUrl } from "./baseUrl.js";
 import { resolveBrandingFromEvent } from "./branding.js";
+import { validateHttpUrl } from "./escape.js";
 import { formatEventDate, resolvePreviewEventTimeZone } from "./formatEventDate.js";
 import { resolveTemplateForEvent } from "./mailTemplate.js";
 import { renderTemplate } from "./render.js";
@@ -8,6 +10,18 @@ import type { RenderedTemplate, TemplateVars } from "./types.js";
 export interface PreviewTemplateOptions {
   /** IANA timezone for calendar `event_date` (e.g. Europe/Warsaw). Falls back to ADMITTO_DEFAULT_EVENT_TIMEZONE or UTC. */
   timeZone?: string;
+  /** Public instance URL — absolutizes `/uploads/…` branding assets in rendered HTML. */
+  baseUrl?: string;
+  /** Env for resolving `BASE_URL` when `baseUrl` is omitted (defaults to `process.env`). */
+  env?: Record<string, string | undefined>;
+}
+
+function resolvePreviewBaseUrl(options?: PreviewTemplateOptions): string {
+  const explicit = options?.baseUrl?.trim();
+  if (explicit) {
+    return validateHttpUrl("BASE_URL", explicit.replace(/\/$/, ""));
+  }
+  return resolvePublicBaseUrl(options?.env);
 }
 
 export const DEFAULT_SAMPLE_VARS: TemplateVars = {
@@ -62,5 +76,6 @@ export async function previewTemplate(
       compiledHtml: resolved.compiledHtmlTemplate,
     },
     vars,
+    { baseUrl: resolvePreviewBaseUrl(options) },
   );
 }
