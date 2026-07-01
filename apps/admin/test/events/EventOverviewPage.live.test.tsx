@@ -164,7 +164,7 @@ describe("EventOverviewPage live stats", () => {
     vi.useRealTimers();
   });
 
-  it("drops SSE dedup keys after overview refresh", async () => {
+  it("keeps SSE dedup after overview refresh so replayed admits do not double-count", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     fetchEventOverview.mockResolvedValue(overviewFixture(5));
 
@@ -196,9 +196,7 @@ describe("EventOverviewPage live stats", () => {
       streamHandler?.(liveEvent);
     });
 
-    await waitFor(() => {
-      expect(screen.getByText("7")).toBeTruthy();
-    });
+    expect(screen.getByText("6")).toBeTruthy();
 
     vi.useRealTimers();
   });

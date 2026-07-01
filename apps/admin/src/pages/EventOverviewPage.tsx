@@ -6,7 +6,10 @@ import type { EventDto, EventOverviewDto } from "../api/types.js";
 import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates.js";
 import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { admitDedupKey } from "../checkin/admitDedup.js";
+import {
+  isAdmitDedupHit,
+  registerAdmitDedup,
+} from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 
 /** Auto-refresh interval for event overview stats (ms). */
@@ -58,7 +61,7 @@ export function EventOverviewPage() {
   const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
   const abortRef = useRef<AbortController | null>(null);
-  const seenCheckinsRef = useRef(new Set<string>());
+  const seenCheckinsRef = useRef(new Map<string, number>());
   const reconcileTimerRef = useRef<number | null>(null);
 
   const [overview, setOverview] = useState<EventOverviewDto | null>(null);
@@ -75,7 +78,6 @@ export function EventOverviewPage() {
     if (data.event.id !== event.id) return;
     setOverview(data);
     setOptimisticAdmittedDelta(0);
-    seenCheckinsRef.current.clear();
   }, [event.id]);
 
   const scheduleReconcile = useCallback(() => {
@@ -96,9 +98,8 @@ export function EventOverviewPage() {
 
   const handleLiveCheckin = useCallback(
     (checkin: StreamCheckinEvent) => {
-      const key = admitDedupKey(checkin.attendeeId, checkin.admittedAt);
-      if (seenCheckinsRef.current.has(key)) return;
-      seenCheckinsRef.current.add(key);
+      if (isAdmitDedupHit(seenCheckinsRef.current, checkin.attendeeId, checkin.admittedAt)) return;
+      registerAdmitDedup(seenCheckinsRef.current, checkin.attendeeId, checkin.admittedAt);
       setOptimisticAdmittedDelta((delta) => delta + 1);
       scheduleReconcile();
     },
