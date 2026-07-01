@@ -234,6 +234,8 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
     expect(item).not.toHaveProperty("qr_payload");
     expect(item.last_mail_status).toBe("sent");
     expect(item.check_in_status).toBe("admitted");
+    expect(item.status).toBe("registered");
+    expect(typeof item.updated_at).toBe("string");
   });
 
   it("filters by q and status", async () => {

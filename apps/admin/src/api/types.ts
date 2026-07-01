@@ -136,6 +136,8 @@ export interface CheckInStatsResponse {
 
 export type RsvpStatus = "none" | "confirmed" | "declined" | "tentative" | "cancelled";
 
+export type AttendeePassStatus = "registered" | "revoked" | "cancelled";
+
 export interface AttendeeRowDto {
   id: string;
   name: string;
@@ -143,8 +145,10 @@ export interface AttendeeRowDto {
   company: string | null;
   department: string | null;
   ticket_type: string | null;
+  status: AttendeePassStatus;
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
+  updated_at: string;
   last_mail_status: string | null;
   rsvp_status: RsvpStatus;
 }

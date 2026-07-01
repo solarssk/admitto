@@ -45,7 +45,9 @@ const ATTENDEE_LIST_SELECT = {
   department: true,
   custom_data: true,
   ticket_type: true,
+  status: true,
   admitted_at: true,
+  updated_at: true,
   rsvp_status: true,
 } as const;
 
@@ -593,6 +595,8 @@ async function auditAttendeesExported(
   });
 }
 
+export type AttendeePassStatus = "registered" | "revoked" | "cancelled";
+
 export type AttendeeRowDto = {
   id: string;
   name: string;
@@ -600,8 +604,10 @@ export type AttendeeRowDto = {
   company: string | null;
   department: string | null;
   ticket_type: string | null;
+  status: AttendeePassStatus;
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
+  updated_at: string;
   last_mail_status: string | null;
   rsvp_status: RsvpStatus;
 };
@@ -862,7 +868,9 @@ function serializeAttendeeRow(
     department: string | null;
     custom_data: unknown;
     ticket_type: string | null;
+    status: string;
     admitted_at: Date | null;
+    updated_at: Date;
     rsvp_status: string;
   },
   lastMail: Map<string, string>,
@@ -875,8 +883,10 @@ function serializeAttendeeRow(
     company,
     department,
     ticket_type: row.ticket_type,
+    status: row.status as AttendeePassStatus,
     check_in_status: checkInStatus(row.admitted_at),
     admitted_at: row.admitted_at ? row.admitted_at.toISOString() : null,
+    updated_at: row.updated_at.toISOString(),
     last_mail_status: lastMail.get(row.id) ?? null,
     rsvp_status: row.rsvp_status as RsvpStatus,
   };
