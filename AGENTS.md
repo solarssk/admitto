@@ -53,6 +53,10 @@ Follow [.github/pull_request_template.md](.github/pull_request_template.md) exac
 
 `Description` · `How to test` · `What stays / known limitations` · `Checklist`
 
+`Description` covers **business context** (the real operator/admin/attendee problem, plain
+language, no jargon) and **technical changes** (what changed in the code, by area) as separate
+paragraphs — not blended. Describe the diff that actually shipped, not the original plan.
+
 Before handoff: assignee @solarssk, current milestone when it exists, labels — one `type:*`, at least one `area:*`, `prio:*` when obvious.
 
 ## Changelog and releases
