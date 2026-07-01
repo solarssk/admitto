@@ -453,7 +453,10 @@ describe("multi-template API", () => {
       body: JSON.stringify({ label: "Test send by id", template_format: "html" }),
     });
     expect(createRes.status).toBe(201);
-    const { id: templateId } = (await createRes.json()) as { id: string };
+    const { id: templateId, name: templateName } = (await createRes.json()) as {
+      id: string;
+      name: string;
+    };
 
     const putRes = await app.request(
       `/api/admin/events/${EVENT_A}/templates/${templateId}`,
@@ -504,6 +507,15 @@ describe("multi-template API", () => {
 
     const after = await prisma.emailDelivery.count({ where: { event_id: EVENT_A } });
     expect(after).toBe(before);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_A, action_type: "mail_test_sent" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    const meta = log!.metadata as { template_id?: string; template_name?: string } | null;
+    expect(meta?.template_id).toBe(templateId);
+    expect(meta?.template_name).toBe(templateName);
   });
 
   it("POST /templates/:id/test-send returns 404 for a template from another event", async () => {

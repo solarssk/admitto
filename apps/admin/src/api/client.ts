@@ -91,28 +91,34 @@ export class ApiError extends Error {
 }
 
 type ApiErrorBody = {
-  error?: string;
-  detail?: string;
-  code?: string;
+  error?: unknown;
+  detail?: unknown;
+  code?: unknown;
   capacity?: number;
   current?: number;
   incoming?: number;
   projected?: number;
 };
 
+function stringField(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
 function messageFromApiErrorBody(body: ApiErrorBody): string | undefined {
-  const detail = body.detail?.trim();
-  if (detail) return detail;
-  const error = body.error?.trim();
-  if (error) return error;
-  const code = body.code?.trim();
-  if (code) return code;
-  return undefined;
+  return stringField(body.detail) ?? stringField(body.error) ?? stringField(body.code);
+}
+
+function apiErrorCodeFromBody(body: ApiErrorBody): string | undefined {
+  return stringField(body.code) ?? stringField(body.error);
 }
 
 /** Parse structured capacity fields from a 409 `event_full` API error body. */
 function eventFullFromBody(body: ApiErrorBody): EventFullMeta | undefined {
-  if (body.code !== "event_full" || body.capacity == null || body.current == null) return undefined;
+  if (apiErrorCodeFromBody(body) !== "event_full" || body.capacity == null || body.current == null) {
+    return undefined;
+  }
   return {
     capacity: body.capacity,
     current: body.current,
@@ -129,7 +135,7 @@ async function parseJson<T>(res: Response): Promise<T> {
     try {
       const body = (await res.json()) as ApiErrorBody;
       message = messageFromApiErrorBody(body) ?? message;
-      code = body.code ?? body.error;
+      code = apiErrorCodeFromBody(body);
       eventFull = eventFullFromBody(body);
     } catch {
       /* ignore */
@@ -630,14 +636,15 @@ export class TemplateValidationError extends Error {
 async function parseTemplateActionJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     try {
-      const body = (await res.json()) as { error?: string; errors?: string[] };
+      const body = (await res.json()) as { error?: unknown; errors?: string[] };
       if (body.errors?.length) {
         throw new TemplateValidationError(body.errors);
       }
+      const errorCode = stringField(body.error);
       throw new ApiError(
         res.status,
-        messageFromApiErrorBody(body) ?? body.error ?? res.statusText,
-        body.error,
+        messageFromApiErrorBody(body) ?? errorCode ?? res.statusText,
+        errorCode,
       );
     } catch (err) {
       if (err instanceof TemplateValidationError || err instanceof ApiError) throw err;
