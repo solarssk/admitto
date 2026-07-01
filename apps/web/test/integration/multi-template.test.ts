@@ -14,6 +14,7 @@ const sameOrigin = { Origin: "http://localhost" };
 
 const ORG_A = "org-multi-tpl-a";
 const EVENT_A = "evt-multi-tpl-a";
+const EVENT_B = "evt-multi-tpl-b";
 const EMAIL_ADMIN = "multi-tpl-admin@example.com";
 const PASSWORD = "multi-tpl-pass-123";
 
@@ -30,14 +31,14 @@ const validTemplate = {
 async function seed(client: PrismaClient) {
   await client.emailDelivery.deleteMany({ where: { event_id: EVENT_A } });
   await client.mailTemplate.deleteMany({
-    where: { scope_id: { in: [EVENT_A, ORG_A] } },
+    where: { scope_id: { in: [EVENT_A, EVENT_B, ORG_A] } },
   });
   await client.attendee.deleteMany({ where: { event_id: EVENT_A } });
   await client.roleAssignment.deleteMany({ where: { scope_id: { in: [ORG_A, EVENT_A] } } });
   await client.session.deleteMany({ where: { user: { email: EMAIL_ADMIN } } });
   await client.userMfaMethod.deleteMany({ where: { user: { email: EMAIL_ADMIN } } });
   await client.user.deleteMany({ where: { email: EMAIL_ADMIN } });
-  await client.event.deleteMany({ where: { id: EVENT_A } });
+  await client.event.deleteMany({ where: { id: { in: [EVENT_A, EVENT_B] } } });
   await client.organization.deleteMany({ where: { id: ORG_A } });
 
   const password_hash = await hashPassword(PASSWORD);
@@ -142,6 +143,38 @@ describe("multi-template API", () => {
     expect(body.label).toBe("Reminder");
   });
 
+  it("POST /templates label Ticket does not create primary ticket template", async () => {
+    await prisma.event.create({
+      data: {
+        id: EVENT_B,
+        title: "Event B",
+        slug: "multi-tpl-event-b",
+        date: new Date("2026-11-01"),
+        organization_id: ORG_A,
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_B}/templates`, {
+      method: "POST",
+      headers: {
+        Cookie: adminCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ label: "Ticket", template_format: "mjml" }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { name: string };
+    expect(body.name).toBe("ticket_2");
+
+    const primary = await prisma.mailTemplate.findUnique({
+      where: {
+        scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_B, name: "ticket" },
+      },
+    });
+    expect(primary).toBeNull();
+  });
+
   it("DELETE blocks ticket template", async () => {
     const ticket = await prisma.mailTemplate.findUniqueOrThrow({
       where: {
@@ -221,7 +254,7 @@ describe("multi-template API", () => {
     expect(body.error).toBe("template_in_use");
   });
 
-  it("DELETE allows custom template even when deliveries exist", async () => {
+  it("DELETE blocks custom template when deliveries exist", async () => {
     const createRes = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
       method: "POST",
       headers: {
@@ -263,7 +296,9 @@ describe("multi-template API", () => {
         headers: { Cookie: adminCookie, ...sameOrigin },
       },
     );
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("template_in_use");
   });
 
   it("POST /send dryRun returns recipientCount", async () => {

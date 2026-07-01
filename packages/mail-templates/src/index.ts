@@ -51,9 +51,11 @@ export {
   resolveTemplate,
   resolveTemplateForEvent,
   resolveTemplateById,
+  createMailTemplate,
   setMailTemplate,
   TemplateNotFoundError,
 } from "./mailTemplate.js";
+export type { CreatedMailTemplateRow } from "./mailTemplate.js";
 export { resolveBranding, resolveBrandingFromEvent, setBranding } from "./branding.js";
 export {
   previewTemplate,

@@ -58,15 +58,23 @@ function noDeliveryDeliveryWhere(
   return { AND: [statusClause, { template_id: scope.templateId }] };
 }
 
-export async function resolveBulkSendNoDeliveryScope(
+async function getBulkSendTemplateName(
   db: PrismaClient,
   templateId: string,
-): Promise<BulkSendNoDeliveryScope> {
+): Promise<string | undefined> {
   const row = await db.mailTemplate.findUnique({
     where: { id: templateId },
     select: { name: true },
   });
-  if (row?.name === "ticket") {
+  return row?.name;
+}
+
+export async function resolveBulkSendNoDeliveryScope(
+  db: PrismaClient,
+  templateId: string,
+): Promise<BulkSendNoDeliveryScope> {
+  const name = await getBulkSendTemplateName(db, templateId);
+  if (name === "ticket") {
     return { mode: "initial_ticket" };
   }
   return { mode: "template", templateId };
@@ -177,12 +185,9 @@ export async function resolveBulkSendPurpose(
     return "resend";
   }
 
-  const row = await db.mailTemplate.findUnique({
-    where: { id: templateId },
-    select: { name: true },
-  });
+  const name = await getBulkSendTemplateName(db, templateId);
 
-  return row?.name === "ticket" ? "initial" : "resend";
+  return name === "ticket" ? "initial" : "resend";
 }
 
 async function assertTemplateForEvent(
@@ -227,10 +232,17 @@ export async function handleBulkSend(
   const templateError = await assertTemplateForEvent(db, eventId, body.templateId);
   if (templateError) return templateError;
 
-  const noDeliveryScope =
-    body.filter.type === "no_delivery"
-      ? await resolveBulkSendNoDeliveryScope(db, body.templateId)
-      : undefined;
+  let noDeliveryScope: BulkSendNoDeliveryScope | undefined;
+  let purpose: "initial" | "resend" = "resend";
+
+  if (body.filter.type === "no_delivery") {
+    const templateName = await getBulkSendTemplateName(db, body.templateId);
+    const isTicket = templateName === "ticket";
+    noDeliveryScope = isTicket
+      ? { mode: "initial_ticket" }
+      : { mode: "template", templateId: body.templateId };
+    purpose = isTicket ? "initial" : "resend";
+  }
 
   const { ids, overLimit } = await resolveBulkSendAttendeeIds(
     db,
@@ -261,8 +273,6 @@ export async function handleBulkSend(
       failed: 0,
     } satisfies BulkSendQueuedDto);
   }
-
-  const purpose = await resolveBulkSendPurpose(db, body.filter, body.templateId);
 
   let sendResult;
   try {

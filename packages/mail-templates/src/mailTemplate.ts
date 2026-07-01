@@ -133,6 +133,46 @@ function rowToResolved(
   };
 }
 
+export type CreatedMailTemplateRow = {
+  id: string;
+  name: string;
+  label: string;
+  template_format: string;
+  subject_template: string;
+  body_template: string;
+  compiled_html_template: string;
+  updated_at: Date;
+};
+
+/** Validate placeholders, compile MJML if needed, insert a new MailTemplate row. */
+export async function createMailTemplate(
+  scope: TemplateScope,
+  input: SetMailTemplateInput,
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<CreatedMailTemplateRow> {
+  assertValidTemplate({ subject: input.subject, body: input.body });
+
+  const compiledHtml = await compileTemplate(input.body, input.format);
+  if (input.format === "mjml") {
+    assertRenderableCompiledHtml(compiledHtml);
+  }
+
+  const key = scopeNameKey(scope);
+
+  return prisma.mailTemplate.create({
+    data: {
+      scope_type: key.scope_type,
+      scope_id: key.scope_id,
+      name: key.name,
+      label: input.label ?? (key.name === DEFAULT_TEMPLATE_NAME ? "Ticket email" : key.name),
+      subject_template: input.subject,
+      body_template: input.body,
+      template_format: input.format,
+      compiled_html_template: compiledHtml,
+    },
+  });
+}
+
 /** Validate placeholders, compile MJML if needed, upsert MailTemplate row. */
 export async function setMailTemplate(
   scope: TemplateScope,

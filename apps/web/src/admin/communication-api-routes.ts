@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import type { EmailDeliveryStatus, EmailDeliveryPurpose } from "@admitto/db";
 import { EMAIL_DELIVERY_STATUS, EMAIL_DELIVERY_PURPOSE } from "@admitto/db/status";
@@ -16,6 +17,7 @@ import {
   formatEventDate,
   renderTemplate,
   resolveBrandingFromEvent,
+  createMailTemplate,
   setMailTemplate,
   validateTemplate,
   UnknownPlaceholdersError,
@@ -474,6 +476,21 @@ export async function handleListEventDeliveries(c: Context, db: PrismaClient): P
 }
 
 const MAX_TEMPLATES_PER_EVENT = 10;
+const CREATE_TEMPLATE_MAX_ATTEMPTS = 5;
+
+/** Slug names reserved for system templates; custom create must not claim them. */
+const RESERVED_CUSTOM_TEMPLATE_NAMES = new Set(["ticket"]);
+
+class TemplateLimitReachedError extends Error {
+  constructor() {
+    super("template_limit_reached");
+    this.name = "TemplateLimitReachedError";
+  }
+}
+
+function isPrismaUniqueViolation(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+}
 
 const createTemplateBodySchema = z
   .object({
@@ -520,29 +537,34 @@ function slugifyTemplateLabel(label: string): string {
 }
 
 async function uniqueTemplateName(
-  db: PrismaClient,
+  db: PrismaClient | Prisma.TransactionClient,
   eventId: string,
   baseName: string,
+  options?: { reserveSemanticNames?: boolean },
 ): Promise<string> {
   let candidate = baseName;
   let n = 2;
-  while (
-    await db.mailTemplate.findUnique({
-      where: {
-        scope_type_scope_id_name: {
-          scope_type: "event",
-          scope_id: eventId,
-          name: candidate,
+  while (true) {
+    const reserved =
+      options?.reserveSemanticNames === true &&
+      RESERVED_CUSTOM_TEMPLATE_NAMES.has(candidate);
+    const exists =
+      reserved ||
+      !!(await db.mailTemplate.findUnique({
+        where: {
+          scope_type_scope_id_name: {
+            scope_type: "event",
+            scope_id: eventId,
+            name: candidate,
+          },
         },
-      },
-      select: { id: true },
-    })
-  ) {
+        select: { id: true },
+      }));
+    if (!exists) return candidate;
     const suffix = `_${n}`;
     candidate = `${baseName.slice(0, Math.max(1, 64 - suffix.length))}${suffix}`;
     n += 1;
   }
-  return candidate;
 }
 
 async function getEventTemplateRow(db: PrismaClient, eventId: string, templateId: string) {
@@ -725,7 +747,6 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
   }
 
   const baseName = slugifyTemplateLabel(body.label);
-  const name = await uniqueTemplateName(db, eventId, baseName);
   const format = body.template_format;
   const subject = body.subject_template ?? EMPTY_TEMPLATE_SUBJECT;
   const templateBody =
@@ -737,38 +758,76 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
     return templateValidationResponse(c, sourceErrors);
   }
 
-  try {
-    await setMailTemplate(
-      { scopeType: "event", scopeId: eventId, name },
-      { subject, body: templateBody, format, label: body.label },
-      db,
-    );
-  } catch (err) {
-    if (err instanceof MjmlCompileError) {
-      return mjmlCompileErrorResponse(c, err);
+  for (let attempt = 0; attempt < CREATE_TEMPLATE_MAX_ATTEMPTS; attempt++) {
+    try {
+      const created = await db.$transaction(async (tx) => {
+        const eventCount = await tx.mailTemplate.count({
+          where: { scope_type: "event", scope_id: eventId },
+        });
+        if (eventCount >= MAX_TEMPLATES_PER_EVENT) {
+          throw new TemplateLimitReachedError();
+        }
+
+        const name = await uniqueTemplateName(tx, eventId, baseName, {
+          reserveSemanticNames: true,
+        });
+
+        return createMailTemplate(
+          { scopeType: "event", scopeId: eventId, name },
+          { subject, body: templateBody, format, label: body.label },
+          tx,
+        );
+      });
+
+      return c.json(
+        {
+          id: created.id,
+          name: created.name,
+          label: created.label,
+          template_format: created.template_format as TemplateFormat,
+          subject_template: created.subject_template,
+          body_template: created.body_template,
+          compiled_html_template: created.compiled_html_template,
+          updated_at: created.updated_at.toISOString(),
+        } satisfies EventTemplateDetailDto,
+        201,
+      );
+    } catch (err) {
+      if (err instanceof TemplateLimitReachedError) {
+        return c.json({ error: "template_limit_reached", limit: MAX_TEMPLATES_PER_EVENT }, 422);
+      }
+      if (isPrismaUniqueViolation(err) && attempt < CREATE_TEMPLATE_MAX_ATTEMPTS - 1) {
+        continue;
+      }
+      if (err instanceof MjmlCompileError) {
+        return mjmlCompileErrorResponse(c, err);
+      }
+      if (err instanceof UnknownPlaceholdersError) {
+        return templateValidationResponse(
+          c,
+          err.unknown.map((u) => `Unknown placeholder: ${u}`),
+        );
+      }
+      if (err instanceof PlaceholderInHtmlCommentError) {
+        return templateValidationResponse(
+          c,
+          err.placeholders.map((p) => `Placeholder in HTML comment: ${p}`),
+        );
+      }
+      if (err instanceof UnquotedAttributePlaceholderError) {
+        return templateValidationResponse(
+          c,
+          err.attributes.map((a) => `Unquoted attribute placeholder: ${a}`),
+        );
+      }
+      if (isPrismaUniqueViolation(err)) {
+        return c.json({ error: "template_name_conflict" }, 409);
+      }
+      throw err;
     }
-    throw err;
   }
 
-  const created = await db.mailTemplate.findUniqueOrThrow({
-    where: {
-      scope_type_scope_id_name: { scope_type: "event", scope_id: eventId, name },
-    },
-  });
-
-  return c.json(
-    {
-      id: created.id,
-      name: created.name,
-      label: created.label,
-      template_format: created.template_format as TemplateFormat,
-      subject_template: created.subject_template,
-      body_template: created.body_template,
-      compiled_html_template: created.compiled_html_template,
-      updated_at: created.updated_at.toISOString(),
-    } satisfies EventTemplateDetailDto,
-    201,
-  );
+  return c.json({ error: "template_name_conflict" }, 409);
 }
 
 /** DELETE /api/admin/events/:eventId/templates/:templateId */
@@ -787,11 +846,9 @@ export async function handleDeleteEventTemplate(c: Context, db: PrismaClient): P
     return c.json({ error: "template_required" }, 422);
   }
 
-  if (row.name === "reminder") {
-    const used = await db.emailDelivery.count({ where: { template_id: templateId } });
-    if (used > 0) {
-      return c.json({ error: "template_in_use" }, 422);
-    }
+  const used = await db.emailDelivery.count({ where: { template_id: templateId } });
+  if (used > 0) {
+    return c.json({ error: "template_in_use" }, 422);
   }
 
   await db.mailTemplate.delete({ where: { id: templateId } });
