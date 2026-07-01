@@ -244,6 +244,7 @@ describe("multi-template API", () => {
         status: "sent",
       },
     });
+    expect(delivery.template_id).toBe(reminder.id);
 
     const res = await app.request(
       `/api/admin/events/${EVENT_A}/templates/${reminder.id}`,
@@ -297,6 +298,7 @@ describe("multi-template API", () => {
         status: "sent",
       },
     });
+    expect(delivery.template_id).toBe(custom.id);
 
     const res = await app.request(
       `/api/admin/events/${EVENT_A}/templates/${custom.id}`,
