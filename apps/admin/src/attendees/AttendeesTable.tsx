@@ -29,7 +29,7 @@ export interface AttendeesTableProps {
   onViewAttendee: (id: string) => void;
   onRevokePass?: (row: AttendeeRowDto) => void;
   onRestorePass?: (row: AttendeeRowDto) => void;
-  passActionBusyId?: string | null;
+  passActionBusyIds?: ReadonlySet<string>;
   onPageChange: (page: number) => void;
   eventTimezone: string;
 }
@@ -53,7 +53,7 @@ export function AttendeesTable({
   onViewAttendee,
   onRevokePass,
   onRestorePass,
-  passActionBusyId = null,
+  passActionBusyIds = new Set(),
   onPageChange,
   eventTimezone,
 }: AttendeesTableProps) {
@@ -185,11 +185,11 @@ export function AttendeesTable({
                       icon={<i className="ti ti-eye" aria-hidden="true" />}
                       onClick={() => onViewAttendee(row.id)}
                     />
-                    {row.status !== "cancelled" && row.status === "revoked" && onRestorePass ? (
+                    {row.status === "revoked" && onRestorePass ? (
                       <IconButton
                         label="Restore pass"
                         icon={<i className="ti ti-refresh" aria-hidden="true" />}
-                        disabled={passActionBusyId === row.id}
+                        disabled={passActionBusyIds.has(row.id)}
                         onClick={() => onRestorePass(row)}
                       />
                     ) : null}
@@ -197,7 +197,7 @@ export function AttendeesTable({
                       <IconButton
                         label="Revoke pass"
                         icon={<i className="ti ti-ban" aria-hidden="true" />}
-                        disabled={passActionBusyId === row.id}
+                        disabled={passActionBusyIds.has(row.id)}
                         onClick={() => onRevokePass(row)}
                       />
                     ) : null}

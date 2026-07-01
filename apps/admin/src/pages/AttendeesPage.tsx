@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Button, PageHeader, useToast } from "@admitto/ui";
 import { ApiError, bulkResendTickets, exportAttendees, fetchEventAttendees, fetchTicketTypes, updateAttendee } from "../api/client.js";
@@ -16,7 +16,7 @@ const DEBOUNCE_MS = 300;
 function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): AttendeeRowDto {
   return {
     ...prev,
-    status: updated.status as AttendeeRowDto["status"],
+    status: updated.status,
     updated_at: updated.updated_at,
     check_in_status: updated.check_in_status,
     admitted_at: updated.admitted_at,
@@ -141,7 +141,12 @@ export function AttendeesPage() {
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<AttendeeRowDto | null>(null);
   const [revokeError, setRevokeError] = useState<string | null>(null);
-  const [passActionBusyId, setPassActionBusyId] = useState<string | null>(null);
+  const passActionBusyRef = useRef(new Set<string>());
+  const [passActionBusyVersion, setPassActionBusyVersion] = useState(0);
+  const passActionBusyIds = useMemo(
+    () => new Set(passActionBusyRef.current),
+    [passActionBusyVersion],
+  );
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -279,7 +284,9 @@ export function AttendeesPage() {
   const handlePassStatusChange = useCallback(
     async (row: AttendeeRowDto, nextStatus: "registered" | "revoked") => {
       if (!eventId) return;
-      setPassActionBusyId(row.id);
+      if (passActionBusyRef.current.has(row.id)) return;
+      passActionBusyRef.current.add(row.id);
+      setPassActionBusyVersion((version) => version + 1);
       setRevokeError(null);
       try {
         const updated = await updateAttendee(eventId, row.id, {
@@ -301,7 +308,7 @@ export function AttendeesPage() {
           if (err.status === 409) {
             if (err.code === "event_full") {
               addToast("Event is at capacity — pass cannot be restored.", "error");
-            } else if (err.message === "stale_write") {
+            } else if (err.code === "stale_write") {
               addToast("Someone else updated this attendee — reloading list", "warning");
               setReloadToken((n) => n + 1);
             } else if (revokeOpen) {
@@ -318,7 +325,9 @@ export function AttendeesPage() {
           addToast(err instanceof ApiError ? err.message : "Could not update pass status.", "error");
         }
       } finally {
-        setPassActionBusyId(null);
+        if (passActionBusyRef.current.delete(row.id)) {
+          setPassActionBusyVersion((version) => version + 1);
+        }
       }
     },
     [addToast, eventId, reportApiError, revokeOpen],
@@ -468,7 +477,7 @@ export function AttendeesPage() {
           setRevokeOpen(true);
         }}
         onRestorePass={(row) => void handlePassStatusChange(row, "registered")}
-        passActionBusyId={passActionBusyId}
+        passActionBusyIds={passActionBusyIds}
         onPageChange={setPage}
         eventTimezone={event.timezone}
       />
@@ -502,13 +511,13 @@ export function AttendeesPage() {
         }
         confirmLabel="Revoke pass"
         confirmVariant="danger"
-        loading={passActionBusyId === revokeTarget?.id}
+        loading={revokeTarget ? passActionBusyIds.has(revokeTarget.id) : false}
         errorMessage={revokeError ?? undefined}
         onConfirm={() => {
           if (revokeTarget) void handlePassStatusChange(revokeTarget, "revoked");
         }}
         onCancel={() => {
-          if (passActionBusyId !== revokeTarget?.id) {
+          if (!revokeTarget || !passActionBusyIds.has(revokeTarget.id)) {
             setRevokeOpen(false);
             setRevokeTarget(null);
             setRevokeError(null);

@@ -12,6 +12,7 @@ import {
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
 import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
+import type { AttendeeStatus } from "@admitto/db/status";
 import { formatEventDate, resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
   collectEventCustomDataFields,
@@ -597,8 +598,6 @@ async function auditAttendeesExported(
   });
 }
 
-export type AttendeePassStatus = "registered" | "revoked" | "cancelled";
-
 export type AttendeeRowDto = {
   id: string;
   name: string;
@@ -606,7 +605,7 @@ export type AttendeeRowDto = {
   company: string | null;
   department: string | null;
   ticket_type: string | null;
-  status: AttendeePassStatus;
+  status: AttendeeStatus;
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
   updated_at: string;
@@ -629,7 +628,7 @@ export type AttendeeDetailDto = {
   company: string | null;
   department: string | null;
   ticket_type: string | null;
-  status: string;
+  status: AttendeeStatus;
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
   updated_at: string;
@@ -885,7 +884,7 @@ function serializeAttendeeRow(
     company,
     department,
     ticket_type: row.ticket_type,
-    status: row.status as AttendeePassStatus,
+    status: row.status as AttendeeStatus,
     check_in_status: checkInStatus(row.admitted_at),
     admitted_at: row.admitted_at ? row.admitted_at.toISOString() : null,
     updated_at: row.updated_at.toISOString(),
@@ -929,7 +928,7 @@ async function buildAttendeeDetailDto(
     company,
     department,
     ticket_type: row.ticket_type,
-    status: row.status,
+    status: row.status as AttendeeStatus,
     check_in_status: checkInStatus(row.admitted_at),
     admitted_at: row.admitted_at ? row.admitted_at.toISOString() : null,
     updated_at: row.updated_at.toISOString(),
