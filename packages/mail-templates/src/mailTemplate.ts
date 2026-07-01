@@ -12,16 +12,36 @@ import { MjmlCompileError, UnknownPlaceholdersError } from "./errors.js";
 
 export { UnknownPlaceholdersError, MjmlCompileError };
 
+const DEFAULT_TEMPLATE_NAME = "ticket";
+
+function scopeNameKey(scope: TemplateScope): {
+  scope_type: string;
+  scope_id: string;
+  name: string;
+} {
+  return {
+    scope_type: scope.scopeType,
+    scope_id: scope.scopeId,
+    name: scope.name ?? DEFAULT_TEMPLATE_NAME,
+  };
+}
+
 /**
- * Resolves effective template for a preloaded event row:
- * event MailTemplate → org MailTemplate → built-in default.
+ * Resolves effective ticket template for a preloaded event row:
+ * event MailTemplate (name=ticket) → org MailTemplate (name=ticket) → built-in default.
  */
 export async function resolveTemplateForEvent(
   event: { id: string; organization_id: string },
   prisma: PrismaClient,
 ): Promise<ResolvedTemplate> {
   const eventRow = await prisma.mailTemplate.findUnique({
-    where: { scope_type_scope_id: { scope_type: "event", scope_id: event.id } },
+    where: {
+      scope_type_scope_id_name: {
+        scope_type: "event",
+        scope_id: event.id,
+        name: DEFAULT_TEMPLATE_NAME,
+      },
+    },
   });
   if (eventRow) {
     return rowToResolved(eventRow, "event");
@@ -29,9 +49,10 @@ export async function resolveTemplateForEvent(
 
   const orgRow = await prisma.mailTemplate.findUnique({
     where: {
-      scope_type_scope_id: {
+      scope_type_scope_id_name: {
         scope_type: "organization",
         scope_id: event.organization_id,
+        name: DEFAULT_TEMPLATE_NAME,
       },
     },
   });
@@ -43,7 +64,7 @@ export async function resolveTemplateForEvent(
 }
 
 /**
- * Resolves effective template: event MailTemplate → org MailTemplate → built-in default.
+ * Resolves effective ticket template: event → org → built-in default.
  */
 export async function resolveTemplate(
   eventId: string,
@@ -53,6 +74,42 @@ export async function resolveTemplate(
   return resolveTemplateForEvent(event, prisma);
 }
 
+/**
+ * Resolve a MailTemplate by id for an event (event-scope row or org-scope for event's org).
+ */
+export async function resolveTemplateById(
+  templateId: string,
+  eventId: string,
+  prisma: PrismaClient,
+): Promise<ResolvedTemplate> {
+  const event = await prisma.event.findUniqueOrThrow({
+    where: { id: eventId },
+    select: { id: true, organization_id: true },
+  });
+
+  const row = await prisma.mailTemplate.findUnique({ where: { id: templateId } });
+  if (!row) {
+    throw new TemplateNotFoundError(templateId);
+  }
+
+  const allowed =
+    (row.scope_type === "event" && row.scope_id === event.id) ||
+    (row.scope_type === "organization" && row.scope_id === event.organization_id);
+
+  if (!allowed) {
+    throw new TemplateNotFoundError(templateId);
+  }
+
+  return rowToResolved(row, row.scope_type as "event" | "organization");
+}
+
+export class TemplateNotFoundError extends Error {
+  constructor(templateId: string) {
+    super(`Mail template not found: ${templateId}`);
+    this.name = "TemplateNotFoundError";
+  }
+}
+
 function parseTemplateFormat(value: string, source: ResolvedTemplate["source"]): TemplateFormat {
   if (value === "mjml" || value === "html") return value;
   throw new Error(`Invalid template_format "${value}" for ${source} MailTemplate`);
@@ -60,6 +117,7 @@ function parseTemplateFormat(value: string, source: ResolvedTemplate["source"]):
 
 function rowToResolved(
   row: {
+    id: string;
     subject_template: string;
     compiled_html_template: string;
     template_format: string;
@@ -71,6 +129,7 @@ function rowToResolved(
     compiledHtmlTemplate: row.compiled_html_template,
     templateFormat: parseTemplateFormat(row.template_format, source),
     source,
+    templateId: row.id,
   };
 }
 
@@ -87,22 +146,22 @@ export async function setMailTemplate(
     assertRenderableCompiledHtml(compiledHtml);
   }
 
+  const key = scopeNameKey(scope);
+
   await prisma.mailTemplate.upsert({
-    where: {
-      scope_type_scope_id: {
-        scope_type: scope.scopeType,
-        scope_id: scope.scopeId,
-      },
-    },
+    where: { scope_type_scope_id_name: key },
     create: {
-      scope_type: scope.scopeType,
-      scope_id: scope.scopeId,
+      scope_type: key.scope_type,
+      scope_id: key.scope_id,
+      name: key.name,
+      label: input.label ?? (key.name === DEFAULT_TEMPLATE_NAME ? "Ticket email" : key.name),
       subject_template: input.subject,
       body_template: input.body,
       template_format: input.format,
       compiled_html_template: compiledHtml,
     },
     update: {
+      ...(input.label !== undefined ? { label: input.label } : {}),
       subject_template: input.subject,
       body_template: input.body,
       template_format: input.format,

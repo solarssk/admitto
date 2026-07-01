@@ -74,6 +74,7 @@ describe("resolveTemplate", () => {
     const resolved = await resolveTemplate("evt-mt", prisma);
     expect(resolved.source).toBe("event");
     expect(resolved.subjectTemplate).toBe("Event {{event_name}}");
+    expect(resolved.templateId).toBeDefined();
   });
 });
 
@@ -124,7 +125,7 @@ describe("setMailTemplate", () => {
 
     const row = await prisma.mailTemplate.findUniqueOrThrow({
       where: {
-        scope_type_scope_id: { scope_type: "organization", scope_id: "org-mt" },
+        scope_type_scope_id_name: { scope_type: "organization", scope_id: "org-mt", name: "ticket" },
       },
     });
     expect(row.compiled_html_template).toContain('href="{{ticket_url}}"');
@@ -142,7 +143,9 @@ describe("setMailTemplate", () => {
     );
 
     const row = await prisma.mailTemplate.findUniqueOrThrow({
-      where: { scope_type_scope_id: { scope_type: "event", scope_id: "evt-mt" } },
+      where: {
+        scope_type_scope_id_name: { scope_type: "event", scope_id: "evt-mt", name: "ticket" },
+      },
     });
     expect(row.compiled_html_template).toContain("{{first_name}}");
     expect(row.compiled_html_template.toLowerCase()).toContain("<table");

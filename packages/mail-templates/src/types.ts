@@ -5,6 +5,8 @@ export type TemplateScopeType = "organization" | "event";
 export interface TemplateScope {
   scopeType: TemplateScopeType;
   scopeId: string;
+  /** Template slug within scope; defaults to `ticket` for legacy single-template upsert. */
+  name?: string;
 }
 
 export type TemplateSource = "event" | "organization" | "builtin";
@@ -14,6 +16,8 @@ export interface ResolvedTemplate {
   compiledHtmlTemplate: string;
   templateFormat: TemplateFormat;
   source: TemplateSource;
+  /** Set when resolved from a MailTemplate row (for EmailDelivery.template_id). */
+  templateId?: string;
 }
 
 export interface TemplateVars {
@@ -47,4 +51,5 @@ export interface SetMailTemplateInput {
   subject: string;
   body: string;
   format: TemplateFormat;
+  label?: string;
 }

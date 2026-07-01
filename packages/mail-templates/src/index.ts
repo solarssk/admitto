@@ -47,7 +47,13 @@ export {
   DEFAULT_BODY_MJML,
   getBuiltinTemplate,
 } from "./defaultTemplate.js";
-export { resolveTemplate, resolveTemplateForEvent, setMailTemplate } from "./mailTemplate.js";
+export {
+  resolveTemplate,
+  resolveTemplateForEvent,
+  resolveTemplateById,
+  setMailTemplate,
+  TemplateNotFoundError,
+} from "./mailTemplate.js";
 export { resolveBranding, resolveBrandingFromEvent, setBranding } from "./branding.js";
 export {
   previewTemplate,
