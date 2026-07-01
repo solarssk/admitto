@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-07-01
+
 ### Fixed
 - Event capacity: pass restore (`status: registered`) respects capacity limits; manual create and import share an advisory lock to prevent concurrent over-capacity writes
 - PATCH reactivation from `cancelled` or `revoked` to `registered` enforces capacity the same way as manual create
@@ -492,7 +494,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.7...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.8...HEAD
+[0.4.8]: https://github.com/solarssk/admitto/compare/v0.4.7...v0.4.8
 [0.4.7]: https://github.com/solarssk/admitto/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/solarssk/admitto/compare/v0.4.5...v0.4.6
 [0.4.5]: https://github.com/solarssk/admitto/compare/v0.4.4...v0.4.5
