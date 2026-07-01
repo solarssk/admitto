@@ -439,9 +439,16 @@ describe("multi-template API", () => {
   });
 
   it("POST /templates/:id/test-send sends using the selected template", async () => {
-    const ticket = await prisma.mailTemplate.findUniqueOrThrow({
-      where: {
-        scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
+    const orgTemplate = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "organization",
+        scope_id: ORG_A,
+        name: "reminder",
+        label: "Org reminder",
+        subject_template: "ORG-REMINDER-TEST-SUBJECT",
+        body_template: DEFAULT_BODY_MJML,
+        template_format: "mjml",
+        compiled_html_template: "<p>org reminder</p>",
       },
     });
 
@@ -449,7 +456,7 @@ describe("multi-template API", () => {
     exported.length = 0;
 
     const res = await app.request(
-      `/api/admin/events/${EVENT_A}/templates/${ticket.id}/test-send`,
+      `/api/admin/events/${EVENT_A}/templates/${orgTemplate.id}/test-send`,
       {
         method: "POST",
         headers: {
@@ -464,6 +471,7 @@ describe("multi-template API", () => {
     const body = (await res.json()) as { status: string };
     expect(body.status).toBe("sent");
     expect(exported.length).toBe(1);
+    expect(exported[0]?.message.subject).toContain("ORG-REMINDER-TEST-SUBJECT");
 
     const after = await prisma.emailDelivery.count({ where: { event_id: EVENT_A } });
     expect(after).toBe(before);

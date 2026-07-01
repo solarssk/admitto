@@ -27,6 +27,7 @@ import type {
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { CommunicationSendDialog } from "../communication/CommunicationSendDialog.js";
+import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import "../communication/communication.css";
 import { isTemplateDirty } from "../communication/templateDirty.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
@@ -46,6 +47,15 @@ function insertAtCursor(value: string, insertion: string, start: number, end: nu
 }
 
 const DELIVERY_PAGE_SIZE = 25;
+
+type DirtyProtectedAction =
+  | { kind: "select"; key: string }
+  | { kind: "create" }
+  | { kind: "delete"; templateId: string; name: string };
+
+function sortTemplates(items: MailTemplateListItem[]): MailTemplateListItem[] {
+  return [...items].sort((a, b) => a.label.localeCompare(b.label));
+}
 
 /** Minimal client-side email shape check (submit is via button, not native form validation). */
 function isValidEmail(value: string): boolean {
@@ -104,9 +114,15 @@ export function CommunicationPage() {
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
   const templateSelectionSeqRef = useRef(0);
+  const legacyTemplateRef = useRef<EventTemplateDto | null>(null);
 
-  const [templateSwitchConfirmOpen, setTemplateSwitchConfirmOpen] = useState(false);
-  const [pendingTemplateKey, setPendingTemplateKey] = useState<string | null>(null);
+  const [dirtyConfirmOpen, setDirtyConfirmOpen] = useState(false);
+  const [pendingDirtyAction, setPendingDirtyAction] = useState<DirtyProtectedAction | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ templateId: string; name: string } | null>(
+    null,
+  );
 
   const isDirty = isTemplateDirty(
     { subject, body, format },
@@ -154,9 +170,12 @@ export function CommunicationPage() {
   }, []);
 
   const loadTemplateSelection = useCallback(
-    async (key: string, legacy: EventTemplateDto) => {
+    async (key: string) => {
       if (key === "virtual-ticket") {
-        applyLegacyTemplate(legacy);
+        if (!legacyTemplateRef.current) {
+          legacyTemplateRef.current = await fetchEventTemplate(eventId!);
+        }
+        applyLegacyTemplate(legacyTemplateRef.current);
         return;
       }
       const detail = await fetchEventTemplateById(eventId!, key);
@@ -175,16 +194,16 @@ export function CommunicationPage() {
       setPreviewHtml(null);
       setTemplateActionBusy(true);
       try {
-        const legacy = await fetchEventTemplate(eventId);
-        if (seq !== templateSelectionSeqRef.current) return;
-        await loadTemplateSelection(key, legacy);
+        await loadTemplateSelection(key);
         if (seq !== templateSelectionSeqRef.current) return;
         setActiveKey(key);
       } catch (err) {
         if (seq !== templateSelectionSeqRef.current) return;
         if (err instanceof ApiError) {
           reportApiError(err.status);
-          setError("Failed to load template.");
+          setSaveStatus("Failed to load template.");
+        } else {
+          setSaveStatus("Failed to load template.");
         }
       } finally {
         if (seq === templateSelectionSeqRef.current) {
@@ -195,34 +214,49 @@ export function CommunicationPage() {
     [activeKey, eventId, loadTemplateSelection, reportApiError],
   );
 
-  const requestSelectTemplate = useCallback(
-    (key: string) => {
-      if (!eventId || key === activeKey) return;
-      if (isDirty) {
-        setPendingTemplateKey(key);
-        setTemplateSwitchConfirmOpen(true);
+  const runDirtyProtectedAction = useCallback(
+    (action: DirtyProtectedAction) => {
+      if (action.kind === "select") {
+        void applySelectTemplate(action.key);
         return;
       }
-      void applySelectTemplate(key);
+      if (action.kind === "create") {
+        setCreateDialogOpen(true);
+        return;
+      }
+      setPendingDelete({ templateId: action.templateId, name: action.name });
+      setDeleteConfirmOpen(true);
     },
-    [activeKey, applySelectTemplate, eventId, isDirty],
+    [applySelectTemplate],
   );
 
-  const handleCreateTemplate = async () => {
+  const requestDirtyProtectedAction = useCallback(
+    (action: DirtyProtectedAction) => {
+      if (!eventId) return;
+      if (action.kind === "select" && action.key === activeKey) return;
+      if (action.kind === "delete" && action.name === "ticket") return;
+      if (isDirty) {
+        setPendingDirtyAction(action);
+        setDirtyConfirmOpen(true);
+        return;
+      }
+      runDirtyProtectedAction(action);
+    },
+    [activeKey, eventId, isDirty, runDirtyProtectedAction],
+  );
+
+  const executeCreateTemplate = async (label: string) => {
     if (!eventId) return;
-    const label = window.prompt("Template label");
-    if (!label?.trim()) return;
     setTemplateActionBusy(true);
     try {
       const created = await createEventTemplate(eventId, {
-        label: label.trim(),
+        label,
         template_format: "mjml",
       });
-      setTemplates((prev) =>
-        [...prev, created].sort((a, b) => a.name.localeCompare(b.name)),
-      );
-      setActiveKey(created.id);
+      setTemplates((prev) => sortTemplates([...prev, created]));
       applyDetailTemplate(created);
+      setActiveKey(created.id);
+      setCreateDialogOpen(false);
     } catch (err) {
       if (err instanceof ApiError) {
         reportApiError(err.status);
@@ -235,24 +269,30 @@ export function CommunicationPage() {
     }
   };
 
-  const handleDeleteTemplate = async (templateId: string, name: string) => {
-    if (!eventId || name === "ticket") return;
-    if (!window.confirm("Delete this template?")) return;
+  const executeDeleteTemplate = async (templateId: string) => {
+    if (!eventId) return;
+    const deletedWasActive = templateId === activeKey;
     setTemplateActionBusy(true);
     try {
       await deleteEventTemplate(eventId, templateId);
       const items = await fetchEventTemplates(eventId);
       setTemplates(items);
-      const ticket = items.find((t) => t.name === "ticket");
-      if (ticket) {
-        setActiveKey(ticket.id);
-        const detail = await fetchEventTemplateById(eventId, ticket.id);
-        applyDetailTemplate(detail);
-      } else {
-        setActiveKey("virtual-ticket");
-        const legacy = await fetchEventTemplate(eventId);
-        applyLegacyTemplate(legacy);
+      if (deletedWasActive) {
+        const ticket = items.find((t) => t.name === "ticket");
+        if (ticket) {
+          const detail = await fetchEventTemplateById(eventId, ticket.id);
+          applyDetailTemplate(detail);
+          setActiveKey(ticket.id);
+        } else {
+          if (!legacyTemplateRef.current) {
+            legacyTemplateRef.current = await fetchEventTemplate(eventId);
+          }
+          applyLegacyTemplate(legacyTemplateRef.current);
+          setActiveKey("virtual-ticket");
+        }
       }
+      setDeleteConfirmOpen(false);
+      setPendingDelete(null);
     } catch (err) {
       if (err instanceof ApiError) {
         reportApiError(err.status);
@@ -320,6 +360,7 @@ export function CommunicationPage() {
           fetchEventTemplate(eventId),
         ]);
         if (cancelled) return;
+        legacyTemplateRef.current = data;
         setTemplates(items);
         setAllowedPlaceholders(data.allowed_placeholders);
         setRequiredPlaceholders(data.required_url_placeholders);
@@ -634,7 +675,7 @@ export function CommunicationPage() {
                   size="sm"
                   variant="secondary"
                   disabled={templateActionBusy}
-                  onClick={() => void handleCreateTemplate()}
+                  onClick={() => requestDirtyProtectedAction({ kind: "create" })}
                 >
                   New
                 </Button>
@@ -652,7 +693,7 @@ export function CommunicationPage() {
                     <button
                       type="button"
                       disabled={templateActionBusy}
-                      onClick={() => requestSelectTemplate("virtual-ticket")}
+                      onClick={() => requestDirtyProtectedAction({ kind: "select", key: "virtual-ticket" })}
                     >
                       Ticket email (inherited)
                     </button>
@@ -671,7 +712,7 @@ export function CommunicationPage() {
                     <button
                       type="button"
                       disabled={templateActionBusy}
-                      onClick={() => requestSelectTemplate(t.id)}
+                      onClick={() => requestDirtyProtectedAction({ kind: "select", key: t.id })}
                     >
                       {t.label}
                     </button>
@@ -680,7 +721,13 @@ export function CommunicationPage() {
                       className="communication-templates__delete"
                       aria-label={`Delete ${t.label}`}
                       disabled={t.name === "ticket" || templateActionBusy}
-                      onClick={() => void handleDeleteTemplate(t.id, t.name)}
+                      onClick={() =>
+                        requestDirtyProtectedAction({
+                          kind: "delete",
+                          templateId: t.id,
+                          name: t.name,
+                        })
+                      }
                     >
                       <i className="ti ti-trash" aria-hidden="true" />
                     </button>
@@ -944,22 +991,51 @@ export function CommunicationPage() {
         </>
       )}
       <ConfirmDialog
-        open={templateSwitchConfirmOpen}
+        open={dirtyConfirmOpen}
         title="Discard unsaved changes?"
-        message="You have unsaved template changes. Switching templates will discard them."
+        message="You have unsaved template changes. Continuing will discard them."
         confirmLabel="Discard"
         confirmVariant="danger"
         cancelLabel="Keep editing"
         onConfirm={() => {
-          setTemplateSwitchConfirmOpen(false);
-          const key = pendingTemplateKey;
-          setPendingTemplateKey(null);
-          if (key) void applySelectTemplate(key);
+          setDirtyConfirmOpen(false);
+          const action = pendingDirtyAction;
+          setPendingDirtyAction(null);
+          if (action) runDirtyProtectedAction(action);
         }}
         onCancel={() => {
-          setTemplateSwitchConfirmOpen(false);
-          setPendingTemplateKey(null);
+          setDirtyConfirmOpen(false);
+          setPendingDirtyAction(null);
         }}
+      />
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="Delete template?"
+        message={
+          pendingDelete
+            ? `Delete "${templates.find((t) => t.id === pendingDelete.templateId)?.label ?? pendingDelete.name}"? This cannot be undone.`
+            : "Delete this template?"
+        }
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        loading={templateActionBusy}
+        onCancel={() => {
+          if (templateActionBusy) return;
+          setDeleteConfirmOpen(false);
+          setPendingDelete(null);
+        }}
+        onConfirm={() => {
+          if (pendingDelete) void executeDeleteTemplate(pendingDelete.templateId);
+        }}
+      />
+      <CreateTemplateDialog
+        open={createDialogOpen}
+        busy={templateActionBusy}
+        onClose={() => {
+          if (templateActionBusy) return;
+          setCreateDialogOpen(false);
+        }}
+        onCreate={(label) => void executeCreateTemplate(label)}
       />
       <ConfirmDialog
         open={overrideConfirmOpen}

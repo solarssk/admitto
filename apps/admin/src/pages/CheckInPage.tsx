@@ -27,6 +27,12 @@ import { CheckinConnectionBanner } from "../checkin/ConnectionBanner.js";
 import { CkEmptyState } from "../checkin/CkEmptyState.js";
 import { CkInlineCamera } from "../checkin/CkInlineCamera.js";
 import { isDesktopViewport, useIsDesktop } from "../hooks/useIsDesktop.js";
+import {
+  isAdmitDedupHit,
+  mergeCheckInHistory,
+  registerAdmitDedup,
+  seedAdmitDedupFromHistory,
+} from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { ManualLookupPanel } from "../checkin/ManualLookupPanel.js";
 import { ScanHistoryList } from "../checkin/ScanHistoryList.js";
@@ -102,28 +108,22 @@ export function CheckInPage({
   const pendingTimerRef = useRef<number | null>(null);
   const wedgeTimerRef = useRef<number | null>(null);
   const recentAdmits = useRef(new Map<string, number>());
+  const historyRef = useRef<CheckInHistoryEntry[]>([]);
 
-  const registerAdmit = useCallback((attendeeId: string, admittedAt: string) => {
-    const key = `${attendeeId}-${admittedAt}`;
-    const now = Date.now();
-    recentAdmits.current.set(key, now);
-    for (const [k, t] of recentAdmits.current) {
-      if (now - t > 5000) recentAdmits.current.delete(k);
-    }
+  const prependAdmit = useCallback((entry: CheckInHistoryEntry, admittedAt: string) => {
+    if (isAdmitDedupHit(recentAdmits.current, entry.attendee_id, admittedAt)) return;
+
+    const exists = historyRef.current.some(
+      (row) => row.attendee_id === entry.attendee_id && row.checked_in_at === admittedAt,
+    );
+    registerAdmitDedup(recentAdmits.current, entry.attendee_id, admittedAt);
+    if (exists) return;
+
+    const next = [entry, ...historyRef.current].slice(0, HISTORY_CAP);
+    historyRef.current = next;
+    setHistory(next);
+    setAdmittedCount((count) => count + 1);
   }, []);
-
-  const isDuplicateAdmit = useCallback((attendeeId: string, admittedAt: string) => {
-    return recentAdmits.current.has(`${attendeeId}-${admittedAt}`);
-  }, []);
-
-  const prependAdmit = useCallback(
-    (entry: CheckInHistoryEntry, admittedAt: string) => {
-      registerAdmit(entry.attendee_id, admittedAt);
-      setHistory((prev) => [entry, ...prev].slice(0, HISTORY_CAP));
-      setAdmittedCount((count) => count + 1);
-    },
-    [registerAdmit],
-  );
 
   const applyLocalAdmit = useCallback(
     (response: CheckInScanResponse) => {
@@ -131,7 +131,7 @@ export function CheckInPage({
       const attendeeId = response.card?.id ?? response.attendeeId;
       const admittedCard = response.card;
       if (!attendeeId || !admittedCard) return;
-      if (isDuplicateAdmit(attendeeId, response.admittedAt)) return;
+      if (isAdmitDedupHit(recentAdmits.current, attendeeId, response.admittedAt)) return;
       prependAdmit(
         {
           id: `local-${attendeeId}-${response.admittedAt}`,
@@ -152,16 +152,15 @@ export function CheckInPage({
         response.admittedAt,
       );
     },
-    [deviceLabel, eventId, isDuplicateAdmit, prependAdmit],
+    [deviceLabel, eventId, prependAdmit],
   );
 
   const handleRemoteCheckin = useCallback(
     (event: StreamCheckinEvent) => {
       if (!eventId) return;
-      if (isDuplicateAdmit(event.attendeeId, event.admittedAt)) return;
       prependAdmit(historyEntryFromStream(event, eventId), event.admittedAt);
     },
-    [eventId, isDuplicateAdmit, prependAdmit],
+    [eventId, prependAdmit],
   );
 
   const { status: streamStatus } = useEventStream(eventId, handleRemoteCheckin);
@@ -175,6 +174,7 @@ export function CheckInPage({
   const [lookupQ, setLookupQ] = useState("");
   const [lookupResults, setLookupResults] = useState<Awaited<ReturnType<typeof lookupCheckInAttendees>>>([]);
   const [history, setHistory] = useState<CheckInHistoryEntry[]>([]);
+  historyRef.current = history;
   const [admittedCount, setAdmittedCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [manualOpen, setManualOpen] = useState(false);
@@ -244,8 +244,13 @@ export function CheckInPage({
         fetchCheckInHistory(eventId, 8),
         fetchCheckInStats(eventId),
       ]);
-      setHistory(h);
-      setAdmittedCount(stats.admitted_count);
+      setHistory((prev) => {
+        const merged = mergeCheckInHistory(h, prev, HISTORY_CAP);
+        historyRef.current = merged;
+        seedAdmitDedupFromHistory(recentAdmits.current, merged);
+        return merged;
+      });
+      setAdmittedCount((prev) => Math.max(prev, stats.admitted_count));
       setTotalCount(stats.total_count);
     } catch {
       /* read-only context */

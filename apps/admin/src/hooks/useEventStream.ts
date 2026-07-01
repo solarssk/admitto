@@ -12,8 +12,26 @@ export interface StreamCheckinEvent {
   deviceLabel: string | null;
 }
 
-const MAX_RETRIES = 3;
-const BACKOFF_MS = [2000, 4000, 8000, 30000];
+const MAX_INITIAL_FAILURES = 3;
+export const STREAM_BACKOFF_MS = [2000, 4000, 8000, 30000] as const;
+
+/** Preflight stream access — EventSource.onerror does not expose HTTP status. */
+export async function probeStreamAuth(
+  eventId: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<"ok" | "denied" | "unknown"> {
+  try {
+    const res = await fetchFn(`/api/checkin/events/${encodeURIComponent(eventId)}/stream`, {
+      method: "GET",
+      credentials: "same-origin",
+      headers: { Accept: "text/event-stream" },
+    });
+    if (res.status === 401 || res.status === 403) return "denied";
+    return "ok";
+  } catch {
+    return "unknown";
+  }
+}
 
 /**
  * Subscribe to live check-in SSE for an event (same-origin session cookie).
@@ -34,7 +52,8 @@ export function useEventStream(
 
     let es: EventSource | null = null;
     let retryTimer: number | null = null;
-    let retryCount = 0;
+    let reconnectAttempt = 0;
+    let initialFailureCount = 0;
     let everConnected = false;
     let cancelled = false;
 
@@ -46,7 +65,7 @@ export function useEventStream(
     };
 
     const scheduleReconnect = () => {
-      const delay = BACKOFF_MS[Math.min(retryCount, BACKOFF_MS.length - 1)];
+      const delay = STREAM_BACKOFF_MS[Math.min(reconnectAttempt - 1, STREAM_BACKOFF_MS.length - 1)];
       clearRetry();
       retryTimer = window.setTimeout(connect, delay);
     };
@@ -61,7 +80,8 @@ export function useEventStream(
 
       es.onopen = () => {
         everConnected = true;
-        retryCount = 0;
+        reconnectAttempt = 0;
+        initialFailureCount = 0;
         setStatus("connected");
       };
 
@@ -82,16 +102,26 @@ export function useEventStream(
         es = null;
         if (cancelled) return;
 
-        if (!everConnected) {
-          retryCount += 1;
-          if (retryCount >= MAX_RETRIES) {
-            setStatus("auth_error");
-            return;
-          }
-        }
+        reconnectAttempt += 1;
 
-        setStatus(everConnected ? "reconnecting" : "connecting");
-        scheduleReconnect();
+        void (async () => {
+          if (!everConnected) {
+            initialFailureCount += 1;
+            if (initialFailureCount >= MAX_INITIAL_FAILURES) {
+              const auth = await probeStreamAuth(eventId);
+              if (cancelled) return;
+              if (auth === "denied") {
+                setStatus("auth_error");
+                return;
+              }
+              initialFailureCount = 0;
+            }
+          }
+
+          if (cancelled) return;
+          setStatus(everConnected ? "reconnecting" : "connecting");
+          scheduleReconnect();
+        })();
       };
     };
 

@@ -24,6 +24,8 @@ import {
   MjmlCompileError,
   PlaceholderInHtmlCommentError,
   UnquotedAttributePlaceholderError,
+  resolveTemplateById,
+  TemplateNotFoundError,
   type TemplateFormat,
   type TemplateSource,
 } from "@admitto/mail-templates";
@@ -442,8 +444,14 @@ export async function handleTestSendEventTemplateById(
   if (forbidden) return forbidden;
 
   const templateId = c.req.param("templateId") ?? "";
-  const existing = await getEventTemplateRow(db, eventId, templateId);
-  if (!existing) return c.json({ error: "not_found" }, 404);
+  try {
+    await resolveTemplateById(templateId, eventId, db);
+  } catch (err) {
+    if (err instanceof TemplateNotFoundError) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    throw err;
+  }
 
   let body: z.infer<typeof testSendBodySchema>;
   try {

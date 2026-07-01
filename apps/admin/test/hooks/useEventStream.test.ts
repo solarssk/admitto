@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useEventStream } from "../../src/hooks/useEventStream.js";
+import {
+  probeStreamAuth,
+  STREAM_BACKOFF_MS,
+  useEventStream,
+} from "../../src/hooks/useEventStream.js";
 
 type ListenerMap = {
   onopen: (() => void) | null;
@@ -32,10 +36,33 @@ class MockEventSource {
   }
 }
 
+async function flushErrorHandler() {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+describe("probeStreamAuth", () => {
+  it("returns denied for 401/403", async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce({ status: 401 })
+      .mockResolvedValueOnce({ status: 403 });
+    expect(await probeStreamAuth("evt-1", fetchFn)).toBe("denied");
+    expect(await probeStreamAuth("evt-1", fetchFn)).toBe("denied");
+  });
+
+  it("returns ok for other statuses", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({ status: 503 });
+    expect(await probeStreamAuth("evt-1", fetchFn)).toBe("ok");
+  });
+});
+
 describe("useEventStream", () => {
   beforeEach(() => {
     instances.length = 0;
     vi.stubGlobal("EventSource", MockEventSource);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 200 }));
     vi.useFakeTimers();
   });
 
@@ -75,18 +102,72 @@ describe("useEventStream", () => {
     expect(onCheckin.mock.calls[0]?.[0]).toMatchObject({ attendeeId: "att-1" });
   });
 
-  it("sets auth_error after repeated failures without ever connecting", () => {
+  it("sets auth_error only when the stream probe returns denied", async () => {
+    vi.mocked(fetch).mockResolvedValue({ status: 403 } as Response);
     const { result } = renderHook(() => useEventStream("evt-1", vi.fn()));
 
     for (let i = 0; i < 3; i++) {
       act(() => {
         instances[i]?.listeners.onerror?.();
+      });
+      await flushErrorHandler();
+      act(() => {
         vi.runOnlyPendingTimers();
       });
     }
 
     expect(result.current.status).toBe("auth_error");
     expect(result.current.connected).toBe(false);
+  });
+
+  it("keeps retrying when initial failures are not auth", async () => {
+    vi.mocked(fetch).mockResolvedValue({ status: 503 } as Response);
+    const { result } = renderHook(() => useEventStream("evt-1", vi.fn()));
+
+    for (let i = 0; i < 3; i++) {
+      act(() => {
+        instances[i]?.listeners.onerror?.();
+      });
+      await flushErrorHandler();
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+    }
+
+    expect(result.current.status).not.toBe("auth_error");
+    expect(instances.length).toBeGreaterThan(3);
+  });
+
+  it("backs off reconnect delays after a successful open", async () => {
+    renderHook(() => useEventStream("evt-1", vi.fn()));
+
+    act(() => {
+      instances[0]?.listeners.onopen?.();
+    });
+
+    act(() => {
+      instances[0]?.listeners.onerror?.();
+    });
+    await flushErrorHandler();
+    act(() => {
+      vi.advanceTimersByTime(STREAM_BACKOFF_MS[0]);
+    });
+    expect(instances.length).toBe(2);
+
+    act(() => {
+      instances[1]?.listeners.onerror?.();
+    });
+    await flushErrorHandler();
+
+    act(() => {
+      vi.advanceTimersByTime(STREAM_BACKOFF_MS[0]);
+    });
+    expect(instances.length).toBe(2);
+
+    act(() => {
+      vi.advanceTimersByTime(STREAM_BACKOFF_MS[1] - STREAM_BACKOFF_MS[0]);
+    });
+    expect(instances.length).toBe(3);
   });
 
   it("closes EventSource on unmount", () => {

@@ -6,7 +6,8 @@ import type { EventDto, EventOverviewDto } from "../api/types.js";
 import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates.js";
 import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { useEventStream } from "../hooks/useEventStream.js";
+import { admitDedupKey } from "../checkin/admitDedup.js";
+import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 
 /** Auto-refresh interval for event overview stats (ms). */
 const OVERVIEW_REFRESH_MS = 30_000;
@@ -57,7 +58,7 @@ export function EventOverviewPage() {
   const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
   const abortRef = useRef<AbortController | null>(null);
-  const pendingCheckinsRef = useRef(0);
+  const seenCheckinsRef = useRef(new Set<string>());
   const reconcileTimerRef = useRef<number | null>(null);
 
   const [overview, setOverview] = useState<EventOverviewDto | null>(null);
@@ -68,15 +69,6 @@ export function EventOverviewPage() {
   const eventTimezone = currentOverview?.event.timezone ?? event.timezone;
   const eventDateIso = currentOverview?.event.date ?? event.date;
   const countdown = useCountdown(eventDateIso, eventTimezone);
-
-  const flushPendingCheckins = useCallback((data: EventOverviewDto): EventOverviewDto => {
-    const pending = pendingCheckinsRef.current;
-    if (pending > 0) {
-      pendingCheckinsRef.current = 0;
-      return { ...data, admitted_count: data.admitted_count + pending };
-    }
-    return data;
-  }, []);
 
   const scheduleReconcile = useCallback(() => {
     if (reconcileTimerRef.current != null) {
@@ -95,22 +87,21 @@ export function EventOverviewPage() {
     }, 3000);
   }, [event.id]);
 
-  const handleLiveCheckin = useCallback(() => {
-    setOverview((prev) => {
-      if (!prev || prev.event.id !== event.id) {
-        pendingCheckinsRef.current += 1;
-        return prev;
-      }
-      return { ...prev, admitted_count: prev.admitted_count + 1 };
-    });
-    scheduleReconcile();
-  }, [event.id, scheduleReconcile]);
+  const handleLiveCheckin = useCallback(
+    (checkin: StreamCheckinEvent) => {
+      const key = admitDedupKey(checkin.attendeeId, checkin.admittedAt);
+      if (seenCheckinsRef.current.has(key)) return;
+      seenCheckinsRef.current.add(key);
+      scheduleReconcile();
+    },
+    [scheduleReconcile],
+  );
 
   useEventStream(event.id, handleLiveCheckin);
 
   useEffect(() => {
     abortRef.current?.abort();
-    pendingCheckinsRef.current = 0;
+    seenCheckinsRef.current.clear();
     if (reconcileTimerRef.current != null) {
       window.clearTimeout(reconcileTimerRef.current);
       reconcileTimerRef.current = null;
@@ -127,7 +118,7 @@ export function EventOverviewPage() {
       fetchEventOverview(event.id, ac.signal)
         .then((data) => {
           if (ac.signal.aborted) return;
-          setOverview(flushPendingCheckins(data));
+          setOverview(data);
           setError(null);
         })
         .catch((err) => {
@@ -155,7 +146,7 @@ export function EventOverviewPage() {
         reconcileTimerRef.current = null;
       }
     };
-  }, [event.id, flushPendingCheckins, reportApiError]);
+  }, [event.id, reportApiError]);
 
   const meta = [formatEventCalendarDate(eventDateIso), event.location]
     .filter(Boolean)
