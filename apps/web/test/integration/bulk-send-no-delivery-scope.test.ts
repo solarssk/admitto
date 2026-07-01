@@ -4,7 +4,7 @@ import { DEFAULT_BODY_MJML, DEFAULT_SUBJECT_TEMPLATE, setMailTemplate } from "@a
 import {
   resolveBulkSendAttendeeIds,
   resolveBulkSendNoDeliveryScope,
-} from "../src/admin/bulk-send-routes.js";
+} from "../../src/admin/bulk-send-routes.js";
 
 const ORG = "org-no-del-scope";
 const EVENT = "evt-no-del-scope";

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { DEFAULT_BODY_MJML, DEFAULT_SUBJECT_TEMPLATE, setMailTemplate } from "@admitto/mail-templates";
-import { resolveBulkSendPurpose } from "../src/admin/bulk-send-routes.js";
+import { resolveBulkSendPurpose } from "../../src/admin/bulk-send-routes.js";
 
 const ORG = "org-bulk-purpose";
 const EVENT = "evt-bulk-purpose";
