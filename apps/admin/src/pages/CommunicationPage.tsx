@@ -335,31 +335,38 @@ export function CommunicationPage() {
 
       if (!deletedWasActive) return;
 
-      try {
-        const ticket = items.find((t) => t.name === "ticket");
-        if (ticket) {
-          const detail = await fetchEventTemplateById(eventId, ticket.id);
-          applyDetailTemplate(detail);
-          setActiveKey(ticket.id);
-        } else {
+      const ticket = items.find((t) => t.name === "ticket");
+      if (ticket) {
+        let loaded = false;
+        for (let attempt = 0; attempt < 2 && !loaded; attempt++) {
+          try {
+            const detail = await fetchEventTemplateById(eventId, ticket.id);
+            applyDetailTemplate(detail);
+            setActiveKey(ticket.id);
+            loaded = true;
+          } catch {
+            /* retry once */
+          }
+        }
+        if (!loaded) {
+          setSaveStatus("Template deleted. Could not load ticket template — reload the page.");
+        }
+      } else {
+        try {
           legacyTemplateRef.current = await fetchEventTemplate(eventId);
           applyLegacyTemplate(legacyTemplateRef.current);
           setActiveKey("virtual-ticket");
-        }
-      } catch {
-        const ticket = items.find((t) => t.name === "ticket");
-        if (ticket) {
-          setActiveKey(ticket.id);
-          setSaveStatus("Template deleted. Could not load ticket template — reload the page.");
-        } else if (legacyTemplateRef.current) {
-          applyLegacyTemplate(legacyTemplateRef.current);
-          setActiveKey("virtual-ticket");
-          setSaveStatus(
-            "Template deleted. Inherited ticket could not be refreshed — showing last known copy.",
-          );
-        } else {
-          setActiveKey("virtual-ticket");
-          setSaveStatus("Template deleted. Could not load inherited ticket — reload the page.");
+        } catch {
+          if (legacyTemplateRef.current) {
+            applyLegacyTemplate(legacyTemplateRef.current);
+            setActiveKey("virtual-ticket");
+            setSaveStatus(
+              "Template deleted. Inherited ticket could not be refreshed — showing last known copy.",
+            );
+          } else {
+            setActiveKey("virtual-ticket");
+            setSaveStatus("Template deleted. Could not load inherited ticket — reload the page.");
+          }
         }
       }
     } catch (err) {

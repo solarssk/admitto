@@ -484,6 +484,62 @@ describe("CommunicationPage templates", () => {
     });
   });
 
+  it("does not activate ticket without loading its draft after delete refresh fails", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    let ticketLoadsAfterMount = 0;
+    fetchEventTemplates
+      .mockResolvedValueOnce([ticketRow, reminderRow])
+      .mockResolvedValueOnce([ticketRow]);
+    fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) => {
+      if (id === "tpl-ticket") {
+        ticketLoadsAfterMount += 1;
+        if (ticketLoadsAfterMount > 1) {
+          throw new ApiError(500, "server_error");
+        }
+        return {
+          ...ticketRow,
+          body_template: "<p>Ticket</p>",
+          compiled_html_template: "<p>Ticket</p>",
+        };
+      }
+      if (id === "tpl-rem") {
+        return {
+          ...reminderRow,
+          body_template: "<p>Reminder</p>",
+          compiled_html_template: "<p>Reminder</p>",
+        };
+      }
+      throw new Error(`unexpected template id ${id}`);
+    });
+    deleteEventTemplate.mockResolvedValue(undefined);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    await waitFor(() => {
+      expect(screen.getByText("Delete template?")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(deleteEventTemplate).toHaveBeenCalledWith("evt-comm", "tpl-rem");
+      expect(
+        screen.getByText("Template deleted. Could not load ticket template — reload the page."),
+      ).toBeTruthy();
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+      expect(screen.queryByDisplayValue("Ticket")).toBeNull();
+    });
+  });
+
   it("falls back to cached inherited ticket when post-delete refresh fails", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventTemplates
