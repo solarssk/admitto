@@ -3,17 +3,30 @@ import { useBlocker, useParams } from "react-router-dom";
 import { Badge, Button, Card, Input, PageHeader, Select, StatusBadge, Tabs } from "@admitto/ui";
 import {
   ApiError,
+  createEventTemplate,
+  deleteEventTemplate,
   fetchEventDeliveries,
   fetchEventOverview,
   fetchEventTemplate,
+  fetchEventTemplateById,
+  fetchEventTemplates,
   previewEventTemplate,
+  previewEventTemplateById,
   saveEventTemplate,
+  saveEventTemplateById,
   TemplateValidationError,
   testSendEventTemplate,
+  testSendEventTemplateById,
 } from "../api/client.js";
-import type { DeliveryDto, EventDeliveriesListParams, EventTemplateDto } from "../api/types.js";
+import type {
+  DeliveryDto,
+  EventDeliveriesListParams,
+  EventTemplateDto,
+  MailTemplateListItem,
+} from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { CommunicationSendDialog } from "../communication/CommunicationSendDialog.js";
 import "../communication/communication.css";
 import { isTemplateDirty } from "../communication/templateDirty.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
@@ -47,6 +60,12 @@ export function CommunicationPage() {
   const [tab, setTab] = useState("compose");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [templates, setTemplates] = useState<MailTemplateListItem[]>([]);
+  const [activeKey, setActiveKey] = useState<string>("virtual-ticket");
+  const [activeTemplateName, setActiveTemplateName] = useState("ticket");
+  const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [templateActionBusy, setTemplateActionBusy] = useState(false);
 
   const [source, setSource] = useState<EventTemplateDto["source"]>("builtin");
   const [allowedPlaceholders, setAllowedPlaceholders] = useState<string[]>([]);
@@ -103,6 +122,128 @@ export function CommunicationPage() {
     [subject, body, format],
   );
 
+  const applyLegacyTemplate = useCallback((data: EventTemplateDto) => {
+    setSource(data.source);
+    setSubject(data.subject_template);
+    setBody(data.body_template);
+    setFormat(data.template_format);
+    setSavedSubject(data.subject_template);
+    setSavedBody(data.body_template);
+    setSavedFormat(data.template_format);
+    setActiveTemplateName("ticket");
+  }, []);
+
+  const applyDetailTemplate = useCallback((detail: {
+    name: string;
+    subject_template: string;
+    body_template: string;
+    template_format: TemplateFormat;
+  }) => {
+    setSource("event");
+    setActiveTemplateName(detail.name);
+    setSubject(detail.subject_template);
+    setBody(detail.body_template);
+    setFormat(detail.template_format);
+    setSavedSubject(detail.subject_template);
+    setSavedBody(detail.body_template);
+    setSavedFormat(detail.template_format);
+  }, []);
+
+  const loadTemplateSelection = useCallback(
+    async (key: string, items: MailTemplateListItem[], legacy: EventTemplateDto) => {
+      if (key === "virtual-ticket") {
+        applyLegacyTemplate(legacy);
+        return;
+      }
+      const detail = await fetchEventTemplateById(eventId!, key);
+      applyDetailTemplate(detail);
+    },
+    [applyDetailTemplate, applyLegacyTemplate, eventId],
+  );
+
+  const selectTemplate = useCallback(
+    async (key: string) => {
+      if (!eventId || key === activeKey) return;
+      setValidationErrors([]);
+      setSaveStatus(null);
+      setPreviewSubject(null);
+      setPreviewHtml(null);
+      setActiveKey(key);
+      try {
+        const legacy = await fetchEventTemplate(eventId);
+        await loadTemplateSelection(key, templates, legacy);
+      } catch (err) {
+        if (err instanceof ApiError) {
+          reportApiError(err.status);
+          setError("Failed to load template.");
+        }
+      }
+    },
+    [activeKey, eventId, loadTemplateSelection, reportApiError, templates],
+  );
+
+  const handleCreateTemplate = async () => {
+    if (!eventId) return;
+    const label = window.prompt("Template label");
+    if (!label?.trim()) return;
+    setTemplateActionBusy(true);
+    try {
+      const created = await createEventTemplate(eventId, {
+        label: label.trim(),
+        template_format: "mjml",
+      });
+      setTemplates((prev) =>
+        [...prev, created].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setActiveKey(created.id);
+      applyDetailTemplate(created);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        setSaveStatus(err.message);
+      } else {
+        setSaveStatus("Create failed.");
+      }
+    } finally {
+      setTemplateActionBusy(false);
+    }
+  };
+
+  const handleDeleteTemplate = async (templateId: string, name: string) => {
+    if (!eventId || name === "ticket") return;
+    if (!window.confirm("Delete this template?")) return;
+    setTemplateActionBusy(true);
+    try {
+      await deleteEventTemplate(eventId, templateId);
+      const items = await fetchEventTemplates(eventId);
+      setTemplates(items);
+      const ticket = items.find((t) => t.name === "ticket");
+      if (ticket) {
+        setActiveKey(ticket.id);
+        const detail = await fetchEventTemplateById(eventId, ticket.id);
+        applyDetailTemplate(detail);
+      } else {
+        setActiveKey("virtual-ticket");
+        const legacy = await fetchEventTemplate(eventId);
+        applyLegacyTemplate(legacy);
+      }
+    } catch (err) {
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        setSaveStatus(err.message);
+      } else {
+        setSaveStatus("Delete failed.");
+      }
+    } finally {
+      setTemplateActionBusy(false);
+    }
+  };
+
+  const sendTemplateId =
+    activeKey === "virtual-ticket"
+      ? templates.find((t) => t.name === "ticket")?.id
+      : activeKey;
+
   const loadDeliveries = useCallback(async (signal?: AbortSignal) => {
     if (!eventId) return;
     setDeliveriesLoading(true);
@@ -148,17 +289,24 @@ export function CommunicationPage() {
       setLoading(true);
       setError(null);
       try {
-        const data = await fetchEventTemplate(eventId);
+        const [items, data] = await Promise.all([
+          fetchEventTemplates(eventId),
+          fetchEventTemplate(eventId),
+        ]);
         if (cancelled) return;
-        setSource(data.source);
+        setTemplates(items);
         setAllowedPlaceholders(data.allowed_placeholders);
         setRequiredPlaceholders(data.required_url_placeholders);
-        setSubject(data.subject_template);
-        setBody(data.body_template);
-        setFormat(data.template_format);
-        setSavedSubject(data.subject_template);
-        setSavedBody(data.body_template);
-        setSavedFormat(data.template_format);
+        const ticket = items.find((t) => t.name === "ticket");
+        if (ticket) {
+          setActiveKey(ticket.id);
+          const detail = await fetchEventTemplateById(eventId, ticket.id);
+          if (cancelled) return;
+          applyDetailTemplate(detail);
+        } else {
+          setActiveKey("virtual-ticket");
+          applyLegacyTemplate(data);
+        }
         setValidationErrors([]);
         setSaveStatus(null);
         setPreviewSubject(null);
@@ -183,7 +331,7 @@ export function CommunicationPage() {
     return () => {
       cancelled = true;
     };
-  }, [eventId, reportApiError]);
+  }, [eventId, reportApiError, applyDetailTemplate, applyLegacyTemplate]);
 
   useLayoutEffect(() => {
     setEmailBounced(0);
@@ -266,7 +414,10 @@ export function CommunicationPage() {
     setValidationErrors([]);
     setSaveStatus(null);
     try {
-      const data = await previewEventTemplate(eventId, templatePayload());
+      const data =
+        activeKey === "virtual-ticket"
+          ? await previewEventTemplate(eventId, templatePayload())
+          : await previewEventTemplateById(eventId, activeKey, templatePayload());
       setPreviewSubject(data.subject);
       setPreviewHtml(data.html);
     } catch (err) {
@@ -291,11 +442,39 @@ export function CommunicationPage() {
     setSaveStatus(null);
     setSaving(true);
     try {
-      await saveEventTemplate(eventId, templatePayload());
-      setSource("event");
-      setSavedSubject(subject);
-      setSavedBody(body);
-      setSavedFormat(format);
+      if (activeKey === "virtual-ticket") {
+        await saveEventTemplate(eventId, templatePayload());
+        const items = await fetchEventTemplates(eventId);
+        setTemplates(items);
+        const ticket = items.find((t) => t.name === "ticket");
+        if (ticket) {
+          setActiveKey(ticket.id);
+          const detail = await fetchEventTemplateById(eventId, ticket.id);
+          applyDetailTemplate(detail);
+        } else {
+          setSource("event");
+          setSavedSubject(subject);
+          setSavedBody(body);
+          setSavedFormat(format);
+        }
+      } else {
+        await saveEventTemplateById(eventId, activeKey, templatePayload());
+        setSavedSubject(subject);
+        setSavedBody(body);
+        setSavedFormat(format);
+        setTemplates((prev) =>
+          prev.map((t) =>
+            t.id === activeKey
+              ? {
+                  ...t,
+                  subject_template: subject,
+                  template_format: format,
+                  updated_at: new Date().toISOString(),
+                }
+              : t,
+          ),
+        );
+      }
       setSaveStatus("Template saved.");
       setPreviewSubject(null);
       setPreviewHtml(null);
@@ -316,7 +495,7 @@ export function CommunicationPage() {
 
   const handleSave = () => {
     if (!eventId) return;
-    if (source !== "event") {
+    if (activeKey === "virtual-ticket" && source !== "event") {
       setOverrideConfirmOpen(true);
       return;
     }
@@ -333,7 +512,10 @@ export function CommunicationPage() {
     setTestStatus(null);
     setTestSending(true);
     try {
-      const result = await testSendEventTemplate(eventId, { to: testEmail.trim() });
+      const result =
+        activeKey === "virtual-ticket"
+          ? await testSendEventTemplate(eventId, { to: testEmail.trim() })
+          : await testSendEventTemplateById(eventId, activeKey, { to: testEmail.trim() });
       if (result.status === "sent") {
         setTestStatus({ kind: "ok", message: "Test email sent." });
       } else {
@@ -369,6 +551,13 @@ export function CommunicationPage() {
       <PageHeader
         title="Communication"
         subtitle="Outlook-safe ticket email · Microsoft Graph transport"
+        actions={
+          sendTemplateId ? (
+            <Button variant="secondary" onClick={() => setSendDialogOpen(true)}>
+              Send email
+            </Button>
+          ) : undefined
+        }
       />
 
       {emailBounced > 0 && (
@@ -405,15 +594,69 @@ export function CommunicationPage() {
 
       {tab === "compose" ? (
         <>
-          {source !== "event" && (
+          {activeKey === "virtual-ticket" && source !== "event" && (
             <div className="communication-default-banner">
               Using default template — save to customize for this event.
             </div>
           )}
 
           <div className="communication-compose">
+            <nav className="communication-templates" aria-label="Email templates">
+              <div className="communication-templates__header">
+                <span>Templates</span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={templateActionBusy}
+                  onClick={() => void handleCreateTemplate()}
+                >
+                  New
+                </Button>
+              </div>
+              <ul className="communication-templates__list">
+                {!templates.some((t) => t.name === "ticket") && (
+                  <li
+                    className={[
+                      "communication-templates__item",
+                      activeKey === "virtual-ticket" && "communication-templates__item--active",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    <button type="button" onClick={() => void selectTemplate("virtual-ticket")}>
+                      Ticket email (inherited)
+                    </button>
+                  </li>
+                )}
+                {templates.map((t) => (
+                  <li
+                    key={t.id}
+                    className={[
+                      "communication-templates__item",
+                      activeKey === t.id && "communication-templates__item--active",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    <button type="button" onClick={() => void selectTemplate(t.id)}>
+                      {t.label}
+                    </button>
+                    <button
+                      type="button"
+                      className="communication-templates__delete"
+                      aria-label={`Delete ${t.label}`}
+                      disabled={t.name === "ticket" || templateActionBusy}
+                      onClick={() => void handleDeleteTemplate(t.id, t.name)}
+                    >
+                      <i className="ti ti-trash" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+
             <Card
-              title="Template"
+              title={activeTemplateName === "ticket" ? "Ticket template" : "Template"}
               actions={<Badge variant="neutral">Outlook-safe</Badge>}
             >
               <div className="communication-ph-row">
@@ -685,6 +928,14 @@ export function CommunicationPage() {
         onConfirm={() => blocker.proceed?.()}
         onCancel={() => blocker.reset?.()}
       />
+      {eventId && sendTemplateId && (
+        <CommunicationSendDialog
+          open={sendDialogOpen}
+          eventId={eventId}
+          templateId={sendTemplateId}
+          onClose={() => setSendDialogOpen(false)}
+        />
+      )}
     </div>
   );
 }

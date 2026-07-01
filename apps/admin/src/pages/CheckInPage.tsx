@@ -27,14 +27,33 @@ import { CheckinConnectionBanner } from "../checkin/ConnectionBanner.js";
 import { CkEmptyState } from "../checkin/CkEmptyState.js";
 import { CkInlineCamera } from "../checkin/CkInlineCamera.js";
 import { isDesktopViewport, useIsDesktop } from "../hooks/useIsDesktop.js";
+import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { ManualLookupPanel } from "../checkin/ManualLookupPanel.js";
 import { ScanHistoryList } from "../checkin/ScanHistoryList.js";
 
 const PENDING_MS = 5000;
 const WEDGE_AUTO_SUBMIT_LEN = 20;
 const WEDGE_DEBOUNCE_MS = 50;
+const HISTORY_CAP = 8;
 const LOOKUP_DISABLED_MSG =
   "Manual lookup is disabled for this event — use QR scan only.";
+
+function historyEntryFromStream(event: StreamCheckinEvent, eventId: string): CheckInHistoryEntry {
+  return {
+    id: `sse-${event.attendeeId}-${event.admittedAt}`,
+    event_id: eventId,
+    attendee_id: event.attendeeId,
+    status: "admitted",
+    checked_in_at: event.admittedAt,
+    checked_in_by: event.operatorId,
+    device_id: event.deviceLabel,
+    source: null,
+    attendee: {
+      name: event.attendeeName,
+      ticket_type: event.ticketType,
+    },
+  };
+}
 
 const DEFAULT_OPS_CONFIG: OpsConfigDto = {
   require_confirm_on_scan: false,
@@ -82,6 +101,70 @@ export function CheckInPage({
   const lastScanRef = useRef<{ value: string; at: number } | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
   const wedgeTimerRef = useRef<number | null>(null);
+  const recentAdmits = useRef(new Map<string, number>());
+
+  const registerAdmit = useCallback((attendeeId: string, admittedAt: string) => {
+    const key = `${attendeeId}-${admittedAt}`;
+    const now = Date.now();
+    recentAdmits.current.set(key, now);
+    for (const [k, t] of recentAdmits.current) {
+      if (now - t > 5000) recentAdmits.current.delete(k);
+    }
+  }, []);
+
+  const isDuplicateAdmit = useCallback((attendeeId: string, admittedAt: string) => {
+    return recentAdmits.current.has(`${attendeeId}-${admittedAt}`);
+  }, []);
+
+  const prependAdmit = useCallback(
+    (entry: CheckInHistoryEntry, admittedAt: string) => {
+      registerAdmit(entry.attendee_id, admittedAt);
+      setHistory((prev) => [entry, ...prev].slice(0, HISTORY_CAP));
+      setAdmittedCount((count) => count + 1);
+    },
+    [registerAdmit],
+  );
+
+  const applyLocalAdmit = useCallback(
+    (response: CheckInScanResponse) => {
+      if (!eventId || response.status !== "VALID" || !response.admittedAt) return;
+      const attendeeId = response.card?.id ?? response.attendeeId;
+      const admittedCard = response.card;
+      if (!attendeeId || !admittedCard) return;
+      if (isDuplicateAdmit(attendeeId, response.admittedAt)) return;
+      prependAdmit(
+        {
+          id: `local-${attendeeId}-${response.admittedAt}`,
+          event_id: eventId,
+          attendee_id: attendeeId,
+          status: "admitted",
+          checked_in_at: response.admittedAt,
+          checked_in_by: null,
+          device_id: deviceLabel ?? null,
+          source: null,
+          attendee: {
+            name: admittedCard.name,
+            ticket_type: admittedCard.ticket_type,
+            company: admittedCard.company,
+            department: admittedCard.department,
+          },
+        },
+        response.admittedAt,
+      );
+    },
+    [deviceLabel, eventId, isDuplicateAdmit, prependAdmit],
+  );
+
+  const handleRemoteCheckin = useCallback(
+    (event: StreamCheckinEvent) => {
+      if (!eventId) return;
+      if (isDuplicateAdmit(event.attendeeId, event.admittedAt)) return;
+      prependAdmit(historyEntryFromStream(event, eventId), event.admittedAt);
+    },
+    [eventId, isDuplicateAdmit, prependAdmit],
+  );
+
+  const { status: streamStatus } = useEventStream(eventId, handleRemoteCheckin);
 
   const [buffer, setBuffer] = useState("");
   const [busy, setBusy] = useState(false);
@@ -142,6 +225,17 @@ export function CheckInPage({
     if (showMobileOverlay) return;
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [showMobileOverlay]);
+
+  const refreshStatsOnly = useCallback(async () => {
+    if (!eventId) return;
+    try {
+      const stats = await fetchCheckInStats(eventId);
+      setAdmittedCount(stats.admitted_count);
+      setTotalCount(stats.total_count);
+    } catch {
+      /* read-only context */
+    }
+  }, [eventId]);
 
   const refreshSidebar = useCallback(async () => {
     if (!eventId) return;
@@ -272,7 +366,12 @@ export function CheckInPage({
           setCard(loaded);
         }
         setBuffer("");
-        void refreshSidebar();
+        if (response.status === "VALID" && response.admittedAt) {
+          applyLocalAdmit(response);
+          void refreshStatsOnly();
+        } else {
+          void refreshSidebar();
+        }
       } catch (err) {
         setScanResult(null);
         handleApiFailure(err);
@@ -281,7 +380,7 @@ export function CheckInPage({
         focusScan();
       }
     },
-    [canAct, deviceId, eventId, focusScan, maybeAutoAdvance, refreshSidebar, reportApiError],
+    [canAct, deviceId, eventId, focusScan, maybeAutoAdvance, applyLocalAdmit, refreshSidebar, refreshStatsOnly, reportApiError],
   );
 
   const closeInlineCamera = useCallback(() => {
@@ -303,8 +402,13 @@ export function CheckInPage({
       if (response) {
         applyResponse(response);
         maybeAutoAdvance(response);
+        if (response.status === "VALID" && response.admittedAt) {
+          applyLocalAdmit(response);
+          void refreshStatsOnly();
+        } else {
+          void refreshSidebar();
+        }
       }
-      void refreshSidebar();
     } catch (err) {
       handleApiFailure(err);
     } finally {
@@ -517,6 +621,17 @@ export function CheckInPage({
   return (
     <>
       {!isOperatorShell && <CheckinConnectionBanner />}
+
+      {streamStatus === "auth_error" && (
+        <p className="check-in__offline-banner" role="status">
+          Live updates unavailable — check access
+        </p>
+      )}
+      {streamStatus === "reconnecting" && (
+        <p className="check-in__offline-banner" role="status">
+          Reconnecting live updates…
+        </p>
+      )}
 
       {!canAct && (
         <p className="checkin-surface__transport-error" role="status">

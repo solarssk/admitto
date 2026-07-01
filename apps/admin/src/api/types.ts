@@ -374,6 +374,54 @@ export interface TestSendResponse {
   error?: string;
 }
 
+/** Multi-template list item from GET .../templates. */
+export interface MailTemplateListItem {
+  id: string;
+  name: string;
+  label: string;
+  template_format: "mjml" | "html";
+  subject_template: string;
+  updated_at: string;
+}
+
+/** Full template row from GET .../templates/:id. */
+export interface MailTemplateDetail extends MailTemplateListItem {
+  body_template: string;
+  compiled_html_template: string;
+}
+
+export type BulkSendFilter =
+  | { type: "all" }
+  | { type: "ticket_type"; value: string }
+  | { type: "rsvp_status"; value: RsvpStatus }
+  | { type: "no_delivery" }
+  | { type: "attendee_ids"; ids: string[] };
+
+export interface BulkSendBody {
+  templateId: string;
+  filter: BulkSendFilter;
+  dryRun?: boolean;
+}
+
+export interface BulkSendDryRunResponse {
+  recipientCount: number;
+}
+
+export interface BulkSendQueuedResponse {
+  batchId: string | null;
+  queued: number;
+  skipped: number;
+  failed: number;
+}
+
+export interface BulkSendStatusResponse {
+  batchId: string;
+  total: number;
+  queued: number;
+  sent: number;
+  failed: number;
+}
+
 export type MailFieldSource = "env" | "db" | "default";
 
 export interface MailPlainFieldDto<T = string | number | boolean | null> {

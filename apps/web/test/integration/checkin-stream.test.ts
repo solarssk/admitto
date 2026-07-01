@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { Hono } from "hono";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword, createSession, SESSION_STAGE } from "@admitto/auth";
+import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import {
   createCheckinPreAuth,
   createCheckinEventScope,
@@ -15,14 +16,17 @@ import { publish, resetSseChannelsForTests, subscriberCount } from "../../src/ad
 const ORG_A = "org-stream-a";
 const EVENT_A = "event-stream-a";
 const USER_OP_A = "user-stream-op-a";
+const USER_ADMIN_A = "user-stream-admin-a";
 
 let prisma: PrismaClient;
 let opCookie = "";
+let adminCookie = "";
 
 async function seed(client: PrismaClient) {
-  await client.roleAssignment.deleteMany({ where: { user_id: USER_OP_A } });
-  await client.session.deleteMany({ where: { user_id: USER_OP_A } });
-  await client.user.deleteMany({ where: { id: USER_OP_A } });
+  await client.roleAssignment.deleteMany({ where: { user_id: { in: [USER_OP_A, USER_ADMIN_A] } } });
+  await client.session.deleteMany({ where: { user_id: { in: [USER_OP_A, USER_ADMIN_A] } } });
+  await client.userMfaMethod.deleteMany({ where: { user_id: { in: [USER_OP_A, USER_ADMIN_A] } } });
+  await client.user.deleteMany({ where: { id: { in: [USER_OP_A, USER_ADMIN_A] } } });
   await client.event.deleteMany({ where: { id: EVENT_A } });
   await client.organization.deleteMany({ where: { id: ORG_A } });
 
@@ -43,12 +47,33 @@ async function seed(client: PrismaClient) {
   await client.user.create({
     data: { id: USER_OP_A, email: "stream-op@example.com", password_hash },
   });
+  await client.user.create({
+    data: { id: USER_ADMIN_A, email: "stream-admin@example.com", password_hash },
+  });
   await client.roleAssignment.create({
     data: { user_id: USER_OP_A, role: "operator", scope_type: "event", scope_id: EVENT_A },
   });
+  await client.roleAssignment.create({
+    data: { user_id: USER_ADMIN_A, role: "admin", scope_type: "organization", scope_id: ORG_A },
+  });
+  for (const userId of [USER_OP_A, USER_ADMIN_A]) {
+    await client.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
+    });
+  }
 
-  const { rawToken } = await createSession(prisma, { userId: USER_OP_A, stage: SESSION_STAGE.FULL });
-  opCookie = `admitto_session=${rawToken}`;
+  const { rawToken: opToken } = await createSession(prisma, { userId: USER_OP_A, stage: SESSION_STAGE.FULL });
+  opCookie = `admitto_session=${opToken}`;
+  const { rawToken: adminToken } = await createSession(prisma, {
+    userId: USER_ADMIN_A,
+    stage: SESSION_STAGE.FULL,
+  });
+  adminCookie = `admitto_session=${adminToken}`;
 }
 
 function buildStreamApp() {
@@ -84,6 +109,16 @@ describe("GET /api/checkin/events/:eventId/stream", () => {
     const app = buildStreamApp();
     const res = await app.request(`/api/checkin/events/${EVENT_A}/stream`, {
       headers: { Cookie: opCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    await res.body?.cancel();
+  });
+
+  it("returns text/event-stream for org admin with event access", async () => {
+    const app = buildStreamApp();
+    const res = await app.request(`/api/checkin/events/${EVENT_A}/stream`, {
+      headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/event-stream");

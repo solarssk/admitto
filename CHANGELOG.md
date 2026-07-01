@@ -12,7 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Backend: multiple email templates per event (`name`/`label`, CRUD under `/api/admin/events/:eventId/templates`)
 - Backend: bulk send `POST /api/admin/events/:eventId/send` with `templateId`, recipient filters, and `dryRun` recipient count
 - Backend: send batch status `GET /api/admin/events/:eventId/send/status/:batchId`
+- Backend: per-template test send `POST /api/admin/events/:eventId/templates/:templateId/test-send`
 - `EmailDelivery.template_id` foreign key to `MailTemplate` (delivery audit per template)
+- Admin SPA: `useEventStream` hook for live check-in SSE with reconnect and auth-error heuristic
+- Admin SPA: Check-in page live feed (prepend history, dedup, offline banner)
+- Admin SPA: Event overview optimistic `admitted_count` from SSE
+- Admin SPA: Communication page multi-template editor, bulk send dialog with dry-run and batch polling
 
 ## [0.4.8] - 2026-07-01
 

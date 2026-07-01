@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { Badge, Card, PageHeader, Stat } from "@admitto/ui";
 import { ApiError, fetchEventOverview } from "../api/client.js";
@@ -6,6 +6,7 @@ import type { EventDto, EventOverviewDto } from "../api/types.js";
 import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates.js";
 import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { useEventStream } from "../hooks/useEventStream.js";
 
 /** Auto-refresh interval for event overview stats (ms). */
 const OVERVIEW_REFRESH_MS = 30_000;
@@ -65,6 +66,15 @@ export function EventOverviewPage() {
   const eventTimezone = currentOverview?.event.timezone ?? event.timezone;
   const eventDateIso = currentOverview?.event.date ?? event.date;
   const countdown = useCountdown(eventDateIso, eventTimezone);
+
+  const handleLiveCheckin = useCallback(() => {
+    setOverview((prev) => {
+      if (!prev || prev.event.id !== event.id) return prev;
+      return { ...prev, admitted_count: prev.admitted_count + 1 };
+    });
+  }, [event.id]);
+
+  useEventStream(event.id, handleLiveCheckin);
 
   useEffect(() => {
     abortRef.current?.abort();
