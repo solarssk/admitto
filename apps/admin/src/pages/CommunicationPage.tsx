@@ -103,6 +103,10 @@ export function CommunicationPage() {
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
+  const templateSelectionSeqRef = useRef(0);
+
+  const [templateSwitchConfirmOpen, setTemplateSwitchConfirmOpen] = useState(false);
+  const [pendingTemplateKey, setPendingTemplateKey] = useState<string | null>(null);
 
   const isDirty = isTemplateDirty(
     { subject, body, format },
@@ -150,7 +154,7 @@ export function CommunicationPage() {
   }, []);
 
   const loadTemplateSelection = useCallback(
-    async (key: string, items: MailTemplateListItem[], legacy: EventTemplateDto) => {
+    async (key: string, legacy: EventTemplateDto) => {
       if (key === "virtual-ticket") {
         applyLegacyTemplate(legacy);
         return;
@@ -161,25 +165,47 @@ export function CommunicationPage() {
     [applyDetailTemplate, applyLegacyTemplate, eventId],
   );
 
-  const selectTemplate = useCallback(
+  const applySelectTemplate = useCallback(
     async (key: string) => {
       if (!eventId || key === activeKey) return;
+      const seq = ++templateSelectionSeqRef.current;
       setValidationErrors([]);
       setSaveStatus(null);
       setPreviewSubject(null);
       setPreviewHtml(null);
-      setActiveKey(key);
+      setTemplateActionBusy(true);
       try {
         const legacy = await fetchEventTemplate(eventId);
-        await loadTemplateSelection(key, templates, legacy);
+        if (seq !== templateSelectionSeqRef.current) return;
+        await loadTemplateSelection(key, legacy);
+        if (seq !== templateSelectionSeqRef.current) return;
+        setActiveKey(key);
       } catch (err) {
+        if (seq !== templateSelectionSeqRef.current) return;
         if (err instanceof ApiError) {
           reportApiError(err.status);
           setError("Failed to load template.");
         }
+      } finally {
+        if (seq === templateSelectionSeqRef.current) {
+          setTemplateActionBusy(false);
+        }
       }
     },
-    [activeKey, eventId, loadTemplateSelection, reportApiError, templates],
+    [activeKey, eventId, loadTemplateSelection, reportApiError],
+  );
+
+  const requestSelectTemplate = useCallback(
+    (key: string) => {
+      if (!eventId || key === activeKey) return;
+      if (isDirty) {
+        setPendingTemplateKey(key);
+        setTemplateSwitchConfirmOpen(true);
+        return;
+      }
+      void applySelectTemplate(key);
+    },
+    [activeKey, applySelectTemplate, eventId, isDirty],
   );
 
   const handleCreateTemplate = async () => {
@@ -623,7 +649,11 @@ export function CommunicationPage() {
                       .filter(Boolean)
                       .join(" ")}
                   >
-                    <button type="button" onClick={() => void selectTemplate("virtual-ticket")}>
+                    <button
+                      type="button"
+                      disabled={templateActionBusy}
+                      onClick={() => requestSelectTemplate("virtual-ticket")}
+                    >
                       Ticket email (inherited)
                     </button>
                   </li>
@@ -638,7 +668,11 @@ export function CommunicationPage() {
                       .filter(Boolean)
                       .join(" ")}
                   >
-                    <button type="button" onClick={() => void selectTemplate(t.id)}>
+                    <button
+                      type="button"
+                      disabled={templateActionBusy}
+                      onClick={() => requestSelectTemplate(t.id)}
+                    >
                       {t.label}
                     </button>
                     <button
@@ -909,6 +943,24 @@ export function CommunicationPage() {
           </Card>
         </>
       )}
+      <ConfirmDialog
+        open={templateSwitchConfirmOpen}
+        title="Discard unsaved changes?"
+        message="You have unsaved template changes. Switching templates will discard them."
+        confirmLabel="Discard"
+        confirmVariant="danger"
+        cancelLabel="Keep editing"
+        onConfirm={() => {
+          setTemplateSwitchConfirmOpen(false);
+          const key = pendingTemplateKey;
+          setPendingTemplateKey(null);
+          if (key) void applySelectTemplate(key);
+        }}
+        onCancel={() => {
+          setTemplateSwitchConfirmOpen(false);
+          setPendingTemplateKey(null);
+        }}
+      />
       <ConfirmDialog
         open={overrideConfirmOpen}
         title="Create event template override"

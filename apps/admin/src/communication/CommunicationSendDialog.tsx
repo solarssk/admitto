@@ -122,9 +122,22 @@ export function CommunicationSendDialog({
         filter: buildFilter(),
       })) as BulkSendQueuedResponse;
 
-      if (body.batchId == null || body.queued === 0) {
+      if (body.batchId == null) {
         setPhase("done");
         setResultMessage("No recipients matched.");
+        return;
+      }
+
+      if (body.queued === 0) {
+        setPhase("done");
+        const detail: string[] = [];
+        if (body.skipped > 0) detail.push(`${body.skipped} skipped`);
+        if (body.failed > 0) detail.push(`${body.failed} failed`);
+        setResultMessage(
+          detail.length > 0
+            ? `No emails queued (${detail.join(", ")}).`
+            : "No emails queued.",
+        );
         return;
       }
 

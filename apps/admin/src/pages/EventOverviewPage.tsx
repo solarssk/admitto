@@ -57,6 +57,8 @@ export function EventOverviewPage() {
   const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
   const abortRef = useRef<AbortController | null>(null);
+  const pendingCheckinsRef = useRef(0);
+  const reconcileTimerRef = useRef<number | null>(null);
 
   const [overview, setOverview] = useState<EventOverviewDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,17 +69,52 @@ export function EventOverviewPage() {
   const eventDateIso = currentOverview?.event.date ?? event.date;
   const countdown = useCountdown(eventDateIso, eventTimezone);
 
+  const flushPendingCheckins = useCallback((data: EventOverviewDto): EventOverviewDto => {
+    const pending = pendingCheckinsRef.current;
+    if (pending > 0) {
+      pendingCheckinsRef.current = 0;
+      return { ...data, admitted_count: data.admitted_count + pending };
+    }
+    return data;
+  }, []);
+
+  const scheduleReconcile = useCallback(() => {
+    if (reconcileTimerRef.current != null) {
+      window.clearTimeout(reconcileTimerRef.current);
+    }
+    reconcileTimerRef.current = window.setTimeout(() => {
+      reconcileTimerRef.current = null;
+      void fetchEventOverview(event.id)
+        .then((data) => {
+          if (data.event.id !== event.id) return;
+          setOverview(data);
+        })
+        .catch(() => {
+          /* keep optimistic value until next poll */
+        });
+    }, 3000);
+  }, [event.id]);
+
   const handleLiveCheckin = useCallback(() => {
     setOverview((prev) => {
-      if (!prev || prev.event.id !== event.id) return prev;
+      if (!prev || prev.event.id !== event.id) {
+        pendingCheckinsRef.current += 1;
+        return prev;
+      }
       return { ...prev, admitted_count: prev.admitted_count + 1 };
     });
-  }, [event.id]);
+    scheduleReconcile();
+  }, [event.id, scheduleReconcile]);
 
   useEventStream(event.id, handleLiveCheckin);
 
   useEffect(() => {
     abortRef.current?.abort();
+    pendingCheckinsRef.current = 0;
+    if (reconcileTimerRef.current != null) {
+      window.clearTimeout(reconcileTimerRef.current);
+      reconcileTimerRef.current = null;
+    }
     setLoading(true);
     setError(null);
     setOverview(null);
@@ -90,7 +127,7 @@ export function EventOverviewPage() {
       fetchEventOverview(event.id, ac.signal)
         .then((data) => {
           if (ac.signal.aborted) return;
-          setOverview(data);
+          setOverview(flushPendingCheckins(data));
           setError(null);
         })
         .catch((err) => {
@@ -113,8 +150,12 @@ export function EventOverviewPage() {
     return () => {
       clearInterval(intervalId);
       abortRef.current?.abort();
+      if (reconcileTimerRef.current != null) {
+        window.clearTimeout(reconcileTimerRef.current);
+        reconcileTimerRef.current = null;
+      }
     };
-  }, [event.id, reportApiError]);
+  }, [event.id, flushPendingCheckins, reportApiError]);
 
   const meta = [formatEventCalendarDate(eventDateIso), event.location]
     .filter(Boolean)
