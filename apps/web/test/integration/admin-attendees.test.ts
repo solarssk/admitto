@@ -244,9 +244,13 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
       { headers: { Cookie: adminCookie } },
     );
     expect(search.status).toBe(200);
-    const searchBody = (await search.json()) as { items: { email: string }[] };
+    const searchBody = (await search.json()) as {
+      items: { email: string; status: string; updated_at: string }[];
+    };
     expect(searchBody.items).toHaveLength(1);
     expect(searchBody.items[0]!.email).toBe("anna@example.com");
+    expect(searchBody.items[0]!.status).toBe("registered");
+    expect(typeof searchBody.items[0]!.updated_at).toBe("string");
 
     const admitted = await app.request(
       `/api/admin/events/${EVENT_A}/attendees?status=admitted`,
@@ -277,10 +281,14 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
       { headers: { Cookie: adminCookie } },
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { items: { id: string; company: string | null }[] };
+    const body = (await res.json()) as {
+      items: { id: string; company: string | null; status: string; updated_at: string }[];
+    };
     expect(body.items).toHaveLength(1);
     expect(body.items[0]!.id).toBe(ATT_A2);
     expect(body.items[0]!.company).toBe("JSON Only Corp");
+    expect(body.items[0]!.status).toBe("registered");
+    expect(typeof body.items[0]!.updated_at).toBe("string");
   });
 
   it("rejects operator", async () => {
