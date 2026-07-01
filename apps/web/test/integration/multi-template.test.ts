@@ -92,7 +92,7 @@ describe("multi-template API", () => {
       rateLimitStore: createRateLimitStore(),
       skipCheckinBootValidation: true,
       adminDistRoot,
-      mailDeliveryDeps: { exportSink: (p) => exported.push(p) },
+      mailDeliveryDeps: { exportSink: (p) => { exported.push(p); } },
     });
   });
 
