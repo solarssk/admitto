@@ -69,4 +69,39 @@ describe("InstanceUrlPanel", () => {
       expect(mockPatch).toHaveBeenCalledWith({ instance_url: "https://tickets.example.com" });
     });
   });
+
+  it("rejects HTTP URL on save without calling API", async () => {
+    mockFetch.mockResolvedValueOnce(emptySettings);
+    render(<InstanceUrlPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Instance URL"), {
+      target: { value: "http://insecure.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByText(/must use https/i)).toBeTruthy();
+    });
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it("clears instance URL via Clear button", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ...emptySettings,
+      instance_url: { value: "https://old.example.com", source: "db" },
+    });
+    mockPatch.mockResolvedValueOnce({
+      ...emptySettings,
+      instance_url: { value: null, source: "default" },
+    });
+    render(<InstanceUrlPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    await waitFor(() => {
+      expect(mockPatch).toHaveBeenCalledWith({ instance_url: null });
+    });
+  });
 });

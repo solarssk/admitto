@@ -67,7 +67,7 @@ describe("LogoUploadZone", () => {
     });
   });
 
-  it("clears value and shows alert when uploaded preview image fails to load", () => {
+  it("shows alert without clearing value when uploaded preview image fails to load", () => {
     const onChange = vi.fn();
     render(
       <LogoUploadZone
@@ -77,8 +77,23 @@ describe("LogoUploadZone", () => {
     );
     const img = screen.getByAltText("Organisation logo preview");
     fireEvent.error(img);
-    expect(onChange).toHaveBeenCalledWith("");
+    expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByRole("alert").textContent).toContain("corrupt");
+  });
+
+  it("clears preview error after a successful image load", () => {
+    const onChange = vi.fn();
+    render(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        onChange={onChange}
+      />,
+    );
+    const img = screen.getByAltText("Organisation logo preview");
+    fireEvent.error(img);
+    expect(screen.getByRole("alert")).toBeTruthy();
+    fireEvent.load(img);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("keeps external URL and shows alert when preview image fails to load", () => {

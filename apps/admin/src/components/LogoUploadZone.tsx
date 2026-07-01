@@ -61,6 +61,7 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
             src={previewSrc}
             alt="Organisation logo preview"
             className="logo-upload__img"
+            onLoad={() => setError(null)}
             onError={() => {
               if (!isUploadedFile) {
                 setError(
@@ -68,8 +69,6 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
                 );
                 return;
               }
-              onChange("");
-              onDirty?.();
               setError("Uploaded file appears corrupt or unsupported. Please try another image.");
             }}
           />

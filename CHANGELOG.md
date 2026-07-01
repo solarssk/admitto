@@ -21,7 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Admin SPA: Communication page multi-template editor, bulk send dialog with dry-run and batch polling
 
 ### Fixed
-- Admin: corrupt or unsupported logo uploads clear preview and show an error in LogoUploadZone
+- Admin: corrupt or unsupported logo uploads show an error in LogoUploadZone without clearing the field on transient preview failures
+- Admin: attendee resend and bulk resend use DB instance URL for ticket links when BASE_URL env is unset
 - Admin SPA: event overview reuses check-in TTL dedup map for SSE admits (no full clear on server refresh; TTL prune on poll keeps map bounded)
 - Admin SPA: communication page refetches inherited ticket template on each virtual-ticket selection (avoids stale legacy cache)
 - Admin SPA: communication page clears editor actions after delete when ticket fallback load fails (avoids targeting deleted template; re-select or create reloads editor)

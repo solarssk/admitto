@@ -75,6 +75,13 @@ const instanceUrlSchema = z
   .min(1)
   .max(2048)
   .superRefine((value, ctx) => {
+    if (value.trim().endsWith("/")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Instance URL must not end with a trailing slash",
+      });
+      return;
+    }
     try {
       normalizePersistedInstanceUrl(value);
     } catch (err) {

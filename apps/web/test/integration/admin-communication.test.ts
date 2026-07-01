@@ -397,8 +397,10 @@ describe("POST /api/admin/events/:eventId/template/preview", () => {
     } finally {
       if (prevBase === undefined) delete process.env.BASE_URL;
       else process.env.BASE_URL = prevBase;
-      await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
-      await prisma.organization.update({ where: { id: ORG_A }, data: { logo_url: null } });
+      await Promise.allSettled([
+        prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } }),
+        prisma.organization.update({ where: { id: ORG_A }, data: { logo_url: null } }),
+      ]);
     }
   });
 

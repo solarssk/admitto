@@ -60,5 +60,7 @@ export async function resolveInstanceBaseUrl(
     return "http://localhost:3000";
   }
 
-  throw new Error("BASE_URL is required in non-development environments");
+  throw new Error(
+    "Instance URL is required (set BASE_URL or configure in Settings → General)",
+  );
 }
