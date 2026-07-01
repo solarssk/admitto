@@ -143,9 +143,17 @@ import {
   handlePreviewEventTemplate,
   handleTestSendEventTemplate,
   handleListEventDeliveries,
+  handleListEventTemplates,
+  handleGetEventTemplateById,
+  handlePutEventTemplateById,
+  handleCreateEventTemplate,
+  handleDeleteEventTemplate,
+  handlePreviewEventTemplateById,
   MAX_TEMPLATE_BODY_BYTES,
   MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
 } from "./admin/communication-api-routes.js";
+import { handleBulkSend, handleBulkSendStatus } from "./admin/bulk-send-routes.js";
+import { handleEventStream } from "./admin/checkin-stream-routes.js";
 import {
   handleGetCheckinEvents,
   handleCheckinScan,
@@ -530,6 +538,50 @@ export function createApp(options: CreateAppOptions = {}) {
     templateTestSendBodyLimit,
     adminCommunicationRateLimit,
     guardArchivedEvent((c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps, baseUrl)),
+  );
+  app.get("/api/admin/events/:eventId/templates", staffAdminGate, (c) =>
+    handleListEventTemplates(c, db),
+  );
+  app.get("/api/admin/events/:eventId/templates/:templateId", staffAdminGate, (c) =>
+    handleGetEventTemplateById(c, db),
+  );
+  app.put(
+    "/api/admin/events/:eventId/templates/:templateId",
+    jsonPostCsrf,
+    staffAdminGate,
+    templateBodyLimit,
+    guardArchivedEvent((c) => handlePutEventTemplateById(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/templates",
+    jsonPostCsrf,
+    staffAdminGate,
+    templateBodyLimit,
+    guardArchivedEvent((c) => handleCreateEventTemplate(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/templates/:templateId",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDeleteEventTemplate(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/templates/:templateId/preview",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminTemplatePreviewRateLimit,
+    templateBodyLimit,
+    guardArchivedEvent((c) => handlePreviewEventTemplateById(c, db, baseUrl)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/send",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminBulkResendRateLimit,
+    guardArchivedEvent((c) => handleBulkSend(c, db, mailDeliveryDeps)),
+  );
+  app.get("/api/admin/events/:eventId/send/status/:batchId", staffAdminGate, (c) =>
+    handleBulkSendStatus(c, db),
   );
   app.get("/api/admin/events/:eventId/deliveries", staffAdminGate, (c) =>
     handleListEventDeliveries(c, db),
@@ -967,6 +1019,13 @@ export function createApp(options: CreateAppOptions = {}) {
     createCheckinAuthenticatedRateLimit(rateLimitStore, "history"),
     createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
     (c) => handleCheckinStats(c, db),
+  );
+
+  app.get(
+    "/api/checkin/events/:eventId/stream",
+    createCheckinPreAuth(checkinAuthDeps),
+    createCheckinEventScope(checkinAuthDeps, (c) => c.req.param("eventId")),
+    (c) => handleEventStream(c),
   );
 
   app.get(

@@ -21,6 +21,7 @@ import {
   type OpsAuditContext,
 } from "@admitto/tickets";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
+import { publishCheckinIfValid } from "./checkin-sse-publish.js";
 
 /** GET /api/checkin/events — session-only capability list (P4). */
 export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Promise<Response> {
@@ -104,6 +105,9 @@ export async function handleCheckinScan(c: Context, db: PrismaClient): Promise<R
       { scanned, eventId, operator: audit.operator, deviceId: audit.deviceId, sessionId: audit.sessionId, ip: audit.ip },
       db,
     );
+    if (result.status === "VALID") {
+      await publishCheckinIfValid(c, db, eventId, result);
+    }
     return c.json(serializeScanResult(result), 200);
   } catch (err) {
     console.error("checkInScan failed:", err);
@@ -174,6 +178,9 @@ export async function handleCheckinAdmit(c: Context, db: PrismaClient): Promise<
       },
       db,
     );
+    if (result.status === "VALID") {
+      await publishCheckinIfValid(c, db, eventId, result);
+    }
     return c.json(serializeScanResult(result), 200);
   } catch (err) {
     console.error("admitAttendee failed:", err);

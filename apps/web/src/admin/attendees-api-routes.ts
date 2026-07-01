@@ -35,6 +35,7 @@ import { sanitizeCsvCell } from "./csv-sanitize.js";
 import { randomUUID } from "node:crypto";
 import { decryptFromString } from "@admitto/crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
+import { resolveBulkSendAttendeeIds } from "./bulk-send-routes.js";
 
 const ATTENDEE_LIST_SELECT = {
   id: true,
@@ -1657,39 +1658,20 @@ export async function handleBulkResendTickets(
   }
 
   const target = parsed.data.target;
-  let attendees: { id: string }[];
+  const filter =
+    target === "unsent" ? ({ type: "no_delivery" } as const) : ({ type: "all" } as const);
+  const { ids, overLimit } = await resolveBulkSendAttendeeIds(db, eventId, filter);
 
-  if (target === "all") {
-    attendees = await db.attendee.findMany({
-      where: { event_id: eventId },
-      select: { id: true },
-      take: BULK_RESEND_LIMIT + 1,
-    });
-  } else {
-    attendees = await db.attendee.findMany({
-      where: {
-        event_id: eventId,
-        email_deliveries: {
-          none: {
-            status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES, "queued"] },
-          },
-        },
-      },
-      select: { id: true },
-      take: BULK_RESEND_LIMIT + 1,
-    });
+  if (overLimit) {
+    return c.json({ error: "too_many_attendees", limit: BULK_RESEND_LIMIT }, 400);
   }
 
-  if (attendees.length === 0) {
+  if (ids.length === 0) {
     await auditBulkTicketSend(db, c, eventId, { target, queued: 0, skipped: 0, failed: 0 });
     return c.json({ queued: 0, skipped: 0, failed: 0 } satisfies BulkResendDto);
   }
 
-  if (attendees.length > BULK_RESEND_LIMIT) {
-    return c.json({ error: "too_many_attendees", limit: BULK_RESEND_LIMIT }, 400);
-  }
-
-  const attendeeIds = attendees.map((row) => row.id);
+  const attendeeIds = ids;
   const mailPurpose = target === "unsent" ? "initial" : "resend";
   const sendResult = await sendTicketEmails(
     eventId,
