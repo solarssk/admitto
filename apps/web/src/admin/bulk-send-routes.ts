@@ -40,19 +40,22 @@ export type BulkSendNoDeliveryScope =
   | { mode: "ticket_email" }
   | { mode: "template"; templateId: string };
 
+const ACTIVE_DELIVERY_STATUSES = [...EMAIL_DELIVERY_SUCCESS_STATUSES, "queued"];
+
 function noDeliveryDeliveryWhere(
   scope: BulkSendNoDeliveryScope,
 ): Prisma.EmailDeliveryWhereInput {
-  const statusFilter = {
-    status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES, "queued"] as const },
+  const statusClause: Prisma.EmailDeliveryWhereInput = {
+    status: { in: ACTIVE_DELIVERY_STATUSES },
   };
+
   if (scope.mode === "initial_ticket") {
-    return { ...statusFilter, purpose: "initial" };
+    return { AND: [statusClause, { purpose: "initial" }] };
   }
   if (scope.mode === "ticket_email") {
-    return { ...statusFilter, purpose: { in: ["initial", "resend"] } };
+    return { AND: [statusClause, { purpose: { in: ["initial", "resend"] } }] };
   }
-  return { ...statusFilter, template_id: scope.templateId };
+  return { AND: [statusClause, { template_id: scope.templateId }] };
 }
 
 export async function resolveBulkSendNoDeliveryScope(
