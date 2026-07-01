@@ -144,6 +144,11 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  fetchEventTemplates.mockReset();
+  fetchEventTemplate.mockReset();
+  fetchEventTemplateById.mockReset();
+  deleteEventTemplate.mockReset();
+  createEventTemplate.mockReset();
 });
 
 describe("CommunicationPage templates", () => {
@@ -548,6 +553,85 @@ describe("CommunicationPage templates", () => {
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+      expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", false);
+      expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", false);
+      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
+    });
+  });
+
+  it("clears missing snapshot when creating a template after delete fallback fails", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    let ticketLoadsAfterMount = 0;
+    fetchEventTemplates
+      .mockResolvedValueOnce([ticketRow, reminderRow])
+      .mockResolvedValueOnce([ticketRow]);
+    fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) => {
+      if (id === "tpl-ticket") {
+        ticketLoadsAfterMount += 1;
+        if (ticketLoadsAfterMount === 2 || ticketLoadsAfterMount === 3) {
+          throw new ApiError(500, "server_error");
+        }
+        return {
+          ...ticketRow,
+          body_template: "<p>Ticket</p>",
+          compiled_html_template: "<p>Ticket</p>",
+        };
+      }
+      if (id === "tpl-rem") {
+        return {
+          ...reminderRow,
+          body_template: "<p>Reminder</p>",
+          compiled_html_template: "<p>Reminder</p>",
+        };
+      }
+      throw new Error(`unexpected template id ${id}`);
+    });
+    deleteEventTemplate.mockResolvedValue(undefined);
+    createEventTemplate.mockResolvedValue({
+      id: "tpl-new",
+      name: "announcement",
+      label: "Announcement",
+      template_format: "mjml",
+      subject_template: "Announcement",
+      body_template: "<mjml></mjml>",
+      updated_at: "2026-01-03T00:00:00.000Z",
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    await waitFor(() => {
+      expect(screen.getByText("Delete template?")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", true);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    await waitFor(() => {
+      expect(screen.getByText("New template")).toBeTruthy();
+    });
+
+    const createDialog = screen.getByRole("dialog", { name: "New template" });
+    fireEvent.change(within(createDialog).getByLabelText("Template label"), {
+      target: { value: "Announcement" },
+    });
+    fireEvent.click(within(createDialog).getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(createEventTemplate).toHaveBeenCalled();
+      expect(screen.getByDisplayValue("Announcement")).toBeTruthy();
       expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", false);
       expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", false);
       expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();

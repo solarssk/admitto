@@ -184,6 +184,7 @@ export function CommunicationPage() {
   );
 
   const applyLegacyTemplate = useCallback((data: EventTemplateDto) => {
+    setEditorSnapshotMissing(false);
     setSource(data.source);
     setSubject(data.subject_template);
     setBody(data.body_template);
@@ -200,6 +201,7 @@ export function CommunicationPage() {
     body_template: string;
     template_format: TemplateFormat;
   }) => {
+    setEditorSnapshotMissing(false);
     setSource("event");
     setActiveTemplateName(detail.name);
     setSubject(detail.subject_template);
@@ -227,7 +229,6 @@ export function CommunicationPage() {
       if (result.kind === "legacy") applyLegacyTemplate(result.data);
       else applyDetailTemplate(result.data);
       setActiveKey(key);
-      setEditorSnapshotMissing(false);
     },
     [applyDetailTemplate, applyLegacyTemplate],
   );
