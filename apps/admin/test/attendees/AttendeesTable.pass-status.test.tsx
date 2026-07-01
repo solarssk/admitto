@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AttendeesTable } from "../../src/attendees/AttendeesTable.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
@@ -86,6 +86,7 @@ describe("AttendeesTable pass status actions", () => {
       />,
     );
 
+    expect(within(screen.getByRole("table")).getByText("Cancelled")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Revoke pass" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Restore pass" })).toBeNull();
   });

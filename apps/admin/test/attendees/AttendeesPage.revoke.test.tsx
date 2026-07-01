@@ -314,6 +314,7 @@ describe("AttendeesPage revoke/restore", () => {
         "warning",
       );
       expect(fetchEventAttendees.mock.calls.length).toBeGreaterThan(callsBeforeConflict);
+      expect(screen.queryByRole("dialog", { name: "Revoke pass?" })).toBeNull();
     });
   });
 

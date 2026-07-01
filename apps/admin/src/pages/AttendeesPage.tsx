@@ -310,6 +310,9 @@ export function AttendeesPage() {
               addToast("Event is at capacity — pass cannot be restored.", "error");
             } else if (err.code === "stale_write") {
               addToast("Someone else updated this attendee — reloading list", "warning");
+              setRevokeOpen(false);
+              setRevokeTarget(null);
+              setRevokeError(null);
               setReloadToken((n) => n + 1);
             } else if (revokeOpen) {
               setRevokeError("Could not update pass status.");

@@ -166,6 +166,8 @@ export function AttendeesTable({
                       <RsvpStatusBadge status={row.rsvp_status} />
                       {row.status === "revoked" ? (
                         <Badge variant="error">Revoked</Badge>
+                      ) : row.status === "cancelled" ? (
+                        <Badge variant="neutral">Cancelled</Badge>
                       ) : null}
                     </div>
                   </td>
