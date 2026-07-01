@@ -109,6 +109,7 @@ export function CommunicationPage() {
   const [activeTemplateName, setActiveTemplateName] = useState("ticket");
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [templateActionBusy, setTemplateActionBusy] = useState(false);
+  const [editorSnapshotMissing, setEditorSnapshotMissing] = useState(false);
 
   const [source, setSource] = useState<EventTemplateDto["source"]>("builtin");
   const [allowedPlaceholders, setAllowedPlaceholders] = useState<string[]>([]);
@@ -226,13 +227,14 @@ export function CommunicationPage() {
       if (result.kind === "legacy") applyLegacyTemplate(result.data);
       else applyDetailTemplate(result.data);
       setActiveKey(key);
+      setEditorSnapshotMissing(false);
     },
     [applyDetailTemplate, applyLegacyTemplate],
   );
 
   const applySelectTemplate = useCallback(
     async (key: string) => {
-      if (!eventId || key === activeKey) return;
+      if (!eventId || (key === activeKey && !editorSnapshotMissing)) return;
       const seq = ++templateSelectionSeqRef.current;
       setValidationErrors([]);
       setSaveStatus(null);
@@ -257,7 +259,7 @@ export function CommunicationPage() {
         }
       }
     },
-    [activeKey, applyLoadedTemplateSelection, eventId, loadTemplateSelection, reportApiError],
+    [activeKey, applyLoadedTemplateSelection, editorSnapshotMissing, eventId, loadTemplateSelection, reportApiError],
   );
 
   const runDirtyProtectedAction = useCallback(
@@ -349,6 +351,15 @@ export function CommunicationPage() {
           }
         }
         if (!loaded) {
+          setActiveKey(ticket.id);
+          setEditorSnapshotMissing(true);
+          setSubject("");
+          setBody("");
+          setSavedSubject("");
+          setSavedBody("");
+          setValidationErrors([]);
+          setPreviewSubject(null);
+          setPreviewHtml(null);
           setSaveStatus("Template deleted. Could not load ticket template — reload the page.");
         }
       } else {
@@ -381,8 +392,9 @@ export function CommunicationPage() {
     }
   };
 
-  const sendTemplateId =
-    activeKey === "virtual-ticket"
+  const sendTemplateId = editorSnapshotMissing
+    ? undefined
+    : activeKey === "virtual-ticket"
       ? templates.find((t) => t.name === "ticket")?.id
       : activeKey;
 
@@ -552,7 +564,7 @@ export function CommunicationPage() {
   };
 
   const handlePreview = async () => {
-    if (!eventId) return;
+    if (!eventId || editorSnapshotMissing) return;
     setPreviewLoading(true);
     setValidationErrors([]);
     setSaveStatus(null);
@@ -624,7 +636,7 @@ export function CommunicationPage() {
   };
 
   const handleSave = () => {
-    if (!eventId) return;
+    if (!eventId || editorSnapshotMissing) return;
     if (activeKey === "virtual-ticket" && source !== "event") {
       setOverrideConfirmOpen(true);
       return;
@@ -638,7 +650,7 @@ export function CommunicationPage() {
       : "This will create an event-specific template override (replacing the default template for this event). Continue?";
 
   const handleTestSend = async () => {
-    if (!eventId) return;
+    if (!eventId || editorSnapshotMissing) return;
     setTestStatus(null);
     setTestSending(true);
     try {
@@ -834,6 +846,7 @@ export function CommunicationPage() {
                 onChange={(e) => setSubject(e.target.value)}
                 onFocus={() => setActiveField("subject")}
                 onClick={() => setActiveField("subject")}
+                disabled={editorSnapshotMissing}
               />
 
               <div className="communication-format-row">
@@ -865,6 +878,7 @@ export function CommunicationPage() {
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
                   onFocus={() => setActiveField("body")}
+                  disabled={editorSnapshotMissing}
                 />
               </div>
 
@@ -894,10 +908,18 @@ export function CommunicationPage() {
               )}
 
               <div className="communication-actions">
-                <Button variant="secondary" onClick={() => void handlePreview()} disabled={previewLoading}>
+                <Button
+                  variant="secondary"
+                  onClick={() => void handlePreview()}
+                  disabled={previewLoading || editorSnapshotMissing}
+                >
                   {previewLoading ? "Previewing…" : "Preview"}
                 </Button>
-                <Button variant="primary" onClick={handleSave} disabled={saving || !isDirty}>
+                <Button
+                  variant="primary"
+                  onClick={handleSave}
+                  disabled={saving || !isDirty || editorSnapshotMissing}
+                >
                   {saving ? "Saving…" : isDirty ? "Save *" : "Saved"}
                 </Button>
               </div>
@@ -935,7 +957,7 @@ export function CommunicationPage() {
               <Button
                 variant="secondary"
                 onClick={() => void handleTestSend()}
-                disabled={testSending || !isValidEmail(testEmail.trim())}
+                disabled={testSending || !isValidEmail(testEmail.trim()) || editorSnapshotMissing}
               >
                 {testSending ? "Sending…" : "Send test"}
               </Button>

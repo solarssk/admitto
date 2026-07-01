@@ -535,8 +535,13 @@ describe("CommunicationPage templates", () => {
       expect(
         screen.getByText("Template deleted. Could not load ticket template — reload the page."),
       ).toBeTruthy();
-      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
-      expect(screen.queryByDisplayValue("Ticket")).toBeNull();
+      expect(screen.queryByDisplayValue("Reminder subject")).toBeNull();
+      expect(screen.getByRole("button", { name: "Ticket email" })).toBeTruthy();
+      expect(screen.getByLabelText("Subject")).toHaveProperty("value", "");
+      expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", true);
+      expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", true);
+      expect(screen.getByRole("button", { name: "Saved" })).toHaveProperty("disabled", true);
     });
   });
 

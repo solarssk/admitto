@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Admin SPA: event overview reuses check-in TTL dedup map for SSE admits (no full clear on server refresh; bounded during live scan bursts)
 - Admin SPA: communication page refetches inherited ticket template on each virtual-ticket selection (avoids stale legacy cache)
+- Admin SPA: communication page clears editor actions after delete when ticket fallback load fails (avoids targeting deleted template)
 
 ## [0.4.8] - 2026-07-01
 
