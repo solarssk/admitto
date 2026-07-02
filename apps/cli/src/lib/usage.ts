@@ -22,7 +22,7 @@ Examples:
   admitto checkin lookup --event evt_123 --query "jan kowal"
   admitto checkin admit --event evt_123 --attendee-id att_456
   admitto checkin admit --event evt_123 --scan "https://tickets.example.com/t/..."
-  admitto attendees export --event evt_123 --out /app/uploads/emergency-attendees.csv --operator-email super@example.com
+  admitto attendees export --event evt_123 --out /backups/emergency-attendees-evt_123.csv --operator-email super@example.com
   admitto mail retry-failed --event evt_123
   admitto auth bootstrap-superadmin --email admin@example.com
   admitto auth reset-mfa --email admin@example.com

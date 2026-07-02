@@ -10,6 +10,8 @@ export async function runMailRetryFailed(db: PrismaClient): Promise<void> {
     throw new CliError("Usage: admitto mail retry-failed --event <id>");
   }
 
+  const format = parseFormat();
+
   const candidates = await db.emailDelivery.findMany({
     where: { event_id: eventId, status: "failed", retryable: true },
     select: { id: true },
@@ -52,7 +54,6 @@ export async function runMailRetryFailed(db: PrismaClient): Promise<void> {
   }
 
   const summary = { retried, skipped, failed, total: candidates.length };
-  const format = parseFormat();
   if (format === "json") {
     console.log(formatJson(summary));
   } else {
