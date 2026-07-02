@@ -15,6 +15,16 @@ ensure_backup_dir_permissions() {
   fi
 }
 
+ensure_emergency_export_dir_permissions() {
+  export_dir="${EMERGENCY_EXPORT_DIR:-/app/emergency-exports}"
+  if [ "$(id -u)" != "0" ]; then
+    return 0
+  fi
+  mkdir -p "$export_dir"
+  chown node:node "$export_dir"
+  chmod 700 "$export_dir"
+}
+
 quote_cmd_args() {
   node -e 'console.log(process.argv.slice(1).map((a) => JSON.stringify(a)).join(" "))' "$@"
 }
@@ -175,10 +185,12 @@ if [ "${1:-}" = "npm" ] || [ "${1:-}" = "npx" ]; then
 fi
 
 if [ "${1:-}" = "node" ]; then
+  ensure_emergency_export_dir_permissions
   run_as_node "$@"
 fi
 
 ensure_backup_dir_permissions
+ensure_emergency_export_dir_permissions
 
 set +e
 status_out="$(migration_status_output)"

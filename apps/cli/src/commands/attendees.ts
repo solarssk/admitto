@@ -10,6 +10,14 @@ import {
 } from "@admitto/tickets";
 import { CliError, arg, hasFlag } from "../lib/args.js";
 import { requireOperatorUserId } from "../lib/audit.js";
+import { assertSafeEmergencyExportOut } from "../lib/export-out-path.js";
+
+const PRIVATE_EXPORT_MODE = 0o600;
+
+function writePrivateExportFile(path: string, content: string): void {
+  fs.writeFileSync(path, content, { encoding: "utf8", mode: PRIVATE_EXPORT_MODE });
+  fs.chmodSync(path, PRIVATE_EXPORT_MODE);
+}
 
 export async function runAttendeesExport(db: PrismaClient): Promise<void> {
   const eventId = arg("event");
@@ -21,6 +29,8 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
   if (format !== "csv") {
     throw new CliError("Emergency CLI supports --format csv only (use admin UI for xlsx/pdf).");
   }
+
+  assertSafeEmergencyExportOut(out);
 
   const statusFilter = arg("status");
   const filters: AttendeeListFilterParams = {
@@ -53,7 +63,7 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
   }
 
   try {
-    fs.writeFileSync(out, result.csv, { encoding: "utf8", mode: 0o600 });
+    writePrivateExportFile(out, result.csv);
   } catch (err) {
     throw new CliError(
       `Failed to write export to ${out}: ${err instanceof Error ? err.message : String(err)}`,

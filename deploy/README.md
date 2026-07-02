@@ -167,10 +167,10 @@ docker compose run --rm app node apps/cli/dist/index.js --help
 docker compose run --rm app node apps/cli/dist/index.js checkin lookup --event <eventId> --query "jan kowal"
 docker compose run --rm app node apps/cli/dist/index.js checkin admit --event <eventId> --attendee-id <attendeeId>
 
-# Paper backup list (CSV) — use /backups (migration_backups volume), NOT /app/uploads
-# (/uploads/* is served without auth; a CSV there would expose attendee PII to anyone with the URL)
-docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /backups/emergency-attendees-<eventId>.csv --operator-email super@example.com
-# File persists on the migration_backups Docker volume (not web-accessible). CLI writes mode 0600.
+# Paper backup list (CSV) — use EMERGENCY_EXPORT_DIR (node-writable bind mount), NOT /app/uploads or /backups
+# (/uploads/* is served without auth; /backups is root-only and fails under docker compose run)
+docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /app/emergency-exports/emergency-attendees-<eventId>.csv --operator-email super@example.com
+# File lands on the host at deploy/emergency-exports/ (bind mount, not web-accessible). CLI writes mode 0600.
 
 # Retry failed mail batch
 docker compose run --rm app node apps/cli/dist/index.js mail retry-failed --event <eventId>
