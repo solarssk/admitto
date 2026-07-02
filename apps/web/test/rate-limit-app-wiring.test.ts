@@ -70,12 +70,14 @@ describe("createApp rate-limit wiring", () => {
       rateLimitStore: store,
     });
 
-    const res = await app.request("/t/sample-token", {
-      headers: { "X-Forwarded-For": "203.0.113.88" },
-    });
-    expect(res.status).not.toBe(429);
-
-    await store.disconnect();
-    warnSpy.mockRestore();
+    try {
+      const res = await app.request("/t/sample-token", {
+        headers: { "X-Forwarded-For": "203.0.113.88" },
+      });
+      expect(res.status).not.toBe(429);
+    } finally {
+      await store.disconnect();
+      warnSpy.mockRestore();
+    }
   });
 });

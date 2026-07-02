@@ -10,7 +10,7 @@ const EXPECTED_POLICIES: Record<
   "ops:healthz": { windowMs: [60_000], max: [120], checks: 1 },
   "ops:readyz": { windowMs: [60_000], max: [10], checks: 1 },
   "auth:oidc": { windowMs: [60_000], max: [20], checks: 1 },
-  "oidc:link-stepup": { windowMs: [60_000, 60_000], max: [10, 10], checks: 2 },
+  "oidc:link-stepup": { windowMs: [60_000], max: [10], checks: 1 },
   "auth:login-ip": { windowMs: [60_000], max: [10], checks: 1 },
   "auth:login-email": { windowMs: [60_000], max: [10], checks: 1 },
   "mfa:verify-totp": { windowMs: [900_000], max: [10], checks: 1 },

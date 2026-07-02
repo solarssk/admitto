@@ -113,12 +113,9 @@ export const RATE_POLICIES = {
       },
     ],
   },
-  /** Inline-only — consumed by checkOidcLinkStepUpRateLimit, not rateLimit(). */
+  /** Inline-only — consumed by checkOidcLinkStepUpRateLimit (user + IP share limits), not rateLimit(). */
   "oidc:link-stepup": {
-    checks: [
-      { keyOf: () => "", windowMs: 60_000, max: 10 },
-      { keyOf: () => "", windowMs: 60_000, max: 10 },
-    ],
+    checks: [{ keyOf: () => "", windowMs: 60_000, max: 10 }],
   },
   "auth:login-ip": {
     checks: [

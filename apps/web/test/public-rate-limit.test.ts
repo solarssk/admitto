@@ -62,10 +62,13 @@ describe("public rate limit middleware", () => {
     const store = new RedisRateLimitStore("redis://127.0.0.1:1", { connectTimeoutMs: 200 });
     const app = makeRateLimitTestApp(store);
 
-    const res = await app.request("/t/x", { headers: clientHeaders });
-    expect(res.status).toBe(200);
-
-    await store.disconnect();
-    warnSpy.mockRestore();
+    try {
+      const res = await app.request("/t/x", { headers: clientHeaders });
+      expect(res.status).toBe(200);
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      await store.disconnect();
+      warnSpy.mockRestore();
+    }
   });
 });
