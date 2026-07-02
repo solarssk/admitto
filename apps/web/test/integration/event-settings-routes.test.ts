@@ -13,7 +13,9 @@ const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures
 const sameOrigin = { Origin: "http://localhost" };
 
 const ORG_SET = "org-event-settings";
+const ORG_B = "org-event-settings-b";
 const EVENT_SET = "evt-event-settings";
+const EVENT_B = "evt-event-settings-b";
 const EVENT_ARCHIVED = "evt-event-settings-archived";
 const EVENT_MISSING = "evt-event-settings-missing";
 const ATT_SET = "att-event-settings-1";
@@ -40,7 +42,7 @@ async function seed(client: PrismaClient) {
   await client.attendee.deleteMany({ where: { event_id: { in: [EVENT_SET, EVENT_ARCHIVED] } } });
   await client.eventItem.deleteMany({ where: { event_id: { in: [EVENT_SET, EVENT_ARCHIVED] } } });
   await client.roleAssignment.deleteMany({
-    where: { OR: [{ scope_id: { in: [ORG_SET, EVENT_SET, EVENT_ARCHIVED] } }] },
+    where: { OR: [{ scope_id: { in: [ORG_SET, ORG_B, EVENT_SET, EVENT_ARCHIVED, EVENT_B] } }] },
   });
   await client.session.deleteMany({
     where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_OP] } } },
@@ -49,13 +51,16 @@ async function seed(client: PrismaClient) {
     where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
   });
   await client.user.deleteMany({ where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_OP] } } });
-  await client.event.deleteMany({ where: { id: { in: [EVENT_SET, EVENT_ARCHIVED] } } });
-  await client.organization.deleteMany({ where: { id: ORG_SET } });
+  await client.event.deleteMany({ where: { id: { in: [EVENT_SET, EVENT_ARCHIVED, EVENT_B] } } });
+  await client.organization.deleteMany({ where: { id: { in: [ORG_SET, ORG_B] } } });
 
   const password_hash = await hashPassword(PASSWORD);
 
-  await client.organization.create({
-    data: { id: ORG_SET, name: "Settings Org", slug: "event-settings-org" },
+  await client.organization.createMany({
+    data: [
+      { id: ORG_SET, name: "Settings Org", slug: "event-settings-org" },
+      { id: ORG_B, name: "Settings Org B", slug: "event-settings-org-b" },
+    ],
   });
 
   await client.event.createMany({
@@ -75,6 +80,13 @@ async function seed(client: PrismaClient) {
         date: new Date("2026-11-01T12:00:00.000Z"),
         organization_id: ORG_SET,
         archived_at: new Date(),
+      },
+      {
+        id: EVENT_B,
+        title: "Settings Event B",
+        slug: "event-settings-b",
+        date: new Date("2026-12-01T12:00:00.000Z"),
+        organization_id: ORG_B,
       },
     ],
   });
@@ -225,13 +237,22 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.error).toBe("not_found");
   });
 
-  it("returns 404 for non-existent event (org admin)", async () => {
+  it("returns 403 for non-existent event (org admin, no existence leak)", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_MISSING}/settings`, {
       headers: { Cookie: adminCookie },
     });
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("not_found");
+    expect(body.error).toBe("forbidden");
+  });
+
+  it("returns 403 for cross-org event", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_B}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
   });
 });
 
@@ -352,6 +373,36 @@ describe("PATCH /api/admin/events/:eventId", () => {
       body: JSON.stringify({ capacity: 2_147_483_648 }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("returns 403 for cross-org event and does not mutate", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_B}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Hacked Title" }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
+
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_B } });
+    expect(row.title).toBe("Settings Event B");
+  });
+
+  it("allows superadmin to patch cross-org event", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_B}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Superadmin Renamed B" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { event: { title: string } };
+    expect(body.event.title).toBe("Superadmin Renamed B");
+
+    await prisma.event.update({
+      where: { id: EVENT_B },
+      data: { title: "Settings Event B" },
+    });
   });
 });
 
