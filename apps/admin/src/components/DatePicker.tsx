@@ -103,12 +103,10 @@ export function DatePicker({
       setHighlightDay(parts.d);
       return;
     }
-    if (viewYear === todayParts.y && viewMonth === todayParts.m) {
-      setHighlightDay(todayParts.d);
-      return;
-    }
-    setHighlightDay(1);
-  }, [open, value, todayParts.d, todayParts.m, todayParts.y, viewMonth, viewYear]);
+    setViewYear(todayParts.y);
+    setViewMonth(todayParts.m);
+    setHighlightDay(todayParts.d);
+  }, [open, value, todayParts.d, todayParts.m, todayParts.y]);
 
   useEffect(() => {
     if (!open) return;

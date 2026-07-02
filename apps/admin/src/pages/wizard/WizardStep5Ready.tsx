@@ -26,11 +26,13 @@ export function WizardStep5Ready({ onComplete }: WizardStep5ReadyProps) {
     ];
 
     if (!mailSkipped && summary.mailLabel !== "Skipped") {
-      const mailLabel =
-        summary.mailLabel.startsWith("Configured") || summary.mailLabel === "Not configured"
-          ? "Mail transport configured"
-          : summary.mailLabel;
-      items.push({ key: "mail", icon: "ti-mail-check", label: mailLabel });
+      if (summary.mailLabel.startsWith("Configured")) {
+        items.push({ key: "mail", icon: "ti-mail-check", label: "Mail transport configured" });
+      } else if (summary.mailLabel === "Not configured") {
+        items.push({ key: "mail", icon: "ti-mail", label: "Mail not configured" });
+      } else {
+        items.push({ key: "mail", icon: "ti-mail-check", label: summary.mailLabel });
+      }
     }
 
     if (!brandingSkipped && summary.brandingLabel !== "Skipped") {

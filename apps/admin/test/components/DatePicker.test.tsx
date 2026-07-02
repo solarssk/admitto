@@ -107,4 +107,30 @@ describe("DatePicker", () => {
     fireEvent.keyDown(panel, { key: "Enter" });
     expect(onChange).toHaveBeenCalledWith("2026-07-03");
   });
+
+  it("allows navigating to another month when editing an existing date", () => {
+    const onChange = vi.fn();
+    vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");
+    vi.spyOn(eventDates, "formatCalendarMonth").mockImplementation((year, month) => `${year}-${month}`);
+    vi.spyOn(eventDates, "getWeekdayLabelsShort").mockReturnValue([
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun",
+    ]);
+    vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((iso) => iso);
+
+    render(<DatePicker value="2026-07-15" onChange={onChange} label="Date" />);
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByText("2026-7")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    expect(screen.getByText("2026-8")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("gridcell", { name: "2026-08-20" }));
+    expect(onChange).toHaveBeenCalledWith("2026-08-20");
+  });
 });
