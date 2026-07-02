@@ -3,6 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import { Button, Card, PageHeader } from "@admitto/ui";
 import type { EventDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
+import { CheckinConnectionPill } from "../checkin/ConnectionBanner.js";
 import { formatEventCalendarDate } from "../utils/event-dates.js";
 import { CheckInPage } from "./CheckInPage.js";
 
@@ -39,15 +40,18 @@ export function AdminCheckInRoute() {
         title="Check-in"
         subtitle={formatEventSubtitle(event)}
         actions={
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon={<i className="ti ti-camera" />}
-            onClick={() => setUseCamera(true)}
-          >
-            Use camera
-          </Button>
+          <div className="ck-pageheader-actions">
+            <CheckinConnectionPill />
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              icon={<i className="ti ti-camera" />}
+              onClick={() => setUseCamera(true)}
+            >
+              Use camera
+            </Button>
+          </div>
         }
       />
       <CheckInPage

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - First-run mail wizard: ignore deploy env placeholders for field locks and test send until setup wizard completes (`setup_complete`).
 
 ### Fixed
+- Check-in: server-connected status moves to a compact page-header pill; full-width green banner only for connection problems (#234).
 - Admin mail transport test returns actionable error messages instead of generic `send failed` (no hostnames or credentials in API responses).
 
 ### Changed

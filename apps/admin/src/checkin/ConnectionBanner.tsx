@@ -38,11 +38,24 @@ const COPY: Record<CheckinConnectionVisual, { icon: string; message: string }> =
   },
 };
 
+/** Compact header indicator when the server link is healthy (admin check-in page header). */
+export function CheckinConnectionPill() {
+  const { state } = useConnectionState();
+  if (mapConnectionState(state) !== "connected") return null;
+
+  return (
+    <span className="ck-server-status" title="All scans confirmed by server">
+      <span className="ck-server-status__dot" aria-hidden="true" />
+      <span className="ck-server-status__label">Server connected</span>
+    </span>
+  );
+}
+
 /** Admin check-in only — operator shell renders its own `ConnectionBanner`. */
 export function CheckinConnectionBanner() {
   const { state } = useConnectionState();
   const visual = mapConnectionState(state);
-  if (!visual) return null;
+  if (!visual || visual === "connected") return null;
 
   return (
     <div
