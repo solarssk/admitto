@@ -29,6 +29,7 @@ import {
   type MailDraft,
   type SecretEdits,
 } from "../../settings/mailSettingsValidation.js";
+import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "../../settings/mailProviderOptions.js";
 import { useWizard } from "./WizardContext.js";
 
 export type WizardStep2MailHandle = {
@@ -81,12 +82,7 @@ function draftFromResponse(data: MailSettingsResponse): MailDraft {
   };
 }
 
-const PROVIDER_LABELS: Record<MailProvider, string> = {
-  smtp: "SMTP",
-  graph: "Microsoft Graph",
-  powerautomate: "Power Automate",
-  export_only: "Export only",
-};
+const PROVIDER_LABELS = MAIL_PROVIDER_LABELS;
 
 export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2MailProps>(
   function WizardStep2Mail({ onDirtyChange }, ref) {
@@ -99,6 +95,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     const [loading, setLoading] = useState(true);
     const [validationErrors, setValidationErrors] = useState<string[]>([]);
     const [testSending, setTestSending] = useState(false);
+    const [testSent, setTestSent] = useState(false);
     const [testError, setTestError] = useState<string | null>(null);
     const loadAbortRef = useRef<AbortController | null>(null);
 
@@ -145,6 +142,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
       setDraft((prev) => ({ ...prev, ...patch }));
       setValidationErrors([]);
       setTestError(null);
+      setTestSent(false);
       onDirtyChange?.(true);
     };
 
@@ -153,6 +151,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
       patch: Partial<SecretEdits[keyof SecretEdits]>,
     ) => {
       setSecrets((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+      setTestSent(false);
       onDirtyChange?.(true);
     };
 
@@ -210,29 +209,28 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
         const result = await sendMailTransportTest(user.email);
         if (result.status === "sent") {
           setTestError(null);
+          setTestSent(true);
           addToast(`Test email sent to ${user.email}.`, "success");
         } else {
           const message = result.error ?? "Test email failed.";
           setTestError(message);
+          setTestSent(false);
           addToast(message, "error");
         }
       } catch (err) {
         const message = err instanceof ApiError ? err.message : "Test email failed.";
         setTestError(message);
+        setTestSent(false);
         addToast(message, "error");
       } finally {
         setTestSending(false);
       }
     };
 
-    const providerOptions: { value: MailProvider; label: string }[] = [
-      { value: "smtp", label: "SMTP" },
-      { value: "graph", label: "Microsoft Graph" },
-      { value: "powerautomate", label: "Power Automate" },
-    ];
-    if (apiData && (!apiData.isProduction || fieldLocked("provider"))) {
-      providerOptions.push({ value: "export_only", label: "Export only (dev/test)" });
-    }
+    const providerOptions = buildMailProviderOptions(
+      "wizard",
+      Boolean(apiData && (!apiData.isProduction || fieldLocked("provider"))),
+    );
 
     const provider = draft.provider;
 
@@ -240,8 +238,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
       <>
         <h2 className="setup-wizard__card-title">Mail transport</h2>
         <p className="setup-wizard__card-desc">
-          Configure outbound email for tickets and notifications. You can skip this step and
-          configure mail later in Settings.
+          Choose how Admitto sends ticket and lifecycle emails.
         </p>
 
         {loading && <p>Loading mail settings…</p>}
@@ -256,7 +253,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
               </ul>
             )}
 
-            <div className="setup-wizard__field">
+            <div className="setup-wizard__mail-form">
               <Select
                 label="Transport"
                 value={provider}
@@ -277,31 +274,78 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
                   </option>
                 ))}
               </Select>
-            </div>
 
-            {provider === "smtp" && (
-              <>
-                <div className="setup-wizard__grid-2">
+              {provider === "graph" && (
+                <>
+                  <Input
+                    label="Tenant ID"
+                    value={draft.tenantId}
+                    disabled={fieldLocked("tenantId")}
+                    onChange={(e) => updateDraft({ tenantId: e.target.value })}
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  />
+                  <Input
+                    label="Client ID"
+                    value={draft.clientId}
+                    disabled={fieldLocked("clientId")}
+                    onChange={(e) => updateDraft({ clientId: e.target.value })}
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  />
+                  <Input
+                    label="Sender address"
+                    type="email"
+                    value={draft.fromAddress || draft.mailbox}
+                    disabled={fieldLocked("fromAddress") && fieldLocked("mailbox")}
+                    onChange={(e) =>
+                      updateDraft({ fromAddress: e.target.value, mailbox: e.target.value })
+                    }
+                    placeholder="events@company.com"
+                  />
+                  <SecretInput
+                    label="Client secret"
+                    field={apiData.fields.graphClientSecret}
+                    edit={secrets.graphClientSecret}
+                    onReplace={() =>
+                      updateSecret("graphClientSecret", { mode: "replace", value: "" })
+                    }
+                    onValueChange={(value) => updateSecret("graphClientSecret", { value })}
+                    onCancel={() => updateSecret("graphClientSecret", { mode: "idle", value: "" })}
+                  />
+                  <Switch
+                    label="Save to Sent Items"
+                    checked={draft.saveToSentItems}
+                    disabled={fieldLocked("saveToSentItems")}
+                    onChange={(e) => updateDraft({ saveToSentItems: e.target.checked })}
+                  />
+                </>
+              )}
+
+              {provider === "smtp" && (
+                <>
                   <Input
                     label="SMTP host"
                     value={draft.host}
                     disabled={fieldLocked("host")}
                     onChange={(e) => updateDraft({ host: e.target.value })}
+                    placeholder="smtp.company.com"
                   />
-                  <Input
-                    label="Port"
-                    value={draft.port}
-                    disabled={fieldLocked("port")}
-                    onChange={(e) => updateDraft({ port: e.target.value })}
-                  />
-                </div>
-                <div className="setup-wizard__grid-2">
-                  <Input
-                    label="Username"
-                    value={draft.user}
-                    disabled={fieldLocked("user")}
-                    onChange={(e) => updateDraft({ user: e.target.value })}
-                  />
+                  <div className="setup-wizard__grid-user-port">
+                    <Input
+                      label="Username"
+                      value={draft.user}
+                      disabled={fieldLocked("user")}
+                      onChange={(e) => updateDraft({ user: e.target.value })}
+                      placeholder="events@company.com"
+                    />
+                    <Input
+                      label="Port"
+                      inputMode="numeric"
+                      value={draft.port}
+                      disabled={fieldLocked("port")}
+                      onChange={(e) => updateDraft({ port: e.target.value })}
+                      placeholder="587"
+                    />
+                  </div>
                   <SecretInput
                     label="Password"
                     field={apiData.fields.smtpPassword}
@@ -310,104 +354,93 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
                     onValueChange={(value) => updateSecret("smtpPassword", { value })}
                     onCancel={() => updateSecret("smtpPassword", { mode: "idle", value: "" })}
                   />
-                </div>
-                <Input
-                  label="From address"
-                  type="email"
-                  value={draft.fromAddress}
-                  disabled={fieldLocked("fromAddress")}
-                  onChange={(e) => updateDraft({ fromAddress: e.target.value })}
-                />
-                <Switch
-                  label="Use TLS (STARTTLS)"
-                  checked={draft.requireTls}
-                  disabled={fieldLocked("requireTls")}
-                  onChange={(e) => updateDraft({ requireTls: e.target.checked })}
-                />
-              </>
-            )}
+                  <Input
+                    label="From address"
+                    type="email"
+                    value={draft.fromAddress}
+                    disabled={fieldLocked("fromAddress")}
+                    onChange={(e) => updateDraft({ fromAddress: e.target.value })}
+                    placeholder="events@company.com"
+                  />
+                  <Switch
+                    label="Use TLS (STARTTLS)"
+                    checked={draft.requireTls}
+                    disabled={fieldLocked("requireTls")}
+                    onChange={(e) => updateDraft({ requireTls: e.target.checked })}
+                  />
+                </>
+              )}
 
-            {provider === "graph" && (
-              <>
-                <Input
-                  label="Tenant ID"
-                  value={draft.tenantId}
-                  disabled={fieldLocked("tenantId")}
-                  onChange={(e) => updateDraft({ tenantId: e.target.value })}
-                />
-                <Input
-                  label="Client ID"
-                  value={draft.clientId}
-                  disabled={fieldLocked("clientId")}
-                  onChange={(e) => updateDraft({ clientId: e.target.value })}
-                />
-                <SecretInput
-                  label="Client secret"
-                  field={apiData.fields.graphClientSecret}
-                  edit={secrets.graphClientSecret}
-                  onReplace={() => updateSecret("graphClientSecret", { mode: "replace", value: "" })}
-                  onValueChange={(value) => updateSecret("graphClientSecret", { value })}
-                  onCancel={() => updateSecret("graphClientSecret", { mode: "idle", value: "" })}
-                />
-                <Input
-                  label="Sender address"
-                  type="email"
-                  value={draft.fromAddress || draft.mailbox}
-                  disabled={fieldLocked("fromAddress") && fieldLocked("mailbox")}
-                  onChange={(e) => updateDraft({ fromAddress: e.target.value, mailbox: e.target.value })}
-                />
-                <Switch
-                  label="Save to Sent Items"
-                  checked={draft.saveToSentItems}
-                  disabled={fieldLocked("saveToSentItems")}
-                  onChange={(e) => updateDraft({ saveToSentItems: e.target.checked })}
-                />
-              </>
-            )}
+              {provider === "powerautomate" && (
+                <>
+                  <SecretInput
+                    label="Webhook URL"
+                    field={apiData.fields.powerAutomateUrl}
+                    edit={secrets.powerAutomateUrl}
+                    onReplace={() =>
+                      updateSecret("powerAutomateUrl", { mode: "replace", value: "" })
+                    }
+                    onValueChange={(value) => updateSecret("powerAutomateUrl", { value })}
+                    onCancel={() => updateSecret("powerAutomateUrl", { mode: "idle", value: "" })}
+                  />
+                  <Input
+                    label="From address"
+                    type="email"
+                    value={draft.fromAddress}
+                    disabled={fieldLocked("fromAddress")}
+                    onChange={(e) => updateDraft({ fromAddress: e.target.value })}
+                    placeholder="events@company.com"
+                  />
+                </>
+              )}
 
-            {provider === "powerautomate" && (
-              <>
-                <SecretInput
-                  label="Webhook URL"
-                  field={apiData.fields.powerAutomateUrl}
-                  edit={secrets.powerAutomateUrl}
-                  onReplace={() => updateSecret("powerAutomateUrl", { mode: "replace", value: "" })}
-                  onValueChange={(value) => updateSecret("powerAutomateUrl", { value })}
-                  onCancel={() => updateSecret("powerAutomateUrl", { mode: "idle", value: "" })}
-                />
-                <Input
-                  label="From address"
-                  type="email"
-                  value={draft.fromAddress}
-                  disabled={fieldLocked("fromAddress")}
-                  onChange={(e) => updateDraft({ fromAddress: e.target.value })}
-                />
-              </>
-            )}
+              {provider === "export_only" && (
+                <p className="setup-wizard__hint">
+                  No email will be sent. Tickets can be exported as CSV/PDF.
+                </p>
+              )}
 
-            {provider === "export_only" && (
-              <p className="setup-wizard__hint">
-                No email will be sent. Tickets can be exported as CSV/PDF.
-              </p>
-            )}
-
-            {provider && provider !== "export_only" && (
-              <div className="setup-wizard__actions-inline">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={testSending}
-                  onClick={() => void handleTestSend()}
-                >
-                  {testSending ? "Sending…" : `Send test email to ${user.email}`}
-                </Button>
-                {testError && (
-                  <p className="setup-wizard__test-error" role="alert">
-                    {testError}
-                  </p>
-                )}
-              </div>
-            )}
+              {provider && provider !== "export_only" && (
+                <>
+                  <div className="setup-wizard__mail-test-row">
+                    <Button
+                      type="button"
+                      variant={testSent ? "secondary" : "primary"}
+                      disabled={testSending}
+                      icon={
+                        testSent ? (
+                          <i
+                            className="ti ti-circle-check setup-wizard__mail-test-icon--ok"
+                            aria-hidden="true"
+                          />
+                        ) : testSending ? (
+                          <i className="ti ti-loader-2 setup-wizard__spin" aria-hidden="true" />
+                        ) : (
+                          <i className="ti ti-send" aria-hidden="true" />
+                        )
+                      }
+                      onClick={() => void handleTestSend()}
+                    >
+                      {testSent
+                        ? "Send again"
+                        : testSending
+                          ? "Sending…"
+                          : "Send test email"}
+                    </Button>
+                    {testSent && (
+                      <span className="setup-wizard__mail-test-hint">
+                        Check your inbox to confirm delivery.
+                      </span>
+                    )}
+                  </div>
+                  {testError && !testSent && (
+                    <p className="setup-wizard__test-error" role="alert">
+                      {testError}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
           </>
         )}
       </>

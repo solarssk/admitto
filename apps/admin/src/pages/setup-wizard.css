@@ -448,12 +448,55 @@
   margin-top: 1rem;
 }
 
+.setup-wizard__mail-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.setup-wizard__mail-form .setup-wizard__field {
+  margin-bottom: 0;
+}
+
+.setup-wizard__grid-user-port {
+  display: grid;
+  grid-template-columns: 1fr 6.875rem;
+  gap: 0.625rem;
+}
+
+.setup-wizard__mail-test-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.setup-wizard__mail-test-hint {
+  font-size: var(--fs-sm, 0.8125rem);
+  color: var(--text-muted, var(--text-secondary));
+}
+
+.setup-wizard__mail-test-icon--ok {
+  color: var(--status-ok);
+}
+
+.setup-wizard__spin {
+  animation: setup-wizard-spin 0.7s linear infinite;
+}
+
+@keyframes setup-wizard-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 640px) {
   .setup-wizard__card {
     padding: 1.25rem 1rem;
   }
 
-  .setup-wizard__grid-2 {
+  .setup-wizard__grid-2,
+  .setup-wizard__grid-user-port {
     grid-template-columns: 1fr;
   }
 }
