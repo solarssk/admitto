@@ -29,6 +29,7 @@ import {
   type MailDraft,
   type SecretEdits,
 } from "../../settings/mailSettingsValidation.js";
+import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "../../settings/mailProviderOptions.js";
 import { useWizard } from "./WizardContext.js";
 
 export type WizardStep2MailHandle = {
@@ -81,12 +82,7 @@ function draftFromResponse(data: MailSettingsResponse): MailDraft {
   };
 }
 
-const PROVIDER_LABELS: Record<MailProvider, string> = {
-  smtp: "SMTP",
-  graph: "Microsoft Graph",
-  powerautomate: "Power Automate",
-  export_only: "Export only",
-};
+const PROVIDER_LABELS = MAIL_PROVIDER_LABELS;
 
 export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2MailProps>(
   function WizardStep2Mail({ onDirtyChange }, ref) {
@@ -231,14 +227,10 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
       }
     };
 
-    const providerOptions: { value: MailProvider; label: string }[] = [
-      { value: "graph", label: "Microsoft Graph (recommended)" },
-      { value: "smtp", label: "SMTP" },
-      { value: "powerautomate", label: "Power Automate webhook" },
-    ];
-    if (apiData && (!apiData.isProduction || fieldLocked("provider"))) {
-      providerOptions.push({ value: "export_only", label: "Export only (dev/test)" });
-    }
+    const providerOptions = buildMailProviderOptions(
+      "wizard",
+      Boolean(apiData && (!apiData.isProduction || fieldLocked("provider"))),
+    );
 
     const provider = draft.provider;
 
@@ -414,7 +406,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
                     <Button
                       type="button"
                       variant={testSent ? "secondary" : "primary"}
-                      disabled={testSending || testSent}
+                      disabled={testSending}
                       icon={
                         testSent ? (
                           <i
@@ -429,7 +421,11 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
                       }
                       onClick={() => void handleTestSend()}
                     >
-                      {testSent ? "Test sent" : testSending ? "Sending…" : "Send test email"}
+                      {testSent
+                        ? "Send again"
+                        : testSending
+                          ? "Sending…"
+                          : "Send test email"}
                     </Button>
                     {testSent && (
                       <span className="setup-wizard__mail-test-hint">

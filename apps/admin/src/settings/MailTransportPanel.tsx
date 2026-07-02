@@ -22,6 +22,7 @@ import {
   type MailDraft,
   type SecretEdits,
 } from "./mailSettingsValidation.js";
+import { buildMailProviderOptions } from "./mailProviderOptions.js";
 
 function strValue(fd: MailPlainFieldDto<string | null>): string {
   return fd.value ?? "";
@@ -291,19 +292,9 @@ export function MailTransportPanel() {
     }
   };
 
-  const providerOptions: { value: MailProvider; label: string }[] = [
-    { value: "smtp", label: "SMTP (DuoCircle)" },
-    { value: "graph", label: "Microsoft Graph" },
-    { value: "powerautomate", label: "Power Automate" },
-  ];
   const showExportOnly =
     apiData && (!apiData.isProduction || (fieldLocked("provider") && draft.provider === "export_only"));
-  if (showExportOnly) {
-    providerOptions.push({
-      value: "export_only",
-      label: "Export only (dev/test)",
-    });
-  }
+  const providerOptions = buildMailProviderOptions("settings", Boolean(showExportOnly));
 
   const provider = draft.provider;
 
