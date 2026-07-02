@@ -7,12 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-07-02
+
 ### Changed
 - Remove instance-superadmin ceiling: multiple active `superadmin@instance` assignments are allowed; OIDC group→superadmin grants are no longer capped at one. The dropped index was redundant with the Serializable `user.count()` guard in `POST /setup`; first-run bootstrap protection is unchanged.
 - Consolidate rate-limit factories into declarative policy registry (no behavior change)
 - Centralize MFA enroll rate-limit constants in `RATE_POLICIES`; add registry edge-case and wiring tests
 - Extract inline-only rate limits to `INLINE_RATE_LIMITS` (excluded from `RatePolicyName`; compile-time guard against `rateLimit()` misuse)
 - Remove unused SSE message variant and stale nginx metrics location; fix dangling ADR links in deploy docs
+- Docs: superadmin runbook for multiple instance admins and OIDC offboarding prerequisites (`SECURITY-CONTROLS.md`, `deploy/README.md`)
 
 ### Security
 - Fix event-settings GET authz-order oracle (404→403 for cross-org probing of non-existent events); add defense-in-depth `assertEventManageAccess` to `handlePatchEvent` handler body (route wrapper already enforced scope); reduce QR image cache TTL from 24h to 5min
@@ -542,7 +545,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.9...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.10...HEAD
+[0.4.10]: https://github.com/solarssk/admitto/compare/v0.4.9...v0.4.10
 [0.4.9]: https://github.com/solarssk/admitto/compare/v0.4.8...v0.4.9
 [0.4.8]: https://github.com/solarssk/admitto/compare/v0.4.7...v0.4.8
 [0.4.7]: https://github.com/solarssk/admitto/compare/v0.4.6...v0.4.7
