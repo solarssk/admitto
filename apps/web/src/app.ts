@@ -169,7 +169,7 @@ import {
   handleGetSetupOrgBranding,
   handlePatchSetupOrgBranding,
 } from "./admin/setup-org-branding-routes.js";
-import { handleGetSetup, handlePostSetup } from "./setup-routes.js";
+import { handleGetSetup, handlePostSetup, resolveStaffEntryPath } from "./setup-routes.js";
 import {
   handleGetSessions,
   handleRevokeSession,
@@ -306,14 +306,17 @@ export function createApp(options: CreateAppOptions = {}) {
   const mfaEnrollRateLimitHtml = createMfaEnrollRateLimitMiddleware(rateLimitStore, { format: "text" });
   const htmlPostCsrf = createCrossSitePostGuard({ format: "text" });
   const jsonPostCsrf = createCrossSitePostGuard({ format: "json" });
+  const resolveStaffEntry = () => resolveStaffEntryPath(db);
   const requireSession = createRequireSession(db);
-  const requireSessionHtml = createRequireSession(db, { redirectTo: "/login" });
+  const requireSessionHtml = createRequireSession(db, { resolveRedirectTo: resolveStaffEntry });
   const requirePartialSession = createRequirePartialSession(db);
-  const requirePartialSessionHtml = createRequirePartialSession(db, { redirectTo: "/login" });
+  const requirePartialSessionHtml = createRequirePartialSession(db, {
+    resolveRedirectTo: resolveStaffEntry,
+  });
   // Forced password change is its own constrained stage; only sessions in that
   // stage may reach `/change-password`, and full sessions never can (IAM-001).
   const requireChangePasswordSession = createRequirePartialSession(db, {
-    redirectTo: "/login",
+    resolveRedirectTo: resolveStaffEntry,
     allowedStages: [SESSION_STAGE.CHANGE_PASSWORD_REQUIRED],
   });
   const requireAdminAccess = createAdminAccessMiddleware(db);

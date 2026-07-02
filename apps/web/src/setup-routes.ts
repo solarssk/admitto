@@ -33,6 +33,11 @@ export async function isFirstRunRequired(db: PrismaClient): Promise<boolean> {
   return count === 0;
 }
 
+/** Unauthenticated staff HTML entry: setup before any user exists, otherwise login. */
+export async function resolveStaffEntryPath(db: PrismaClient): Promise<"/setup" | "/login"> {
+  return (await isFirstRunRequired(db)) ? "/setup" : "/login";
+}
+
 /** Apply setup page security headers and return an HTML response. */
 function htmlResponse(c: Context, html: string, status: 200 | 409 = 200): Response {
   for (const [name, value] of Object.entries(getSetupPageSecurityHeaders())) {

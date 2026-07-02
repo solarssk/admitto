@@ -222,6 +222,54 @@ describe("GET /api/admin/setup/checks", () => {
     }
   });
 
+  it("returns ok on loopback http BASE_URL in production (local docker smoke)", async () => {
+    const checksApp = createChecksAppWithoutInjectedBaseUrl();
+    const prevNode = process.env.NODE_ENV;
+    const prevBase = process.env.BASE_URL;
+    await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
+    process.env.NODE_ENV = "production";
+    process.env.BASE_URL = "http://127.0.0.1:8080";
+    try {
+      const res = await checksApp.request("/api/admin/setup/checks", {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        checks: { base_url: { ok: boolean; detail: string } };
+      };
+      expect(body.checks.base_url.ok).toBe(true);
+      expect(body.checks.base_url.detail).toBe("http://127.0.0.1:8080");
+    } finally {
+      process.env.NODE_ENV = prevNode;
+      if (prevBase === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prevBase;
+    }
+  });
+
+  it("returns not ok on non-loopback http BASE_URL in production", async () => {
+    const checksApp = createChecksAppWithoutInjectedBaseUrl();
+    const prevNode = process.env.NODE_ENV;
+    const prevBase = process.env.BASE_URL;
+    await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
+    process.env.NODE_ENV = "production";
+    process.env.BASE_URL = "http://tickets.example.com";
+    try {
+      const res = await checksApp.request("/api/admin/setup/checks", {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        checks: { base_url: { ok: boolean; detail: string } };
+      };
+      expect(body.checks.base_url.ok).toBe(false);
+      expect(body.checks.base_url.detail).toContain("https");
+    } finally {
+      process.env.NODE_ENV = prevNode;
+      if (prevBase === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prevBase;
+    }
+  });
+
   it("returns ok on base_url from injected createApp baseUrl when env and DB unset", async () => {
     const prev = process.env.BASE_URL;
     delete process.env.BASE_URL;

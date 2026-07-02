@@ -33,22 +33,38 @@ declare module "hono" {
   }
 }
 
+type SessionRedirectOptions = {
+  redirectTo?: string;
+  resolveRedirectTo?: () => Promise<string>;
+};
+
+async function redirectUnauthenticated(
+  c: Context,
+  options?: SessionRedirectOptions,
+): Promise<Response> {
+  if (options?.resolveRedirectTo) {
+    return c.redirect(await options.resolveRedirectTo(), 302);
+  }
+  if (options?.redirectTo) {
+    return c.redirect(options.redirectTo, 302);
+  }
+  return c.json({ error: "unauthorized" }, 401);
+}
+
 /** Require valid full session cookie; optional HTML redirect instead of 401 JSON. */
 export function createRequireSession(
   prisma: PrismaClient,
-  options?: { redirectTo?: string },
+  options?: SessionRedirectOptions,
 ) {
   return async (c: Context, next: Next): Promise<Response | void> => {
     const rawToken = getCookie(c, SESSION_COOKIE_NAME);
     if (!rawToken) {
-      if (options?.redirectTo) return c.redirect(options.redirectTo, 302);
-      return c.json({ error: "unauthorized" }, 401);
+      return redirectUnauthenticated(c, options);
     }
 
     const validated = await validateSession(prisma, rawToken);
     if (!validated) {
-      if (options?.redirectTo) return c.redirect(options.redirectTo, 302);
-      return c.json({ error: "unauthorized" }, 401);
+      return redirectUnauthenticated(c, options);
     }
 
     c.set("auth", {
@@ -62,7 +78,7 @@ export function createRequireSession(
 /** Require any active session including mfa_pending / enrollment_required. */
 export function createRequirePartialSession(
   prisma: PrismaClient,
-  options?: { redirectTo?: string; allowedStages?: SessionStage[] },
+  options?: SessionRedirectOptions & { allowedStages?: SessionStage[] },
 ) {
   const allowedStages = options?.allowedStages ?? [
     SESSION_STAGE.MFA_PENDING,
@@ -73,14 +89,12 @@ export function createRequirePartialSession(
   return async (c: Context, next: Next): Promise<Response | void> => {
     const rawToken = getCookie(c, SESSION_COOKIE_NAME);
     if (!rawToken) {
-      if (options?.redirectTo) return c.redirect(options.redirectTo, 302);
-      return c.json({ error: "unauthorized" }, 401);
+      return redirectUnauthenticated(c, options);
     }
 
     const validated = await validatePartialSession(prisma, rawToken);
     if (!validated || !allowedStages.includes(validated.stage)) {
-      if (options?.redirectTo) return c.redirect(options.redirectTo, 302);
-      return c.json({ error: "unauthorized" }, 401);
+      return redirectUnauthenticated(c, options);
     }
 
     c.set("partialAuth", {

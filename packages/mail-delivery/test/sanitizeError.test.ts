@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientSafeDeliveryError, sanitizeDeliveryError } from "../src/sanitizeError.js";
+import { clientSafeDeliveryError, sanitizeDeliveryError, transportTestErrorForAdmin } from "../src/sanitizeError.js";
 
 describe("clientSafeDeliveryError", () => {
   it("returns generic message for Graph OAuth errors", () => {
@@ -53,6 +53,44 @@ describe("clientSafeDeliveryError", () => {
 
   it("allows plain send error without internals", () => {
     expect(clientSafeDeliveryError("Mailbox does not exist")).toBe("Mailbox does not exist");
+  });
+});
+
+describe("transportTestErrorForAdmin", () => {
+  it("maps connection refused without leaking host", () => {
+    expect(transportTestErrorForAdmin("connect ECONNREFUSED smtp.example.com:587")).toBe(
+      "Could not connect to the mail server (connection refused). Check host and port.",
+    );
+  });
+
+  it("maps DNS failure", () => {
+    expect(transportTestErrorForAdmin("getaddrinfo ENOTFOUND smtp.example.com")).toBe(
+      "Mail server hostname could not be resolved. Check the SMTP host.",
+    );
+  });
+
+  it("maps SMTP auth failure", () => {
+    expect(transportTestErrorForAdmin("Invalid login: 535 Authentication failed")).toBe(
+      "SMTP authentication failed. Check username and password.",
+    );
+  });
+
+  it("maps Graph OAuth without leaking client id", () => {
+    expect(
+      transportTestErrorForAdmin("invalid_client: AADSTS70011 client_id=abc graph.microsoft.com"),
+    ).toBe("Microsoft Graph authentication failed. Check tenant, client ID, and secret.");
+  });
+
+  it("falls back to actionable generic message", () => {
+    expect(transportTestErrorForAdmin("smtp: weird internal failure at smtp.corp:25")).toBe(
+      "Send failed. Verify transport settings; see server logs for the technical detail.",
+    );
+  });
+
+  it("handles empty input", () => {
+    expect(transportTestErrorForAdmin(undefined)).toBe(
+      "Send failed. Check transport settings and try again.",
+    );
   });
 });
 

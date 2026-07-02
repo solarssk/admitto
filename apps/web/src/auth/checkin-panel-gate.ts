@@ -2,6 +2,8 @@ import type { Context, Next } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canAccessAdminPanel, canAccessCheckInPanel } from "@admitto/auth";
 
+import { resolveStaffEntryPath } from "../setup-routes.js";
+
 /** Requires `auth` on context (apply `requireSession` first). */
 export function createCheckInPanelCapabilityGuard(prisma: PrismaClient) {
   return async (c: Context, next: Next): Promise<Response | void> => {
@@ -10,7 +12,7 @@ export function createCheckInPanelCapabilityGuard(prisma: PrismaClient) {
       if (c.req.path.startsWith("/api/")) {
         return c.json({ error: "unauthorized" }, 401);
       }
-      return c.redirect("/login", 302);
+      return c.redirect(await resolveStaffEntryPath(prisma), 302);
     }
 
     if (!(await canAccessCheckInPanel(prisma, auth.userId))) {

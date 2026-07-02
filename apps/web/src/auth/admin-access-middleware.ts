@@ -17,6 +17,7 @@ import {
   logCfAccessAuth,
   logAccessDenied,
 } from "@admitto/auth";
+import { resolveStaffEntryPath } from "../setup-routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 
 const CF_ACCESS_FORBIDDEN_MESSAGE =
@@ -26,11 +27,11 @@ function isApiAdminPath(path: string): boolean {
   return path === "/api/admin" || path.startsWith("/api/admin/");
 }
 
-function loginBoundaryResponse(c: Context): Response {
+async function loginBoundaryResponse(c: Context, prisma: PrismaClient): Promise<Response> {
   if (isApiAdminPath(c.req.path)) {
     return c.json({ error: "authentication_required" }, 401);
   }
-  return c.redirect("/login", 302);
+  return c.redirect(await resolveStaffEntryPath(prisma), 302);
 }
 
 function rejectInvalidJwt(c: Context, reason: string): Response {
@@ -130,11 +131,11 @@ async function sessionSuperadminGate(
 ): Promise<Response | void> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
   if (!rawToken) {
-    return loginBoundaryResponse(c);
+    return loginBoundaryResponse(c, prisma);
   }
   const validated = await validateSession(prisma, rawToken);
   if (!validated) {
-    return loginBoundaryResponse(c);
+    return loginBoundaryResponse(c, prisma);
   }
   if (!(await canManageInstance(prisma, validated.userId))) {
     logAccessDenied({
