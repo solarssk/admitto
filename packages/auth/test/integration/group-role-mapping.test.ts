@@ -207,14 +207,8 @@ describe("OIDC instance superadmin revoke floor-guard", () => {
     });
   }
 
-  async function grantOidcInstanceSuperadmin(userId: string) {
+  async function ensureFloorSuperadminMapping() {
     await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: FLOOR_PROVIDER_ID } });
-    await prisma.oidcRoleGrant.deleteMany({
-      where: { user_id: userId, provider_id: FLOOR_PROVIDER_ID },
-    });
-    await prisma.roleAssignment.deleteMany({
-      where: { user_id: userId, role: "superadmin", scope_type: "instance", scope_id: null },
-    });
     await prisma.oidcGroupRoleMapping.create({
       data: {
         provider_id: FLOOR_PROVIDER_ID,
@@ -223,6 +217,18 @@ describe("OIDC instance superadmin revoke floor-guard", () => {
         scope_type: "instance",
         scope_id: "",
       },
+    });
+  }
+
+  async function grantOidcInstanceSuperadmin(userId: string, options?: { resetMapping?: boolean }) {
+    if (options?.resetMapping !== false) {
+      await ensureFloorSuperadminMapping();
+    }
+    await prisma.oidcRoleGrant.deleteMany({
+      where: { user_id: userId, provider_id: FLOOR_PROVIDER_ID },
+    });
+    await prisma.roleAssignment.deleteMany({
+      where: { user_id: userId, role: "superadmin", scope_type: "instance", scope_id: null },
     });
     await applyOidcGroupRoleMappings(prisma, FLOOR_PROVIDER_ID, userId, [FLOOR_SUPER_GROUP]);
   }
@@ -323,6 +329,53 @@ describe("OIDC instance superadmin revoke floor-guard", () => {
     } finally {
       await prisma.roleAssignment.deleteMany({ where: { user_id: secondSuperId } });
       await prisma.user.delete({ where: { id: secondSuperId } });
+    }
+  });
+
+  it("does not fail when two OIDC superadmins lose group concurrently", async () => {
+    const secondUser = await prisma.user.create({
+      data: {
+        email: SECOND_SUPER_EMAIL,
+        password_hash: await hashPassword("x"),
+      },
+    });
+    try {
+      await removeOtherInstanceSuperadmins([FLOOR_USER_ID, secondUser.id]);
+      await grantOidcInstanceSuperadmin(FLOOR_USER_ID);
+      await grantOidcInstanceSuperadmin(secondUser.id, { resetMapping: false });
+
+      expect(await countActiveInstanceSuperadmins(prisma)).toBe(2);
+
+      await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: FLOOR_PROVIDER_ID } });
+
+      await Promise.all([
+        applyOidcGroupRoleMappings(prisma, FLOOR_PROVIDER_ID, FLOOR_USER_ID, []),
+        applyOidcGroupRoleMappings(prisma, FLOOR_PROVIDER_ID, secondUser.id, []),
+      ]);
+
+      expect(await countActiveInstanceSuperadmins(prisma)).toBe(1);
+
+      const floorKeeps = await prisma.roleAssignment.findFirst({
+        where: {
+          user_id: FLOOR_USER_ID,
+          role: "superadmin",
+          scope_type: "instance",
+          scope_id: null,
+        },
+      });
+      const secondKeeps = await prisma.roleAssignment.findFirst({
+        where: {
+          user_id: secondUser.id,
+          role: "superadmin",
+          scope_type: "instance",
+          scope_id: null,
+        },
+      });
+      expect(Boolean(floorKeeps) !== Boolean(secondKeeps)).toBe(true);
+    } finally {
+      await prisma.oidcRoleGrant.deleteMany({ where: { user_id: secondUser.id } });
+      await prisma.roleAssignment.deleteMany({ where: { user_id: secondUser.id } });
+      await prisma.user.delete({ where: { id: secondUser.id } });
     }
   });
 

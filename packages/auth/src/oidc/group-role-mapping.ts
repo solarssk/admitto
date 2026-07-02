@@ -38,6 +38,18 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
+/** Prisma Serializable transaction conflict (concurrent superadmin floor-guard revokes). */
+function isSerializationFailure(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: string }).code === "P2034"
+  );
+}
+
+const SERIALIZATION_RETRY_ATTEMPTS = 3;
+
 /** Natural key for an OIDC-owned grant row. */
 function grantWhere(
   userId: string,
@@ -141,28 +153,41 @@ async function revokeOidcRoleGrant(
     isInstanceSuperadminGrant(grant) &&
     (await removesActiveInstanceSuperadmin(prisma, grant, userId));
 
-  return runInOwnTransaction(
-    prisma,
-    async (tx) => {
-      if (isInstanceSuperadminGrant(grant)) {
-        if (await removesActiveInstanceSuperadmin(tx, grant, userId)) {
-          const remaining = await countActiveInstanceSuperadmins(tx);
-          if (remaining <= 1) {
-            logOidcSuperadminRevokeBlocked({ providerId, userId });
-            return false;
+  const transactionOptions = needsSerializableFloorGuard
+    ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    : undefined;
+
+  for (let attempt = 0; attempt < SERIALIZATION_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await runInOwnTransaction(
+        prisma,
+        async (tx) => {
+          if (isInstanceSuperadminGrant(grant)) {
+            if (await removesActiveInstanceSuperadmin(tx, grant, userId)) {
+              const remaining = await countActiveInstanceSuperadmins(tx);
+              if (remaining <= 1) {
+                logOidcSuperadminRevokeBlocked({ providerId, userId });
+                return false;
+              }
+            }
           }
-        }
+          await tx.roleAssignment.deleteMany({
+            where: { id: grant.role_assignment_id, user_id: userId },
+          });
+          // OidcRoleGrant is removed via ON DELETE CASCADE on role_assignment_id FK.
+          return true;
+        },
+        transactionOptions,
+      );
+    } catch (err) {
+      if (isSerializationFailure(err) && attempt < SERIALIZATION_RETRY_ATTEMPTS - 1) {
+        continue;
       }
-      await tx.roleAssignment.deleteMany({
-        where: { id: grant.role_assignment_id, user_id: userId },
-      });
-      // OidcRoleGrant is removed via ON DELETE CASCADE on role_assignment_id FK.
-      return true;
-    },
-    needsSerializableFloorGuard
-      ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-      : undefined,
-  );
+      throw err;
+    }
+  }
+
+  throw new Error("unreachable: revokeOidcRoleGrant serialization retries exhausted");
 }
 
 /**
