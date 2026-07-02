@@ -8,6 +8,7 @@ import type {
 import { CameraScanner } from "./CameraScanner.js";
 import { CheckInCameraResultPanel } from "./CheckInCameraResultPanel.js";
 import { CkRecentScans } from "./CkRecentScans.js";
+import { checkinSearchFieldAttrs } from "./searchFieldAttrs.js";
 
 type CameraOverlayProps = {
   open: boolean;
@@ -145,6 +146,7 @@ export function CameraOverlay({
             <input
               type="text"
               className="ck-overlay__manual-input"
+              name="checkin-overlay-search"
               value={manualToken}
               onChange={(e) => {
                 setManualToken(e.target.value);
@@ -152,11 +154,10 @@ export function CameraOverlay({
               }}
               onKeyDown={onManualKeyDown}
               placeholder="Paste token or search by name, email…"
-              autoComplete="off"
-              spellCheck={false}
               aria-label="Enter token or search by name"
               aria-invalid={manualError ? true : undefined}
               aria-describedby={manualError ? "ck-overlay-manual-error" : undefined}
+              {...checkinSearchFieldAttrs}
             />
             {manualError && (
               <p id="ck-overlay-manual-error" className="ck-overlay__manual-error" role="alert">
