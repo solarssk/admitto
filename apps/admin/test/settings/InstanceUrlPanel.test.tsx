@@ -97,7 +97,23 @@ describe("InstanceUrlPanel", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(screen.getByText(/query or fragment/i)).toBeTruthy();
+      expect(screen.getByText(/a query/i)).toBeTruthy();
+    });
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it("rejects embedded credentials on save without calling API", async () => {
+    mockFetch.mockResolvedValueOnce(emptySettings);
+    render(<InstanceUrlPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Instance URL"), {
+      target: { value: "https://user:pass@tickets.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByText(/credentials/i)).toBeTruthy();
     });
     expect(mockPatch).not.toHaveBeenCalled();
   });

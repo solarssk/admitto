@@ -23,6 +23,7 @@ function isValidInstanceUrl(value: string): boolean {
   try {
     const parsed = new URL(trimmed);
     if (parsed.search || parsed.hash) return false;
+    if (parsed.username || parsed.password) return false;
     return true;
   } catch {
     return false;
@@ -87,7 +88,7 @@ export function InstanceUrlPanel() {
 
     if (trimmed && !isValidInstanceUrl(trimmed)) {
       setSaveError(
-        "Instance URL must use https://, must not end with a trailing slash, and must not include a query or fragment.",
+        "Instance URL must use https://, must not end with a trailing slash, and must not include credentials, a query, or a fragment.",
       );
       setSaving(false);
       return;

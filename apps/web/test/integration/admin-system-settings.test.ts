@@ -462,6 +462,21 @@ describe("PATCH /api/admin/system-settings", () => {
     expect(body.error).toBe("validation_error");
   });
 
+  it("rejects instance_url with embedded credentials", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ instance_url: "https://user:pass@tickets.example.com" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_error");
+  });
+
   it("env-locked instance_url returns 400 when BASE_URL is set", async () => {
     const prev = process.env.BASE_URL;
     process.env.BASE_URL = "https://env.example.com";

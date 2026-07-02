@@ -36,6 +36,18 @@ describe("normalizePersistedInstanceUrl", () => {
       /query string or fragment/i,
     );
   });
+
+  it("rejects embedded credentials", () => {
+    expect(() =>
+      normalizePersistedInstanceUrl("https://user:pass@tickets.example.com"),
+    ).toThrow(/credentials/i);
+  });
+
+  it("rejects username-only userinfo", () => {
+    expect(() => normalizePersistedInstanceUrl("https://user@tickets.example.com")).toThrow(
+      /credentials/i,
+    );
+  });
 });
 
 describe("normalizeRuntimeBaseUrl", () => {
