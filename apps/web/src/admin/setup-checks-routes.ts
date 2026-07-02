@@ -37,11 +37,23 @@ function checkEncryption(env: NodeJS.ProcessEnv = process.env): SetupCheckResult
   }
 }
 
-/** Validate instance URL from env or DB settings. */
+/** Validate instance URL: injected app URL → env BASE_URL → DB settings. */
 async function checkInstanceUrl(
   db: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,
+  injectedBaseUrl?: string,
 ): Promise<SetupCheckResult> {
+  const injected = injectedBaseUrl?.trim();
+  if (injected) {
+    try {
+      const normalized = normalizeRuntimeBaseUrl(injected, env);
+      return { ok: true, detail: normalized };
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "Invalid instance URL";
+      return { ok: false, detail };
+    }
+  }
+
   const envRaw = env.BASE_URL?.trim();
   if (envRaw) {
     if (env.NODE_ENV !== "development" && env.NODE_ENV !== "test" && !envRaw.startsWith("https://")) {
@@ -93,6 +105,7 @@ export async function handleGetSetupChecks(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) {
@@ -128,7 +141,7 @@ export async function handleGetSetupChecks(
       migrations,
       redis,
       encryption: checkEncryption(),
-      base_url: await checkInstanceUrl(db),
+      base_url: await checkInstanceUrl(db, process.env, injectedBaseUrl),
     },
   };
 

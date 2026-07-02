@@ -54,7 +54,7 @@ export function normalizePersistedInstanceUrl(raw: string): string {
   if (parsed.username || parsed.password) {
     throw new Error("Instance URL must not include credentials");
   }
-  const validated = validateHttpUrl("BASE_URL", trimmed);
+  const validated = validateHttpUrl("instance_url", trimmed);
   if (!validated.startsWith("https://")) {
     throw new Error("Instance URL must use https://");
   }

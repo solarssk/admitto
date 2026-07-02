@@ -167,6 +167,24 @@ async function sessionCookieFor(userId: string): Promise<string> {
   return `admitto_session=${rawToken}`;
 }
 
+function createMailAppWithoutInjectedBaseUrl(): ReturnType<typeof createApp> {
+  const prevNode = process.env.NODE_ENV;
+  process.env.NODE_ENV = "development";
+  try {
+    return createApp({
+      prisma,
+      checkinToken: "admin-comm-checkin-token-32chars!!",
+      allowCheckinBearer: true,
+      rateLimitStore: createRateLimitStore(),
+      skipCheckinBootValidation: true,
+      adminDistRoot,
+      mailDeliveryDeps: { exportSink: (p) => { exported.push(p); } },
+    });
+  } finally {
+    process.env.NODE_ENV = prevNode;
+  }
+}
+
 beforeAll(async () => {
   prisma = new PrismaClient();
   await seed(prisma);
@@ -389,7 +407,8 @@ describe("POST /api/admin/events/:eventId/template/preview", () => {
     };
 
     try {
-      const res = await app.request(`/api/admin/events/${EVENT_A}/template/preview`, {
+      const dbOnlyApp = createMailAppWithoutInjectedBaseUrl();
+      const res = await dbOnlyApp.request(`/api/admin/events/${EVENT_A}/template/preview`, {
         method: "POST",
         headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
         body: JSON.stringify(logoTemplate),

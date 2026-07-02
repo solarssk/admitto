@@ -282,6 +282,7 @@ async function handleHealthz(c: Context, db: PrismaClient) {
 /** Build the Admitto Hono app (public tickets, auth, check-in API, operator HTML). */
 export function createApp(options: CreateAppOptions = {}) {
   const db = options.prisma ?? defaultPrisma;
+  const mailInjectedBaseUrl = options.baseUrl;
   const baseUrl = options.baseUrl ?? resolveBaseUrl();
   const allowCheckinBearer =
     options.allowCheckinBearer !== undefined
@@ -506,7 +507,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminBulkResendRateLimit,
-    guardArchivedEvent((c) => handleBulkResendTickets(c, db, mailDeliveryDeps, baseUrl)),
+    guardArchivedEvent((c) => handleBulkResendTickets(c, db, mailDeliveryDeps, mailInjectedBaseUrl)),
   );
   app.get("/api/admin/events/:eventId/attendees/:id", staffAdminGate, (c) =>
     handleGetEventAttendee(c, db),
@@ -522,7 +523,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminResendRateLimit,
-    guardArchivedEvent((c) => handleResendEventAttendeeTicket(c, db, mailDeliveryDeps, baseUrl)),
+    guardArchivedEvent((c) => handleResendEventAttendeeTicket(c, db, mailDeliveryDeps, mailInjectedBaseUrl)),
   );
   app.get("/api/admin/events/:eventId/template", staffAdminGate, (c) =>
     handleGetEventTemplate(c, db),
@@ -531,7 +532,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePutEventTemplate(c, db),
   ));
   app.post("/api/admin/events/:eventId/template/preview", jsonPostCsrf, staffAdminGate, adminTemplatePreviewRateLimit, templateBodyLimit, guardArchivedEvent((c) =>
-    handlePreviewEventTemplate(c, db, baseUrl),
+    handlePreviewEventTemplate(c, db, mailInjectedBaseUrl),
   ));
   app.post(
     "/api/admin/events/:eventId/template/test-send",
@@ -539,7 +540,7 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     templateTestSendBodyLimit,
     adminCommunicationRateLimit,
-    guardArchivedEvent((c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps, baseUrl)),
+    guardArchivedEvent((c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps, mailInjectedBaseUrl)),
   );
   app.get("/api/admin/events/:eventId/templates", staffAdminGate, (c) =>
     handleListEventTemplates(c, db),
@@ -573,7 +574,7 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminTemplatePreviewRateLimit,
     templateBodyLimit,
-    guardArchivedEvent((c) => handlePreviewEventTemplateById(c, db, baseUrl)),
+    guardArchivedEvent((c) => handlePreviewEventTemplateById(c, db, mailInjectedBaseUrl)),
   );
   app.post(
     "/api/admin/events/:eventId/templates/:templateId/test-send",
@@ -582,7 +583,7 @@ export function createApp(options: CreateAppOptions = {}) {
     templateTestSendBodyLimit,
     adminCommunicationRateLimit,
     guardArchivedEvent((c) =>
-      handleTestSendEventTemplateById(c, db, mailDeliveryDeps, baseUrl),
+      handleTestSendEventTemplateById(c, db, mailDeliveryDeps, mailInjectedBaseUrl),
     ),
   );
   app.post(
@@ -590,7 +591,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminBulkResendRateLimit,
-    guardArchivedEvent((c) => handleBulkSend(c, db, mailDeliveryDeps, baseUrl)),
+    guardArchivedEvent((c) => handleBulkSend(c, db, mailDeliveryDeps, mailInjectedBaseUrl)),
   );
   app.get("/api/admin/events/:eventId/send/status/:batchId", staffAdminGate, (c) =>
     handleBulkSendStatus(c, db),
@@ -642,7 +643,7 @@ export function createApp(options: CreateAppOptions = {}) {
     (c) => handlePostMailSettingsTest(c, db, mailDeliveryDeps),
   );
   app.get("/api/admin/setup/checks", staffAdminGate, (c) =>
-    handleGetSetupChecks(c, db, rateLimitStore),
+    handleGetSetupChecks(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.get("/api/admin/setup/org-branding", staffAdminGate, (c) => handleGetSetupOrgBranding(c, db));
   app.patch("/api/admin/setup/org-branding", jsonPostCsrf, staffAdminGate, (c) =>
