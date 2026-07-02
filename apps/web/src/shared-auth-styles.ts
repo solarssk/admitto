@@ -126,6 +126,15 @@ body {
 }
 .auth-input:focus { border-color: var(--at-blue); box-shadow: 0 0 0 3px rgba(6,111,209,0.15); }
 .auth-field { margin-bottom: 1rem; }
+.auth-label-optional {
+  font-weight: 400;
+  color: var(--at-gray-500);
+}
+.auth-field-hint {
+  margin: 0.375rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--at-gray-500);
+}
 .auth-otp-wrap { margin-bottom: 1rem; }
 .auth-otp-digits {
   display: flex;

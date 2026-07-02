@@ -1,0 +1,37 @@
+import { describe, expect, it } from "vitest";
+import {
+  renderSetupPage,
+  setupErrorMessage,
+  setupPasswordRulesAttribute,
+} from "../../src/setup-page.js";
+
+describe("setup-page", () => {
+  it("exposes password rules for password managers", () => {
+    expect(setupPasswordRulesAttribute()).toBe("minlength: 12;");
+  });
+
+  it("renders password manager friendly fields", () => {
+    const html = renderSetupPage();
+    expect(html).toContain('autocomplete="email"');
+    expect(html).toContain('passwordrules="minlength: 12;"');
+    expect(html).toContain('autocomplete="new-password"');
+    expect(html).toContain('name="confirm_password"');
+    expect(html).toContain('id="password-hint"');
+  });
+
+  it("maps email_taken to mockup copy", () => {
+    expect(setupErrorMessage("email_taken")).toBe(
+      "An account with this email already exists.",
+    );
+  });
+
+  it("preserves email and display name on validation error", () => {
+    const html = renderSetupPage("password_mismatch", {
+      email: "admin@example.com",
+      display_name: "Ops Lead",
+    });
+    expect(html).toContain('value="admin@example.com"');
+    expect(html).toContain('value="Ops Lead"');
+    expect(html).toContain("Passwords do not match.");
+  });
+});

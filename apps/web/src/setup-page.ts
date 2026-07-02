@@ -1,3 +1,4 @@
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth";
 import { getLoginPageSecurityHeaders } from "./login-page.js";
 import {
   AUTH_PAGE_CSS,
@@ -37,7 +38,7 @@ export function setupErrorMessage(code?: SetupErrorCode): string | undefined {
     case "password_mismatch":
       return "Passwords do not match.";
     case "email_taken":
-      return "That email is already registered.";
+      return "An account with this email already exists.";
     default:
       return undefined;
   }
@@ -48,37 +49,44 @@ export interface SetupFormValues {
   display_name?: string;
 }
 
+/** Password Rules language hint for password managers (Safari, 1Password, etc.). */
+export function setupPasswordRulesAttribute(): string {
+  return `minlength: ${PASSWORD_MIN_LENGTH};`;
+}
+
 /** Render first-run superadmin bootstrap form (no client-side scripts). */
 export function renderSetupPage(error?: SetupErrorCode, values: SetupFormValues = {}): string {
   const message = setupErrorMessage(error);
   const errorBlock = message ? `<div class="auth-error" role="alert">${esc(message)}</div>` : "";
   const emailValue = values.email ? ` value="${esc(values.email)}"` : "";
   const displayNameValue = values.display_name ? ` value="${esc(values.display_name)}"` : "";
+  const passwordRules = esc(setupPasswordRulesAttribute());
 
   const card = `${renderAuthBrand()}
-    <h2 class="auth-page-action">Initial setup</h2>
-    <p class="subtitle">Create the first superadmin account for this Admitto instance.</p>
+    <h2 class="auth-page-action">Set up Admitto</h2>
+    <p class="subtitle">Create your administrator account to get started.</p>
     ${errorBlock}
     <form method="post" action="/setup" aria-label="Admitto initial setup">
       <div class="auth-field">
         <label class="auth-label" for="email">Email</label>
-        <input class="auth-input" id="email" type="email" name="email" placeholder="admin@example.com" required autocomplete="username"${emailValue}>
+        <input class="auth-input" id="email" type="email" name="email" placeholder="admin@example.com" required autocomplete="email" inputmode="email" autocapitalize="off"${emailValue}>
       </div>
       <div class="auth-field">
-        <label class="auth-label" for="display_name">Display name</label>
+        <label class="auth-label" for="display_name">Display name <span class="auth-label-optional">(optional)</span></label>
         <input class="auth-input" id="display_name" type="text" name="display_name" placeholder="Admin" maxlength="120" autocomplete="name"${displayNameValue}>
       </div>
       <div class="auth-field">
         <label class="auth-label" for="password">Password</label>
-        <input class="auth-input" id="password" type="password" name="password" required minlength="12" autocomplete="new-password">
+        <input class="auth-input" id="password" type="password" name="password" required minlength="${PASSWORD_MIN_LENGTH}" autocomplete="new-password" autocapitalize="off" spellcheck="false" passwordrules="${passwordRules}" aria-describedby="password-hint">
+        <p class="auth-field-hint" id="password-hint">At least ${PASSWORD_MIN_LENGTH} characters.</p>
       </div>
       <div class="auth-field">
         <label class="auth-label" for="confirm_password">Confirm password</label>
-        <input class="auth-input" id="confirm_password" type="password" name="confirm_password" required minlength="12" autocomplete="new-password">
+        <input class="auth-input" id="confirm_password" type="password" name="confirm_password" required minlength="${PASSWORD_MIN_LENGTH}" autocomplete="new-password" autocapitalize="off" spellcheck="false">
       </div>
-      <button class="auth-btn-primary" type="submit">Create superadmin</button>
+      <button class="auth-btn-primary" type="submit">Create administrator account</button>
     </form>
-    <p class="auth-footer">You will enroll MFA immediately after account creation.</p>`;
+    <p class="auth-footer">This page is only shown during initial setup. You will enroll MFA immediately after account creation.</p>`;
 
   return renderAuthDocument({
     step: "Initial setup",

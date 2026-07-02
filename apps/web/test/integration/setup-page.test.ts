@@ -76,7 +76,10 @@ describe("GET /setup", () => {
     const html = await res.text();
     expect(html).toContain('action="/setup"');
     expect(html).toContain('name="confirm_password"');
-    expect(html).toContain("Initial setup");
+    expect(html).toContain('autocomplete="email"');
+    expect(html).toContain('passwordrules="minlength: 12;"');
+    expect(html).toContain("Set up Admitto");
+    expect(html).toContain("Create administrator account");
     expect(html).not.toContain("<script");
   });
 
