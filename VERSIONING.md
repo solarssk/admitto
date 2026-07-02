@@ -49,8 +49,8 @@ flowchart LR
 
 ### Common scope mistakes (read before opening a milestone PR)
 
-- **First-event attendee intake** is **MS Forms → Power Automate → `/api/ingest`** (target **v0.6**), not a native public registration UI inside Admitto.
-- **Native registration form**, custom branded domain, full i18n, multi-room scheduling, and mini-CRM belong to **`v1.1+`**, not to `v0.6`/`v0.7` pre-go-live milestones.
+- **First-event attendee intake** is **MS Forms → Power Automate → `/api/ingest`** (target **v0.5**), not a native public registration UI inside Admitto.
+- **Native registration form**, custom branded domain, full i18n, multi-room scheduling, and mini-CRM belong to **`v1.1+`**, not to `v0.5`–`v0.7` pre-go-live milestones.
 - **`v0.x` patches** (`v0.4.1`, `v0.4.2`, …) are normal — they still belong to the same minor line until the next tagged minor (e.g. `v0.5.0`).
 
 Internal Polish product guide (maintainer docs, outside this public repo) mirrors this model; **this file is the canonical English definition for contributors and operators.**
