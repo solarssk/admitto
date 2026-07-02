@@ -15,11 +15,16 @@ export interface RetryDeliveryOptions {
 /**
  * Retry a failed transient delivery — re-sends the frozen snapshot with fresh ticket links.
  *
- * TODO(v0.5): No HTTP route currently calls this function. When a retry endpoint is added
- * (e.g. POST /api/admin/deliveries/:id/retry), the caller MUST resolve baseUrl via
- * `resolveMailInstanceBaseUrl(db, env)` from `apps/web/src/admin/admin-helpers.ts` and
- * pass it as `options.baseUrl`. Without it, retries fall back to env-only BASE_URL and
- * will fail to generate ticket links when only DB instance_url is configured.
+ * TODO(v0.4.10 Slice E): No caller currently invokes this function — dead export until the
+ * `admitto mail retry-failed` CLI command (see `_ops/prompts/63-admitto-cli.md`) becomes its
+ * first caller. That command MUST resolve baseUrl via the context-free
+ * `resolveInstanceBaseUrl(db, env)` from `apps/web/src/instance-base-url.ts` — NOT the
+ * `resolveMailInstanceBaseUrl(c, db, env)` wrapper in `apps/web/src/admin/admin-helpers.ts`
+ * used by HTTP routes, since that wrapper requires a Hono `Context` (to return a 422 JSON
+ * response) that a CLI process does not have. The CLI must catch `InstanceUrlRequiredError`
+ * itself and print a CLI-appropriate error instead. Without wiring baseUrl at all, retries
+ * fall back to env-only BASE_URL and will fail to generate ticket links when only DB
+ * instance_url is configured.
  */
 export async function retryDelivery(
   deliveryId: string,
