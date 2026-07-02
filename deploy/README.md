@@ -207,11 +207,45 @@ See [`../../_ops/design/deployment-cloudflare-access.md`](../../_ops/design/depl
 
 Public attendee paths (`/t/*`, `/q/*`) must stay bypassed at Cloudflare.
 
+## Retention (auth sessions, mail snapshots)
+
+**On app startup:** `docker-entrypoint.sh` runs `purge-auth-retention` and
+`nullify-delivery-snapshots` (best-effort, 120s timeout per CLI).
+
+**Daily sidecar (`retention`):** the same CLIs run every 24 hours so long-lived stacks
+do not skip retention between restarts. Logs:
+
+```bash
+docker compose logs -f retention
+```
+
+Manual one-off (same commands as the sidecar):
+
+```bash
+docker compose exec app node packages/auth/dist/cli.js purge-auth-retention
+docker compose exec app node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots
+```
+
+Failed runs log `FAILED` but do not stop the loop — check logs after deploy.
+
 ## PostgreSQL backups (ADR 0012, ADR 0027)
 
 **Automatic (upgrades):** when pending migrations exist, the app entrypoint writes
 `pre-migration-<UTC>.sql.gz` to the `migration_backups` volume before `migrate deploy`. Copy these
 offsite when possible (ADR 0023).
+
+**Automatic (nightly):** the `db-backup` sidecar writes `nightly-<UTC>.sql.gz` to the same
+`migration_backups` volume (14-day retention via `find -mtime`; pre-migration files use count-based
+`MIGRATION_BACKUP_RETENTION` instead). Verify after first deploy:
+
+```bash
+docker compose logs db-backup
+docker compose exec db-backup sh -c 'ls -la /backups/nightly-*.sql.gz'
+docker compose exec db-backup gzip -t /backups/nightly-*.sql.gz
+```
+
+Nightly dumps on the host volume are **not** a full disaster-recovery strategy — copy offsite per
+ADR 0023 (S3, rsync, or your backup tool). TODO: document operator-specific offsite copy.
 
 **Manual (ops milestones):** run from the `deploy/` directory. Postgres credentials come from the **db container env** (compose `.env`), not your host shell — use `sh -c` so `$POSTGRES_USER` / `$POSTGRES_DB` expand inside the container:
 

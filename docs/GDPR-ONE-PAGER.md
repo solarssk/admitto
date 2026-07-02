@@ -46,15 +46,15 @@ If you rely on **legitimate interest** (Art. 6(1)(f) GDPR), your DPO should docu
 
 ## Retention
 
-Two layers: **product-automated** (container startup, best-effort) vs **operator policy**
+Two layers: **product-automated** (daily sidecar + container startup, best-effort) vs **operator policy**
 (export/delete, log retention). Periods differ by design.
 
 | Data | Policy (default design intent) |
 |------|-------------------------------|
-| Login sessions, trusted devices | Purged automatically when expired/revoked (container startup) |
-| Email delivery snapshots (`rendered_html`, `rendered_subject`) | Nullified **60 days** after terminal delivery; delivery log metadata retained |
+| Login sessions, trusted devices | Purged automatically when expired/revoked — **daily automated sidecar + app startup** |
+| Email delivery snapshots (`rendered_html`, `rendered_subject`) | Nullified **60 days** after terminal delivery — **daily automated sidecar + app startup**; delivery log metadata retained |
 | IP in admin audit / check-in logs | **30 days or operator corporate log retention policy** — not auto-purged by product |
-| Event attendee PII | Operator export via admin UI; erasure via `DELETE` API per DSAR procedure (no SPA delete button yet) |
+| Event attendee PII | **Retained until operator erasure** (conscious product default); export via admin UI; erasure via `DELETE` API per DSAR procedure (no SPA delete button yet) |
 | Audit logs (general) | Per customer security policy; minimise personal data in log lines |
 
 Organizers can export attendee lists before erasure (spreadsheet / PDF export in admin UI).

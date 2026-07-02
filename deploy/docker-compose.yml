@@ -79,6 +79,45 @@ services:
     networks:
       - internal
 
+  retention:
+    image: ${ADMITTO_IMAGE:-ghcr.io/solarssk/admitto:local}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    depends_on:
+      app:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          echo "[retention] $$(date -u +%FT%TZ) running auth + mail retention"
+          node packages/auth/dist/cli.js purge-auth-retention \
+            || echo "[retention] auth purge FAILED"
+          node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots \
+            || echo "[retention] mail nullify FAILED"
+          sleep 86400
+        done
+    networks:
+      - internal
+
+  db-backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MIGRATION_BACKUP_DIR: /backups
+    entrypoint: ["/bin/sh", "/scripts/nightly-db-backup-loop.sh"]
+    volumes:
+      - migration_backups:/backups
+      - ./scripts/nightly-db-backup-loop.sh:/scripts/nightly-db-backup-loop.sh:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+
 networks:
   internal:
 
