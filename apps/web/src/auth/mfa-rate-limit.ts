@@ -1,13 +1,8 @@
 import type { Context, Next } from "hono";
 import { logRateLimitExceeded } from "@admitto/auth";
+import { RATE_POLICIES } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
-
-const MFA_VERIFY_WINDOW_MS = 15 * 60_000;
-/** Brute-force guard for 6-digit TOTP. */
-const MFA_TOTP_VERIFY_LIMIT = 10;
-/** Separate, more generous bucket for high-entropy recovery codes (user typos). */
-const MFA_RECOVERY_VERIFY_LIMIT = 30;
 
 function mfaTotpSessionKey(sessionId: string): string {
   return `mfa:totp:session:${sessionId}`;
@@ -32,8 +27,7 @@ export function isTotpMfaAttempt(code: string): boolean {
 
 /**
  * Rate-limit MFA verification per session and IP.
- * TOTP and recovery codes use separate buckets (recovery is not brute-forceable but users typo).
- * Returns false when throttled.
+ * Dual-key check stays inline — bucket choice depends on submitted code shape.
  */
 export async function checkMfaVerifyRateLimit(
   store: RateLimitStore,
@@ -42,19 +36,28 @@ export async function checkMfaVerifyRateLimit(
   code: string,
 ): Promise<boolean> {
   const totpAttempt = isTotpMfaAttempt(code);
+  const policy = RATE_POLICIES[totpAttempt ? "mfa:verify-totp" : "mfa:verify-recovery"];
+  const { windowMs, max } = policy.checks[0];
 
   const sessionKey = totpAttempt ? mfaTotpSessionKey(sessionId) : mfaRecoverySessionKey(sessionId);
   const ipKey = totpAttempt ? mfaTotpIpKey(ip) : mfaRecoveryIpKey(ip);
-  const limit = totpAttempt ? MFA_TOTP_VERIFY_LIMIT : MFA_RECOVERY_VERIFY_LIMIT;
 
-  const sessionResult = await store.hit(sessionKey, MFA_VERIFY_WINDOW_MS, limit);
+  const sessionResult = await store.hit(sessionKey, windowMs, max);
   if (!sessionResult.allowed) {
-    logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: totpAttempt ? "session_totp" : "session_recovery" });
+    logRateLimitExceeded({
+      scope: "mfa_verify",
+      ip,
+      keyHint: totpAttempt ? "session_totp" : "session_recovery",
+    });
     return false;
   }
-  const ipResult = await store.hit(ipKey, MFA_VERIFY_WINDOW_MS, limit);
+  const ipResult = await store.hit(ipKey, windowMs, max);
   if (!ipResult.allowed) {
-    logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: totpAttempt ? "ip_totp" : "ip_recovery" });
+    logRateLimitExceeded({
+      scope: "mfa_verify",
+      ip,
+      keyHint: totpAttempt ? "ip_totp" : "ip_recovery",
+    });
     return false;
   }
   return true;
@@ -68,7 +71,16 @@ export function resolveMfaClientIp(c: Context): string {
 const MFA_ENROLL_WINDOW_MS = 15 * 60_000;
 const MFA_ENROLL_MAX_REQUESTS = 10;
 
-/** Rate-limit TOTP enrollment start per full session and IP (account self-service). */
+function enrollDenied(c: Context, format: "json" | "text"): Response {
+  return format === "text"
+    ? c.text("Too many requests", 429)
+    : c.json({ error: "too many requests" }, 429);
+}
+
+/**
+ * Rate-limit TOTP enrollment start per full session and IP (account self-service).
+ * Dual-key + format option — stays outside generic rateLimit() wrapper.
+ */
 export function createAccountMfaEnrollRateLimitMiddleware(
   store: RateLimitStore,
   options: { format?: "json" | "text" } = {},
@@ -91,17 +103,13 @@ export function createAccountMfaEnrollRateLimitMiddleware(
     );
     if (!sessionResult.allowed) {
       logRateLimitExceeded({ scope: "mfa_enroll", ip, keyHint: "session" });
-      return format === "text"
-        ? c.text("Too many requests", 429)
-        : c.json({ error: "too many requests" }, 429);
+      return enrollDenied(c, format);
     }
 
     const ipResult = await store.hit(`mfa:enroll:ip:${ip}`, MFA_ENROLL_WINDOW_MS, MFA_ENROLL_MAX_REQUESTS);
     if (!ipResult.allowed) {
       logRateLimitExceeded({ scope: "mfa_enroll", ip, keyHint: "ip" });
-      return format === "text"
-        ? c.text("Too many requests", 429)
-        : c.json({ error: "too many requests" }, 429);
+      return enrollDenied(c, format);
     }
 
     await next();
@@ -125,17 +133,13 @@ export function createMfaEnrollRateLimitMiddleware(
     );
     if (!sessionResult.allowed) {
       logRateLimitExceeded({ scope: "mfa_enroll", ip, keyHint: "session" });
-      return format === "text"
-        ? c.text("Too many requests", 429)
-        : c.json({ error: "too many requests" }, 429);
+      return enrollDenied(c, format);
     }
 
     const ipResult = await store.hit(`mfa:enroll:ip:${ip}`, MFA_ENROLL_WINDOW_MS, MFA_ENROLL_MAX_REQUESTS);
     if (!ipResult.allowed) {
       logRateLimitExceeded({ scope: "mfa_enroll", ip, keyHint: "ip" });
-      return format === "text"
-        ? c.text("Too many requests", 429)
-        : c.json({ error: "too many requests" }, 429);
+      return enrollDenied(c, format);
     }
 
     await next();

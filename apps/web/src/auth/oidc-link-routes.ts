@@ -10,7 +10,7 @@ import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { beginOidcAuthorizationRedirect } from "./oidc-flow.js";
 import { getOidcLinkPageSecurityHeaders, renderOidcLinkForm } from "./oidc-link-page.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
-import { checkOidcLinkStepUpRateLimit } from "./oidc-rate-limit.js";
+import { checkOidcLinkStepUpRateLimit } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
 const LINK_ERROR = "Invalid password or code. Try again.";

@@ -1,11 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import {
   InMemoryRateLimitStore,
   createPublicRateLimitMiddleware,
+  type RateLimitStore,
 } from "../src/rate-limit/index.js";
+import { RedisRateLimitStore } from "../src/rate-limit/redis.js";
 
-function makeRateLimitTestApp(store: InMemoryRateLimitStore) {
+function makeRateLimitTestApp(store: RateLimitStore) {
   const app = new Hono();
   app.use("/t/*", createPublicRateLimitMiddleware(store));
   app.use("/q/*", createPublicRateLimitMiddleware(store));
@@ -53,5 +55,17 @@ describe("public rate limit middleware", () => {
       const res = await app.request("/api/checkin/history", { headers: clientHeaders });
       expect(res.status).toBe(200);
     }
+  });
+
+  it("fails open when Redis is unreachable", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store = new RedisRateLimitStore("redis://127.0.0.1:1", { connectTimeoutMs: 200 });
+    const app = makeRateLimitTestApp(store);
+
+    const res = await app.request("/t/x", { headers: clientHeaders });
+    expect(res.status).toBe(200);
+
+    await store.disconnect();
+    warnSpy.mockRestore();
   });
 });

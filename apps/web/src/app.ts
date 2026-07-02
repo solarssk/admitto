@@ -56,32 +56,18 @@ import {
   createPublicRateLimitMiddleware,
   type RateLimitStore,
 } from "./rate-limit/index.js";
+import {
+  createHealthzRateLimitMiddleware,
+  rateLimit,
+} from "./rate-limit/policies.js";
 import { createRequireSession, createRequirePartialSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
-import { createOidcAuthRateLimitMiddleware } from "./auth/oidc-rate-limit.js";
 import {
   createAccountMfaEnrollRateLimitMiddleware,
   createMfaEnrollRateLimitMiddleware,
 } from "./auth/mfa-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
-import { createCheckinAuthenticatedRateLimit } from "./checkin-rate-limit.js";
 import { createCheckinStreamConcurrencyLimit } from "./checkin-stream-limit.js";
-import {
-  createAdminBulkResendRateLimit,
-  createAdminResendRateLimit,
-} from "./admin-resend-rate-limit.js";
-import {
-  createAdminExportRateLimit,
-  createAdminPiiExportRateLimit,
-} from "./admin-export-rate-limit.js";
-import { createAdminCommunicationRateLimit } from "./admin-communication-rate-limit.js";
-import { createAdminMailSettingsRateLimit } from "./admin-mail-settings-rate-limit.js";
-import {
-  createAdminImportPreviewRateLimit,
-  createAdminImportCommitRateLimit,
-  createAdminTemplatePreviewRateLimit,
-} from "./admin-heavy-ops-rate-limit.js";
-import { createAdminAuthProviderOpsRateLimit } from "./admin-auth-providers-rate-limit.js";
 import { handleLogin, handleLogout, handleMe, handlePostSessionDeviceLabel, handleMfaVerify, handleTotpEnroll, handleTotpConfirm, handleTotpBackupCodesComplete } from "./auth/routes.js";
 import {
   handleGetMfaEnroll,
@@ -242,8 +228,6 @@ import {
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
 import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
 import { handleReadyz } from "./ops/readyz.js";
-import { createReadyzRateLimitMiddleware } from "./ops/readyz-rate-limit.js";
-import { createHealthzRateLimitMiddleware } from "./ops/healthz-rate-limit.js";
 
 /** Parse check-in history `limit` query param: default 10, clamped to 1–100. */
 function parseCheckinHistoryLimit(raw: string | undefined): number {
@@ -312,12 +296,12 @@ export function createApp(options: CreateAppOptions = {}) {
   const app = new Hono();
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const opsHealthToken = resolveOpsHealthTokenOption(options.opsHealthToken);
-  const readyzRateLimit = createReadyzRateLimitMiddleware(rateLimitStore);
+  const readyzRateLimit = rateLimit(rateLimitStore, "ops:readyz");
   const healthzRateLimit = createHealthzRateLimitMiddleware(rateLimitStore);
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
   const loginRateLimitHtml = createLoginRateLimitMiddleware(rateLimitStore, { format: "text" });
-  const oidcAuthRateLimit = createOidcAuthRateLimitMiddleware(rateLimitStore);
+  const oidcAuthRateLimit = rateLimit(rateLimitStore, "auth:oidc");
   const mfaEnrollRateLimitJson = createMfaEnrollRateLimitMiddleware(rateLimitStore, { format: "json" });
   const mfaEnrollRateLimitHtml = createMfaEnrollRateLimitMiddleware(rateLimitStore, { format: "text" });
   const htmlPostCsrf = createCrossSitePostGuard({ format: "text" });
@@ -337,16 +321,19 @@ export function createApp(options: CreateAppOptions = {}) {
   /** Middleware: event manage access, then archived read-only guard, then route handler. */
   const guardArchivedEvent = (handler: (c: Context) => Response | Promise<Response>) =>
     withEventArchiveGuard(db, handler);
-  const adminResendRateLimit = createAdminResendRateLimit(rateLimitStore);
-  const adminBulkResendRateLimit = createAdminBulkResendRateLimit(rateLimitStore);
-  const adminPiiExportRateLimit = createAdminPiiExportRateLimit(rateLimitStore);
-  const adminExportRateLimit = createAdminExportRateLimit(rateLimitStore);
-  const adminCommunicationRateLimit = createAdminCommunicationRateLimit(rateLimitStore);
-  const adminMailSettingsRateLimit = createAdminMailSettingsRateLimit(rateLimitStore);
-  const adminImportPreviewRateLimit = createAdminImportPreviewRateLimit(rateLimitStore);
-  const adminImportCommitRateLimit = createAdminImportCommitRateLimit(rateLimitStore);
-  const adminTemplatePreviewRateLimit = createAdminTemplatePreviewRateLimit(rateLimitStore);
-  const adminAuthProviderOpsRateLimit = createAdminAuthProviderOpsRateLimit(rateLimitStore);
+  const adminResendRateLimit = rateLimit(rateLimitStore, "admin:resend");
+  const adminBulkResendRateLimit = rateLimit(rateLimitStore, "admin:resend-bulk");
+  const adminPiiExportRateLimit = rateLimit(rateLimitStore, "admin:export-pii");
+  const adminExportRateLimit = rateLimit(rateLimitStore, "admin:export");
+  const adminCommunicationRateLimit = rateLimit(rateLimitStore, "admin:test-send");
+  const adminMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:mail-transport-test");
+  const adminImportPreviewRateLimit = rateLimit(rateLimitStore, "admin:import-preview");
+  const adminImportCommitRateLimit = rateLimit(rateLimitStore, "admin:import-commit");
+  const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
+  const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
+  const checkinScanRateLimit = rateLimit(rateLimitStore, "checkin:scan");
+  const checkinHistoryRateLimit = rateLimit(rateLimitStore, "checkin:history");
+  const checkinStreamRateLimit = rateLimit(rateLimitStore, "checkin:stream");
   const importBodyLimit = bodyLimit({
     maxSize: MAX_IMPORT_BODY_BYTES,
     onError: (c) => c.json({ error: "file too large" }, 400),
@@ -954,7 +941,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/checkin/scan",
     createCheckinPreAuth(checkinAuthDeps),
     createCheckinSessionCsrfGuard(),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
+    checkinScanRateLimit,
     parseScanBodyMiddleware,
     createCheckinEventScope(checkinAuthDeps, eventIdFromScanBody),
     (c) => handleCheckinScan(c, db),
@@ -964,7 +951,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/checkin/lookup",
     createCheckinPreAuth(checkinAuthDeps),
     createCheckinSessionCsrfGuard(),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
+    checkinScanRateLimit,
     parseScanBodyMiddleware,
     createCheckinEventScope(checkinAuthDeps, eventIdFromCheckinBody),
     (c) => handleCheckinLookup(c, db),
@@ -973,7 +960,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get(
     "/api/checkin/attendees/:attendeeId",
     createCheckinPreAuth(checkinAuthDeps),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "history"),
+    checkinHistoryRateLimit,
     createCheckinEventScope(checkinAuthDeps, (c) => c.req.query("eventId") || undefined),
     (c) => handleGetAttendeeCard(c, db),
   );
@@ -982,7 +969,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/checkin/admit",
     createCheckinPreAuth(checkinAuthDeps),
     createCheckinSessionCsrfGuard(),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
+    checkinScanRateLimit,
     parseScanBodyMiddleware,
     createCheckinEventScope(checkinAuthDeps, eventIdFromCheckinBody),
     (c) => handleCheckinAdmit(c, db),
@@ -992,7 +979,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/checkin/items/:itemKey",
     createCheckinPreAuth(checkinAuthDeps),
     createCheckinSessionCsrfGuard(),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
+    checkinScanRateLimit,
     parseScanBodyMiddleware,
     createCheckinEventScope(checkinAuthDeps, eventIdFromCheckinBody),
     (c) => handleCheckinItemAction(c, db),
@@ -1002,7 +989,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/checkin/notes",
     createCheckinPreAuth(checkinAuthDeps),
     createCheckinSessionCsrfGuard(),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
+    checkinScanRateLimit,
     parseScanBodyMiddleware,
     createCheckinEventScope(checkinAuthDeps, eventIdFromCheckinBody),
     (c) => handleCheckinNote(c, db),
@@ -1012,7 +999,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/checkin/undo",
     createCheckinPreAuth(checkinAuthDeps),
     createCheckinSessionCsrfGuard(),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
+    checkinScanRateLimit,
     parseScanBodyMiddleware,
     createCheckinEventScope(checkinAuthDeps, eventIdFromCheckinBody),
     (c) => handleCheckinUndo(c, db),
@@ -1021,7 +1008,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get(
     "/api/checkin/ops-config",
     createCheckinPreAuth(checkinAuthDeps),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "history"),
+    checkinHistoryRateLimit,
     createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
     (c) => handleCheckinOpsConfig(c, db),
   );
@@ -1029,7 +1016,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get(
     "/api/checkin/stats",
     createCheckinPreAuth(checkinAuthDeps),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "history"),
+    checkinHistoryRateLimit,
     createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
     (c) => handleCheckinStats(c, db),
   );
@@ -1037,7 +1024,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get(
     "/api/checkin/events/:eventId/stream",
     createCheckinPreAuth(checkinAuthDeps),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "stream"),
+    checkinStreamRateLimit,
     createCheckinEventScope(checkinAuthDeps, (c) => c.req.param("eventId")),
     createCheckinStreamConcurrencyLimit(),
     (c) => handleEventStream(c),
@@ -1046,7 +1033,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get(
     "/api/checkin/history",
     createCheckinPreAuth(checkinAuthDeps),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "history"),
+    checkinHistoryRateLimit,
     createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
     (c) => handleCheckinHistory(c, db),
   );

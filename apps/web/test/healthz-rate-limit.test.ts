@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { InMemoryRateLimitStore } from "../src/rate-limit/in-memory.js";
 import type { RateLimitStore } from "../src/rate-limit/types.js";
-import { createHealthzRateLimitMiddleware } from "../src/ops/healthz-rate-limit.js";
+import { createHealthzRateLimitMiddleware } from "../src/rate-limit/policies.js";
 
 describe("createHealthzRateLimitMiddleware", () => {
   it("isolates counters per replica when Redis is shared", async () => {

@@ -1,21 +1,11 @@
-import type { Context, Next } from "hono";
-import { logRateLimitExceeded } from "@admitto/auth";
-import { resolveClientIp } from "./client-ip.js";
-import { MAX_REQUESTS, WINDOW_MS } from "./constants.js";
 import type { RateLimitStore } from "./types.js";
+import { rateLimit } from "./policies.js";
 
 /**
  * Hono middleware that rate-limits public `/t` and `/q` routes per client IP.
- * X-Forwarded-For is trusted only behind a reverse proxy that overwrites the header.
+ * Implemented via the declarative registry — key is bare IP (no prefix).
+ * Fail-open when Redis is down is handled by {@link RedisRateLimitStore}.
  */
 export function createPublicRateLimitMiddleware(store: RateLimitStore) {
-  return async (c: Context, next: Next) => {
-    const ip = resolveClientIp(c);
-    const { allowed } = await store.hit(ip, WINDOW_MS, MAX_REQUESTS);
-    if (!allowed) {
-      logRateLimitExceeded({ scope: "public", ip });
-      return c.text("Too Many Requests", 429);
-    }
-    await next();
-  };
+  return rateLimit(store, "public:tq");
 }

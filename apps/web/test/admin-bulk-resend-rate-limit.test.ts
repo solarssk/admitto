@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import type { Context, Next } from "hono";
 import { InMemoryRateLimitStore } from "../src/rate-limit/index.js";
-import { createAdminBulkResendRateLimit } from "../src/admin-resend-rate-limit.js";
+import { rateLimit } from "../src/rate-limit/policies.js";
 
 function adminContext(userId: string) {
   return async (c: Context, next: Next): Promise<void> => {
@@ -16,7 +16,7 @@ function makeBulkApp(store: InMemoryRateLimitStore, userId: string) {
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-resend",
     adminContext(userId),
-    createAdminBulkResendRateLimit(store),
+    rateLimit(store, "admin:resend-bulk"),
     (c) => c.json({ queued: 0, skipped: 0, failed: 0 }, 200),
   );
   return app;

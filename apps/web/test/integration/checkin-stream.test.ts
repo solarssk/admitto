@@ -7,7 +7,7 @@ import {
   createCheckinPreAuth,
   createCheckinEventScope,
 } from "../../src/checkin-gate.js";
-import { createCheckinAuthenticatedRateLimit } from "../../src/checkin-rate-limit.js";
+import { rateLimit } from "../../src/rate-limit/policies.js";
 import { createCheckinStreamConcurrencyLimit } from "../../src/checkin-stream-limit.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { handleEventStream, HEARTBEAT_MS } from "../../src/admin/checkin-stream-routes.js";
@@ -83,7 +83,7 @@ function buildStreamApp() {
   app.get(
     "/api/checkin/events/:eventId/stream",
     createCheckinPreAuth(deps),
-    createCheckinAuthenticatedRateLimit(rateLimitStore, "stream"),
+    rateLimit(rateLimitStore, "checkin:stream"),
     createCheckinEventScope(deps, (c) => c.req.param("eventId")),
     createCheckinStreamConcurrencyLimit(),
     (c) => handleEventStream(c),

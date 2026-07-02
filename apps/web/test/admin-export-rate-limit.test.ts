@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import type { Context, Next } from "hono";
 import { InMemoryRateLimitStore } from "../src/rate-limit/index.js";
-import {
-  createAdminExportRateLimit,
-  createAdminPiiExportRateLimit,
-} from "../src/admin-export-rate-limit.js";
+import { rateLimit } from "../src/rate-limit/policies.js";
 
 function adminContext(userId: string) {
   return async (c: Context, next: Next): Promise<void> => {
@@ -19,13 +16,13 @@ function makeExportApp(store: InMemoryRateLimitStore, userId: string) {
   app.get(
     "/api/admin/events/:eventId/attendees/export",
     adminContext(userId),
-    createAdminExportRateLimit(store),
+    rateLimit(store, "admin:export"),
     (c) => c.json({ ok: true }, 200),
   );
   app.get(
     "/api/admin/events/:eventId/reports/export",
     adminContext(userId),
-    createAdminExportRateLimit(store),
+    rateLimit(store, "admin:export"),
     (c) => c.json({ ok: true }, 200),
   );
   return app;
@@ -36,7 +33,7 @@ function makePiiExportApp(store: InMemoryRateLimitStore, userId: string) {
   app.get(
     "/api/admin/events/:eventId/export-pii",
     adminContext(userId),
-    createAdminPiiExportRateLimit(store),
+    rateLimit(store, "admin:export-pii"),
     (c) => c.json({ ok: true }, 200),
   );
   return app;
