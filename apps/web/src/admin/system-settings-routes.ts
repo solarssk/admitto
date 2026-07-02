@@ -3,21 +3,23 @@ import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import {
   canManageInstance,
-  getSetting,
   setSetting,
   isSettingEnvLocked,
   getSessionTtlAdminMs,
   getSessionTtlOperatorMs,
   getTrustedDeviceDays,
   getMfaRequiredRoles,
+  getInstanceUrl,
   SETTING_SESSION_TTL,
   SETTING_OPERATOR_SESSION_TTL,
   SETTING_TRUSTED_DEVICE_DAYS,
   SETTING_MFA_REQUIRED_ROLES,
+  SETTING_INSTANCE_URL,
 } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import { normalizePersistedInstanceUrl } from "../instance-base-url.js";
 
 async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response | null> {
   const auth = c.get("auth");
@@ -34,26 +36,59 @@ async function getSettingSource(
   return row ? "db" : "default";
 }
 
-async function buildSecuritySettingsDto(db: PrismaClient) {
-  const [adminTtl, opTtl, trustedDays, mfaRoles, adminTtlSrc, opTtlSrc, trustedDaysSrc, mfaRolesSrc] =
-    await Promise.all([
-      getSessionTtlAdminMs(db),
-      getSessionTtlOperatorMs(db),
-      getTrustedDeviceDays(db),
-      getMfaRequiredRoles(db),
-      getSettingSource(db, SETTING_SESSION_TTL),
-      getSettingSource(db, SETTING_OPERATOR_SESSION_TTL),
-      getSettingSource(db, SETTING_TRUSTED_DEVICE_DAYS),
-      getSettingSource(db, SETTING_MFA_REQUIRED_ROLES),
-    ]);
+async function buildSystemSettingsDto(db: PrismaClient) {
+  const [
+    adminTtl,
+    opTtl,
+    trustedDays,
+    mfaRoles,
+    instanceUrl,
+    adminTtlSrc,
+    opTtlSrc,
+    trustedDaysSrc,
+    mfaRolesSrc,
+    instanceUrlSrc,
+  ] = await Promise.all([
+    getSessionTtlAdminMs(db),
+    getSessionTtlOperatorMs(db),
+    getTrustedDeviceDays(db),
+    getMfaRequiredRoles(db),
+    getInstanceUrl(db),
+    getSettingSource(db, SETTING_SESSION_TTL),
+    getSettingSource(db, SETTING_OPERATOR_SESSION_TTL),
+    getSettingSource(db, SETTING_TRUSTED_DEVICE_DAYS),
+    getSettingSource(db, SETTING_MFA_REQUIRED_ROLES),
+    getSettingSource(db, SETTING_INSTANCE_URL),
+  ]);
 
   return {
     session_ttl_ms: { value: adminTtl, source: adminTtlSrc },
     operator_session_ttl_ms: { value: opTtl, source: opTtlSrc },
     trusted_device_days: { value: trustedDays, source: trustedDaysSrc },
     mfa_required_roles: { value: mfaRoles, source: mfaRolesSrc },
+    instance_url: { value: instanceUrl, source: instanceUrlSrc },
   };
 }
+
+const instanceUrlSchema = z
+  .string()
+  .min(1)
+  .max(2048)
+  .superRefine((value, ctx) => {
+    if (value.trim().endsWith("/")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Instance URL must not end with a trailing slash",
+      });
+      return;
+    }
+    try {
+      normalizePersistedInstanceUrl(value);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Invalid instance URL";
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+    }
+  });
 
 const patchSchema = z
   .object({
@@ -70,6 +105,7 @@ const patchSchema = z
       .array(z.enum(["superadmin", "admin", "operator"]))
       .nullable()
       .optional(),
+    instance_url: instanceUrlSchema.nullable().optional(),
   })
   .strict();
 
@@ -78,17 +114,18 @@ const KEY_MAP = {
   operator_session_ttl_ms: SETTING_OPERATOR_SESSION_TTL,
   trusted_device_days: SETTING_TRUSTED_DEVICE_DAYS,
   mfa_required_roles: SETTING_MFA_REQUIRED_ROLES,
+  instance_url: SETTING_INSTANCE_URL,
 } as const satisfies Record<string, string>;
 
-/** GET /api/admin/system-settings — returns the 4 security settings with value and source (env|db|default). Superadmin only. */
+/** GET /api/admin/system-settings — returns system settings with value and source (env|db|default). Superadmin only. */
 export async function handleGetSystemSettings(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
 
-  return c.json(await buildSecuritySettingsDto(db));
+  return c.json(await buildSystemSettingsDto(db));
 }
 
-/** PATCH /api/admin/system-settings — update security settings atomically; null clears DB override. Superadmin only. */
+/** PATCH /api/admin/system-settings — update system settings atomically; null clears DB override. Superadmin only. */
 export async function handlePatchSystemSettings(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
@@ -109,7 +146,7 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
   const presentKeys = Object.keys(data) as (keyof typeof data)[];
 
   if (presentKeys.length === 0) {
-    return c.json(await buildSecuritySettingsDto(db));
+    return c.json(await buildSystemSettingsDto(db));
   }
 
   for (const bodyKey of presentKeys) {
@@ -125,7 +162,10 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
   await db.$transaction(async (tx) => {
     for (const bodyKey of presentKeys) {
       const settingKey = KEY_MAP[bodyKey];
-      const value = data[bodyKey];
+      let value = data[bodyKey];
+      if (bodyKey === "instance_url" && typeof value === "string") {
+        value = normalizePersistedInstanceUrl(value);
+      }
       if (value === null || value === undefined) {
         await tx.systemSettings.deleteMany({ where: { key: settingKey } });
       } else {
@@ -143,5 +183,5 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
     });
   });
 
-  return c.json(await buildSecuritySettingsDto(db));
+  return c.json(await buildSystemSettingsDto(db));
 }

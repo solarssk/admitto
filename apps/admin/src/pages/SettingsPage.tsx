@@ -2,6 +2,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import { Card, PageHeader, Tabs } from "@admitto/ui";
 import { BrandingPanel } from "../settings/BrandingPanel.js";
 import { MailTransportPanel } from "../settings/MailTransportPanel.js";
+import { InstanceUrlPanel } from "../settings/InstanceUrlPanel.js";
 import { SessionsPanel } from "../settings/SessionsPanel.js";
 import { EventArchivingPanel } from "../settings/EventArchivingPanel.js";
 import { SecurityPanel } from "../settings/SecurityPanel.js";
@@ -100,6 +101,7 @@ export function SettingsPage() {
       >
         <BrandingPanel />
         <MailTransportPanel />
+        <InstanceUrlPanel />
         <SessionsPanel />
       </SettingsTabPanel>
       <SettingsTabPanel

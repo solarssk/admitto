@@ -23,6 +23,7 @@ let adminId: string;
 let superCookie = "";
 let adminCookie = "";
 let prevInstanceOrgId: string | undefined;
+let prevBaseUrlForSuite: string | undefined;
 
 async function seed(client: PrismaClient) {
   await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_SYSSETTINGS } });
@@ -74,6 +75,8 @@ async function seed(client: PrismaClient) {
 
 beforeAll(async () => {
   prevInstanceOrgId = process.env.INSTANCE_ORG_ID;
+  prevBaseUrlForSuite = process.env.BASE_URL;
+  delete process.env.BASE_URL;
   process.env.INSTANCE_ORG_ID = ORG_SYSSETTINGS;
 
   prisma = new PrismaClient();
@@ -104,6 +107,8 @@ afterEach(async () => {
 afterAll(async () => {
   if (prevInstanceOrgId !== undefined) process.env.INSTANCE_ORG_ID = prevInstanceOrgId;
   else delete process.env.INSTANCE_ORG_ID;
+  if (prevBaseUrlForSuite === undefined) delete process.env.BASE_URL;
+  else process.env.BASE_URL = prevBaseUrlForSuite;
   await prisma?.$disconnect();
 });
 
@@ -113,10 +118,11 @@ type SecurityDto = {
   operator_session_ttl_ms: SettingField<number>;
   trusted_device_days: SettingField<number>;
   mfa_required_roles: SettingField<string[]>;
+  instance_url: SettingField<string | null>;
 };
 
 describe("GET /api/admin/system-settings", () => {
-  it("returns all 4 keys with source=default on fresh DB", async () => {
+  it("returns all 5 keys with source=default on fresh DB", async () => {
     const res = await app.request("/api/admin/system-settings", {
       headers: { Cookie: superCookie },
     });
@@ -126,6 +132,8 @@ describe("GET /api/admin/system-settings", () => {
     expect(body.operator_session_ttl_ms.source).toBe("default");
     expect(body.trusted_device_days.source).toBe("default");
     expect(body.mfa_required_roles.source).toBe("default");
+    expect(body.instance_url.source).toBe("default");
+    expect(body.instance_url.value).toBeNull();
     expect(typeof body.session_ttl_ms.value).toBe("number");
     expect(Array.isArray(body.mfa_required_roles.value)).toBe(true);
   });
@@ -375,5 +383,136 @@ describe("PATCH /api/admin/system-settings", () => {
     expect(body.operator_session_ttl_ms.source).toBe("default");
     expect(body.trusted_device_days.source).toBe("default");
     expect(body.mfa_required_roles.source).toBe("default");
+  });
+
+  it("updates instance_url and source becomes db", async () => {
+    const url = "https://tickets-db.example.com";
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ instance_url: url }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SecurityDto;
+    expect(body.instance_url.value).toBe(url);
+    expect(body.instance_url.source).toBe("db");
+  });
+
+  it("rejects instance_url with trailing slash", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ instance_url: "https://tickets.example.com/" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_error");
+  });
+
+  it("rejects non-HTTPS instance_url", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ instance_url: "http://tickets.example.com" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_error");
+  });
+
+  it("rejects instance_url with query string", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ instance_url: "https://tickets.example.com?preview=1" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_error");
+  });
+
+  it("rejects instance_url with fragment", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ instance_url: "https://tickets.example.com#section" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_error");
+  });
+
+  it("rejects instance_url with embedded credentials", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ instance_url: "https://user:pass@tickets.example.com" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_error");
+  });
+
+  it("env-locked instance_url returns 400 when BASE_URL is set", async () => {
+    const prev = process.env.BASE_URL;
+    process.env.BASE_URL = "https://env.example.com";
+    try {
+      const res = await app.request("/api/admin/system-settings", {
+        method: "PATCH",
+        headers: {
+          Cookie: superCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({ instance_url: "https://db.example.com" }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; field: string };
+      expect(body.error).toBe("managed by environment");
+      expect(body.field).toBe("instance_url");
+    } finally {
+      if (prev === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prev;
+    }
+  });
+
+  it("GET shows source=env for instance_url when BASE_URL is set", async () => {
+    const prev = process.env.BASE_URL;
+    process.env.BASE_URL = "https://env.example.com";
+    try {
+      const res = await app.request("/api/admin/system-settings", {
+        headers: { Cookie: superCookie },
+      });
+      const body = (await res.json()) as SecurityDto;
+      expect(body.instance_url.source).toBe("env");
+      expect(body.instance_url.value).toBe("https://env.example.com");
+    } finally {
+      if (prev === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prev;
+    }
   });
 });

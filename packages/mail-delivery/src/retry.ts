@@ -7,14 +7,26 @@ import { resolveAttendeeMailLinks } from "./links.js";
 import { mapSendResultToDelivery } from "./mapSendResult.js";
 import type { MailDeliveryDeps } from "./send.js";
 
+export interface RetryDeliveryOptions {
+  /** Resolved public instance URL (env BASE_URL or DB instance_url). */
+  baseUrl?: string;
+}
+
 /**
  * Retry a failed transient delivery — re-sends the frozen snapshot with fresh ticket links.
+ *
+ * TODO(v0.5): No HTTP route currently calls this function. When a retry endpoint is added
+ * (e.g. POST /api/admin/deliveries/:id/retry), the caller MUST resolve baseUrl via
+ * `resolveMailInstanceBaseUrl(db, env)` from `apps/web/src/admin/admin-helpers.ts` and
+ * pass it as `options.baseUrl`. Without it, retries fall back to env-only BASE_URL and
+ * will fail to generate ticket links when only DB instance_url is configured.
  */
 export async function retryDelivery(
   deliveryId: string,
   prisma: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,
   deps: MailDeliveryDeps = {},
+  options: RetryDeliveryOptions = {},
 ): Promise<{ ok: boolean; reason?: string }> {
   const delivery = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
 
@@ -25,7 +37,7 @@ export async function retryDelivery(
     return { ok: false, reason: "missing_snapshot" };
   }
 
-  const baseUrl = resolveBaseUrl(env);
+  const baseUrl = options.baseUrl ?? resolveBaseUrl(env);
   let links;
   try {
     links = await resolveAttendeeMailLinks(delivery.attendee_id, prisma, baseUrl);

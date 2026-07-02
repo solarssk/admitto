@@ -57,12 +57,29 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
       </p>
       {previewSrc && (
         <div className="logo-upload__preview">
-          <img src={previewSrc} alt="Organisation logo preview" className="logo-upload__img" />
+          <img
+            src={previewSrc}
+            alt="Organisation logo preview"
+            className="logo-upload__img"
+            onLoad={() => setError(null)}
+            onError={() => {
+              if (!isUploadedFile) {
+                setError(
+                  "Could not load logo preview from this URL. Check the link or try again later.",
+                );
+                return;
+              }
+              setError("Uploaded file appears corrupt or unsupported. Please try another image.");
+              onChange("");
+              onDirty?.();
+            }}
+          />
           <button
             type="button"
             className="logo-upload__clear"
             aria-label="Remove logo"
             onClick={() => {
+              setError(null);
               onChange("");
               onDirty?.();
             }}

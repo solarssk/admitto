@@ -29,6 +29,8 @@ export interface SendTicketEmailsOptions {
   purpose?: "initial" | "resend";
   /** Override delivery recipient for a single-attendee resend (does not mutate Attendee.email). */
   recipientEmail?: string;
+  /** Resolved public instance URL (env BASE_URL or DB instance_url). */
+  baseUrl?: string;
 }
 
 /** Optional test hooks for `sendTicketEmails()` (e.g. export_only sink). */
@@ -99,7 +101,7 @@ export async function sendTicketEmails(
   deps: MailDeliveryDeps = {},
 ): Promise<SendTicketEmailsResult> {
   const purpose = options.purpose ?? "initial";
-  const baseUrl = resolveBaseUrl(env);
+  const baseUrl = options.baseUrl ?? resolveBaseUrl(env);
   const batchId = randomUUID();
 
   if (

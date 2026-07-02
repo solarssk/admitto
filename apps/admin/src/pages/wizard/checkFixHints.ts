@@ -11,9 +11,9 @@ For single-node dev without Redis, the in-memory store is acceptable — check y
   encryption: `Set ENCRYPTION_KEY in your .env file or Docker environment (32 bytes, base64-encoded):
   ENCRYPTION_KEY=$(openssl rand -base64 32)
 Then restart the server.`,
-  base_url: `Set BASE_URL to the public HTTPS URL of this Admitto instance, for example:
+  base_url: `Set the Instance URL in Settings → General, or set BASE_URL in your environment, for example:
   BASE_URL=https://tickets.example.com
-In production, BASE_URL must use https://.`,
+In production, BASE_URL env is required for server boot/restarts; the Settings value is used for mail links at runtime.`,
 };
 
 /** Operator-facing remediation copy for a failed setup readiness check. */
@@ -34,5 +34,5 @@ export const SETUP_CHECK_LABELS: Record<SetupCheckKey, string> = {
   migrations: "Migrations",
   redis: "Redis",
   encryption: "Encryption key",
-  base_url: "Base URL",
+  base_url: "Instance URL",
 };

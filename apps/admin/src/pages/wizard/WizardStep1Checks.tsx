@@ -78,17 +78,23 @@ function CheckRow({
   result,
 }: {
   checkKey: SetupCheckKey;
-  result: { ok: boolean; detail: string };
+  result: { ok: boolean; detail: string; warn?: boolean };
 }) {
-  const iconClass = result.ok
-    ? "ti ti-circle-check setup-wizard__check-icon is-ok"
-    : "ti ti-circle-x setup-wizard__check-icon is-error";
+  const iconClass = result.warn
+    ? "ti ti-alert-circle setup-wizard__check-icon is-warn"
+    : result.ok
+      ? "ti ti-circle-check setup-wizard__check-icon is-ok"
+      : "ti ti-circle-x setup-wizard__check-icon is-error";
 
   return (
     <div className="setup-wizard__check-row">
       <i className={iconClass} aria-hidden="true" />
       <div className="setup-wizard__check-body">
-        <p className={`setup-wizard__check-title${result.ok ? " is-ok" : ""}`}>
+        <p
+          className={`setup-wizard__check-title${
+            result.warn ? " is-warn" : result.ok ? " is-ok" : ""
+          }`}
+        >
           {SETUP_CHECK_LABELS[checkKey]}
         </p>
         <p className="setup-wizard__check-detail">{result.detail}</p>

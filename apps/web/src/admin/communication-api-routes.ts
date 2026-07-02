@@ -44,6 +44,7 @@ import {
   assertEventManageAccess,
   positiveIntQuery,
   requireEventId,
+  resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
 
 /** Max character length for `body_template` (schema); shared with wire byte cap below. */
@@ -321,7 +322,7 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
 export async function handlePreviewEventTemplate(
   c: Context,
   db: PrismaClient,
-  baseUrl: string,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -340,6 +341,10 @@ export async function handlePreviewEventTemplate(
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
   }
+
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+  const baseUrl = baseUrlOrRes;
 
   try {
     const rendered = await renderDraftPreview(
@@ -376,7 +381,7 @@ export async function handleTestSendEventTemplate(
   c: Context,
   db: PrismaClient,
   mailDeliveryDeps: MailDeliveryDeps = {},
-  baseUrl: string,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -390,6 +395,10 @@ export async function handleTestSendEventTemplate(
   } catch {
     return c.json({ error: "validation_failed" }, 400);
   }
+
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+  const baseUrl = baseUrlOrRes;
 
   let result;
   try {
@@ -435,7 +444,7 @@ export async function handleTestSendEventTemplateById(
   c: Context,
   db: PrismaClient,
   mailDeliveryDeps: MailDeliveryDeps = {},
-  baseUrl: string,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -464,6 +473,10 @@ export async function handleTestSendEventTemplateById(
   } catch {
     return c.json({ error: "validation_failed" }, 400);
   }
+
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+  const baseUrl = baseUrlOrRes;
 
   let result;
   try {
@@ -934,7 +947,7 @@ export async function handleDeleteEventTemplate(c: Context, db: PrismaClient): P
 export async function handlePreviewEventTemplateById(
   c: Context,
   db: PrismaClient,
-  baseUrl: string,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -961,6 +974,10 @@ export async function handlePreviewEventTemplateById(
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
   }
+
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+  const baseUrl = baseUrlOrRes;
 
   try {
     const rendered = await renderDraftPreview(db, eventId, subject, templateBody, format, baseUrl);

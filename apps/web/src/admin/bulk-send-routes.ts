@@ -5,7 +5,7 @@ import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
 import { sendTicketEmails, type MailDeliveryDeps } from "@admitto/mail-delivery";
 import { resolveTemplateById, TemplateNotFoundError } from "@admitto/mail-templates";
 import { writeBulkActionLog } from "@admitto/tickets";
-import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import { adminAuditFromContext, assertEventManageAccess, requireEventId, resolveMailInstanceBaseUrl } from "./admin-helpers.js";
 
 export const BULK_SEND_LIMIT = 500;
 
@@ -210,6 +210,7 @@ export async function handleBulkSend(
   c: Context,
   db: PrismaClient,
   mailDeps: MailDeliveryDeps = {},
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -270,11 +271,19 @@ export async function handleBulkSend(
     } satisfies BulkSendQueuedDto);
   }
 
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+
   let sendResult;
   try {
     sendResult = await sendTicketEmails(
       eventId,
-      { attendeeIds: ids, templateId: body.templateId, purpose },
+      {
+        attendeeIds: ids,
+        templateId: body.templateId,
+        purpose,
+        baseUrl: baseUrlOrRes,
+      },
       db,
       process.env,
       mailDeps,

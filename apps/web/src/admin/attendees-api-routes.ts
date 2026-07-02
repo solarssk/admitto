@@ -30,6 +30,7 @@ import {
   assertEventManageAccess,
   positiveIntQuery,
   requireEventId,
+  resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
@@ -1545,6 +1546,7 @@ export async function handleResendEventAttendeeTicket(
   c: Context,
   db: PrismaClient,
   mailDeps: MailDeliveryDeps = {},
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -1578,7 +1580,12 @@ export async function handleResendEventAttendeeTicket(
   // A domain allowlist per org/event is planned for v0.5 (see follow-up task).
   // Rationale: admins legitimately resend to corporate relay addresses outside the registrant's
   // personal domain; a hardcoded allowlist would break that use-case without org configuration.
-  const sendResult = await resendTicketEmail(attendeeId, db, process.env, mailDeps, { to });
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+  const sendResult = await resendTicketEmail(attendeeId, db, process.env, mailDeps, {
+    to,
+    baseUrl: baseUrlOrRes,
+  });
 
   const skipped = sendResult.skipped.find((s) => s.attendeeId === attendeeId);
   if (skipped) {
@@ -1650,6 +1657,7 @@ export async function handleBulkResendTickets(
   c: Context,
   db: PrismaClient,
   mailDeps: MailDeliveryDeps = {},
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -1690,9 +1698,15 @@ export async function handleBulkResendTickets(
 
   const attendeeIds = ids;
   const mailPurpose = target === "unsent" ? "initial" : "resend";
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
   const sendResult = await sendTicketEmails(
     eventId,
-    { attendeeIds, purpose: mailPurpose },
+    {
+      attendeeIds,
+      purpose: mailPurpose,
+      baseUrl: baseUrlOrRes,
+    },
     db,
     process.env,
     mailDeps,

@@ -3,6 +3,27 @@ import type { PrismaClient } from "@prisma/client";
 import { canManageEvent } from "@admitto/auth";
 import type { OpsAuditContext } from "@admitto/tickets";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
+import {
+  InstanceUrlRequiredError,
+  resolveInstanceBaseUrl,
+} from "../instance-base-url.js";
+
+/** Resolve mail/preview base URL or return 422 when unset in production. */
+export async function resolveMailInstanceBaseUrl(
+  c: Context,
+  db: PrismaClient,
+  env: NodeJS.ProcessEnv = process.env,
+  injectedBaseUrl?: string,
+): Promise<string | Response> {
+  try {
+    return await resolveInstanceBaseUrl(db, env, injectedBaseUrl);
+  } catch (err) {
+    if (err instanceof InstanceUrlRequiredError) {
+      return c.json({ error: "instance_url_required" }, 422);
+    }
+    throw err;
+  }
+}
 
 /** Return 403 when the session user cannot manage the event; otherwise null. */
 export async function assertEventManageAccess(

@@ -57,7 +57,9 @@ export {
   SETTING_CF_ACCESS_AUD,
   SETTING_CF_ACCESS_PROTECTED_PREFIXES,
   SETTING_SETUP_COMPLETE,
+  SETTING_INSTANCE_URL,
 } from "./settings/keys.js";
+export { getInstanceUrl } from "./settings/instance-url.js";
 export {
   resolveSetupComplete,
   markSetupIncomplete,

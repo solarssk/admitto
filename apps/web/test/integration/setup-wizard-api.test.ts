@@ -7,6 +7,7 @@ import {
   hashPassword,
   SESSION_STAGE,
   SETTING_SETUP_COMPLETE,
+  SETTING_INSTANCE_URL,
   setSetting,
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -25,6 +26,23 @@ let superCookie: string;
 let adminCookie: string;
 
 const sameOrigin = { Origin: "http://localhost" };
+
+function createChecksAppWithoutInjectedBaseUrl(): ReturnType<typeof createApp> {
+  const prevNode = process.env.NODE_ENV;
+  process.env.NODE_ENV = "development";
+  try {
+    return createApp({
+      prisma,
+      checkinToken: null,
+      allowCheckinBearer: false,
+      rateLimitStore: createRateLimitStore(),
+      skipCheckinBootValidation: true,
+      adminDistRoot,
+    });
+  } finally {
+    process.env.NODE_ENV = prevNode;
+  }
+}
 
 async function seed(client: PrismaClient) {
   await client.roleAssignment.deleteMany({
@@ -131,6 +149,99 @@ describe("GET /api/admin/setup/checks", () => {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("returns warn on base_url when unset in test environment", async () => {
+    const checksApp = createChecksAppWithoutInjectedBaseUrl();
+    const prev = process.env.BASE_URL;
+    delete process.env.BASE_URL;
+    await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
+    try {
+      const res = await checksApp.request("/api/admin/setup/checks", {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        checks: { base_url: { ok: boolean; warn?: boolean; detail: string } };
+      };
+      expect(body.checks.base_url.ok).toBe(true);
+      expect(body.checks.base_url.warn).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prev;
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
+    }
+  });
+
+  it("returns ok on base_url when instance_url is set in DB", async () => {
+    const checksApp = createChecksAppWithoutInjectedBaseUrl();
+    const prev = process.env.BASE_URL;
+    delete process.env.BASE_URL;
+    await setSetting(prisma, SETTING_INSTANCE_URL, "https://wizard-db.example.com");
+    try {
+      const res = await checksApp.request("/api/admin/setup/checks", {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        checks: { base_url: { ok: boolean; warn?: boolean; detail: string } };
+      };
+      expect(body.checks.base_url.ok).toBe(true);
+      expect(body.checks.base_url.warn).toBeUndefined();
+      expect(body.checks.base_url.detail).toContain("wizard-db.example.com");
+    } finally {
+      if (prev === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prev;
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
+    }
+  });
+
+  it("returns not ok in production when only DB instance_url is set", async () => {
+    const checksApp = createChecksAppWithoutInjectedBaseUrl();
+    const prevNode = process.env.NODE_ENV;
+    const prevBase = process.env.BASE_URL;
+    delete process.env.BASE_URL;
+    process.env.NODE_ENV = "production";
+    await setSetting(prisma, SETTING_INSTANCE_URL, "https://wizard-db.example.com");
+    try {
+      const res = await checksApp.request("/api/admin/setup/checks", {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        checks: { base_url: { ok: boolean; warn?: boolean; detail: string } };
+      };
+      expect(body.checks.base_url.ok).toBe(false);
+      expect(body.checks.base_url.warn).toBeUndefined();
+      expect(body.checks.base_url.detail).toContain("BASE_URL");
+    } finally {
+      process.env.NODE_ENV = prevNode;
+      if (prevBase === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prevBase;
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
+    }
+  });
+
+  it("returns ok on base_url from injected createApp baseUrl when env and DB unset", async () => {
+    const prev = process.env.BASE_URL;
+    delete process.env.BASE_URL;
+    await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
+    try {
+      const res = await app.request("/api/admin/setup/checks", {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        checks: { base_url: { ok: boolean; warn?: boolean; detail: string } };
+      };
+      expect(body.checks.base_url.ok).toBe(true);
+      expect(body.checks.base_url.warn).toBeUndefined();
+      expect(body.checks.base_url.detail).toContain("tickets.example.com");
+    } finally {
+      if (prev === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prev;
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } });
+    }
   });
 });
 

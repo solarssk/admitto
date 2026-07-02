@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { createSession, hashPassword, SESSION_STAGE, setSetting, SETTING_INSTANCE_URL } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { setMailSettings } from "@admitto/mailer-config";
 import {
@@ -165,6 +165,24 @@ async function seed(client: PrismaClient) {
 async function sessionCookieFor(userId: string): Promise<string> {
   const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
   return `admitto_session=${rawToken}`;
+}
+
+function createMailAppWithoutInjectedBaseUrl(): ReturnType<typeof createApp> {
+  const prevNode = process.env.NODE_ENV;
+  process.env.NODE_ENV = "development";
+  try {
+    return createApp({
+      prisma,
+      checkinToken: "admin-comm-checkin-token-32chars!!",
+      allowCheckinBearer: true,
+      rateLimitStore: createRateLimitStore(),
+      skipCheckinBootValidation: true,
+      adminDistRoot,
+      mailDeliveryDeps: { exportSink: (p) => { exported.push(p); } },
+    });
+  } finally {
+    process.env.NODE_ENV = prevNode;
+  }
 }
 
 beforeAll(async () => {
@@ -365,6 +383,47 @@ describe("POST /api/admin/events/:eventId/template/preview", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error?: string };
     expect(body.error).toBe("template too large");
+  });
+
+  it("absolutizes uploaded logo using DB instance_url when BASE_URL env is unset", async () => {
+    const logoPath = "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png";
+    const instanceUrl = "https://tickets-from-db.example.com";
+    const prevBase = process.env.BASE_URL;
+    delete process.env.BASE_URL;
+
+    await prisma.organization.update({
+      where: { id: ORG_A },
+      data: { logo_url: logoPath },
+    });
+    await setSetting(prisma, SETTING_INSTANCE_URL, instanceUrl);
+
+    const logoTemplate = {
+      subject_template: "Logo preview {{event_name}}",
+      body_template:
+        '<p><img src="{{logo_url}}" alt="Logo" width="120" height="40" /></p>' +
+        '<p><a href="{{ticket_url}}">Ticket</a></p>' +
+        '<p><img src="{{qr_image_url}}" alt="QR" width="80" height="80" /></p>',
+      template_format: "html" as const,
+    };
+
+    try {
+      const dbOnlyApp = createMailAppWithoutInjectedBaseUrl();
+      const res = await dbOnlyApp.request(`/api/admin/events/${EVENT_A}/template/preview`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify(logoTemplate),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { html: string };
+      expect(body.html).toContain(`${instanceUrl}${logoPath}`);
+    } finally {
+      if (prevBase === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prevBase;
+      await Promise.allSettled([
+        prisma.systemSettings.deleteMany({ where: { key: SETTING_INSTANCE_URL } }),
+        prisma.organization.update({ where: { id: ORG_A }, data: { logo_url: null } }),
+      ]);
+    }
   });
 
   it("rejects operator", async () => {
