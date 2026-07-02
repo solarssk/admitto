@@ -2435,14 +2435,6 @@
   text-align: center;
 }
 
-.timezone-select__validator {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-
 .date-picker {
   position: relative;
 }
@@ -2609,6 +2601,15 @@
   color: #fff;
 }
 
+.date-picker__day--highlighted {
+  outline: 2px solid var(--brand-400, #3d8fe0);
+  outline-offset: 1px;
+}
+
+.date-picker__day--selected.date-picker__day--highlighted {
+  outline-color: #fff;
+}
+
 .date-picker__day--selected.date-picker__day--today {
   box-shadow: none;
 }
@@ -2639,14 +2640,6 @@
 
 .date-picker__footer-btn--primary {
   color: var(--brand-600, #0559b0);
-}
-
-.date-picker__validator {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
 }
 
 /* Settings — horizontal tab scroll on narrow viewports */

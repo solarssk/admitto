@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import {
   formatCalendarMonth,
   formatIsoCalendarDate,
@@ -33,6 +33,20 @@ function shiftMonth(year: number, month: number, delta: number): { y: number; m:
   return { y: date.getUTCFullYear(), m: date.getUTCMonth() + 1 };
 }
 
+function addDays(
+  year: number,
+  month: number,
+  day: number,
+  delta: number,
+): { y: number; m: number; d: number } {
+  const date = new Date(Date.UTC(year, month - 1, day + delta));
+  return {
+    y: date.getUTCFullYear(),
+    m: date.getUTCMonth() + 1,
+    d: date.getUTCDate(),
+  };
+}
+
 export interface DatePickerProps {
   value: string;
   onChange: (value: string) => void;
@@ -65,12 +79,20 @@ export function DatePicker({
   const [open, setOpen] = useState(false);
   const [viewYear, setViewYear] = useState(() => parsed?.y ?? todayParts.y);
   const [viewMonth, setViewMonth] = useState(() => parsed?.m ?? todayParts.m);
+  const [highlightDay, setHighlightDay] = useState(() => parsed?.d ?? todayParts.d);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const weekdayLabels = getWeekdayLabelsShort();
   const monthLabel = formatCalendarMonth(viewYear, viewMonth);
   const days = daysInMonth(viewYear, viewMonth);
   const offset = mondayFirstOffset(viewYear, viewMonth);
+
+  const closePanel = () => {
+    setOpen(false);
+    window.setTimeout(() => triggerRef.current?.focus(), 0);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -78,14 +100,29 @@ export function DatePicker({
     if (parts) {
       setViewYear(parts.y);
       setViewMonth(parts.m);
+      setHighlightDay(parts.d);
+      return;
     }
-  }, [open, value]);
+    if (viewYear === todayParts.y && viewMonth === todayParts.m) {
+      setHighlightDay(todayParts.d);
+      return;
+    }
+    setHighlightDay(1);
+  }, [open, value, todayParts.d, todayParts.m, todayParts.y, viewMonth, viewYear]);
+
+  useEffect(() => {
+    if (!open) return;
+    const cell = panelRef.current?.querySelector(
+      `[data-day="${highlightDay}"]`,
+    ) as HTMLElement | undefined;
+    cell?.focus();
+  }, [highlightDay, open, viewMonth, viewYear]);
 
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: MouseEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) {
-        setOpen(false);
+        closePanel();
       }
     };
     document.addEventListener("mousedown", onPointerDown);
@@ -94,7 +131,46 @@ export function DatePicker({
 
   const selectDate = (day: number) => {
     onChange(toIsoDate(viewYear, viewMonth, day));
-    setOpen(false);
+    closePanel();
+  };
+
+  const moveHighlight = (deltaDays: number) => {
+    const next = addDays(viewYear, viewMonth, highlightDay, deltaDays);
+    setViewYear(next.y);
+    setViewMonth(next.m);
+    setHighlightDay(next.d);
+  };
+
+  const onPanelKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closePanel();
+      return;
+    }
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      moveHighlight(-1);
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      moveHighlight(1);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveHighlight(-7);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveHighlight(7);
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      selectDate(highlightDay);
+    }
   };
 
   const isInvalid = Boolean(error);
@@ -114,6 +190,7 @@ export function DatePicker({
       ) : null}
 
       <button
+        ref={triggerRef}
         type="button"
         id={controlId}
         className={["date-picker__trigger", isInvalid && "date-picker__trigger--invalid"]
@@ -123,6 +200,7 @@ export function DatePicker({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-invalid={isInvalid || undefined}
+        aria-required={required || undefined}
         onClick={() => {
           if (!disabled) setOpen((prev) => !prev);
         }}
@@ -135,7 +213,14 @@ export function DatePicker({
       </button>
 
       {open && (
-        <div className="date-picker__panel" role="dialog" aria-label="Choose date">
+        <div
+          ref={panelRef}
+          className="date-picker__panel"
+          role="dialog"
+          aria-label="Choose date"
+          aria-modal="true"
+          onKeyDown={onPanelKeyDown}
+        >
           <div className="date-picker__header">
             <button
               type="button"
@@ -186,15 +271,19 @@ export function DatePicker({
                   key={day}
                   type="button"
                   role="gridcell"
+                  data-day={day}
+                  tabIndex={day === highlightDay ? 0 : -1}
                   className={[
                     "date-picker__day",
                     selected && "date-picker__day--selected",
                     isToday && "date-picker__day--today",
+                    day === highlightDay && "date-picker__day--highlighted",
                   ]
                     .filter(Boolean)
                     .join(" ")}
                   aria-selected={selected}
                   aria-label={formatIsoCalendarDate(iso)}
+                  onMouseEnter={() => setHighlightDay(day)}
                   onClick={() => selectDate(day)}
                 >
                   {day}
@@ -209,7 +298,7 @@ export function DatePicker({
               className="date-picker__footer-btn"
               onClick={() => {
                 onChange("");
-                setOpen(false);
+                closePanel();
               }}
             >
               Clear
@@ -222,7 +311,7 @@ export function DatePicker({
                 const parts = parseIsoDate(today)!;
                 setViewYear(parts.y);
                 setViewMonth(parts.m);
-                setOpen(false);
+                closePanel();
               }}
             >
               Today
@@ -235,17 +324,6 @@ export function DatePicker({
         <span className="at-hint at-hint--error">{error}</span>
       ) : hint ? (
         <span className="at-hint">{hint}</span>
-      ) : null}
-
-      {required ? (
-        <input
-          tabIndex={-1}
-          aria-hidden="true"
-          className="date-picker__validator"
-          value={value}
-          required
-          onChange={() => {}}
-        />
       ) : null}
     </div>
   );

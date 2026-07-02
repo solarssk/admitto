@@ -307,6 +307,7 @@ export function TimezoneSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const index = getTzIndex();
   const searching = Boolean(deferred.trim());
@@ -325,6 +326,12 @@ export function TimezoneSelect({
 
   const selectedEntry = value ? findTzEntry(index, value) : undefined;
 
+  const closePanel = () => {
+    setOpen(false);
+    setQuery("");
+    window.setTimeout(() => triggerRef.current?.focus(), 0);
+  };
+
   useEffect(() => {
     if (!open) return;
     const selectedIdx = options.findIndex((e) => e.iana === value);
@@ -337,8 +344,7 @@ export function TimezoneSelect({
     if (!open) return;
     const onPointerDown = (event: MouseEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-        setQuery("");
+        closePanel();
       }
     };
     document.addEventListener("mousedown", onPointerDown);
@@ -355,15 +361,13 @@ export function TimezoneSelect({
 
   const selectOption = (entry: TzEntry) => {
     onChange(entry.iana);
-    setOpen(false);
-    setQuery("");
+    closePanel();
   };
 
   const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
-      setOpen(false);
-      setQuery("");
+      closePanel();
       return;
     }
     if (event.key === "ArrowDown") {
@@ -385,6 +389,7 @@ export function TimezoneSelect({
   return (
     <div className="timezone-select" ref={containerRef}>
       <button
+        ref={triggerRef}
         type="button"
         id={controlId}
         className="timezone-select__trigger"
@@ -483,17 +488,6 @@ export function TimezoneSelect({
             )}
           </ul>
         </div>
-      )}
-
-      {required && (
-        <input
-          tabIndex={-1}
-          aria-hidden="true"
-          className="timezone-select__validator"
-          value={value}
-          required
-          onChange={() => {}}
-        />
       )}
     </div>
   );

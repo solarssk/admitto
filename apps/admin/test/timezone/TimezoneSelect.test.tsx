@@ -122,4 +122,15 @@ describe("TimezoneSelect", () => {
       expect(options.some((o) => o.textContent?.includes("Europe/Warsaw"))).toBe(false);
     });
   });
+
+  it("closes on Escape and returns focus to the trigger", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    const trigger = screen.getByRole("button");
+    openPicker();
+    fireEvent.keyDown(screen.getByLabelText("Search timezones"), { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(trigger);
+    });
+  });
 });
