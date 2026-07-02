@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@admitto/ui";
 import { WizardProvider, useWizard } from "./wizard/WizardContext.js";
 import { WizardStep1Checks } from "./wizard/WizardStep1Checks.js";
@@ -12,6 +12,14 @@ const WIZARD_PROGRESS_KEY = "admitto_wizard_progress";
 const TOTAL_STEPS = 5;
 
 const STEP_NAMES = ["System", "Mail", "Brand", "Event", "Ready"] as const;
+
+const STEP_LABELS: Record<(typeof STEP_NAMES)[number], string> = {
+  System: "System check",
+  Mail: "Mail transport",
+  Brand: "Branding",
+  Event: "First event",
+  Ready: "Ready",
+};
 
 type SetupWizardPageProps = {
   onComplete: () => Promise<void>;
@@ -158,39 +166,61 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
           : "Continue"
         : "Continue";
 
+  const showContinueArrow = !continuing && step < TOTAL_STEPS;
+
   return (
     <div className="setup-wizard">
-      <header className="setup-wizard__header">
-        <span className="setup-wizard__brand" aria-label="Admitto">
-          {BRAND_MARK}
-          Admitto
-        </span>
-        <span className="setup-wizard__step-label">
-          Step {step} of {TOTAL_STEPS}
-        </span>
-      </header>
+      <div className="setup-wizard__shell">
+        <header className="setup-wizard__intro">
+          <span className="setup-wizard__brand" aria-label="Admitto">
+            {BRAND_MARK}
+            Admitto
+          </span>
+          <h1 className="setup-wizard__title">Set up your instance</h1>
+          <p className="setup-wizard__subtitle">
+            Complete a few steps to get Admitto ready for your first event.
+          </p>
+        </header>
 
-      <main className="setup-wizard__main">
-        <div className="setup-wizard__progress" aria-label="Setup progress">
-          <div className="setup-wizard__progress-track">
-            {STEP_NAMES.map((name, index) => {
-              const stepNum = index + 1;
-              const isActive = step === stepNum;
-              const isComplete = completedSteps.has(stepNum) || step > stepNum;
-              return (
+        <nav className="setup-wizard__steps" aria-label="Setup progress">
+          {STEP_NAMES.map((name, index) => {
+            const stepNum = index + 1;
+            const isActive = step === stepNum;
+            const isPast = step > stepNum;
+            const isComplete = isPast || (completedSteps.has(stepNum) && !isActive);
+            const state = isActive ? "active" : isComplete ? "done" : "pending";
+            return (
+              <Fragment key={name}>
                 <div
-                  key={name}
-                  className={`setup-wizard__progress-step${isActive ? " is-active" : ""}${isComplete ? " is-complete" : ""}`}
+                  className={`setup-wizard__step setup-wizard__step--${state}`}
                   aria-current={isActive ? "step" : undefined}
                 >
-                  <span className="setup-wizard__progress-dot" />
-                  <span className="setup-wizard__progress-name">{name}</span>
+                  <span className="setup-wizard__step-dot" aria-hidden="true">
+                    {!isActive && isComplete ? (
+                      <i className="ti ti-check" />
+                    ) : (
+                      <span>{stepNum}</span>
+                    )}
+                  </span>
+                  <span className="setup-wizard__step-label">
+                    {STEP_LABELS[name]}
+                    {isComplete && !isActive ? (
+                      <span className="setup-wizard__sr-only"> — completed</span>
+                    ) : null}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-        </div>
+                {index < STEP_NAMES.length - 1 ? (
+                  <div
+                    className={`setup-wizard__step-line${step > stepNum ? " setup-wizard__step-line--done" : ""}`}
+                    aria-hidden="true"
+                  />
+                ) : null}
+              </Fragment>
+            );
+          })}
+        </nav>
 
+        <main className="setup-wizard__main">
         {refreshNotice && step === 1 && (
           <p className="setup-wizard__refresh-notice" role="status">
             Your progress was not saved. Let&apos;s start again.
@@ -229,13 +259,17 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
               type="button"
               variant="primary"
               disabled={continueDisabled}
+              iconRight={
+                showContinueArrow ? <i className="ti ti-arrow-right" aria-hidden="true" /> : undefined
+              }
               onClick={() => void handleContinue()}
             >
               {continueLabel}
             </Button>
           </footer>
         )}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
