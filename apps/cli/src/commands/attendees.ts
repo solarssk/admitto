@@ -10,6 +10,7 @@ import {
 } from "@admitto/tickets";
 import { CliError, arg, hasFlag } from "../lib/args.js";
 import { requireOperatorUserId } from "../lib/audit.js";
+import { assertSafeEmergencyExportOut } from "../lib/export-out-path.js";
 
 const PRIVATE_EXPORT_MODE = 0o600;
 
@@ -28,6 +29,8 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
   if (format !== "csv") {
     throw new CliError("Emergency CLI supports --format csv only (use admin UI for xlsx/pdf).");
   }
+
+  assertSafeEmergencyExportOut(out);
 
   const statusFilter = arg("status");
   const filters: AttendeeListFilterParams = {
