@@ -1,0 +1,141 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { ToastProvider } from "@admitto/ui";
+import { CheckInPage } from "../../src/pages/CheckInPage.js";
+
+const fetchCheckInHistory = vi.fn();
+const fetchCheckInStats = vi.fn();
+const fetchCheckInOpsConfig = vi.fn();
+const fetchCheckInEvents = vi.fn();
+const lookupCheckInAttendees = vi.fn();
+const addToast = vi.fn();
+
+vi.mock("../../src/hooks/useEventStream.js", () => ({
+  useEventStream: () => ({ connected: true, status: "connected" }),
+}));
+
+vi.mock("../../src/auth/AuthProvider.js", () => ({
+  useAuth: () => ({ deviceLabel: "desk-1" }),
+}));
+
+vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
+  useConnectionState: () => ({ state: "connected", reportApiError: vi.fn() }),
+}));
+
+vi.mock("../../src/hooks/useIsDesktop.js", () => ({
+  useIsDesktop: () => true,
+  isDesktopViewport: () => true,
+}));
+
+vi.mock("@admitto/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/ui")>();
+  return {
+    ...actual,
+    useToast: () => ({ addToast }),
+  };
+});
+
+vi.mock("../../src/api/client.js", () => ({
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.status = status;
+    }
+  },
+  fetchCheckInHistory: (...args: unknown[]) => fetchCheckInHistory(...args),
+  fetchCheckInStats: (...args: unknown[]) => fetchCheckInStats(...args),
+  fetchCheckInOpsConfig: (...args: unknown[]) => fetchCheckInOpsConfig(...args),
+  fetchCheckInEvents: (...args: unknown[]) => fetchCheckInEvents(...args),
+  fetchAttendeeCard: vi.fn(),
+  lookupCheckInAttendees: (...args: unknown[]) => lookupCheckInAttendees(...args),
+  submitAttendeeNote: vi.fn(),
+  submitCheckInAdmit: vi.fn(),
+  submitCheckInScan: vi.fn(),
+  submitItemAction: vi.fn(),
+  undoLastCheckIn: vi.fn(),
+}));
+
+function mockPageBootstrap() {
+  fetchCheckInOpsConfig.mockResolvedValue({
+    require_confirm_on_scan: false,
+    badge_at_entry: true,
+    allow_manual_lookup: true,
+    auto_advance_on_valid: true,
+  });
+  fetchCheckInEvents.mockResolvedValue([{ id: "evt-live", timezone: "UTC" }]);
+  fetchCheckInHistory.mockResolvedValue([]);
+  fetchCheckInStats.mockResolvedValue({ admitted_count: 0, total_count: 1 });
+}
+
+function renderPage() {
+  return render(
+    <ToastProvider>
+      <MemoryRouter initialEntries={["/admin/events/evt-live/checkin"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/checkin" element={<CheckInPage />} />
+        </Routes>
+      </MemoryRouter>
+    </ToastProvider>,
+  );
+}
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+describe("CheckInPage lookup feedback", () => {
+  it("shows a warning toast when manual lookup finds no attendees", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Manual lookup" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Manual lookup" }));
+
+    const lookupPanel = screen.getByRole("searchbox", {
+      name: "Search attendees by name, email, or company",
+    }).closest(".checkin-lookup");
+    expect(lookupPanel).toBeTruthy();
+
+    const lookupInput = within(lookupPanel as HTMLElement).getByRole("searchbox", {
+      name: "Search attendees by name, email, or company",
+    });
+    fireEvent.change(lookupInput, { target: { value: "filip" } });
+    fireEvent.click(within(lookupPanel as HTMLElement).getByRole("button", { name: "Search" }));
+
+    await waitFor(() => {
+      expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", "filip");
+      expect(addToast).toHaveBeenCalledWith("No attendees matched that search.", "warning");
+    });
+  });
+
+  it("marks scan and lookup inputs with password-manager ignore hints", async () => {
+    mockPageBootstrap();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("QR scan or search")).toBeTruthy();
+    });
+
+    const scanInput = screen.getByLabelText("QR scan or search");
+    expect(scanInput.getAttribute("data-bwignore")).not.toBeNull();
+    expect(scanInput.getAttribute("data-lpignore")).toBe("true");
+    expect(scanInput.getAttribute("name")).toBe("checkin-scan");
+
+    fireEvent.click(screen.getByRole("button", { name: "Manual lookup" }));
+
+    const lookupInput = screen.getByRole("searchbox", {
+      name: "Search attendees by name, email, or company",
+    });
+    expect(lookupInput.getAttribute("data-bwignore")).not.toBeNull();
+    expect(lookupInput.getAttribute("name")).toBe("checkin-lookup");
+  });
+});

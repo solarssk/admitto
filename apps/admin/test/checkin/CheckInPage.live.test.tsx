@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
 
@@ -81,11 +82,13 @@ function mockPageBootstrap(history: unknown[] = [], admitted = 2, statsAfterScan
 
 function renderPage() {
   return render(
-    <MemoryRouter initialEntries={["/admin/events/evt-live/checkin"]}>
-      <Routes>
-        <Route path="/admin/events/:eventId/checkin" element={<CheckInPage />} />
-      </Routes>
-    </MemoryRouter>,
+    <ToastProvider>
+      <MemoryRouter initialEntries={["/admin/events/evt-live/checkin"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/checkin" element={<CheckInPage />} />
+        </Routes>
+      </MemoryRouter>
+    </ToastProvider>,
   );
 }
 
