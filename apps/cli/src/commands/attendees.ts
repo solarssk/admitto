@@ -10,14 +10,10 @@ import {
 } from "@admitto/tickets";
 import { CliError, arg, hasFlag } from "../lib/args.js";
 import { requireOperatorUserId } from "../lib/audit.js";
-import { assertSafeEmergencyExportOut } from "../lib/export-out-path.js";
-
-const PRIVATE_EXPORT_MODE = 0o600;
-
-function writePrivateExportFile(path: string, content: string): void {
-  fs.writeFileSync(path, content, { encoding: "utf8", mode: PRIVATE_EXPORT_MODE });
-  fs.chmodSync(path, PRIVATE_EXPORT_MODE);
-}
+import {
+  assertSafeEmergencyExportOut,
+  writeSafeEmergencyExportFile,
+} from "../lib/export-out-path.js";
 
 export async function runAttendeesExport(db: PrismaClient): Promise<void> {
   const eventId = arg("event");
@@ -30,8 +26,6 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
     throw new CliError("Emergency CLI supports --format csv only (use admin UI for xlsx/pdf).");
   }
 
-  assertSafeEmergencyExportOut(out);
-
   const statusFilter = arg("status");
   const filters: AttendeeListFilterParams = {
     status: "all",
@@ -43,7 +37,8 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
   };
 
   if (hasFlag("dry-run")) {
-    console.log(`Dry run: would export attendees for event ${eventId} to ${out}`);
+    const exportPath = assertSafeEmergencyExportOut(out);
+    console.log(`Dry run: would export attendees for event ${eventId} to ${exportPath}`);
     return;
   }
 
@@ -62,8 +57,9 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
     throw err;
   }
 
+  let exportPath: string;
   try {
-    writePrivateExportFile(out, result.csv);
+    exportPath = writeSafeEmergencyExportFile(out, result.csv);
   } catch (err) {
     throw new CliError(
       `Failed to write export to ${out}: ${err instanceof Error ? err.message : String(err)}`,
@@ -80,7 +76,7 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
           format: "csv",
           count: result.rowCount,
           source: "cli",
-          outPath: out,
+          outPath: exportPath,
           filters: {
             status: filters.status,
             ticket_type: filters.ticket_type ?? null,
@@ -91,7 +87,7 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
     });
   } catch (err) {
     try {
-      fs.unlinkSync(out);
+      fs.unlinkSync(exportPath);
     } catch {
       // Best-effort rollback when audit fails after write.
     }
@@ -101,5 +97,5 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
     );
   }
 
-  console.log(`Exported ${result.rowCount} rows to ${out}`);
+  console.log(`Exported ${result.rowCount} rows to ${exportPath}`);
 }

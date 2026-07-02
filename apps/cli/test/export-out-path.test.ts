@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { CliError } from "../src/lib/args.js";
-import { assertSafeEmergencyExportOut } from "../src/lib/export-out-path.js";
+import { assertSafeEmergencyExportOut, writeSafeEmergencyExportFile } from "../src/lib/export-out-path.js";
 
 const dockerEnv = {
   EMERGENCY_EXPORT_DIR: "/app/emergency-exports",
@@ -89,6 +89,46 @@ describe("assertSafeEmergencyExportOut", () => {
     expect(() =>
       assertSafeEmergencyExportOut(path.join(exportLink, "report.csv"), {
         EMERGENCY_EXPORT_DIR: emergency,
+        UPLOAD_DIR: uploads,
+      }),
+    ).toThrow(CliError);
+  });
+
+  it("writeSafeEmergencyExportFile rejects symlink planted before open", () => {
+    const { emergency, uploads } = makeTempLayout();
+    const out = path.join(emergency, "report.csv");
+    fs.symlinkSync(path.join(uploads, "leaked.csv"), out);
+
+    expect(() =>
+      writeSafeEmergencyExportFile(out, "name,email\n", {
+        EMERGENCY_EXPORT_DIR: emergency,
+        UPLOAD_DIR: uploads,
+      }),
+    ).toThrow(CliError);
+    expect(fs.existsSync(path.join(uploads, "leaked.csv"))).toBe(false);
+  });
+
+  it("rejects EMERGENCY_EXPORT_DIR configured as a public uploads alias", () => {
+    const { emergency, uploads } = makeTempLayout();
+    const exportLink = path.join(uploads, "export-link");
+    fs.symlinkSync(emergency, exportLink);
+
+    expect(() =>
+      assertSafeEmergencyExportOut(path.join(emergency, "report.csv"), {
+        EMERGENCY_EXPORT_DIR: exportLink,
+        UPLOAD_DIR: uploads,
+      }),
+    ).toThrow(CliError);
+  });
+
+  it("rejects when EMERGENCY_EXPORT_DIR itself is under UPLOAD_DIR", () => {
+    const { emergency, uploads } = makeTempLayout();
+    const exportLink = path.join(uploads, "export-link");
+    fs.symlinkSync(emergency, exportLink);
+
+    expect(() =>
+      assertSafeEmergencyExportOut(path.join(exportLink, "report.csv"), {
+        EMERGENCY_EXPORT_DIR: exportLink,
         UPLOAD_DIR: uploads,
       }),
     ).toThrow(CliError);

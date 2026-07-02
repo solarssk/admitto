@@ -1,6 +1,8 @@
-import fs from "node:fs";
+import fs, { constants } from "node:fs";
 import path from "node:path";
 import { CliError } from "./args.js";
+
+const PRIVATE_EXPORT_MODE = 0o600;
 
 function isPathInside(child: string, parent: string): boolean {
   const resolvedParent = path.resolve(parent);
@@ -60,14 +62,14 @@ function canonicalExportOutPath(out: string): string {
 }
 
 /**
- * Restrict emergency CSV exports to EMERGENCY_EXPORT_DIR and block UPLOAD_DIR
- * (served publicly at /uploads/*). Skips prefix checks when env vars are unset
- * (local dev without Docker env). Resolves symlinks when the parent path exists.
+ * Validate `--out` and return the canonical path to write.
+ * Restricts to EMERGENCY_EXPORT_DIR and blocks UPLOAD_DIR (public /uploads/*).
+ * Skips prefix checks when env vars are unset (local dev without Docker env).
  */
 export function assertSafeEmergencyExportOut(
   out: string,
   env: NodeJS.ProcessEnv = process.env,
-): void {
+): string {
   const resolvedOut = path.resolve(out);
   const canonicalOut = canonicalExportOutPath(out);
 
@@ -89,9 +91,57 @@ export function assertSafeEmergencyExportOut(
   }
 
   const emergencyDir = env.EMERGENCY_EXPORT_DIR?.trim();
-  if (emergencyDir && !isPathInside(canonicalOut, canonicalDir(emergencyDir))) {
-    throw new CliError(
-      `--out must be under EMERGENCY_EXPORT_DIR (${canonicalDir(emergencyDir)}).`,
-    );
+  if (emergencyDir) {
+    const resolvedEmergencyDir = path.resolve(emergencyDir);
+    const realEmergencyDir = canonicalDir(emergencyDir);
+
+    if (uploadDir && isPathInside(resolvedEmergencyDir, path.resolve(uploadDir))) {
+      throw new CliError(
+        `EMERGENCY_EXPORT_DIR must not be under UPLOAD_DIR (${path.resolve(uploadDir)}): use a non-public path.`,
+      );
+    }
+
+    if (!isPathInside(resolvedOut, resolvedEmergencyDir)) {
+      throw new CliError(
+        `--out must be under EMERGENCY_EXPORT_DIR (${resolvedEmergencyDir}).`,
+      );
+    }
+    if (!isPathInside(canonicalOut, realEmergencyDir)) {
+      throw new CliError(
+        `--out must resolve under EMERGENCY_EXPORT_DIR (${realEmergencyDir}).`,
+      );
+    }
   }
+
+  return canonicalOut;
+}
+
+/** Write export CSV with 0600 perms; O_NOFOLLOW rejects symlink races at open time. */
+export function writeSafeEmergencyExportFile(
+  out: string,
+  content: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const exportPath = assertSafeEmergencyExportOut(out, env);
+  const data = Buffer.from(content, "utf8");
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(
+      exportPath,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+      PRIVATE_EXPORT_MODE,
+    );
+    fs.writeSync(fd, data);
+    fs.fchmodSync(fd, PRIVATE_EXPORT_MODE);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ELOOP") {
+      throw new CliError("--out must not be a symlink.");
+    }
+    throw err;
+  } finally {
+    if (fd !== undefined) {
+      fs.closeSync(fd);
+    }
+  }
+  return exportPath;
 }
