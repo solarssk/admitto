@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { ApiError } from "../../src/api/client.js";
 import { LogoUploadZone } from "../../src/components/LogoUploadZone.js";
 
@@ -67,28 +68,25 @@ describe("LogoUploadZone", () => {
     });
   });
 
-  it("shows alert without clearing value when uploaded preview image fails to load", () => {
-    const onChange = vi.fn();
-    render(
-      <LogoUploadZone
-        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
-        onChange={onChange}
-      />,
-    );
-    const img = screen.getByAltText("Organisation logo preview");
-    fireEvent.error(img);
-    expect(onChange).not.toHaveBeenCalled();
+  it("clears corrupt uploaded logo and shows drop zone on preview load failure", () => {
+    const onDirty = vi.fn();
+    function Harness() {
+      const [value, setValue] = useState(
+        "/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png",
+      );
+      return <LogoUploadZone value={value} onChange={setValue} onDirty={onDirty} />;
+    }
+    render(<Harness />);
+    fireEvent.error(screen.getByAltText("Organisation logo preview"));
+    expect(onDirty).toHaveBeenCalled();
     expect(screen.getByRole("alert").textContent).toContain("corrupt");
+    expect(screen.getByRole("button", { name: /drop logo here/i })).toBeTruthy();
+    expect(screen.queryByAltText("Organisation logo preview")).toBeNull();
   });
 
-  it("clears preview error after a successful image load", () => {
+  it("clears preview error after a successful external image load", () => {
     const onChange = vi.fn();
-    render(
-      <LogoUploadZone
-        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
-        onChange={onChange}
-      />,
-    );
+    render(<LogoUploadZone value="https://cdn.example.com/logo.png" onChange={onChange} />);
     const img = screen.getByAltText("Organisation logo preview");
     fireEvent.error(img);
     expect(screen.getByRole("alert")).toBeTruthy();

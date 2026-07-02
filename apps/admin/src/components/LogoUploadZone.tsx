@@ -70,6 +70,8 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
                 return;
               }
               setError("Uploaded file appears corrupt or unsupported. Please try another image.");
+              onChange("");
+              onDirty?.();
             }}
           />
           <button

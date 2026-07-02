@@ -63,21 +63,21 @@ export function normalizePersistedInstanceUrl(raw: string): string {
 
 /**
  * Resolve public base URL for mail preview and ticket links:
- * env `BASE_URL` → DB `instance_url` → injected `createApp` baseUrl → dev localhost → prod throw.
+ * injected `createApp` baseUrl (when provided) → env `BASE_URL` → DB `instance_url` → dev localhost → prod throw.
  */
 export async function resolveInstanceBaseUrl(
   db: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,
   injectedBaseUrl?: string,
 ): Promise<string> {
+  const injected = injectedBaseUrl?.trim();
+  if (injected) return normalizeRuntimeBaseUrl(injected, env);
+
   const fromEnv = env.BASE_URL?.trim();
   if (fromEnv) return normalizeRuntimeBaseUrl(fromEnv, env);
 
   const fromDb = await getInstanceUrl(db);
   if (fromDb) return normalizePersistedInstanceUrl(fromDb);
-
-  const injected = injectedBaseUrl?.trim();
-  if (injected) return normalizeRuntimeBaseUrl(injected, env);
 
   if (env.NODE_ENV === "development" || env.NODE_ENV === "test") {
     return "http://localhost:3000";

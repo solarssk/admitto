@@ -86,4 +86,15 @@ describe("resolveInstanceBaseUrl", () => {
       else process.env.BASE_URL = prevBase;
     }
   });
+
+  it("prefers injected app baseUrl over env BASE_URL", async () => {
+    const db = { systemSettings: { findUnique: async () => null } } as never;
+    await expect(
+      resolveInstanceBaseUrl(
+        db,
+        { NODE_ENV: "test", BASE_URL: "https://env.example.com" },
+        "https://injected.example.com",
+      ),
+    ).resolves.toBe("https://injected.example.com");
+  });
 });

@@ -14,6 +14,12 @@ export interface RetryDeliveryOptions {
 
 /**
  * Retry a failed transient delivery — re-sends the frozen snapshot with fresh ticket links.
+ *
+ * TODO(v0.5): No HTTP route currently calls this function. When a retry endpoint is added
+ * (e.g. POST /api/admin/deliveries/:id/retry), the caller MUST resolve baseUrl via
+ * `resolveMailInstanceBaseUrl(db, env)` from `apps/web/src/admin/admin-helpers.ts` and
+ * pass it as `options.baseUrl`. Without it, retries fall back to env-only BASE_URL and
+ * will fail to generate ticket links when only DB instance_url is configured.
  */
 export async function retryDelivery(
   deliveryId: string,
