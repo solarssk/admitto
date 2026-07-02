@@ -48,6 +48,9 @@ export function normalizePersistedInstanceUrl(raw: string): string {
   } catch {
     throw new Error("Instance URL must be a valid https:// URL");
   }
+  if (trimmed.includes("?") || trimmed.includes("#")) {
+    throw new Error("Instance URL must not include a query string or fragment");
+  }
   if (parsed.search || parsed.hash) {
     throw new Error("Instance URL must not include a query string or fragment");
   }
