@@ -139,7 +139,7 @@ On every `app` start, `deploy/docker-entrypoint.sh` runs **fail-fast** (any step
 
 Env (see `.env.example`): `MIGRATION_BACKUP_DIR`, `MIGRATION_BACKUP_RETENTION`, `MIGRATION_BACKUP_MIN_FREE_MB` (default 512 — tune per deployment), `MIGRATION_BACKUP_DISABLE` (dev/test only).
 
-Copy pre-migration backups offsite per [ADR 0023](../../_ops/adr/0023-backup-and-disaster-recovery.md) (nightly dumps are separate).
+Copy pre-migration backups offsite per ADR 0023 (backup and disaster recovery — internal archive) (nightly dumps are separate).
 
 Schema change policy (expand-contract, CI guard): [packages/db/README.md](../packages/db/README.md#schema-change-policy).
 
@@ -185,16 +185,10 @@ Compose nginx trusts **only `127.0.0.1`** as the RealIP peer (NPM on the host �
 
 (`$scheme` is `https` on the public NPM vhost; compose nginx forwards that value so `TRUST_PROXY` CSRF checks see HTTPS.)
 
-For the future admin SSE metrics path, add a custom location in NPM (or here in `default.conf`):
+For long-lived check-in SSE, add a custom location in NPM (or here in `default.conf`):
 
 ```nginx
 location ~ ^/api/checkin/events/[^/]+/stream$ {
-  proxy_buffering off;
-  proxy_read_timeout 3600s;
-  proxy_pass http://admitto_app;
-}
-
-location ~ ^/api/admin/events/[^/]+/metrics/stream$ {
   proxy_buffering off;
   proxy_read_timeout 3600s;
   proxy_pass http://admitto_app;

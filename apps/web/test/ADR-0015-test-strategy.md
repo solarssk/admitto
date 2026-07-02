@@ -2,7 +2,7 @@
 
 Status: Accepted · Date: 2026-06-14
 
-Canonical copy also in monorepo-external `_ops/adr/0015-test-strategy.md`.
+Canonical copy also maintained in the internal ops archive (outside this repository).
 
 ## Context
 
