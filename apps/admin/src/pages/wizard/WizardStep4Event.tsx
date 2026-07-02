@@ -6,6 +6,7 @@ import {
 } from "react";
 import { Input, useToast } from "@admitto/ui";
 import { ApiError, createEvent, fetchAdminEvents } from "../../api/client.js";
+import { DatePicker } from "../../components/DatePicker.js";
 import { TimezoneSelect } from "../../components/TimezoneSelect.js";
 import { slugFromTitle } from "../../events/slug.js";
 import { useWizard } from "./WizardContext.js";
@@ -141,14 +142,13 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
         </div>
 
         <div className="setup-wizard__field">
-          <Input
+          <DatePicker
             label="Date"
-            type="date"
             value={date}
             required
             disabled={submitting}
-            onChange={(e) => {
-              setDate(e.target.value);
+            onChange={(next) => {
+              setDate(next);
               setError(null);
               onDirtyChange?.(true);
             }}

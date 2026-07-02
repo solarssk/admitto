@@ -1,12 +1,18 @@
 /**
  * Searchable timezone picker backed by the full IANA tz database.
  *
- * Supports searching by: city name, IANA path, abbreviation (CEST/JST/IST),
- * UTC offset (+9, +5:30, +5.5, GMT+2), or any substring of the IANA name.
- *
- * Uses Intl.supportedValuesOf('timeZone') when available — all ~590 canonical timezones.
+ * Default browse order: west → east by current UTC offset (not alphabetical).
+ * Search: city, country alias, region, abbreviation, or numeric offset.
  */
-import { useDeferredValue, useMemo, useState } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 
 interface TzEntry {
   iana: string;
@@ -17,25 +23,99 @@ interface TzEntry {
   searchText: string;
 }
 
+type TimezoneListItem =
+  | { kind: "group"; id: string; label: string }
+  | { kind: "option"; id: string; entry: TzEntry; optionIndex: number };
+
 const FALLBACK_TIMEZONES = [
   "UTC",
   "Europe/London",
   "Europe/Paris",
   "Europe/Berlin",
   "Europe/Warsaw",
+  "Europe/Moscow",
   "America/New_York",
   "America/Chicago",
   "America/Denver",
   "America/Los_Angeles",
   "America/Sao_Paulo",
   "Asia/Dubai",
-  "Asia/Kolkata",
+  "Asia/Calcutta",
   "Asia/Tokyo",
   "Asia/Shanghai",
   "Asia/Singapore",
   "Australia/Sydney",
   "Pacific/Auckland",
 ];
+
+const MAX_SEARCH_RESULTS = 120;
+
+const RUSSIA_IANAS = [
+  "Europe/Kaliningrad",
+  "Europe/Moscow",
+  "Europe/Samara",
+  "Europe/Volgograd",
+  "Asia/Yekaterinburg",
+  "Asia/Omsk",
+  "Asia/Novosibirsk",
+  "Asia/Krasnoyarsk",
+  "Asia/Irkutsk",
+  "Asia/Yakutsk",
+  "Asia/Vladivostok",
+  "Asia/Magadan",
+  "Asia/Sakhalin",
+  "Asia/Kamchatka",
+  "Asia/Anadyr",
+];
+
+const INDIA_SEARCH_ALIASES = [
+  "india",
+  "indian",
+  "delhi",
+  "mumbai",
+  "bombay",
+  "bangalore",
+  "chennai",
+  "kolkata",
+  "calcutta",
+  "hyderabad",
+  "pune",
+  "ist",
+];
+
+/** Extra search terms for common country/city queries not present in IANA paths. */
+const IANA_SEARCH_ALIASES: Record<string, string[]> = {
+  "Asia/Kolkata": INDIA_SEARCH_ALIASES,
+  "Asia/Calcutta": INDIA_SEARCH_ALIASES,
+  "Europe/Warsaw": ["poland", "polish", "krakow", "wroclaw", "gdansk"],
+  "Europe/Moscow": ["russia", "russian", "moscow", "msk"],
+  "Europe/London": ["uk", "britain", "british", "england", "gmt", "bst"],
+  "Europe/Berlin": ["germany", "german", "deutschland", "munich", "frankfurt"],
+  "Europe/Paris": ["france", "french", "cet"],
+  "America/New_York": ["usa", "us", "eastern", "nyc", "newyork"],
+  "America/Los_Angeles": ["pacific", "la", "california", "westcoast"],
+  "America/Chicago": ["central", "chicago"],
+  "Asia/Dubai": ["uae", "emirates", "dubai"],
+  "Asia/Tokyo": ["japan", "japanese", "jst"],
+  "Asia/Shanghai": ["china", "chinese", "beijing", "shanghai", "cst"],
+  "Asia/Singapore": ["singapore", "sgt"],
+  "Asia/Bangkok": ["thailand", "thai"],
+  "Asia/Seoul": ["korea", "korean", "southkorea"],
+  "Australia/Sydney": ["australia", "australian", "aest"],
+  "Africa/Cairo": ["egypt", "egyptian"],
+  "Africa/Johannesburg": ["southafrica"],
+  "America/Toronto": ["canada", "canadian", "toronto"],
+  "America/Mexico_City": ["mexico", "mexican"],
+  "America/Sao_Paulo": ["brazil", "brazilian"],
+};
+
+/** Country/region search returns all relevant IANA zones, sorted by offset. */
+const COUNTRY_SEARCH_BUNDLES: Record<string, string[]> = {
+  russia: RUSSIA_IANAS,
+  russian: RUSSIA_IANAS,
+  india: ["Asia/Calcutta", "Asia/Kolkata"],
+  indian: ["Asia/Calcutta", "Asia/Kolkata"],
+};
 
 function buildTzEntry(iana: string, now: Date): TzEntry {
   const abbrParts = new Intl.DateTimeFormat("en", {
@@ -58,6 +138,7 @@ function buildTzEntry(iana: string, now: Date): TzEntry {
 
   const segments = iana.split("/");
   const city = (segments.at(-1) ?? iana).replace(/_/g, " ");
+  const aliases = IANA_SEARCH_ALIASES[iana] ?? [];
 
   const searchText = [
     iana,
@@ -66,12 +147,20 @@ function buildTzEntry(iana: string, now: Date): TzEntry {
     abbr,
     offsetLabel,
     offsetLabel.replace("GMT", ""),
+    ...aliases,
   ]
     .join(" ")
     .toLowerCase()
     .replace(/\s/g, "");
 
   return { iana, city, abbr, offsetLabel, offsetHours, searchText };
+}
+
+function sortByOffset(entries: TzEntry[]): TzEntry[] {
+  return [...entries].sort((a, b) => {
+    if (a.offsetHours !== b.offsetHours) return a.offsetHours - b.offsetHours;
+    return a.city.localeCompare(b.city, undefined, { sensitivity: "base" });
+  });
 }
 
 function buildTzIndex(): TzEntry[] {
@@ -82,9 +171,9 @@ function buildTzIndex(): TzEntry[] {
       : FALLBACK_TIMEZONES;
   const entries = ianaList.map((iana) => buildTzEntry(iana, now));
   if (!entries.some((e) => e.iana === "UTC")) {
-    entries.unshift(buildTzEntry("UTC", now));
+    entries.push(buildTzEntry("UTC", now));
   }
-  return entries;
+  return sortByOffset(entries);
 }
 
 let tzIndex: TzEntry[] | null = null;
@@ -93,9 +182,27 @@ function getTzIndex(): TzEntry[] {
   return (tzIndex ??= buildTzIndex());
 }
 
+function entriesForIanas(index: TzEntry[], ianas: string[]): TzEntry[] {
+  const out: TzEntry[] = [];
+  const seen = new Set<string>();
+  for (const iana of ianas) {
+    const entry = findTzEntry(index, iana);
+    if (entry && !seen.has(entry.iana)) {
+      seen.add(entry.iana);
+      out.push(entry);
+    }
+  }
+  return sortByOffset(out);
+}
+
 function searchTz(index: TzEntry[], query: string): TzEntry[] {
   const q = query.trim().toLowerCase().replace(/\s/g, "");
   if (!q) return index;
+
+  const bundle = COUNTRY_SEARCH_BUNDLES[q];
+  if (bundle) {
+    return entriesForIanas(index, bundle);
+  }
 
   const om = q.match(/^(gmt)?([+-])(\d{1,2})(?:[:.，,](\d{1,2}))?$/);
   if (om) {
@@ -103,10 +210,75 @@ function searchTz(index: TzEntry[], query: string): TzEntry[] {
     const h = parseInt(om[3] ?? "0", 10);
     const rawMin = parseInt(om[4] ?? "0", 10);
     const fractHours = sign * (h + (rawMin > 5 ? rawMin / 60 : rawMin / 10));
-    return index.filter((e) => Math.abs(e.offsetHours - fractHours) < 0.09);
+    return sortByOffset(index.filter((e) => Math.abs(e.offsetHours - fractHours) < 0.09));
   }
 
-  return index.filter((e) => e.searchText.includes(q));
+  const matches = index.filter((e) => e.searchText.includes(q));
+  const aliasPriority = matches.filter((e) =>
+    (IANA_SEARCH_ALIASES[e.iana] ?? []).some((alias) => alias.replace(/\s/g, "") === q),
+  );
+  const aliasIanas = new Set(aliasPriority.map((e) => e.iana));
+  const rest = sortByOffset(matches.filter((e) => !aliasIanas.has(e.iana)));
+  return [...sortByOffset(aliasPriority), ...rest].slice(0, MAX_SEARCH_RESULTS);
+}
+
+function findTzEntry(index: TzEntry[], iana: string): TzEntry | undefined {
+  const direct = index.find((e) => e.iana === iana);
+  if (direct) return direct;
+  if (iana === "Asia/Kolkata") return index.find((e) => e.iana === "Asia/Calcutta");
+  if (iana === "Asia/Calcutta") return index.find((e) => e.iana === "Asia/Kolkata");
+  return undefined;
+}
+
+function ensureSelectedInOptions(
+  options: TzEntry[],
+  value: string,
+  index: TzEntry[],
+  searching: boolean,
+): TzEntry[] {
+  if (!value || options.some((e) => e.iana === value)) return options;
+  if (searching) return options;
+  const entry = findTzEntry(index, value);
+  if (entry) return sortByOffset([entry, ...options]);
+  return sortByOffset([
+    {
+      iana: value,
+      city: value.replace(/_/g, " "),
+      abbr: value,
+      offsetLabel: "",
+      offsetHours: 0,
+      searchText: value.toLowerCase(),
+    },
+    ...options,
+  ]);
+}
+
+function buildListItems(entries: TzEntry[], grouped: boolean): TimezoneListItem[] {
+  if (!grouped) {
+    return entries.map((entry, optionIndex) => ({
+      kind: "option" as const,
+      id: entry.iana,
+      entry,
+      optionIndex,
+    }));
+  }
+
+  const items: TimezoneListItem[] = [];
+  let lastOffset: number | null = null;
+  let optionIndex = 0;
+  for (const entry of entries) {
+    if (entry.offsetHours !== lastOffset) {
+      lastOffset = entry.offsetHours;
+      items.push({
+        kind: "group",
+        id: `group-${entry.offsetHours}`,
+        label: entry.offsetLabel || "GMT+0",
+      });
+    }
+    items.push({ kind: "option", id: entry.iana, entry, optionIndex });
+    optionIndex += 1;
+  }
+  return items;
 }
 
 interface TimezoneSelectProps {
@@ -124,68 +296,204 @@ export function TimezoneSelect({
   id,
   required,
 }: TimezoneSelectProps) {
-  const [query, setQuery] = useState("");
-  const deferred = useDeferredValue(query);
-  const index = getTzIndex();
+  const autoId = useId();
+  const controlId = id ?? `tz-${autoId}`;
+  const listboxId = `${controlId}-listbox`;
 
-  const filtered = useMemo(() => searchTz(index, deferred), [index, deferred]);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [highlightIndex, setHighlightIndex] = useState(0);
+  const deferred = useDeferredValue(query);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const index = getTzIndex();
+  const searching = Boolean(deferred.trim());
 
   const options = useMemo(() => {
-    const inList = filtered.some((e) => e.iana === value);
-    if (!inList && value) {
-      const entry = index.find((e) => e.iana === value);
-      if (entry) return [entry, ...filtered];
-      return [
-        {
-          iana: value,
-          city: value.replace(/_/g, " "),
-          abbr: value,
-          offsetLabel: "",
-          offsetHours: 0,
-          searchText: value.toLowerCase(),
-        },
-        ...filtered,
-      ];
-    }
-    return filtered;
-  }, [filtered, value, index]);
+    const base = searching ? searchTz(index, deferred) : index;
+    return ensureSelectedInOptions(base, value, index, searching);
+  }, [deferred, index, searching, value]);
 
-  const selectedEntry = value ? index.find((e) => e.iana === value) : undefined;
+  const listItems = useMemo(
+    () => buildListItems(options, !searching),
+    [options, searching],
+  );
+
+  const optionCount = options.length;
+
+  const selectedEntry = value ? findTzEntry(index, value) : undefined;
+
+  useEffect(() => {
+    if (!open) return;
+    const selectedIdx = options.findIndex((e) => e.iana === value);
+    setHighlightIndex(selectedIdx >= 0 ? selectedIdx : 0);
+    const t = window.setTimeout(() => searchRef.current?.focus(), 0);
+    return () => window.clearTimeout(t);
+  }, [open, value, options]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const item = listRef.current?.querySelector(
+      `[data-option-index="${highlightIndex}"]`,
+    ) as HTMLElement | undefined;
+    item?.scrollIntoView?.({ block: "nearest" });
+  }, [highlightIndex, open]);
+
+  const selectOption = (entry: TzEntry) => {
+    onChange(entry.iana);
+    setOpen(false);
+    setQuery("");
+  };
+
+  const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setOpen(false);
+      setQuery("");
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setHighlightIndex((i) => Math.min(i + 1, Math.max(optionCount - 1, 0)));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlightIndex((i) => Math.max(i - 1, 0));
+      return;
+    }
+    if (event.key === "Enter" && options[highlightIndex]) {
+      event.preventDefault();
+      selectOption(options[highlightIndex]);
+    }
+  };
 
   return (
-    <div className="timezone-select">
-      <input
-        type="search"
-        className="form-control timezone-select__search"
-        placeholder="Search by city, abbreviation or offset (e.g. Tokyo, CEST, +5:30)…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
+    <div className="timezone-select" ref={containerRef}>
+      <button
+        type="button"
+        id={controlId}
+        className="timezone-select__trigger"
         disabled={disabled}
-        aria-label="Search timezones"
-        aria-controls={id}
-        autoComplete="off"
-      />
-      <select
-        id={id}
-        className="form-select timezone-select__list"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        required={required}
-        size={6}
-        aria-label="Select timezone"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listboxId}
+        aria-required={required || undefined}
+        onClick={() => {
+          if (disabled) return;
+          setOpen((prev) => !prev);
+        }}
       >
-        {options.map((e) => (
-          <option key={e.iana} value={e.iana}>
-            {e.city} ({e.abbr}, {e.offsetLabel})
-          </option>
-        ))}
-      </select>
-      {value && (
-        <p className="form-text timezone-select__current">
-          Selected: <strong>{value}</strong>
-          {selectedEntry ? ` — ${selectedEntry.abbr}, ${selectedEntry.offsetLabel}` : ""}
-        </p>
+        <span className="timezone-select__trigger-text">
+          {selectedEntry ? (
+            <>
+              <span className="timezone-select__trigger-city">{selectedEntry.city}</span>
+              <span className="timezone-select__trigger-meta">
+                {selectedEntry.iana}
+                {selectedEntry.offsetLabel ? ` · ${selectedEntry.offsetLabel}` : ""}
+              </span>
+            </>
+          ) : (
+            <span className="timezone-select__trigger-placeholder">Select timezone…</span>
+          )}
+        </span>
+        <i className="ti ti-chevron-down timezone-select__chevron" aria-hidden="true" />
+      </button>
+
+      {open && (
+        <div className="timezone-select__panel">
+          <input
+            ref={searchRef}
+            type="search"
+            className="at-input timezone-select__search"
+            placeholder="Search city, country or offset (e.g. Moscow, India, +5:30)…"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setHighlightIndex(0);
+            }}
+            onKeyDown={onSearchKeyDown}
+            disabled={disabled}
+            aria-label="Search timezones"
+            aria-controls={listboxId}
+            autoComplete="off"
+          />
+          {!searching && (
+            <p className="timezone-select__hint">
+              Sorted west → east by UTC offset · type to filter
+            </p>
+          )}
+          <ul
+            id={listboxId}
+            ref={listRef}
+            role="listbox"
+            className="timezone-select__list"
+            aria-label="Select timezone"
+          >
+            {optionCount === 0 ? (
+              <li className="timezone-select__empty" role="presentation">
+                No matching timezones
+              </li>
+            ) : (
+              listItems.map((item) =>
+                item.kind === "group" ? (
+                  <li key={item.id} className="timezone-select__group" role="presentation">
+                    {item.label}
+                  </li>
+                ) : (
+                  <li
+                    key={item.id}
+                    role="option"
+                    data-option-index={item.optionIndex}
+                    aria-selected={item.entry.iana === value}
+                    className={[
+                      "timezone-select__option",
+                      item.entry.iana === value && "timezone-select__option--selected",
+                      item.optionIndex === highlightIndex && "timezone-select__option--highlighted",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onMouseEnter={() => setHighlightIndex(item.optionIndex)}
+                    onClick={() => selectOption(item.entry)}
+                  >
+                    <span className="timezone-select__option-row">
+                      <span className="timezone-select__option-city">{item.entry.city}</span>
+                      {!searching ? null : item.entry.offsetLabel ? (
+                        <span className="timezone-select__option-offset">{item.entry.offsetLabel}</span>
+                      ) : null}
+                    </span>
+                    <span className="timezone-select__option-iana">{item.entry.iana}</span>
+                  </li>
+                ),
+              )
+            )}
+          </ul>
+        </div>
+      )}
+
+      {required && (
+        <input
+          tabIndex={-1}
+          aria-hidden="true"
+          className="timezone-select__validator"
+          value={value}
+          required
+          onChange={() => {}}
+        />
       )}
     </div>
   );

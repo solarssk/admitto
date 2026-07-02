@@ -3,6 +3,7 @@ import { Button } from "@admitto/ui";
 import { ApiError, createEvent } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
+import { DatePicker } from "../components/DatePicker.js";
 import { slugFromTitle } from "./slug.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import "./create-event-modal.css";
@@ -142,17 +143,13 @@ export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalP
             </div>
           </div>
           <div className="create-event-modal__field">
-            <label htmlFor="ce-date">
-              Event date <span aria-hidden="true">*</span>
-            </label>
-            <input
+            <DatePicker
               id="ce-date"
-              className="create-event-modal__input"
-              type="date"
+              label="Event date"
               value={date}
               required
               disabled={submitting}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={setDate}
             />
           </div>
           <div className="create-event-modal__field">

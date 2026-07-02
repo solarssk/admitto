@@ -191,13 +191,15 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
           </div>
         </div>
 
-        {refreshNotice && (
+        {refreshNotice && step === 1 && (
           <p className="setup-wizard__refresh-notice" role="status">
             Your progress was not saved. Let&apos;s start again.
           </p>
         )}
 
-        <div className="setup-wizard__card">
+        <div
+          className={`setup-wizard__card${step === 5 ? " setup-wizard__card--done" : ""}`}
+        >
           {step === 1 && <WizardStep1Checks onChecksOk={setChecksOk} />}
           {step === 2 && <WizardStep2Mail ref={mailRef} onDirtyChange={setDirty} />}
           {step === 3 && <WizardStep3Branding ref={brandingRef} onDirtyChange={setDirty} />}
