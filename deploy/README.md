@@ -241,7 +241,7 @@ offsite when possible (ADR 0023).
 ```bash
 docker compose logs db-backup
 docker compose exec db-backup sh -c 'ls -la /backups/nightly-*.sql.gz'
-docker compose exec db-backup gzip -t /backups/nightly-*.sql.gz
+docker compose exec db-backup sh -c 'gzip -t /backups/nightly-*.sql.gz'
 ```
 
 Nightly dumps on the host volume are **not** a full disaster-recovery strategy — copy offsite per
