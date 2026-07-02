@@ -41,12 +41,14 @@ describe.skipIf(!redisUrl)("RedisRateLimitStore", () => {
   });
 
   it("blocks when limit exceeded", async () => {
+    const windowMs = 60_000;
+    await waitForFreshRedisWindow(windowMs);
     const key = `test-block-${Date.now()}`;
     for (let i = 0; i < 60; i++) {
-      const result = await store.hit(key, 60_000, 60);
+      const result = await store.hit(key, windowMs, 60);
       expect(result.allowed).toBe(true);
     }
-    const blocked = await store.hit(key, 60_000, 60);
+    const blocked = await store.hit(key, windowMs, 60);
     expect(blocked.allowed).toBe(false);
     expect(blocked.remaining).toBe(0);
   });
