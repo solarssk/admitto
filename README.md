@@ -32,7 +32,7 @@
 flowchart LR
     A("📥 Import\nCSV / XLSX / UUIDs") --> B("🎫 Generate\nsecure QR token")
     B --> C("📧 Deliver ticket\nM365 · SMTP · Power Automate")
-    C --> D("📱 Wallet pass\nApple & Google — v0.5")
+    C --> D("📱 Wallet pass\nApple & Google — v0.6")
     C --> E("✅ Check-in\ntablet scan · no double-entry")
     E --> F("📄 Paper fallback\nPDF / XLSX export")
 ```
@@ -41,7 +41,7 @@ flowchart LR
 
 - 🎫 **Secure QR tickets** — unpredictable tokens, single-use, replay-safe
 - 📧 **Flexible mail delivery** — M365 Graph, SMTP, or Power Automate; Outlook-safe HTML templates
-- 📱 **Wallet passes** — Apple & Google Wallet via PassCreator *(v0.5)*
+- 📱 **Wallet passes** — Apple & Google Wallet via PassCreator *(v0.6)*
 - ✅ **Operator-first check-in** — scanner-driven, tablet-ready, manual lookup, offline-safe
 - 🔒 **Strong security defaults** — 2FA (TOTP), OIDC, Cloudflare Access, AES-256-GCM at-rest, audit logs
 - 🏢 **Self-hosted, multi-org** — superadmin / admin / operator RBAC; one instance, multiple organisations
@@ -124,9 +124,10 @@ See [deploy/README.md](deploy/README.md).
 
 | Milestone | What ships |
 |-----------|------------|
-| v0.5 | 📱 Apple & Google Wallet passes (PassCreator) |
-| v0.6 | 📋 RSVP intake via external forms |
-| v0.7–0.9 | 🔧 Hardening, stress testing, dry run |
+| v0.5 | 🔌 External-ingest API (Power Automate / MS Forms), users-table UX |
+| v0.6 | 📱 Apple & Google Wallet passes (PassCreator) |
+| v0.7 | 📋 RSVP intake, calendar invites, waitlist |
+| v0.8–0.9 | 🔧 Hardening, stress testing, dry run |
 | **v1.0** | **🚀 First event go-live** |
 | v1.1+ | 🌍 Self-service registration, multi-language, multi-track |
 
