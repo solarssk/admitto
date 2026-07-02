@@ -6,3 +6,10 @@ export { RedisRateLimitStore } from "./redis.js";
 export { redisKeyForHit, redisWindowStart } from "./redis-keys.js";
 export { createRateLimitStore } from "./factory.js";
 export { createPublicRateLimitMiddleware } from "./middleware.js";
+export {
+  RATE_POLICIES,
+  rateLimit,
+  createHealthzRateLimitMiddleware,
+  checkOidcLinkStepUpRateLimit,
+  type RatePolicyName,
+} from "./policies.js";

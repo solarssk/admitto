@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import type { Context, Next } from "hono";
 import { InMemoryRateLimitStore } from "../src/rate-limit/index.js";
-import { createCheckinAuthenticatedRateLimit } from "../src/checkin-rate-limit.js";
+import { rateLimit } from "../src/rate-limit/policies.js";
 
 function sessionContext(userId: string) {
   return async (c: Context, next: Next): Promise<void> => {
@@ -17,7 +17,7 @@ function makeScanApp(store: InMemoryRateLimitStore, userId: string) {
   app.post(
     "/api/checkin/scan",
     sessionContext(userId),
-    createCheckinAuthenticatedRateLimit(store, "scan"),
+    rateLimit(store, "checkin:scan"),
     (c) => c.json({ ok: true }, 200),
   );
   return app;
@@ -57,13 +57,13 @@ describe("check-in authenticated rate limit", () => {
     app.get(
       "/api/checkin/history",
       sessionContext("op-a"),
-      createCheckinAuthenticatedRateLimit(store, "history"),
+      rateLimit(store, "checkin:history"),
       (c) => c.json({ ok: true }, 200),
     );
     app.post(
       "/api/checkin/scan",
       sessionContext("op-a"),
-      createCheckinAuthenticatedRateLimit(store, "scan"),
+      rateLimit(store, "checkin:scan"),
       (c) => c.json({ ok: true }, 200),
     );
 

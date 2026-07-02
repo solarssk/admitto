@@ -12,7 +12,7 @@ import {
   eventIdFromHistoryQuery,
 } from "../../src/checkin-gate.js";
 import { handleCheckinStats } from "../../src/admin/checkin-api-routes.js";
-import { createCheckinAuthenticatedRateLimit } from "../../src/checkin-rate-limit.js";
+import { rateLimit } from "../../src/rate-limit/policies.js";
 import { InMemoryRateLimitStore, type RateLimitStore } from "../../src/rate-limit/index.js";
 
 const TOKEN = "test-operator-token-abc123";
@@ -131,7 +131,7 @@ function buildScanApp(allowBearer = false, rateLimitStore?: RateLimitStore) {
       "/api/checkin/scan",
       createCheckinPreAuth(deps),
       createCheckinSessionCsrfGuard(),
-      createCheckinAuthenticatedRateLimit(rateLimitStore, "scan"),
+      rateLimit(rateLimitStore, "checkin:scan"),
       parseScanBodyMiddleware,
       createCheckinEventScope(deps, eventIdFromScanBody),
       handler,
