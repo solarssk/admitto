@@ -660,30 +660,32 @@ describe("v0.4.10: unlimited instance superadmins", () => {
       data: { email: fourthEmail, password_hash: await hashPassword(PASSWORD) },
     });
 
-    const grant = async (userId: string) => {
-      const res = await app.request(`/api/admin/users/${userId}/roles`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: superCookie },
-        body: JSON.stringify({ role: "superadmin", scope_type: "instance" }),
+    try {
+      const grant = async (userId: string) => {
+        const res = await app.request(`/api/admin/users/${userId}/roles`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: superCookie },
+          body: JSON.stringify({ role: "superadmin", scope_type: "instance" }),
+        });
+        expect(res.status).toBe(201);
+      };
+
+      await grant(targetId);
+      await grant(thirdUser.id);
+      await grant(fourthUser.id);
+
+      const count = await prisma.roleAssignment.count({
+        where: { role: "superadmin", scope_type: "instance", scope_id: null },
       });
-      expect(res.status).toBe(201);
-    };
-
-    await grant(targetId);
-    await grant(thirdUser.id);
-    await grant(fourthUser.id);
-
-    const count = await prisma.roleAssignment.count({
-      where: { role: "superadmin", scope_type: "instance", scope_id: null },
-    });
-    expect(count).toBeGreaterThanOrEqual(4);
-
-    await prisma.roleAssignment.deleteMany({
-      where: { user_id: { in: [targetId, thirdUser.id, fourthUser.id] } },
-    });
-    await prisma.user.deleteMany({
-      where: { id: { in: [thirdUser.id, fourthUser.id] } },
-    });
+      expect(count).toBeGreaterThanOrEqual(4);
+    } finally {
+      await prisma.roleAssignment.deleteMany({
+        where: { user_id: { in: [targetId, thirdUser.id, fourthUser.id] } },
+      });
+      await prisma.user.deleteMany({
+        where: { id: { in: [thirdUser.id, fourthUser.id] } },
+      });
+    }
   });
 
   it("returns 409 already_assigned for duplicate superadmin grant on same user", async () => {

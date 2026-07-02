@@ -108,6 +108,22 @@ function isInstanceSuperadminGrant(grant: {
   return grant.role === "superadmin" && grant.scope_type === "instance" && grant.scope_id === null;
 }
 
+/** True when revoke would remove an active user's instance-superadmin assignment. */
+async function removesActiveInstanceSuperadmin(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  grant: { role_assignment_id: string },
+  userId: string,
+): Promise<boolean> {
+  const count = await prisma.roleAssignment.count({
+    where: {
+      id: grant.role_assignment_id,
+      user_id: userId,
+      user: { is_active: true },
+    },
+  });
+  return count > 0;
+}
+
 /** Remove one provider-owned grant and its linked assignment (grant cascades via FK). */
 async function revokeOidcRoleGrant(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -121,14 +137,20 @@ async function revokeOidcRoleGrant(
   userId: string,
   providerId: string,
 ): Promise<boolean> {
+  const needsSerializableFloorGuard =
+    isInstanceSuperadminGrant(grant) &&
+    (await removesActiveInstanceSuperadmin(prisma, grant, userId));
+
   return runInOwnTransaction(
     prisma,
     async (tx) => {
       if (isInstanceSuperadminGrant(grant)) {
-        const remaining = await countActiveInstanceSuperadmins(tx);
-        if (remaining <= 1) {
-          logOidcSuperadminRevokeBlocked({ providerId, userId });
-          return false;
+        if (await removesActiveInstanceSuperadmin(tx, grant, userId)) {
+          const remaining = await countActiveInstanceSuperadmins(tx);
+          if (remaining <= 1) {
+            logOidcSuperadminRevokeBlocked({ providerId, userId });
+            return false;
+          }
         }
       }
       await tx.roleAssignment.deleteMany({
@@ -137,7 +159,7 @@ async function revokeOidcRoleGrant(
       // OidcRoleGrant is removed via ON DELETE CASCADE on role_assignment_id FK.
       return true;
     },
-    isInstanceSuperadminGrant(grant)
+    needsSerializableFloorGuard
       ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
       : undefined,
   );
