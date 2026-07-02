@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CreateEventModal } from "../../src/events/CreateEventModal.js";
+import * as eventDates from "../../src/utils/event-dates.js";
 
 vi.mock("../../src/api/client.js", () => ({
   ApiError: class ApiError extends Error {
@@ -16,7 +17,27 @@ vi.mock("../../src/api/client.js", () => ({
 
 afterEach(cleanup);
 
+function pickEventDate(iso: string) {
+  fireEvent.click(screen.getByRole("button", { name: /Event date/ }));
+  fireEvent.click(screen.getByRole("gridcell", { name: iso }));
+}
+
 describe("CreateEventModal", () => {
+  beforeEach(() => {
+    vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-09-01");
+    vi.spyOn(eventDates, "formatCalendarMonth").mockReturnValue("September 2026");
+    vi.spyOn(eventDates, "getWeekdayLabelsShort").mockReturnValue([
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun",
+    ]);
+    vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((value) => value);
+  });
+
   it("auto-generates slug from title until slug is manually edited", () => {
     render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
 
@@ -38,9 +59,7 @@ describe("CreateEventModal", () => {
       true,
     );
 
-    fireEvent.change(screen.getByLabelText(/Event date/), {
-      target: { value: "2026-09-29" },
-    });
+    pickEventDate("2026-09-29");
 
     expect((screen.getByRole("button", { name: "Create event" }) as HTMLButtonElement).disabled).toBe(
       false,

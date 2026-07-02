@@ -13,6 +13,7 @@ const ALLOWLIST = new Set([
   "pages/ReportsPage.tsx",
   "account/AccountPage.tsx",
   "components/TimezoneSelect.tsx",
+  "components/DatePicker.tsx",
   "events/CreateEventModal.tsx",
   "pages/wizard/WizardStep4Event.tsx",
 ]);

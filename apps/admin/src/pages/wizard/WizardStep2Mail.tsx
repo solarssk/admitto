@@ -99,6 +99,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     const [loading, setLoading] = useState(true);
     const [validationErrors, setValidationErrors] = useState<string[]>([]);
     const [testSending, setTestSending] = useState(false);
+    const [testError, setTestError] = useState<string | null>(null);
     const loadAbortRef = useRef<AbortController | null>(null);
 
     const fieldLocked = useCallback(
@@ -143,6 +144,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     const updateDraft = (patch: Partial<MailDraft>) => {
       setDraft((prev) => ({ ...prev, ...patch }));
       setValidationErrors([]);
+      setTestError(null);
       onDirtyChange?.(true);
     };
 
@@ -201,17 +203,23 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
         return;
       }
       setTestSending(true);
+      setTestError(null);
       try {
         const saved = await saveSettings();
         if (!saved) return;
         const result = await sendMailTransportTest(user.email);
         if (result.status === "sent") {
+          setTestError(null);
           addToast(`Test email sent to ${user.email}.`, "success");
         } else {
-          addToast(result.error ?? "Test email failed.", "error");
+          const message = result.error ?? "Test email failed.";
+          setTestError(message);
+          addToast(message, "error");
         }
       } catch (err) {
-        addToast(err instanceof ApiError ? err.message : "Test email failed.", "error");
+        const message = err instanceof ApiError ? err.message : "Test email failed.";
+        setTestError(message);
+        addToast(message, "error");
       } finally {
         setTestSending(false);
       }
@@ -393,6 +401,11 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
                 >
                   {testSending ? "Sending…" : `Send test email to ${user.email}`}
                 </Button>
+                {testError && (
+                  <p className="setup-wizard__test-error" role="alert">
+                    {testError}
+                  </p>
+                )}
               </div>
             )}
           </>
@@ -426,6 +439,21 @@ function SecretInput({
     );
   }
 
+  if (!field.locked && !field.set) {
+    return (
+      <Input
+        label={label}
+        type={label === "Webhook URL" ? "url" : "password"}
+        autoComplete="new-password"
+        value={edit.mode === "idle" ? "" : edit.value}
+        onChange={(e) => {
+          if (edit.mode === "idle") onReplace();
+          onValueChange(e.target.value);
+        }}
+      />
+    );
+  }
+
   if (edit.mode === "idle") {
     return (
       <div className="setup-wizard__field">
@@ -442,7 +470,7 @@ function SecretInput({
     <div className="setup-wizard__field">
       <Input
         label={label}
-        type="password"
+        type={label === "Webhook URL" ? "url" : "password"}
         autoComplete="new-password"
         value={edit.value}
         onChange={(e) => onValueChange(e.target.value)}

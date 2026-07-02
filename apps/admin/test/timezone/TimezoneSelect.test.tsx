@@ -5,65 +5,132 @@ import { TimezoneSelect } from "../../src/components/TimezoneSelect.js";
 
 afterEach(cleanup);
 
+function openPicker() {
+  fireEvent.click(screen.getByRole("button"));
+}
+
 describe("TimezoneSelect", () => {
-  it("renders with the selected value visible", () => {
+  it("renders with the selected value visible on the trigger", () => {
     render(<TimezoneSelect value="UTC" onChange={() => {}} />);
-    expect((screen.getByLabelText("Select timezone") as HTMLSelectElement).value).toBe("UTC");
-    expect(screen.getByText(/Selected:/)).toBeTruthy();
-    expect(screen.getByText("UTC", { selector: "strong" })).toBeTruthy();
+    expect(screen.getByRole("button").textContent).toContain("UTC");
+  });
+
+  it("opens a searchable listbox", () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    expect(screen.getByRole("listbox", { name: "Select timezone" })).toBeTruthy();
+    expect(screen.getByLabelText("Search timezones")).toBeTruthy();
   });
 
   it("filters options when searching by city", async () => {
     render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
     fireEvent.change(screen.getByLabelText("Search timezones"), {
       target: { value: "tokyo" },
     });
     await waitFor(() => {
-      const select = screen.getByLabelText("Select timezone") as HTMLSelectElement;
-      const labels = Array.from(select.options).map((o) => o.text);
-      expect(labels.some((l) => l.toLowerCase().includes("tokyo"))).toBe(true);
-      expect(labels.length).toBeLessThan(590);
+      const options = screen.getAllByRole("option");
+      expect(options.some((o) => o.textContent?.toLowerCase().includes("tokyo"))).toBe(true);
+      expect(options.length).toBeLessThan(80);
     });
   });
 
   it("matches city names with spaces in the query", async () => {
     render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
     fireEvent.change(screen.getByLabelText("Search timezones"), {
       target: { value: "new york" },
     });
     await waitFor(() => {
-      const select = screen.getByLabelText("Select timezone") as HTMLSelectElement;
-      expect(Array.from(select.options).some((o) => o.value === "America/New_York")).toBe(true);
+      expect(
+        screen.getAllByRole("option").some((o) => o.textContent?.includes("America/New_York")),
+      ).toBe(true);
     });
   });
 
   it("calls onChange when a new timezone is selected", async () => {
     const onChange = vi.fn();
     render(<TimezoneSelect value="UTC" onChange={onChange} />);
+    openPicker();
     fireEvent.change(screen.getByLabelText("Search timezones"), {
       target: { value: "tokyo" },
     });
     await waitFor(() => {
-      const select = screen.getByLabelText("Select timezone") as HTMLSelectElement;
-      expect(Array.from(select.options).some((o) => o.value.includes("Tokyo"))).toBe(true);
+      expect(screen.getAllByRole("option").some((o) => o.textContent?.includes("Tokyo"))).toBe(
+        true,
+      );
     });
-    const select = screen.getByLabelText("Select timezone");
-    const tokyoOption = Array.from((select as HTMLSelectElement).options).find((o) =>
-      o.value.includes("Tokyo"),
-    );
+    const tokyoOption = screen
+      .getAllByRole("option")
+      .find((o) => o.textContent?.includes("Asia/Tokyo"));
     expect(tokyoOption).toBeDefined();
-    fireEvent.change(select, { target: { value: tokyoOption!.value } });
-    expect(onChange).toHaveBeenCalledWith(tokyoOption!.value);
+    fireEvent.click(tokyoOption!);
+    expect(onChange).toHaveBeenCalledWith("Asia/Tokyo");
   });
 
   it("keeps custom IANA value visible when not in filtered list", async () => {
     render(<TimezoneSelect value="Pacific/Kiritimati" onChange={() => {}} />);
+    openPicker();
     fireEvent.change(screen.getByLabelText("Search timezones"), {
       target: { value: "zzznomatch" },
     });
     await waitFor(() => {
-      const select = screen.getByLabelText("Select timezone") as HTMLSelectElement;
-      expect(Array.from(select.options).some((o) => o.value === "Pacific/Kiritimati")).toBe(true);
+      expect(screen.queryAllByRole("option")).toHaveLength(0);
+      expect(screen.getByText("No matching timezones")).toBeTruthy();
+    });
+  });
+
+  it("finds India when searching india and does not pin unrelated selection", async () => {
+    render(<TimezoneSelect value="Europe/Warsaw" onChange={() => {}} />);
+    openPicker();
+    fireEvent.change(screen.getByLabelText("Search timezones"), {
+      target: { value: "india" },
+    });
+    await waitFor(() => {
+      const options = screen.getAllByRole("option");
+      expect(
+        options.some(
+          (o) =>
+            o.textContent?.includes("Asia/Kolkata") || o.textContent?.includes("Asia/Calcutta"),
+        ),
+      ).toBe(true);
+      expect(options.some((o) => o.textContent?.includes("Europe/Warsaw"))).toBe(false);
+      expect(options[0]?.textContent).toMatch(/Kolkata|Calcutta/);
+    });
+  });
+
+  it("shows the full IANA list sorted by offset when browsing", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    await waitFor(() => {
+      const options = screen.getAllByRole("option");
+      expect(options.length).toBeGreaterThan(200);
+      expect(document.querySelector(".timezone-select__group")).toBeTruthy();
+    });
+  });
+
+  it("returns Russian zones when searching russia", async () => {
+    render(<TimezoneSelect value="Europe/Warsaw" onChange={() => {}} />);
+    openPicker();
+    fireEvent.change(screen.getByLabelText("Search timezones"), {
+      target: { value: "russia" },
+    });
+    await waitFor(() => {
+      const options = screen.getAllByRole("option");
+      expect(options.some((o) => o.textContent?.includes("Europe/Moscow"))).toBe(true);
+      expect(options.some((o) => o.textContent?.includes("Asia/Vladivostok"))).toBe(true);
+      expect(options.some((o) => o.textContent?.includes("Europe/Warsaw"))).toBe(false);
+    });
+  });
+
+  it("closes on Escape and returns focus to the trigger", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    const trigger = screen.getByRole("button");
+    openPicker();
+    fireEvent.keyDown(screen.getByLabelText("Search timezones"), { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(trigger);
     });
   });
 });

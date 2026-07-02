@@ -14,6 +14,7 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
+import { DatePicker } from "../components/DatePicker.js";
 import "./event-settings-page.css";
 
 type SettingsForm = {
@@ -267,13 +268,12 @@ export function EventSettingsPage() {
         />
         <p className="field-hint">Displayed everywhere — attendees, tickets, and mail.</p>
 
-        <Input
+        <DatePicker
           label="Date"
-          type="date"
           required
           value={form.date}
           disabled={isArchived || saving}
-          onChange={(e) => setForm({ ...form, date: e.target.value })}
+          onChange={(next) => setForm({ ...form, date: next })}
         />
 
         <div className="event-settings-timezone">

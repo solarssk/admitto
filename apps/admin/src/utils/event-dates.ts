@@ -59,6 +59,42 @@ export function utcDayEndIso(yyyyMmDd: string): string {
   return `${yyyyMmDd}T23:59:59.999Z`;
 }
 
+/** Display label for a `YYYY-MM-DD` event date field value. */
+export function formatIsoCalendarDate(yyyyMmDd: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(yyyyMmDd)) return yyyyMmDd;
+  return formatEventCalendarDate(`${yyyyMmDd}T12:00:00.000Z`);
+}
+
+/** Month heading for the custom date picker (UTC calendar month). */
+export function formatCalendarMonth(year: number, month: number): string {
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString(getPreferredLocale(), {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+const MONDAY_REF_MS = Date.UTC(2024, 0, 1);
+
+/** Short weekday labels, Monday-first, for calendar grids. */
+export function getWeekdayLabelsShort(): string[] {
+  return Array.from({ length: 7 }, (_, i) =>
+    new Date(MONDAY_REF_MS + i * 86_400_000).toLocaleDateString(getPreferredLocale(), {
+      weekday: "short",
+      timeZone: "UTC",
+    }),
+  );
+}
+
+/** Today's calendar date as `YYYY-MM-DD` in the user's local timezone. */
+export function todayIsoDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 /** Category 2 — admin/system timestamps always in UTC with explicit label. */
 export function formatUtcDateTime(iso: string): string {
   return new Date(iso).toLocaleString(getPreferredLocale(), {

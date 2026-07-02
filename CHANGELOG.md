@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Admin mail transport test returns actionable error messages instead of generic `send failed` (no hostnames or credentials in API responses).
 
+### Changed
+- Setup wizard: custom date picker and timezone combobox (UTC-offset browse order, country search aliases); ready step summary chips; hide stale refresh notice after step 1.
+- Mail wizard: inline transport test errors; password fields without spurious Cancel on first entry.
+
 ## [0.4.11] - 2026-07-02
 
 ### Fixed
