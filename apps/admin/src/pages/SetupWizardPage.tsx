@@ -186,8 +186,9 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
           {STEP_NAMES.map((name, index) => {
             const stepNum = index + 1;
             const isActive = step === stepNum;
-            const isComplete = completedSteps.has(stepNum) || step > stepNum;
-            const state = isComplete ? "done" : isActive ? "active" : "pending";
+            const isPast = step > stepNum;
+            const isComplete = isPast || (completedSteps.has(stepNum) && !isActive);
+            const state = isActive ? "active" : isComplete ? "done" : "pending";
             return (
               <Fragment key={name}>
                 <div
@@ -195,9 +196,18 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
                   aria-current={isActive ? "step" : undefined}
                 >
                   <span className="setup-wizard__step-dot" aria-hidden="true">
-                    {isComplete ? <i className="ti ti-check" /> : <span>{stepNum}</span>}
+                    {!isActive && isComplete ? (
+                      <i className="ti ti-check" />
+                    ) : (
+                      <span>{stepNum}</span>
+                    )}
                   </span>
-                  <span className="setup-wizard__step-label">{STEP_LABELS[name]}</span>
+                  <span className="setup-wizard__step-label">
+                    {STEP_LABELS[name]}
+                    {isComplete && !isActive ? (
+                      <span className="setup-wizard__sr-only"> — completed</span>
+                    ) : null}
+                  </span>
                 </div>
                 {index < STEP_NAMES.length - 1 ? (
                   <div
