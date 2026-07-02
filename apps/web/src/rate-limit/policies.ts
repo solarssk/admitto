@@ -29,6 +29,26 @@ export interface RatePolicy {
   failOpenOnStoreError?: boolean;
 }
 
+/** Sliding-window limits for inline helpers (dual-key, dynamic key, custom 429 body) — not middleware. */
+export interface InlineRateLimit {
+  windowMs: number;
+  max: number;
+}
+
+/**
+ * Limits consumed only by inline rate-limit helpers, not {@link rateLimit} middleware.
+ * Kept separate so these names are excluded from {@link RatePolicyName} at compile time.
+ */
+export const INLINE_RATE_LIMITS = {
+  "oidc:link-stepup": { windowMs: 60_000, max: 10 },
+  "auth:login-email": { windowMs: 60_000, max: 10 },
+  "mfa:verify-totp": { windowMs: 15 * 60_000, max: 10 },
+  "mfa:verify-recovery": { windowMs: 15 * 60_000, max: 30 },
+  "mfa:enroll": { windowMs: 15 * 60_000, max: 10 },
+} as const satisfies Record<string, InlineRateLimit>;
+
+export type InlineRateLimitName = keyof typeof INLINE_RATE_LIMITS;
+
 export type CheckinRateLimitKind = "scan" | "history" | "stream";
 
 function jsonTooManyRequests(c: Context): Response {
@@ -113,10 +133,6 @@ export const RATE_POLICIES = {
       },
     ],
   },
-  /** Inline-only — consumed by checkOidcLinkStepUpRateLimit (user + IP share limits), not rateLimit(). */
-  "oidc:link-stepup": {
-    checks: [{ keyOf: () => "", windowMs: 60_000, max: 10 }],
-  },
   "auth:login-ip": {
     checks: [
       {
@@ -126,22 +142,6 @@ export const RATE_POLICIES = {
         logOnExceeded: { scope: "login_ip" },
       },
     ],
-  },
-  /** Inline-only — consumed by checkLoginEmailRateLimit, not rateLimit(). */
-  "auth:login-email": {
-    checks: [{ keyOf: () => "", windowMs: 60_000, max: 10 }],
-  },
-  /** Inline-only — TOTP verify dual-key; consumed by checkMfaVerifyRateLimit. */
-  "mfa:verify-totp": {
-    checks: [{ keyOf: () => "", windowMs: 15 * 60_000, max: 10 }],
-  },
-  /** Inline-only — recovery verify dual-key; consumed by checkMfaVerifyRateLimit. */
-  "mfa:verify-recovery": {
-    checks: [{ keyOf: () => "", windowMs: 15 * 60_000, max: 30 }],
-  },
-  /** Inline-only — enroll dual-key; consumed by MFA enroll middleware, not rateLimit(). */
-  "mfa:enroll": {
-    checks: [{ keyOf: () => "", windowMs: 15 * 60_000, max: 10 }],
   },
   "admin:oidc-provider-ops": {
     checks: [
@@ -367,7 +367,7 @@ export async function checkOidcLinkStepUpRateLimit(
   userId: string,
   ip: string,
 ): Promise<boolean> {
-  const { windowMs, max } = RATE_POLICIES["oidc:link-stepup"].checks[0];
+  const { windowMs, max } = INLINE_RATE_LIMITS["oidc:link-stepup"];
   const userResult = await store.hit(`oidc:link:stepup:user:${userId}`, windowMs, max);
   if (!userResult.allowed) {
     logRateLimitExceeded({ scope: "oidc_link_stepup", ip, keyHint: "user" });

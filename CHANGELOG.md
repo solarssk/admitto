@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Consolidate rate-limit factories into declarative policy registry (no behavior change)
 - Centralize MFA enroll rate-limit constants in `RATE_POLICIES`; add registry edge-case and wiring tests
+- Extract inline-only rate limits to `INLINE_RATE_LIMITS` (excluded from `RatePolicyName`; compile-time guard against `rateLimit()` misuse)
 
 ## [0.4.9] - 2026-07-02
 

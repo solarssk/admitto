@@ -1,7 +1,7 @@
 import type { Context, Next } from "hono";
 import { logRateLimitExceeded, normalizeEmail } from "@admitto/auth";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
-import { RATE_POLICIES } from "../rate-limit/policies.js";
+import { INLINE_RATE_LIMITS, RATE_POLICIES } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
 /**
@@ -33,9 +33,9 @@ export async function checkLoginEmailRateLimit(
   email: string,
   ip?: string,
 ): Promise<boolean> {
-  const check = RATE_POLICIES["auth:login-email"].checks[0];
+  const { windowMs, max } = INLINE_RATE_LIMITS["auth:login-email"];
   const key = `auth:login:email:${normalizeEmail(email)}`;
-  const { allowed } = await store.hit(key, check.windowMs, check.max);
+  const { allowed } = await store.hit(key, windowMs, max);
   if (!allowed) {
     logRateLimitExceeded({ scope: "login_email", ip, keyHint: "email" });
   }

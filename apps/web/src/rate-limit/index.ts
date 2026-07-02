@@ -7,9 +7,11 @@ export { redisKeyForHit, redisWindowStart } from "./redis-keys.js";
 export { createRateLimitStore } from "./factory.js";
 export { createPublicRateLimitMiddleware } from "./middleware.js";
 export {
+  INLINE_RATE_LIMITS,
   RATE_POLICIES,
   rateLimit,
   createHealthzRateLimitMiddleware,
   checkOidcLinkStepUpRateLimit,
+  type InlineRateLimitName,
   type RatePolicyName,
 } from "./policies.js";
