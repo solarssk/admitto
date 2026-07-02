@@ -1,3 +1,4 @@
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth";
 import { describe, expect, it } from "vitest";
 import {
   renderSetupPage,
@@ -17,6 +18,12 @@ describe("setup-page", () => {
     expect(html).toContain('autocomplete="new-password"');
     expect(html).toContain('name="confirm_password"');
     expect(html).toContain('id="password-hint"');
+  });
+
+  it("maps password_too_short to PASSWORD_MIN_LENGTH copy", () => {
+    expect(setupErrorMessage("password_too_short")).toBe(
+      `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`,
+    );
   });
 
   it("maps email_taken to mockup copy", () => {

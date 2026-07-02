@@ -34,7 +34,7 @@ export function setupErrorMessage(code?: SetupErrorCode): string | undefined {
     case "invalid_email":
       return "Enter a valid email address.";
     case "password_too_short":
-      return "Password must be at least 12 characters.";
+      return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`;
     case "password_mismatch":
       return "Passwords do not match.";
     case "email_taken":
