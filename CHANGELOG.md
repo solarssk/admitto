@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-07-02
+
 ### Added
 - Admin: Instance URL setting (Settings → General) for email logo absolute URLs when BASE_URL env is unset
 - Backend: live check-in SSE at `GET /api/checkin/events/:eventId/stream` (operator/admin `canPerformCheckIn` auth)
@@ -20,9 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Admin SPA: Event overview optimistic `admitted_count` from SSE
 - Admin SPA: Communication page multi-template editor, bulk send dialog with dry-run and batch polling
 
+### Changed
+- Docs: align contributor roadmap in `AGENTS.md`, `README.md`, and `VERSIONING.md` (v0.5 ingest API → v0.6 Wallet → v0.7 RSVP); `AGENTS.md` points at `CHANGELOG.md` and the open GitHub milestone instead of a hardcoded active milestone
+
 ### Fixed
 - Admin: corrupt uploaded logo files clear the upload value in LogoUploadZone and show an error; external HTTPS URLs keep the value for manual correction
 - Admin: attendee resend and bulk resend use DB instance URL for ticket links when BASE_URL env is unset
+- Instance URL validation rejects bare `?` or `#` delimiters (prevents malformed ticket and QR link paths)
 - Admin SPA: event overview reuses check-in TTL dedup map for SSE admits (no full clear on server refresh; TTL prune on poll keeps map bounded)
 - Admin SPA: communication page refetches inherited ticket template on each virtual-ticket selection (avoids stale legacy cache)
 - Admin SPA: communication page clears editor actions after delete when ticket fallback load fails (avoids targeting deleted template; re-select or create reloads editor)
@@ -516,7 +522,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.8...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.9...HEAD
+[0.4.9]: https://github.com/solarssk/admitto/compare/v0.4.8...v0.4.9
 [0.4.8]: https://github.com/solarssk/admitto/compare/v0.4.7...v0.4.8
 [0.4.7]: https://github.com/solarssk/admitto/compare/v0.4.6...v0.4.7
 [0.4.6]: https://github.com/solarssk/admitto/compare/v0.4.5...v0.4.6
