@@ -1,5 +1,8 @@
+import fs, { constants } from "node:fs";
 import path from "node:path";
 import { CliError } from "./args.js";
+
+const PRIVATE_EXPORT_MODE = 0o600;
 
 function isPathInside(child: string, parent: string): boolean {
   const resolvedParent = path.resolve(parent);
@@ -10,28 +13,155 @@ function isPathInside(child: string, parent: string): boolean {
   );
 }
 
+function canonicalDir(dir: string): string {
+  const resolved = path.resolve(dir);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+/** Resolve symlinks in parent chain; reject symlink final paths. */
+function canonicalExportOutPath(out: string): string {
+  const resolved = path.resolve(out);
+
+  try {
+    const stat = fs.lstatSync(resolved);
+    if (stat.isSymbolicLink()) {
+      throw new CliError("--out must not be a symlink.");
+    }
+    return fs.realpathSync(resolved);
+  } catch (err) {
+    if (err instanceof CliError) throw err;
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+
+  const parent = path.dirname(resolved);
+  const base = path.basename(resolved);
+
+  if (!fs.existsSync(parent)) {
+    return resolved;
+  }
+
+  const realParent = fs.realpathSync(parent);
+  const candidate = path.join(realParent, base);
+
+  try {
+    const candidateStat = fs.lstatSync(candidate);
+    if (candidateStat.isSymbolicLink()) {
+      throw new CliError("--out must not be a symlink.");
+    }
+    return fs.realpathSync(candidate);
+  } catch (err) {
+    if (err instanceof CliError) throw err;
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+
+  return candidate;
+}
+
 /**
- * Restrict emergency CSV exports to EMERGENCY_EXPORT_DIR and block UPLOAD_DIR
- * (served publicly at /uploads/*). Skips prefix checks when env vars are unset
- * (local dev without Docker env).
+ * Validate `--out` and return the canonical path to write.
+ * Restricts to EMERGENCY_EXPORT_DIR and blocks UPLOAD_DIR (public /uploads/*).
+ * Skips prefix checks when env vars are unset (local dev without Docker env).
  */
 export function assertSafeEmergencyExportOut(
   out: string,
   env: NodeJS.ProcessEnv = process.env,
-): void {
+): string {
   const resolvedOut = path.resolve(out);
+  const canonicalOut = canonicalExportOutPath(out);
 
   const uploadDir = env.UPLOAD_DIR?.trim();
-  if (uploadDir && isPathInside(resolvedOut, uploadDir)) {
-    throw new CliError(
-      `--out must not be under UPLOAD_DIR (${path.resolve(uploadDir)}): /uploads is served without auth.`,
-    );
+  const resolvedUploadDir = uploadDir ? path.resolve(uploadDir) : undefined;
+  const realUploadDir = uploadDir ? canonicalDir(uploadDir) : undefined;
+
+  if (resolvedUploadDir && realUploadDir) {
+    // Raw path: /uploads/* is served without auth; readFile follows symlinks under UPLOAD_DIR.
+    if (isPathInside(resolvedOut, resolvedUploadDir)) {
+      throw new CliError(
+        `--out must not be under UPLOAD_DIR (${resolvedUploadDir}): /uploads is served without auth.`,
+      );
+    }
+    if (isPathInside(canonicalOut, realUploadDir)) {
+      throw new CliError(
+        `--out must not resolve under UPLOAD_DIR (${realUploadDir}): /uploads is served without auth.`,
+      );
+    }
   }
 
   const emergencyDir = env.EMERGENCY_EXPORT_DIR?.trim();
-  if (emergencyDir && !isPathInside(resolvedOut, emergencyDir)) {
-    throw new CliError(
-      `--out must be under EMERGENCY_EXPORT_DIR (${path.resolve(emergencyDir)}).`,
-    );
+  if (emergencyDir) {
+    const resolvedEmergencyDir = path.resolve(emergencyDir);
+    const realEmergencyDir = canonicalDir(emergencyDir);
+
+    if (resolvedUploadDir && realUploadDir) {
+      const emergencyUnderUpload =
+        isPathInside(resolvedEmergencyDir, resolvedUploadDir) ||
+        isPathInside(resolvedEmergencyDir, realUploadDir) ||
+        isPathInside(realEmergencyDir, resolvedUploadDir) ||
+        isPathInside(realEmergencyDir, realUploadDir);
+      if (emergencyUnderUpload) {
+        throw new CliError(
+          `EMERGENCY_EXPORT_DIR must not be under UPLOAD_DIR (${resolvedUploadDir}; realpath ${realUploadDir}): use a non-public path.`,
+        );
+      }
+    }
+
+    if (!isPathInside(resolvedOut, resolvedEmergencyDir)) {
+      throw new CliError(
+        `--out must be under EMERGENCY_EXPORT_DIR (${resolvedEmergencyDir}).`,
+      );
+    }
+    if (!isPathInside(canonicalOut, realEmergencyDir)) {
+      throw new CliError(
+        `--out must resolve under EMERGENCY_EXPORT_DIR (${realEmergencyDir}).`,
+      );
+    }
   }
+
+  return canonicalOut;
+}
+
+/** Write the full buffer to an open fd; loops until all bytes are persisted. */
+function writeAllSync(fd: number, data: Buffer): void {
+  let offset = 0;
+  while (offset < data.length) {
+    const written = fs.writeSync(fd, data, offset, data.length - offset);
+    if (written <= 0) {
+      throw new CliError("Failed to write export: incomplete write.");
+    }
+    offset += written;
+  }
+}
+
+/** Write export CSV with 0600 perms; O_NOFOLLOW rejects symlink races at open time. */
+export function writeSafeEmergencyExportFile(
+  out: string,
+  content: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const exportPath = assertSafeEmergencyExportOut(out, env);
+  const data = Buffer.from(content, "utf8");
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(
+      exportPath,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+      PRIVATE_EXPORT_MODE,
+    );
+    writeAllSync(fd, data);
+    fs.fchmodSync(fd, PRIVATE_EXPORT_MODE);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ELOOP") {
+      throw new CliError("--out must not be a symlink.");
+    }
+    throw err;
+  } finally {
+    if (fd !== undefined) {
+      fs.closeSync(fd);
+    }
+  }
+  return exportPath;
 }
