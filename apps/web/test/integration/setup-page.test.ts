@@ -178,6 +178,35 @@ describe("POST /setup", () => {
     expect(setting?.value_json).toBe("false");
   });
 
+  it("returns 409 already_initialized when concurrent first-run setup races", async () => {
+    const postSetup = (email: string) =>
+      app.request("/setup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          ...sameOrigin,
+        },
+        body: new URLSearchParams({
+          email,
+          password: SETUP_PASSWORD,
+          confirm_password: SETUP_PASSWORD,
+        }).toString(),
+      });
+
+    const [resA, resB] = await Promise.all([
+      postSetup("race-a@example.com"),
+      postSetup("race-b@example.com"),
+    ]);
+
+    const statuses = [resA.status, resB.status].sort((a, b) => a - b);
+    expect(statuses).toEqual([302, 409]);
+
+    const loser = resA.status === 409 ? resA : resB;
+    const body = (await loser.json()) as { code: string };
+    expect(body.code).toBe("already_initialized");
+    expect(await prisma.user.count()).toBe(1);
+  });
+
   it("returns 409 when database already initialized", async () => {
     await seedGateUser(prisma);
     const res = await app.request("/setup", {

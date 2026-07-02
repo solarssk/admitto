@@ -649,30 +649,54 @@ describe("POST /change-password", () => {
   });
 });
 
-describe("IAM-004 granting a second instance superadmin", () => {
-  // The partial unique index is migration-only (not expressible in schema.prisma),
-  // so create it locally to reproduce the production constraint under `db push`.
-  const INDEX = "RoleAssignment_single_superadmin_key";
+describe("v0.4.10: unlimited instance superadmins", () => {
+  it("allows granting superadmin to second, third, and fourth users", async () => {
+    const thirdEmail = "super-third@example.com";
+    const fourthEmail = "super-fourth@example.com";
+    const thirdUser = await prisma.user.create({
+      data: { email: thirdEmail, password_hash: await hashPassword(PASSWORD) },
+    });
+    const fourthUser = await prisma.user.create({
+      data: { email: fourthEmail, password_hash: await hashPassword(PASSWORD) },
+    });
 
-  it("returns 409 single_superadmin_limit instead of 500", async () => {
-    await prisma.$executeRawUnsafe(
-      `CREATE UNIQUE INDEX IF NOT EXISTS "${INDEX}" ON "RoleAssignment" ("role", "scope_type") WHERE "scope_id" IS NULL AND "role" = 'superadmin'`,
-    );
     try {
-      const res = await app.request(`/api/admin/users/${targetId}/roles`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: superCookie },
-        body: JSON.stringify({ role: "superadmin", scope_type: "instance" }),
+      const grant = async (userId: string) => {
+        const res = await app.request(`/api/admin/users/${userId}/roles`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: superCookie },
+          body: JSON.stringify({ role: "superadmin", scope_type: "instance" }),
+        });
+        expect(res.status).toBe(201);
+      };
+
+      await grant(targetId);
+      await grant(thirdUser.id);
+      await grant(fourthUser.id);
+
+      const count = await prisma.roleAssignment.count({
+        where: { role: "superadmin", scope_type: "instance", scope_id: null },
       });
-      expect(res.status).toBe(409);
-      const body = (await res.json()) as { code?: string };
-      expect(body.code).toBe("single_superadmin_limit");
+      expect(count).toBeGreaterThanOrEqual(4);
     } finally {
       await prisma.roleAssignment.deleteMany({
-        where: { user_id: targetId, role: "superadmin", scope_type: "instance", scope_id: null },
+        where: { user_id: { in: [targetId, thirdUser.id, fourthUser.id] } },
       });
-      await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "${INDEX}"`);
+      await prisma.user.deleteMany({
+        where: { id: { in: [thirdUser.id, fourthUser.id] } },
+      });
     }
+  });
+
+  it("returns 409 already_assigned for duplicate superadmin grant on same user", async () => {
+    const res = await app.request(`/api/admin/users/${superId}/roles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: superCookie },
+      body: JSON.stringify({ role: "superadmin", scope_type: "instance" }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code?: string };
+    expect(body.code).toBe("already_assigned");
   });
 });
 

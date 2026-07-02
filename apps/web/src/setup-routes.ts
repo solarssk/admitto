@@ -145,14 +145,13 @@ export async function handlePostSetup(c: Context, db: PrismaClient): Promise<Res
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
   } catch (err) {
-    if (err instanceof SetupAlreadyInitializedError) {
+    if (
+      err instanceof SetupAlreadyInitializedError ||
+      (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034")
+    ) {
       return c.json({ code: "already_initialized" }, 409);
     }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      const target = String(err.meta?.target ?? "");
-      if (target.includes("RoleAssignment_single_superadmin")) {
-        return c.json({ code: "already_initialized" }, 409);
-      }
       return htmlResponse(
         c,
         renderSetupPage("email_taken", { email, display_name: displayName ?? undefined }),

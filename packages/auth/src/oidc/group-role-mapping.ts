@@ -1,5 +1,6 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { hasScope } from "@admitto/db";
+import { logOidcSuperadminRevokeBlocked } from "../audit.js";
 
 /** RoleAssignment requires NULL scope_id for instance scope (DB CHECK). */
 export function roleAssignmentScopeId(scopeType: string, scopeId: string | null): string | null {
@@ -19,9 +20,10 @@ function isPrismaClient(
 async function runInOwnTransaction<T>(
   prisma: PrismaClient | Prisma.TransactionClient,
   fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
 ): Promise<T> {
   if (isPrismaClient(prisma)) {
-    return prisma.$transaction(fn);
+    return prisma.$transaction(fn, options);
   }
   return fn(prisma);
 }
@@ -35,6 +37,18 @@ function isUniqueViolation(err: unknown): boolean {
     (err as { code: string }).code === "P2002"
   );
 }
+
+/** Prisma Serializable transaction conflict (concurrent superadmin floor-guard revokes). */
+function isSerializationFailure(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: string }).code === "P2034"
+  );
+}
+
+const SERIALIZATION_RETRY_ATTEMPTS = 3;
 
 /** Natural key for an OIDC-owned grant row. */
 function grantWhere(
@@ -83,18 +97,97 @@ function ruleStillAuthorizesGrant(
   });
 }
 
+/** Count active users with instance-scoped superadmin RoleAssignment. */
+export async function countActiveInstanceSuperadmins(
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<number> {
+  return prisma.roleAssignment.count({
+    where: {
+      role: "superadmin",
+      scope_type: "instance",
+      scope_id: null,
+      user: { is_active: true },
+    },
+  });
+}
+
+/** True for instance-scoped superadmin grants subject to the last-superadmin floor guard. */
+function isInstanceSuperadminGrant(grant: {
+  role: string;
+  scope_type: string;
+  scope_id: string | null;
+}): boolean {
+  return grant.role === "superadmin" && grant.scope_type === "instance" && grant.scope_id === null;
+}
+
+/** True when revoke would remove an active user's instance-superadmin assignment. */
+async function removesActiveInstanceSuperadmin(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  grant: { role_assignment_id: string },
+  userId: string,
+): Promise<boolean> {
+  const count = await prisma.roleAssignment.count({
+    where: {
+      id: grant.role_assignment_id,
+      user_id: userId,
+      user: { is_active: true },
+    },
+  });
+  return count > 0;
+}
+
 /** Remove one provider-owned grant and its linked assignment (grant cascades via FK). */
 async function revokeOidcRoleGrant(
   prisma: PrismaClient | Prisma.TransactionClient,
-  grant: { id: string; role_assignment_id: string },
+  grant: {
+    id: string;
+    role_assignment_id: string;
+    role: string;
+    scope_type: string;
+    scope_id: string | null;
+  },
   userId: string,
-): Promise<void> {
-  await runInOwnTransaction(prisma, async (tx) => {
-    await tx.roleAssignment.deleteMany({
-      where: { id: grant.role_assignment_id, user_id: userId },
-    });
-    // OidcRoleGrant is removed via ON DELETE CASCADE on role_assignment_id FK.
-  });
+  providerId: string,
+): Promise<boolean> {
+  const needsSerializableFloorGuard =
+    isInstanceSuperadminGrant(grant) &&
+    (await removesActiveInstanceSuperadmin(prisma, grant, userId));
+
+  const transactionOptions = needsSerializableFloorGuard
+    ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    : undefined;
+
+  for (let attempt = 0; attempt < SERIALIZATION_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await runInOwnTransaction(
+        prisma,
+        async (tx) => {
+          if (isInstanceSuperadminGrant(grant)) {
+            if (await removesActiveInstanceSuperadmin(tx, grant, userId)) {
+              const remaining = await countActiveInstanceSuperadmins(tx);
+              if (remaining <= 1) {
+                logOidcSuperadminRevokeBlocked({ providerId, userId });
+                return false;
+              }
+            }
+          }
+          await tx.roleAssignment.deleteMany({
+            where: { id: grant.role_assignment_id, user_id: userId },
+          });
+          // OidcRoleGrant is removed via ON DELETE CASCADE on role_assignment_id FK.
+          return true;
+        },
+        transactionOptions,
+      );
+    } catch (err) {
+      if (isSerializationFailure(err) && attempt < SERIALIZATION_RETRY_ATTEMPTS - 1) {
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw new Error("unreachable: revokeOidcRoleGrant serialization retries exhausted");
 }
 
 /**
@@ -176,8 +269,9 @@ export async function applyOidcGroupRoleMappings(
 
   for (const grant of grants) {
     if (ruleStillAuthorizesGrant(grant, rules, groupSet)) continue;
-    await revokeOidcRoleGrant(prisma, grant, userId);
-    changed++;
+    if (await revokeOidcRoleGrant(prisma, grant, userId, providerId)) {
+      changed++;
+    }
   }
 
   for (const rule of rules) {
