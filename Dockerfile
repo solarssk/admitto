@@ -60,11 +60,13 @@ COPY packages/import/package.json packages/import/
 COPY packages/ui/package.json packages/ui/
 COPY apps/admin/package.json apps/admin/
 COPY apps/web/package.json apps/web/
+COPY apps/cli/package.json apps/cli/
 
 COPY --from=builder /app/node_modules ./node_modules
 
 COPY --from=builder /app/apps/web/dist ./apps/web/dist
 COPY --from=builder /app/apps/admin/dist ./apps/admin/dist
+COPY --from=builder /app/apps/cli/dist ./apps/cli/dist
 COPY --from=builder /app/packages/ui/dist ./packages/ui/dist
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/crypto/dist ./packages/crypto/dist

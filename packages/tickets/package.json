@@ -20,6 +20,7 @@
   "dependencies": {
     "@admitto/crypto": "*",
     "@admitto/db": "*",
+    "@admitto/mail-templates": "*",
     "qrcode": "^1.5.3"
   },
   "devDependencies": {

@@ -4,7 +4,7 @@ import {
   normalizePersistedInstanceUrl,
   normalizeRuntimeBaseUrl,
   resolveInstanceBaseUrl,
-} from "../src/instance-base-url.js";
+} from "@admitto/auth";
 
 describe("normalizePersistedInstanceUrl", () => {
   it("accepts HTTPS URLs without trailing slash", () => {
