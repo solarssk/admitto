@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CliError } from "../src/lib/args.js";
 import { assertSafeEmergencyExportOut, writeSafeEmergencyExportFile } from "../src/lib/export-out-path.js";
 
@@ -106,6 +106,37 @@ describe("assertSafeEmergencyExportOut", () => {
       }),
     ).toThrow(CliError);
     expect(fs.existsSync(path.join(uploads, "leaked.csv"))).toBe(false);
+  });
+
+  it("writeSafeEmergencyExportFile persists full content across partial writeSync calls", () => {
+    const { emergency, uploads } = makeTempLayout();
+    const out = path.join(emergency, "report.csv");
+    const content = "row\n".repeat(2000);
+    const realWriteSync = fs.writeSync.bind(fs);
+    let calls = 0;
+
+    const spy = vi.spyOn(fs, "writeSync").mockImplementation((fd, buffer, ...rest) => {
+      if (Buffer.isBuffer(buffer) && calls === 0) {
+        calls++;
+        const offset = typeof rest[0] === "number" ? rest[0] : 0;
+        const length =
+          typeof rest[1] === "number" ? rest[1] : buffer.length - offset;
+        const chunk = Math.min(64, length);
+        return realWriteSync(fd, buffer, offset, chunk);
+      }
+      return realWriteSync(fd, buffer, ...rest);
+    });
+
+    try {
+      writeSafeEmergencyExportFile(out, content, {
+        EMERGENCY_EXPORT_DIR: emergency,
+        UPLOAD_DIR: uploads,
+      });
+      expect(fs.readFileSync(out, "utf8")).toBe(content);
+      expect(calls).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("rejects EMERGENCY_EXPORT_DIR configured as a public uploads alias", () => {

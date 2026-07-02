@@ -116,6 +116,18 @@ export function assertSafeEmergencyExportOut(
   return canonicalOut;
 }
 
+/** Write the full buffer to an open fd; loops until all bytes are persisted. */
+function writeAllSync(fd: number, data: Buffer): void {
+  let offset = 0;
+  while (offset < data.length) {
+    const written = fs.writeSync(fd, data, offset, data.length - offset);
+    if (written <= 0) {
+      throw new CliError("Failed to write export: incomplete write.");
+    }
+    offset += written;
+  }
+}
+
 /** Write export CSV with 0600 perms; O_NOFOLLOW rejects symlink races at open time. */
 export function writeSafeEmergencyExportFile(
   out: string,
@@ -131,7 +143,7 @@ export function writeSafeEmergencyExportFile(
       constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
       PRIVATE_EXPORT_MODE,
     );
-    fs.writeSync(fd, data);
+    writeAllSync(fd, data);
     fs.fchmodSync(fd, PRIVATE_EXPORT_MODE);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ELOOP") {
