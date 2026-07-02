@@ -80,4 +80,17 @@ describe("assertSafeEmergencyExportOut", () => {
       }),
     ).toThrow(CliError);
   });
+
+  it("rejects raw UPLOAD_DIR paths when a symlink resolves outside uploads", () => {
+    const { emergency, uploads } = makeTempLayout();
+    const exportLink = path.join(uploads, "export-link");
+    fs.symlinkSync(emergency, exportLink);
+
+    expect(() =>
+      assertSafeEmergencyExportOut(path.join(exportLink, "report.csv"), {
+        EMERGENCY_EXPORT_DIR: emergency,
+        UPLOAD_DIR: uploads,
+      }),
+    ).toThrow(CliError);
+  });
 });

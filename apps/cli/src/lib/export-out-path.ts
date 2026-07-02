@@ -68,13 +68,24 @@ export function assertSafeEmergencyExportOut(
   out: string,
   env: NodeJS.ProcessEnv = process.env,
 ): void {
+  const resolvedOut = path.resolve(out);
   const canonicalOut = canonicalExportOutPath(out);
 
   const uploadDir = env.UPLOAD_DIR?.trim();
-  if (uploadDir && isPathInside(canonicalOut, canonicalDir(uploadDir))) {
-    throw new CliError(
-      `--out must not be under UPLOAD_DIR (${canonicalDir(uploadDir)}): /uploads is served without auth.`,
-    );
+  if (uploadDir) {
+    const resolvedUploadDir = path.resolve(uploadDir);
+    const realUploadDir = canonicalDir(uploadDir);
+    // Raw path: /uploads/* is served without auth; readFile follows symlinks under UPLOAD_DIR.
+    if (isPathInside(resolvedOut, resolvedUploadDir)) {
+      throw new CliError(
+        `--out must not be under UPLOAD_DIR (${resolvedUploadDir}): /uploads is served without auth.`,
+      );
+    }
+    if (isPathInside(canonicalOut, realUploadDir)) {
+      throw new CliError(
+        `--out must not resolve under UPLOAD_DIR (${realUploadDir}): /uploads is served without auth.`,
+      );
+    }
   }
 
   const emergencyDir = env.EMERGENCY_EXPORT_DIR?.trim();
