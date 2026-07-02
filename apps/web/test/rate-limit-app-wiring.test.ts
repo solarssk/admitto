@@ -10,6 +10,20 @@ function createMockPrisma(): PrismaClient {
   } as unknown as PrismaClient;
 }
 
+const CHECKIN_TOKEN = "wiring-checkin-bearer-token-32ch!!";
+const sameOrigin = { Origin: "http://localhost" };
+
+function createWiringApp(store: InMemoryRateLimitStore) {
+  return createApp({
+    prisma: createMockPrisma(),
+    baseUrl: "https://tickets.example.com",
+    skipCheckinBootValidation: true,
+    rateLimitStore: store,
+    allowCheckinBearer: true,
+    checkinToken: CHECKIN_TOKEN,
+  });
+}
+
 describe("createApp rate-limit wiring", () => {
   it("rate-limits /healthz through registry policy", async () => {
     const store = new InMemoryRateLimitStore();
@@ -44,12 +58,7 @@ describe("createApp rate-limit wiring", () => {
 
   it("rate-limits /t through public:tq registry policy", async () => {
     const store = new InMemoryRateLimitStore();
-    const app = createApp({
-      prisma: createMockPrisma(),
-      baseUrl: "https://tickets.example.com",
-      skipCheckinBootValidation: true,
-      rateLimitStore: store,
-    });
+    const app = createWiringApp(store);
     const headers = { "X-Forwarded-For": "203.0.113.77" };
 
     for (let i = 0; i < 60; i++) {
@@ -58,6 +67,45 @@ describe("createApp rate-limit wiring", () => {
     const blocked = await app.request("/t/sample-token", { headers });
     expect(blocked.status).toBe(429);
     expect(await blocked.text()).toBe("Too Many Requests");
+  });
+
+  it("rate-limits POST /api/auth/login through auth:login-ip policy", async () => {
+    const store = new InMemoryRateLimitStore();
+    const app = createWiringApp(store);
+    const headers = {
+      ...sameOrigin,
+      "Content-Type": "application/json",
+      "X-Forwarded-For": "203.0.113.50",
+    };
+
+    for (let i = 0; i < 10; i++) {
+      expect(
+        (await app.request("/api/auth/login", { method: "POST", headers, body: "{}" })).status,
+      ).not.toBe(429);
+    }
+    expect(
+      (await app.request("/api/auth/login", { method: "POST", headers, body: "{}" })).status,
+    ).toBe(429);
+  });
+
+  it("rate-limits POST /api/checkin/scan through checkin:scan policy", async () => {
+    const store = new InMemoryRateLimitStore();
+    const app = createWiringApp(store);
+    const headers = {
+      Authorization: `Bearer ${CHECKIN_TOKEN}`,
+      "Content-Type": "application/json",
+      "X-Forwarded-For": "203.0.113.60",
+    };
+    const body = JSON.stringify({ eventId: "evt-wiring", scanned: "qr-token" });
+
+    for (let i = 0; i < 120; i++) {
+      expect(
+        (await app.request("/api/checkin/scan", { method: "POST", headers, body })).status,
+      ).not.toBe(429);
+    }
+    expect(
+      (await app.request("/api/checkin/scan", { method: "POST", headers, body })).status,
+    ).toBe(429);
   });
 
   it("allows /t when Redis is unreachable (store fail-open)", async () => {

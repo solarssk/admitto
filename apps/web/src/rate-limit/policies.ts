@@ -139,6 +139,10 @@ export const RATE_POLICIES = {
   "mfa:verify-recovery": {
     checks: [{ keyOf: () => "", windowMs: 15 * 60_000, max: 30 }],
   },
+  /** Inline-only — enroll dual-key; consumed by MFA enroll middleware, not rateLimit(). */
+  "mfa:enroll": {
+    checks: [{ keyOf: () => "", windowMs: 15 * 60_000, max: 10 }],
+  },
   "admin:oidc-provider-ops": {
     checks: [
       {
