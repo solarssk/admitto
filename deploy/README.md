@@ -156,7 +156,8 @@ docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin 
 
 Replace the email with your break-glass superadmin address. The CLI prompts for a password on stdin (not echoed). Run on the server directly, not through Cloudflare Access.
 
-Additional instance superadmins can be assigned in the admin UI (Users) or via OIDC group mappings.
+From **v0.4.10** onward (drops the single-instance-superadmin index on migrate), additional
+instance superadmins can be assigned in the admin UI (Users) or via OIDC group mappings.
 Before demoting a superadmin in your IdP, ensure at least one other **active** instance superadmin
 remains — see the OIDC offboarding runbook in [SECURITY-CONTROLS.md](../docs/SECURITY-CONTROLS.md).
 
