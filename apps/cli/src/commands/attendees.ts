@@ -11,6 +11,13 @@ import {
 import { CliError, arg, hasFlag } from "../lib/args.js";
 import { requireOperatorUserId } from "../lib/audit.js";
 
+const PRIVATE_EXPORT_MODE = 0o600;
+
+function writePrivateExportFile(path: string, content: string): void {
+  fs.writeFileSync(path, content, { encoding: "utf8", mode: PRIVATE_EXPORT_MODE });
+  fs.chmodSync(path, PRIVATE_EXPORT_MODE);
+}
+
 export async function runAttendeesExport(db: PrismaClient): Promise<void> {
   const eventId = arg("event");
   const out = arg("out");
@@ -53,7 +60,7 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
   }
 
   try {
-    fs.writeFileSync(out, result.csv, { encoding: "utf8", mode: 0o600 });
+    writePrivateExportFile(out, result.csv);
   } catch (err) {
     throw new CliError(
       `Failed to write export to ${out}: ${err instanceof Error ? err.message : String(err)}`,
