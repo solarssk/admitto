@@ -123,11 +123,11 @@ export async function handleGetEventSettings(c: Context, db: PrismaClient): Prom
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
 
-  const event = await loadEventSettingsRow(db, eventId);
-  if (!event) return c.json({ error: "not_found" }, 404);
-
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
+
+  const event = await loadEventSettingsRow(db, eventId);
+  if (!event) return c.json({ error: "not_found" }, 404);
 
   return c.json(serializeEventSettings(event));
 }
@@ -137,6 +137,9 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
 
   let body: unknown;
   try {
@@ -160,7 +163,6 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
   if (!existing) return c.json({ error: "not_found" }, 404);
 
   const audit = adminAuditFromContext(c);
-  if (!audit.operator) return c.json({ error: "unauthorized" }, 401);
 
   const data: {
     title?: string;

@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
 import { BrandingUploadError, saveBrandingUpload } from "./branding-upload.js";
+import { logger } from "../logger.js";
 
 /** POST /api/admin/uploads — superadmin only, multipart branding image. */
 export async function handlePostUpload(c: Context, db: PrismaClient): Promise<Response> {
@@ -10,6 +11,9 @@ export async function handlePostUpload(c: Context, db: PrismaClient): Promise<Re
     return c.json({ error: "forbidden" }, 403);
   }
 
+  // TODO(multi-org): hardcoded until organization context is threaded through the upload
+  // handler (see ROADMAP v0.5+). Safe today — single-tenant deployment, only one Organization
+  // row exists. MUST be replaced before enabling multi-org (would leak uploads cross-tenant).
   const orgId = "default";
 
   let body: Record<string, string | File>;
@@ -31,7 +35,7 @@ export async function handlePostUpload(c: Context, db: PrismaClient): Promise<Re
     if (err instanceof BrandingUploadError) {
       return c.json({ error: err.code, ...err.details }, err.status as 400 | 413 | 415);
     }
-    console.error("handlePostUpload failed:", err);
+    logger.error("handlePostUpload failed", { err });
     return c.json({ error: "server error" }, 500);
   }
 }

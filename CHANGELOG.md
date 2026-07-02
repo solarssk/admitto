@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extract inline-only rate limits to `INLINE_RATE_LIMITS` (excluded from `RatePolicyName`; compile-time guard against `rateLimit()` misuse)
 - Remove unused SSE message variant and stale nginx metrics location; fix dangling ADR links in deploy docs
 
+### Security
+- Fix event-settings authz-order oracle (404→403 for cross-org access to non-existent events); fix `handlePatchEvent` missing event-scope authorization (cross-tenant write); reduce QR image cache TTL from 24h to 5min
+
 ## [0.4.9] - 2026-07-02
 
 ### Added

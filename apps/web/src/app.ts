@@ -897,7 +897,7 @@ export function createApp(options: CreateAppOptions = {}) {
     try {
       const png = await generateQrPng(buildQrPayload("agency", { agencyPayload }));
       c.header("Content-Type", "image/png");
-      c.header("Cache-Control", "public, max-age=86400");
+      c.header("Cache-Control", "private, max-age=300");
       return c.body(new Uint8Array(png), 200);
     } catch {
       return c.body(null, 500);
@@ -930,7 +930,7 @@ export function createApp(options: CreateAppOptions = {}) {
         buildQrPayload("internal", { baseUrl, token }),
       );
       c.header("Content-Type", "image/png");
-      c.header("Cache-Control", "public, max-age=86400");
+      c.header("Cache-Control", "private, max-age=300");
       return c.body(new Uint8Array(png), 200);
     } catch {
       return c.body(null, 500);

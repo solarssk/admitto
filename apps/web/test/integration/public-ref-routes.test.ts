@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { backfillAgencyPublicRefs } from "@admitto/db";
-import { generateToken } from "@admitto/tickets";
+import { encryptToString } from "@admitto/crypto";
+import { generateToken, hashToken } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -9,7 +10,9 @@ const ORG_ID = "org-pubref";
 const EVENT_ID = "evt-pubref";
 const EVENT_SLUG = "summer-gala";
 const PUBLIC_REF = generateToken();
+const MODE_A_TOKEN = generateToken();
 const ATTENDEE_ID = "attendee-cuid-legacy-id";
+const MODE_A_ATTENDEE_ID = "attendee-mode-a-token";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -43,6 +46,17 @@ async function seedPublicRefFixture(client: PrismaClient): Promise<void> {
       public_ref: PUBLIC_REF,
     },
   });
+  await client.attendee.create({
+    data: {
+      id: MODE_A_ATTENDEE_ID,
+      event_id: EVENT_ID,
+      email: "modea@example.com",
+      name: "Mode A Guest",
+      token_hash: hashToken(MODE_A_TOKEN),
+      token_enc: encryptToString(MODE_A_TOKEN),
+      status: "active",
+    },
+  });
 }
 
 beforeAll(async () => {
@@ -70,10 +84,18 @@ describe("Mode B public routes — public_ref", () => {
     expect(html).toContain("Summer Gala");
   });
 
-  it("GET /q/:slug/a/:public_ref.png returns PNG", async () => {
+  it("GET /q/:slug/a/:public_ref.png returns PNG with short private cache", async () => {
     const res = await app.request(`/q/${EVENT_SLUG}/a/${PUBLIC_REF}.png`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("image/png");
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=300");
+  });
+
+  it("GET /q/:token.png returns PNG with short private cache (Mode A)", async () => {
+    const res = await app.request(`/q/${MODE_A_TOKEN}.png`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("image/png");
+    expect(res.headers.get("Cache-Control")).toBe("private, max-age=300");
   });
 
   it("legacy Attendee.id in URL returns 404", async () => {
