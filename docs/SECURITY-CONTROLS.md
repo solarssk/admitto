@@ -43,7 +43,7 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 
 ```mermaid
 flowchart TB
-    SA["superadmin @ instance\nAll events · All config · Break-glass CLI"]
+    SA["superadmin @ instance\nAll events · All config · Break-glass CLI\n(multiple active grants allowed)"]
     A["admin @ organization\nOrg events · Mail config · Guest list · Export"]
     O["operator @ event\nAssigned event only · Check-in · Item fulfilment"]
     SA --> A --> O
@@ -248,8 +248,18 @@ Be explicit with auditors about what is **out of product scope** today:
   deployments where OIDC group mappings grant admin/superadmin roles, set `SESSION_TTL_ADMIN_MS`
   to **8h or less** (`28800000`) so the stale-session window is bounded.
 
+  **Multiple instance superadmins (v0.4.10+):** Admitto allows more than one active
+  `superadmin@instance` assignment (admin UI, CLI bootstrap, or OIDC group mapping). First-run
+  `POST /setup` still creates exactly one user when the database is empty; concurrent setup
+  submissions surface `409 already_initialized` for the loser. Before removing or demoting a
+  superadmin in the IdP, keep **at least two active** instance superadmins so OIDC reconciliation
+  cannot leave the deployment without break-glass access. OIDC group sync refuses to revoke the
+  last **active** instance-superadmin grant (`auth.oidc.superadmin_revoke_blocked` audit event);
+  inactive users are excluded from the floor count.
+
   Offboarding runbook for OIDC-managed elevated roles:
-  1. Remove the user from the relevant group in the IdP.
+  1. Remove the user from the relevant group in the IdP **only after** another active instance
+     superadmin exists (see multiple-superadmin note above).
   2. In Admitto, revoke the user's active sessions (`POST /api/admin/users/:id/revoke-sessions`).
   3. On the next OIDC login, `applyOidcGroupRoleMappings` removes grants no longer authorized by
      current IdP group membership.
