@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { RATE_POLICIES } from "../src/rate-limit/policies.js";
+import { INLINE_RATE_LIMITS, RATE_POLICIES } from "../src/rate-limit/policies.js";
 
-/** Regression guard — limits and check counts must match production wiring. */
+/** Regression guard — middleware policies: limits and check counts must match production wiring. */
 const EXPECTED_POLICIES: Record<
   keyof typeof RATE_POLICIES,
   { windowMs: number[]; max: number[]; checks: number }
@@ -10,12 +10,7 @@ const EXPECTED_POLICIES: Record<
   "ops:healthz": { windowMs: [60_000], max: [120], checks: 1 },
   "ops:readyz": { windowMs: [60_000], max: [10], checks: 1 },
   "auth:oidc": { windowMs: [60_000], max: [20], checks: 1 },
-  "oidc:link-stepup": { windowMs: [60_000], max: [10], checks: 1 },
   "auth:login-ip": { windowMs: [60_000], max: [10], checks: 1 },
-  "auth:login-email": { windowMs: [60_000], max: [10], checks: 1 },
-  "mfa:verify-totp": { windowMs: [900_000], max: [10], checks: 1 },
-  "mfa:verify-recovery": { windowMs: [900_000], max: [30], checks: 1 },
-  "mfa:enroll": { windowMs: [900_000], max: [10], checks: 1 },
   "admin:oidc-provider-ops": { windowMs: [60_000], max: [10], checks: 1 },
   "admin:test-send": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:mail-transport-test": { windowMs: [60_000], max: [5], checks: 1 },
@@ -30,6 +25,16 @@ const EXPECTED_POLICIES: Record<
   "checkin:history": { windowMs: [60_000], max: [180], checks: 1 },
   "checkin:stream": { windowMs: [60_000], max: [12], checks: 1 },
 };
+
+/** Inline helpers — not passable to rateLimit(); limits only. */
+const EXPECTED_INLINE_LIMITS: Record<keyof typeof INLINE_RATE_LIMITS, { windowMs: number; max: number }> =
+  {
+    "oidc:link-stepup": { windowMs: 60_000, max: 10 },
+    "auth:login-email": { windowMs: 60_000, max: 10 },
+    "mfa:verify-totp": { windowMs: 900_000, max: 10 },
+    "mfa:verify-recovery": { windowMs: 900_000, max: 30 },
+    "mfa:enroll": { windowMs: 900_000, max: 10 },
+  };
 
 describe("RATE_POLICIES registry", () => {
   it("defines every expected policy with correct limits", () => {
@@ -58,6 +63,20 @@ describe("RATE_POLICIES registry", () => {
     } finally {
       if (prev === undefined) delete process.env.TRUST_PROXY;
       else process.env.TRUST_PROXY = prev;
+    }
+  });
+});
+
+describe("INLINE_RATE_LIMITS", () => {
+  it("defines every expected inline limit", () => {
+    expect(Object.keys(INLINE_RATE_LIMITS).sort()).toEqual(
+      Object.keys(EXPECTED_INLINE_LIMITS).sort(),
+    );
+
+    for (const [name, expected] of Object.entries(EXPECTED_INLINE_LIMITS)) {
+      const limit = INLINE_RATE_LIMITS[name as keyof typeof INLINE_RATE_LIMITS];
+      expect(limit.windowMs).toBe(expected.windowMs);
+      expect(limit.max).toBe(expected.max);
     }
   });
 });
