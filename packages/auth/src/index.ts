@@ -61,6 +61,14 @@ export {
 } from "./settings/keys.js";
 export { getInstanceUrl } from "./settings/instance-url.js";
 export {
+  InstanceUrlRequiredError,
+  normalizePersistedInstanceUrl,
+  normalizeRuntimeBaseUrl,
+  resolveInstanceBaseUrl,
+} from "./settings/resolve-instance-base-url.js";
+export { purgeAllSessions } from "./emergency-purge.js";
+export type { PurgeAllSessionsOptions, PurgeAllSessionsResult } from "./emergency-purge.js";
+export {
   resolveSetupComplete,
   markSetupIncomplete,
   markSetupComplete,

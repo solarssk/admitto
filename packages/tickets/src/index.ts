@@ -31,6 +31,21 @@ export { DEFAULT_EVENT_ITEM_KEYS } from "./event-items.js";
 export { parseEventOpsConfig, loadEventOpsConfig } from "./ops-config.js";
 export { writeActionLog, writeBulkActionLog } from "./ops-audit.js";
 export { writeAdminAuditLog } from "./admin-audit.js";
+export {
+  ATTENDEE_EXPORT_RSVP_STATUSES,
+  EXPORT_ROW_CAP,
+  buildAttendeeListWhere,
+  countFilteredAttendees,
+  findFilteredAttendeesForExport,
+  findFilteredAttendeesForList,
+} from "./attendees-list-filters.js";
+export type {
+  AttendeeExportRsvpStatus,
+  AttendeeListFilterParams,
+  AttendeeListSqlRow,
+  ExportAttendeeSqlRow,
+} from "./attendees-list-filters.js";
+export { sanitizeCsvCell } from "./csv-sanitize.js";
 export type { OpsAuditContext } from "./ops-audit.js";
 export type { AdminAuditWriteInput } from "./admin-audit.js";
 export type {

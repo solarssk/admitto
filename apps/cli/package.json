@@ -1,0 +1,28 @@
+{
+  "name": "@admitto/cli",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Admitto emergency ops CLI — event-day failover when the admin UI is unreachable",
+  "type": "module",
+  "bin": {
+    "admitto": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "precli": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/mailer && npm run build -w @admitto/mailer-config && npm run build -w @admitto/mail-delivery && npm run build -w @admitto/auth && npm run build -w @admitto/cli",
+    "cli": "node dist/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@admitto/auth": "*",
+    "@admitto/db": "*",
+    "@admitto/mail-delivery": "*",
+    "@admitto/tickets": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "4.1.9"
+  }
+}

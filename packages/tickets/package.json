@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./attendees-export": {
+      "types": "./dist/attendees-export.d.ts",
+      "default": "./dist/attendees-export.js"
     }
   },
   "scripts": {
@@ -20,6 +24,7 @@
   "dependencies": {
     "@admitto/crypto": "*",
     "@admitto/db": "*",
+    "@admitto/mail-templates": "*",
     "qrcode": "^1.5.3"
   },
   "devDependencies": {

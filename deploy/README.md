@@ -156,6 +156,38 @@ docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin 
 
 Replace the email with your break-glass superadmin address. The CLI prompts for a password on stdin (not echoed). Run on the server directly, not through Cloudflare Access.
 
+## Emergency CLI (event-day failover)
+
+When the admin SPA or scanner is down, use the unified emergency binary (same production `app` image — `npm`/`npx` are not available):
+
+```bash
+docker compose run --rm app node apps/cli/dist/index.js --help
+
+# Manual lookup + admit (staging drill before the event)
+docker compose run --rm app node apps/cli/dist/index.js checkin lookup --event <eventId> --query "jan kowal"
+docker compose run --rm app node apps/cli/dist/index.js checkin admit --event <eventId> --attendee-id <attendeeId>
+
+# Paper backup list (CSV) — use /backups (migration_backups volume), NOT /app/uploads
+# (/uploads/* is served without auth; a CSV there would expose attendee PII to anyone with the URL)
+docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /backups/emergency-attendees-<eventId>.csv --operator-email super@example.com
+# File persists on the migration_backups Docker volume (not web-accessible). CLI writes mode 0600.
+
+# Retry failed mail batch
+docker compose run --rm app node apps/cli/dist/index.js mail retry-failed --event <eventId>
+
+# Session break-glass (destructive — requires confirmation or --yes, and --operator-email for audit)
+docker compose run --rm app node apps/cli/dist/index.js sessions revoke --user admin@example.com --operator-email super@example.com
+docker compose run --rm app node apps/cli/dist/index.js sessions purge --all --yes --operator-email super@example.com
+
+# Auth break-glass / retention
+docker compose run --rm app node apps/cli/dist/index.js auth reset-mfa --email super@example.com
+docker compose run --rm app node apps/cli/dist/index.js retention run --operator-email super@example.com
+```
+
+**Pre-event drill:** on staging, admit at least three test attendees using only `checkin lookup` → `checkin admit` and verify `AttendeeActionLog` / admitted status in admin.
+
+Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention; `admitto retention run` combines auth + mail snapshot cleanup in one command.
+
 ## Nginx Proxy Manager (production edge)
 
 NPM is the **TLS termination layer in front of this compose stack**. Forward **only** to:

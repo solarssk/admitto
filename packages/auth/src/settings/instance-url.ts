@@ -2,7 +2,8 @@ import type { PrismaClient, Prisma } from "@prisma/client";
 import { getSetting } from "./resolver.js";
 import { SETTING_INSTANCE_URL } from "./keys.js";
 
-/** Instance URL from SystemSettings (`instance_url`), or null when unset. */
+/** Instance URL from SystemSettings (`instance_url`), or null when unset.
+ *  For mail/ticket link resolution with env/dev fallbacks, use {@link resolveInstanceBaseUrl}. */
 export async function getInstanceUrl(
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<string | null> {
