@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -80,6 +80,72 @@ async function seed(client: PrismaClient) {
   adminCookie = `admitto_session=${rawToken}`;
 }
 
+async function resetEventAState(client: PrismaClient) {
+  await client.attendeeActionLog.deleteMany({ where: { event_id: EVENT_A } });
+  await client.emailDelivery.deleteMany({ where: { event_id: EVENT_A } });
+  await client.mailTemplate.deleteMany({ where: { scope_id: EVENT_A } });
+  await client.attendee.deleteMany({ where: { event_id: EVENT_A } });
+}
+
+async function putTicketTemplate(
+  testApp: ReturnType<typeof createApp>,
+  eventId = EVENT_A,
+) {
+  const res = await testApp.request(`/api/admin/events/${eventId}/template`, {
+    method: "PUT",
+    headers: {
+      Cookie: adminCookie,
+      "Content-Type": "application/json",
+      ...sameOrigin,
+    },
+    body: JSON.stringify(validTemplate),
+  });
+  expect(res.status).toBe(200);
+}
+
+async function postNamedTemplate(
+  testApp: ReturnType<typeof createApp>,
+  label: string,
+  eventId = EVENT_A,
+) {
+  const res = await testApp.request(`/api/admin/events/${eventId}/templates`, {
+    method: "POST",
+    headers: {
+      Cookie: adminCookie,
+      "Content-Type": "application/json",
+      ...sameOrigin,
+    },
+    body: JSON.stringify({ label, template_format: "mjml" }),
+  });
+  expect(res.status).toBe(201);
+  return (await res.json()) as { id: string; name: string; label: string };
+}
+
+async function ensureEventB(client: PrismaClient) {
+  const existing = await client.event.findUnique({ where: { id: EVENT_B } });
+  if (existing) return;
+  await client.event.create({
+    data: {
+      id: EVENT_B,
+      title: "Event B",
+      slug: "multi-tpl-event-b",
+      date: new Date("2026-11-01"),
+      organization_id: ORG_A,
+    },
+  });
+}
+
+async function ensureEventBForeignTemplate(
+  testApp: ReturnType<typeof createApp>,
+  client: PrismaClient,
+) {
+  await client.mailTemplate.deleteMany({ where: { scope_id: EVENT_B } });
+  await ensureEventB(client);
+  const body = await postNamedTemplate(testApp, "Ticket", EVENT_B);
+  expect(body.name).toBe("ticket_2");
+  return body;
+}
+
 describe("multi-template API", () => {
   beforeAll(async () => {
     prisma = new PrismaClient();
@@ -98,6 +164,11 @@ describe("multi-template API", () => {
 
   afterAll(async () => {
     await prisma.$disconnect();
+  });
+
+  beforeEach(async () => {
+    exported.length = 0;
+    await resetEventAState(prisma);
   });
 
   it("PUT /template creates ticket template with name=ticket", async () => {
@@ -122,6 +193,7 @@ describe("multi-template API", () => {
   });
 
   it("GET /templates lists event templates", async () => {
+    await putTicketTemplate(app);
     const res = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
       headers: { Cookie: adminCookie },
     });
@@ -147,15 +219,7 @@ describe("multi-template API", () => {
   });
 
   it("POST /templates label Ticket does not create primary ticket template", async () => {
-    await prisma.event.create({
-      data: {
-        id: EVENT_B,
-        title: "Event B",
-        slug: "multi-tpl-event-b",
-        date: new Date("2026-11-01"),
-        organization_id: ORG_A,
-      },
-    });
+    await ensureEventB(prisma);
 
     const res = await app.request(`/api/admin/events/${EVENT_B}/templates`, {
       method: "POST",
@@ -179,6 +243,7 @@ describe("multi-template API", () => {
   });
 
   it("DELETE blocks ticket template", async () => {
+    await putTicketTemplate(app);
     const ticket = await prisma.mailTemplate.findUniqueOrThrow({
       where: {
         scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
@@ -197,11 +262,7 @@ describe("multi-template API", () => {
   });
 
   it("DELETE allows unused reminder template", async () => {
-    const reminder = await prisma.mailTemplate.findUniqueOrThrow({
-      where: {
-        scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "reminder" },
-      },
-    });
+    const reminder = await postNamedTemplate(app, "Reminder");
     const res = await app.request(
       `/api/admin/events/${EVENT_A}/templates/${reminder.id}`,
       {
@@ -319,6 +380,7 @@ describe("multi-template API", () => {
   });
 
   it("POST /send dryRun returns recipientCount", async () => {
+    await putTicketTemplate(app);
     const ticket = await prisma.mailTemplate.findUniqueOrThrow({
       where: {
         scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
@@ -352,6 +414,7 @@ describe("multi-template API", () => {
   });
 
   it("POST /send dryRun attendee_ids ignores IDs from other events", async () => {
+    await putTicketTemplate(app);
     const ticket = await prisma.mailTemplate.findUniqueOrThrow({
       where: {
         scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
@@ -453,6 +516,7 @@ describe("multi-template API", () => {
   });
 
   it("POST /templates/:id/test-send sends using the selected template", async () => {
+    await putTicketTemplate(app);
     const TEST_SUBJECT = "BY-ID-CUSTOM-SUBJECT-7f3a";
     const TEST_BODY =
       '<p>BY-ID-CUSTOM-BODY-MARKER-7f3a</p><p><a href="{{ticket_url}}">View ticket</a></p><img src="{{qr_image_url}}" alt="QR" />';
@@ -535,9 +599,7 @@ describe("multi-template API", () => {
   it("POST /templates/:id/test-send returns 404 for a template from another event", async () => {
     exported.length = 0;
 
-    const foreignTemplate = await prisma.mailTemplate.findFirstOrThrow({
-      where: { scope_type: "event", scope_id: EVENT_B },
-    });
+    const foreignTemplate = await ensureEventBForeignTemplate(app, prisma);
 
     const res = await app.request(
       `/api/admin/events/${EVENT_A}/templates/${foreignTemplate.id}/test-send`,
