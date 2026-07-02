@@ -1,4 +1,4 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { hasScope } from "@admitto/db";
 import { logOidcSuperadminRevokeBlocked } from "../audit.js";
 
@@ -20,9 +20,10 @@ function isPrismaClient(
 async function runInOwnTransaction<T>(
   prisma: PrismaClient | Prisma.TransactionClient,
   fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
 ): Promise<T> {
   if (isPrismaClient(prisma)) {
-    return prisma.$transaction(fn);
+    return prisma.$transaction(fn, options);
   }
   return fn(prisma);
 }
@@ -98,6 +99,15 @@ export async function countActiveInstanceSuperadmins(
   });
 }
 
+/** True for instance-scoped superadmin grants subject to the last-superadmin floor guard. */
+function isInstanceSuperadminGrant(grant: {
+  role: string;
+  scope_type: string;
+  scope_id: string | null;
+}): boolean {
+  return grant.role === "superadmin" && grant.scope_type === "instance" && grant.scope_id === null;
+}
+
 /** Remove one provider-owned grant and its linked assignment (grant cascades via FK). */
 async function revokeOidcRoleGrant(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -111,24 +121,26 @@ async function revokeOidcRoleGrant(
   userId: string,
   providerId: string,
 ): Promise<boolean> {
-  return runInOwnTransaction(prisma, async (tx) => {
-    if (
-      grant.role === "superadmin" &&
-      grant.scope_type === "instance" &&
-      grant.scope_id === null
-    ) {
-      const remaining = await countActiveInstanceSuperadmins(tx);
-      if (remaining <= 1) {
-        logOidcSuperadminRevokeBlocked({ providerId, userId });
-        return false;
+  return runInOwnTransaction(
+    prisma,
+    async (tx) => {
+      if (isInstanceSuperadminGrant(grant)) {
+        const remaining = await countActiveInstanceSuperadmins(tx);
+        if (remaining <= 1) {
+          logOidcSuperadminRevokeBlocked({ providerId, userId });
+          return false;
+        }
       }
-    }
-    await tx.roleAssignment.deleteMany({
-      where: { id: grant.role_assignment_id, user_id: userId },
-    });
-    // OidcRoleGrant is removed via ON DELETE CASCADE on role_assignment_id FK.
-    return true;
-  });
+      await tx.roleAssignment.deleteMany({
+        where: { id: grant.role_assignment_id, user_id: userId },
+      });
+      // OidcRoleGrant is removed via ON DELETE CASCADE on role_assignment_id FK.
+      return true;
+    },
+    isInstanceSuperadminGrant(grant)
+      ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+      : undefined,
+  );
 }
 
 /**
