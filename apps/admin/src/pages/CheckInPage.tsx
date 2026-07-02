@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useParams } from "react-router-dom";
-import { Button, Card } from "@admitto/ui";
+import { Button, Card, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchAttendeeCard,
@@ -35,6 +35,7 @@ import {
 } from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { ManualLookupPanel } from "../checkin/ManualLookupPanel.js";
+import { checkinSearchFieldAttrs } from "../checkin/searchFieldAttrs.js";
 import { ScanHistoryList } from "../checkin/ScanHistoryList.js";
 
 const PENDING_MS = 5000;
@@ -43,6 +44,7 @@ const WEDGE_DEBOUNCE_MS = 50;
 const HISTORY_CAP = 8;
 const LOOKUP_DISABLED_MSG =
   "Manual lookup is disabled for this event — use QR scan only.";
+const LOOKUP_NO_MATCH_MSG = "No attendees matched that search.";
 
 /** Build a sidebar history row from a live SSE check-in event. */
 function historyEntryFromStream(event: StreamCheckinEvent, eventId: string): CheckInHistoryEntry {
@@ -86,6 +88,7 @@ export function CheckInPage({
   const [eventTimezone, setEventTimezone] = useState(eventTimezoneProp ?? "UTC");
   const { deviceLabel } = useAuth();
   const { state: connectionState, reportApiError } = useConnectionState();
+  const { addToast } = useToast();
   const canAct = canMutateCheckin(connectionState);
   const isOperatorShell = onUseCameraChange === undefined;
   const isDesktop = useIsDesktop();
@@ -450,6 +453,9 @@ export function CheckInPage({
     try {
       const results = await lookupCheckInAttendees(eventId, lookupQ);
       setLookupResults(results);
+      if (results.length === 0) {
+        addToast(LOOKUP_NO_MATCH_MSG, "warning");
+      }
     } catch (err) {
       handleApiFailure(err);
     } finally {
@@ -488,8 +494,11 @@ export function CheckInPage({
         }
         const message =
           results.length === 0
-            ? "No attendees matched that search."
+            ? LOOKUP_NO_MATCH_MSG
             : "Multiple matches — narrow your search or use manual lookup.";
+        if (results.length === 0) {
+          addToast(LOOKUP_NO_MATCH_MSG, "warning");
+        }
         if (showMobileOverlay) setOverlayManualError(message);
         else setTransportError(message);
         return false;
@@ -512,7 +521,7 @@ export function CheckInPage({
         setBusy(false);
       }
     },
-    [allowManualLookup, canAct, eventId, reportApiError, runScan, showMobileOverlay],
+    [allowManualLookup, addToast, canAct, eventId, reportApiError, runScan, showMobileOverlay],
   );
 
   const onItemAction = async (itemKey: string, targetState: string) => {
@@ -661,24 +670,24 @@ export function CheckInPage({
 
       <div className="ck-layout">
         <div className="ck-main">
-          <form className="ck-scan-bar" onSubmit={onSubmit}>
+          <form className="ck-scan-bar" onSubmit={onSubmit} autoComplete="off">
             <i className="ti ti-scan ck-scan-bar__icon" aria-hidden="true" />
             <input
               ref={inputRef}
               id="checkin-scan-field"
+              name="checkin-scan"
               className="ck-scan-bar__input"
               value={buffer}
               onChange={(e) => handleBufferChange(e.target.value)}
               onKeyDown={onKeyDown}
               autoFocus
-              autoComplete="off"
-              spellCheck={false}
               inputMode="none"
               placeholder="Scan QR · type name, email or company…"
               aria-label="QR scan or search"
               aria-describedby="ck-scan-hint"
               disabled={busy || !canAct}
               aria-busy={busy}
+              {...checkinSearchFieldAttrs}
             />
             <button
               type="submit"

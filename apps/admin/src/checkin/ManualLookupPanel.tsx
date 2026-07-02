@@ -1,4 +1,5 @@
 import type { LookupAttendeeResult } from "../api/types.js";
+import { checkinSearchFieldAttrs } from "./searchFieldAttrs.js";
 
 type ManualLookupPanelProps = {
   open: boolean;
@@ -37,7 +38,9 @@ export function ManualLookupPanel({
         <div className="checkin-lookup">
           <input
             className="at-input"
+            name="checkin-lookup"
             placeholder="Name, email, or company"
+            aria-label="Search attendees by name, email, or company"
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             disabled={!canAct || busy}
@@ -47,6 +50,7 @@ export function ManualLookupPanel({
                 onSearch();
               }
             }}
+            {...checkinSearchFieldAttrs}
           />
           <button
             type="button"
