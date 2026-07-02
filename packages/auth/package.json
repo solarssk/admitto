@@ -34,7 +34,7 @@
     "test": "vitest run",
     "test:unit": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "precli": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/tickets -w @admitto/auth",
+    "precli": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mail-templates -w @admitto/tickets -w @admitto/auth",
     "cli": "node dist/cli.js"
   },
   "dependencies": {

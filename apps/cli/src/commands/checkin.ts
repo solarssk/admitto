@@ -45,6 +45,7 @@ export async function runCheckinAdmit(db: PrismaClient): Promise<void> {
     return;
   }
 
+  const format = parseFormat();
   const audit = await resolveOperatorContext(db);
   let attendeeId = attendeeIdArg;
 
@@ -63,14 +64,13 @@ export async function runCheckinAdmit(db: PrismaClient): Promise<void> {
     {
       attendeeId: attendeeId!,
       eventId,
-      method: "manual",
+      method: scan ? "scan" : "manual",
       audit,
       notes,
     },
     db,
   );
 
-  const format = parseFormat();
   const payload = {
     status: result.status,
     confirmed: result.confirmed,
@@ -79,6 +79,9 @@ export async function runCheckinAdmit(db: PrismaClient): Promise<void> {
   };
   if (format === "json") {
     console.log(formatJson(payload));
+    if (result.status !== "VALID" && result.status !== "ALREADY_CHECKED_IN") {
+      process.exitCode = 1;
+    }
     return;
   }
 

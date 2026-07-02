@@ -167,14 +167,20 @@ docker compose run --rm app node apps/cli/dist/index.js --help
 docker compose run --rm app node apps/cli/dist/index.js checkin lookup --event <eventId> --query "jan kowal"
 docker compose run --rm app node apps/cli/dist/index.js checkin admit --event <eventId> --attendee-id <attendeeId>
 
-# Paper backup list (CSV)
-docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /tmp/backup.csv
+# Paper backup list (CSV) — write to a mounted path, not container /tmp (--rm deletes the container)
+docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /app/uploads/emergency-attendees.csv --operator-email super@example.com
+# File lands on the host at deploy/uploads/emergency-attendees.csv (bind mount). CLI writes mode 0600; prefer /backups/... on migration_backups volume when available.
 
 # Retry failed mail batch
 docker compose run --rm app node apps/cli/dist/index.js mail retry-failed --event <eventId>
 
-# Session break-glass (destructive — requires confirmation or --yes)
-docker compose run --rm app node apps/cli/dist/index.js sessions purge --all --yes --operator-email admin@example.com
+# Session break-glass (destructive — requires confirmation or --yes, and --operator-email for audit)
+docker compose run --rm app node apps/cli/dist/index.js sessions revoke --user admin@example.com --operator-email super@example.com
+docker compose run --rm app node apps/cli/dist/index.js sessions purge --all --yes --operator-email super@example.com
+
+# Auth break-glass / retention
+docker compose run --rm app node apps/cli/dist/index.js auth reset-mfa --email super@example.com
+docker compose run --rm app node apps/cli/dist/index.js retention run --operator-email super@example.com
 ```
 
 **Pre-event drill:** on staging, admit at least three test attendees using only `checkin lookup` → `checkin admit` and verify `AttendeeActionLog` / admitted status in admin.

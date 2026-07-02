@@ -172,6 +172,7 @@ export async function findFilteredAttendeesForExport(
       where: buildAttendeeListWhere(eventId, params),
       select: EXPORT_ATTENDEE_SELECT,
       orderBy: { name: "asc" },
+      take: EXPORT_ROW_CAP,
     });
   }
   return db.$queryRaw<ExportAttendeeSqlRow[]>`

@@ -2,7 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { InstanceUrlRequiredError, resolveInstanceBaseUrl } from "@admitto/auth";
 import { retryDelivery } from "@admitto/mail-delivery";
 import { CliError, arg, hasFlag, parseFormat } from "../lib/args.js";
-import { formatJson, printError } from "../lib/output.js";
+import { formatJson } from "../lib/output.js";
 
 export async function runMailRetryFailed(db: PrismaClient): Promise<void> {
   const eventId = arg("event");
@@ -37,12 +37,16 @@ export async function runMailRetryFailed(db: PrismaClient): Promise<void> {
   let failed = 0;
 
   for (const { id } of candidates) {
-    const result = await retryDelivery(id, db, process.env, {}, { baseUrl });
-    if (result.ok) {
-      retried++;
-    } else if (result.reason === "not_retryable" || result.reason === "missing_snapshot") {
-      skipped++;
-    } else {
+    try {
+      const result = await retryDelivery(id, db, process.env, {}, { baseUrl });
+      if (result.ok) {
+        retried++;
+      } else if (result.reason === "not_retryable" || result.reason === "missing_snapshot") {
+        skipped++;
+      } else {
+        failed++;
+      }
+    } catch {
       failed++;
     }
   }

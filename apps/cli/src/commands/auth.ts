@@ -12,7 +12,6 @@ import {
 } from "@admitto/auth";
 import {
   assertNoPasswordArgv,
-  CliError as AuthCliError,
   readPasswordFromStdin,
 } from "@admitto/auth/cli-helpers";
 import { CliError, arg, hasFlag } from "../lib/args.js";
@@ -61,9 +60,11 @@ export async function runAuthBootstrapSuperadmin(db: PrismaClient): Promise<void
     );
   }
   if (exists && force) {
-    const ok = await confirmForce();
-    if (!ok) {
-      throw new CliError("Aborted.");
+    if (!hasFlag("yes")) {
+      const ok = await confirmForce();
+      if (!ok) {
+        throw new CliError("Aborted.");
+      }
     }
   }
 
@@ -93,11 +94,4 @@ export async function runAuthGenerateEmergencyRecovery(db: PrismaClient): Promis
   const { code } = await generateEmergencyRecoveryCode(db, userId);
   logMfaBreakGlass({ action: "generate_emergency_recovery", email });
   console.log(`Emergency one-time recovery code (shown once): ${code}`);
-}
-
-export function mapAuthCliError(err: unknown): never {
-  if (err instanceof AuthCliError) {
-    throw new CliError(err.message, err.exitCode);
-  }
-  throw err;
 }

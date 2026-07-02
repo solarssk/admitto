@@ -3,11 +3,13 @@ import type { PrismaClient } from "@prisma/client";
 import {
   AttendeeExportTooLargeError,
   exportAttendeesCsv,
+} from "@admitto/tickets/attendees-export";
+import {
   writeBulkActionLog,
   type AttendeeListFilterParams,
 } from "@admitto/tickets";
 import { CliError, arg, hasFlag } from "../lib/args.js";
-import { resolveOperatorContext } from "../lib/audit.js";
+import { requireOperatorUserId } from "../lib/audit.js";
 
 export async function runAttendeesExport(db: PrismaClient): Promise<void> {
   const eventId = arg("event");
@@ -20,10 +22,11 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
     throw new CliError("Emergency CLI supports --format csv only (use admin UI for xlsx/pdf).");
   }
 
+  const statusFilter = arg("status");
   const filters: AttendeeListFilterParams = {
     status: "all",
-    ...(arg("status") === "admitted" || arg("status") === "not_admitted"
-      ? { status: arg("status") as "admitted" | "not_admitted" }
+    ...(statusFilter === "admitted" || statusFilter === "not_admitted"
+      ? { status: statusFilter }
       : {}),
     ...(arg("ticket_type") ? { ticket_type: arg("ticket_type") } : {}),
     ...(arg("q") ? { q: arg("q") } : {}),
@@ -33,6 +36,8 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
     console.log(`Dry run: would export attendees for event ${eventId} to ${out}`);
     return;
   }
+
+  const actorUserId = await requireOperatorUserId(db);
 
   let result;
   try {
@@ -47,26 +52,44 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
     throw err;
   }
 
-  fs.writeFileSync(out, result.csv, "utf8");
+  try {
+    fs.writeFileSync(out, result.csv, { encoding: "utf8", mode: 0o600 });
+  } catch (err) {
+    throw new CliError(
+      `Failed to write export to ${out}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
-  const audit = await resolveOperatorContext(db);
-  await db.$transaction(async (tx) => {
-    await writeBulkActionLog(tx, {
-      event_id: eventId,
-      action_type: "attendees_exported",
-      audit,
-      metadata: {
-        format: "csv",
-        count: result.rowCount,
-        source: "cli",
-        filters: {
-          status: filters.status,
-          ticket_type: filters.ticket_type ?? null,
-          has_query: Boolean(filters.q),
+  try {
+    await db.$transaction(async (tx) => {
+      await writeBulkActionLog(tx, {
+        event_id: eventId,
+        action_type: "attendees_exported",
+        audit: { operator: actorUserId, ip: "127.0.0.1" },
+        metadata: {
+          format: "csv",
+          count: result.rowCount,
+          source: "cli",
+          outPath: out,
+          filters: {
+            status: filters.status,
+            ticket_type: filters.ticket_type ?? null,
+            has_query: Boolean(filters.q),
+          },
         },
-      },
+      });
     });
-  });
+  } catch (err) {
+    try {
+      fs.unlinkSync(out);
+    } catch {
+      // Best-effort rollback when audit fails after write.
+    }
+    throw new CliError(
+      `Export audit log failed: ${err instanceof Error ? err.message : String(err)}`,
+      2,
+    );
+  }
 
   console.log(`Exported ${result.rowCount} rows to ${out}`);
 }

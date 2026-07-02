@@ -26,15 +26,17 @@ import {
   type EventItemContent,
   ATTENDEE_EXPORT_RSVP_STATUSES,
   EXPORT_ROW_CAP,
-  EXPORT_BASE_COLUMNS,
   countFilteredAttendees,
   findFilteredAttendeesForExport,
   findFilteredAttendeesForList,
+} from "@admitto/tickets";
+import {
+  EXPORT_BASE_COLUMNS,
   buildExportColumns,
   buildExportCsv,
   buildSanitizedExportRows,
   type SanitizedExportRow,
-} from "@admitto/tickets";
+} from "@admitto/tickets/attendees-export";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
@@ -47,20 +49,6 @@ import { randomUUID } from "node:crypto";
 import { decryptFromString } from "@admitto/crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
 import { resolveBulkSendAttendeeIds, BULK_SEND_LIMIT } from "./bulk-send-routes.js";
-
-const ATTENDEE_LIST_SELECT = {
-  id: true,
-  name: true,
-  email: true,
-  company: true,
-  department: true,
-  custom_data: true,
-  ticket_type: true,
-  status: true,
-  admitted_at: true,
-  updated_at: true,
-  rsvp_status: true,
-} as const;
 
 const ATTENDEE_DETAIL_SELECT = {
   id: true,

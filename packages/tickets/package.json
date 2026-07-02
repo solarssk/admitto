@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./attendees-export": {
+      "types": "./dist/attendees-export.d.ts",
+      "default": "./dist/attendees-export.js"
     }
   },
   "scripts": {

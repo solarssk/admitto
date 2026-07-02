@@ -10,11 +10,22 @@ export class CliError extends Error {
 
 export function arg(name: string, argv: string[] = process.argv): string | undefined {
   const i = argv.indexOf(`--${name}`);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : undefined;
+  if (i === -1) return undefined;
+  const next = argv[i + 1];
+  if (!next || next.startsWith("-")) {
+    throw new CliError(`Missing value for --${name}`);
+  }
+  return next;
 }
 
+const SHORT_FLAG_ALIASES: Record<string, string[]> = {
+  yes: ["y"],
+};
+
 export function hasFlag(name: string, argv: string[] = process.argv): boolean {
-  return argv.includes(`--${name}`) || argv.includes(`-${name.charAt(0)}`);
+  if (argv.includes(`--${name}`)) return true;
+  const shorts = SHORT_FLAG_ALIASES[name];
+  return shorts?.some((s) => argv.includes(`-${s}`)) ?? false;
 }
 
 export function parseFormat(argv: string[] = process.argv): "table" | "json" {

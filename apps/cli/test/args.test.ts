@@ -9,6 +9,12 @@ describe("arg", () => {
   it("returns undefined when flag missing", () => {
     expect(arg("event", ["admitto", "checkin", "lookup"])).toBeUndefined();
   });
+
+  it("throws when flag is missing a value", () => {
+    expect(() => arg("event", ["admitto", "checkin", "lookup", "--event", "--query", "x"])).toThrow(
+      CliError,
+    );
+  });
 });
 
 describe("hasFlag", () => {
