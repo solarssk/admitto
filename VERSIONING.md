@@ -29,20 +29,21 @@ This is the current product roadmap — details live in milestone descriptions a
 ```mermaid
 flowchart LR
     v04["v0.4 ✓\nStaff UI · check-in\nadmin · mail"]
-    v045["v0.4.5 ▶\nSettings · sessions"]
-    v05["v0.5\nWallet passes\nPassCreator"]
-    v06["v0.6\nIngest · RSVP\nMS Forms"]
-    v079["v0.7–0.9\nHardening\ndry run"]
+    v049["v0.4.9 ▶\nSSE live check-in\nmulti-template mail"]
+    v05["v0.5\nIngest API\nUsers UX"]
+    v06["v0.6\nWallet passes\nPassCreator"]
+    v07["v0.7\nRSVP · ICS\nWaitlist"]
     v10(["v1.0\nFirst event\ngo-live"])
-    v04 --> v045 --> v05 --> v06 --> v079 --> v10
+    v04 --> v049 --> v05 --> v06 --> v07 --> v10
 ```
 
 | Version | Focus |
 |---------|--------|
-| **v0.4** | Operator UI + event-day ops + staff SPA foundation (`v0.4.0`–`v0.4.1` tagged). Next: admin event screens → `v0.4.2+`, wallet → `v0.5`. |
-| **v0.5** | Wallet passes (Apple/Google via PassCreator). |
-| **v0.6** | First-event **registration → attendance** engine: authenticated `/api/ingest` (MS Forms → Power Automate), calendar iMIP/ICS + RSVP, capacity/waitlist, exports, lifecycle mail. |
-| **v0.7–v0.9** | Hardening + dry run (Outlook/devices, batch tests, backup/restore, event-day readiness — ADR 0012). |
+| **v0.4** | Operator UI + event-day ops + staff SPA foundation, through **v0.4.9** (SSE live check-in, multi-template mail). |
+| **v0.5** | External-ingest `/api/ingest` (Power Automate / MS Forms), users-table UX, template lifecycle triggers. |
+| **v0.6** | Wallet passes (Apple/Google via PassCreator). |
+| **v0.7** | RSVP intake, calendar iMIP/ICS, waitlist. |
+| **v0.8–v0.9** | Hardening + dry run (Outlook/devices, batch tests, backup/restore, event-day readiness — ADR 0012). |
 | **v1.0** | First event **go-live ready** = MVP complete. |
 | **v1.1+** | New waves **after** the first event — e.g. native bounded registration form, branded domain (CNAME), i18n, multi-room, mini-CRM. |
 

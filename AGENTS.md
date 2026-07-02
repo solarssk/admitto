@@ -3,7 +3,7 @@
 Instructions for AI agents in this repository (Cursor, Claude Code, Codex, Copilot, and others).
 
 Repo: https://github.com/solarssk/admitto  
-**Active milestone:** v0.5 — wallet passes (PassCreator). Product line **v0.4.7** closes settings/overview/requirements/import hardening.  
+**Active milestone:** see the open GitHub milestone and `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md) — this file does not track it to avoid drift.  
 **Product version:** git tag `v0.x.y` + root `package.json` + [CHANGELOG.md](CHANGELOG.md) — see [VERSIONING.md](VERSIONING.md).
 
 ## Project
@@ -78,6 +78,14 @@ Local `./scripts/release-tag.sh` is emergency-only (signed tag). Do **not** use 
 ## Compounding rules
 
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
+
+**Do not create new top-level `.md` documentation files in this repo.** This repo's doc set is
+fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,
+`AGENTS.md`, `CLAUDE.md`, plus package-level `README.md` files and `docs/*` referenced from them.
+If something doesn't fit an existing file, add a section to the closest one instead of starting a
+new file. Avoid hardcoding "current milestone/version" callouts in prose here — point to
+`CHANGELOG.md`'s `[Unreleased]` section or the open GitHub milestone instead, so this file can't
+drift out of date.
 
 ## Claude Code
 
