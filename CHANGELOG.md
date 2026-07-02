@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Setup wizard: custom date picker and timezone combobox (UTC-offset browse order, country search aliases); ready step summary chips; hide stale refresh notice after step 1.
 - Mail wizard: inline transport test errors; password fields without spurious Cancel on first entry.
+- Setup SSR (`/setup`): mockup-aligned copy, login-aligned `autocomplete="username"` on email, confirm password, and `passwordrules` for password managers.
 
 ## [0.4.11] - 2026-07-02
 

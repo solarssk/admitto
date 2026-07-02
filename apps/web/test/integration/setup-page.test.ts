@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
-import { hashPassword, SETTING_SETUP_COMPLETE } from "@admitto/auth";
+import { hashPassword, PASSWORD_MIN_LENGTH, SETTING_SETUP_COMPLETE } from "@admitto/auth";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -76,7 +76,10 @@ describe("GET /setup", () => {
     const html = await res.text();
     expect(html).toContain('action="/setup"');
     expect(html).toContain('name="confirm_password"');
-    expect(html).toContain("Initial setup");
+    expect(html).toContain('autocomplete="username"');
+    expect(html).toContain('passwordrules="minlength: 12;"');
+    expect(html).toContain("Set up Admitto");
+    expect(html).toContain("Create administrator account");
     expect(html).not.toContain("<script");
   });
 
@@ -122,7 +125,7 @@ describe("POST /setup", () => {
     });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("at least 12 characters");
+    expect(html).toContain(`at least ${PASSWORD_MIN_LENGTH} characters`);
     expect(html).toContain(SETUP_EMAIL);
   });
 

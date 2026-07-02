@@ -16,9 +16,9 @@ import {
   type SetupErrorCode,
   type SetupFormValues,
 } from "./setup-page.js";
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth";
 
 const DISPLAY_NAME_MAX = 120;
-const PASSWORD_MIN = 12;
 
 class SetupAlreadyInitializedError extends Error {
   constructor() {
@@ -88,7 +88,7 @@ function validateSetupForm(form: Record<string, string>): {
     return { ok: false, code: "invalid_email", values };
   }
 
-  if (password.length < PASSWORD_MIN) {
+  if (password.length < PASSWORD_MIN_LENGTH) {
     return { ok: false, code: "password_too_short", values };
   }
   if (password !== confirm) {
