@@ -15,6 +15,7 @@ const EXPECTED_POLICIES: Record<
   "auth:login-email": { windowMs: [60_000], max: [10], checks: 1 },
   "mfa:verify-totp": { windowMs: [900_000], max: [10], checks: 1 },
   "mfa:verify-recovery": { windowMs: [900_000], max: [30], checks: 1 },
+  "mfa:enroll": { windowMs: [900_000], max: [10], checks: 1 },
   "admin:oidc-provider-ops": { windowMs: [60_000], max: [10], checks: 1 },
   "admin:test-send": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:mail-transport-test": { windowMs: [60_000], max: [5], checks: 1 },

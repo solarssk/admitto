@@ -68,8 +68,7 @@ export function resolveMfaClientIp(c: Context): string {
   return resolveClientIp(c);
 }
 
-const MFA_ENROLL_WINDOW_MS = 15 * 60_000;
-const MFA_ENROLL_MAX_REQUESTS = 10;
+const mfaEnrollPolicy = RATE_POLICIES["mfa:enroll"].checks[0];
 
 function enrollDenied(c: Context, format: "json" | "text"): Response {
   return format === "text"
@@ -98,15 +97,15 @@ export function createAccountMfaEnrollRateLimitMiddleware(
 
     const sessionResult = await store.hit(
       `mfa:enroll:session:${sessionId}`,
-      MFA_ENROLL_WINDOW_MS,
-      MFA_ENROLL_MAX_REQUESTS,
+      mfaEnrollPolicy.windowMs,
+      mfaEnrollPolicy.max,
     );
     if (!sessionResult.allowed) {
       logRateLimitExceeded({ scope: "mfa_enroll", ip, keyHint: "session" });
       return enrollDenied(c, format);
     }
 
-    const ipResult = await store.hit(`mfa:enroll:ip:${ip}`, MFA_ENROLL_WINDOW_MS, MFA_ENROLL_MAX_REQUESTS);
+    const ipResult = await store.hit(`mfa:enroll:ip:${ip}`, mfaEnrollPolicy.windowMs, mfaEnrollPolicy.max);
     if (!ipResult.allowed) {
       logRateLimitExceeded({ scope: "mfa_enroll", ip, keyHint: "ip" });
       return enrollDenied(c, format);
@@ -128,15 +127,15 @@ export function createMfaEnrollRateLimitMiddleware(
 
     const sessionResult = await store.hit(
       `mfa:enroll:session:${partial.sessionId}`,
-      MFA_ENROLL_WINDOW_MS,
-      MFA_ENROLL_MAX_REQUESTS,
+      mfaEnrollPolicy.windowMs,
+      mfaEnrollPolicy.max,
     );
     if (!sessionResult.allowed) {
       logRateLimitExceeded({ scope: "mfa_enroll", ip, keyHint: "session" });
       return enrollDenied(c, format);
     }
 
-    const ipResult = await store.hit(`mfa:enroll:ip:${ip}`, MFA_ENROLL_WINDOW_MS, MFA_ENROLL_MAX_REQUESTS);
+    const ipResult = await store.hit(`mfa:enroll:ip:${ip}`, mfaEnrollPolicy.windowMs, mfaEnrollPolicy.max);
     if (!ipResult.allowed) {
       logRateLimitExceeded({ scope: "mfa_enroll", ip, keyHint: "ip" });
       return enrollDenied(c, format);

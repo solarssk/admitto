@@ -22,6 +22,16 @@ function makeResendApp(store: InMemoryRateLimitStore, userId: string) {
   return app;
 }
 
+function makeResendAppWithoutAuth(store: InMemoryRateLimitStore) {
+  const app = new Hono();
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/resend",
+    rateLimit(store, "admin:resend"),
+    (c) => c.json({ ok: true }, 200),
+  );
+  return app;
+}
+
 describe("admin resend rate limit", () => {
   it("returns 429 after 5 resends per attendee per minute", async () => {
     const store = new InMemoryRateLimitStore();
@@ -78,5 +88,35 @@ describe("admin resend rate limit", () => {
       (await appB.request("/api/admin/events/evt-a/attendees/att-1/resend", { method: "POST" }))
         .status,
     ).toBe(200);
+  });
+
+  it("returns 400 when attendee id param is missing", async () => {
+    const store = new InMemoryRateLimitStore();
+    const app = new Hono();
+    // Route without :id — exercises beforeCheck when param("id") is absent.
+    app.post(
+      "/api/admin/events/:eventId/attendees/resend",
+      adminContext("admin-missing-id"),
+      rateLimit(store, "admin:resend"),
+      (c) => c.json({ ok: true }, 200),
+    );
+
+    const res = await app.request("/api/admin/events/evt-a/attendees/resend", { method: "POST" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "id required" });
+  });
+
+  it("skips global cap when userId is absent (IP-only per-attendee keys)", async () => {
+    const store = new InMemoryRateLimitStore();
+    const app = makeResendAppWithoutAuth(store);
+    const headers = { "X-Forwarded-For": "203.0.113.99" };
+
+    for (let i = 0; i < 31; i++) {
+      const res = await app.request(`/api/admin/events/evt-a/attendees/att-${i}/resend`, {
+        method: "POST",
+        headers,
+      });
+      expect(res.status).toBe(200);
+    }
   });
 });
