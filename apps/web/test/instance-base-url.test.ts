@@ -31,6 +31,18 @@ describe("normalizePersistedInstanceUrl", () => {
     ).toThrow(/query string or fragment/i);
   });
 
+  it("rejects bare query delimiter", () => {
+    expect(() => normalizePersistedInstanceUrl("https://tickets.example.com?")).toThrow(
+      /query string or fragment/i,
+    );
+  });
+
+  it("rejects bare fragment delimiter", () => {
+    expect(() => normalizePersistedInstanceUrl("https://tickets.example.com#")).toThrow(
+      /query string or fragment/i,
+    );
+  });
+
   it("rejects fragment", () => {
     expect(() => normalizePersistedInstanceUrl("https://tickets.example.com#section")).toThrow(
       /query string or fragment/i,
