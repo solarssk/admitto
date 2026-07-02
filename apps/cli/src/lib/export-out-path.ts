@@ -74,9 +74,10 @@ export function assertSafeEmergencyExportOut(
   const canonicalOut = canonicalExportOutPath(out);
 
   const uploadDir = env.UPLOAD_DIR?.trim();
-  if (uploadDir) {
-    const resolvedUploadDir = path.resolve(uploadDir);
-    const realUploadDir = canonicalDir(uploadDir);
+  const resolvedUploadDir = uploadDir ? path.resolve(uploadDir) : undefined;
+  const realUploadDir = uploadDir ? canonicalDir(uploadDir) : undefined;
+
+  if (resolvedUploadDir && realUploadDir) {
     // Raw path: /uploads/* is served without auth; readFile follows symlinks under UPLOAD_DIR.
     if (isPathInside(resolvedOut, resolvedUploadDir)) {
       throw new CliError(
@@ -95,10 +96,17 @@ export function assertSafeEmergencyExportOut(
     const resolvedEmergencyDir = path.resolve(emergencyDir);
     const realEmergencyDir = canonicalDir(emergencyDir);
 
-    if (uploadDir && isPathInside(resolvedEmergencyDir, path.resolve(uploadDir))) {
-      throw new CliError(
-        `EMERGENCY_EXPORT_DIR must not be under UPLOAD_DIR (${path.resolve(uploadDir)}): use a non-public path.`,
-      );
+    if (resolvedUploadDir && realUploadDir) {
+      const emergencyUnderUpload =
+        isPathInside(resolvedEmergencyDir, resolvedUploadDir) ||
+        isPathInside(resolvedEmergencyDir, realUploadDir) ||
+        isPathInside(realEmergencyDir, resolvedUploadDir) ||
+        isPathInside(realEmergencyDir, realUploadDir);
+      if (emergencyUnderUpload) {
+        throw new CliError(
+          `EMERGENCY_EXPORT_DIR must not be under UPLOAD_DIR (${resolvedUploadDir}; realpath ${realUploadDir}): use a non-public path.`,
+        );
+      }
     }
 
     if (!isPathInside(resolvedOut, resolvedEmergencyDir)) {

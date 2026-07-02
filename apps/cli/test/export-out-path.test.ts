@@ -164,4 +164,26 @@ describe("assertSafeEmergencyExportOut", () => {
       }),
     ).toThrow(CliError);
   });
+
+  it("rejects EMERGENCY_EXPORT_DIR under upload realpath when UPLOAD_DIR is a symlink", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "admitto-export-out-"));
+    tempRoots.push(root);
+    const srvUploads = path.join(root, "srv", "uploads");
+    const appUploads = path.join(root, "app", "uploads");
+    const emergency = path.join(root, "app", "emergency-exports");
+    fs.mkdirSync(srvUploads, { recursive: true });
+    fs.mkdirSync(emergency, { recursive: true });
+    fs.mkdirSync(path.dirname(appUploads), { recursive: true });
+    fs.symlinkSync(srvUploads, appUploads);
+
+    const exportLink = path.join(srvUploads, "export-link");
+    fs.symlinkSync(emergency, exportLink);
+
+    expect(() =>
+      assertSafeEmergencyExportOut(path.join(emergency, "report.csv"), {
+        EMERGENCY_EXPORT_DIR: exportLink,
+        UPLOAD_DIR: appUploads,
+      }),
+    ).toThrow(CliError);
+  });
 });
