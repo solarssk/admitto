@@ -38,18 +38,49 @@ const COPY: Record<CheckinConnectionVisual, { icon: string; message: string }> =
   },
 };
 
-/** Admin check-in only — operator shell renders its own `ConnectionBanner`. */
-export function CheckinConnectionBanner() {
+/** Screen-reader announcements for all connection states in one stable live region. */
+export function CheckinConnectionLiveRegion() {
   const { state } = useConnectionState();
   const visual = mapConnectionState(state);
   if (!visual) return null;
 
   return (
     <div
-      className={`ck-connection ck-connection--${visual}`}
+      className="ck-connection-live sr-only"
       role="status"
       aria-live="polite"
+      aria-atomic="true"
+      data-testid="checkin-connection-live"
+    >
+      {COPY[visual].message}
+    </div>
+  );
+}
+
+/** Compact header indicator when the server link is healthy (admin check-in page header). */
+export function CheckinConnectionPill() {
+  const { state } = useConnectionState();
+  if (mapConnectionState(state) !== "connected") return null;
+
+  return (
+    <span className="ck-server-status" title="All scans confirmed by server">
+      <span className="ck-server-status__dot" aria-hidden="true" />
+      <span className="ck-server-status__label">Server connected</span>
+    </span>
+  );
+}
+
+/** Admin check-in only — operator shell renders its own `ConnectionBanner`. */
+export function CheckinConnectionBanner() {
+  const { state } = useConnectionState();
+  const visual = mapConnectionState(state);
+  if (!visual || visual === "connected") return null;
+
+  return (
+    <div
+      className={`ck-connection ck-connection--${visual}`}
       data-connection={state}
+      aria-hidden="true"
     >
       <i className={`ti ${COPY[visual].icon}`} aria-hidden="true" />
       <span>{COPY[visual].message}</span>

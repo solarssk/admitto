@@ -23,7 +23,7 @@ import { canMutateCheckin } from "../checkin/connection.js";
 import { ScanFeedback } from "../checkin/ScanFeedback.js";
 import { AttendeeCard } from "../checkin/AttendeeCard.js";
 import { CameraOverlay } from "../checkin/CameraOverlay.js";
-import { CheckinConnectionBanner } from "../checkin/ConnectionBanner.js";
+import { CheckinConnectionBanner, CheckinConnectionLiveRegion } from "../checkin/ConnectionBanner.js";
 import { CkEmptyState } from "../checkin/CkEmptyState.js";
 import { CkInlineCamera } from "../checkin/CkInlineCamera.js";
 import { isDesktopViewport, useIsDesktop } from "../hooks/useIsDesktop.js";
@@ -635,6 +635,7 @@ export function CheckInPage({
 
   return (
     <>
+      {!isOperatorShell && <CheckinConnectionLiveRegion />}
       {!isOperatorShell && <CheckinConnectionBanner />}
 
       {streamStatus === "auth_error" && (

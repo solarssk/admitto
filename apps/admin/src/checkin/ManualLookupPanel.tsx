@@ -36,30 +36,32 @@ export function ManualLookupPanel({
 
       {open && (
         <div className="checkin-lookup">
-          <input
-            className="at-input"
-            name="checkin-lookup"
-            placeholder="Name, email, or company"
-            aria-label="Search attendees by name, email, or company"
-            value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
-            disabled={!canAct || busy}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onSearch();
-              }
-            }}
-            {...checkinSearchFieldAttrs}
-          />
-          <button
-            type="button"
-            className="checkin-action-btn"
-            disabled={!canAct || busy || !query.trim()}
-            onClick={onSearch}
-          >
-            Search
-          </button>
+          <div className="checkin-lookup__row">
+            <input
+              className="at-input"
+              name="checkin-lookup"
+              placeholder="Name, email, or company"
+              aria-label="Search attendees by name, email, or company"
+              value={query}
+              onChange={(e) => onQueryChange(e.target.value)}
+              disabled={!canAct || busy}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onSearch();
+                }
+              }}
+              {...checkinSearchFieldAttrs}
+            />
+            <button
+              type="button"
+              className="checkin-action-btn checkin-lookup__search"
+              disabled={!canAct || busy || !query.trim()}
+              onClick={onSearch}
+            >
+              Search
+            </button>
+          </div>
           <ul className="checkin-lookup__results">
             {results.map((r) => (
               <li key={r.id}>
