@@ -128,6 +128,17 @@ export function logRateLimitExceeded(input: {
   });
 }
 
+/** Emit `auth.oidc.superadmin_revoke_blocked` when OIDC sync would remove the last active instance superadmin. */
+export function logOidcSuperadminRevokeBlocked(input: {
+  providerId: string;
+  userId: string;
+}): void {
+  emitAuditEvent("auth.oidc.superadmin_revoke_blocked", {
+    provider_id: input.providerId,
+    user_fingerprint: fingerprint(input.userId),
+  });
+}
+
 /** Emit `auth.oidc.success` after OIDC callback creates a full session. */
 export function logOidcLoginSuccess(input: {
   providerId: string;

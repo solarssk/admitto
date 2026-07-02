@@ -1,5 +1,6 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { hasScope } from "@admitto/db";
+import { logOidcSuperadminRevokeBlocked } from "../audit.js";
 
 /** RoleAssignment requires NULL scope_id for instance scope (DB CHECK). */
 export function roleAssignmentScopeId(scopeType: string, scopeId: string | null): string | null {
@@ -83,17 +84,50 @@ function ruleStillAuthorizesGrant(
   });
 }
 
+/** Count active users with instance-scoped superadmin RoleAssignment. */
+export async function countActiveInstanceSuperadmins(
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<number> {
+  return prisma.roleAssignment.count({
+    where: {
+      role: "superadmin",
+      scope_type: "instance",
+      scope_id: null,
+      user: { is_active: true },
+    },
+  });
+}
+
 /** Remove one provider-owned grant and its linked assignment (grant cascades via FK). */
 async function revokeOidcRoleGrant(
   prisma: PrismaClient | Prisma.TransactionClient,
-  grant: { id: string; role_assignment_id: string },
+  grant: {
+    id: string;
+    role_assignment_id: string;
+    role: string;
+    scope_type: string;
+    scope_id: string | null;
+  },
   userId: string,
-): Promise<void> {
-  await runInOwnTransaction(prisma, async (tx) => {
+  providerId: string,
+): Promise<boolean> {
+  return runInOwnTransaction(prisma, async (tx) => {
+    if (
+      grant.role === "superadmin" &&
+      grant.scope_type === "instance" &&
+      grant.scope_id === null
+    ) {
+      const remaining = await countActiveInstanceSuperadmins(tx);
+      if (remaining <= 1) {
+        logOidcSuperadminRevokeBlocked({ providerId, userId });
+        return false;
+      }
+    }
     await tx.roleAssignment.deleteMany({
       where: { id: grant.role_assignment_id, user_id: userId },
     });
     // OidcRoleGrant is removed via ON DELETE CASCADE on role_assignment_id FK.
+    return true;
   });
 }
 
@@ -176,8 +210,9 @@ export async function applyOidcGroupRoleMappings(
 
   for (const grant of grants) {
     if (ruleStillAuthorizesGrant(grant, rules, groupSet)) continue;
-    await revokeOidcRoleGrant(prisma, grant, userId);
-    changed++;
+    if (await revokeOidcRoleGrant(prisma, grant, userId, providerId)) {
+      changed++;
+    }
   }
 
   for (const rule of rules) {

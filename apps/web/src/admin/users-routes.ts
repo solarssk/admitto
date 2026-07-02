@@ -459,20 +459,7 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
       return created;
     });
   } catch (err) {
-    // The partial unique index allows at most one instance-scoped superadmin;
-    // a second grant collides on P2002. Surface a descriptive 409 instead of a
-    // generic 500 (IAM-004).
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      const target = String(err.meta?.target ?? "");
-      const isDuplicateSameGrant = target.includes("user_id");
-      if (
-        parsed.role === "superadmin" &&
-        parsed.scopeType === "instance" &&
-        parsed.scopeId === null &&
-        (target.includes("RoleAssignment_single_superadmin") || !isDuplicateSameGrant)
-      ) {
-        return c.json({ code: "single_superadmin_limit" }, 409);
-      }
       return c.json({ code: "already_assigned" }, 409);
     }
     throw err;
