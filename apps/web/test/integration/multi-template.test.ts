@@ -562,7 +562,6 @@ describe("multi-template API", () => {
     expect(ticket.subject_template).not.toBe(TEST_SUBJECT);
 
     const before = await prisma.emailDelivery.count({ where: { event_id: EVENT_A } });
-    exported.length = 0;
 
     const res = await app.request(
       `/api/admin/events/${EVENT_A}/templates/${templateId}/test-send`,
@@ -597,8 +596,6 @@ describe("multi-template API", () => {
   });
 
   it("POST /templates/:id/test-send returns 404 for a template from another event", async () => {
-    exported.length = 0;
-
     const foreignTemplate = await ensureEventBForeignTemplate(app, prisma);
 
     const res = await app.request(
