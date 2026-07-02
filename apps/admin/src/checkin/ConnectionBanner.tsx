@@ -38,6 +38,25 @@ const COPY: Record<CheckinConnectionVisual, { icon: string; message: string }> =
   },
 };
 
+/** Screen-reader announcements for all connection states in one stable live region. */
+export function CheckinConnectionLiveRegion() {
+  const { state } = useConnectionState();
+  const visual = mapConnectionState(state);
+  if (!visual) return null;
+
+  return (
+    <div
+      className="ck-connection-live sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="checkin-connection-live"
+    >
+      {COPY[visual].message}
+    </div>
+  );
+}
+
 /** Compact header indicator when the server link is healthy (admin check-in page header). */
 export function CheckinConnectionPill() {
   const { state } = useConnectionState();
@@ -60,9 +79,8 @@ export function CheckinConnectionBanner() {
   return (
     <div
       className={`ck-connection ck-connection--${visual}`}
-      role="status"
-      aria-live="polite"
       data-connection={state}
+      aria-hidden="true"
     >
       <i className={`ti ${COPY[visual].icon}`} aria-hidden="true" />
       <span>{COPY[visual].message}</span>

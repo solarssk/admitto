@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Check-in: server-connected status moves to a compact page-header pill; full-width green banner only for connection problems (#234).
+- Check-in: persistent screen-reader live region announces connection recovery after offline/degraded states.
 - Admin mail transport test returns actionable error messages instead of generic `send failed` (no hostnames or credentials in API responses).
 
 ### Changed

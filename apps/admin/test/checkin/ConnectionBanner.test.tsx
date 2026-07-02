@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionState } from "../../src/connection/types.js";
 import {
   CheckinConnectionBanner,
+  CheckinConnectionLiveRegion,
   CheckinConnectionPill,
 } from "../../src/checkin/ConnectionBanner.js";
 
@@ -49,5 +50,27 @@ describe("CheckinConnectionPill", () => {
     mockState("offline");
     const { container } = render(<CheckinConnectionPill />);
     expect(container.firstChild).toBeNull();
+  });
+});
+
+describe("CheckinConnectionLiveRegion", () => {
+  it("keeps a single polite live region for connected state", () => {
+    mockState("connected");
+    render(<CheckinConnectionLiveRegion />);
+    const region = screen.getByTestId("checkin-connection-live");
+    expect(region.getAttribute("aria-live")).toBe("polite");
+    expect(region.textContent).toContain("Connected — all scans confirmed by server");
+  });
+
+  it("updates the live region message when connection recovers", () => {
+    mockState("offline");
+    const { rerender } = render(<CheckinConnectionLiveRegion />);
+    expect(screen.getByTestId("checkin-connection-live").textContent).toContain("Offline");
+
+    mockState("connected");
+    rerender(<CheckinConnectionLiveRegion />);
+    expect(screen.getByTestId("checkin-connection-live").textContent).toContain(
+      "Connected — all scans confirmed by server",
+    );
   });
 });

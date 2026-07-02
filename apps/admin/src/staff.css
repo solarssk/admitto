@@ -665,10 +665,16 @@
   font-weight: 500;
 }
 
-.ck-connection--connected {
-  background: var(--status-ok-tint);
-  border: 1px solid var(--status-ok);
-  color: var(--status-ok-fg);
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .ck-connection--offline {
