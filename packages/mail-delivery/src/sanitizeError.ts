@@ -30,3 +30,44 @@ export function clientSafeDeliveryError(message: string | undefined): string {
   }
   return sanitized;
 }
+
+/**
+ * Superadmin transport test — actionable copy without hostnames, URLs, or credentials.
+ * Used only for POST /api/admin/mail-settings/test (not attendee-facing mail logs).
+ */
+export function transportTestErrorForAdmin(message: string | undefined): string {
+  if (!message?.trim()) {
+    return "Send failed. Check transport settings and try again.";
+  }
+
+  const msg = message;
+  if (/Cannot resolve mail provider|mail transport not configured/i.test(msg)) {
+    return "Mail transport is not configured. Choose a provider and save required fields.";
+  }
+  if (/ECONNREFUSED/i.test(msg)) {
+    return "Could not connect to the mail server (connection refused). Check host and port.";
+  }
+  if (/ETIMEDOUT|ETIMEOUT|socket timeout/i.test(msg)) {
+    return "Mail server did not respond in time. Check host, port, and firewall.";
+  }
+  if (/ENOTFOUND|getaddrinfo/i.test(msg)) {
+    return "Mail server hostname could not be resolved. Check the SMTP host.";
+  }
+  if (/\b535\b|\b534\b|authentication failed|invalid login|invalid credentials/i.test(msg)) {
+    return "SMTP authentication failed. Check username and password.";
+  }
+  if (/certificate|STARTTLS|TLS|SSL|self[- ]signed/i.test(msg)) {
+    return "TLS error talking to the mail server. Check TLS/STARTTLS settings.";
+  }
+  if (/\b550\b|\b553\b|mailbox unavailable|user unknown/i.test(msg)) {
+    return "Server rejected the recipient or sender address.";
+  }
+  if (/AADSTS|invalid_client|client_secret|graph\.microsoft|oauth/i.test(msg)) {
+    return "Microsoft Graph authentication failed. Check tenant, client ID, and secret.";
+  }
+
+  const generic = clientSafeDeliveryError(message);
+  if (generic !== "send failed") return generic;
+
+  return "Send failed. Verify transport settings; see server logs for the technical detail.";
+}

@@ -22,6 +22,7 @@ import {
 } from "../login-page.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
+import { resolveStaffEntryPath } from "../setup-routes.js";
 import { loadLoginSsoProviders } from "./login-sso.js";
 
 function mfaPathWithNext(path: string, next?: string): string {
@@ -40,6 +41,9 @@ function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Respon
 
 /** GET /login — operator sign-in form (HTML). */
 export async function handleGetLogin(c: Context, db: PrismaClient): Promise<Response> {
+  if (await resolveStaffEntryPath(db) === "/setup") {
+    return c.redirect("/setup", 302);
+  }
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
   const errorParam = c.req.query("error") ?? undefined;
   const sso = await loadLoginSsoProviders(db);
@@ -65,6 +69,9 @@ export async function handlePostLogin(
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
 ): Promise<Response> {
+  if (await resolveStaffEntryPath(db) === "/setup") {
+    return c.redirect("/setup", 302);
+  }
   const form = await parseLoginForm(c);
   const email = form["email"]?.trim() ?? "";
   const password = form["password"] ?? "";

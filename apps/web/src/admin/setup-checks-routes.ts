@@ -56,9 +56,6 @@ async function checkInstanceUrl(
 
   const envRaw = env.BASE_URL?.trim();
   if (envRaw) {
-    if (env.NODE_ENV !== "development" && env.NODE_ENV !== "test" && !envRaw.startsWith("https://")) {
-      return { ok: false, detail: "BASE_URL must use https:// in production" };
-    }
     try {
       const normalized = normalizeRuntimeBaseUrl(envRaw, env);
       return { ok: true, detail: normalized };

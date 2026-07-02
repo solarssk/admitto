@@ -1,6 +1,7 @@
 import type { Context, Next } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canAccessAdminPanel, canAccessCheckInPanel, logAccessDenied, logCfAccessAuth } from "@admitto/auth";
+import { resolveStaffEntryPath } from "../setup-routes.js";
 import { resolveStaffAuthFromRequest } from "./resolve-staff-auth.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 
@@ -12,11 +13,11 @@ function isAdminApiPath(path: string): boolean {
   return path === "/api/admin" || path.startsWith("/api/admin/");
 }
 
-function loginBoundaryResponse(c: Context): Response {
+async function loginBoundaryResponse(c: Context, prisma: PrismaClient): Promise<Response> {
   if (isAdminApiPath(c.req.path)) {
     return c.json({ error: "authentication_required" }, 401);
   }
-  return c.redirect("/login", 302);
+  return c.redirect(await resolveStaffEntryPath(prisma), 302);
 }
 
 function terminalForbiddenResponse(c: Context): Response {
@@ -69,7 +70,7 @@ export function createStaffAdminGate(prisma: PrismaClient) {
       return rejectInvalidJwt(c, result.reason);
     }
     if (result.status === "unauthenticated") {
-      return loginBoundaryResponse(c);
+      return loginBoundaryResponse(c, prisma);
     }
 
     if (!(await canAccessAdminPanel(prisma, result.auth.userId))) {

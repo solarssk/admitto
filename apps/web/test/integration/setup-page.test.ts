@@ -226,3 +226,47 @@ describe("POST /setup", () => {
     expect(body.code).toBe("already_initialized");
   });
 });
+
+describe("first-run staff entry redirect", () => {
+  beforeEach(async () => {
+    await clearAllUsers(prisma);
+  });
+
+  it("redirects GET /login to /setup when database is empty", async () => {
+    const res = await app.request("/login", { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/setup");
+  });
+
+  it("redirects POST /login to /setup when database is empty", async () => {
+    const res = await app.request("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin },
+      body: new URLSearchParams({
+        email: "nobody@example.com",
+        password: "wrong-password",
+      }).toString(),
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/setup");
+  });
+
+  it("redirects GET / to /setup when database is empty", async () => {
+    const res = await app.request("/", { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/setup");
+  });
+
+  it("redirects GET /operator to /setup when database is empty", async () => {
+    const res = await app.request("/operator", { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/setup");
+  });
+
+  it("redirects GET /admin to /setup when database is empty", async () => {
+    const res = await app.request("/admin", { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/setup");
+  });
+});

@@ -2,7 +2,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import {
+  createSession,
+  hashPassword,
+  SESSION_STAGE,
+  SETTING_SETUP_COMPLETE,
+  setSetting,
+} from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import type { ExportPayload } from "@admitto/mailer";
 import * as tickets from "@admitto/tickets";
@@ -193,6 +199,32 @@ describe("GET /api/admin/mail-settings", () => {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
+    }
+  });
+
+  it("unlocks env-sourced fields during first-run wizard (setup_complete=false)", async () => {
+    const saved = {
+      EMAIL_PROVIDER: process.env.EMAIL_PROVIDER,
+      SMTP_HOST: process.env.SMTP_HOST,
+    };
+    process.env.EMAIL_PROVIDER = "smtp";
+    process.env.SMTP_HOST = "smtp.all-env.example.com";
+    await setSetting(prisma, SETTING_SETUP_COMPLETE, false);
+    try {
+      const res = await app.request("/api/admin/mail-settings", {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as MailSettingsApi;
+      expect(body.fields.provider?.locked).toBe(false);
+      expect(body.fields.host?.locked).toBe(false);
+      expect(body.fields.provider?.value).toBeNull();
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_SETUP_COMPLETE } });
     }
   });
 });

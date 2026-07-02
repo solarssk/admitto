@@ -166,3 +166,22 @@ export async function describeMailConfigForOrg(
 
   return buildConfigDescriptor(envFields, null, org);
 }
+
+/**
+ * First-run setup wizard: org DB + defaults only — env placeholders must not lock the form.
+ */
+export async function describeMailConfigForOrgWizard(
+  organizationId: string,
+  prisma: PrismaClient,
+): Promise<ConfigDescriptor> {
+  const org = await prisma.mailSettings.findUnique({
+    where: {
+      scope_type_scope_id: {
+        scope_type: "organization",
+        scope_id: organizationId,
+      },
+    },
+  });
+
+  return buildConfigDescriptor({}, null, org);
+}

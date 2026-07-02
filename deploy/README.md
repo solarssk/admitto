@@ -147,14 +147,19 @@ For one-off CLI (bootstrap, MFA reset), the entrypoint passes through `node …`
 
 ## First superadmin
 
-After the stack is healthy:
+On a **fresh database** (no users), open the app URL — you are redirected to **`/setup`**
+automatically (`/`, `/login`, and other staff paths send you there until the first account exists).
+
+Create the break-glass superadmin in the browser: email, display name, and password (min. 12
+characters). After submit you enroll MFA, then the in-app setup wizard runs (mail, branding, first
+event).
+
+**CLI bootstrap** remains for break-glass recovery when the web UI is unavailable:
 
 ```bash
 docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin \
   --email admin@example.com
 ```
-
-Replace the email with your break-glass superadmin address. The CLI prompts for a password on stdin (not echoed). Run on the server directly, not through Cloudflare Access.
 
 From **v0.4.10** onward (drops the single-instance-superadmin index on migrate), additional
 instance superadmins can be assigned in the admin UI (Users) or via OIDC group mappings.

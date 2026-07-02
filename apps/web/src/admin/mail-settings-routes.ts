@@ -1,9 +1,10 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { canManageInstance } from "@admitto/auth";
+import { canManageInstance, resolveSetupComplete } from "@admitto/auth";
 import {
   describeMailConfigForOrg,
+  describeMailConfigForOrgWizard,
   setMailSettings,
   validateOrgMailSettingsUpdate,
   type ConfigDescriptor,
@@ -12,8 +13,8 @@ import {
   type MailSettingsInput,
 } from "@admitto/mailer-config";
 import {
-  clientSafeDeliveryError,
   sendTransportTestEmail,
+  transportTestErrorForAdmin,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
 import { isSendSuccess } from "@admitto/mailer";
@@ -171,13 +172,28 @@ async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response
 
 const MAIL_PROVIDER_UNCONFIGURED = "Cannot resolve mail provider";
 
+async function isFirstRunWizard(db: PrismaClient): Promise<boolean> {
+  return !(await resolveSetupComplete(db));
+}
+
+async function describeOrgMailForAdmin(
+  orgId: string,
+  db: PrismaClient,
+  env: NodeJS.ProcessEnv,
+): Promise<ConfigDescriptor> {
+  if (await isFirstRunWizard(db)) {
+    return describeMailConfigForOrgWizard(orgId, db);
+  }
+  return describeMailConfigForOrg(orgId, db, env);
+}
+
 /** GET /api/admin/mail-settings */
 export async function handleGetMailSettings(c: Context, db: PrismaClient): Promise<Response> {
   const forbidden = await requireSuperadmin(c, db);
   if (forbidden) return forbidden;
 
   const orgId = await resolveInstanceOrganizationId(db, process.env);
-  const desc = await describeMailConfigForOrg(orgId, db, process.env);
+  const desc = await describeOrgMailForAdmin(orgId, db, process.env);
 
   return c.json({
     organizationId: orgId,
@@ -203,15 +219,18 @@ export async function handlePutMailSettings(c: Context, db: PrismaClient): Promi
   }
 
   const orgId = await resolveInstanceOrganizationId(db, process.env);
-  const current = await describeMailConfigForOrg(orgId, db, process.env);
+  const firstRun = await isFirstRunWizard(db);
+  const current = await describeOrgMailForAdmin(orgId, db, process.env);
   const orgRow = await db.mailSettings.findUnique({
     where: { scope_type_scope_id: { scope_type: "organization", scope_id: orgId } },
   });
 
-  for (const key of Object.keys(body) as Array<keyof typeof body>) {
-    const fd = descriptorForKey(current, key as keyof MailSettingsInput);
-    if (fd.locked) {
-      return c.json({ error: "managed by environment" }, 400);
+  if (!firstRun) {
+    for (const key of Object.keys(body) as Array<keyof typeof body>) {
+      const fd = descriptorForKey(current, key as keyof MailSettingsInput);
+      if (fd.locked) {
+        return c.json({ error: "managed by environment" }, 400);
+      }
     }
   }
 
@@ -252,7 +271,7 @@ export async function handlePutMailSettings(c: Context, db: PrismaClient): Promi
     });
   });
 
-  const desc = await describeMailConfigForOrg(orgId, db, process.env);
+  const desc = await describeOrgMailForAdmin(orgId, db, process.env);
   return c.json({
     organizationId: orgId,
     isProduction: isProductionEnv(process.env),
@@ -278,6 +297,7 @@ export async function handlePostMailSettingsTest(
 
   const orgId = await resolveInstanceOrganizationId(db, process.env);
   const audit = adminAuditFromContext(c);
+  const mailEnv = (await isFirstRunWizard(db)) ? ({} as NodeJS.ProcessEnv) : process.env;
 
   let resultStatus: "sent" | "failed" = "failed";
   let errorMessage: string | undefined;
@@ -286,22 +306,27 @@ export async function handlePostMailSettingsTest(
     const result = await sendTransportTestEmail(
       { organizationId: orgId, toAddress: body.to },
       db,
-      process.env,
+      mailEnv,
       mailDeliveryDeps,
     );
 
     if (!isSendSuccess(result.status) || result.error) {
-      errorMessage = clientSafeDeliveryError(result.error);
+      if (result.error) {
+        console.error("[admin] mail transport test failed:", result.error);
+      }
+      errorMessage = transportTestErrorForAdmin(result.error);
     } else {
       resultStatus = "sent";
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : undefined;
+    if (message) {
+      console.error("[admin] mail transport test failed:", message);
+    }
     if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
       errorMessage = "mail transport not configured";
     } else {
-      console.error("[admin] mail transport test failed", err);
-      errorMessage = clientSafeDeliveryError(message);
+      errorMessage = transportTestErrorForAdmin(message);
     }
   }
 
