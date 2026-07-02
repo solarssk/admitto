@@ -12,7 +12,7 @@ describe("setup-page", () => {
 
   it("renders password manager friendly fields", () => {
     const html = renderSetupPage();
-    expect(html).toContain('autocomplete="email"');
+    expect(html).toContain('autocomplete="username"');
     expect(html).toContain('passwordrules="minlength: 12;"');
     expect(html).toContain('autocomplete="new-password"');
     expect(html).toContain('name="confirm_password"');

@@ -69,7 +69,7 @@ export function renderSetupPage(error?: SetupErrorCode, values: SetupFormValues 
     <form method="post" action="/setup" aria-label="Admitto initial setup">
       <div class="auth-field">
         <label class="auth-label" for="email">Email</label>
-        <input class="auth-input" id="email" type="email" name="email" placeholder="admin@example.com" required autocomplete="email" inputmode="email" autocapitalize="off"${emailValue}>
+        <input class="auth-input" id="email" type="email" name="email" placeholder="admin@example.com" required autocomplete="username" inputmode="email" autocapitalize="off"${emailValue}>
       </div>
       <div class="auth-field">
         <label class="auth-label" for="display_name">Display name <span class="auth-label-optional">(optional)</span></label>
