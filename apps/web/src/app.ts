@@ -226,6 +226,7 @@ import {
   handlePostCfAccessTest,
 } from "./admin/cf-access-routes.js";
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
+import { createRequestLogMiddleware, resolveLogHttpRequests } from "./request-log.js";
 import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
 import { handleReadyz } from "./ops/readyz.js";
 
@@ -247,6 +248,8 @@ export interface CreateAppOptions {
   adminDistRoot?: string;
   mailDeliveryDeps?: MailDeliveryDeps;
   opsHealthToken?: string | null;
+  /** JSON access log per request (defaults to `LOG_HTTP_REQUESTS` env). */
+  logHttpRequests?: boolean;
 }
 
 /**
@@ -294,6 +297,10 @@ export function createApp(options: CreateAppOptions = {}) {
   const mailDeliveryDeps = options.mailDeliveryDeps ?? {};
 
   const app = new Hono();
+  // First middleware so the access log also covers 404s and rate-limited requests.
+  if (options.logHttpRequests ?? resolveLogHttpRequests()) {
+    app.use("*", createRequestLogMiddleware());
+  }
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const opsHealthToken = resolveOpsHealthTokenOption(options.opsHealthToken);
   const readyzRateLimit = rateLimit(rateLimitStore, "ops:readyz");
