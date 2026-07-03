@@ -17,6 +17,7 @@ export function getAuthPageInlineScriptHeaders(scriptNonce: string): Record<stri
       `script-src 'nonce-${scriptNonce}'`,
       "form-action 'self'",
       "frame-ancestors 'none'",
+      "base-uri 'none'",
     ].join("; "),
     "Referrer-Policy": "same-origin",
     "X-Content-Type-Options": "nosniff",
