@@ -306,7 +306,7 @@ export function AccountPage() {
                   id="account-confirm-password"
                   name="confirm-new-password"
                   type="password"
-                  autoComplete="off"
+                  autoComplete="new-password"
                   autoCapitalize="off"
                   spellCheck={false}
                   value={confirmPassword}

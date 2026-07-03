@@ -1788,10 +1788,6 @@
   gap: var(--space-2);
 }
 
-.mail-field-row--password .at-password-slot {
-  padding-bottom: 1.375rem;
-}
-
 .mail-field-env-badge {
   align-self: flex-start;
 }

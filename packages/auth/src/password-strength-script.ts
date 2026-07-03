@@ -1,20 +1,28 @@
 import { PASSWORD_MIN_LENGTH } from "./constants.js";
-import { scorePasswordStrengthInline, tooShortProgressScore } from "./password-strength.js";
+import {
+  passwordStrengthTip,
+  scorePasswordStrengthInline,
+  tooShortProgressScore,
+} from "./password-strength.js";
 
 /** Shared auth-page styles for password strength and confirm-match hints. */
 export const AUTH_PASSWORD_STRENGTH_CSS = `
 .auth-password-slot {
   position: relative;
 }
+/* Single-row meter sits in the standard .auth-field margin (1rem) below the
+   input — no extra field spacing, no layout shift when it appears/disappears. */
 .auth-password-strength {
   position: absolute;
-  top: calc(100% + 0.5rem);
+  top: calc(100% + 0.375rem);
   left: 0;
   right: 0;
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 0.75rem;
+  height: 0.5rem;
+  pointer-events: none;
 }
 .auth-password-strength--empty {
   display: none;
@@ -31,20 +39,22 @@ export const AUTH_PASSWORD_STRENGTH_CSS = `
   background: var(--at-gray-200);
   transition: background-color 0.15s ease-out;
 }
+.auth-password-strength__segment--tooShort { background: var(--at-gray-400, #94a3b8); }
 .auth-password-strength__segment--weak { background: var(--at-red); }
 .auth-password-strength__segment--fair { background: var(--at-yellow); }
 .auth-password-strength__segment--good { background: var(--at-blue); }
 .auth-password-strength__segment--strong { background: var(--at-green); }
 .auth-password-strength__label {
   flex-shrink: 0;
-  min-width: 4.5rem;
+  min-width: 4rem;
   text-align: right;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 500;
+  line-height: 1;
   color: var(--at-gray-600);
 }
 .auth-password-strength__label--weak { color: var(--at-red); }
-.auth-password-strength__label--fair { color: var(--at-yellow); }
+.auth-password-strength__label--fair { color: var(--at-yellow-700, #9a6400); }
 .auth-password-strength__label--good { color: var(--at-blue); }
 .auth-password-strength__label--strong { color: var(--at-green); }
 .auth-confirm-match--ok { color: var(--at-green-600); }
@@ -67,16 +77,24 @@ export function renderAuthPasswordStrengthMeterHtml(inputId: string): string {
 export function passwordStrengthAuthScript(scriptNonce: string): string {
   const tooShortSource = tooShortProgressScore.toString();
   const scorerSource = scorePasswordStrengthInline.toString();
+  const tipSource = passwordStrengthTip.toString();
   return `<script nonce="${scriptNonce}">
 (function () {
   var MIN = ${PASSWORD_MIN_LENGTH};
   var tooShortProgressScore = ${tooShortSource};
   var score = ${scorerSource};
+  var strengthTip = ${tipSource};
 
   function appendDescribedBy(input, id) {
     var tokens = (input.getAttribute("aria-describedby") || "").split(/\\s+/).filter(Boolean);
     if (tokens.indexOf(id) === -1) tokens.push(id);
     input.setAttribute("aria-describedby", tokens.join(" "));
+  }
+
+  function meterAriaLabel(result, password) {
+    var label = "Password strength: " + result.label;
+    var tip = strengthTip(password, MIN);
+    return tip ? label + ". " + tip : label;
   }
 
   function ensureMeter(input) {
@@ -123,7 +141,7 @@ export function passwordStrengthAuthScript(scriptNonce: string): string {
       return;
     }
     meter.classList.remove("auth-password-strength--empty");
-    meter.setAttribute("aria-label", "Password strength: " + result.label);
+    meter.setAttribute("aria-label", meterAriaLabel(result, input.value));
     var label = meter.querySelector(".auth-password-strength__label");
     if (label) {
       label.textContent = result.label;

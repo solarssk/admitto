@@ -35,4 +35,11 @@ describe("PasswordStrengthMeter", () => {
     rerender(<PasswordStrengthMeter password={PASSWORD_STRENGTH_STRONG} />);
     expect(screen.getByText("Strong")).toBeTruthy();
   });
+
+  it("includes the next-step tip in aria-label for screen readers", () => {
+    render(<PasswordStrengthMeter password={PASSWORD_STRENGTH_WEAK} />);
+    expect(screen.getByRole("status").getAttribute("aria-label")).toBe(
+      "Password strength: Weak. Add 16+ characters for a stronger score.",
+    );
+  });
 });

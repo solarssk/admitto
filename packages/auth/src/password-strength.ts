@@ -1,6 +1,6 @@
 import { PASSWORD_MIN_LENGTH } from "./constants.js";
 
-export type PasswordStrengthLevel = "empty" | "weak" | "fair" | "good" | "strong";
+export type PasswordStrengthLevel = "empty" | "tooShort" | "weak" | "fair" | "good" | "strong";
 
 export interface PasswordStrengthResult {
   level: PasswordStrengthLevel;
@@ -29,7 +29,9 @@ export function scorePasswordStrengthInline(
     return {
       score: tooShortProgressScore(password.length, minLength),
       label: "Too short",
-      level: "weak",
+      // Distinct from a genuine post-minlength "weak" verdict: incomplete
+      // progress should read as neutral, not an alarming red warning.
+      level: "tooShort",
     };
   }
 
@@ -54,4 +56,26 @@ export function scorePasswordStrength(password: string): PasswordStrengthResult 
     score: result.score,
     label: result.label,
   };
+}
+
+/**
+ * Actionable next step to raise the score once minlength is met (empty once
+ * already Strong, or while below minlength — "Too short" already says enough).
+ * Names only the single highest-impact missing ingredient — guarantees a
+ * short, one-line message instead of a long list that could wrap and
+ * overlap the next field. Browser-safe — embedded into auth HTML via `.toString()`.
+ */
+export function passwordStrengthTip(password: string, minLength: number): string {
+  if (!password || password.length < minLength) return "";
+  const hasLower = /[a-z]/.test(password);
+  const hasUpper = /[A-Z]/.test(password);
+  const hasDigit = /\d/.test(password);
+  const hasSymbol = /[^a-zA-Z0-9]/.test(password);
+  let missing = "";
+  if (password.length < 16) missing = "16+ characters";
+  else if (!(hasLower && hasUpper)) missing = "upper & lower case";
+  else if (!hasDigit) missing = "a number";
+  else if (!hasSymbol) missing = "a symbol";
+  if (!missing) return "";
+  return "Add " + missing + " for a stronger score.";
 }

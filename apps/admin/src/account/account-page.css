@@ -112,6 +112,14 @@
   margin: 0;
 }
 
+/* Same 1rem field gap as SSR auth pages (.auth-field { margin-bottom: 1rem }). */
+.account-password-form .mail-field-row {
+  margin-bottom: var(--space-4, 1rem);
+}
+.account-password-form .mail-field-row:last-of-type {
+  margin-bottom: 0;
+}
+
 .account-password-form__username {
   position: absolute;
   width: 1px;

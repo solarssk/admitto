@@ -188,15 +188,19 @@
 .at-password-slot {
   position: relative;
 }
+/* Single-row meter sits in the standard field gap below the input — no extra
+   spacing on the row, no layout shift when it appears/disappears. */
 .at-password-strength {
   position: absolute;
-  top: calc(100% + var(--space-2));
+  top: calc(100% + var(--space-1));
   left: 0;
   right: 0;
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: var(--space-3);
+  height: 0.5rem;
+  pointer-events: none;
 }
 .at-password-strength__bar {
   flex: 1;
@@ -210,19 +214,21 @@
   background: var(--at-gray-200);
   transition: background-color var(--dur-fast) var(--ease-out);
 }
+.at-password-strength__segment--tooShort { background: var(--at-gray-400); }
 .at-password-strength__segment--weak { background: var(--status-error); }
 .at-password-strength__segment--fair { background: var(--status-warn); }
 .at-password-strength__segment--good { background: var(--primary); }
 .at-password-strength__segment--strong { background: var(--status-ok); }
 .at-password-strength__label {
   flex-shrink: 0;
-  min-width: 4.5rem;
+  min-width: 4rem;
   text-align: right;
   font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
+  line-height: 1;
   color: var(--text-muted);
 }
 .at-password-strength__label--weak { color: var(--status-error); }
-.at-password-strength__label--fair { color: var(--status-warn); }
+.at-password-strength__label--fair { color: var(--status-warn-fg); }
 .at-password-strength__label--good { color: var(--primary); }
 .at-password-strength__label--strong { color: var(--status-ok); }

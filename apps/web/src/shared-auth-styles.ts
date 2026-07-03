@@ -29,9 +29,11 @@ export const AUTH_PAGE_CSS = `
   --at-red: #d63939;
   --at-red-050: #fbeaea;
   --at-yellow: #f59f00;
+  --at-yellow-700: #9a6400;
   --at-yellow-050: #fdf3e1;
   --at-green: #2fb344;
   --at-green-600: #279a39;
+  --at-gray-400: #94a3b8;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -130,8 +132,7 @@ body {
   transition: border-color 0.15s;
 }
 .auth-input:focus { border-color: var(--at-blue); box-shadow: 0 0 0 3px rgba(6,111,209,0.15); }
-/* Room for the absolutely positioned password-strength meter between fields. */
-.auth-field { margin-bottom: 1.375rem; }
+.auth-field { margin-bottom: 1rem; }
 .auth-label-optional {
   font-weight: 400;
   color: var(--at-gray-500);

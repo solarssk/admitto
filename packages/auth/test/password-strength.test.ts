@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PASSWORD_MIN_LENGTH } from "../src/constants.js";
 import {
+  passwordStrengthTip,
   scorePasswordStrength,
   scorePasswordStrengthInline,
 } from "../src/password-strength.js";
@@ -18,13 +19,15 @@ describe("scorePasswordStrength", () => {
   });
 
   it("flags passwords below PASSWORD_MIN_LENGTH with partial meter progress", () => {
+    // Distinct "tooShort" level (not "weak") — incomplete progress should
+    // read as neutral, not as an alarming red warning.
     expect(scorePasswordStrength("short")).toEqual({
-      level: "weak",
+      level: "tooShort",
       score: 2,
       label: "Too short",
     });
     expect(scorePasswordStrength("a")).toEqual({
-      level: "weak",
+      level: "tooShort",
       score: 1,
       label: "Too short",
     });
@@ -35,6 +38,36 @@ describe("scorePasswordStrength", () => {
     expect(scorePasswordStrength(PASSWORD_STRENGTH_FAIR).label).toBe("Fair");
     expect(scorePasswordStrength(PASSWORD_STRENGTH_GOOD).label).toBe("Good");
     expect(scorePasswordStrength(PASSWORD_STRENGTH_STRONG).label).toBe("Strong");
+  });
+});
+
+describe("passwordStrengthTip", () => {
+  it("is empty below minlength — 'Too short' already says enough", () => {
+    expect(passwordStrengthTip("short", PASSWORD_MIN_LENGTH)).toBe("");
+    expect(passwordStrengthTip("", PASSWORD_MIN_LENGTH)).toBe("");
+  });
+
+  it("is empty once the password is already Strong", () => {
+    expect(passwordStrengthTip(PASSWORD_STRENGTH_STRONG, PASSWORD_MIN_LENGTH)).toBe("");
+  });
+
+  it("names only the single highest-impact missing ingredient (stays one line)", () => {
+    // 12 lowercase chars: length is the biggest lever, named first.
+    expect(passwordStrengthTip(PASSWORD_STRENGTH_WEAK, PASSWORD_MIN_LENGTH)).toBe(
+      "Add 16+ characters for a stronger score.",
+    );
+  });
+
+  it("moves on to the next missing ingredient once length is satisfied", () => {
+    expect(passwordStrengthTip("a".repeat(16), PASSWORD_MIN_LENGTH)).toBe(
+      "Add upper & lower case for a stronger score.",
+    );
+    expect(passwordStrengthTip("aaaaaaaaaaaaaaaA", PASSWORD_MIN_LENGTH)).toBe(
+      "Add a number for a stronger score.",
+    );
+    expect(passwordStrengthTip("aaaaaaaaaaaaaaA1", PASSWORD_MIN_LENGTH)).toBe(
+      "Add a symbol for a stronger score.",
+    );
   });
 });
 
@@ -90,5 +123,12 @@ describe("passwordStrengthAuthScript", () => {
     expect(script).toContain("auth-password-slot");
     expect(script).toContain("auth-password-strength--empty");
     expect(script).toContain("clearMeter");
+  });
+
+  it("embeds passwordStrengthTip in aria-label, not as a visible tip row", () => {
+    const script = passwordStrengthAuthScript(SCRIPT_NONCE);
+    expect(script).toContain("var strengthTip =");
+    expect(script).toContain("meterAriaLabel");
+    expect(script).not.toContain("auth-password-strength__tip");
   });
 });

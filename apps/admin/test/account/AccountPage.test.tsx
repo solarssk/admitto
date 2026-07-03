@@ -200,7 +200,11 @@ describe("AccountPage toasts", () => {
     expect(newPassword.getAttribute("autocomplete")).toBe("new-password");
     expect(newPassword.getAttribute("passwordrules")).toBe("minlength: 12;");
 
-    expect(screen.getByLabelText("Confirm new password").getAttribute("autocomplete")).toBe("off");
+    // Matches the SSR /setup and /change-password pages — "new-password" lets
+    // password managers fill/save the confirm field consistently.
+    expect(screen.getByLabelText("Confirm new password").getAttribute("autocomplete")).toBe(
+      "new-password",
+    );
 
     const username = document.querySelector<HTMLInputElement>(".account-password-form__username");
     expect(username?.value).toBe("admin@example.com");
