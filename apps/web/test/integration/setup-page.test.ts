@@ -80,7 +80,8 @@ describe("GET /setup", () => {
     expect(html).toContain('passwordrules="minlength: 12;"');
     expect(html).toContain("Set up Admitto");
     expect(html).toContain("Create administrator account");
-    expect(html).not.toContain("<script");
+    expect(html).toContain("auth-password-strength");
+    expect(html).toContain("scorePasswordStrengthInline");
   });
 
   it("redirects to /login when users exist", async () => {
