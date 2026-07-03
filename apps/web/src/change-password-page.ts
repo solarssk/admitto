@@ -48,6 +48,7 @@ function errorMessage(error?: string): string | undefined {
 export function renderChangePasswordForm(error?: string): string {
   const message = errorMessage(error);
   const errorBlock = message ? `<div class="auth-error" role="alert">${esc(message)}</div>` : "";
+  const passwordRules = esc(`minlength: ${PASSWORD_MIN_LENGTH};`);
   const card = `${renderAuthBrand()}
     <h2 class="auth-page-action">Change password</h2>
     <p class="subtitle">Your administrator requires a new password before you can continue.</p>
@@ -55,11 +56,12 @@ export function renderChangePasswordForm(error?: string): string {
     <form method="post" action="/change-password" aria-label="Change password">
       <div class="auth-field">
         <label class="auth-label" for="password">New password</label>
-        <input class="auth-input" id="password" name="password" type="password" autocomplete="new-password" required minlength="${PASSWORD_MIN_LENGTH}" />
+        <input class="auth-input" id="password" name="password" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" passwordrules="${passwordRules}" required minlength="${PASSWORD_MIN_LENGTH}" aria-describedby="password-hint">
+        <p class="auth-field-hint" id="password-hint">At least ${PASSWORD_MIN_LENGTH} characters.</p>
       </div>
       <div class="auth-field">
         <label class="auth-label" for="password_confirm">Confirm password</label>
-        <input class="auth-input" id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" required minlength="${PASSWORD_MIN_LENGTH}" aria-describedby="password_confirm-match" />
+        <input class="auth-input" id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" required minlength="${PASSWORD_MIN_LENGTH}" aria-describedby="password_confirm-match">
       </div>
       <button type="submit" class="auth-btn-primary">Save password</button>
     </form>`;

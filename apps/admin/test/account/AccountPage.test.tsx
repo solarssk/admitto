@@ -172,11 +172,38 @@ describe("AccountPage toasts", () => {
       target: { value: "short" },
     });
     expect(screen.getByText("Too short")).toBeTruthy();
+    expect(screen.queryByText("At least 12 characters.")).toBeNull();
 
     fireEvent.change(screen.getByLabelText("New password"), {
       target: { value: PASSWORD_STRENGTH_STRONG },
     });
     expect(screen.getByText("Strong")).toBeTruthy();
+  });
+
+  it("exposes password-manager hints on the change-password form", async () => {
+    mockLoadedAccount();
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Current password")).toBeTruthy();
+    });
+
+    const form = screen.getByRole("form", { name: "Change password" });
+    expect(form).toBeTruthy();
+
+    expect(screen.getByLabelText("Current password").getAttribute("name")).toBe("current-password");
+    expect(screen.getByLabelText("Current password").getAttribute("autocomplete")).toBe("current-password");
+
+    const newPassword = screen.getByLabelText("New password");
+    expect(newPassword.getAttribute("name")).toBe("new-password");
+    expect(newPassword.getAttribute("autocomplete")).toBe("new-password");
+    expect(newPassword.getAttribute("passwordrules")).toBe("minlength: 12;");
+
+    expect(screen.getByLabelText("Confirm new password").getAttribute("autocomplete")).toBe("off");
+
+    const username = document.querySelector<HTMLInputElement>(".account-password-form__username");
+    expect(username?.value).toBe("admin@example.com");
+    expect(username?.getAttribute("autocomplete")).toBe("username");
   });
 
   it("toasts password change success", async () => {

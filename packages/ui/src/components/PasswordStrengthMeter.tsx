@@ -37,7 +37,14 @@ export function PasswordStrengthMeter({
           />
         ))}
       </div>
-      <span className="at-password-strength__label">{result.label}</span>
+      <span
+        className={[
+          "at-password-strength__label",
+          `at-password-strength__label--${result.level}`,
+        ].join(" ")}
+      >
+        {result.label}
+      </span>
     </div>
   );
 }

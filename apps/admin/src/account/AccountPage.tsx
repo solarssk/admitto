@@ -227,38 +227,101 @@ export function AccountPage() {
             {account.must_change_password && (
               <div className="account-warn-block" role="alert">You are required to change your password.</div>
             )}
-            <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-current-password">Current password</label>
-              <Input id="account-current-password" type="password" autoComplete="current-password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
-            </div>
-            <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-new-password">New password</label>
-              <Input id="account-new-password" type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={12} />
-              <PasswordStrengthMeter password={newPassword} />
-            </div>
-            <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-confirm-password">Confirm new password</label>
-              <Input id="account-confirm-password" type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} aria-invalid={passwordMismatch || undefined} />
-              {passwordMismatch && (
-                <p className="text-error" role="alert">Passwords do not match.</p>
-              )}
-            </div>
-            <div className="mail-transport-footer">
-              <Button type="button" variant="primary" disabled={passwordSaving || !passwordFormValid} onClick={async () => {
+            <form
+              className="account-password-form"
+              aria-label="Change password"
+              autoComplete="on"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (passwordSaving || !passwordFormValid) return;
                 setPasswordSaving(true);
                 try {
-                  const { sessions_revoked } = await patchAccountPassword({ current_password: currentPassword, new_password: newPassword, new_password_confirm: confirmPassword });
-                  setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
+                  const { sessions_revoked } = await patchAccountPassword({
+                    current_password: currentPassword,
+                    new_password: newPassword,
+                    new_password_confirm: confirmPassword,
+                  });
+                  setCurrentPassword("");
+                  setNewPassword("");
+                  setConfirmPassword("");
                   addToast(
                     `Password changed.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} revoked.` : ""}`,
                     "success",
                   );
-                  await loadAccount(); await loadSessions();
+                  await loadAccount();
+                  await loadSessions();
                 } catch (err) {
                   addToast(err instanceof ApiError ? err.message : "Failed to change password.", "error");
-                } finally { setPasswordSaving(false); }
-              }}>Change password</Button>
-            </div>
+                } finally {
+                  setPasswordSaving(false);
+                }
+              }}
+            >
+              <input
+                type="text"
+                name="username"
+                autoComplete="username"
+                value={account.email}
+                readOnly
+                tabIndex={-1}
+                aria-hidden="true"
+                className="account-password-form__username"
+              />
+              <div className="mail-field-row">
+                <label className="mail-field-label" htmlFor="account-current-password">Current password</label>
+                <Input
+                  id="account-current-password"
+                  name="current-password"
+                  type="password"
+                  autoComplete="current-password"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                />
+              </div>
+              <div className="mail-field-row">
+                <label className="mail-field-label" htmlFor="account-new-password">New password</label>
+                <Input
+                  id="account-new-password"
+                  name="new-password"
+                  type="password"
+                  autoComplete="new-password"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  passwordRules="minlength: 12;"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  minLength={12}
+                />
+                {newPassword.length === 0 && (
+                  <p className="mail-field-hint">At least 12 characters.</p>
+                )}
+                <PasswordStrengthMeter password={newPassword} />
+              </div>
+              <div className="mail-field-row">
+                <label className="mail-field-label" htmlFor="account-confirm-password">Confirm new password</label>
+                <Input
+                  id="account-confirm-password"
+                  name="confirm-new-password"
+                  type="password"
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  aria-invalid={passwordMismatch || undefined}
+                />
+                {passwordMismatch && (
+                  <p className="text-error" role="alert">Passwords do not match.</p>
+                )}
+              </div>
+              <div className="mail-transport-footer">
+                <Button type="submit" variant="primary" disabled={passwordSaving || !passwordFormValid}>
+                  Change password
+                </Button>
+              </div>
+            </form>
           </>
         )}
       </Card>
@@ -329,7 +392,16 @@ export function AccountPage() {
               <>
                 <div className="mail-field-row">
                   <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
-                  <Input id="account-reset-password" type="password" autoComplete="current-password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} />
+                  <Input
+                    id="account-reset-password"
+                    name="current-password"
+                    type="password"
+                    autoComplete="current-password"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                  />
                 </div>
                 <div className="account-enroll-actions">
                   <Button type="button" variant="danger" disabled={!resetPassword} onClick={() => setResetConfirmOpen(true)}>Reset 2FA</Button>

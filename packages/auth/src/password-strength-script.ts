@@ -5,18 +5,20 @@ import { scorePasswordStrengthInline } from "./password-strength.js";
 export const AUTH_PASSWORD_STRENGTH_CSS = `
 .auth-password-strength {
   display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  margin-top: 0.375rem;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
 }
 .auth-password-strength[hidden] { display: none; }
 .auth-password-strength__bar {
+  flex: 1;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 0.25rem;
 }
 .auth-password-strength__segment {
-  height: 0.25rem;
+  height: 0.375rem;
   border-radius: 999px;
   background: var(--at-gray-200);
 }
@@ -25,10 +27,18 @@ export const AUTH_PASSWORD_STRENGTH_CSS = `
 .auth-password-strength__segment--good { background: var(--at-blue); }
 .auth-password-strength__segment--strong { background: var(--at-green); }
 .auth-password-strength__label {
+  flex-shrink: 0;
+  min-width: 4.5rem;
+  text-align: right;
   font-size: 0.8125rem;
   font-weight: 500;
   color: var(--at-gray-600);
 }
+.auth-password-strength__label--weak { color: var(--at-red); }
+.auth-password-strength__label--fair { color: var(--at-yellow); }
+.auth-password-strength__label--good { color: var(--at-blue); }
+.auth-password-strength__label--strong { color: var(--at-green); }
+.auth-input[type="password"] { padding-right: 2.75rem; }
 .auth-confirm-match--ok { color: var(--at-green-600); }
 .auth-confirm-match--warn { color: var(--at-gray-500); }
 `;
@@ -72,15 +82,22 @@ export function passwordStrengthAuthScript(): string {
   function updateMeter(input) {
     var meter = ensureMeter(input);
     if (!meter) return;
+    var field = input.closest(".auth-field");
+    var hint = field ? field.querySelector("#password-hint") : null;
+    if (hint) hint.hidden = input.value.length > 0;
     var result = score(input.value, MIN);
     if (result.level === "empty") {
       meter.hidden = true;
+      if (hint) hint.hidden = false;
       return;
     }
     meter.hidden = false;
     meter.setAttribute("aria-label", "Password strength: " + result.label);
     var label = meter.querySelector(".auth-password-strength__label");
-    if (label) label.textContent = result.label;
+    if (label) {
+      label.textContent = result.label;
+      label.className = "auth-password-strength__label auth-password-strength__label--" + result.level;
+    }
     var segments = meter.querySelectorAll(".auth-password-strength__segment");
     for (var i = 0; i < segments.length; i++) {
       var seg = segments[i];
