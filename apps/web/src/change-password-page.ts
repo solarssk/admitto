@@ -61,6 +61,7 @@ export function renderChangePasswordForm(scriptNonce: string, error?: string): s
       <div class="auth-field">
         <label class="auth-label" for="password_confirm">Confirm password</label>
         <input class="auth-input" id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" required minlength="${PASSWORD_MIN_LENGTH}" aria-describedby="password_confirm-match">
+        <p class="auth-field-hint auth-confirm-match" id="password_confirm-match" role="status" aria-live="polite"></p>
       </div>
       <button type="submit" class="auth-btn-primary">Save password</button>
     </form>`;

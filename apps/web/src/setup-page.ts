@@ -94,6 +94,7 @@ export function renderSetupPage(
       <div class="auth-field">
         <label class="auth-label" for="confirm_password">Confirm password</label>
         <input class="auth-input" id="confirm_password" type="password" name="confirm_password" required minlength="${PASSWORD_MIN_LENGTH}" autocomplete="new-password" autocapitalize="off" spellcheck="false" aria-describedby="confirm_password-match">
+        <p class="auth-field-hint auth-confirm-match" id="confirm_password-match" role="status" aria-live="polite"></p>
       </div>
       <button class="auth-btn-primary" type="submit">Create administrator account</button>
     </form>

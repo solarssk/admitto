@@ -265,7 +265,7 @@ export function AccountPage() {
                 readOnly
                 tabIndex={-1}
                 aria-hidden="true"
-                className="account-password-form__username"
+                className="sr-only"
               />
               <div className="mail-field-row">
                 <label className="mail-field-label" htmlFor="account-current-password">Current password</label>
@@ -312,9 +312,12 @@ export function AccountPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   aria-invalid={passwordMismatch || undefined}
+                  aria-describedby={passwordMismatch ? "account-confirm-password-error" : undefined}
                 />
                 {passwordMismatch && (
-                  <p className="text-error" role="alert">Passwords do not match.</p>
+                  <p id="account-confirm-password-error" className="text-error" role="alert">
+                    Passwords do not match.
+                  </p>
                 )}
               </div>
               <div className="mail-transport-footer">

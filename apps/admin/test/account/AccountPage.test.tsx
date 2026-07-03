@@ -206,7 +206,7 @@ describe("AccountPage toasts", () => {
       "new-password",
     );
 
-    const username = document.querySelector<HTMLInputElement>(".account-password-form__username");
+    const username = document.querySelector<HTMLInputElement>('input[name="username"]');
     expect(username?.value).toBe("admin@example.com");
     expect(username?.getAttribute("autocomplete")).toBe("username");
   });
