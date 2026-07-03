@@ -414,7 +414,20 @@ describe("HTML MFA enroll", () => {
       headers: { ...sameOrigin, ...cookieHeader(loginRes) },
     });
     expect(startRes.status).toBe(200);
+
+    // Enroll HTML ships nonce-gated CSP; every inline script carries the response nonce (#253).
+    const csp = startRes.headers.get("content-security-policy") ?? "";
+    expect(csp).not.toContain("script-src 'unsafe-inline'");
+    const nonce = csp.match(/script-src 'nonce-([^']+)'/)?.[1];
+    expect(nonce).toBeTruthy();
+
     const html = await startRes.text();
+    const scriptTags = html.match(/<script\b[^>]*>/g) ?? [];
+    expect(scriptTags.length).toBeGreaterThan(0);
+    for (const tag of scriptTags) {
+      expect(tag).toContain(`nonce="${nonce}"`);
+    }
+
     expect(html).toContain("otpauth://totp/");
     expect(html).toContain('class="auth-qr"');
     expect(html).toContain("Copy setup key");

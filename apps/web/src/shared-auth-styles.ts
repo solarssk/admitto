@@ -692,22 +692,6 @@ export function authFormSubmitScript(scriptNonce: string): string {
 </script>`;
 }
 
-/** Legacy inline submit helper — pages without nonce-gated CSP (login, MFA). */
-export const AUTH_FORM_SUBMIT_SCRIPT = `<script>
-(function () {
-  document.querySelectorAll(".auth-page form").forEach(function (form) {
-    form.addEventListener("submit", function () {
-      var btn = form.querySelector('button[type="submit"]');
-      if (!btn || btn.disabled) return;
-      btn.disabled = true;
-      btn.setAttribute("aria-busy", "true");
-      if (!btn.dataset.originalLabel) btn.dataset.originalLabel = btn.textContent || "";
-      btn.textContent = btn.dataset.loadingLabel || "Please wait…";
-    });
-  });
-})();
-</script>`;
-
 export function renderAuthDocument(options: AuthDocumentOptions): string {
   const { step, body, css = AUTH_PAGE_CSS, scripts } = options;
   const esc = (s: string) =>

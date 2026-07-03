@@ -25,6 +25,7 @@ import {
   renderMfaEnrollBackupCodesPage,
   renderMfaEnrollStartPage,
 } from "../mfa-page.js";
+import { createAuthPageScriptNonce } from "../auth-page-security.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
 import {
   clearEnrollmentBackupCodes,
@@ -39,15 +40,15 @@ import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { setTrustedDeviceCookie, clearSessionCookie } from "./routes.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
-function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Response {
-  for (const [name, value] of Object.entries(getMfaPageSecurityHeaders())) {
+function htmlResponse(c: Context, html: string, scriptNonce: string, status: 200 | 401 = 200): Response {
+  for (const [name, value] of Object.entries(getMfaPageSecurityHeaders(scriptNonce))) {
     c.header(name, value);
   }
   return c.html(html, status);
 }
 
-function htmlEnrollResponse(c: Context, html: string, status: 200 | 401 = 200): Response {
-  for (const [name, value] of Object.entries(getMfaEnrollPageSecurityHeaders())) {
+function htmlEnrollResponse(c: Context, html: string, scriptNonce: string, status: 200 | 401 = 200): Response {
+  for (const [name, value] of Object.entries(getMfaEnrollPageSecurityHeaders(scriptNonce))) {
     c.header(name, value);
   }
   return c.html(html, status);
@@ -92,6 +93,7 @@ function stashFreshEnrollmentBackupCodes(
 
 /** Build QR enrollment HTML from current DB enrollment state (no backup codes). */
 async function renderEnrollQrFromState(
+  scriptNonce: string,
   sessionId: string,
   enrollment: StartTotpEnrollmentResult | null,
   error?: string,
@@ -99,6 +101,7 @@ async function renderEnrollQrFromState(
 ): Promise<string> {
   if (!enrollment?.otpauthUri) {
     return renderMfaEnrollQrPage({
+      scriptNonce,
       otpauthUri: "",
       setupKey: "",
       qrDataUri: "",
@@ -112,6 +115,7 @@ async function renderEnrollQrFromState(
   const qrDataUri = `data:image/png;base64,${png.toString("base64")}`;
 
   return renderMfaEnrollQrPage({
+    scriptNonce,
     otpauthUri: enrollment.otpauthUri,
     setupKey,
     qrDataUri,
@@ -121,12 +125,14 @@ async function renderEnrollQrFromState(
 }
 
 function renderBackupCodesPageForSession(
+  scriptNonce: string,
   sessionId: string,
   error?: string,
   next?: string,
 ): string {
   const stashed = getStashedEnrollmentBackupCodes(sessionId);
   return renderMfaEnrollBackupCodesPage({
+    scriptNonce,
     backupCodes: stashed ?? [],
     codesUnavailable: !stashed?.length,
     error,
@@ -158,7 +164,8 @@ async function redirectAfterFullEnrollment(
 /** GET /mfa/verify */
 export function handleGetMfaVerify(c: Context): Response {
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
-  return htmlResponse(c, renderMfaVerifyForm(undefined, next));
+  const scriptNonce = createAuthPageScriptNonce();
+  return htmlResponse(c, renderMfaVerifyForm(scriptNonce, undefined, next), scriptNonce);
 }
 
 /** POST /mfa/verify */
@@ -178,7 +185,8 @@ export async function handlePostMfaVerify(
   const next = resolveOptionalSafeRedirectPath(form["next"] ?? c.req.query("next"));
 
   if (!code) {
-    return htmlResponse(c, renderMfaVerifyForm(MFA_ERROR, next), 401);
+    const scriptNonce = createAuthPageScriptNonce();
+    return htmlResponse(c, renderMfaVerifyForm(scriptNonce, MFA_ERROR, next), scriptNonce, 401);
   }
 
   const ip = resolveMfaClientIp(c);
@@ -205,7 +213,8 @@ export async function handlePostMfaVerify(
   );
 
   if (!result.ok) {
-    return htmlResponse(c, renderMfaVerifyForm(MFA_ERROR, next), 401);
+    const scriptNonce = createAuthPageScriptNonce();
+    return htmlResponse(c, renderMfaVerifyForm(scriptNonce, MFA_ERROR, next), scriptNonce, 401);
   }
 
   if (result.trustedDeviceRawToken) {
@@ -242,11 +251,12 @@ export async function handleGetMfaEnroll(c: Context, db: PrismaClient): Promise<
 
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
   const pending = await resumePendingTotpEnrollment(db, partial.userId);
+  const scriptNonce = createAuthPageScriptNonce();
   if (!pending) {
-    return htmlEnrollResponse(c, renderMfaEnrollStartPage(next));
+    return htmlEnrollResponse(c, renderMfaEnrollStartPage(scriptNonce, next), scriptNonce);
   }
 
-  return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, pending, undefined, next));
+  return htmlEnrollResponse(c, await renderEnrollQrFromState(scriptNonce, partial.sessionId, pending, undefined, next), scriptNonce);
 }
 
 /** POST /mfa/enroll/start — create pending TOTP + backup codes (CSRF-protected). */
@@ -261,7 +271,8 @@ export async function handlePostMfaEnrollStart(c: Context, db: PrismaClient): Pr
 
   const existing = await resumePendingTotpEnrollment(db, partial.userId);
   if (existing) {
-    return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, existing, undefined, next));
+    const scriptNonce = createAuthPageScriptNonce();
+    return htmlEnrollResponse(c, await renderEnrollQrFromState(scriptNonce, partial.sessionId, existing, undefined, next), scriptNonce);
   }
 
   const enrollment = await startTotpEnrollment(db, partial.userId);
@@ -270,7 +281,8 @@ export async function handlePostMfaEnrollStart(c: Context, db: PrismaClient): Pr
   }
 
   stashFreshEnrollmentBackupCodes(partial.sessionId, enrollment);
-  return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, enrollment, undefined, next));
+  const scriptNonce = createAuthPageScriptNonce();
+  return htmlEnrollResponse(c, await renderEnrollQrFromState(scriptNonce, partial.sessionId, enrollment, undefined, next), scriptNonce);
 }
 
 /** POST /mfa/enroll — confirm TOTP setup, then advance to backup-codes step. */
@@ -291,10 +303,11 @@ export async function handlePostMfaEnroll(
 
   if (!code) {
     const pending = await resumePendingTotpEnrollment(db, partial.userId);
+    const scriptNonce = createAuthPageScriptNonce();
     if (!pending) {
-      return htmlEnrollResponse(c, renderMfaEnrollStartPage(next), 401);
+      return htmlEnrollResponse(c, renderMfaEnrollStartPage(scriptNonce, next), scriptNonce, 401);
     }
-    return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
+    return htmlEnrollResponse(c, await renderEnrollQrFromState(scriptNonce, partial.sessionId, pending, MFA_ERROR, next), scriptNonce, 401);
   }
 
   const ip = resolveMfaClientIp(c);
@@ -305,10 +318,11 @@ export async function handlePostMfaEnroll(
   const ok = await confirmTotpEnrollment(db, partial.userId, code);
   if (!ok) {
     const pending = await resumePendingTotpEnrollment(db, partial.userId);
+    const scriptNonce = createAuthPageScriptNonce();
     if (!pending) {
-      return htmlEnrollResponse(c, renderMfaEnrollStartPage(next), 401);
+      return htmlEnrollResponse(c, renderMfaEnrollStartPage(scriptNonce, next), scriptNonce, 401);
     }
-    return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
+    return htmlEnrollResponse(c, await renderEnrollQrFromState(scriptNonce, partial.sessionId, pending, MFA_ERROR, next), scriptNonce, 401);
   }
 
   // Ensure backup codes are in the stash. They may be missing when the enrollment
@@ -322,10 +336,11 @@ export async function handlePostMfaEnroll(
   const promoted = await promoteSessionToBackupCodesStep(db, partial.sessionId, partial.userId);
   if (!promoted) {
     const pending = await resumePendingTotpEnrollment(db, partial.userId);
+    const scriptNonce = createAuthPageScriptNonce();
     if (!pending) {
-      return htmlEnrollResponse(c, renderMfaEnrollStartPage(next), 401);
+      return htmlEnrollResponse(c, renderMfaEnrollStartPage(scriptNonce, next), scriptNonce, 401);
     }
-    return htmlEnrollResponse(c, await renderEnrollQrFromState(partial.sessionId, pending, MFA_ERROR, next), 401);
+    return htmlEnrollResponse(c, await renderEnrollQrFromState(scriptNonce, partial.sessionId, pending, MFA_ERROR, next), scriptNonce, 401);
   }
 
   // Extend stash TTL to match the fresh backup-codes session window.
@@ -344,7 +359,8 @@ export async function handleGetMfaEnrollBackupCodes(c: Context, db: PrismaClient
   await ensureEnrollmentBackupCodesStashed(db, partial.sessionId, partial.userId);
 
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
-  return htmlEnrollResponse(c, renderBackupCodesPageForSession(partial.sessionId, undefined, next));
+  const scriptNonce = createAuthPageScriptNonce();
+  return htmlEnrollResponse(c, renderBackupCodesPageForSession(scriptNonce, partial.sessionId, undefined, next), scriptNonce);
 }
 
 /** POST /mfa/enroll/backup-codes — acknowledge backup codes and enter the app. */
@@ -365,9 +381,11 @@ export async function handlePostMfaEnrollBackupCodes(
   // displaying the codes would silently leave the user with no recovery path.
   const stashed = getStashedEnrollmentBackupCodes(partial.sessionId);
   if (!stashed?.length) {
+    const scriptNonce = createAuthPageScriptNonce();
     return htmlEnrollResponse(
       c,
-      renderBackupCodesPageForSession(partial.sessionId, "Backup codes are no longer available — please log in again to restart enrollment.", next),
+      renderBackupCodesPageForSession(scriptNonce, partial.sessionId, "Backup codes are no longer available — please log in again to restart enrollment.", next),
+      scriptNonce,
       401,
     );
   }
@@ -379,9 +397,11 @@ export async function handlePostMfaEnrollBackupCodes(
     return promoteSessionToFull(tx, partial.sessionId, partial.userId);
   });
   if (!promoted) {
+    const scriptNonce = createAuthPageScriptNonce();
     return htmlEnrollResponse(
       c,
-      renderBackupCodesPageForSession(partial.sessionId, "Could not complete setup. Try again.", next),
+      renderBackupCodesPageForSession(scriptNonce, partial.sessionId, "Could not complete setup. Try again.", next),
+      scriptNonce,
       401,
     );
   }
@@ -420,7 +440,8 @@ export async function handlePostMfaEnrollDownloadCodes(
     return c.text("Invalid backup codes.", 400);
   }
 
-  for (const [name, value] of Object.entries(getMfaEnrollPageSecurityHeaders())) {
+  // Plain-text download ships no scripts; nonce is only generated to satisfy the shared header shape.
+  for (const [name, value] of Object.entries(getMfaEnrollPageSecurityHeaders(createAuthPageScriptNonce()))) {
     c.header(name, value);
   }
   c.header("Content-Type", "text/plain; charset=utf-8");
