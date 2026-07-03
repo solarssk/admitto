@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { DEFAULT_EVENT_ITEM_KEYS, ensureDefaultEventItems } from "@admitto/tickets";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
@@ -184,6 +185,25 @@ describe("POST /api/admin/events", () => {
       where: { organization_id: ORG_CREATE, action_type: "event_created" },
     });
     expect(afterAudit).toBe(beforeAudit + 1);
+  });
+
+  it("seeds default event items on create (idempotent)", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Items Seeded",
+      slug: "items-seeded-event",
+      date: "2026-09-29",
+      timezone: "UTC",
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { event: { id: string } };
+
+    const items = await prisma.eventItem.findMany({ where: { event_id: body.event.id } });
+    expect(new Set(items.map((i) => i.key))).toEqual(DEFAULT_EVENT_ITEM_KEYS);
+
+    // Lazy seed on later paths must stay a no-op for already-seeded events.
+    await ensureDefaultEventItems(body.event.id, prisma);
+    const after = await prisma.eventItem.count({ where: { event_id: body.event.id } });
+    expect(after).toBe(items.length);
   });
 
   it("creates event as org admin in own organization", async () => {
