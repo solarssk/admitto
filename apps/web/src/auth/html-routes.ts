@@ -20,6 +20,7 @@ import {
   renderLoginForm,
   LOGIN_ERROR_CODE,
 } from "../login-page.js";
+import { createAuthPageScriptNonce } from "../auth-page-security.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { resolveStaffEntryPath } from "../setup-routes.js";
@@ -32,8 +33,8 @@ function mfaPathWithNext(path: string, next?: string): string {
 
 const LOGIN_ERROR = LOGIN_ERROR_CODE;
 
-function htmlResponse(c: Context, html: string, status: 200 | 401 = 200): Response {
-  for (const [name, value] of Object.entries(getLoginPageSecurityHeaders())) {
+function htmlResponse(c: Context, html: string, scriptNonce: string, status: 200 | 401 = 200): Response {
+  for (const [name, value] of Object.entries(getLoginPageSecurityHeaders(scriptNonce))) {
     c.header(name, value);
   }
   return c.html(html, status);
@@ -47,7 +48,8 @@ export async function handleGetLogin(c: Context, db: PrismaClient): Promise<Resp
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
   const errorParam = c.req.query("error") ?? undefined;
   const sso = await loadLoginSsoProviders(db);
-  return htmlResponse(c, renderLoginForm(errorParam, next, sso));
+  const scriptNonce = createAuthPageScriptNonce();
+  return htmlResponse(c, renderLoginForm(scriptNonce, errorParam, next, sso), scriptNonce);
 }
 
 async function parseLoginForm(c: Context): Promise<Record<string, string>> {
@@ -80,7 +82,8 @@ export async function handlePostLogin(
   const sso = await loadLoginSsoProviders(db);
 
   if (!email || !password) {
-    return htmlResponse(c, renderLoginForm(LOGIN_ERROR, next, sso), 401);
+    const scriptNonce = createAuthPageScriptNonce();
+    return htmlResponse(c, renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso), scriptNonce, 401);
   }
 
   const result = await login(
@@ -99,7 +102,8 @@ export async function handlePostLogin(
     if (!(await checkLoginEmailRateLimit(rateLimitStore, email, resolveClientIp(c)))) {
       return c.text("Too many requests", 429);
     }
-    return htmlResponse(c, renderLoginForm(LOGIN_ERROR, next, sso), 401);
+    const scriptNonce = createAuthPageScriptNonce();
+    return htmlResponse(c, renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso), scriptNonce, 401);
   }
 
   setSessionCookie(c, result.rawToken);

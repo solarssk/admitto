@@ -106,6 +106,27 @@ describe("GET /login", () => {
     expect(html).toContain("/apple-touch-icon.png");
   });
 
+  it("ships nonce-gated CSP; inline scripts carry the response nonce", async () => {
+    const res = await app.request("/login");
+    expect(res.status).toBe(200);
+    const csp = res.headers.get("content-security-policy") ?? "";
+    const nonce = csp.match(/script-src 'nonce-([^']+)'/)?.[1];
+    expect(nonce).toBeTruthy();
+    const scriptSrc = csp.split(";").map((d) => d.trim()).find((d) => d.startsWith("script-src"));
+    expect(scriptSrc).toBe(`script-src 'nonce-${nonce}'`);
+
+    const html = await res.text();
+    const openTags = html.split("<script").length - 1;
+    const noncedTags = html.split(`<script nonce="${nonce}">`).length - 1;
+    expect(openTags).toBeGreaterThan(0);
+    expect(noncedTags).toBe(openTags);
+
+    // Nonce must be fresh per response.
+    const res2 = await app.request("/login");
+    const csp2 = res2.headers.get("content-security-policy") ?? "";
+    expect(csp2.match(/script-src 'nonce-([^']+)'/)?.[1]).not.toBe(nonce);
+  });
+
   it("renders SSO fallback banner for error=oidc_failed", async () => {
     const res = await app.request("/login?error=oidc_failed");
     expect(res.status).toBe(200);

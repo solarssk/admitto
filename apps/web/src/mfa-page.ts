@@ -1,30 +1,20 @@
-import { getLoginPageSecurityHeaders } from "./login-page.js";
 import {
-  AUTH_FORM_SUBMIT_SCRIPT,
+  authFormSubmitScript,
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
   renderAuthPage,
 } from "./shared-auth-styles.js";
-import { AUTH_PAGE_ICON_CSP } from "./favicon.js";
+import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
 
-const MFA_OTP_SCRIPT_CSP =
-  `default-src 'none'; ${AUTH_PAGE_ICON_CSP}; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'`;
-
-/** Security headers for MFA verify (minimal inline script for OTP digit widget). */
-export function getMfaPageSecurityHeaders(): Record<string, string> {
-  return {
-    ...getLoginPageSecurityHeaders(),
-    "Content-Security-Policy": MFA_OTP_SCRIPT_CSP,
-  };
+/** Security headers for MFA verify (nonce-gated inline script for OTP digit widget). */
+export function getMfaPageSecurityHeaders(scriptNonce: string): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce);
 }
 
-/** MFA enroll allows minimal inline script for clipboard copy and OTP widget. */
-export function getMfaEnrollPageSecurityHeaders(): Record<string, string> {
-  return {
-    ...getLoginPageSecurityHeaders(),
-    "Content-Security-Policy": MFA_OTP_SCRIPT_CSP,
-  };
+/** MFA enroll allows nonce-gated inline script for clipboard copy and OTP widget. */
+export function getMfaEnrollPageSecurityHeaders(scriptNonce: string): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce);
 }
 
 interface AuthOtpCodeFieldOptions {
@@ -66,7 +56,7 @@ function renderAuthOtpCodeField(options: AuthOtpCodeFieldOptions): string {
 }
 
 /** Render MFA verification form HTML (`/mfa/verify`). */
-export function renderMfaVerifyForm(error?: string, next?: string): string {
+export function renderMfaVerifyForm(scriptNonce: string, error?: string, next?: string): string {
   const err = error ? `<div class="auth-error" role="alert">${escapeHtml(error)}</div>` : "";
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
   const card = `${renderAuthBrand()}
@@ -89,11 +79,12 @@ export function renderMfaVerifyForm(error?: string, next?: string): string {
     step: "Two-factor authentication",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: `${MFA_OTP_DIGITS_SCRIPT}\n${AUTH_FORM_SUBMIT_SCRIPT}`,
+    scripts: `${mfaOtpDigitsScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}`,
   });
 }
 
 export interface MfaEnrollQrPageOptions {
+  scriptNonce: string;
   otpauthUri: string;
   setupKey: string;
   qrDataUri: string;
@@ -103,7 +94,7 @@ export interface MfaEnrollQrPageOptions {
 
 /** Step 2: QR + setup key + TOTP confirmation (no backup codes yet). */
 export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
-  const { otpauthUri, setupKey, qrDataUri, error, next } = options;
+  const { scriptNonce, otpauthUri, setupKey, qrDataUri, error, next } = options;
   const err = error ? `<div class="auth-error" role="alert">${escapeHtml(error)}</div>` : "";
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
 
@@ -126,8 +117,7 @@ export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
       <summary class="auth-muted">Show full otpauth URI</summary>
       <code class="auth-uri-code">${escapeHtml(otpauthUri)}</code>
     </details>
-  </div>
-  ${MFA_ENROLL_COPY_SCRIPT}`
+  </div>`
       : "";
 
   const card = `${renderAuthBrand()}
@@ -150,11 +140,12 @@ export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
     step: "Set up two-factor authentication",
     body: renderAuthPage(card, true),
     css: AUTH_PAGE_CSS,
-    scripts: `${MFA_OTP_DIGITS_SCRIPT}\n${MFA_ENROLL_COPY_SCRIPT}\n${AUTH_FORM_SUBMIT_SCRIPT}`,
+    scripts: `${mfaOtpDigitsScript(scriptNonce)}\n${mfaEnrollCopyScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}`,
   });
 }
 
 export interface MfaEnrollBackupCodesPageOptions {
+  scriptNonce: string;
   backupCodes: string[];
   codesUnavailable?: boolean;
   error?: string;
@@ -163,7 +154,7 @@ export interface MfaEnrollBackupCodesPageOptions {
 
 /** Step 3: one-time backup recovery codes before app access. */
 export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPageOptions): string {
-  const { backupCodes, codesUnavailable, error, next } = options;
+  const { scriptNonce, backupCodes, codesUnavailable, error, next } = options;
   const err = error ? `<div class="auth-error" role="alert">${escapeHtml(error)}</div>` : "";
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
 
@@ -203,12 +194,12 @@ export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPage
     step: "Save backup codes",
     body: renderAuthPage(card, true),
     css: AUTH_PAGE_CSS,
-    scripts: AUTH_FORM_SUBMIT_SCRIPT,
+    scripts: authFormSubmitScript(scriptNonce),
   });
 }
 
 /** Step 1: enrollment landing — start setup via CSRF-protected POST only. */
-export function renderMfaEnrollStartPage(next?: string): string {
+export function renderMfaEnrollStartPage(scriptNonce: string, next?: string): string {
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
   const card = `${renderAuthBrand()}
     ${renderAuthStepIndicator(1, 3, "Get started")}
@@ -223,11 +214,12 @@ export function renderMfaEnrollStartPage(next?: string): string {
     step: "Set up two-factor authentication",
     body: renderAuthPage(card, true),
     css: AUTH_PAGE_CSS,
-    scripts: AUTH_FORM_SUBMIT_SCRIPT,
+    scripts: authFormSubmitScript(scriptNonce),
   });
 }
 
-const MFA_OTP_DIGITS_SCRIPT = `<script>
+function mfaOtpDigitsScript(scriptNonce: string): string {
+  return `<script nonce="${scriptNonce}">
 (function () {
   document.querySelectorAll("[data-auth-otp-digits]").forEach(function (wrap) {
     var hidden = wrap.querySelector('input[type="hidden"][name="code"]');
@@ -316,8 +308,10 @@ const MFA_OTP_DIGITS_SCRIPT = `<script>
   });
 })();
 </script>`;
+}
 
-const MFA_ENROLL_COPY_SCRIPT = `<script>
+function mfaEnrollCopyScript(scriptNonce: string): string {
+  return `<script nonce="${scriptNonce}">
 (function () {
   var btn = document.getElementById("copy-enroll-secret");
   var input = document.getElementById("enroll-secret");
@@ -341,6 +335,7 @@ const MFA_ENROLL_COPY_SCRIPT = `<script>
   });
 })();
 </script>`;
+}
 
 function escapeHtml(s: string): string {
   return s

@@ -1,12 +1,12 @@
 import {
-  AUTH_FORM_SUBMIT_SCRIPT,
+  authFormSubmitScript,
   AUTH_PAGE_CSS,
   AUTH_SSO_BUTTON_ICON_SVG,
   renderAuthBrand,
   renderAuthDocument,
   renderAuthPage,
 } from "./shared-auth-styles.js";
-import { AUTH_PAGE_ICON_CSP } from "./favicon.js";
+import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
 
 function esc(s: string): string {
   return s
@@ -17,17 +17,13 @@ function esc(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/** Security headers for server-rendered operator login and landing pages. */
-export function getLoginPageSecurityHeaders(): Record<string, string> {
-  return {
-    "Cache-Control": "private, no-store, max-age=0",
-    "Content-Security-Policy":
-      `default-src 'none'; ${AUTH_PAGE_ICON_CSP}; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'`,
-    // Primary CSRF signal for HTML form POSTs: Referer on same-origin submits (Safari).
-    // Sec-Fetch-Site in same-origin-post.ts is a legacy-UA fallback only.
-    "Referrer-Policy": "same-origin",
-    "X-Content-Type-Options": "nosniff",
-  };
+/**
+ * Security headers for server-rendered operator login pages (nonce-gated submit script).
+ * Referrer-Policy same-origin is the primary CSRF signal for HTML form POSTs (Safari);
+ * Sec-Fetch-Site in same-origin-post.ts is a legacy-UA fallback only.
+ */
+export function getLoginPageSecurityHeaders(scriptNonce: string): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce);
 }
 
 /** SSO provider link for login footer. */
@@ -62,6 +58,7 @@ function renderSsoBlock(ssoProviders: LoginSsoProvider[], next?: string): string
 
 /** Render the operator sign-in form HTML (optional uniform error message). */
 export function renderLoginForm(
+  scriptNonce: string,
   error?: string,
   next?: string,
   ssoProviders: LoginSsoProvider[] = [],
@@ -99,7 +96,7 @@ export function renderLoginForm(
     step: "Sign in",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: AUTH_FORM_SUBMIT_SCRIPT,
+    scripts: authFormSubmitScript(scriptNonce),
   });
 }
 
