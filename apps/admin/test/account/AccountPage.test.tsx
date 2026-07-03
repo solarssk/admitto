@@ -73,7 +73,8 @@ describe("AccountPage toasts", () => {
     expect(screen.queryByText("Profile saved.", { selector: ".text-success" })).toBeNull();
   });
 
-  it("toasts locale change note with profile save", async () => {
+  it("keeps locale-change reload reminder visible until dismissed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     mockLoadedAccount();
     mockPatchProfile.mockResolvedValueOnce({ ...baseAccount, preferred_locale: "pl-PL" });
 
@@ -86,10 +87,12 @@ describe("AccountPage toasts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(
-        /Profile saved\. Reload this page to refresh session timestamps below\./,
-      );
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Reload this page/);
     });
+
+    vi.advanceTimersByTime(10_000);
+    expect(screen.getByTestId("at-toast").textContent).toMatch(/Reload this page/);
+    vi.useRealTimers();
   });
 
   it("toasts profile save errors", async () => {

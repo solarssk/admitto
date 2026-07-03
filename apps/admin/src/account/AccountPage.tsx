@@ -162,6 +162,7 @@ export function AccountPage() {
               ? "Profile saved. Reload this page to refresh session timestamps below."
               : "Profile saved.",
             "success",
+            localeChanged ? 0 : undefined,
           );
           await loadAccount();
         } catch (err) {
