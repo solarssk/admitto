@@ -1,5 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { findAdmittoRepoRoot } from "./repo-root.js";
@@ -10,13 +12,43 @@ type MigrationRow = {
   rolled_back_at: Date | null;
 };
 
+const require = createRequire(import.meta.url);
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+
+/** Resolve `packages/db/prisma/migrations` (monorepo checkout or installed `@admitto/db`). */
+function resolveMigrationsDir(): string | null {
+  const candidates: string[] = [];
+
+  try {
+    const dbEntry = require.resolve("@admitto/db");
+    candidates.push(join(dirname(dbEntry), "..", "prisma/migrations"));
+  } catch {
+    // ignore — fall through to path candidates
+  }
+
+  candidates.push(join(MODULE_DIR, "../../../../packages/db/prisma/migrations"));
+  candidates.push(join(MODULE_DIR, "../../../../../packages/db/prisma/migrations"));
+
+  const repoRoot = findAdmittoRepoRoot(MODULE_DIR);
+  if (repoRoot) {
+    candidates.push(join(repoRoot, "packages/db/prisma/migrations"));
+  }
+
+  for (const dir of candidates) {
+    if (existsSync(dir)) return dir;
+  }
+  if (process.env.NODE_ENV !== "test") {
+    console.warn(
+      "[migrations-check] Could not resolve packages/db/prisma/migrations on disk",
+    );
+  }
+  return null;
+}
+
 /** List Prisma migration folder names that contain `migration.sql`. */
 function listMigrationNamesOnDisk(): Set<string> {
-  const root = findAdmittoRepoRoot();
-  if (!root) return new Set();
-
-  const migrationsDir = join(root, "packages/db/prisma/migrations");
-  if (!existsSync(migrationsDir)) return new Set();
+  const migrationsDir = resolveMigrationsDir();
+  if (!migrationsDir) return new Set();
 
   try {
     return new Set(
@@ -52,7 +84,10 @@ export async function checkMigrationsStatus(db: PrismaClient): Promise<"ok" | "p
       if (!applied.has(name)) return "pending";
     }
     return "ok";
-  } catch {
+  } catch (err) {
+    if (process.env.NODE_ENV !== "test") {
+      console.warn("[migrations-check] Failed to read migration status:", err);
+    }
     return "pending";
   }
 }

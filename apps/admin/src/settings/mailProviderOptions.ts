@@ -17,8 +17,8 @@ export function buildMailProviderOptions(
   const options: MailProviderOption[] =
     surface === "wizard"
       ? [
-          { value: "graph", label: "Microsoft Graph (recommended)" },
-          { value: "smtp", label: "SMTP" },
+          { value: "smtp", label: "SMTP (recommended)" },
+          { value: "graph", label: "Microsoft Graph" },
           { value: "powerautomate", label: "Power Automate webhook" },
         ]
       : [

@@ -2,6 +2,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useRef,
   useState,
@@ -96,7 +97,6 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     const [validationErrors, setValidationErrors] = useState<string[]>([]);
     const [testSending, setTestSending] = useState(false);
     const [testSent, setTestSent] = useState(false);
-    const [testError, setTestError] = useState<string | null>(null);
     const loadAbortRef = useRef<AbortController | null>(null);
 
     const fieldLocked = useCallback(
@@ -141,7 +141,6 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     const updateDraft = (patch: Partial<MailDraft>) => {
       setDraft((prev) => ({ ...prev, ...patch }));
       setValidationErrors([]);
-      setTestError(null);
       setTestSent(false);
       onDirtyChange?.(true);
     };
@@ -202,26 +201,19 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
         return;
       }
       setTestSending(true);
-      setTestError(null);
       try {
         const saved = await saveSettings();
         if (!saved) return;
         const result = await sendMailTransportTest(user.email);
         if (result.status === "sent") {
-          setTestError(null);
           setTestSent(true);
-          addToast(`Test email sent to ${user.email}.`, "success");
         } else {
-          const message = result.error ?? "Test email failed.";
-          setTestError(message);
           setTestSent(false);
-          addToast(message, "error");
+          addToast(result.error ?? "Test email failed.", "error");
         }
       } catch (err) {
-        const message = err instanceof ApiError ? err.message : "Test email failed.";
-        setTestError(message);
         setTestSent(false);
-        addToast(message, "error");
+        addToast(err instanceof ApiError ? err.message : "Test email failed.", "error");
       } finally {
         setTestSending(false);
       }
@@ -236,12 +228,11 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
 
     return (
       <>
-        <h2 className="setup-wizard__card-title">Mail transport</h2>
-        <p className="setup-wizard__card-desc">
+        <p className="setup-wizard__step-sub">
           Choose how Admitto sends ticket and lifecycle emails.
         </p>
 
-        {loading && <p>Loading mail settings…</p>}
+        {loading && <p className="setup-wizard__hint">Loading mail settings…</p>}
 
         {!loading && apiData && (
           <>
@@ -255,6 +246,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
 
             <div className="setup-wizard__mail-form">
               <Select
+                className="setup-wizard__transport-select"
                 label="Transport"
                 value={provider}
                 disabled={fieldLocked("provider")}
@@ -362,12 +354,19 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
                     onChange={(e) => updateDraft({ fromAddress: e.target.value })}
                     placeholder="events@company.com"
                   />
-                  <Switch
-                    label="Use TLS (STARTTLS)"
-                    checked={draft.requireTls}
-                    disabled={fieldLocked("requireTls")}
-                    onChange={(e) => updateDraft({ requireTls: e.target.checked })}
-                  />
+                  <div className="setup-wizard__mail-options-row">
+                    <Switch
+                      label="Use TLS (STARTTLS)"
+                      checked={draft.requireTls}
+                      disabled={fieldLocked("requireTls")}
+                      onChange={(e) => updateDraft({ requireTls: e.target.checked })}
+                    />
+                    <MailTestControl
+                      testSending={testSending}
+                      testSent={testSent}
+                      onSend={() => void handleTestSend()}
+                    />
+                  </div>
                 </>
               )}
 
@@ -400,45 +399,12 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
                 </p>
               )}
 
-              {provider && provider !== "export_only" && (
-                <>
-                  <div className="setup-wizard__mail-test-row">
-                    <Button
-                      type="button"
-                      variant={testSent ? "secondary" : "primary"}
-                      disabled={testSending}
-                      icon={
-                        testSent ? (
-                          <i
-                            className="ti ti-circle-check setup-wizard__mail-test-icon--ok"
-                            aria-hidden="true"
-                          />
-                        ) : testSending ? (
-                          <i className="ti ti-loader-2 setup-wizard__spin" aria-hidden="true" />
-                        ) : (
-                          <i className="ti ti-send" aria-hidden="true" />
-                        )
-                      }
-                      onClick={() => void handleTestSend()}
-                    >
-                      {testSent
-                        ? "Send again"
-                        : testSending
-                          ? "Sending…"
-                          : "Send test email"}
-                    </Button>
-                    {testSent && (
-                      <span className="setup-wizard__mail-test-hint">
-                        Check your inbox to confirm delivery.
-                      </span>
-                    )}
-                  </div>
-                  {testError && !testSent && (
-                    <p className="setup-wizard__test-error" role="alert">
-                      {testError}
-                    </p>
-                  )}
-                </>
+              {provider && provider !== "smtp" && provider !== "export_only" && (
+                <MailTestControl
+                  testSending={testSending}
+                  testSent={testSent}
+                  onSend={() => void handleTestSend()}
+                />
               )}
             </div>
           </>
@@ -447,6 +413,43 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     );
   },
 );
+
+function MailTestControl({
+  testSending,
+  testSent,
+  onSend,
+}: {
+  testSending: boolean;
+  testSent: boolean;
+  onSend: () => void;
+}) {
+  return (
+    <div className="setup-wizard__mail-test-cluster">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="setup-wizard__mail-test-action"
+        disabled={testSending}
+        onClick={onSend}
+        icon={
+          testSent ? (
+            <i className="ti ti-circle-check setup-wizard__mail-test-icon--ok" aria-hidden="true" />
+          ) : testSending ? (
+            <i className="ti ti-loader-2 setup-wizard__spin" aria-hidden="true" />
+          ) : (
+            <i className="ti ti-send" aria-hidden="true" />
+          )
+        }
+      >
+        {testSent ? "Test sent" : testSending ? "Sending…" : "Send test email"}
+      </Button>
+      <span className="setup-wizard__mail-test-hint">
+        {testSent ? "Check your inbox." : "Optional — to your login email."}
+      </span>
+    </div>
+  );
+}
 
 function SecretInput({
   label,
@@ -463,6 +466,8 @@ function SecretInput({
   onValueChange: (value: string) => void;
   onCancel: () => void;
 }) {
+  const inputId = useId();
+
   if (field.locked) {
     return (
       <div className="setup-wizard__field">
@@ -489,28 +494,36 @@ function SecretInput({
 
   if (edit.mode === "idle") {
     return (
-      <div className="setup-wizard__field">
+      <div className="setup-wizard__secret-row">
         <span className="at-label">{label}</span>
-        <p className="setup-wizard__hint">{field.set ? "Set ••••" : "Not set"}</p>
-        <Button type="button" variant="secondary" onClick={onReplace}>
-          {field.set ? "Replace" : "Set"}
-        </Button>
+        <div className="setup-wizard__secret-status">
+          <span className="setup-wizard__hint">{field.set ? "Set ••••" : "Not set"}</span>
+          <Button type="button" variant="ghost" size="sm" onClick={onReplace}>
+            {field.set ? "Replace" : "Set"}
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="setup-wizard__field">
-      <Input
-        label={label}
+    <div className="at-field setup-wizard__secret-field">
+      <div className="setup-wizard__label-row">
+        <label className="at-label" htmlFor={inputId}>
+          {label}
+        </label>
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+      <input
+        id={inputId}
+        className="at-input"
         type={label === "Webhook URL" ? "url" : "password"}
         autoComplete="new-password"
         value={edit.value}
         onChange={(e) => onValueChange(e.target.value)}
       />
-      <Button type="button" variant="ghost" onClick={onCancel}>
-        Cancel
-      </Button>
     </div>
   );
 }

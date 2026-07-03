@@ -13,12 +13,31 @@ export type SetupCheckResult = { ok: boolean; detail: string; warn?: boolean };
 export type SetupChecksPayload = {
   checks: {
     database: SetupCheckResult;
-    migrations: SetupCheckResult;
     redis: SetupCheckResult;
     encryption: SetupCheckResult;
     base_url: SetupCheckResult;
   };
 };
+
+/** DB reachability plus Prisma schema parity (migrations run at container boot). */
+async function checkDatabaseWithMigrations(db: PrismaClient): Promise<SetupCheckResult> {
+  try {
+    await db.$queryRaw(Prisma.sql`SELECT 1`);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Cannot connect to PostgreSQL";
+    return { ok: false, detail };
+  }
+
+  const migrationsStatus = await checkMigrationsStatus(db);
+  if (migrationsStatus !== "ok") {
+    return {
+      ok: false,
+      detail: "PostgreSQL connected · migrations pending",
+    };
+  }
+
+  return { ok: true, detail: "PostgreSQL connected · migrations current" };
+}
 
 /** Validate ENCRYPTION_KEY boot config (optional in dev/test when unset). */
 function checkEncryption(env: NodeJS.ProcessEnv = process.env): SetupCheckResult {
@@ -97,6 +116,35 @@ async function checkInstanceUrl(
   };
 }
 
+/** Run wizard step-1 system checks (shared by GET checks and POST complete guard). */
+export async function collectSetupChecks(
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  injectedBaseUrl?: string,
+): Promise<SetupChecksPayload["checks"]> {
+  const database = await checkDatabaseWithMigrations(db);
+
+  const redisProbe = await checkRedis(rateLimitStore);
+  const redis: SetupCheckResult =
+    redisProbe.status === "degraded"
+      ? { ok: false, detail: "Redis unreachable" }
+      : redisProbe.status === "disabled"
+        ? { ok: true, detail: "In-memory rate limit store (no Redis)" }
+        : { ok: true, detail: `Redis OK (${redisProbe.latency_ms ?? 0} ms)` };
+
+  return {
+    database,
+    redis,
+    encryption: checkEncryption(),
+    base_url: await checkInstanceUrl(db, process.env, injectedBaseUrl),
+  };
+}
+
+/** True when every check passed (warnings with `ok: true` are allowed). */
+export function setupChecksAllOk(checks: SetupChecksPayload["checks"]): boolean {
+  return checks.database.ok && checks.redis.ok && checks.encryption.ok && checks.base_url.ok;
+}
+
 /** GET /api/admin/setup/checks — superadmin system readiness for wizard step 1. */
 export async function handleGetSetupChecks(
   c: Context,
@@ -109,38 +157,8 @@ export async function handleGetSetupChecks(
     return c.json({ error: "forbidden" }, 403);
   }
 
-  let database: SetupCheckResult;
-  try {
-    await db.$queryRaw(Prisma.sql`SELECT 1`);
-    database = { ok: true, detail: "Connected" };
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : "Database unreachable";
-    database = { ok: false, detail };
-  }
-
-  const migrationsStatus = await checkMigrationsStatus(db);
-  const migrations: SetupCheckResult =
-    migrationsStatus === "ok"
-      ? { ok: true, detail: "All migrations applied" }
-      : { ok: false, detail: "Pending or failed migrations — run prisma migrate deploy" };
-
-  const redisProbe = await checkRedis(rateLimitStore);
-  const redis: SetupCheckResult =
-    redisProbe.status === "degraded"
-      ? { ok: false, detail: "Redis unreachable" }
-      : redisProbe.status === "disabled"
-        ? { ok: true, detail: "In-memory rate limit store (no Redis)" }
-        : { ok: true, detail: `Redis OK (${redisProbe.latency_ms ?? 0} ms)` };
-
-  const payload: SetupChecksPayload = {
-    checks: {
-      database,
-      migrations,
-      redis,
-      encryption: checkEncryption(),
-      base_url: await checkInstanceUrl(db, process.env, injectedBaseUrl),
-    },
-  };
+  const checks = await collectSetupChecks(db, rateLimitStore, injectedBaseUrl);
+  const payload: SetupChecksPayload = { checks };
 
   return c.json(payload, 200);
 }

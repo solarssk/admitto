@@ -1,11 +1,10 @@
-export type SetupCheckKey = "database" | "migrations" | "redis" | "encryption" | "base_url";
+export type SetupCheckKey = "database" | "redis" | "encryption" | "base_url";
 
 const FIX_HINTS: Record<SetupCheckKey, string> = {
   database: `Verify DATABASE_URL in your .env or Docker environment points to a running PostgreSQL instance.
-Then restart the Admitto web service and retry this check.`,
-  migrations: `Run pending Prisma migrations against your database:
+If the database is up but migrations are pending, run:
   npx prisma migrate deploy
-Or, in Docker Compose, run the migrate job/container before starting the web app.`,
+In Docker Compose, migrations run automatically on app container start — restart the web service after fixing DATABASE_URL.`,
   redis: `If you use Redis for rate limiting or sessions, set REDIS_URL and ensure the Redis service is reachable.
 For single-node dev without Redis, the in-memory store is acceptable — check your deployment docs.`,
   encryption: `Set ENCRYPTION_KEY in your .env file or Docker environment (32 bytes, base64-encoded):
@@ -23,7 +22,6 @@ export function checkFixHint(key: SetupCheckKey): string {
 
 export const SETUP_CHECK_ORDER: SetupCheckKey[] = [
   "database",
-  "migrations",
   "redis",
   "encryption",
   "base_url",
@@ -31,8 +29,7 @@ export const SETUP_CHECK_ORDER: SetupCheckKey[] = [
 
 export const SETUP_CHECK_LABELS: Record<SetupCheckKey, string> = {
   database: "Database",
-  migrations: "Migrations",
   redis: "Redis",
   encryption: "Encryption key",
-  base_url: "Instance URL",
+  base_url: "Base URL",
 };

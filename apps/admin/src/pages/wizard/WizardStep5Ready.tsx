@@ -1,4 +1,10 @@
-import { useMemo, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  useMemo,
+  useState,
+} from "react";
 import { Button, useToast } from "@admitto/ui";
 import { useNavigate } from "react-router-dom";
 import { ApiError, completeSetup } from "../../api/client.js";
@@ -6,6 +12,12 @@ import { useWizard } from "./WizardContext.js";
 
 type WizardStep5ReadyProps = {
   onComplete: () => Promise<void>;
+  onGoToChecks: () => void;
+  onSubmittingChange?: (submitting: boolean) => void;
+};
+
+export type WizardStep5ReadyHandle = {
+  goToDashboard: () => Promise<void>;
 };
 
 type SummaryChip = {
@@ -14,11 +26,18 @@ type SummaryChip = {
   label: string;
 };
 
-export function WizardStep5Ready({ onComplete }: WizardStep5ReadyProps) {
+export const WizardStep5Ready = forwardRef<WizardStep5ReadyHandle, WizardStep5ReadyProps>(
+  function WizardStep5Ready({ onComplete, onGoToChecks, onSubmittingChange }, ref) {
   const { addToast } = useToast();
   const navigate = useNavigate();
   const { summary, selectedEventId, mailSkipped, brandingSkipped } = useWizard();
   const [submitting, setSubmitting] = useState(false);
+  const [checksNotReady, setChecksNotReady] = useState(false);
+
+  const setBusy = (busy: boolean) => {
+    setSubmitting(busy);
+    onSubmittingChange?.(busy);
+  };
 
   const chips = useMemo(() => {
     const items: SummaryChip[] = [
@@ -44,15 +63,16 @@ export function WizardStep5Ready({ onComplete }: WizardStep5ReadyProps) {
     }
 
     if (summary.eventTitle) {
-      items.push({ key: "event", icon: "ti-calendar", label: summary.eventTitle });
+      items.push({ key: "event", icon: "ti-calendar-event", label: summary.eventTitle });
     }
 
     return items;
   }, [brandingSkipped, mailSkipped, summary]);
 
-  const handleGoToDashboard = async () => {
+  const goToDashboard = useCallback(async () => {
     if (submitting) return;
-    setSubmitting(true);
+    setBusy(true);
+    setChecksNotReady(false);
     try {
       await completeSetup();
       await onComplete();
@@ -62,10 +82,29 @@ export function WizardStep5Ready({ onComplete }: WizardStep5ReadyProps) {
         navigate("/admin", { replace: true });
       }
     } catch (err) {
-      addToast(err instanceof ApiError ? err.message : "Failed to complete setup.", "error");
-      setSubmitting(false);
+      if (
+        err instanceof ApiError &&
+        (err.code === "setup_not_ready" || err.message === "setup_not_ready")
+      ) {
+        setChecksNotReady(true);
+        setBusy(false);
+        return;
+      }
+      setChecksNotReady(false);
+      const message =
+        err instanceof ApiError ? err.message : "Failed to complete setup.";
+      addToast(message, "error");
+      setBusy(false);
     }
-  };
+  }, [addToast, navigate, onComplete, selectedEventId, submitting]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      goToDashboard,
+    }),
+    [goToDashboard],
+  );
 
   return (
     <div className="setup-wizard__done">
@@ -81,21 +120,21 @@ export function WizardStep5Ready({ onComplete }: WizardStep5ReadyProps) {
         {chips.map((chip) => (
           <span key={chip.key} className="setup-wizard__done-chip">
             <i className={`ti ${chip.icon}`} aria-hidden="true" />
-            {chip.label}
+            <span className="setup-wizard__done-chip-label">{chip.label}</span>
           </span>
         ))}
       </div>
 
-      <Button
-        type="button"
-        variant="primary"
-        block
-        disabled={submitting}
-        iconRight={<i className="ti ti-arrow-right" />}
-        onClick={() => void handleGoToDashboard()}
-      >
-        {submitting ? "Finishing…" : "Go to dashboard"}
-      </Button>
+      {checksNotReady ? (
+        <div className="setup-wizard__checks-error" role="alert">
+          <p className="setup-wizard__hint">
+            System checks are not passing yet. Review step 1 and fix any failed checks.
+          </p>
+          <Button type="button" variant="secondary" size="sm" onClick={onGoToChecks}>
+            Review system checks
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
-}
+});

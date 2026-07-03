@@ -4,6 +4,7 @@ import {
   formatEventDateTime,
   formatEventTime,
   formatUtcDateTime,
+  parseFlexibleCalendarDate,
   utcDayEndIso,
   utcDayStartIso,
 } from "../../src/utils/event-dates.js";
@@ -87,5 +88,52 @@ describe("utcDayIso helpers", () => {
   it("utcDayStartIso and utcDayEndIso bound UTC calendar days", () => {
     expect(utcDayStartIso("2026-06-28")).toBe("2026-06-28T00:00:00.000Z");
     expect(utcDayEndIso("2026-06-28")).toBe("2026-06-28T23:59:59.999Z");
+  });
+});
+
+describe("parseFlexibleCalendarDate", () => {
+  afterEach(() => setPreferredLocale(null));
+
+  it("parses ISO dates", () => {
+    expect(parseFlexibleCalendarDate("2026-07-15")).toBe("2026-07-15");
+  });
+
+  it("parses day-first dates for pl-PL locale", () => {
+    setPreferredLocale("pl-PL");
+    expect(parseFlexibleCalendarDate("15.07.2026")).toBe("2026-07-15");
+  });
+
+  it("parses month-first dates for en-US locale", () => {
+    setPreferredLocale("en-US");
+    expect(parseFlexibleCalendarDate("07/15/2026")).toBe("2026-07-15");
+  });
+
+  it("parses year-first dates for ja-JP locale", () => {
+    setPreferredLocale("ja-JP");
+    expect(parseFlexibleCalendarDate("2026/07/08")).toBe("2026-07-08");
+  });
+
+  it("rejects invalid calendar dates", () => {
+    expect(parseFlexibleCalendarDate("2026-02-30")).toBeNull();
+  });
+
+  it("rejects chunks with non-numeric suffixes", () => {
+    setPreferredLocale("pl-PL");
+    expect(parseFlexibleCalendarDate("15a.07.2026")).toBeNull();
+  });
+
+  it("parses day-first when day is greater than 12", () => {
+    setPreferredLocale("pl-PL");
+    expect(parseFlexibleCalendarDate("15.01.2026")).toBe("2026-01-15");
+  });
+
+  it("rejects day and month values above 31", () => {
+    setPreferredLocale("pl-PL");
+    expect(parseFlexibleCalendarDate("32.32.2026")).toBeNull();
+  });
+
+  it("rejects year in the middle", () => {
+    setPreferredLocale("en-US");
+    expect(parseFlexibleCalendarDate("07/2026/15")).toBeNull();
   });
 });

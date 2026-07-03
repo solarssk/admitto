@@ -18,7 +18,7 @@ vi.mock("../../src/api/client.js", () => ({
 afterEach(cleanup);
 
 function pickEventDate(iso: string) {
-  fireEvent.click(screen.getByRole("button", { name: /Event date/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
   fireEvent.click(screen.getByRole("gridcell", { name: iso }));
 }
 

@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import {
   createSession,
@@ -13,6 +13,8 @@ import {
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import * as migrationsCheck from "../../src/ops/migrations-check.js";
+import { WEB_TEST_DATABASE_URL } from "../testEnv.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const EMAIL_SUPER = "setup-wizard-super@example.com";
@@ -24,6 +26,7 @@ let app: ReturnType<typeof createApp>;
 let superId: string;
 let superCookie: string;
 let adminCookie: string;
+let migrationsOkSpy: ReturnType<typeof vi.spyOn> | undefined;
 
 const sameOrigin = { Origin: "http://localhost" };
 
@@ -102,7 +105,13 @@ async function seed(client: PrismaClient) {
 }
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  process.env.DATABASE_URL = WEB_TEST_DATABASE_URL;
+  prisma = new PrismaClient({
+    datasources: { db: { url: WEB_TEST_DATABASE_URL } },
+  });
+  // Disk-vs-DB migration parity is covered in test/ops/migrations-check.test.ts; Vitest fork
+  // workers can inherit CI job DATABASE_URL (main DB) and report a false pending state here.
+  migrationsOkSpy = vi.spyOn(migrationsCheck, "checkMigrationsStatus").mockResolvedValue("ok");
   await seed(prisma);
   app = createApp({
     prisma,
@@ -116,6 +125,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  migrationsOkSpy?.mockRestore();
   await prisma.roleAssignment.deleteMany({
     where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
   });
@@ -137,8 +147,9 @@ describe("GET /api/admin/setup/checks", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { checks: Record<string, { ok: boolean; detail: string }> };
-    expect(body.checks.database?.ok).toBe(true);
-    expect(body.checks.migrations).toBeDefined();
+    expect(body.checks.database?.ok, body.checks.database?.detail).toBe(true);
+    expect(body.checks.database?.detail).toContain("migrations");
+    expect(body.checks.migrations).toBeUndefined();
     expect(body.checks.redis).toBeDefined();
     expect(body.checks.encryption).toBeDefined();
     expect(body.checks.base_url).toBeDefined();
@@ -383,5 +394,23 @@ describe("POST /api/admin/setup/complete", () => {
       headers: { Cookie: adminCookie, ...sameOrigin },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("returns 409 when system checks are not ready", async () => {
+    const spy = vi.spyOn(migrationsCheck, "checkMigrationsStatus").mockResolvedValue("pending");
+    try {
+      await setSetting(prisma, SETTING_SETUP_COMPLETE, false);
+      const res = await app.request("/api/admin/setup/complete", {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { error: string; checks: { database: { ok: boolean } } };
+      expect(body.error).toBe("setup_not_ready");
+      expect(body.checks.database.ok).toBe(false);
+    } finally {
+      spy.mockRestore();
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_SETUP_COMPLETE } });
+    }
   });
 });

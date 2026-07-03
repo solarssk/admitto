@@ -1,10 +1,20 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from "react";
 import {
   formatCalendarMonth,
   formatIsoCalendarDate,
   getWeekdayLabelsShort,
+  localeDateInputPattern,
+  parseFlexibleCalendarDate,
   todayIsoDate,
 } from "../utils/event-dates.js";
+import { useModalFocusTrap } from "./useModalFocusTrap.js";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -66,7 +76,7 @@ export function DatePicker({
   id,
   disabled,
   required,
-  placeholder = "Pick a date…",
+  placeholder,
   hint,
   error,
 }: DatePickerProps) {
@@ -75,13 +85,20 @@ export function DatePicker({
   const parsed = parseIsoDate(value);
   const today = todayIsoDate();
   const todayParts = parseIsoDate(today)!;
+  const inputPattern = localeDateInputPattern();
+  const resolvedPlaceholder = placeholder ?? inputPattern;
 
   const [open, setOpen] = useState(false);
+  const [panelAbove, setPanelAbove] = useState(false);
+  const [text, setText] = useState(() => (value ? formatIsoCalendarDate(value) : ""));
+  const [typing, setTyping] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
   const [viewYear, setViewYear] = useState(() => parsed?.y ?? todayParts.y);
   const [viewMonth, setViewMonth] = useState(() => parsed?.m ?? todayParts.m);
   const [highlightDay, setHighlightDay] = useState(() => parsed?.d ?? todayParts.d);
   const containerRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const calendarRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   const weekdayLabels = getWeekdayLabelsShort();
@@ -91,8 +108,13 @@ export function DatePicker({
 
   const closePanel = () => {
     setOpen(false);
-    window.setTimeout(() => triggerRef.current?.focus(), 0);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
   };
+
+  useEffect(() => {
+    if (typing || parseError) return;
+    setText(value ? formatIsoCalendarDate(value) : "");
+  }, [typing, value, parseError]);
 
   useEffect(() => {
     if (!open) return;
@@ -127,8 +149,59 @@ export function DatePicker({
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [open]);
 
+  useEffect(() => {
+    if (!open || !containerRef.current || !panelRef.current) return;
+    const updatePlacement = () => {
+      const rect = containerRef.current!.getBoundingClientRect();
+      const panelHeight = panelRef.current!.offsetHeight;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      setPanelAbove(spaceBelow < panelHeight + 8 && spaceAbove > spaceBelow);
+    };
+    updatePlacement();
+    window.addEventListener("resize", updatePlacement);
+    window.addEventListener("scroll", updatePlacement, true);
+    return () => {
+      window.removeEventListener("resize", updatePlacement);
+      window.removeEventListener("scroll", updatePlacement, true);
+    };
+  }, [open, viewMonth, viewYear]);
+
+  const commitText = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setParseError(null);
+      onChange("");
+      setText("");
+      setTyping(false);
+      return true;
+    }
+    if (value && trimmed === formatIsoCalendarDate(value)) {
+      setParseError(null);
+      setTyping(false);
+      return true;
+    }
+    const iso = parseFlexibleCalendarDate(trimmed);
+    if (!iso) {
+      setParseError(`Use a valid date (${inputPattern} or yyyy-mm-dd).`);
+      setText(trimmed);
+      onChange("");
+      setTyping(false);
+      return false;
+    }
+    setParseError(null);
+    onChange(iso);
+    setText(formatIsoCalendarDate(iso));
+    setTyping(false);
+    return true;
+  };
+
   const selectDate = (day: number) => {
-    onChange(toIsoDate(viewYear, viewMonth, day));
+    const iso = toIsoDate(viewYear, viewMonth, day);
+    onChange(iso);
+    setText(formatIsoCalendarDate(iso));
+    setParseError(null);
+    setTyping(false);
     closePanel();
   };
 
@@ -171,7 +244,16 @@ export function DatePicker({
     }
   };
 
-  const isInvalid = Boolean(error);
+  const onInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setTyping(true);
+    setText(event.target.value);
+    setParseError(null);
+  };
+
+  useModalFocusTrap(panelRef, open, closePanel);
+
+  const displayError = error ?? parseError;
+  const isInvalid = Boolean(displayError);
 
   return (
     <div className="at-field date-picker" ref={containerRef}>
@@ -187,33 +269,67 @@ export function DatePicker({
         </label>
       ) : null}
 
-      <button
-        ref={triggerRef}
-        type="button"
-        id={controlId}
-        className={["date-picker__trigger", isInvalid && "date-picker__trigger--invalid"]
+      <div
+        className={["date-picker__control", isInvalid && "date-picker__control--invalid"]
           .filter(Boolean)
           .join(" ")}
-        disabled={disabled}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-invalid={isInvalid || undefined}
-        aria-required={required || undefined}
-        onClick={() => {
-          if (!disabled) setOpen((prev) => !prev);
-        }}
       >
-        <i className="ti ti-calendar date-picker__icon" aria-hidden="true" />
-        <span className={value ? "date-picker__value" : "date-picker__placeholder"}>
-          {value ? formatIsoCalendarDate(value) : placeholder}
-        </span>
-        <i className="ti ti-chevron-down date-picker__chevron" aria-hidden="true" />
-      </button>
+        <button
+          ref={calendarRef}
+          type="button"
+          className="date-picker__calendar-btn"
+          disabled={disabled}
+          aria-label={open ? "Close calendar" : "Open calendar"}
+          aria-expanded={open}
+          aria-controls={`${controlId}-panel`}
+          onClick={() => {
+            if (!disabled) setOpen((prev) => !prev);
+          }}
+        >
+          <i className="ti ti-calendar" aria-hidden="true" />
+        </button>
+        <input
+          ref={inputRef}
+          id={controlId}
+          className="date-picker__input"
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          disabled={disabled}
+          aria-invalid={isInvalid || undefined}
+          aria-required={required || undefined}
+          placeholder={resolvedPlaceholder}
+          value={text}
+          onChange={onInputChange}
+          onBlur={() => {
+            if (typing) void commitText(text);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              if (typing) {
+                if (commitText(text)) closePanel();
+              }
+              return;
+            }
+            if (event.key === "ArrowDown" && !open) {
+              event.preventDefault();
+              setOpen(true);
+            }
+          }}
+        />
+      </div>
 
       {open && (
         <div
           ref={panelRef}
-          className="date-picker__panel"
+          id={`${controlId}-panel`}
+          className={[
+            "date-picker__panel",
+            panelAbove && "date-picker__panel--above",
+          ]
+            .filter(Boolean)
+            .join(" ")}
           role="dialog"
           aria-label="Choose date"
           aria-modal="true"
@@ -296,6 +412,9 @@ export function DatePicker({
               className="date-picker__footer-btn"
               onClick={() => {
                 onChange("");
+                setText("");
+                setParseError(null);
+                setTyping(false);
                 closePanel();
               }}
             >
@@ -306,6 +425,9 @@ export function DatePicker({
               className="date-picker__footer-btn date-picker__footer-btn--primary"
               onClick={() => {
                 onChange(today);
+                setText(formatIsoCalendarDate(today));
+                setParseError(null);
+                setTyping(false);
                 const parts = parseIsoDate(today)!;
                 setViewYear(parts.y);
                 setViewMonth(parts.m);
@@ -318,8 +440,10 @@ export function DatePicker({
         </div>
       )}
 
-      {error ? (
-        <span className="at-hint at-hint--error">{error}</span>
+      {displayError ? (
+        <span className="at-hint at-hint--error" role="alert" aria-live="polite">
+          {displayError}
+        </span>
       ) : hint ? (
         <span className="at-hint">{hint}</span>
       ) : null}

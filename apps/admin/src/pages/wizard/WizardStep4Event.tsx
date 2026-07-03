@@ -37,7 +37,6 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
     const [existingEvents, setExistingEvents] = useState<{ id: string; title: string }[]>([]);
     const [loadingEvents, setLoadingEvents] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [error, setError] = useState<string | null>(null);
 
     const slug = slugFromTitle(title, 80);
     const canSubmit = Boolean(title.trim() && date && slug.length > 0 && timezone);
@@ -72,7 +71,6 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
     const createAndContinue = async (): Promise<boolean> => {
       if (!canSubmit || submitting) return false;
       setSubmitting(true);
-      setError(null);
       try {
         const event = await createEvent({
           title: title.trim(),
@@ -87,11 +85,9 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
         return true;
       } catch (err) {
         if (err instanceof ApiError && err.status === 409) {
-          setError("Slug is already in use. Change the event name and try again.");
+          addToast("Slug is already in use. Change the event name and try again.", "error");
         } else {
-          const message = err instanceof ApiError ? err.message : "Failed to create event.";
-          setError(message);
-          addToast(message, "error");
+          addToast(err instanceof ApiError ? err.message : "Failed to create event.", "error");
         }
         return false;
       } finally {
@@ -105,8 +101,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
 
     return (
       <>
-        <h2 className="setup-wizard__card-title">First event</h2>
-        <p className="setup-wizard__card-desc">
+        <p className="setup-wizard__step-sub">
           Create your first event so you can start importing attendees and sending tickets.
         </p>
 
@@ -120,12 +115,6 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
           </div>
         )}
 
-        {error && (
-          <p className="setup-wizard__hint" style={{ color: "var(--status-error)" }} role="alert">
-            {error}
-          </p>
-        )}
-
         <div className="setup-wizard__field">
           <Input
             label="Event name"
@@ -135,13 +124,12 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
             disabled={submitting}
             onChange={(e) => {
               setTitle(e.target.value);
-              setError(null);
               onDirtyChange?.(true);
             }}
           />
         </div>
 
-        <div className="setup-wizard__field">
+        <div className="setup-wizard__field setup-wizard__field--popover">
           <DatePicker
             label="Date"
             value={date}
@@ -149,22 +137,21 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
             disabled={submitting}
             onChange={(next) => {
               setDate(next);
-              setError(null);
               onDirtyChange?.(true);
             }}
           />
         </div>
 
-        <div className="setup-wizard__field">
+        <div className="setup-wizard__field setup-wizard__field--popover">
           <label className="input-label" htmlFor="wizard-event-timezone">
             Event timezone <span aria-hidden="true">*</span>
           </label>
           <TimezoneSelect
             id="wizard-event-timezone"
             value={timezone}
+            compact
             onChange={(tz) => {
               setTimezone(tz);
-              setError(null);
               onDirtyChange?.(true);
             }}
             disabled={submitting}

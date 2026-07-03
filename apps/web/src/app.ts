@@ -640,7 +640,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePatchSetupOrgBranding(c, db),
   );
   app.post("/api/admin/setup/complete", jsonPostCsrf, staffAdminGate, (c) =>
-    handlePostSetupComplete(c, db),
+    handlePostSetupComplete(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.get("/api/admin/audit-log", staffAdminGate, (c) => handleGetAuditLog(c, db));
   app.get("/api/admin/sessions", staffAdminGate, (c) => handleGetSessions(c, db));

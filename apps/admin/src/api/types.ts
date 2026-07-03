@@ -656,7 +656,7 @@ export interface RoleAssignmentsListResponse {
   pageSize: number;
 }
 
-export type SetupCheckKey = "database" | "migrations" | "redis" | "encryption" | "base_url";
+export type SetupCheckKey = "database" | "redis" | "encryption" | "base_url";
 
 export interface SetupCheckResult {
   ok: boolean;
