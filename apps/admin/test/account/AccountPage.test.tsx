@@ -3,6 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AccountPage } from "../../src/account/AccountPage.js";
 import type { AccountDto } from "../../src/api/types.js";
+import { PASSWORD_STRENGTH_STRONG } from "../../../../packages/auth/test/password-strength-samples.js";
 import { renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -59,11 +60,13 @@ const totpEnrolledAccount: AccountDto = {
   mfa_methods: [{ type: "totp", confirmed: true, last_used_at: null }],
 };
 
+const newPasswordLabel = /^New password/;
+
 function fillPasswordForm() {
   fireEvent.change(screen.getByLabelText("Current password"), {
     target: { value: "old-password-1" },
   });
-  fireEvent.change(screen.getByLabelText("New password"), {
+  fireEvent.change(screen.getByLabelText(newPasswordLabel), {
     target: { value: "new-password-12" },
   });
   fireEvent.change(screen.getByLabelText("Confirm new password"), {
@@ -145,10 +148,10 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText("New password")).toBeTruthy();
+      expect(screen.getByLabelText(newPasswordLabel)).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("New password"), {
+    fireEvent.change(screen.getByLabelText(newPasswordLabel), {
       target: { value: "long-enough-pass" },
     });
     fireEvent.change(screen.getByLabelText("Confirm new password"), {
@@ -157,6 +160,55 @@ describe("AccountPage toasts", () => {
 
     expect(screen.getByText("Passwords do not match.")).toBeTruthy();
     expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
+  it("shows password strength feedback while typing a new password", async () => {
+    mockLoadedAccount();
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText(newPasswordLabel)).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText(newPasswordLabel), {
+      target: { value: "short" },
+    });
+    expect(screen.getByText("Too short")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText(newPasswordLabel), {
+      target: { value: PASSWORD_STRENGTH_STRONG },
+    });
+    expect(screen.getByText("Strong")).toBeTruthy();
+  });
+
+  it("exposes password-manager hints on the change-password form", async () => {
+    mockLoadedAccount();
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Current password")).toBeTruthy();
+    });
+
+    const form = screen.getByRole("form", { name: "Change password" });
+    expect(form).toBeTruthy();
+
+    expect(screen.getByLabelText("Current password").getAttribute("name")).toBe("current-password");
+    expect(screen.getByLabelText("Current password").getAttribute("autocomplete")).toBe("current-password");
+
+    const newPassword = screen.getByLabelText(newPasswordLabel);
+    expect(newPassword.getAttribute("name")).toBe("new-password");
+    expect(newPassword.getAttribute("autocomplete")).toBe("new-password");
+    expect(newPassword.getAttribute("passwordrules")).toBe("minlength: 12;");
+
+    // Matches the SSR /setup and /change-password pages — "new-password" lets
+    // password managers fill/save the confirm field consistently.
+    expect(screen.getByLabelText("Confirm new password").getAttribute("autocomplete")).toBe(
+      "new-password",
+    );
+
+    const username = document.querySelector<HTMLInputElement>(".account-password-form__username");
+    expect(username?.value).toBe("admin@example.com");
+    expect(username?.getAttribute("autocomplete")).toBe("username");
   });
 
   it("toasts password change success", async () => {

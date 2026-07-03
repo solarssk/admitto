@@ -6,6 +6,8 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   error?: string;
   icon?: ReactNode;
   invalid?: boolean;
+  /** Safari / password-manager hint (maps to HTML `passwordrules`). */
+  passwordRules?: string;
 }
 
 /** Labeled text field with optional hint, error state, and icon; forwards ref to the native input. */

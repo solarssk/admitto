@@ -16,6 +16,7 @@ import {
   type SetupErrorCode,
   type SetupFormValues,
 } from "./setup-page.js";
+import { createAuthPageScriptNonce } from "./auth-page-security.js";
 import { PASSWORD_MIN_LENGTH } from "@admitto/auth";
 
 const DISPLAY_NAME_MAX = 120;
@@ -39,8 +40,8 @@ export async function resolveStaffEntryPath(db: PrismaClient): Promise<"/setup" 
 }
 
 /** Apply setup page security headers and return an HTML response. */
-function htmlResponse(c: Context, html: string, status: 200 | 409 = 200): Response {
-  for (const [name, value] of Object.entries(getSetupPageSecurityHeaders())) {
+function htmlResponse(c: Context, html: string, scriptNonce: string, status: 200 | 409 = 200): Response {
+  for (const [name, value] of Object.entries(getSetupPageSecurityHeaders(scriptNonce))) {
     c.header(name, value);
   }
   return c.html(html, status);
@@ -108,7 +109,8 @@ export async function handleGetSetup(c: Context, db: PrismaClient): Promise<Resp
   if (!(await isFirstRunRequired(db))) {
     return c.redirect("/login", 302);
   }
-  return htmlResponse(c, renderSetupPage());
+  const scriptNonce = createAuthPageScriptNonce();
+  return htmlResponse(c, renderSetupPage(scriptNonce), scriptNonce);
 }
 
 /** POST /setup — create superadmin, mark setup incomplete, auto-login → MFA enroll. */
@@ -120,7 +122,8 @@ export async function handlePostSetup(c: Context, db: PrismaClient): Promise<Res
   const form = await parseSetupForm(c);
   const validated = validateSetupForm(form);
   if (!validated.ok) {
-    return htmlResponse(c, renderSetupPage(validated.code, validated.values));
+    const scriptNonce = createAuthPageScriptNonce();
+    return htmlResponse(c, renderSetupPage(scriptNonce, validated.code, validated.values), scriptNonce);
   }
 
   const { email, password, displayName } = validated;
@@ -157,9 +160,11 @@ export async function handlePostSetup(c: Context, db: PrismaClient): Promise<Res
       return c.json({ code: "already_initialized" }, 409);
     }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const scriptNonce = createAuthPageScriptNonce();
       return htmlResponse(
         c,
-        renderSetupPage("email_taken", { email, display_name: displayName ?? undefined }),
+        renderSetupPage(scriptNonce, "email_taken", { email, display_name: displayName ?? undefined }),
+        scriptNonce,
       );
     }
     throw err;

@@ -17,7 +17,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prebuild": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/auth",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/auth",
     "test": "vitest run"
   },
   "peerDependencies": {
@@ -25,6 +27,7 @@
     "react-dom": "^19.2.7"
   },
   "dependencies": {
+    "@admitto/auth": "*",
     "@fontsource/inter": "^5.2.5"
   },
   "devDependencies": {

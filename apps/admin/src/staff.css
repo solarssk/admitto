@@ -1877,6 +1877,11 @@
   margin-bottom: var(--space-1);
 }
 
+.mail-field-label-optional {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 /* Sessions panel */
 .sessions-filter {
   display: flex;

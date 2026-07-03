@@ -1,12 +1,16 @@
-import { PASSWORD_MIN_LENGTH } from "@admitto/auth";
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
 import {
-  AUTH_FORM_SUBMIT_SCRIPT,
+  passwordStrengthAuthScript,
+  renderAuthPasswordStrengthMeterHtml,
+} from "@admitto/auth/password-strength-script";
+import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
+import {
+  authFormSubmitScript,
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
   renderAuthPage,
 } from "./shared-auth-styles.js";
-import { AUTH_PAGE_ICON_CSP } from "./favicon.js";
 
 function esc(s: string): string {
   return s
@@ -18,14 +22,8 @@ function esc(s: string): string {
 }
 
 /** Security headers for the forced password-change page. */
-export function getChangePasswordPageSecurityHeaders(): Record<string, string> {
-  return {
-    "Cache-Control": "private, no-store, max-age=0",
-    "Content-Security-Policy":
-      `default-src 'none'; ${AUTH_PAGE_ICON_CSP}; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'`,
-    "Referrer-Policy": "same-origin",
-    "X-Content-Type-Options": "nosniff",
-  };
+export function getChangePasswordPageSecurityHeaders(scriptNonce: string): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce);
 }
 
 const PASSWORD_MISMATCH = "password_mismatch";
@@ -44,21 +42,25 @@ function errorMessage(error?: string): string | undefined {
 }
 
 /** Server-rendered forced password change form. */
-export function renderChangePasswordForm(error?: string): string {
+export function renderChangePasswordForm(scriptNonce: string, error?: string): string {
   const message = errorMessage(error);
   const errorBlock = message ? `<div class="auth-error" role="alert">${esc(message)}</div>` : "";
+  const passwordRules = esc(`minlength: ${PASSWORD_MIN_LENGTH};`);
   const card = `${renderAuthBrand()}
     <h2 class="auth-page-action">Change password</h2>
     <p class="subtitle">Your administrator requires a new password before you can continue.</p>
     ${errorBlock}
     <form method="post" action="/change-password" aria-label="Change password">
       <div class="auth-field">
-        <label class="auth-label" for="password">New password</label>
-        <input class="auth-input" id="password" name="password" type="password" autocomplete="new-password" required minlength="${PASSWORD_MIN_LENGTH}" />
+        <label class="auth-label" for="password">New password <span class="auth-label-optional">(at least ${PASSWORD_MIN_LENGTH} characters)</span></label>
+        <div class="auth-password-slot">
+          <input class="auth-input" id="password" name="password" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" passwordrules="${passwordRules}" required minlength="${PASSWORD_MIN_LENGTH}" aria-describedby="password-strength">
+          ${renderAuthPasswordStrengthMeterHtml("password")}
+        </div>
       </div>
       <div class="auth-field">
         <label class="auth-label" for="password_confirm">Confirm password</label>
-        <input class="auth-input" id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" required minlength="${PASSWORD_MIN_LENGTH}" />
+        <input class="auth-input" id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" required minlength="${PASSWORD_MIN_LENGTH}" aria-describedby="password_confirm-match">
       </div>
       <button type="submit" class="auth-btn-primary">Save password</button>
     </form>`;
@@ -67,7 +69,7 @@ export function renderChangePasswordForm(error?: string): string {
     step: "Change password",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: AUTH_FORM_SUBMIT_SCRIPT,
+    scripts: `${passwordStrengthAuthScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}`,
   });
 }
 

@@ -1,6 +1,11 @@
-import { PASSWORD_MIN_LENGTH } from "@admitto/auth";
-import { getLoginPageSecurityHeaders } from "./login-page.js";
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
 import {
+  passwordStrengthAuthScript,
+  renderAuthPasswordStrengthMeterHtml,
+} from "@admitto/auth/password-strength-script";
+import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
+import {
+  authFormSubmitScript,
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
@@ -17,9 +22,9 @@ function esc(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/** Security headers for server-rendered first-run setup page (no inline scripts). */
-export function getSetupPageSecurityHeaders(): Record<string, string> {
-  return getLoginPageSecurityHeaders();
+/** Security headers for server-rendered first-run setup page. */
+export function getSetupPageSecurityHeaders(scriptNonce: string): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce);
 }
 
 export type SetupErrorCode =
@@ -54,8 +59,12 @@ export function setupPasswordRulesAttribute(): string {
   return `minlength: ${PASSWORD_MIN_LENGTH};`;
 }
 
-/** Render first-run superadmin bootstrap form (no client-side scripts). */
-export function renderSetupPage(error?: SetupErrorCode, values: SetupFormValues = {}): string {
+/** Render first-run superadmin bootstrap form (inline strength + confirm-match scripts). */
+export function renderSetupPage(
+  scriptNonce: string,
+  error?: SetupErrorCode,
+  values: SetupFormValues = {},
+): string {
   const message = setupErrorMessage(error);
   const errorBlock = message ? `<div class="auth-error" role="alert">${esc(message)}</div>` : "";
   const emailValue = values.email ? ` value="${esc(values.email)}"` : "";
@@ -76,13 +85,15 @@ export function renderSetupPage(error?: SetupErrorCode, values: SetupFormValues 
         <input class="auth-input" id="display_name" type="text" name="display_name" placeholder="Admin" maxlength="120" autocomplete="name"${displayNameValue}>
       </div>
       <div class="auth-field">
-        <label class="auth-label" for="password">Password</label>
-        <input class="auth-input" id="password" type="password" name="password" required minlength="${PASSWORD_MIN_LENGTH}" autocomplete="new-password" autocapitalize="off" spellcheck="false" passwordrules="${passwordRules}" aria-describedby="password-hint">
-        <p class="auth-field-hint" id="password-hint">At least ${PASSWORD_MIN_LENGTH} characters.</p>
+        <label class="auth-label" for="password">Password <span class="auth-label-optional">(at least ${PASSWORD_MIN_LENGTH} characters)</span></label>
+        <div class="auth-password-slot">
+          <input class="auth-input" id="password" type="password" name="password" required minlength="${PASSWORD_MIN_LENGTH}" autocomplete="new-password" autocapitalize="off" spellcheck="false" passwordrules="${passwordRules}" aria-describedby="password-strength">
+          ${renderAuthPasswordStrengthMeterHtml("password")}
+        </div>
       </div>
       <div class="auth-field">
         <label class="auth-label" for="confirm_password">Confirm password</label>
-        <input class="auth-input" id="confirm_password" type="password" name="confirm_password" required minlength="${PASSWORD_MIN_LENGTH}" autocomplete="new-password" autocapitalize="off" spellcheck="false">
+        <input class="auth-input" id="confirm_password" type="password" name="confirm_password" required minlength="${PASSWORD_MIN_LENGTH}" autocomplete="new-password" autocapitalize="off" spellcheck="false" aria-describedby="confirm_password-match">
       </div>
       <button class="auth-btn-primary" type="submit">Create administrator account</button>
     </form>
@@ -92,5 +103,6 @@ export function renderSetupPage(error?: SetupErrorCode, values: SetupFormValues 
     step: "Initial setup",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
+    scripts: `${passwordStrengthAuthScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}`,
   });
 }

@@ -20,6 +20,16 @@ export {
 } from "./constants.js";
 
 export { hashPassword, verifyPassword, verifyPasswordOrDummy } from "./password.js";
+export {
+  scorePasswordStrength,
+  scorePasswordStrengthInline,
+  type PasswordStrengthLevel,
+  type PasswordStrengthResult,
+} from "./password-strength.js";
+export {
+  AUTH_PASSWORD_STRENGTH_CSS,
+  passwordStrengthAuthScript,
+} from "./password-strength-script.js";
 export { normalizeEmail, createUser, findUserByEmail, findUserById } from "./user.js";
 export {
   createSession,
