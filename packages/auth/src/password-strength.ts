@@ -14,12 +14,24 @@ export interface PasswordStrengthResult {
  * Browser-safe scorer embedded in auth HTML via `passwordStrengthAuthScript()`.
  * Keep algorithm in sync with `scorePasswordStrength`.
  */
+/** Filled segments while password is below min length (1–4, never 0 when length > 0). */
+export function tooShortProgressScore(length: number, minLength: number): number {
+  if (length <= 0) return 0;
+  return Math.min(4, Math.max(1, Math.ceil((length / minLength) * 4)));
+}
+
 export function scorePasswordStrengthInline(
   password: string,
   minLength: number,
 ): { score: number; label: string; level: PasswordStrengthLevel } {
   if (!password) return { score: 0, label: "", level: "empty" };
-  if (password.length < minLength) return { score: 0, label: "Too short", level: "weak" };
+  if (password.length < minLength) {
+    return {
+      score: tooShortProgressScore(password.length, minLength),
+      label: "Too short",
+      level: "weak",
+    };
+  }
 
   let points = 0;
   if (password.length >= minLength) points += 1;

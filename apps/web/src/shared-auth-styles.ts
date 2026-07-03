@@ -130,7 +130,8 @@ body {
   transition: border-color 0.15s;
 }
 .auth-input:focus { border-color: var(--at-blue); box-shadow: 0 0 0 3px rgba(6,111,209,0.15); }
-.auth-field { margin-bottom: 1rem; }
+/* Room for the absolutely positioned password-strength meter between fields. */
+.auth-field { margin-bottom: 1.375rem; }
 .auth-label-optional {
   font-weight: 400;
   color: var(--at-gray-500);
@@ -324,6 +325,7 @@ body {
   font-size: 0.875rem;
   margin-bottom: 0.5rem;
 }
+${AUTH_PASSWORD_STRENGTH_CSS}
 `;
 
 export const ADMIN_PAGE_CSS = `
@@ -602,7 +604,6 @@ button[type=submit].adm-btn--secondary:hover { background: var(--at-gray-100); b
   .adm-main { grid-column: 1; }
   .adm-content { padding: 16px; }
 }
-${AUTH_PASSWORD_STRENGTH_CSS}
 `;
 
 const ADMIN_MARK_SVG = `<svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="30" height="30" rx="7.5" fill="#066fd1"/><path d="M9.5 16.5l4.2 4.2 7.5-9" stroke="#ffffff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><rect x="22.5" y="6" width="4" height="4" rx="1" fill="#ffffff" fill-opacity="0.55"/></svg>`;

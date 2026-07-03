@@ -1788,6 +1788,10 @@
   gap: var(--space-2);
 }
 
+.mail-field-row--password {
+  margin-bottom: 0.375rem;
+}
+
 .mail-field-env-badge {
   align-self: flex-start;
 }
@@ -1875,6 +1879,11 @@
   font-weight: 500;
   color: var(--text-primary);
   margin-bottom: var(--space-1);
+}
+
+.mail-field-label-optional {
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 /* Sessions panel */

@@ -17,10 +17,15 @@ describe("scorePasswordStrength", () => {
     expect(scorePasswordStrength("")).toEqual({ level: "empty", score: 0, label: "" });
   });
 
-  it("flags passwords below PASSWORD_MIN_LENGTH", () => {
+  it("flags passwords below PASSWORD_MIN_LENGTH with partial meter progress", () => {
     expect(scorePasswordStrength("short")).toEqual({
       level: "weak",
-      score: 0,
+      score: 2,
+      label: "Too short",
+    });
+    expect(scorePasswordStrength("a")).toEqual({
+      level: "weak",
+      score: 1,
       label: "Too short",
     });
   });
@@ -69,5 +74,18 @@ describe("passwordStrengthAuthScript", () => {
     const script = passwordStrengthAuthScript();
     expect(script).toContain("wireMatch(confirm, password)");
     expect(script).not.toMatch(/updateMeter\s*\(\s*confirm/);
+  });
+
+  it("embeds tooShortProgressScore for sub-minimum passwords", () => {
+    const script = passwordStrengthAuthScript();
+    expect(script).toContain("var tooShortProgressScore =");
+    expect(script).toContain("Too short");
+  });
+
+  it("positions meter in auth-password-slot without layout shift", () => {
+    const script = passwordStrengthAuthScript();
+    expect(script).toContain("auth-password-slot");
+    expect(script).toContain("auth-password-strength--empty");
+    expect(script).toContain("clearMeter");
   });
 });

@@ -1,5 +1,8 @@
 import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
-import { passwordStrengthAuthScript } from "@admitto/auth/password-strength-script";
+import {
+  passwordStrengthAuthScript,
+  renderAuthPasswordStrengthMeterHtml,
+} from "@admitto/auth/password-strength-script";
 import {
   AUTH_FORM_SUBMIT_SCRIPT,
   AUTH_PAGE_CSS,
@@ -55,9 +58,11 @@ export function renderChangePasswordForm(error?: string): string {
     ${errorBlock}
     <form method="post" action="/change-password" aria-label="Change password">
       <div class="auth-field">
-        <label class="auth-label" for="password">New password</label>
-        <input class="auth-input" id="password" name="password" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" passwordrules="${passwordRules}" required minlength="${PASSWORD_MIN_LENGTH}" aria-describedby="password-hint">
-        <p class="auth-field-hint" id="password-hint">At least ${PASSWORD_MIN_LENGTH} characters.</p>
+        <label class="auth-label" for="password">New password <span class="auth-label-optional">(at least ${PASSWORD_MIN_LENGTH} characters)</span></label>
+        <div class="auth-password-slot">
+          <input class="auth-input" id="password" name="password" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" passwordrules="${passwordRules}" required minlength="${PASSWORD_MIN_LENGTH}" aria-describedby="password-strength">
+          ${renderAuthPasswordStrengthMeterHtml("password")}
+        </div>
       </div>
       <div class="auth-field">
         <label class="auth-label" for="password_confirm">Confirm password</label>

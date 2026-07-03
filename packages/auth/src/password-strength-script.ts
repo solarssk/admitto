@@ -1,16 +1,24 @@
 import { PASSWORD_MIN_LENGTH } from "./constants.js";
-import { scorePasswordStrengthInline } from "./password-strength.js";
+import { scorePasswordStrengthInline, tooShortProgressScore } from "./password-strength.js";
 
 /** Shared auth-page styles for password strength and confirm-match hints. */
 export const AUTH_PASSWORD_STRENGTH_CSS = `
+.auth-password-slot {
+  position: relative;
+}
 .auth-password-strength {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 0.75rem;
-  margin-top: 0.5rem;
 }
-.auth-password-strength[hidden] { display: none; }
+.auth-password-strength--empty {
+  display: none;
+}
 .auth-password-strength__bar {
   flex: 1;
   display: grid;
@@ -18,9 +26,10 @@ export const AUTH_PASSWORD_STRENGTH_CSS = `
   gap: 0.25rem;
 }
 .auth-password-strength__segment {
-  height: 0.375rem;
+  height: 0.5rem;
   border-radius: 999px;
   background: var(--at-gray-200);
+  transition: background-color 0.15s ease-out;
 }
 .auth-password-strength__segment--weak { background: var(--at-red); }
 .auth-password-strength__segment--fair { background: var(--at-yellow); }
@@ -38,17 +47,30 @@ export const AUTH_PASSWORD_STRENGTH_CSS = `
 .auth-password-strength__label--fair { color: var(--at-yellow); }
 .auth-password-strength__label--good { color: var(--at-blue); }
 .auth-password-strength__label--strong { color: var(--at-green); }
-.auth-input[type="password"] { padding-right: 2.75rem; }
 .auth-confirm-match--ok { color: var(--at-green-600); }
 .auth-confirm-match--warn { color: var(--at-gray-500); }
 `;
 
+const AUTH_PASSWORD_STRENGTH_SEGMENTS_HTML =
+  '<span class="auth-password-strength__segment"></span>'.repeat(4);
+
+/** SSR password strength meter shell (updated by passwordStrengthAuthScript on input). */
+export function renderAuthPasswordStrengthMeterHtml(inputId: string): string {
+  const meterId = `${inputId}-strength`;
+  return `<div class="auth-password-strength auth-password-strength--empty" id="${meterId}" role="status" aria-live="polite">
+    <div class="auth-password-strength__bar" aria-hidden="true">${AUTH_PASSWORD_STRENGTH_SEGMENTS_HTML}</div>
+    <span class="auth-password-strength__label"></span>
+  </div>`;
+}
+
 /** Inline script for setup / change-password pages — embeds the same scorer as @admitto/auth. */
 export function passwordStrengthAuthScript(): string {
+  const tooShortSource = tooShortProgressScore.toString();
   const scorerSource = scorePasswordStrengthInline.toString();
   return `<script>
 (function () {
   var MIN = ${PASSWORD_MIN_LENGTH};
+  var tooShortProgressScore = ${tooShortSource};
   var score = ${scorerSource};
 
   function appendDescribedBy(input, id) {
@@ -58,20 +80,19 @@ export function passwordStrengthAuthScript(): string {
   }
 
   function ensureMeter(input) {
-    var field = input.closest(".auth-field");
-    if (!field) return null;
-    var meter = field.querySelector(".auth-password-strength");
+    var slot = input.closest(".auth-password-slot");
+    if (!slot) return null;
+    var meter = slot.querySelector(".auth-password-strength");
     if (!meter) {
       meter = document.createElement("div");
-      meter.className = "auth-password-strength";
-      meter.hidden = true;
+      meter.className = "auth-password-strength auth-password-strength--empty";
       meter.setAttribute("role", "status");
       meter.setAttribute("aria-live", "polite");
       meter.innerHTML =
         '<div class="auth-password-strength__bar" aria-hidden="true">' +
         '<span class="auth-password-strength__segment"></span>'.repeat(4) +
         '</div><span class="auth-password-strength__label"></span>';
-      field.appendChild(meter);
+      slot.appendChild(meter);
       var meterId = input.id + "-strength";
       meter.id = meterId;
       appendDescribedBy(input, meterId);
@@ -79,19 +100,29 @@ export function passwordStrengthAuthScript(): string {
     return meter;
   }
 
+  function clearMeter(meter) {
+    meter.classList.add("auth-password-strength--empty");
+    meter.removeAttribute("aria-label");
+    var label = meter.querySelector(".auth-password-strength__label");
+    if (label) {
+      label.textContent = "";
+      label.className = "auth-password-strength__label";
+    }
+    var segments = meter.querySelectorAll(".auth-password-strength__segment");
+    for (var i = 0; i < segments.length; i++) {
+      segments[i].className = "auth-password-strength__segment";
+    }
+  }
+
   function updateMeter(input) {
     var meter = ensureMeter(input);
     if (!meter) return;
-    var field = input.closest(".auth-field");
-    var hint = field ? field.querySelector("#password-hint") : null;
-    if (hint) hint.hidden = input.value.length > 0;
     var result = score(input.value, MIN);
     if (result.level === "empty") {
-      meter.hidden = true;
-      if (hint) hint.hidden = false;
+      clearMeter(meter);
       return;
     }
-    meter.hidden = false;
+    meter.classList.remove("auth-password-strength--empty");
     meter.setAttribute("aria-label", "Password strength: " + result.label);
     var label = meter.querySelector(".auth-password-strength__label");
     if (label) {

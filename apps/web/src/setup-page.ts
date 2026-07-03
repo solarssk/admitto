@@ -1,5 +1,8 @@
 import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
-import { passwordStrengthAuthScript } from "@admitto/auth/password-strength-script";
+import {
+  passwordStrengthAuthScript,
+  renderAuthPasswordStrengthMeterHtml,
+} from "@admitto/auth/password-strength-script";
 import { AUTH_PAGE_ICON_CSP } from "./favicon.js";
 import { getLoginPageSecurityHeaders } from "./login-page.js";
 import {
@@ -83,9 +86,11 @@ export function renderSetupPage(error?: SetupErrorCode, values: SetupFormValues 
         <input class="auth-input" id="display_name" type="text" name="display_name" placeholder="Admin" maxlength="120" autocomplete="name"${displayNameValue}>
       </div>
       <div class="auth-field">
-        <label class="auth-label" for="password">Password</label>
-        <input class="auth-input" id="password" type="password" name="password" required minlength="${PASSWORD_MIN_LENGTH}" autocomplete="new-password" autocapitalize="off" spellcheck="false" passwordrules="${passwordRules}" aria-describedby="password-hint">
-        <p class="auth-field-hint" id="password-hint">At least ${PASSWORD_MIN_LENGTH} characters.</p>
+        <label class="auth-label" for="password">Password <span class="auth-label-optional">(at least ${PASSWORD_MIN_LENGTH} characters)</span></label>
+        <div class="auth-password-slot">
+          <input class="auth-input" id="password" type="password" name="password" required minlength="${PASSWORD_MIN_LENGTH}" autocomplete="new-password" autocapitalize="off" spellcheck="false" passwordrules="${passwordRules}" aria-describedby="password-strength">
+          ${renderAuthPasswordStrengthMeterHtml("password")}
+        </div>
       </div>
       <div class="auth-field">
         <label class="auth-label" for="confirm_password">Confirm password</label>

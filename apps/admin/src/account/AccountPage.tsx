@@ -280,24 +280,25 @@ export function AccountPage() {
                   onChange={(e) => setCurrentPassword(e.target.value)}
                 />
               </div>
-              <div className="mail-field-row">
-                <label className="mail-field-label" htmlFor="account-new-password">New password</label>
-                <Input
-                  id="account-new-password"
-                  name="new-password"
-                  type="password"
-                  autoComplete="new-password"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  passwordRules="minlength: 12;"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  minLength={12}
-                />
-                {newPassword.length === 0 && (
-                  <p className="mail-field-hint">At least 12 characters.</p>
-                )}
-                <PasswordStrengthMeter password={newPassword} />
+              <div className="mail-field-row mail-field-row--password">
+                <label className="mail-field-label" htmlFor="account-new-password">
+                  New password <span className="mail-field-label-optional">(at least 12 characters)</span>
+                </label>
+                <div className="at-password-slot">
+                  <Input
+                    id="account-new-password"
+                    name="new-password"
+                    type="password"
+                    autoComplete="new-password"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    passwordRules="minlength: 12;"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    minLength={12}
+                  />
+                  <PasswordStrengthMeter password={newPassword} />
+                </div>
               </div>
               <div className="mail-field-row">
                 <label className="mail-field-label" htmlFor="account-confirm-password">Confirm new password</label>

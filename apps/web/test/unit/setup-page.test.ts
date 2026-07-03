@@ -17,8 +17,8 @@ describe("setup-page", () => {
     expect(html).toContain('passwordrules="minlength: 12;"');
     expect(html).toContain('autocomplete="new-password"');
     expect(html).toContain('name="confirm_password"');
-    expect(html).toContain('id="password-hint"');
-    expect(html).toContain("auth-password-strength");
+    expect(html).toContain("at least 12 characters");
+    expect(html).toContain("auth-password-strength__bar");
     expect(html).toContain("scorePasswordStrengthInline");
   });
 

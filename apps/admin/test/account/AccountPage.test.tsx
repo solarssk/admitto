@@ -60,11 +60,13 @@ const totpEnrolledAccount: AccountDto = {
   mfa_methods: [{ type: "totp", confirmed: true, last_used_at: null }],
 };
 
+const newPasswordLabel = /^New password/;
+
 function fillPasswordForm() {
   fireEvent.change(screen.getByLabelText("Current password"), {
     target: { value: "old-password-1" },
   });
-  fireEvent.change(screen.getByLabelText("New password"), {
+  fireEvent.change(screen.getByLabelText(newPasswordLabel), {
     target: { value: "new-password-12" },
   });
   fireEvent.change(screen.getByLabelText("Confirm new password"), {
@@ -146,10 +148,10 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText("New password")).toBeTruthy();
+      expect(screen.getByLabelText(newPasswordLabel)).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("New password"), {
+    fireEvent.change(screen.getByLabelText(newPasswordLabel), {
       target: { value: "long-enough-pass" },
     });
     fireEvent.change(screen.getByLabelText("Confirm new password"), {
@@ -165,16 +167,15 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText("New password")).toBeTruthy();
+      expect(screen.getByLabelText(newPasswordLabel)).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("New password"), {
+    fireEvent.change(screen.getByLabelText(newPasswordLabel), {
       target: { value: "short" },
     });
     expect(screen.getByText("Too short")).toBeTruthy();
-    expect(screen.queryByText("At least 12 characters.")).toBeNull();
 
-    fireEvent.change(screen.getByLabelText("New password"), {
+    fireEvent.change(screen.getByLabelText(newPasswordLabel), {
       target: { value: PASSWORD_STRENGTH_STRONG },
     });
     expect(screen.getByText("Strong")).toBeTruthy();
@@ -194,7 +195,7 @@ describe("AccountPage toasts", () => {
     expect(screen.getByLabelText("Current password").getAttribute("name")).toBe("current-password");
     expect(screen.getByLabelText("Current password").getAttribute("autocomplete")).toBe("current-password");
 
-    const newPassword = screen.getByLabelText("New password");
+    const newPassword = screen.getByLabelText(newPasswordLabel);
     expect(newPassword.getAttribute("name")).toBe("new-password");
     expect(newPassword.getAttribute("autocomplete")).toBe("new-password");
     expect(newPassword.getAttribute("passwordrules")).toBe("minlength: 12;");
