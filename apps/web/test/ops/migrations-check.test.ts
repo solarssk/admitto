@@ -1,18 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { Prisma } from "@prisma/client";
 import { checkMigrationsStatus } from "../../src/ops/migrations-check.js";
-import { findAdmittoRepoRoot } from "../../src/ops/repo-root.js";
 import { dirname, join } from "node:path";
 import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const WEB_PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-
 describe("checkMigrationsStatus", () => {
   it("resolves migration folders from the web package anchor (not only process.cwd)", () => {
-    const root = findAdmittoRepoRoot(WEB_PACKAGE_DIR);
-    expect(root).not.toBeNull();
-    const migrationsDir = join(root!, "packages/db/prisma/migrations");
+    const moduleDir = join(dirname(fileURLToPath(import.meta.url)), "../..", "src", "ops");
+    const migrationsDir = join(moduleDir, "../../../../packages/db/prisma/migrations");
+    expect(existsSync(migrationsDir)).toBe(true);
     const onDisk = readdirSync(migrationsDir).filter((name) =>
       existsSync(join(migrationsDir, name, "migration.sql")),
     );
@@ -20,9 +17,8 @@ describe("checkMigrationsStatus", () => {
   });
 
   it("returns ok when applied rows match migrations on disk", async () => {
-    const root = findAdmittoRepoRoot(WEB_PACKAGE_DIR);
-    expect(root).not.toBeNull();
-    const migrationsDir = join(root!, "packages/db/prisma/migrations");
+    const moduleDir = join(dirname(fileURLToPath(import.meta.url)), "../..", "src", "ops");
+    const migrationsDir = join(moduleDir, "../../../../packages/db/prisma/migrations");
     const rows = readdirSync(migrationsDir)
       .filter((name) => existsSync(join(migrationsDir, name, "migration.sql")))
       .map((migration_name) => ({

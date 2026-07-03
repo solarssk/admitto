@@ -137,7 +137,7 @@ describe("GET /api/admin/setup/checks", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { checks: Record<string, { ok: boolean; detail: string }> };
-    expect(body.checks.database?.ok).toBe(true);
+    expect(body.checks.database?.ok, body.checks.database?.detail).toBe(true);
     expect(body.checks.database?.detail).toContain("migrations");
     expect(body.checks.migrations).toBeUndefined();
     expect(body.checks.redis).toBeDefined();

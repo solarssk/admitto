@@ -12,15 +12,25 @@ type MigrationRow = {
 };
 
 /** Anchor from this module to `@admitto/web` — avoids relying on `process.cwd()` in Vitest forks. */
-const WEB_PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+
+/** Resolve migrations folder from module location (src or dist layout). */
+function resolveMigrationsDir(): string | null {
+  const candidates = [
+    join(MODULE_DIR, "../../../../packages/db/prisma/migrations"),
+    join(MODULE_DIR, "../../../../../packages/db/prisma/migrations"),
+    join(findAdmittoRepoRoot(join(MODULE_DIR, "..", "..")) ?? "", "packages/db/prisma/migrations"),
+  ];
+  for (const dir of candidates) {
+    if (dir && existsSync(dir)) return dir;
+  }
+  return null;
+}
 
 /** List Prisma migration folder names that contain `migration.sql`. */
 function listMigrationNamesOnDisk(): Set<string> {
-  const root = findAdmittoRepoRoot(WEB_PACKAGE_DIR);
-  if (!root) return new Set();
-
-  const migrationsDir = join(root, "packages/db/prisma/migrations");
-  if (!existsSync(migrationsDir)) return new Set();
+  const migrationsDir = resolveMigrationsDir();
+  if (!migrationsDir) return new Set();
 
   try {
     return new Set(
