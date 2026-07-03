@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - First-run mail wizard: ignore deploy env placeholders for field locks and test send until setup wizard completes (`setup_complete`).
 
 ### Fixed
+- Setup wizard step 1: Retry on failed check load, **Run checks again** after results, inline fix hints, two-column check grid on desktop (#223).
 - Check-in: server-connected status moves to a compact page-header pill; full-width green banner only for connection problems (#234).
 - Check-in: persistent screen-reader live region announces connection recovery after offline/degraded states.
 - Check-in search fields: suppress password-manager autofill hints on scan bar and manual lookup (#231).

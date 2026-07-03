@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Spinner, useToast } from "@admitto/ui";
+import { useCallback, useEffect, useState } from "react";
+import { Button, Spinner, useToast } from "@admitto/ui";
 import { ApiError, fetchSetupChecks } from "../../api/client.js";
 import type { SetupChecksResponse } from "../../api/types.js";
 import {
@@ -17,6 +17,9 @@ export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
   const { addToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [checks, setChecks] = useState<SetupChecksResponse["checks"] | null>(null);
+  const [runNonce, setRunNonce] = useState(0);
+
+  const retry = useCallback(() => setRunNonce((n) => n + 1), []);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -35,7 +38,7 @@ export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
       }
     })();
     return () => ac.abort();
-  }, [addToast]);
+  }, [addToast, runNonce]);
 
   const allOk = checks ? SETUP_CHECK_ORDER.every((key) => checks[key].ok) : false;
 
@@ -57,17 +60,27 @@ export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
       )}
 
       {!loading && checks && (
-        <div className="setup-wizard__checks">
-          {SETUP_CHECK_ORDER.map((key) => (
-            <CheckRow key={key} checkKey={key} result={checks[key]} />
-          ))}
-        </div>
+        <>
+          <div className="setup-wizard__checks">
+            {SETUP_CHECK_ORDER.map((key) => (
+              <CheckRow key={key} checkKey={key} result={checks[key]} />
+            ))}
+          </div>
+          <div className="setup-wizard__checks-actions">
+            <Button type="button" variant="secondary" size="sm" onClick={retry}>
+              Run checks again
+            </Button>
+          </div>
+        </>
       )}
 
       {!loading && !checks && (
-        <p className="setup-wizard__hint" role="alert">
-          Could not load system checks. Refresh the page to try again.
-        </p>
+        <div className="setup-wizard__checks-error" role="alert">
+          <p className="setup-wizard__hint">Could not load system checks.</p>
+          <Button type="button" variant="secondary" size="sm" onClick={retry}>
+            Retry
+          </Button>
+        </div>
       )}
     </>
   );
@@ -99,10 +112,7 @@ function CheckRow({
         </p>
         <p className="setup-wizard__check-detail">{result.detail}</p>
         {!result.ok && (
-          <details className="setup-wizard__fix">
-            <summary>How to fix</summary>
-            <pre>{checkFixHint(checkKey)}</pre>
-          </details>
+          <pre className="setup-wizard__fix-inline">{checkFixHint(checkKey)}</pre>
         )}
       </div>
     </div>
