@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Setup wizard system check: four rows like mockup (Database includes migration status; no separate Migrations row).
 - Setup wizard steps 2–5: mockup parity — mail test row, branding logo zone/toasts, typed date picker, timezone list layout, ready screen footer; step labels no longer truncated (#243).
 - Setup wizard: restore last step after browser refresh; unsaved-refresh notice only when a dirty form was lost (saved mail/branding kept).
+- `POST /api/admin/setup/complete` requires passing system checks (409 `setup_not_ready` when checks fail).
 - Mail transport test: actionable admin error messages for TLS hostname mismatch, auth, and port mode (no hostnames in API responses) (#244).
 - Check-in: server-connected status moves to a compact page-header pill; full-width green banner only for connection problems (#234).
 - Check-in: persistent screen-reader live region announces connection recovery after offline/degraded states.

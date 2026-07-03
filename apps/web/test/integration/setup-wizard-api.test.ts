@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import {
   createSession,
@@ -13,6 +13,7 @@ import {
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import * as migrationsCheck from "../../src/ops/migrations-check.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const EMAIL_SUPER = "setup-wizard-super@example.com";
@@ -384,5 +385,23 @@ describe("POST /api/admin/setup/complete", () => {
       headers: { Cookie: adminCookie, ...sameOrigin },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("returns 409 when system checks are not ready", async () => {
+    const spy = vi.spyOn(migrationsCheck, "checkMigrationsStatus").mockResolvedValue("pending");
+    try {
+      await setSetting(prisma, SETTING_SETUP_COMPLETE, false);
+      const res = await app.request("/api/admin/setup/complete", {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { error: string; checks: { database: { ok: boolean } } };
+      expect(body.error).toBe("setup_not_ready");
+      expect(body.checks.database.ok).toBe(false);
+    } finally {
+      spy.mockRestore();
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_SETUP_COMPLETE } });
+    }
   });
 });

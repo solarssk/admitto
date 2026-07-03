@@ -176,10 +176,16 @@ export function DatePicker({
       setTyping(false);
       return true;
     }
+    if (value && trimmed === formatIsoCalendarDate(value)) {
+      setParseError(null);
+      setTyping(false);
+      return true;
+    }
     const iso = parseFlexibleCalendarDate(trimmed);
     if (!iso) {
       setParseError(`Use a valid date (${inputPattern} or yyyy-mm-dd).`);
       onChange("");
+      setTyping(false);
       return false;
     }
     setParseError(null);
