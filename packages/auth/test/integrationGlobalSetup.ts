@@ -27,6 +27,17 @@ function databaseName(databaseUrl: string): string {
   return new URL(databaseUrl).pathname.replace(/^\//, "");
 }
 
+/** Derive PG* env vars from DATABASE_URL so reset-test-db.sh targets the same server, not its own defaults. */
+function pgConnectionEnv(databaseUrl: string): NodeJS.ProcessEnv {
+  const url = new URL(databaseUrl);
+  return {
+    PGHOST: url.hostname,
+    PGPORT: url.port || "5432",
+    PGUSER: decodeURIComponent(url.username),
+    PGPASSWORD: decodeURIComponent(url.password),
+  };
+}
+
 export default async function integrationGlobalSetup(): Promise<void> {
   const env = {
     ...process.env,
@@ -49,7 +60,7 @@ export default async function integrationGlobalSetup(): Promise<void> {
     console.warn("[auth integrationGlobalSetup] migrate deploy P3005, falling back to DB reset");
     await execFileAsync("bash", ["infra/scripts/reset-test-db.sh", databaseName(env.DATABASE_URL!)], {
       cwd: REPO_ROOT,
-      env,
+      env: { ...env, ...pgConnectionEnv(env.DATABASE_URL!) },
       timeout: 60_000,
     });
     await execAsync("npx prisma migrate deploy", { cwd: DB_ROOT, env, timeout: 60_000 });
