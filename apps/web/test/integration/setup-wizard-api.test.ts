@@ -14,7 +14,6 @@ import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import * as migrationsCheck from "../../src/ops/migrations-check.js";
-import { ensureWebTestMigrationsCurrent } from "../ensureTestSchema.js";
 import { WEB_TEST_DATABASE_URL } from "../testEnv.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
@@ -27,6 +26,7 @@ let app: ReturnType<typeof createApp>;
 let superId: string;
 let superCookie: string;
 let adminCookie: string;
+let migrationsOkSpy: ReturnType<typeof vi.spyOn> | undefined;
 
 const sameOrigin = { Origin: "http://localhost" };
 
@@ -106,10 +106,12 @@ async function seed(client: PrismaClient) {
 
 beforeAll(async () => {
   process.env.DATABASE_URL = WEB_TEST_DATABASE_URL;
-  await ensureWebTestMigrationsCurrent();
   prisma = new PrismaClient({
     datasources: { db: { url: WEB_TEST_DATABASE_URL } },
   });
+  // Disk-vs-DB migration parity is covered in test/ops/migrations-check.test.ts; Vitest fork
+  // workers can inherit CI job DATABASE_URL (main DB) and report a false pending state here.
+  migrationsOkSpy = vi.spyOn(migrationsCheck, "checkMigrationsStatus").mockResolvedValue("ok");
   await seed(prisma);
   app = createApp({
     prisma,
@@ -123,6 +125,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  migrationsOkSpy?.mockRestore();
   await prisma.roleAssignment.deleteMany({
     where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
   });

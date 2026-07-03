@@ -54,13 +54,6 @@ async function runPrismaArgs(args: string[], env: NodeJS.ProcessEnv): Promise<vo
   await execFileAsync("npx", args, { cwd: DB_ROOT, env, timeout: MIGRATE_TIMEOUT_MS });
 }
 
-/** Idempotent `migrate deploy` on the web integration DB (safe in Vitest fork workers). */
-export async function ensureWebTestMigrationsCurrent(): Promise<void> {
-  const env = testDbEnv();
-  assertTestDatabaseUrl(env.DATABASE_URL!);
-  await runPrismaArgs(["prisma", "migrate", "deploy"], env);
-}
-
 /** Extract database name from a PostgreSQL connection URL. */
 function testDatabaseName(databaseUrl: string): string {
   return new URL(databaseUrl).pathname.replace(/^\//, "");
