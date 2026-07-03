@@ -197,11 +197,18 @@
 
 .setup-wizard__footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.625rem;
   padding: 0.875rem 2rem;
   border-top: 1px solid var(--border);
   background: var(--surface-sunken, var(--surface-page));
+}
+
+@media (max-width: 30rem) {
+  .setup-wizard__footer {
+    padding-inline: 1rem;
+  }
 }
 
 .setup-wizard__footer--done {

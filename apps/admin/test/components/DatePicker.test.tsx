@@ -55,6 +55,19 @@ describe("DatePicker", () => {
     expect(onChange).toHaveBeenCalledWith("2026-08-20");
   });
 
+  it("clears parent value when typed date is invalid on blur", () => {
+    const onChange = vi.fn();
+    vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
+    vi.spyOn(eventDates, "formatIsoCalendarDate").mockReturnValue("2 Jul 2026");
+    vi.spyOn(eventDates, "parseFlexibleCalendarDate").mockReturnValue(null);
+
+    render(<DatePicker value="2026-07-02" onChange={onChange} label="Date" />);
+    const input = screen.getByLabelText(/date/i);
+    fireEvent.change(input, { target: { value: "not-a-date" } });
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenCalledWith("");
+  });
+
   it("sets today from the footer action", () => {
     const onChange = vi.fn();
     vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");

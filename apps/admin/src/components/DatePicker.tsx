@@ -179,6 +179,7 @@ export function DatePicker({
     const iso = parseFlexibleCalendarDate(trimmed);
     if (!iso) {
       setParseError(`Use a valid date (${inputPattern} or yyyy-mm-dd).`);
+      onChange("");
       return false;
     }
     setParseError(null);

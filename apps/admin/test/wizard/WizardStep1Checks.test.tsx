@@ -70,7 +70,9 @@ describe("WizardStep1Checks", () => {
       expect(screen.getByText(/Fix the issues above/i)).toBeTruthy();
     });
 
+    onChecksOk.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onChecksOk).toHaveBeenCalledWith(false);
 
     await waitFor(() => {
       expect(fetchSetupChecks).toHaveBeenCalledTimes(2);

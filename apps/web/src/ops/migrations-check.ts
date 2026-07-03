@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { findAdmittoRepoRoot } from "./repo-root.js";
@@ -10,9 +11,12 @@ type MigrationRow = {
   rolled_back_at: Date | null;
 };
 
+/** Anchor from this module to `@admitto/web` — avoids relying on `process.cwd()` in Vitest forks. */
+const WEB_PACKAGE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
 /** List Prisma migration folder names that contain `migration.sql`. */
 function listMigrationNamesOnDisk(): Set<string> {
-  const root = findAdmittoRepoRoot();
+  const root = findAdmittoRepoRoot(WEB_PACKAGE_DIR);
   if (!root) return new Set();
 
   const migrationsDir = join(root, "packages/db/prisma/migrations");

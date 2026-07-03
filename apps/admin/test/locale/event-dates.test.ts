@@ -108,6 +108,11 @@ describe("parseFlexibleCalendarDate", () => {
     expect(parseFlexibleCalendarDate("07/15/2026")).toBe("2026-07-15");
   });
 
+  it("parses year-first dates for ja-JP locale", () => {
+    setPreferredLocale("ja-JP");
+    expect(parseFlexibleCalendarDate("2026/07/08")).toBe("2026-07-08");
+  });
+
   it("rejects invalid calendar dates", () => {
     expect(parseFlexibleCalendarDate("2026-02-30")).toBeNull();
   });

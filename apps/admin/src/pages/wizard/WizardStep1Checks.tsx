@@ -21,7 +21,11 @@ export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
   const [checks, setChecks] = useState<SetupChecksResponse["checks"] | null>(null);
   const [runNonce, setRunNonce] = useState(0);
 
-  const retry = useCallback(() => setRunNonce((n) => n + 1), []);
+  const retry = useCallback(() => {
+    setChecks(null);
+    onChecksOk(false);
+    setRunNonce((n) => n + 1);
+  }, [onChecksOk]);
 
   useEffect(() => {
     const ac = new AbortController();

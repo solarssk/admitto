@@ -166,9 +166,16 @@ export function parseFlexibleCalendarDate(input: string): string | null {
 
   const yearIdx = chunks.findIndex((part, i) => part.length === 4 && nums[i]! >= 1000);
   if (yearIdx === 0) {
-    const [y, a, b] = nums;
-    const dm = resolveDayMonth(a!, b!);
-    return dm ? toIsoDateParts(y!, dm.m, dm.d) : null;
+    const y = nums[0]!;
+    const order = getLocaleDateInputOrder().filter((part) => part !== "year");
+    if (order[0] === "month") {
+      return toIsoDateParts(y, nums[1]!, nums[2]!);
+    }
+    if (order[0] === "day") {
+      return toIsoDateParts(y, nums[2]!, nums[1]!);
+    }
+    const dm = resolveDayMonth(nums[1]!, nums[2]!);
+    return dm ? toIsoDateParts(y, dm.m, dm.d) : null;
   }
   if (yearIdx === 2) {
     const [a, b, y] = nums;
