@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import type { Context, Next } from "hono";
-import { InMemoryRateLimitStore } from "../src/rate-limit/index.js";
+import { InMemoryRateLimitStore } from "../src/rate-limit/in-memory.js";
 import { rateLimit } from "../src/rate-limit/policies.js";
 
 function sessionContext(userId: string) {

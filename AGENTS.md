@@ -85,7 +85,6 @@ Staff UI uses `useToast()` from `@admitto/ui` (`ToastProvider` in the admin shel
 | **Inline / `EmptyState`** | Initial page load failed or data is missing until the user retries | Attendees/Requirements load error with **Retry** |
 | **`ConfirmDialog`** | Destructive or irreversible confirmation | Delete attendee, archive event — do not also toast the same message |
 | **In-context inline** | Error is tied to a modal, form field, or overlay that already has focus | Check-in camera overlay (no-match → overlay message, not toast behind overlay); form field validation |
-| **Persistent page status** | Long-lived account/security state the user may re-read | Account password change status — migrate to toast in follow-up when touched |
 
 Toasts dedupe identical `message + variant`, cap at five, and sit below the check-in overlay (`--z-toast` &lt; `--z-overlay`). Prefer `renderWithToast()` in admin tests when asserting toast behavior.
 

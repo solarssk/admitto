@@ -137,7 +137,7 @@ async function seed(client: PrismaClient) {
       company: "Acme",
       token_hash: hashToken(token),
       token_enc: encryptToString(token),
-      status: "active",
+      status: "registered",
     },
   });
 }

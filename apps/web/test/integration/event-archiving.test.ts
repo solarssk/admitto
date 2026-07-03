@@ -112,7 +112,7 @@ async function seed(client: PrismaClient) {
       name: "Guest",
       token_hash: hashToken(token),
       token_enc: encryptToString(token),
-      status: "active",
+      status: "registered",
     },
   });
 }
