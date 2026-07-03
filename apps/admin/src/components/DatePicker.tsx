@@ -14,6 +14,7 @@ import {
   parseFlexibleCalendarDate,
   todayIsoDate,
 } from "../utils/event-dates.js";
+import { useModalFocusTrap } from "./useModalFocusTrap.js";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -111,10 +112,9 @@ export function DatePicker({
   };
 
   useEffect(() => {
-    if (typing) return;
+    if (typing || parseError) return;
     setText(value ? formatIsoCalendarDate(value) : "");
-    setParseError(null);
-  }, [typing, value]);
+  }, [typing, value, parseError]);
 
   useEffect(() => {
     if (!open) return;
@@ -184,6 +184,7 @@ export function DatePicker({
     const iso = parseFlexibleCalendarDate(trimmed);
     if (!iso) {
       setParseError(`Use a valid date (${inputPattern} or yyyy-mm-dd).`);
+      setText(trimmed);
       onChange("");
       setTyping(false);
       return false;
@@ -248,6 +249,8 @@ export function DatePicker({
     setText(event.target.value);
     setParseError(null);
   };
+
+  useModalFocusTrap(panelRef, open, closePanel);
 
   const displayError = error ?? parseError;
   const isInvalid = Boolean(displayError);

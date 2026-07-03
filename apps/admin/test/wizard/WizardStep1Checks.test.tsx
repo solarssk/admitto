@@ -45,6 +45,7 @@ describe("WizardStep1Checks", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+      expect(screen.getByText("Server error")).toBeTruthy();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));

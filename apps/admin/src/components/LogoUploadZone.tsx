@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { Button, useToast } from "@admitto/ui";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@admitto/ui";
 import { ApiError, uploadFile } from "../api/client.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import "./logo-upload.css";
@@ -14,31 +14,51 @@ export interface LogoUploadZoneProps {
 
 /** Upload to server or link an external HTTPS image — both are supported. */
 export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps) {
-  const { addToast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const uploadSeqRef = useRef(0);
   const [uploading, setUploading] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [zoneError, setZoneError] = useState<string | null>(null);
 
   const isUploadedFile = value.startsWith("/uploads/");
   const previewSrc = useMemo(() => brandingLogoImgSrc(value), [value]);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const showPreview = Boolean(previewSrc) && !previewFailed;
+
+  useEffect(() => {
+    setPreviewFailed(false);
+    if (previewSrc) setZoneError(null);
+  }, [previewSrc]);
+
+  const clearLogo = () => {
+    uploadSeqRef.current += 1;
+    setZoneError(null);
+    setPreviewFailed(false);
+    onChange("");
+    onDirty?.();
+  };
 
   const handleFile = async (file: File) => {
     if (file.size > MAX_UPLOAD_BYTES) {
-      addToast("File must be 2 MB or smaller.", "error");
+      setZoneError("File must be 2 MB or smaller.");
       return;
     }
+    const seq = ++uploadSeqRef.current;
+    setZoneError(null);
     setUploading(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
       const result = await uploadFile(fd);
+      if (seq !== uploadSeqRef.current) return;
       onChange(result.url);
       onDirty?.();
     } catch (err) {
-      addToast(err instanceof ApiError ? err.message : "Upload failed.", "error");
+      if (seq !== uploadSeqRef.current) return;
+      setZoneError(err instanceof ApiError ? err.message : "Upload failed.");
     } finally {
-      setUploading(false);
+      if (seq === uploadSeqRef.current) setUploading(false);
     }
   };
 
@@ -64,7 +84,8 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
           "logo-upload__zone",
           uploading && "logo-upload__zone--busy",
           dragging && "logo-upload__zone--dragging",
-          previewSrc && "logo-upload__zone--has-preview",
+          previewSrc && showPreview && "logo-upload__zone--has-preview",
+          zoneError && "logo-upload__zone--invalid",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -75,36 +96,37 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
         }}
         onDragLeave={() => setDragging(false)}
         onClick={() => {
-          if (!previewSrc) openFilePicker();
+          if (!showPreview) openFilePicker();
         }}
-        role={previewSrc ? undefined : "button"}
-        tabIndex={previewSrc ? undefined : 0}
+        role={showPreview ? undefined : "button"}
+        tabIndex={showPreview ? undefined : 0}
         onKeyDown={(e) => {
-          if (!previewSrc && (e.key === "Enter" || e.key === " ")) {
+          if (!showPreview && (e.key === "Enter" || e.key === " ")) {
             e.preventDefault();
             openFilePicker();
           }
         }}
       >
-        {previewSrc ? (
+        {showPreview ? (
           <>
             <div className="logo-upload__preview-inner">
               <img
-                src={previewSrc}
+                src={previewSrc!}
                 alt="Organisation logo preview"
                 className="logo-upload__img"
                 onError={() => {
                   if (!isUploadedFile) {
-                    addToast(
+                    setZoneError(
                       "Could not load logo preview from this URL. Check the link or try again later.",
-                      "error",
                     );
+                    setPreviewFailed(true);
                     return;
                   }
-                  addToast(
+                  setZoneError(
                     "Uploaded file appears corrupt or unsupported. Please try another image.",
-                    "error",
                   );
+                  uploadSeqRef.current += 1;
+                  setPreviewFailed(false);
                   onChange("");
                   onDirty?.();
                 }}
@@ -116,8 +138,7 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
               aria-label="Remove logo"
               onClick={(e) => {
                 e.stopPropagation();
-                onChange("");
-                onDirty?.();
+                clearLogo();
               }}
             >
               <i className="ti ti-x" aria-hidden="true" />
@@ -145,8 +166,13 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
           tabIndex={-1}
         />
       </div>
+      {zoneError ? (
+        <p className="at-hint at-hint--error" role="alert">
+          {zoneError}
+        </p>
+      ) : null}
       <div className="logo-upload__actions">
-        {previewSrc ? (
+        {showPreview ? (
           <Button
             type="button"
             variant="ghost"

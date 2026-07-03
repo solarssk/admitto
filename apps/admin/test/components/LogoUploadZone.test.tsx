@@ -59,14 +59,14 @@ describe("LogoUploadZone", () => {
     expect(onChange).toHaveBeenCalledWith("");
   });
 
-  it("shows upload error toast when uploadFile fails", async () => {
+  it("shows upload error inline when uploadFile fails", async () => {
     mockUploadFile.mockRejectedValue(new ApiError(415, "unsupported_file_type"));
     renderWithToast(<LogoUploadZone value="" onChange={() => {}} />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["x"], "bad.exe", { type: "application/octet-stream" });
     fireEvent.change(input, { target: { files: [file] } });
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toContain("unsupported_file_type");
+      expect(screen.getByRole("alert").textContent).toContain("unsupported_file_type");
     });
   });
 
@@ -81,7 +81,7 @@ describe("LogoUploadZone", () => {
     renderWithToast(<Harness />);
     fireEvent.error(screen.getByAltText("Organisation logo preview"));
     expect(onDirty).toHaveBeenCalled();
-    expect(screen.getByTestId("at-toast").textContent).toContain("corrupt");
+    expect(screen.getByRole("alert").textContent).toContain("corrupt");
     expect(screen.getByRole("button", { name: /drop logo here/i })).toBeTruthy();
     expect(screen.queryByAltText("Organisation logo preview")).toBeNull();
   });
@@ -93,7 +93,7 @@ describe("LogoUploadZone", () => {
     expect(screen.getByRole("button", { name: "Hide external URL" })).toBeTruthy();
   });
 
-  it("keeps external URL and shows toast when preview image fails to load", () => {
+  it("hides broken external URL preview after load failure", () => {
     const onChange = vi.fn();
     renderWithToast(
       <LogoUploadZone value="https://cdn.example.com/logo.png" onChange={onChange} />,
@@ -101,7 +101,9 @@ describe("LogoUploadZone", () => {
     const img = screen.getByAltText("Organisation logo preview");
     fireEvent.error(img);
     expect(onChange).not.toHaveBeenCalled();
-    expect(screen.getByTestId("at-toast").textContent).toContain("Could not load logo preview");
+    expect(screen.getByRole("alert").textContent).toContain("Could not load logo preview");
+    expect(screen.queryByAltText("Organisation logo preview")).toBeNull();
+    expect(screen.getByRole("button", { name: /drop logo here/i })).toBeTruthy();
   });
 
   it("rejects files over 2 MB before upload", async () => {
@@ -112,7 +114,7 @@ describe("LogoUploadZone", () => {
     });
     fireEvent.change(input, { target: { files: [big] } });
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toContain("2 MB");
+      expect(screen.getByRole("alert").textContent).toContain("2 MB");
     });
     expect(mockUploadFile).not.toHaveBeenCalled();
   });

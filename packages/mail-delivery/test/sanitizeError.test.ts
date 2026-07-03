@@ -123,6 +123,19 @@ describe("transportTestErrorForAdmin", () => {
     ).toBe("Microsoft Graph authentication failed. Check tenant, client ID, and secret.");
   });
 
+  it("maps SMTP relay / PTR rejection without TLS verify hint", () => {
+    expect(
+      transportTestErrorForAdmin(
+        "550 5.7.1 Client host rejected: cannot find your hostname, PTR record required",
+      ),
+    ).toContain("relay");
+    expect(
+      transportTestErrorForAdmin(
+        "550 5.7.1 Client host rejected: cannot find your hostname, PTR record required",
+      ),
+    ).not.toContain("Verify TLS certificate");
+  });
+
   it("falls back to actionable generic message", () => {
     expect(transportTestErrorForAdmin("smtp: weird internal failure at smtp.corp:25")).toBe(
       "Send failed. Check transport settings or ask your administrator to review server logs.",

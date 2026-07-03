@@ -80,6 +80,13 @@ export function transportTestErrorForAdmin(message: string | undefined): string 
   if (/certificate|STARTTLS|TLS|SSL/i.test(msg)) {
     return `TLS error talking to the mail server. Check host, port, and STARTTLS settings, or ${MAIL_TLS_VERIFY_HINT}`;
   }
+  if (
+    /relay access denied|relay not permitted|client host rejected|must belong to|PTR record|reverse DNS|rDNS|550 5\.7\.1|does not meet.*requirements/i.test(
+      msg,
+    )
+  ) {
+    return "The mail server rejected relay or sender identity. Ask IT to allow this host for SMTP relay or fix reverse DNS (PTR).";
+  }
   if (/\b550\b|\b553\b|mailbox unavailable|user unknown/i.test(msg)) {
     return "Server rejected the recipient or sender address.";
   }

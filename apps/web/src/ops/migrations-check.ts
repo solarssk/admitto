@@ -37,6 +37,11 @@ function resolveMigrationsDir(): string | null {
   for (const dir of candidates) {
     if (existsSync(dir)) return dir;
   }
+  if (process.env.NODE_ENV !== "test") {
+    console.warn(
+      "[migrations-check] Could not resolve packages/db/prisma/migrations on disk",
+    );
+  }
   return null;
 }
 
@@ -79,7 +84,10 @@ export async function checkMigrationsStatus(db: PrismaClient): Promise<"ok" | "p
       if (!applied.has(name)) return "pending";
     }
     return "ok";
-  } catch {
+  } catch (err) {
+    if (process.env.NODE_ENV !== "test") {
+      console.warn("[migrations-check] Failed to read migration status:", err);
+    }
     return "pending";
   }
 }

@@ -409,6 +409,28 @@ export function TimezoneSelect({
     }
   };
 
+  const selectedTriggerContent = selectedEntry ? (
+    <>
+      <span className="timezone-select__trigger-city">{selectedEntry.city}</span>
+      <span className="timezone-select__trigger-meta">
+        {selectedEntry.iana}
+        {selectedEntry.offsetLabel ? ` · ${selectedEntry.offsetLabel}` : ""}
+      </span>
+    </>
+  ) : (
+    <span className="timezone-select__trigger-placeholder">Select timezone…</span>
+  );
+
+  const triggerLabel = selectedEntry ? (
+    compact ? (
+      <span className="timezone-select__trigger-compact">{selectedTriggerContent}</span>
+    ) : (
+      selectedTriggerContent
+    )
+  ) : (
+    selectedTriggerContent
+  );
+
   return (
     <div
       className={["timezone-select", compact && "timezone-select--compact"].filter(Boolean).join(" ")}
@@ -429,29 +451,7 @@ export function TimezoneSelect({
           setOpen((prev) => !prev);
         }}
       >
-        <span className="timezone-select__trigger-text">
-          {selectedEntry ? (
-            compact ? (
-              <span className="timezone-select__trigger-compact">
-                <span className="timezone-select__trigger-city">{selectedEntry.city}</span>
-                <span className="timezone-select__trigger-meta">
-                  {selectedEntry.iana}
-                  {selectedEntry.offsetLabel ? ` · ${selectedEntry.offsetLabel}` : ""}
-                </span>
-              </span>
-            ) : (
-              <>
-                <span className="timezone-select__trigger-city">{selectedEntry.city}</span>
-                <span className="timezone-select__trigger-meta">
-                  {selectedEntry.iana}
-                  {selectedEntry.offsetLabel ? ` · ${selectedEntry.offsetLabel}` : ""}
-                </span>
-              </>
-            )
-          ) : (
-            <span className="timezone-select__trigger-placeholder">Select timezone…</span>
-          )}
-        </span>
+        <span className="timezone-select__trigger-text">{triggerLabel}</span>
         <i className="ti ti-chevron-down timezone-select__chevron" aria-hidden="true" />
       </button>
 

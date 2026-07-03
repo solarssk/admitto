@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button, useToast } from "@admitto/ui";
+import { Button } from "@admitto/ui";
 import { ApiError, fetchSetupChecks } from "../../api/client.js";
 import type { SetupChecksResponse } from "../../api/types.js";
 import {
@@ -16,13 +16,14 @@ type WizardStep1ChecksProps = {
 type CheckResult = SetupChecksResponse["checks"][SetupCheckKey];
 
 export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
-  const { addToast } = useToast();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [checks, setChecks] = useState<SetupChecksResponse["checks"] | null>(null);
   const [runNonce, setRunNonce] = useState(0);
 
   const retry = useCallback(() => {
     setChecks(null);
+    setLoadError(null);
     onChecksOk(false);
     setRunNonce((n) => n + 1);
   }, [onChecksOk]);
@@ -30,6 +31,7 @@ export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
   useEffect(() => {
     const ac = new AbortController();
     setLoading(true);
+    setLoadError(null);
     void (async () => {
       try {
         const data = await fetchSetupChecks(ac.signal);
@@ -37,14 +39,16 @@ export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
         setChecks(data.checks);
       } catch (err) {
         if (ac.signal.aborted) return;
-        addToast(err instanceof ApiError ? err.message : "Failed to load system checks.", "error");
+        setLoadError(
+          err instanceof ApiError ? err.message : "Failed to load system checks.",
+        );
         setChecks(null);
       } finally {
         if (!ac.signal.aborted) setLoading(false);
       }
     })();
     return () => ac.abort();
-  }, [addToast, runNonce]);
+  }, [runNonce]);
 
   const allOk = checks ? SETUP_CHECK_ORDER.every((key) => checks[key].ok) : false;
   const hasCheckErrors = checks ? SETUP_CHECK_ORDER.some((key) => !checks[key].ok) : false;
@@ -80,9 +84,9 @@ export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
         </div>
       )}
 
-      {!loading && !checks && (
+      {!loading && loadError && (
         <div className="setup-wizard__checks-error" role="alert">
-          <p className="setup-wizard__hint">Could not load system checks.</p>
+          <p className="setup-wizard__hint">{loadError}</p>
           <Button type="button" variant="secondary" size="sm" onClick={retry}>
             Retry
           </Button>

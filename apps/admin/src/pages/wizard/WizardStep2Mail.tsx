@@ -425,24 +425,25 @@ function MailTestControl({
 }) {
   return (
     <div className="setup-wizard__mail-test-cluster">
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="sm"
         className="setup-wizard__mail-test-action"
         disabled={testSending}
         onClick={onSend}
+        icon={
+          testSent ? (
+            <i className="ti ti-circle-check setup-wizard__mail-test-icon--ok" aria-hidden="true" />
+          ) : testSending ? (
+            <i className="ti ti-loader-2 setup-wizard__spin" aria-hidden="true" />
+          ) : (
+            <i className="ti ti-send" aria-hidden="true" />
+          )
+        }
       >
-        {testSent ? (
-          <i
-            className="ti ti-circle-check setup-wizard__mail-test-icon--ok"
-            aria-hidden="true"
-          />
-        ) : testSending ? (
-          <i className="ti ti-loader-2 setup-wizard__spin" aria-hidden="true" />
-        ) : (
-          <i className="ti ti-send" aria-hidden="true" />
-        )}
         {testSent ? "Test sent" : testSending ? "Sending…" : "Send test email"}
-      </button>
+      </Button>
       <span className="setup-wizard__mail-test-hint">
         {testSent ? "Check your inbox." : "Optional — to your login email."}
       </span>
@@ -511,9 +512,9 @@ function SecretInput({
         <label className="at-label" htmlFor={inputId}>
           {label}
         </label>
-        <button type="button" className="setup-wizard__inline-action" onClick={onCancel}>
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
           Cancel
-        </button>
+        </Button>
       </div>
       <input
         id={inputId}

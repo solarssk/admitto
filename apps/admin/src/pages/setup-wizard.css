@@ -5,11 +5,14 @@
   place-items: center;
   background: var(--surface-page);
   padding: 2rem 1.25rem;
+  overflow-x: clip;
+  box-sizing: border-box;
 }
 
 .setup-wizard__shell {
   width: 100%;
-  max-width: 42.5rem;
+  max-width: min(42.5rem, 100%);
+  min-width: 0;
   background: var(--surface-card, var(--surface-raised));
   border: 1px solid var(--border);
   border-radius: var(--radius-lg, 0.75rem);

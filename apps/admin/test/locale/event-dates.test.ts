@@ -122,6 +122,16 @@ describe("parseFlexibleCalendarDate", () => {
     expect(parseFlexibleCalendarDate("15a.07.2026")).toBeNull();
   });
 
+  it("parses day-first when day is greater than 12", () => {
+    setPreferredLocale("pl-PL");
+    expect(parseFlexibleCalendarDate("15.01.2026")).toBe("2026-01-15");
+  });
+
+  it("rejects day and month values above 31", () => {
+    setPreferredLocale("pl-PL");
+    expect(parseFlexibleCalendarDate("32.32.2026")).toBeNull();
+  });
+
   it("rejects year in the middle", () => {
     setPreferredLocale("en-US");
     expect(parseFlexibleCalendarDate("07/2026/15")).toBeNull();

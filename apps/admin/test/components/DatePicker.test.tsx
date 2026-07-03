@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { DatePicker } from "../../src/components/DatePicker.js";
 import * as eventDates from "../../src/utils/event-dates.js";
 
@@ -55,17 +56,47 @@ describe("DatePicker", () => {
     expect(onChange).toHaveBeenCalledWith("2026-08-20");
   });
 
-  it("clears parent value when typed date is invalid on blur", () => {
-    const onChange = vi.fn();
+  it("clears parent value when typed date is invalid on blur", async () => {
+    function Harness() {
+      const [value, setValue] = useState("2026-07-02");
+      return <DatePicker value={value} onChange={setValue} label="Date" />;
+    }
     vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
     vi.spyOn(eventDates, "formatIsoCalendarDate").mockReturnValue("2 Jul 2026");
     vi.spyOn(eventDates, "parseFlexibleCalendarDate").mockReturnValue(null);
 
-    render(<DatePicker value="2026-07-02" onChange={onChange} label="Date" />);
+    render(<Harness />);
     const input = screen.getByLabelText(/date/i);
     fireEvent.change(input, { target: { value: "not-a-date" } });
+    await waitFor(() => {
+      expect((input as HTMLInputElement).value).toBe("not-a-date");
+    });
     fireEvent.blur(input);
-    expect(onChange).toHaveBeenCalledWith("");
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/valid date/i);
+    });
+    expect((input as HTMLInputElement).value).toBe("not-a-date");
+  });
+
+  it("keeps invalid typed text and error after blur without clearing the message", async () => {
+    function Harness() {
+      const [value, setValue] = useState("");
+      return <DatePicker value={value} onChange={setValue} label="Date" />;
+    }
+    vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
+    vi.spyOn(eventDates, "parseFlexibleCalendarDate").mockReturnValue(null);
+
+    render(<Harness />);
+    const input = screen.getByLabelText(/date/i);
+    fireEvent.change(input, { target: { value: "3." } });
+    await waitFor(() => {
+      expect((input as HTMLInputElement).value).toBe("3.");
+    });
+    fireEvent.blur(input);
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/valid date/i);
+    });
+    expect((input as HTMLInputElement).value).toBe("3.");
   });
 
   it("does not clear value when Enter is pressed on an unchanged display date", () => {

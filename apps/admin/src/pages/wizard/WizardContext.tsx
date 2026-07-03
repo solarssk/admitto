@@ -44,6 +44,23 @@ type PersistedWizardContext = {
   summary: WizardSummary;
 };
 
+/** Coerce persisted summary JSON to a safe WizardSummary (ignore unknown/corrupt shapes). */
+function sanitizePersistedSummary(value: unknown): WizardSummary {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return DEFAULT_SUMMARY;
+  }
+  const raw = value as Record<string, unknown>;
+  return {
+    mailLabel: typeof raw.mailLabel === "string" ? raw.mailLabel : DEFAULT_SUMMARY.mailLabel,
+    brandingLabel:
+      typeof raw.brandingLabel === "string" ? raw.brandingLabel : DEFAULT_SUMMARY.brandingLabel,
+    eventTitle:
+      raw.eventTitle === null || typeof raw.eventTitle === "string"
+        ? raw.eventTitle
+        : DEFAULT_SUMMARY.eventTitle,
+  };
+}
+
 function readPersistedWizardContext(): PersistedWizardContext | null {
   try {
     const raw = sessionStorage.getItem(WIZARD_CONTEXT_STORAGE_KEY);
@@ -54,7 +71,7 @@ function readPersistedWizardContext(): PersistedWizardContext | null {
       selectedEventId: typeof parsed.selectedEventId === "string" ? parsed.selectedEventId : null,
       mailSkipped: Boolean(parsed.mailSkipped),
       brandingSkipped: Boolean(parsed.brandingSkipped),
-      summary: { ...DEFAULT_SUMMARY, ...parsed.summary },
+      summary: sanitizePersistedSummary(parsed.summary),
     };
   } catch {
     return null;
@@ -92,7 +109,11 @@ export function WizardProvider({ children }: { children: ReactNode }) {
       brandingSkipped,
       summary,
     };
-    sessionStorage.setItem(WIZARD_CONTEXT_STORAGE_KEY, JSON.stringify(payload));
+    try {
+      sessionStorage.setItem(WIZARD_CONTEXT_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      /* storage blocked */
+    }
   }, [selectedEventId, mailSkipped, brandingSkipped, summary]);
 
   const value = useMemo(

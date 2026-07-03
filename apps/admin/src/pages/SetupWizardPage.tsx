@@ -13,15 +13,55 @@ const WIZARD_UNSAVED_KEY = "admitto_wizard_unsaved_refresh";
 const TOTAL_STEPS = 5;
 
 function readSavedWizardStep(): number {
-  const raw = sessionStorage.getItem(WIZARD_STEP_KEY);
-  const n = raw ? Number.parseInt(raw, 10) : 1;
-  return Number.isFinite(n) && n >= 1 && n <= TOTAL_STEPS ? n : 1;
+  try {
+    const raw = sessionStorage.getItem(WIZARD_STEP_KEY);
+    const n = raw ? Number.parseInt(raw, 10) : 1;
+    return Number.isFinite(n) && n >= 1 && n <= TOTAL_STEPS ? n : 1;
+  } catch {
+    return 1;
+  }
 }
 
 function clearWizardSession(): void {
-  sessionStorage.removeItem(WIZARD_STEP_KEY);
-  sessionStorage.removeItem(WIZARD_UNSAVED_KEY);
-  sessionStorage.removeItem(WIZARD_CONTEXT_STORAGE_KEY);
+  try {
+    sessionStorage.removeItem(WIZARD_STEP_KEY);
+    sessionStorage.removeItem(WIZARD_UNSAVED_KEY);
+    sessionStorage.removeItem(WIZARD_CONTEXT_STORAGE_KEY);
+  } catch {
+    /* storage blocked */
+  }
+}
+
+function readUnsavedRefreshFlag(): boolean {
+  try {
+    return sessionStorage.getItem(WIZARD_UNSAVED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function clearUnsavedRefreshFlag(): void {
+  try {
+    sessionStorage.removeItem(WIZARD_UNSAVED_KEY);
+  } catch {
+    /* storage blocked */
+  }
+}
+
+function persistWizardStep(step: number): void {
+  try {
+    sessionStorage.setItem(WIZARD_STEP_KEY, String(step));
+  } catch {
+    /* storage blocked */
+  }
+}
+
+function markUnsavedRefreshFlag(): void {
+  try {
+    sessionStorage.setItem(WIZARD_UNSAVED_KEY, "1");
+  } catch {
+    /* storage blocked */
+  }
 }
 
 const STEP_NAMES = ["System", "Mail", "Brand", "Event", "Ready"] as const;
@@ -91,23 +131,22 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
   useEffect(() => {
     const saved = readSavedWizardStep();
     for (let i = 1; i < saved; i++) markStepComplete(i);
-    if (sessionStorage.getItem(WIZARD_UNSAVED_KEY) === "1") {
+    if (readUnsavedRefreshFlag()) {
       setUnsavedRefreshNotice(true);
-      sessionStorage.removeItem(WIZARD_UNSAVED_KEY);
+      clearUnsavedRefreshFlag();
     }
   }, [markStepComplete]);
 
   useEffect(() => {
-    sessionStorage.setItem(WIZARD_STEP_KEY, String(step));
+    persistWizardStep(step);
   }, [step]);
 
   useEffect(() => {
     const markUnsavedRefresh = () => {
-      if (dirty) sessionStorage.setItem(WIZARD_UNSAVED_KEY, "1");
+      if (dirty) markUnsavedRefreshFlag();
     };
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (dirty) {
-        markUnsavedRefresh();
         e.preventDefault();
         e.returnValue = "";
       }
@@ -129,8 +168,12 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
     [markStepComplete],
   );
 
+  const goToChecks = useCallback(() => {
+    setStep(1);
+  }, []);
+
   const handleBack = () => {
-    if (step <= 1 || step === TOTAL_STEPS) return;
+    if (step <= 1) return;
     setStep((s) => s - 1);
   };
 
@@ -273,6 +316,7 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
           {step === 5 && (
             <WizardStep5Ready
               ref={readyRef}
+              onGoToChecks={goToChecks}
               onSubmittingChange={setFinishing}
               onComplete={async () => {
                 clearWizardSession();
@@ -284,6 +328,9 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
 
         {step === TOTAL_STEPS ? (
           <footer className="setup-wizard__footer setup-wizard__footer--done">
+            <Button type="button" variant="secondary" onClick={handleBack}>
+              Back
+            </Button>
             <div className="setup-wizard__footer-spacer" />
             <Button
               type="button"
