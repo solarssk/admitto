@@ -159,6 +159,25 @@ describe("AccountPage toasts", () => {
     expect(screen.queryByTestId("at-toast")).toBeNull();
   });
 
+  it("shows password strength feedback while typing a new password", async () => {
+    mockLoadedAccount();
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("New password")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "short" },
+    });
+    expect(screen.getByText("Too short")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "Abcdefghijkl12!@#" },
+    });
+    expect(screen.getByText("Strong")).toBeTruthy();
+  });
+
   it("toasts password change success", async () => {
     mockLoadedAccount();
     mockPatchPassword.mockResolvedValueOnce({ sessions_revoked: 2 });

@@ -1,4 +1,4 @@
-import { PASSWORD_MIN_LENGTH } from "@admitto/auth";
+import { PASSWORD_MIN_LENGTH, passwordStrengthAuthScript } from "@admitto/auth";
 import {
   AUTH_FORM_SUBMIT_SCRIPT,
   AUTH_PAGE_CSS,
@@ -22,7 +22,7 @@ export function getChangePasswordPageSecurityHeaders(): Record<string, string> {
   return {
     "Cache-Control": "private, no-store, max-age=0",
     "Content-Security-Policy":
-      `default-src 'none'; ${AUTH_PAGE_ICON_CSP}; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'`,
+      `default-src 'none'; ${AUTH_PAGE_ICON_CSP}; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'`,
     "Referrer-Policy": "same-origin",
     "X-Content-Type-Options": "nosniff",
   };
@@ -58,7 +58,7 @@ export function renderChangePasswordForm(error?: string): string {
       </div>
       <div class="auth-field">
         <label class="auth-label" for="password_confirm">Confirm password</label>
-        <input class="auth-input" id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" required minlength="${PASSWORD_MIN_LENGTH}" />
+        <input class="auth-input" id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" required minlength="${PASSWORD_MIN_LENGTH}" aria-describedby="password_confirm-match" />
       </div>
       <button type="submit" class="auth-btn-primary">Save password</button>
     </form>`;
@@ -67,7 +67,7 @@ export function renderChangePasswordForm(error?: string): string {
     step: "Change password",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: AUTH_FORM_SUBMIT_SCRIPT,
+    scripts: `${passwordStrengthAuthScript()}\n${AUTH_FORM_SUBMIT_SCRIPT}`,
   });
 }
 

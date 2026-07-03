@@ -182,3 +182,29 @@
   gap: var(--space-2);
   flex-shrink: 0;
 }
+
+/* ---------------- Password strength ---------------- */
+.at-password-strength {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.at-password-strength__bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-1);
+}
+.at-password-strength__segment {
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--at-gray-200);
+}
+.at-password-strength__segment--weak { background: var(--status-error); }
+.at-password-strength__segment--fair { background: var(--status-warn); }
+.at-password-strength__segment--good { background: var(--primary); }
+.at-password-strength__segment--strong { background: var(--status-ok); }
+.at-password-strength__label {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}

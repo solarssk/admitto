@@ -1,6 +1,10 @@
 export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from "./components/Button.js";
 export { IconButton, type IconButtonProps } from "./components/IconButton.js";
 export { Input, type InputProps } from "./components/Input.js";
+export {
+  PasswordStrengthMeter,
+  type PasswordStrengthMeterProps,
+} from "./components/PasswordStrengthMeter.js";
 export { Select, type SelectProps } from "./components/Select.js";
 export { Checkbox, type CheckboxProps } from "./components/Checkbox.js";
 export { Switch, type SwitchProps } from "./components/Switch.js";
