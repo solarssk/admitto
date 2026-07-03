@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  useCallback,
   useImperativeHandle,
   useMemo,
   useState,
@@ -66,7 +67,7 @@ export const WizardStep5Ready = forwardRef<WizardStep5ReadyHandle, WizardStep5Re
     return items;
   }, [brandingSkipped, mailSkipped, summary]);
 
-  const goToDashboard = async () => {
+  const goToDashboard = useCallback(async () => {
     if (submitting) return;
     setBusy(true);
     try {
@@ -81,11 +82,15 @@ export const WizardStep5Ready = forwardRef<WizardStep5ReadyHandle, WizardStep5Re
       addToast(err instanceof ApiError ? err.message : "Failed to complete setup.", "error");
       setBusy(false);
     }
-  };
+  }, [addToast, navigate, onComplete, selectedEventId, submitting]);
 
-  useImperativeHandle(ref, () => ({
-    goToDashboard,
-  }));
+  useImperativeHandle(
+    ref,
+    () => ({
+      goToDashboard,
+    }),
+    [goToDashboard],
+  );
 
   return (
     <div className="setup-wizard__done">

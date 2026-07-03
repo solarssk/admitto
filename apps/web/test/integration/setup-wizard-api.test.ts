@@ -13,8 +13,6 @@ import {
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
-import { checkMigrationsStatus } from "../../src/ops/migrations-check.js";
-import { ensureIntegrationTestSchema } from "../ensureTestSchema.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const EMAIL_SUPER = "setup-wizard-super@example.com";
@@ -105,9 +103,6 @@ async function seed(client: PrismaClient) {
 
 beforeAll(async () => {
   prisma = new PrismaClient();
-  if ((await checkMigrationsStatus(prisma)) !== "ok") {
-    await ensureIntegrationTestSchema();
-  }
   await seed(prisma);
   app = createApp({
     prisma,

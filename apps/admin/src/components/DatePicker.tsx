@@ -298,7 +298,9 @@ export function DatePicker({
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              if (commitText(text)) closePanel();
+              if (typing) {
+                if (commitText(text)) closePanel();
+              }
               return;
             }
             if (event.key === "ArrowDown" && !open) {
@@ -430,7 +432,9 @@ export function DatePicker({
       )}
 
       {displayError ? (
-        <span className="at-hint at-hint--error">{displayError}</span>
+        <span className="at-hint at-hint--error" role="alert" aria-live="polite">
+          {displayError}
+        </span>
       ) : hint ? (
         <span className="at-hint">{hint}</span>
       ) : null}

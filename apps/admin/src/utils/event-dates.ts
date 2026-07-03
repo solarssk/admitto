@@ -160,6 +160,7 @@ export function parseFlexibleCalendarDate(input: string): string | null {
 
   const chunks = trimmed.split(/[./\s-]+/).filter(Boolean);
   if (chunks.length !== 3) return null;
+  if (chunks.some((part) => !/^\d+$/.test(part))) return null;
 
   const nums = chunks.map((part) => Number.parseInt(part, 10));
   if (nums.some((n) => !Number.isFinite(n))) return null;

@@ -116,4 +116,14 @@ describe("parseFlexibleCalendarDate", () => {
   it("rejects invalid calendar dates", () => {
     expect(parseFlexibleCalendarDate("2026-02-30")).toBeNull();
   });
+
+  it("rejects chunks with non-numeric suffixes", () => {
+    setPreferredLocale("pl-PL");
+    expect(parseFlexibleCalendarDate("15a.07.2026")).toBeNull();
+  });
+
+  it("rejects year in the middle", () => {
+    setPreferredLocale("en-US");
+    expect(parseFlexibleCalendarDate("07/2026/15")).toBeNull();
+  });
 });

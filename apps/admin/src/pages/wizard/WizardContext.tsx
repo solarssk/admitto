@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -34,12 +35,43 @@ const DEFAULT_SUMMARY: WizardSummary = {
   eventTitle: null,
 };
 
+export const WIZARD_CONTEXT_STORAGE_KEY = "admitto_wizard_context";
+
+type PersistedWizardContext = {
+  selectedEventId: string | null;
+  mailSkipped: boolean;
+  brandingSkipped: boolean;
+  summary: WizardSummary;
+};
+
+function readPersistedWizardContext(): PersistedWizardContext | null {
+  try {
+    const raw = sessionStorage.getItem(WIZARD_CONTEXT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedWizardContext>;
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      selectedEventId: typeof parsed.selectedEventId === "string" ? parsed.selectedEventId : null,
+      mailSkipped: Boolean(parsed.mailSkipped),
+      brandingSkipped: Boolean(parsed.brandingSkipped),
+      summary: { ...DEFAULT_SUMMARY, ...parsed.summary },
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function WizardProvider({ children }: { children: ReactNode }) {
+  const persisted = readPersistedWizardContext();
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(() => new Set());
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [mailSkipped, setMailSkipped] = useState(false);
-  const [brandingSkipped, setBrandingSkipped] = useState(false);
-  const [summary, setSummaryState] = useState<WizardSummary>(DEFAULT_SUMMARY);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(
+    () => persisted?.selectedEventId ?? null,
+  );
+  const [mailSkipped, setMailSkipped] = useState(() => persisted?.mailSkipped ?? false);
+  const [brandingSkipped, setBrandingSkipped] = useState(() => persisted?.brandingSkipped ?? false);
+  const [summary, setSummaryState] = useState<WizardSummary>(
+    () => persisted?.summary ?? DEFAULT_SUMMARY,
+  );
 
   const markStepComplete = useCallback((step: number) => {
     setCompletedSteps((prev) => {
@@ -52,6 +84,16 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   const setSummary = useCallback((patch: Partial<WizardSummary>) => {
     setSummaryState((prev) => ({ ...prev, ...patch }));
   }, []);
+
+  useEffect(() => {
+    const payload: PersistedWizardContext = {
+      selectedEventId,
+      mailSkipped,
+      brandingSkipped,
+      summary,
+    };
+    sessionStorage.setItem(WIZARD_CONTEXT_STORAGE_KEY, JSON.stringify(payload));
+  }, [selectedEventId, mailSkipped, brandingSkipped, summary]);
 
   const value = useMemo(
     () => ({

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@admitto/ui";
-import { WizardProvider, useWizard } from "./wizard/WizardContext.js";
+import { WizardProvider, useWizard, WIZARD_CONTEXT_STORAGE_KEY } from "./wizard/WizardContext.js";
 import { WizardStep1Checks } from "./wizard/WizardStep1Checks.js";
 import { WizardStep2Mail, type WizardStep2MailHandle } from "./wizard/WizardStep2Mail.js";
 import { WizardStep3Branding, type WizardStep3BrandingHandle } from "./wizard/WizardStep3Branding.js";
@@ -21,6 +21,7 @@ function readSavedWizardStep(): number {
 function clearWizardSession(): void {
   sessionStorage.removeItem(WIZARD_STEP_KEY);
   sessionStorage.removeItem(WIZARD_UNSAVED_KEY);
+  sessionStorage.removeItem(WIZARD_CONTEXT_STORAGE_KEY);
 }
 
 const STEP_NAMES = ["System", "Mail", "Brand", "Event", "Ready"] as const;
@@ -197,7 +198,7 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
 
   return (
     <div className="setup-wizard">
-      <div className="setup-wizard__shell">
+      <main className="setup-wizard__shell">
         <header className="setup-wizard__header">
           <span className="setup-wizard__brand" aria-label="Admitto">
             {BRAND_MARK}
@@ -251,7 +252,7 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
         </nav>
 
         <div className={`setup-wizard__body${step === TOTAL_STEPS ? " setup-wizard__body--done" : ""}`}>
-          {unsavedRefreshNotice && step === 1 && (
+          {unsavedRefreshNotice && (
             <p className="setup-wizard__refresh-notice" role="status">
               Unsaved form changes were lost after refresh. Settings you already saved (mail, branding)
               are still kept — continue from here.
@@ -322,7 +323,7 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
             </Button>
           </footer>
         )}
-      </div>
+      </main>
     </div>
   );
 }

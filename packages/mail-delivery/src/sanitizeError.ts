@@ -32,7 +32,7 @@ export function clientSafeDeliveryError(message: string | undefined): string {
 }
 
 const MAIL_TLS_VERIFY_HINT =
-  "In Settings → Mail → SMTP tuning, try turning off Verify TLS certificate (common with corporate relays).";
+  "turn off Verify TLS certificate in Settings → Mail → SMTP tuning (common with corporate relays)";
 
 /**
  * Superadmin transport test — actionable copy without hostnames, URLs, or credentials.

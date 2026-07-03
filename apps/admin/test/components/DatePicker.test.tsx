@@ -68,6 +68,17 @@ describe("DatePicker", () => {
     expect(onChange).toHaveBeenCalledWith("");
   });
 
+  it("does not clear value when Enter is pressed on an unchanged display date", () => {
+    const onChange = vi.fn();
+    vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
+    vi.spyOn(eventDates, "formatIsoCalendarDate").mockReturnValue("2 Jul 2026");
+
+    render(<DatePicker value="2026-07-02" onChange={onChange} label="Date" />);
+    const input = screen.getByLabelText(/date/i);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("sets today from the footer action", () => {
     const onChange = vi.fn();
     vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");

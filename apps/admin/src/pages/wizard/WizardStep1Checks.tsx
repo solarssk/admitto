@@ -73,7 +73,7 @@ export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
       {!loading && checks && hasCheckErrors && (
         <div className="setup-wizard__check-error-banner" role="alert">
           <i className="ti ti-alert-triangle" aria-hidden="true" />
-          <p>Fix the issues above, then restart Admitto and return to this page.</p>
+          <p>Fix the issues above, then use Retry to run checks again.</p>
           <Button type="button" variant="secondary" size="sm" onClick={retry} className="setup-wizard__check-retry">
             Retry
           </Button>
