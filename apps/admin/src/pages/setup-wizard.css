@@ -58,9 +58,10 @@
 }
 
 .setup-wizard__steps {
+  --setup-wizard-dot-size: 1.75rem;
+
   display: flex;
-  align-items: center;
-  justify-content: stretch;
+  align-items: flex-start;
   gap: 0;
   padding: 1rem 2rem;
   border-bottom: 1px solid var(--border);
@@ -72,14 +73,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
-  flex-shrink: 0;
-  min-width: 4.5rem;
+  gap: 0.3125rem;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .setup-wizard__step-dot {
-  width: 1.75rem;
-  height: 1.75rem;
+  width: var(--setup-wizard-dot-size);
+  height: var(--setup-wizard-dot-size);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -109,11 +110,14 @@
 }
 
 .setup-wizard__step-label {
-  font-size: 0.66rem;
+  font-size: 0.65625rem;
   color: var(--text-muted, var(--text-secondary));
   text-align: center;
   white-space: nowrap;
   line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .setup-wizard__step--active .setup-wizard__step-label {
@@ -138,11 +142,11 @@
 }
 
 .setup-wizard__step-line {
-  flex: 1;
-  min-width: 0.75rem;
+  flex: 1 1 0;
+  min-width: 0.25rem;
   height: 2px;
   background: var(--border);
-  margin: 0 0.25rem 1.125rem;
+  margin: calc((var(--setup-wizard-dot-size) - 2px) / 2) 0.25rem 0;
   align-self: flex-start;
 }
 
@@ -585,10 +589,10 @@
 
 @media (max-width: 479px) {
   .setup-wizard__step-label {
-    display: none;
+    font-size: 0.5625rem;
   }
 
   .setup-wizard__step-line {
-    margin-top: 0.75rem;
+    margin-top: calc((var(--setup-wizard-dot-size) - 2px) / 2);
   }
 }
