@@ -11,13 +11,16 @@ import {
 
 const NONCE = "unit-test-nonce";
 
-/** Every inline `<script>` tag must carry the response nonce. */
+/**
+ * Every inline `<script>` tag must carry the response nonce. Counts literal
+ * substrings instead of a tag regex — our renderers emit exactly
+ * `<script nonce="...">`, and CodeQL flags HTML-tag regexes (js/bad-tag-filter).
+ */
 function expectAllScriptsNonced(html: string): void {
-  const scriptTags = html.match(/<script\b[^>]*>/g) ?? [];
-  expect(scriptTags.length).toBeGreaterThan(0);
-  for (const tag of scriptTags) {
-    expect(tag).toContain(`nonce="${NONCE}"`);
-  }
+  const openTags = html.split("<script").length - 1;
+  const noncedTags = html.split(`<script nonce="${NONCE}">`).length - 1;
+  expect(openTags).toBeGreaterThan(0);
+  expect(noncedTags).toBe(openTags);
 }
 
 function expectNonceOnlyScriptSrc(headers: Record<string, string>): void {

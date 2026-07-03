@@ -422,11 +422,10 @@ describe("HTML MFA enroll", () => {
     expect(nonce).toBeTruthy();
 
     const html = await startRes.text();
-    const scriptTags = html.match(/<script\b[^>]*>/g) ?? [];
-    expect(scriptTags.length).toBeGreaterThan(0);
-    for (const tag of scriptTags) {
-      expect(tag).toContain(`nonce="${nonce}"`);
-    }
+    const openTags = html.split("<script").length - 1;
+    const noncedTags = html.split(`<script nonce="${nonce}">`).length - 1;
+    expect(openTags).toBeGreaterThan(0);
+    expect(noncedTags).toBe(openTags);
 
     expect(html).toContain("otpauth://totp/");
     expect(html).toContain('class="auth-qr"');

@@ -116,11 +116,10 @@ describe("GET /login", () => {
     expect(scriptSrc).toBe(`script-src 'nonce-${nonce}'`);
 
     const html = await res.text();
-    const scriptTags = html.match(/<script\b[^>]*>/g) ?? [];
-    expect(scriptTags.length).toBeGreaterThan(0);
-    for (const tag of scriptTags) {
-      expect(tag).toContain(`nonce="${nonce}"`);
-    }
+    const openTags = html.split("<script").length - 1;
+    const noncedTags = html.split(`<script nonce="${nonce}">`).length - 1;
+    expect(openTags).toBeGreaterThan(0);
+    expect(noncedTags).toBe(openTags);
 
     // Nonce must be fresh per response.
     const res2 = await app.request("/login");
