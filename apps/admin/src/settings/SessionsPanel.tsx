@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card } from "@admitto/ui";
+import { Badge, Button, Card, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchAdminEvents,
@@ -49,20 +49,18 @@ type FilterValue = "all" | "admin" | "operator";
 
 /** Settings panel — lists active staff sessions, per-session revoke, and bulk operator-session revoke by event. */
 export function SessionsPanel() {
+  const { addToast } = useToast();
   const [sessions, setSessions] = useState<SessionListDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterValue>("all");
   const [confirmTarget, setConfirmTarget] = useState<SessionListDto | null>(null);
   const [revoking, setRevoking] = useState(false);
-  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const [events, setEvents] = useState<EventDto[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkRevoking, setBulkRevoking] = useState(false);
-  const [bulkResult, setBulkResult] = useState<string | null>(null);
-  const [bulkError, setBulkError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,11 +69,13 @@ export function SessionsPanel() {
       const data = await fetchSessions();
       setSessions(data.sessions);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load sessions.");
+      const message = err instanceof ApiError ? err.message : "Failed to load sessions.";
+      setError(message);
+      addToast(message, "error");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     void load();
@@ -93,13 +93,13 @@ export function SessionsPanel() {
   const handleRevoke = async () => {
     if (!confirmTarget) return;
     setRevoking(true);
-    setRevokeError(null);
     try {
       await revokeSessionById(confirmTarget.id);
       setConfirmTarget(null);
+      addToast("Session revoked.", "success");
       await load();
     } catch (err) {
-      setRevokeError(err instanceof ApiError ? err.message : "Failed to revoke session.");
+      addToast(err instanceof ApiError ? err.message : "Failed to revoke session.", "error");
     } finally {
       setRevoking(false);
     }
@@ -108,15 +108,16 @@ export function SessionsPanel() {
   const handleBulkRevoke = async () => {
     if (!selectedEventId) return;
     setBulkRevoking(true);
-    setBulkError(null);
-    setBulkResult(null);
     try {
       const { revokedCount } = await revokeAllOperatorSessions(selectedEventId);
-      setBulkResult(`Revoked ${revokedCount} operator session${revokedCount === 1 ? "" : "s"}.`);
+      addToast(
+        `Revoked ${revokedCount} operator session${revokedCount === 1 ? "" : "s"}.`,
+        "success",
+      );
       setBulkConfirmOpen(false);
       await load();
     } catch (err) {
-      setBulkError(err instanceof ApiError ? err.message : "Failed to revoke sessions.");
+      addToast(err instanceof ApiError ? err.message : "Failed to revoke sessions.", "error");
     } finally {
       setBulkRevoking(false);
     }
@@ -223,7 +224,6 @@ export function SessionsPanel() {
           </div>
         )}
 
-        {revokeError && <p className="sessions-error">{revokeError}</p>}
       </Card>
 
       <Card title="Bulk revoke operator sessions">
@@ -236,8 +236,6 @@ export function SessionsPanel() {
             value={selectedEventId}
             onChange={(e) => {
               setSelectedEventId(e.target.value);
-              setBulkResult(null);
-              setBulkError(null);
             }}
           >
             <option value="">Select event…</option>
@@ -257,8 +255,6 @@ export function SessionsPanel() {
             Revoke all operator sessions
           </Button>
         </div>
-        {bulkResult && <p className="sessions-success">{bulkResult}</p>}
-        {bulkError && <p className="sessions-error">{bulkError}</p>}
       </Card>
 
       <ConfirmDialog

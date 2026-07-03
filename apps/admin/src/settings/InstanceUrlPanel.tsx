@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, Input } from "@admitto/ui";
+import { Badge, Button, Card, Input, useToast } from "@admitto/ui";
 import { ApiError, fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
 
@@ -32,13 +32,12 @@ function isValidInstanceUrl(value: string): boolean {
 
 /** Settings panel — public instance URL for ticket links and absolute logo URLs in email. */
 export function InstanceUrlPanel() {
+  const { addToast } = useToast();
   const [settings, setSettings] = useState<SystemSettingsDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,11 +47,13 @@ export function InstanceUrlPanel() {
       setSettings(data);
       setDraft(data.instance_url.value ?? "");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load instance settings.");
+      const message = err instanceof ApiError ? err.message : "Failed to load instance settings.";
+      setError(message);
+      addToast(message, "error");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     void load();
@@ -68,27 +69,26 @@ export function InstanceUrlPanel() {
   const handleSave = async () => {
     if (!settings) return;
     setSaving(true);
-    setSaveError(null);
-    setSaveStatus(null);
 
     const trimmed = draft.trim();
     const current = settings.instance_url.value?.trim() ?? "";
 
     if (fieldLocked(settings.instance_url.source)) {
-      setSaveStatus("No changes to save.");
+      addToast("No changes to save.", "info");
       setSaving(false);
       return;
     }
 
     if (trimmed === current) {
-      setSaveStatus("No changes to save.");
+      addToast("No changes to save.", "info");
       setSaving(false);
       return;
     }
 
     if (trimmed && !isValidInstanceUrl(trimmed)) {
-      setSaveError(
+      addToast(
         "Instance URL must use https://, must not end with a trailing slash, and must not include credentials, a query, or a fragment.",
+        "error",
       );
       setSaving(false);
       return;
@@ -102,9 +102,9 @@ export function InstanceUrlPanel() {
       const updated = await patchSecuritySettings(body);
       setSettings(updated);
       setDraft(updated.instance_url.value ?? "");
-      setSaveStatus("Settings saved.");
+      addToast("Settings saved.", "success");
     } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : "Failed to save settings.");
+      addToast(err instanceof ApiError ? err.message : "Failed to save settings.", "error");
     } finally {
       setSaving(false);
     }
@@ -113,16 +113,14 @@ export function InstanceUrlPanel() {
   const handleReset = async () => {
     if (!settings || fieldLocked(settings.instance_url.source)) return;
     setSaving(true);
-    setSaveError(null);
-    setSaveStatus(null);
 
     try {
       const updated = await patchSecuritySettings({ instance_url: null });
       setSettings(updated);
       setDraft("");
-      setSaveStatus("Reset to default.");
+      addToast("Reset to default.", "success");
     } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : "Failed to reset settings.");
+      addToast(err instanceof ApiError ? err.message : "Failed to reset settings.", "error");
     } finally {
       setSaving(false);
     }
@@ -185,7 +183,6 @@ export function InstanceUrlPanel() {
             placeholder="https://tickets.example.com"
             onChange={(e) => {
               setDraft(e.target.value);
-              setSaveStatus(null);
             }}
           />
           <EnvBadge source={settings.instance_url.source} />
@@ -210,16 +207,6 @@ export function InstanceUrlPanel() {
           </p>
         )}
 
-        {saveError && (
-          <p role="alert" className="text-error">
-            {saveError}
-          </p>
-        )}
-        {saveStatus && !saveError && (
-          <p role="status" className="text-success">
-            {saveStatus}
-          </p>
-        )}
       </div>
     </Card>
   );

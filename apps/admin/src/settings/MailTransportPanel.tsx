@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Button, Card, Input, Select, Switch } from "@admitto/ui";
+import { Badge, Button, Card, Input, Select, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchMailSettings,
@@ -156,6 +156,7 @@ function SecretFieldRow({
 
 /** Superadmin mail transport configuration panel. */
 export function MailTransportPanel() {
+  const { addToast } = useToast();
   const [apiData, setApiData] = useState<MailSettingsResponse | null>(null);
   const [draft, setDraft] = useState<MailDraft>(emptyMailDraft());
   const [secrets, setSecrets] = useState<SecretEdits>(emptySecretEdits());
@@ -164,12 +165,7 @@ export function MailTransportPanel() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [testEmail, setTestEmail] = useState("");
-  const [testStatus, setTestStatus] = useState<{ kind: "ok" | "error"; message: string } | null>(
-    null,
-  );
   const [testSending, setTestSending] = useState(false);
   const loadAbortRef = useRef<AbortController | null>(null);
 
@@ -194,12 +190,14 @@ export function MailTransportPanel() {
       applyResponse(data);
     } catch {
       if (ac.signal.aborted) return;
-      setLoadError("Failed to load mail settings.");
+      const message = "Failed to load mail settings.";
+      setLoadError(message);
+      addToast(message, "error");
       setApiData(null);
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [applyResponse]);
+  }, [applyResponse, addToast]);
 
   useEffect(() => {
     void loadSettings();
@@ -208,8 +206,6 @@ export function MailTransportPanel() {
 
   const updateDraft = (patch: Partial<MailDraft>) => {
     setDraft((prev) => ({ ...prev, ...patch }));
-    setSaveMessage(null);
-    setSaveError(null);
   };
 
   const fieldLocked = (key: keyof MailSettingsResponse["fields"]): boolean => {
@@ -227,7 +223,6 @@ export function MailTransportPanel() {
     }
     setValidationErrors([]);
     setSaving(true);
-    setSaveError(null);
     try {
       const lockedKeys = new Set(
         (Object.keys(apiData.fields) as Array<keyof typeof apiData.fields>).filter((key) =>
@@ -237,9 +232,9 @@ export function MailTransportPanel() {
       const body = buildSaveMailSettingsBody(draft, secrets, lockedKeys);
       const data = await saveMailSettings(body);
       applyResponse(data);
-      setSaveMessage("Mail settings saved.");
+      addToast("Mail settings saved.", "success");
     } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : "Failed to save mail settings.");
+      addToast(err instanceof ApiError ? err.message : "Failed to save mail settings.", "error");
     } finally {
       setSaving(false);
     }
@@ -249,33 +244,27 @@ export function MailTransportPanel() {
     setDraft(savedDraft);
     setSecrets(emptySecretEdits());
     setValidationErrors([]);
-    setSaveMessage(null);
-    setSaveError(null);
   };
 
   const hasUnsavedChanges = isMailSettingsDirty(draft, savedDraft, secrets);
 
   const handleTestSend = async () => {
     if (hasUnsavedChanges) {
-      setTestStatus({
-        kind: "error",
-        message: "Save your changes before sending a test email.",
-      });
+      addToast("Save your changes before sending a test email.", "warning");
       return;
     }
     const to = testEmail.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
-      setTestStatus({ kind: "error", message: "Enter a valid email address." });
+      addToast("Enter a valid email address.", "error");
       return;
     }
     setTestSending(true);
-    setTestStatus(null);
     try {
       const result = await sendMailTransportTest(to);
       if (result.status === "sent") {
-        setTestStatus({ kind: "ok", message: "Test email sent." });
+        addToast("Test email sent.", "success");
       } else {
-        setTestStatus({ kind: "error", message: result.error ?? "Send failed." });
+        addToast(result.error ?? "Send failed.", "error");
       }
     } catch (err) {
       let message = "Send failed.";
@@ -286,7 +275,7 @@ export function MailTransportPanel() {
           message = err.message;
         }
       }
-      setTestStatus({ kind: "error", message });
+      addToast(message, "error");
     } finally {
       setTestSending(false);
     }
@@ -304,16 +293,6 @@ export function MailTransportPanel() {
       footer={
         <div className="foot-actions">
           <div className="foot-actions__status">
-            {saveMessage && (
-              <p role="status" className="text-success">
-                {saveMessage}
-              </p>
-            )}
-            {saveError && (
-              <p role="alert" className="text-error">
-                {saveError}
-              </p>
-            )}
             {validationErrors.length > 0 && (
               <ul role="alert" className="text-error">
                 {validationErrors.map((e) => (
@@ -683,14 +662,6 @@ export function MailTransportPanel() {
                 {testSending ? "Sending…" : "Send test email"}
               </Button>
             </div>
-            {testStatus && (
-              <p
-                role={testStatus.kind === "ok" ? "status" : "alert"}
-                className={testStatus.kind === "ok" ? "text-success" : "text-error"}
-              >
-                {testStatus.message}
-              </p>
-            )}
           </div>
         </div>
       )}

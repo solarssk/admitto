@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EventOverviewPage } from "../../src/pages/EventOverviewPage.js";
 import type { EventOverviewDto } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
+import { renderWithToast } from "../test-utils.js";
 
 const fetchEventOverview = vi.fn();
 const reportApiError = vi.fn();
@@ -85,7 +86,7 @@ const liveEvent: StreamCheckinEvent = {
 };
 
 function renderPage() {
-  return render(
+  return renderWithToast(
     <MemoryRouter initialEntries={["/admin/events/evt-1/overview"]}>
       <Routes>
         <Route path="/admin/events/:eventId/overview" element={<EventOverviewPage />} />

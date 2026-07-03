@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Badge, Button, Card, EmptyState, PageHeader, Spinner, Tabs } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, PageHeader, Spinner, Tabs, useToast } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ApiError, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
@@ -35,6 +35,7 @@ export function EventsPickerPage() {
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const { reportApiError } = useConnectionState();
+  const { addToast } = useToast();
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSearchQuery(searchInput.trim()), SEARCH_DEBOUNCE_MS);
@@ -52,7 +53,9 @@ export function EventsPickerPage() {
       if (signal?.aborted) return;
       if (err instanceof ApiError) {
         reportApiError(err.status);
-        setError(err.status === 403 ? "You do not have access to the admin panel." : "Failed to load events.");
+        const message =
+          err.status === 403 ? "You do not have access to the admin panel." : "Failed to load events.";
+        setError(message);
       } else {
         setError("Failed to load events.");
       }
@@ -111,9 +114,11 @@ export function EventsPickerPage() {
     try {
       await unarchiveEvent(unarchiveTarget.event.id);
       setUnarchiveTarget(null);
+      addToast("Event unarchived.", "success");
       await load();
     } catch (err) {
-      setUnarchiveError(err instanceof ApiError ? err.message : "Failed to unarchive event.");
+      const message = err instanceof ApiError ? err.message : "Failed to unarchive event.";
+      setUnarchiveError(message);
     } finally {
       setUnarchiving(false);
     }
@@ -148,7 +153,9 @@ export function EventsPickerPage() {
           <Spinner label="Loading events" />
         </div>
       )}
-      {error && <p className="text-error">{error}</p>}
+      {!loading && error && (
+        <EmptyState title="Could not load events" description={error} />
+      )}
 
       {!loading && !error && displayedEvents.length > 0 && (
         <div className="events-picker-toolbar">

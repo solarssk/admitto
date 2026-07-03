@@ -24,6 +24,13 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+const TOAST_ICON: Record<ToastVariant, string> = {
+  success: "circle-check",
+  error: "circle-x",
+  warning: "alert-triangle",
+  info: "info-circle",
+};
+
 /** Clears and removes a pending auto-dismiss timer for the given toast id. */
 function clearToastTimer(
   timerRefs: MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>,
@@ -48,8 +55,19 @@ function clearAllToastTimers(timerRefs: MutableRefObject<Map<string, ReturnType<
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const timerRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const prevToastIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => () => clearAllToastTimers(timerRefs), []);
+
+  useEffect(() => {
+    const currentIds = new Set(toasts.map((t) => t.id));
+    for (const prevId of prevToastIdsRef.current) {
+      if (!currentIds.has(prevId)) {
+        clearToastTimer(timerRefs, prevId);
+      }
+    }
+    prevToastIdsRef.current = currentIds;
+  }, [toasts]);
 
   const dismiss = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -60,13 +78,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (message: string, variant: ToastVariant = "info", duration = 4000) => {
       const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       setToasts((prev) => {
-        const kept = prev.slice(-4);
-        const keptIds = new Set(kept.map((t) => t.id));
-        for (const toast of prev) {
-          if (!keptIds.has(toast.id)) {
-            clearToastTimer(timerRefs, toast.id);
-          }
-        }
+        const withoutDup = prev.filter((t) => !(t.message === message && t.variant === variant));
+        const kept = withoutDup.slice(-4);
         return [...kept, { id, message, variant, duration }];
       });
       if (duration > 0) {
@@ -80,9 +93,25 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ addToast }}>
       {children}
-      <div className="at-toast-stack" role="region" aria-label="Notifications" aria-live="polite">
+      <div
+        className="at-toast-stack"
+        role="region"
+        aria-label="Notifications"
+        aria-live="polite"
+        aria-atomic="false"
+      >
         {toasts.map((toast) => (
-          <div key={toast.id} className={`at-toast at-toast--${toast.variant}`} role="alert">
+          <div
+            key={toast.id}
+            className={`at-toast at-toast--${toast.variant}`}
+            data-testid="at-toast"
+            data-variant={toast.variant}
+            role={toast.variant === "error" ? "alert" : "status"}
+          >
+            <i
+              className={`ti ti-${TOAST_ICON[toast.variant]} at-toast__icon`}
+              aria-hidden="true"
+            />
             <span className="at-toast__message">{toast.message}</span>
             <button
               type="button"

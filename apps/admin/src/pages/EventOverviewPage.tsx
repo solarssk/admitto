@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
-import { Badge, Card, PageHeader, Stat } from "@admitto/ui";
+import { Badge, Card, PageHeader, Stat, useToast } from "@admitto/ui";
 import { ApiError, fetchEventOverview } from "../api/client.js";
 import type { EventDto, EventOverviewDto } from "../api/types.js";
 import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates.js";
@@ -61,8 +61,10 @@ function formatEmailDeliverySub(overview: EventOverviewDto): string {
 export function EventOverviewPage() {
   const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
+  const { addToast } = useToast();
   const abortRef = useRef<AbortController | null>(null);
   const seenCheckinsRef = useRef(new Map<string, number>());
+  const statsErrorToastedRef = useRef(false);
   /** Recent admits within admitDedup TTL — not cleared on server refresh (replay dedup); pruned instead. */
   const reconcileTimerRef = useRef<number | null>(null);
   const currentEventIdRef = useRef(event.id);
@@ -74,7 +76,6 @@ export function EventOverviewPage() {
   const [overview, setOverview] = useState<EventOverviewDto | null>(null);
   const [optimisticAdmittedDelta, setOptimisticAdmittedDelta] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const currentOverview = overview?.event.id === event.id ? overview : null;
   const eventTimezone = currentOverview?.event.timezone ?? event.timezone;
@@ -124,7 +125,7 @@ export function EventOverviewPage() {
       reconcileTimerRef.current = null;
     }
     setLoading(true);
-    setError(null);
+    statsErrorToastedRef.current = false;
     setOverview(null);
     setOptimisticAdmittedDelta(0);
 
@@ -137,15 +138,17 @@ export function EventOverviewPage() {
         .then((data) => {
           if (ac.signal.aborted) return;
           absorbServerOverview(data);
-          setError(null);
+          statsErrorToastedRef.current = false;
         })
         .catch((err) => {
           if (err instanceof DOMException && err.name === "AbortError") return;
+          const message = "Failed to load event stats.";
           if (err instanceof ApiError) {
             reportApiError(err.status);
-            setError("Failed to load event stats.");
-          } else {
-            setError("Failed to load event stats.");
+          }
+          if (!statsErrorToastedRef.current) {
+            addToast(message, "error");
+            statsErrorToastedRef.current = true;
           }
         })
         .finally(() => {
@@ -164,7 +167,7 @@ export function EventOverviewPage() {
         reconcileTimerRef.current = null;
       }
     };
-  }, [absorbServerOverview, event.id, reportApiError]);
+  }, [absorbServerOverview, event.id, reportApiError, addToast]);
 
   const meta = [formatEventCalendarDate(eventDateIso), event.location]
     .filter(Boolean)
@@ -231,8 +234,6 @@ export function EventOverviewPage() {
           />
         </Card>
       </div>
-
-      {error && <p className="text-error">{error}</p>}
 
       {event.archived_at && (
         <p className="overview-archived-note">

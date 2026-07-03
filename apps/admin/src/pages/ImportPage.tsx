@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Button, Card, PageHeader } from "@admitto/ui";
+import { Button, Card, PageHeader, useToast } from "@admitto/ui";
 import { ApiError, commitImport, fetchEventItems, previewImport, type EventFullMeta } from "../api/client.js";
 import type { ImportCommitResponse, ImportPreviewResponse, ImportSampleRow } from "../api/types.js";
 import {
@@ -104,6 +104,7 @@ export function ImportPage() {
   const { eventId } = useParams();
   const { assignments } = useAuth();
   const { reportApiError } = useConnectionState();
+  const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const superadmin = isSuperadmin(assignments);
 
@@ -113,7 +114,6 @@ export function ImportPage() {
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
   const [result, setResult] = useState<ImportCommitResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [capacityBlocked, setCapacityBlocked] = useState<EventFullMeta | null>(null);
   const [forceCapacity, setForceCapacity] = useState(false);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
@@ -150,16 +150,21 @@ export function ImportPage() {
         if (err.message === "invalid file content") return "The file could not be read. Check that it is a valid CSV or XLSX.";
         return err.message || "Request failed.";
       })();
-      setError(msg);
+      const duration =
+        err.message === "file too large" ||
+        err.message === "too many rows" ||
+        err.message === "invalid file content"
+          ? 7000
+          : undefined;
+      addToast(msg, "error", duration);
     } else {
-      setError("Request failed.");
+      addToast("Request failed.", "error");
     }
   };
 
   const onPreview = async () => {
     if (!eventId || !file) return;
     setLoading(true);
-    setError(null);
     try {
       const data = await previewImport(eventId, file, overwrite);
       setPreview(data);
@@ -174,17 +179,19 @@ export function ImportPage() {
   const onCommit = async (opts?: { force?: boolean }) => {
     if (!eventId || !file || !preview) return;
     setLoading(true);
-    setError(null);
     setCapacityBlocked(null);
     try {
       const data = await commitImport(eventId, file, overwrite, { force: opts?.force });
       setResult(data);
       setStep("done");
       setForceCapacity(false);
+      addToast(
+        `Attendees imported: ${data.created} created, ${data.updated} updated, ${data.skipped.length} skipped`,
+        "success",
+      );
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && err.code === "event_full" && err.eventFull) {
         setCapacityBlocked(err.eventFull);
-        setError(null);
       } else {
         handleApiError(err);
       }
@@ -215,7 +222,6 @@ export function ImportPage() {
         <Link to={`/admin/events/${eventId}/attendees`}>← Back to attendees</Link>
       </p>
 
-      {error && <p className="text-error">{error}</p>}
 
       {step !== "done" && (
         <Card className="import-card">

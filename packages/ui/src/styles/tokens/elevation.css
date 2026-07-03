@@ -30,5 +30,5 @@
   --z-overlay:   1040;  /* @kind other */
   --z-modal:     1050;  /* @kind other */
   --z-demo-bar:  200;   /* @kind other */
-  --z-toast:     1080;  /* @kind other */
+  --z-toast:     1030;  /* below camera overlay (--z-overlay) */
 }

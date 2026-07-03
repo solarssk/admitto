@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Card } from "@admitto/ui";
+import { Button, Card, useToast } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { ApiError, archiveEvent, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
@@ -9,6 +9,7 @@ type ConfirmAction = { type: "archive" | "unarchive"; event: EventDto };
 
 /** Settings panel — archive/unarchive events (superadmin-only section). */
 export function EventArchivingPanel() {
+  const { addToast } = useToast();
   const [events, setEvents] = useState<EventDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,11 +26,12 @@ export function EventArchivingPanel() {
       setEvents(list);
     } catch (err) {
       if (signal?.aborted) return;
-      setError(err instanceof ApiError ? err.message : "Failed to load events.");
+      const message = err instanceof ApiError ? err.message : "Failed to load events.";
+      setError(message);
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -53,8 +55,10 @@ export function EventArchivingPanel() {
     try {
       if (confirmAction.type === "archive") {
         await archiveEvent(confirmAction.event.id);
+        addToast("Event archived.", "success");
       } else {
         await unarchiveEvent(confirmAction.event.id);
+        addToast("Event unarchived.", "success");
       }
       setConfirmAction(null);
       await load();
