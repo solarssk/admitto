@@ -4,6 +4,8 @@ import {
   formatEventDateTime,
   formatEventTime,
   formatUtcDateTime,
+  calendarDateValidationHint,
+  localeDateInputPattern,
   parseFlexibleCalendarDate,
   utcDayEndIso,
   utcDayStartIso,
@@ -113,6 +115,21 @@ describe("parseFlexibleCalendarDate", () => {
     expect(parseFlexibleCalendarDate("2026/07/08")).toBe("2026-07-08");
   });
 
+  it("parses year-first input as ISO order in day-first locales", () => {
+    setPreferredLocale("pl-PL");
+    expect(parseFlexibleCalendarDate("2026.3.15")).toBe("2026-03-15");
+    expect(parseFlexibleCalendarDate("2026/3/15")).toBe("2026-03-15");
+    expect(parseFlexibleCalendarDate("2026.07.15")).toBe("2026-07-15");
+    expect(parseFlexibleCalendarDate("2026.3.7")).toBe("2026-03-07");
+    expect(parseFlexibleCalendarDate("2026/3/7")).toBe("2026-03-07");
+  });
+
+  it("parses year-first input as ISO order in de-DE locale", () => {
+    setPreferredLocale("de-DE");
+    expect(parseFlexibleCalendarDate("2026.3.15")).toBe("2026-03-15");
+    expect(parseFlexibleCalendarDate("2026-3-7")).toBe("2026-03-07");
+  });
+
   it("rejects invalid calendar dates", () => {
     expect(parseFlexibleCalendarDate("2026-02-30")).toBeNull();
   });
@@ -135,5 +152,30 @@ describe("parseFlexibleCalendarDate", () => {
   it("rejects year in the middle", () => {
     setPreferredLocale("en-US");
     expect(parseFlexibleCalendarDate("07/2026/15")).toBeNull();
+  });
+});
+
+describe("localeDateInputPattern", () => {
+  afterEach(() => setPreferredLocale(null));
+
+  it("drops trailing locale punctuation for ko-KR", () => {
+    setPreferredLocale("ko-KR");
+    expect(localeDateInputPattern()).toBe("yyyy.mm.dd");
+  });
+
+  it("uses slashes for year-first ja-JP", () => {
+    setPreferredLocale("ja-JP");
+    expect(localeDateInputPattern()).toBe("yyyy/mm/dd");
+  });
+});
+
+describe("calendarDateValidationHint", () => {
+  it("omits hyphenated ISO hint for year-first patterns", () => {
+    expect(calendarDateValidationHint("yyyy/mm/dd")).toBe("yyyy/mm/dd");
+  });
+
+  it("keeps ISO hint for day-first and month-first patterns", () => {
+    expect(calendarDateValidationHint("dd.mm.yyyy")).toBe("dd.mm.yyyy or yyyy-mm-dd");
+    expect(calendarDateValidationHint("mm/dd/yyyy")).toBe("mm/dd/yyyy or yyyy-mm-dd");
   });
 });

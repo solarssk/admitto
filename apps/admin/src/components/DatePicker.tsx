@@ -10,6 +10,7 @@ import {
   formatCalendarMonth,
   formatIsoCalendarDate,
   getWeekdayLabelsShort,
+  calendarDateValidationHint,
   localeDateInputPattern,
   parseFlexibleCalendarDate,
   todayIsoDate,
@@ -183,7 +184,7 @@ export function DatePicker({
     }
     const iso = parseFlexibleCalendarDate(trimmed);
     if (!iso) {
-      setParseError(`Use a valid date (${inputPattern} or yyyy-mm-dd).`);
+      setParseError(`Use a valid date (${calendarDateValidationHint(inputPattern)}).`);
       setText(trimmed);
       onChange("");
       setTyping(false);
