@@ -14,6 +14,8 @@ import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import * as migrationsCheck from "../../src/ops/migrations-check.js";
+import { ensureWebTestMigrationsCurrent } from "../ensureTestSchema.js";
+import { WEB_TEST_DATABASE_URL } from "../testEnv.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const EMAIL_SUPER = "setup-wizard-super@example.com";
@@ -103,7 +105,11 @@ async function seed(client: PrismaClient) {
 }
 
 beforeAll(async () => {
-  prisma = new PrismaClient();
+  process.env.DATABASE_URL = WEB_TEST_DATABASE_URL;
+  await ensureWebTestMigrationsCurrent();
+  prisma = new PrismaClient({
+    datasources: { db: { url: WEB_TEST_DATABASE_URL } },
+  });
   await seed(prisma);
   app = createApp({
     prisma,

@@ -1,4 +1,4 @@
-import { exec, execFile } from "node:child_process";
+import { execFile } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -25,7 +25,6 @@ function assertTestDatabaseUrl(databaseUrl: string): void {
   );
 }
 
-const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const DB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "db");
 const REPO_ROOT = path.resolve(DB_ROOT, "..", "..");
@@ -50,9 +49,16 @@ function isMissingMigrationHistoryError(error: unknown): boolean {
   return migrateErrorText(error).includes("P3005");
 }
 
-/** Run a Prisma CLI command in the db package with a timeout. */
-async function runPrisma(command: string, env: NodeJS.ProcessEnv): Promise<void> {
-  await execAsync(command, { cwd: DB_ROOT, env, timeout: MIGRATE_TIMEOUT_MS });
+/** Run a Prisma CLI command in the db package without spawning /bin/sh. */
+async function runPrismaArgs(args: string[], env: NodeJS.ProcessEnv): Promise<void> {
+  await execFileAsync("npx", args, { cwd: DB_ROOT, env, timeout: MIGRATE_TIMEOUT_MS });
+}
+
+/** Idempotent `migrate deploy` on the web integration DB (safe in Vitest fork workers). */
+export async function ensureWebTestMigrationsCurrent(): Promise<void> {
+  const env = testDbEnv();
+  assertTestDatabaseUrl(env.DATABASE_URL!);
+  await runPrismaArgs(["prisma", "migrate", "deploy"], env);
 }
 
 /** Extract database name from a PostgreSQL connection URL. */
@@ -78,14 +84,14 @@ export async function ensureIntegrationTestSchema(): Promise<void> {
   const env = testDbEnv();
   assertTestDatabaseUrl(env.DATABASE_URL!);
   try {
-    await runPrisma("npx prisma migrate deploy", env);
+    await runPrismaArgs(["prisma", "migrate", "deploy"], env);
   } catch (migrateError) {
     if (isMissingMigrationHistoryError(migrateError)) {
       console.warn(
         "[ensureTestSchema] P3005 — resetting test DB and retrying migrate deploy",
       );
       await resetTestDatabase(env);
-      await runPrisma("npx prisma migrate deploy", env);
+      await runPrismaArgs(["prisma", "migrate", "deploy"], env);
       return;
     }
     if (process.env["CI"]) {
@@ -95,6 +101,9 @@ export async function ensureIntegrationTestSchema(): Promise<void> {
       "[ensureTestSchema] migrate deploy failed, falling back to db push:",
       migrateError,
     );
-    await runPrisma("npx prisma db push --skip-generate --accept-data-loss", env);
+    await runPrismaArgs(
+      ["prisma", "db", "push", "--skip-generate", "--accept-data-loss"],
+      env,
+    );
   }
 }
