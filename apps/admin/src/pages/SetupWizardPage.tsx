@@ -5,11 +5,23 @@ import { WizardStep1Checks } from "./wizard/WizardStep1Checks.js";
 import { WizardStep2Mail, type WizardStep2MailHandle } from "./wizard/WizardStep2Mail.js";
 import { WizardStep3Branding, type WizardStep3BrandingHandle } from "./wizard/WizardStep3Branding.js";
 import { WizardStep4Event, type WizardStep4EventHandle } from "./wizard/WizardStep4Event.js";
-import { WizardStep5Ready } from "./wizard/WizardStep5Ready.js";
+import { WizardStep5Ready, type WizardStep5ReadyHandle } from "./wizard/WizardStep5Ready.js";
 import "./setup-wizard.css";
 
-const WIZARD_PROGRESS_KEY = "admitto_wizard_progress";
+const WIZARD_STEP_KEY = "admitto_wizard_step";
+const WIZARD_UNSAVED_KEY = "admitto_wizard_unsaved_refresh";
 const TOTAL_STEPS = 5;
+
+function readSavedWizardStep(): number {
+  const raw = sessionStorage.getItem(WIZARD_STEP_KEY);
+  const n = raw ? Number.parseInt(raw, 10) : 1;
+  return Number.isFinite(n) && n >= 1 && n <= TOTAL_STEPS ? n : 1;
+}
+
+function clearWizardSession(): void {
+  sessionStorage.removeItem(WIZARD_STEP_KEY);
+  sessionStorage.removeItem(WIZARD_UNSAVED_KEY);
+}
 
 const STEP_NAMES = ["System", "Mail", "Brand", "Event", "Ready"] as const;
 
@@ -61,40 +73,55 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
     setBrandingSkipped,
     setSummary,
   } = useWizard();
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(() => readSavedWizardStep());
   const [checksOk, setChecksOk] = useState(false);
   const [eventCanContinue, setEventCanContinue] = useState(false);
   const [hasExistingEvents, setHasExistingEvents] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [refreshNotice, setRefreshNotice] = useState(false);
+  const [unsavedRefreshNotice, setUnsavedRefreshNotice] = useState(false);
   const [continuing, setContinuing] = useState(false);
+  const [finishing, setFinishing] = useState(false);
 
   const mailRef = useRef<WizardStep2MailHandle>(null);
   const brandingRef = useRef<WizardStep3BrandingHandle>(null);
   const eventRef = useRef<WizardStep4EventHandle>(null);
+  const readyRef = useRef<WizardStep5ReadyHandle>(null);
 
   useEffect(() => {
-    if (sessionStorage.getItem(WIZARD_PROGRESS_KEY) === "1") {
-      setRefreshNotice(true);
-      sessionStorage.removeItem(WIZARD_PROGRESS_KEY);
+    const saved = readSavedWizardStep();
+    for (let i = 1; i < saved; i++) markStepComplete(i);
+    if (sessionStorage.getItem(WIZARD_UNSAVED_KEY) === "1") {
+      setUnsavedRefreshNotice(true);
+      sessionStorage.removeItem(WIZARD_UNSAVED_KEY);
     }
-  }, []);
+  }, [markStepComplete]);
 
   useEffect(() => {
+    sessionStorage.setItem(WIZARD_STEP_KEY, String(step));
+  }, [step]);
+
+  useEffect(() => {
+    const markUnsavedRefresh = () => {
+      if (dirty) sessionStorage.setItem(WIZARD_UNSAVED_KEY, "1");
+    };
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (step > 1 || dirty) {
+      if (dirty) {
+        markUnsavedRefresh();
         e.preventDefault();
         e.returnValue = "";
       }
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [step, dirty]);
+    window.addEventListener("pagehide", markUnsavedRefresh);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", markUnsavedRefresh);
+    };
+  }, [dirty]);
 
   const goNext = useCallback(
     (fromStep: number) => {
       markStepComplete(fromStep);
-      sessionStorage.setItem(WIZARD_PROGRESS_KEY, "1");
       setDirty(false);
       setStep((s) => Math.min(TOTAL_STEPS, s + 1));
     },
@@ -185,9 +212,12 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
         <nav className="setup-wizard__steps" aria-label="Setup progress">
           {STEP_NAMES.map((name, index) => {
             const stepNum = index + 1;
-            const isActive = step === stepNum;
-            const isPast = step > stepNum;
-            const isComplete = isPast || (completedSteps.has(stepNum) && !isActive);
+            const isOnReady = step === TOTAL_STEPS;
+            const isActive = step === stepNum && !isOnReady;
+            const isComplete =
+              step > stepNum ||
+              (completedSteps.has(stepNum) && !isActive) ||
+              (isOnReady && stepNum === TOTAL_STEPS);
             const state = isActive ? "active" : isComplete ? "done" : "pending";
             return (
               <Fragment key={name}>
@@ -220,10 +250,11 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
           })}
         </nav>
 
-        <div className="setup-wizard__body">
-          {refreshNotice && step === 1 && (
+        <div className={`setup-wizard__body${step === TOTAL_STEPS ? " setup-wizard__body--done" : ""}`}>
+          {unsavedRefreshNotice && step === 1 && (
             <p className="setup-wizard__refresh-notice" role="status">
-              Your progress was not saved. Let&apos;s start again.
+              Unsaved form changes were lost after refresh. Settings you already saved (mail, branding)
+              are still kept — continue from here.
             </p>
           )}
 
@@ -238,10 +269,32 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
               onDirtyChange={setDirty}
             />
           )}
-          {step === 5 && <WizardStep5Ready onComplete={onComplete} />}
+          {step === 5 && (
+            <WizardStep5Ready
+              ref={readyRef}
+              onSubmittingChange={setFinishing}
+              onComplete={async () => {
+                clearWizardSession();
+                await onComplete();
+              }}
+            />
+          )}
         </div>
 
-        {step < TOTAL_STEPS && (
+        {step === TOTAL_STEPS ? (
+          <footer className="setup-wizard__footer setup-wizard__footer--done">
+            <div className="setup-wizard__footer-spacer" />
+            <Button
+              type="button"
+              variant="primary"
+              disabled={finishing}
+              icon={<i className="ti ti-layout-dashboard" aria-hidden="true" />}
+              onClick={() => void readyRef.current?.goToDashboard()}
+            >
+              {finishing ? "Finishing…" : "Open dashboard"}
+            </Button>
+          </footer>
+        ) : (
           <footer className="setup-wizard__footer">
             {showBack ? (
               <Button type="button" variant="secondary" onClick={handleBack}>

@@ -11,6 +11,7 @@
 }
 
 .logo-upload__zone {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -42,6 +43,10 @@
   background: var(--surface-hover);
 }
 
+.logo-upload__zone--has-preview {
+  cursor: default;
+}
+
 .logo-upload__zone i {
   font-size: 1.5rem;
   color: var(--text-muted);
@@ -56,27 +61,25 @@
   display: none;
 }
 
-.logo-upload__preview {
-  position: relative;
-  display: inline-flex;
-  max-width: 240px;
-  padding: var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
+.logo-upload__preview-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 64px;
 }
 
 .logo-upload__img {
   display: block;
-  max-width: 200px;
+  max-width: min(100%, 240px);
   max-height: 64px;
   object-fit: contain;
 }
 
 .logo-upload__clear {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 8px;
+  right: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -84,9 +87,15 @@
   height: 24px;
   border: none;
   border-radius: var(--radius-pill, 999px);
-  background: var(--surface-hover);
+  background: var(--surface-card, #fff);
   color: var(--text);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgb(15 23 42 / 8%));
   cursor: pointer;
+  z-index: 1;
+}
+
+.logo-upload__clear:hover {
+  background: var(--surface-hover);
 }
 
 .logo-upload__clear:focus-visible {
@@ -94,20 +103,13 @@
   outline-offset: 2px;
 }
 
-.logo-upload__toggle {
-  align-self: flex-start;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+.logo-upload__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
 }
 
-.logo-upload__toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.logo-upload__actions .at-btn {
+  padding-left: 0;
 }

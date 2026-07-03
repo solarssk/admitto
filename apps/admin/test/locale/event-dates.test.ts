@@ -4,6 +4,7 @@ import {
   formatEventDateTime,
   formatEventTime,
   formatUtcDateTime,
+  parseFlexibleCalendarDate,
   utcDayEndIso,
   utcDayStartIso,
 } from "../../src/utils/event-dates.js";
@@ -87,5 +88,27 @@ describe("utcDayIso helpers", () => {
   it("utcDayStartIso and utcDayEndIso bound UTC calendar days", () => {
     expect(utcDayStartIso("2026-06-28")).toBe("2026-06-28T00:00:00.000Z");
     expect(utcDayEndIso("2026-06-28")).toBe("2026-06-28T23:59:59.999Z");
+  });
+});
+
+describe("parseFlexibleCalendarDate", () => {
+  afterEach(() => setPreferredLocale(null));
+
+  it("parses ISO dates", () => {
+    expect(parseFlexibleCalendarDate("2026-07-15")).toBe("2026-07-15");
+  });
+
+  it("parses day-first dates for pl-PL locale", () => {
+    setPreferredLocale("pl-PL");
+    expect(parseFlexibleCalendarDate("15.07.2026")).toBe("2026-07-15");
+  });
+
+  it("parses month-first dates for en-US locale", () => {
+    setPreferredLocale("en-US");
+    expect(parseFlexibleCalendarDate("07/15/2026")).toBe("2026-07-15");
+  });
+
+  it("rejects invalid calendar dates", () => {
+    expect(parseFlexibleCalendarDate("2026-02-30")).toBeNull();
   });
 });

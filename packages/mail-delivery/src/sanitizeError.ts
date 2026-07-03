@@ -31,6 +31,9 @@ export function clientSafeDeliveryError(message: string | undefined): string {
   return sanitized;
 }
 
+const MAIL_TLS_VERIFY_HINT =
+  "In Settings → Mail → SMTP tuning, try turning off Verify TLS certificate (common with corporate relays).";
+
 /**
  * Superadmin transport test — actionable copy without hostnames, URLs, or credentials.
  * Used only for POST /api/admin/mail-settings/test (not attendee-facing mail logs).
@@ -56,8 +59,26 @@ export function transportTestErrorForAdmin(message: string | undefined): string 
   if (/\b535\b|\b534\b|authentication failed|invalid login|invalid credentials/i.test(msg)) {
     return "SMTP authentication failed. Check username and password.";
   }
-  if (/certificate|STARTTLS|TLS|SSL|self[- ]signed/i.test(msg)) {
-    return "TLS error talking to the mail server. Check TLS/STARTTLS settings.";
+  if (/Hostname\/IP does not match|altnames|ERR_TLS_CERT_ALTNAME_INVALID/i.test(msg)) {
+    return `The SMTP hostname does not match the server's TLS certificate. Ask IT for the correct relay hostname, or ${MAIL_TLS_VERIFY_HINT}`;
+  }
+  if (/certificate has expired|cert has expired|CERT_HAS_EXPIRED/i.test(msg)) {
+    return "The mail server's TLS certificate has expired. Contact your mail administrator.";
+  }
+  if (/self[- ]signed|SELF_SIGNED_CERT/i.test(msg)) {
+    return `The mail server uses a certificate this instance does not trust. Ask IT to provide trust setup, or ${MAIL_TLS_VERIFY_HINT}`;
+  }
+  if (/unable to verify|UNABLE_TO_VERIFY|certificate chain|unknown ca|not trusted/i.test(msg)) {
+    return `The mail server certificate could not be verified. Ask IT for the corporate CA/trust setup, or ${MAIL_TLS_VERIFY_HINT}`;
+  }
+  if (/wrong version number|SSL routines|ssl3_get_record|packet length too long/i.test(msg)) {
+    return "TLS handshake failed — port and TLS mode may not match. Use port 587 with STARTTLS on, or port 465 with implicit TLS (confirm with IT).";
+  }
+  if (/STARTTLS not supported|STARTTLS command failed|must issue a STARTTLS/i.test(msg)) {
+    return "This server does not offer STARTTLS on the chosen port. Try port 465 with STARTTLS off, or ask IT for relay settings.";
+  }
+  if (/certificate|STARTTLS|TLS|SSL/i.test(msg)) {
+    return `TLS error talking to the mail server. Check host, port, and STARTTLS settings, or ${MAIL_TLS_VERIFY_HINT}`;
   }
   if (/\b550\b|\b553\b|mailbox unavailable|user unknown/i.test(msg)) {
     return "Server rejected the recipient or sender address.";
@@ -69,5 +90,5 @@ export function transportTestErrorForAdmin(message: string | undefined): string 
   const generic = clientSafeDeliveryError(message);
   if (generic !== "send failed") return generic;
 
-  return "Send failed. Verify transport settings; see server logs for the technical detail.";
+  return "Send failed. Check transport settings or ask your administrator to review server logs.";
 }

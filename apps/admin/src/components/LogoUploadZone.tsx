@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { Button, useToast } from "@admitto/ui";
 import { ApiError, uploadFile } from "../api/client.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import "./logo-upload.css";
@@ -13,9 +14,9 @@ export interface LogoUploadZoneProps {
 
 /** Upload to server or link an external HTTPS image — both are supported. */
 export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps) {
+  const { addToast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [dragging, setDragging] = useState(false);
 
@@ -23,9 +24,8 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
   const previewSrc = useMemo(() => brandingLogoImgSrc(value), [value]);
 
   const handleFile = async (file: File) => {
-    setError(null);
     if (file.size > MAX_UPLOAD_BYTES) {
-      setError("File must be 2 MB or smaller.");
+      addToast("File must be 2 MB or smaller.", "error");
       return;
     }
     setUploading(true);
@@ -36,7 +36,7 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
       onChange(result.url);
       onDirty?.();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Upload failed.");
+      addToast(err instanceof ApiError ? err.message : "Upload failed.", "error");
     } finally {
       setUploading(false);
     }
@@ -49,100 +49,125 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
     if (file) void handleFile(file);
   };
 
+  const openFilePicker = () => {
+    if (!uploading) fileRef.current?.click();
+  };
+
   return (
     <div className="logo-upload">
       <span className="at-label">Organisation logo</span>
       <p className="logo-upload__intro">
         Upload a file to this server, or use an image hosted elsewhere (HTTPS).
       </p>
-      {previewSrc && (
-        <div className="logo-upload__preview">
-          <img
-            src={previewSrc}
-            alt="Organisation logo preview"
-            className="logo-upload__img"
-            onLoad={() => setError(null)}
-            onError={() => {
-              if (!isUploadedFile) {
-                setError(
-                  "Could not load logo preview from this URL. Check the link or try again later.",
-                );
-                return;
-              }
-              setError("Uploaded file appears corrupt or unsupported. Please try another image.");
-              onChange("");
-              onDirty?.();
-            }}
-          />
-          <button
-            type="button"
-            className="logo-upload__clear"
-            aria-label="Remove logo"
-            onClick={() => {
-              setError(null);
-              onChange("");
-              onDirty?.();
-            }}
-          >
-            <i className="ti ti-x" aria-hidden="true" />
-          </button>
-        </div>
-      )}
-      {!value && (
-        <div
-          className={[
-            "logo-upload__zone",
-            uploading && "logo-upload__zone--busy",
-            dragging && "logo-upload__zone--dragging",
-          ]
-            .filter(Boolean)
-            .join(" ")}
-          onDrop={(e) => void onDrop(e)}
-          onDragOver={(e) => {
+      <div
+        className={[
+          "logo-upload__zone",
+          uploading && "logo-upload__zone--busy",
+          dragging && "logo-upload__zone--dragging",
+          previewSrc && "logo-upload__zone--has-preview",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onDrop={(e) => void onDrop(e)}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onClick={() => {
+          if (!previewSrc) openFilePicker();
+        }}
+        role={previewSrc ? undefined : "button"}
+        tabIndex={previewSrc ? undefined : 0}
+        onKeyDown={(e) => {
+          if (!previewSrc && (e.key === "Enter" || e.key === " ")) {
             e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onClick={() => fileRef.current?.click()}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              fileRef.current?.click();
-            }
-          }}
-        >
-          <i className="ti ti-photo-up" aria-hidden="true" />
-          <span>{uploading ? "Uploading…" : "Drop logo here or click to browse"}</span>
-          <span className="logo-upload__hint">PNG, JPG, WebP · max 2 MB · recommended 160×48 px</span>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            className="logo-upload__file-input"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleFile(f);
-            }}
-            disabled={uploading}
-            aria-hidden="true"
-            tabIndex={-1}
-          />
-        </div>
-      )}
-      {error && (
-        <p className="text-error" role="alert">
-          {error}
-        </p>
-      )}
-      <button
-        type="button"
-        className="logo-upload__toggle"
-        onClick={() => setShowUrlInput((v) => !v)}
+            openFilePicker();
+          }
+        }}
       >
-        {showUrlInput ? "Hide external URL" : "Use external HTTPS URL"}
-      </button>
+        {previewSrc ? (
+          <>
+            <div className="logo-upload__preview-inner">
+              <img
+                src={previewSrc}
+                alt="Organisation logo preview"
+                className="logo-upload__img"
+                onError={() => {
+                  if (!isUploadedFile) {
+                    addToast(
+                      "Could not load logo preview from this URL. Check the link or try again later.",
+                      "error",
+                    );
+                    return;
+                  }
+                  addToast(
+                    "Uploaded file appears corrupt or unsupported. Please try another image.",
+                    "error",
+                  );
+                  onChange("");
+                  onDirty?.();
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              className="logo-upload__clear"
+              aria-label="Remove logo"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange("");
+                onDirty?.();
+              }}
+            >
+              <i className="ti ti-x" aria-hidden="true" />
+            </button>
+          </>
+        ) : (
+          <>
+            <i className="ti ti-photo-up" aria-hidden="true" />
+            <span>{uploading ? "Uploading…" : "Drop logo here or click to browse"}</span>
+            <span className="logo-upload__hint">PNG, JPG, WebP · max 2 MB · recommended 160×48 px</span>
+          </>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="logo-upload__file-input"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void handleFile(f);
+            e.target.value = "";
+          }}
+          disabled={uploading}
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+      </div>
+      <div className="logo-upload__actions">
+        {previewSrc ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={uploading}
+            icon={<i className="ti ti-refresh" aria-hidden="true" />}
+            onClick={openFilePicker}
+          >
+            Replace image
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          icon={<i className={showUrlInput ? "ti ti-chevron-up" : "ti ti-link"} aria-hidden="true" />}
+          onClick={() => setShowUrlInput((v) => !v)}
+        >
+          {showUrlInput ? "Hide external URL" : "Use external HTTPS URL"}
+        </Button>
+      </div>
       {showUrlInput && (
         <div className="at-field">
           <label className="at-label" htmlFor="logo-url-external">

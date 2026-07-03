@@ -354,12 +354,19 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
                     onChange={(e) => updateDraft({ fromAddress: e.target.value })}
                     placeholder="events@company.com"
                   />
-                  <Switch
-                    label="Use TLS (STARTTLS)"
-                    checked={draft.requireTls}
-                    disabled={fieldLocked("requireTls")}
-                    onChange={(e) => updateDraft({ requireTls: e.target.checked })}
-                  />
+                  <div className="setup-wizard__mail-options-row">
+                    <Switch
+                      label="Use TLS (STARTTLS)"
+                      checked={draft.requireTls}
+                      disabled={fieldLocked("requireTls")}
+                      onChange={(e) => updateDraft({ requireTls: e.target.checked })}
+                    />
+                    <MailTestControl
+                      testSending={testSending}
+                      testSent={testSent}
+                      onSend={() => void handleTestSend()}
+                    />
+                  </div>
                 </>
               )}
 
@@ -392,39 +399,12 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
                 </p>
               )}
 
-              {provider && provider !== "export_only" && (
-                <div className="setup-wizard__mail-test-row">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={testSending}
-                    icon={
-                      testSent ? (
-                        <i
-                          className="ti ti-circle-check setup-wizard__mail-test-icon--ok"
-                          aria-hidden="true"
-                        />
-                      ) : testSending ? (
-                        <i className="ti ti-loader-2 setup-wizard__spin" aria-hidden="true" />
-                      ) : (
-                        <i className="ti ti-send" aria-hidden="true" />
-                      )
-                    }
-                    onClick={() => void handleTestSend()}
-                  >
-                    {testSent ? "Test sent" : testSending ? "Sending…" : "Send test email"}
-                  </Button>
-                  {testSent ? (
-                    <span className="setup-wizard__mail-test-hint">
-                      Check your inbox to confirm delivery.
-                    </span>
-                  ) : (
-                    <span className="setup-wizard__mail-test-hint">
-                      Optional — sends to your login email.
-                    </span>
-                  )}
-                </div>
+              {provider && provider !== "smtp" && provider !== "export_only" && (
+                <MailTestControl
+                  testSending={testSending}
+                  testSent={testSent}
+                  onSend={() => void handleTestSend()}
+                />
               )}
             </div>
           </>
@@ -433,6 +413,42 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     );
   },
 );
+
+function MailTestControl({
+  testSending,
+  testSent,
+  onSend,
+}: {
+  testSending: boolean;
+  testSent: boolean;
+  onSend: () => void;
+}) {
+  return (
+    <div className="setup-wizard__mail-test-cluster">
+      <button
+        type="button"
+        className="setup-wizard__mail-test-action"
+        disabled={testSending}
+        onClick={onSend}
+      >
+        {testSent ? (
+          <i
+            className="ti ti-circle-check setup-wizard__mail-test-icon--ok"
+            aria-hidden="true"
+          />
+        ) : testSending ? (
+          <i className="ti ti-loader-2 setup-wizard__spin" aria-hidden="true" />
+        ) : (
+          <i className="ti ti-send" aria-hidden="true" />
+        )}
+        {testSent ? "Test sent" : testSending ? "Sending…" : "Send test email"}
+      </button>
+      <span className="setup-wizard__mail-test-hint">
+        {testSent ? "Check your inbox." : "Optional — to your login email."}
+      </span>
+    </div>
+  );
+}
 
 function SecretInput({
   label,

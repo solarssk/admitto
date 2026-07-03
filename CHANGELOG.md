@@ -16,19 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - First-run mail wizard: ignore deploy env placeholders for field locks and test send until setup wizard completes (`setup_complete`).
 
 ### Fixed
-- Setup wizard step 1: Retry on failed check load, **Run checks again** after results, inline fix hints, two-column check grid on desktop (#223).
+- Setup wizard step 1: Retry on failed check load, **Run checks again** after results, inline fix hints; single-column check list with status on the right (#223).
 - Setup wizard system check: four rows like mockup (Database includes migration status; no separate Migrations row).
+- Setup wizard steps 2–5: mockup parity — mail test row, branding logo zone/toasts, typed date picker, timezone list layout, ready screen footer; step labels no longer truncated (#243).
+- Setup wizard: restore last step after browser refresh; unsaved-refresh notice only when a dirty form was lost (saved mail/branding kept).
+- Mail transport test: actionable admin error messages for TLS hostname mismatch, auth, and port mode (no hostnames in API responses) (#244).
 - Check-in: server-connected status moves to a compact page-header pill; full-width green banner only for connection problems (#234).
 - Check-in: persistent screen-reader live region announces connection recovery after offline/degraded states.
 - Check-in search fields: suppress password-manager autofill hints on scan bar and manual lookup (#231).
 - Check-in manual lookup: warning toast when search returns no attendees (#232).
-- Admin mail transport test returns actionable error messages instead of generic `send failed` (no hostnames or credentials in API responses).
 
 ### Changed
-- Setup wizard: custom date picker and timezone combobox (UTC-offset browse order, country search aliases); ready step summary chips; hide stale refresh notice after step 1.
-- Mail wizard: inline transport test errors; password fields without spurious Cancel on first entry.
 - Setup SSR (`/setup`): mockup-aligned copy, login-aligned `autocomplete="username"` on email, confirm password, and `passwordrules` for password managers.
-- Setup wizard shell: “Set up your instance” header, numbered stepper with labels, Continue arrow on primary CTA.
+- Setup wizard shell: “Set up your instance” header, numbered stepper with labels, Continue arrow on primary CTA; custom date picker and timezone combobox; ready step summary chips.
 
 ## [0.4.11] - 2026-07-02
 

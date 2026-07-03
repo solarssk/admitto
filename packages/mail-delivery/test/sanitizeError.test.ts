@@ -75,6 +75,48 @@ describe("transportTestErrorForAdmin", () => {
     );
   });
 
+  it("maps TLS hostname mismatch without leaking host or cert names", () => {
+    const raw =
+      "Hostname/IP does not match certificate's altnames: Host: smartrelay.corp.example.com. is not in the cert's altnames: DNS:relay.vendor.net, DNS:*.relay.vendor.net";
+    const out = transportTestErrorForAdmin(raw);
+    expect(out).not.toContain("smartrelay");
+    expect(out).not.toContain("vendor");
+    expect(out).toContain("does not match");
+    expect(out).toContain("Verify TLS certificate");
+  });
+
+  it("maps self-signed certificate errors", () => {
+    expect(transportTestErrorForAdmin("self-signed certificate in certificate chain")).toContain(
+      "does not trust",
+    );
+  });
+
+  it("maps untrusted CA chain errors", () => {
+    expect(transportTestErrorForAdmin("unable to verify the first certificate")).toContain(
+      "could not be verified",
+    );
+  });
+
+  it("maps expired certificate errors", () => {
+    expect(transportTestErrorForAdmin("certificate has expired")).toBe(
+      "The mail server's TLS certificate has expired. Contact your mail administrator.",
+    );
+  });
+
+  it("maps TLS port/mode mismatch", () => {
+    expect(transportTestErrorForAdmin("wrong version number")).toContain("port 587");
+    expect(transportTestErrorForAdmin("wrong version number")).toContain("port 465");
+  });
+
+  it("maps STARTTLS not supported", () => {
+    expect(transportTestErrorForAdmin("STARTTLS not supported by server")).toContain("STARTTLS");
+  });
+
+  it("maps generic TLS without leaking internals", () => {
+    expect(transportTestErrorForAdmin("TLS handshake failed")).toContain("Verify TLS certificate");
+    expect(transportTestErrorForAdmin("TLS handshake failed")).not.toContain("smtp");
+  });
+
   it("maps Graph OAuth without leaking client id", () => {
     expect(
       transportTestErrorForAdmin("invalid_client: AADSTS70011 client_id=abc graph.microsoft.com"),
@@ -83,7 +125,7 @@ describe("transportTestErrorForAdmin", () => {
 
   it("falls back to actionable generic message", () => {
     expect(transportTestErrorForAdmin("smtp: weird internal failure at smtp.corp:25")).toBe(
-      "Send failed. Verify transport settings; see server logs for the technical detail.",
+      "Send failed. Check transport settings or ask your administrator to review server logs.",
     );
   });
 

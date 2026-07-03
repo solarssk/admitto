@@ -95,6 +95,93 @@ export function todayIsoDate(): string {
   return `${y}-${m}-${d}`;
 }
 
+type DatePart = "day" | "month" | "year";
+
+/** Locale order for numeric date input (e.g. dd/mm vs mm/dd). */
+export function getLocaleDateInputOrder(): DatePart[] {
+  const parts = new Intl.DateTimeFormat(getPreferredLocale()).formatToParts(
+    new Date(Date.UTC(2023, 10, 25)),
+  );
+  return parts
+    .filter((p): p is Intl.DateTimeFormatPart & { type: DatePart } =>
+      p.type === "day" || p.type === "month" || p.type === "year",
+    )
+    .map((p) => p.type);
+}
+
+/** Example pattern for typed dates, e.g. `dd.mm.yyyy` or `mm/dd/yyyy`. */
+export function localeDateInputPattern(): string {
+  const sample: Record<DatePart, string> = { day: "dd", month: "mm", year: "yyyy" };
+  const parts = new Intl.DateTimeFormat(getPreferredLocale()).formatToParts(
+    new Date(Date.UTC(2026, 6, 15)),
+  );
+  return parts
+    .map((p) => {
+      if (p.type === "day" || p.type === "month" || p.type === "year") return sample[p.type];
+      return p.value.trim();
+    })
+    .join("")
+    .replace(/\s+/g, "");
+}
+
+function isValidCalendarDate(y: number, m: number, d: number): boolean {
+  if (m < 1 || m > 12 || d < 1) return false;
+  const max = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return d <= max;
+}
+
+function toIsoDateParts(y: number, m: number, d: number): string | null {
+  if (!isValidCalendarDate(y, m, d)) return null;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+function resolveDayMonth(a: number, b: number): { d: number; m: number } | null {
+  if (a > 31 || b > 31) return null;
+  if (a > 12 && b <= 12) return { d: a, m: b };
+  if (b > 12 && a <= 12) return { d: b, m: a };
+  if (a > 12 && b > 12) return null;
+  const order = getLocaleDateInputOrder();
+  const monthFirst = order[0] === "month";
+  return monthFirst ? { d: b, m: a } : { d: a, m: b };
+}
+
+/**
+ * Parse a typed calendar date into `YYYY-MM-DD`.
+ * Accepts ISO (`yyyy-mm-dd`) and locale-oriented `dd/mm/yyyy` vs `mm/dd/yyyy`.
+ */
+export function parseFlexibleCalendarDate(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(trimmed)) {
+    const [y, m, d] = trimmed.split("-").map((part) => Number.parseInt(part, 10));
+    return toIsoDateParts(y, m, d);
+  }
+
+  const chunks = trimmed.split(/[./\s-]+/).filter(Boolean);
+  if (chunks.length !== 3) return null;
+
+  const nums = chunks.map((part) => Number.parseInt(part, 10));
+  if (nums.some((n) => !Number.isFinite(n))) return null;
+
+  const yearIdx = chunks.findIndex((part, i) => part.length === 4 && nums[i]! >= 1000);
+  if (yearIdx === 0) {
+    const [y, a, b] = nums;
+    const dm = resolveDayMonth(a!, b!);
+    return dm ? toIsoDateParts(y!, dm.m, dm.d) : null;
+  }
+  if (yearIdx === 2) {
+    const [a, b, y] = nums;
+    const dm = resolveDayMonth(a!, b!);
+    return dm ? toIsoDateParts(y!, dm.m, dm.d) : null;
+  }
+  if (yearIdx === 1) {
+    return null;
+  }
+
+  return null;
+}
+
 /** Category 2 — admin/system timestamps always in UTC with explicit label. */
 export function formatUtcDateTime(iso: string): string {
   return new Date(iso).toLocaleString(getPreferredLocale(), {

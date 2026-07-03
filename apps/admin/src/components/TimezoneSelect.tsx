@@ -287,6 +287,8 @@ interface TimezoneSelectProps {
   disabled?: boolean;
   id?: string;
   required?: boolean;
+  /** Single-line trigger label (wizard / tight forms). */
+  compact?: boolean;
 }
 
 export function TimezoneSelect({
@@ -295,16 +297,19 @@ export function TimezoneSelect({
   disabled,
   id,
   required,
+  compact = false,
 }: TimezoneSelectProps) {
   const autoId = useId();
   const controlId = id ?? `tz-${autoId}`;
   const listboxId = `${controlId}-listbox`;
 
   const [open, setOpen] = useState(false);
+  const [panelAbove, setPanelAbove] = useState(false);
   const [query, setQuery] = useState("");
   const [highlightIndex, setHighlightIndex] = useState(0);
   const deferred = useDeferredValue(query);
   const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -359,6 +364,24 @@ export function TimezoneSelect({
     item?.scrollIntoView?.({ block: "nearest" });
   }, [highlightIndex, open]);
 
+  useEffect(() => {
+    if (!open || !containerRef.current || !panelRef.current) return;
+    const updatePlacement = () => {
+      const rect = containerRef.current!.getBoundingClientRect();
+      const panelHeight = panelRef.current!.offsetHeight;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      setPanelAbove(spaceBelow < panelHeight + 8 && spaceAbove > spaceBelow);
+    };
+    updatePlacement();
+    window.addEventListener("resize", updatePlacement);
+    window.addEventListener("scroll", updatePlacement, true);
+    return () => {
+      window.removeEventListener("resize", updatePlacement);
+      window.removeEventListener("scroll", updatePlacement, true);
+    };
+  }, [open, optionCount, query]);
+
   const selectOption = (entry: TzEntry) => {
     onChange(entry.iana);
     closePanel();
@@ -387,7 +410,10 @@ export function TimezoneSelect({
   };
 
   return (
-    <div className="timezone-select" ref={containerRef}>
+    <div
+      className={["timezone-select", compact && "timezone-select--compact"].filter(Boolean).join(" ")}
+      ref={containerRef}
+    >
       <button
         ref={triggerRef}
         type="button"
@@ -405,13 +431,23 @@ export function TimezoneSelect({
       >
         <span className="timezone-select__trigger-text">
           {selectedEntry ? (
-            <>
-              <span className="timezone-select__trigger-city">{selectedEntry.city}</span>
-              <span className="timezone-select__trigger-meta">
-                {selectedEntry.iana}
-                {selectedEntry.offsetLabel ? ` · ${selectedEntry.offsetLabel}` : ""}
+            compact ? (
+              <span className="timezone-select__trigger-compact">
+                <span className="timezone-select__trigger-city">{selectedEntry.city}</span>
+                <span className="timezone-select__trigger-meta">
+                  {selectedEntry.iana}
+                  {selectedEntry.offsetLabel ? ` · ${selectedEntry.offsetLabel}` : ""}
+                </span>
               </span>
-            </>
+            ) : (
+              <>
+                <span className="timezone-select__trigger-city">{selectedEntry.city}</span>
+                <span className="timezone-select__trigger-meta">
+                  {selectedEntry.iana}
+                  {selectedEntry.offsetLabel ? ` · ${selectedEntry.offsetLabel}` : ""}
+                </span>
+              </>
+            )
           ) : (
             <span className="timezone-select__trigger-placeholder">Select timezone…</span>
           )}
@@ -420,7 +456,15 @@ export function TimezoneSelect({
       </button>
 
       {open && (
-        <div className="timezone-select__panel">
+        <div
+          ref={panelRef}
+          className={[
+            "timezone-select__panel",
+            panelAbove && "timezone-select__panel--above",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           <input
             ref={searchRef}
             type="search"
@@ -477,11 +521,11 @@ export function TimezoneSelect({
                   >
                     <span className="timezone-select__option-row">
                       <span className="timezone-select__option-city">{item.entry.city}</span>
-                      {!searching ? null : item.entry.offsetLabel ? (
+                      <span className="timezone-select__option-iana">{item.entry.iana}</span>
+                      {searching && item.entry.offsetLabel ? (
                         <span className="timezone-select__option-offset">{item.entry.offsetLabel}</span>
                       ) : null}
                     </span>
-                    <span className="timezone-select__option-iana">{item.entry.iana}</span>
                   </li>
                 ),
               )

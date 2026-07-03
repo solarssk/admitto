@@ -2,14 +2,13 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
-  useMemo,
   useRef,
   useState,
 } from "react";
 import { Input, useToast } from "@admitto/ui";
 import { LogoUploadZone } from "../../components/LogoUploadZone.js";
 import { ApiError, fetchOrgBranding, patchOrgBranding } from "../../api/client.js";
-import { brandingLogoImgSrc, safeBrandingLogoHref } from "../../utils/safeBrandingLogoHref.js";
+import { safeBrandingLogoHref } from "../../utils/safeBrandingLogoHref.js";
 import { useWizard } from "./WizardContext.js";
 
 export type WizardStep3BrandingHandle = {
@@ -27,8 +26,6 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
     const [orgName, setOrgName] = useState("");
     const [logoUrl, setLogoUrl] = useState("");
     const [loading, setLoading] = useState(true);
-    const [nameError, setNameError] = useState<string | null>(null);
-    const [logoError, setLogoError] = useState<string | null>(null);
     const loadAbortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
@@ -58,15 +55,13 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
     const saveBranding = async (): Promise<boolean> => {
       const name = orgName.trim();
       const logo = logoUrl.trim();
-      setNameError(null);
-      setLogoError(null);
 
       if (!name) {
-        setNameError("Organisation name is required.");
+        addToast("Organisation name is required.", "error");
         return false;
       }
       if (logo && !safeBrandingLogoHref(logo)) {
-        setLogoError("Logo must be a valid HTTPS URL or uploaded image.");
+        addToast("Logo must be a valid HTTPS URL or uploaded image.", "error");
         return false;
       }
 
@@ -91,12 +86,9 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
       saveAndContinue: saveBranding,
     }));
 
-    const previewLogo = useMemo(() => brandingLogoImgSrc(logoUrl), [logoUrl]);
-
     return (
       <>
-        <h2 className="setup-wizard__card-title">Branding</h2>
-        <p className="setup-wizard__card-desc">
+        <p className="setup-wizard__step-sub">
           Set your organisation name and logo for ticket pages and emails.
         </p>
 
@@ -111,18 +103,12 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
                 placeholder="e.g. Acme Corp"
                 onChange={(e) => {
                   setOrgName(e.target.value);
-                  setNameError(null);
                   onDirtyChange?.(true);
                 }}
               />
               <p className="setup-wizard__hint">
                 Used as fallback when no logo is set. Shown in the ticket header.
               </p>
-              {nameError && (
-                <p className="setup-wizard__hint" style={{ color: "var(--status-error)" }} role="alert">
-                  {nameError}
-                </p>
-              )}
             </div>
 
             <div className="setup-wizard__field">
@@ -130,35 +116,10 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
                 value={logoUrl}
                 onChange={(url) => {
                   setLogoUrl(url);
-                  setLogoError(null);
+                  onDirtyChange?.(true);
                 }}
                 onDirty={() => onDirtyChange?.(true)}
               />
-              {logoError && (
-                <p className="setup-wizard__hint" style={{ color: "var(--status-error)" }} role="alert">
-                  {logoError}
-                </p>
-              )}
-            </div>
-
-            <div className="setup-wizard__preview" aria-label="Ticket header preview">
-              <div className="setup-wizard__preview-header">
-                <div className="setup-wizard__preview-brand">
-                  {previewLogo ? (
-                    <img
-                      key={previewLogo}
-                      src={previewLogo}
-                      alt=""
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
-                      }}
-                    />
-                  ) : (
-                    <span>{orgName.trim() || "Your organisation"}</span>
-                  )}
-                </div>
-                <span className="setup-wizard__preview-title">Event ticket</span>
-              </div>
             </div>
           </>
         )}

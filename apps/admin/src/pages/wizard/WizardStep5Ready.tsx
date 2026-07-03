@@ -1,11 +1,21 @@
-import { useMemo, useState } from "react";
-import { Button, useToast } from "@admitto/ui";
+import {
+  forwardRef,
+  useImperativeHandle,
+  useMemo,
+  useState,
+} from "react";
+import { useToast } from "@admitto/ui";
 import { useNavigate } from "react-router-dom";
 import { ApiError, completeSetup } from "../../api/client.js";
 import { useWizard } from "./WizardContext.js";
 
 type WizardStep5ReadyProps = {
   onComplete: () => Promise<void>;
+  onSubmittingChange?: (submitting: boolean) => void;
+};
+
+export type WizardStep5ReadyHandle = {
+  goToDashboard: () => Promise<void>;
 };
 
 type SummaryChip = {
@@ -14,11 +24,17 @@ type SummaryChip = {
   label: string;
 };
 
-export function WizardStep5Ready({ onComplete }: WizardStep5ReadyProps) {
+export const WizardStep5Ready = forwardRef<WizardStep5ReadyHandle, WizardStep5ReadyProps>(
+  function WizardStep5Ready({ onComplete, onSubmittingChange }, ref) {
   const { addToast } = useToast();
   const navigate = useNavigate();
   const { summary, selectedEventId, mailSkipped, brandingSkipped } = useWizard();
   const [submitting, setSubmitting] = useState(false);
+
+  const setBusy = (busy: boolean) => {
+    setSubmitting(busy);
+    onSubmittingChange?.(busy);
+  };
 
   const chips = useMemo(() => {
     const items: SummaryChip[] = [
@@ -44,15 +60,15 @@ export function WizardStep5Ready({ onComplete }: WizardStep5ReadyProps) {
     }
 
     if (summary.eventTitle) {
-      items.push({ key: "event", icon: "ti-calendar", label: summary.eventTitle });
+      items.push({ key: "event", icon: "ti-calendar-event", label: summary.eventTitle });
     }
 
     return items;
   }, [brandingSkipped, mailSkipped, summary]);
 
-  const handleGoToDashboard = async () => {
+  const goToDashboard = async () => {
     if (submitting) return;
-    setSubmitting(true);
+    setBusy(true);
     try {
       await completeSetup();
       await onComplete();
@@ -63,9 +79,13 @@ export function WizardStep5Ready({ onComplete }: WizardStep5ReadyProps) {
       }
     } catch (err) {
       addToast(err instanceof ApiError ? err.message : "Failed to complete setup.", "error");
-      setSubmitting(false);
+      setBusy(false);
     }
   };
+
+  useImperativeHandle(ref, () => ({
+    goToDashboard,
+  }));
 
   return (
     <div className="setup-wizard__done">
@@ -81,21 +101,10 @@ export function WizardStep5Ready({ onComplete }: WizardStep5ReadyProps) {
         {chips.map((chip) => (
           <span key={chip.key} className="setup-wizard__done-chip">
             <i className={`ti ${chip.icon}`} aria-hidden="true" />
-            {chip.label}
+            <span className="setup-wizard__done-chip-label">{chip.label}</span>
           </span>
         ))}
       </div>
-
-      <Button
-        type="button"
-        variant="primary"
-        block
-        disabled={submitting}
-        iconRight={<i className="ti ti-arrow-right" />}
-        onClick={() => void handleGoToDashboard()}
-      >
-        {submitting ? "Finishing…" : "Go to dashboard"}
-      </Button>
     </div>
   );
-}
+});
