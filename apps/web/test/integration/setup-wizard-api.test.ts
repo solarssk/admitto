@@ -1,5 +1,7 @@
+import { exec } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import {
@@ -14,6 +16,22 @@ import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import * as migrationsCheck from "../../src/ops/migrations-check.js";
+import { WEB_TEST_DATABASE_URL } from "../testEnv.js";
+
+const execAsync = promisify(exec);
+const DB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "db");
+
+async function ensureTestMigrationsCurrent(client: PrismaClient): Promise<void> {
+  if ((await migrationsCheck.checkMigrationsStatus(client)) === "ok") return;
+  await execAsync("npx prisma migrate deploy", {
+    cwd: DB_ROOT,
+    env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL ?? WEB_TEST_DATABASE_URL },
+    timeout: 60_000,
+  });
+  if ((await migrationsCheck.checkMigrationsStatus(client)) !== "ok") {
+    throw new Error("admitto_web_test migrations not current after migrate deploy");
+  }
+}
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const EMAIL_SUPER = "setup-wizard-super@example.com";
@@ -104,6 +122,7 @@ async function seed(client: PrismaClient) {
 
 beforeAll(async () => {
   prisma = new PrismaClient();
+  await ensureTestMigrationsCurrent(prisma);
   await seed(prisma);
   app = createApp({
     prisma,

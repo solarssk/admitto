@@ -1,14 +1,20 @@
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { Prisma } from "@prisma/client";
 import { checkMigrationsStatus } from "../../src/ops/migrations-check.js";
-import { dirname, join } from "node:path";
-import { existsSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+
+const require = createRequire(import.meta.url);
+
+function migrationsDirFromDbPackage(): string {
+  const dbEntry = require.resolve("@admitto/db");
+  return join(dirname(dbEntry), "..", "prisma/migrations");
+}
 
 describe("checkMigrationsStatus", () => {
-  it("resolves migration folders from the web package anchor (not only process.cwd)", () => {
-    const moduleDir = join(dirname(fileURLToPath(import.meta.url)), "../..", "src", "ops");
-    const migrationsDir = join(moduleDir, "../../../../packages/db/prisma/migrations");
+  it("resolves migration folders via @admitto/db package", () => {
+    const migrationsDir = migrationsDirFromDbPackage();
     expect(existsSync(migrationsDir)).toBe(true);
     const onDisk = readdirSync(migrationsDir).filter((name) =>
       existsSync(join(migrationsDir, name, "migration.sql")),
@@ -17,8 +23,7 @@ describe("checkMigrationsStatus", () => {
   });
 
   it("returns ok when applied rows match migrations on disk", async () => {
-    const moduleDir = join(dirname(fileURLToPath(import.meta.url)), "../..", "src", "ops");
-    const migrationsDir = join(moduleDir, "../../../../packages/db/prisma/migrations");
+    const migrationsDir = migrationsDirFromDbPackage();
     const rows = readdirSync(migrationsDir)
       .filter((name) => existsSync(join(migrationsDir, name, "migration.sql")))
       .map((migration_name) => ({

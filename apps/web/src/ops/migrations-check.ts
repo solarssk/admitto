@@ -1,9 +1,8 @@
 import { existsSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
-import { findAdmittoRepoRoot } from "./repo-root.js";
 
 type MigrationRow = {
   migration_name: string;
@@ -11,20 +10,17 @@ type MigrationRow = {
   rolled_back_at: Date | null;
 };
 
-/** Anchor from this module to `@admitto/web` — avoids relying on `process.cwd()` in Vitest forks. */
-const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 
-/** Resolve migrations folder from module location (src or dist layout). */
+/** Resolve `packages/db/prisma/migrations` via the installed `@admitto/db` package. */
 function resolveMigrationsDir(): string | null {
-  const candidates = [
-    join(MODULE_DIR, "../../../../packages/db/prisma/migrations"),
-    join(MODULE_DIR, "../../../../../packages/db/prisma/migrations"),
-    join(findAdmittoRepoRoot(join(MODULE_DIR, "..", "..")) ?? "", "packages/db/prisma/migrations"),
-  ];
-  for (const dir of candidates) {
-    if (dir && existsSync(dir)) return dir;
+  try {
+    const dbEntry = require.resolve("@admitto/db");
+    const dir = join(dirname(dbEntry), "..", "prisma/migrations");
+    return existsSync(dir) ? dir : null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /** List Prisma migration folder names that contain `migration.sql`. */
