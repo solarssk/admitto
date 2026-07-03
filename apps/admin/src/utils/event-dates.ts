@@ -115,13 +115,23 @@ export function localeDateInputPattern(): string {
   const parts = new Intl.DateTimeFormat(getPreferredLocale()).formatToParts(
     new Date(Date.UTC(2026, 6, 15)),
   );
-  return parts
+  const pattern = parts
     .map((p) => {
       if (p.type === "day" || p.type === "month" || p.type === "year") return sample[p.type];
       return p.value.trim();
     })
     .join("")
     .replace(/\s+/g, "");
+  // Drop trailing locale punctuation (e.g. ko-KR `yyyy.mm.dd.`).
+  return pattern.replace(/[./\s-]+$/u, "");
+}
+
+/** User-facing validation hint aligned with `localeDateInputPattern()`. */
+export function calendarDateValidationHint(pattern: string): string {
+  if (pattern.startsWith("yyyy")) {
+    return pattern;
+  }
+  return `${pattern} or yyyy-mm-dd`;
 }
 
 function isValidCalendarDate(y: number, m: number, d: number): boolean {

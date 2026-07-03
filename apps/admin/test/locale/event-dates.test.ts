@@ -4,6 +4,8 @@ import {
   formatEventDateTime,
   formatEventTime,
   formatUtcDateTime,
+  calendarDateValidationHint,
+  localeDateInputPattern,
   parseFlexibleCalendarDate,
   utcDayEndIso,
   utcDayStartIso,
@@ -135,5 +137,30 @@ describe("parseFlexibleCalendarDate", () => {
   it("rejects year in the middle", () => {
     setPreferredLocale("en-US");
     expect(parseFlexibleCalendarDate("07/2026/15")).toBeNull();
+  });
+});
+
+describe("localeDateInputPattern", () => {
+  afterEach(() => setPreferredLocale(null));
+
+  it("drops trailing locale punctuation for ko-KR", () => {
+    setPreferredLocale("ko-KR");
+    expect(localeDateInputPattern()).toBe("yyyy.mm.dd");
+  });
+
+  it("uses slashes for year-first ja-JP", () => {
+    setPreferredLocale("ja-JP");
+    expect(localeDateInputPattern()).toBe("yyyy/mm/dd");
+  });
+});
+
+describe("calendarDateValidationHint", () => {
+  it("omits hyphenated ISO hint for year-first patterns", () => {
+    expect(calendarDateValidationHint("yyyy/mm/dd")).toBe("yyyy/mm/dd");
+  });
+
+  it("keeps ISO hint for day-first and month-first patterns", () => {
+    expect(calendarDateValidationHint("dd.mm.yyyy")).toBe("dd.mm.yyyy or yyyy-mm-dd");
+    expect(calendarDateValidationHint("mm/dd/yyyy")).toBe("mm/dd/yyyy or yyyy-mm-dd");
   });
 });
