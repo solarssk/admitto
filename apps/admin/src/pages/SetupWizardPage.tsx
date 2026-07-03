@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@admitto/ui";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { WizardProvider, useWizard, WIZARD_CONTEXT_STORAGE_KEY } from "./wizard/WizardContext.js";
 import { WizardStep1Checks } from "./wizard/WizardStep1Checks.js";
 import { WizardStep2Mail, type WizardStep2MailHandle } from "./wizard/WizardStep2Mail.js";
@@ -120,6 +121,7 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
   const [hasExistingEvents, setHasExistingEvents] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [unsavedRefreshNotice, setUnsavedRefreshNotice] = useState(false);
+  const [backConfirmOpen, setBackConfirmOpen] = useState(false);
   const [continuing, setContinuing] = useState(false);
   const [finishing, setFinishing] = useState(false);
 
@@ -172,9 +174,18 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
     setStep(1);
   }, []);
 
+  const navigateBack = useCallback(() => {
+    setDirty(false);
+    setStep((s) => s - 1);
+  }, []);
+
   const handleBack = () => {
     if (step <= 1) return;
-    setStep((s) => s - 1);
+    if (dirty && step >= 2 && step <= 4) {
+      setBackConfirmOpen(true);
+      return;
+    }
+    navigateBack();
   };
 
   const handleSkip = () => {
@@ -371,6 +382,19 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
           </footer>
         )}
       </main>
+
+      <ConfirmDialog
+        open={backConfirmOpen}
+        title="Discard unsaved changes?"
+        message="Going back will discard unsaved form changes on this step."
+        confirmLabel="Go back"
+        cancelLabel="Stay"
+        onConfirm={() => {
+          setBackConfirmOpen(false);
+          navigateBack();
+        }}
+        onCancel={() => setBackConfirmOpen(false)}
+      />
     </div>
   );
 }
