@@ -52,20 +52,26 @@ describe("WizardStep1Checks", () => {
 
     await waitFor(() => {
       expect(fetchSetupChecks).toHaveBeenCalledTimes(2);
-      expect(screen.getByText("Database")).toBeTruthy();
+      expect(screen.getByText("Connected")).toBeTruthy();
     });
   });
 
-  it("re-runs checks when Run checks again is clicked", async () => {
-    fetchSetupChecks.mockResolvedValue({ checks: okChecks });
+  it("shows error banner Retry when a check fails", async () => {
+    fetchSetupChecks.mockResolvedValueOnce({
+      checks: {
+        ...okChecks,
+        encryption: { ok: false, detail: "ENCRYPTION_KEY is not set" },
+      },
+    });
 
     renderStep();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Run checks again" })).toBeTruthy();
+      expect(screen.getByText("Failed")).toBeTruthy();
+      expect(screen.getByText(/Fix the issues above/i)).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Run checks again" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     await waitFor(() => {
       expect(fetchSetupChecks).toHaveBeenCalledTimes(2);
@@ -84,6 +90,17 @@ describe("WizardStep1Checks", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Set ENCRYPTION_KEY in your .env file/i)).toBeTruthy();
+    });
+  });
+
+  it("renders status detail on the right for passing checks", async () => {
+    fetchSetupChecks.mockResolvedValueOnce({ checks: okChecks });
+
+    renderStep();
+
+    await waitFor(() => {
+      expect(screen.getByText("Connected")).toBeTruthy();
+      expect(screen.getByText("Up to date")).toBeTruthy();
     });
   });
 });

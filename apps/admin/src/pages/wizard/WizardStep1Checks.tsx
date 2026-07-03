@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button, Spinner, useToast } from "@admitto/ui";
+import { Button, useToast } from "@admitto/ui";
 import { ApiError, fetchSetupChecks } from "../../api/client.js";
 import type { SetupChecksResponse } from "../../api/types.js";
 import {
@@ -12,6 +12,8 @@ import {
 type WizardStep1ChecksProps = {
   onChecksOk: (ok: boolean) => void;
 };
+
+type CheckResult = SetupChecksResponse["checks"][SetupCheckKey];
 
 export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
   const { addToast } = useToast();
@@ -41,6 +43,7 @@ export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
   }, [addToast, runNonce]);
 
   const allOk = checks ? SETUP_CHECK_ORDER.every((key) => checks[key].ok) : false;
+  const hasCheckErrors = checks ? SETUP_CHECK_ORDER.some((key) => !checks[key].ok) : false;
 
   useEffect(() => {
     onChecksOk(allOk);
@@ -48,30 +51,29 @@ export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
 
   return (
     <>
-      <h2 className="setup-wizard__card-title">System check</h2>
-      <p className="setup-wizard__card-desc">
-        Verify prerequisites before configuring your instance. All checks must pass to continue.
-      </p>
+      <p className="setup-wizard__step-sub">Verifying all prerequisites before first use.</p>
 
-      {loading && (
-        <div role="status" style={{ textAlign: "center", padding: "1.5rem 0" }}>
-          <Spinner label="Running system checks" />
-        </div>
+      {(loading || checks) && (
+        <ul className="setup-wizard__check-list">
+          {SETUP_CHECK_ORDER.map((key) => (
+            <CheckRow
+              key={key}
+              checkKey={key}
+              result={checks?.[key] ?? null}
+              pending={loading}
+            />
+          ))}
+        </ul>
       )}
 
-      {!loading && checks && (
-        <>
-          <div className="setup-wizard__checks">
-            {SETUP_CHECK_ORDER.map((key) => (
-              <CheckRow key={key} checkKey={key} result={checks[key]} />
-            ))}
-          </div>
-          <div className="setup-wizard__checks-actions">
-            <Button type="button" variant="secondary" size="sm" onClick={retry}>
-              Run checks again
-            </Button>
-          </div>
-        </>
+      {!loading && checks && hasCheckErrors && (
+        <div className="setup-wizard__check-error-banner" role="alert">
+          <i className="ti ti-alert-triangle" aria-hidden="true" />
+          <p>Fix the issues above, then restart Admitto and return to this page.</p>
+          <Button type="button" variant="secondary" size="sm" onClick={retry} className="setup-wizard__check-retry">
+            Retry
+          </Button>
+        </div>
       )}
 
       {!loading && !checks && (
@@ -89,32 +91,47 @@ export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
 function CheckRow({
   checkKey,
   result,
+  pending,
 }: {
   checkKey: SetupCheckKey;
-  result: { ok: boolean; detail: string; warn?: boolean };
+  result: CheckResult | null;
+  pending: boolean;
 }) {
-  const iconClass = result.warn
-    ? "ti ti-alert-circle setup-wizard__check-icon is-warn"
-    : result.ok
-      ? "ti ti-circle-check setup-wizard__check-icon is-ok"
-      : "ti ti-circle-x setup-wizard__check-icon is-error";
+  const isPending = pending || !result;
+  const isError = !!result && !result.ok;
+  const isWarn = !!result?.ok && !!result.warn;
+
+  const itemClass = [
+    "setup-wizard__check-item",
+    isError ? "setup-wizard__check-item--error" : "",
+    !isPending && result?.ok && !isWarn ? "setup-wizard__check-item--ok" : "",
+    isWarn ? "setup-wizard__check-item--warn" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <div className="setup-wizard__check-row">
-      <i className={iconClass} aria-hidden="true" />
-      <div className="setup-wizard__check-body">
-        <p
-          className={`setup-wizard__check-title${
-            result.warn ? " is-warn" : result.ok ? " is-ok" : ""
-          }`}
-        >
-          {SETUP_CHECK_LABELS[checkKey]}
-        </p>
-        <p className="setup-wizard__check-detail">{result.detail}</p>
-        {!result.ok && (
-          <pre className="setup-wizard__fix-inline">{checkFixHint(checkKey)}</pre>
+    <li className={itemClass}>
+      <span className="setup-wizard__check-item-icon" aria-hidden="true">
+        {isPending && <i className="ti ti-loader-2 setup-wizard__check-spin" />}
+        {!isPending && isError && <i className="ti ti-circle-x" />}
+        {!isPending && !isError && isWarn && <i className="ti ti-alert-circle" />}
+        {!isPending && !isError && !isWarn && <i className="ti ti-circle-check" />}
+      </span>
+      <div className="setup-wizard__check-item-main">
+        <span className="setup-wizard__check-item-label">{SETUP_CHECK_LABELS[checkKey]}</span>
+        {isError && result && (
+          <div className="setup-wizard__check-item-fix">
+            <p className="setup-wizard__check-item-err">{result.detail}</p>
+            <p className="setup-wizard__check-item-hint">{checkFixHint(checkKey)}</p>
+          </div>
         )}
       </div>
-    </div>
+      <span className="setup-wizard__check-item-detail">
+        {isPending && "Checking…"}
+        {!isPending && isError && "Failed"}
+        {!isPending && !isError && result?.detail}
+      </span>
+    </li>
   );
 }
