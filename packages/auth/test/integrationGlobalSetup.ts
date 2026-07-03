@@ -32,7 +32,14 @@ export default async function integrationGlobalSetup(): Promise<void> {
     if (!isMissingMigrationHistoryError(migrateError)) {
       throw migrateError;
     }
-    console.warn("[auth integrationGlobalSetup] migrate deploy P3005, falling back to db push");
-    await execAsync("npx prisma db push --skip-generate --accept-data-loss", { cwd: DB_ROOT, env, timeout: 60_000 });
+    // P3005: schema exists without _prisma_migrations (unit tests run `db push --force-reset`).
+    // `db push` cannot recreate the partial UNIQUE indexes that live only in migration SQL
+    // (RoleAssignment, OidcRoleGrant, ...), so reset the schema and replay all migrations.
+    console.warn("[auth integrationGlobalSetup] migrate deploy P3005, falling back to migrate reset");
+    await execAsync("npx prisma migrate reset --force --skip-generate --skip-seed", {
+      cwd: DB_ROOT,
+      env,
+      timeout: 120_000,
+    });
   }
 }
