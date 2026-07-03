@@ -103,8 +103,8 @@ function CheckRow({
 
   const itemClass = [
     "setup-wizard__check-item",
+    isPending ? "setup-wizard__check-item--pending" : "",
     isError ? "setup-wizard__check-item--error" : "",
-    !isPending && result?.ok && !isWarn ? "setup-wizard__check-item--ok" : "",
     isWarn ? "setup-wizard__check-item--warn" : "",
   ]
     .filter(Boolean)

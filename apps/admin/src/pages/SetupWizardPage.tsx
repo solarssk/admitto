@@ -171,7 +171,7 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
   return (
     <div className="setup-wizard">
       <div className="setup-wizard__shell">
-        <header className="setup-wizard__intro">
+        <header className="setup-wizard__header">
           <span className="setup-wizard__brand" aria-label="Admitto">
             {BRAND_MARK}
             Admitto
@@ -220,16 +220,13 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
           })}
         </nav>
 
-        <main className="setup-wizard__main">
-        {refreshNotice && step === 1 && (
-          <p className="setup-wizard__refresh-notice" role="status">
-            Your progress was not saved. Let&apos;s start again.
-          </p>
-        )}
+        <div className="setup-wizard__body">
+          {refreshNotice && step === 1 && (
+            <p className="setup-wizard__refresh-notice" role="status">
+              Your progress was not saved. Let&apos;s start again.
+            </p>
+          )}
 
-        <div
-          className={`setup-wizard__card${step === 5 ? " setup-wizard__card--done" : ""}`}
-        >
           {step === 1 && <WizardStep1Checks onChecksOk={setChecksOk} />}
           {step === 2 && <WizardStep2Mail ref={mailRef} onDirtyChange={setDirty} />}
           {step === 3 && <WizardStep3Branding ref={brandingRef} onDirtyChange={setDirty} />}
@@ -246,9 +243,13 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
 
         {step < TOTAL_STEPS && (
           <footer className="setup-wizard__footer">
-            <Button type="button" variant="secondary" disabled={!showBack} onClick={handleBack}>
-              Back
-            </Button>
+            {showBack ? (
+              <Button type="button" variant="secondary" onClick={handleBack}>
+                Back
+              </Button>
+            ) : (
+              <span />
+            )}
             <div className="setup-wizard__footer-spacer" />
             {showSkip && (
               <Button type="button" variant="ghost" disabled={continuing} onClick={handleSkip}>
@@ -268,7 +269,6 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
             </Button>
           </footer>
         )}
-        </main>
       </div>
     </div>
   );
