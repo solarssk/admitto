@@ -109,7 +109,8 @@ export async function handleGetSetup(c: Context, db: PrismaClient): Promise<Resp
   if (!(await isFirstRunRequired(db))) {
     return c.redirect("/login", 302);
   }
-  return htmlResponse(c, renderSetupPage(undefined, {}, createAuthPageScriptNonce()));
+  const scriptNonce = createAuthPageScriptNonce();
+  return htmlResponse(c, renderSetupPage(scriptNonce), scriptNonce);
 }
 
 /** POST /setup — create superadmin, mark setup incomplete, auto-login → MFA enroll. */
@@ -121,7 +122,8 @@ export async function handlePostSetup(c: Context, db: PrismaClient): Promise<Res
   const form = await parseSetupForm(c);
   const validated = validateSetupForm(form);
   if (!validated.ok) {
-    return htmlResponse(c, renderSetupPage(validated.code, validated.values, createAuthPageScriptNonce()));
+    const scriptNonce = createAuthPageScriptNonce();
+    return htmlResponse(c, renderSetupPage(scriptNonce, validated.code, validated.values), scriptNonce);
   }
 
   const { email, password, displayName } = validated;
@@ -158,9 +160,11 @@ export async function handlePostSetup(c: Context, db: PrismaClient): Promise<Res
       return c.json({ code: "already_initialized" }, 409);
     }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const scriptNonce = createAuthPageScriptNonce();
       return htmlResponse(
         c,
-        renderSetupPage("email_taken", { email, display_name: displayName ?? undefined }, createAuthPageScriptNonce()),
+        renderSetupPage(scriptNonce, "email_taken", { email, display_name: displayName ?? undefined }),
+        scriptNonce,
       );
     }
     throw err;

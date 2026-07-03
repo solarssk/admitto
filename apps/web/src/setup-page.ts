@@ -61,9 +61,9 @@ export function setupPasswordRulesAttribute(): string {
 
 /** Render first-run superadmin bootstrap form (inline strength + confirm-match scripts). */
 export function renderSetupPage(
+  scriptNonce: string,
   error?: SetupErrorCode,
   values: SetupFormValues = {},
-  scriptNonce: string,
 ): string {
   const message = setupErrorMessage(error);
   const errorBlock = message ? `<div class="auth-error" role="alert">${esc(message)}</div>` : "";

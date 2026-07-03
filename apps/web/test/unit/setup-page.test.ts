@@ -14,7 +14,7 @@ describe("setup-page", () => {
   });
 
   it("renders password manager friendly fields", () => {
-    const html = renderSetupPage(undefined, {}, SETUP_SCRIPT_NONCE);
+    const html = renderSetupPage(SETUP_SCRIPT_NONCE);
     expect(html).toContain('autocomplete="username"');
     expect(html).toContain('passwordrules="minlength: 12;"');
     expect(html).toContain('autocomplete="new-password"');
@@ -38,10 +38,10 @@ describe("setup-page", () => {
   });
 
   it("preserves email and display name on validation error", () => {
-    const html = renderSetupPage("password_mismatch", {
+    const html = renderSetupPage(SETUP_SCRIPT_NONCE, "password_mismatch", {
       email: "admin@example.com",
       display_name: "Ops Lead",
-    }, SETUP_SCRIPT_NONCE);
+    });
     expect(html).toContain('value="admin@example.com"');
     expect(html).toContain('value="Ops Lead"');
     expect(html).toContain("Passwords do not match.");

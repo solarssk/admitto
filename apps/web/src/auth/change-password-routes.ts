@@ -67,7 +67,7 @@ export async function handleGetChangePassword(c: Context, db: PrismaClient): Pro
   const gate = await requireForcedPasswordChange(c, db);
   if (gate instanceof Response) return gate;
   const scriptNonce = createAuthPageScriptNonce();
-  return htmlResponse(c, renderChangePasswordForm(undefined, scriptNonce));
+  return htmlResponse(c, renderChangePasswordForm(scriptNonce), scriptNonce);
 }
 
 /** POST /change-password — update password, clear flag, revoke other sessions. */
@@ -81,11 +81,11 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
 
   if (password.length < PASSWORD_MIN_LENGTH) {
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderChangePasswordForm(PASSWORD_TOO_SHORT, scriptNonce), 400);
+    return htmlResponse(c, renderChangePasswordForm(scriptNonce, PASSWORD_TOO_SHORT), scriptNonce, 400);
   }
   if (password !== confirm) {
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderChangePasswordForm(PASSWORD_MISMATCH, scriptNonce), 400);
+    return htmlResponse(c, renderChangePasswordForm(scriptNonce, PASSWORD_MISMATCH), scriptNonce, 400);
   }
 
   try {
@@ -117,6 +117,6 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
         ? PASSWORD_COMPLETE_FAILED
         : PASSWORD_INVALID;
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderChangePasswordForm(message, scriptNonce), 400);
+    return htmlResponse(c, renderChangePasswordForm(scriptNonce, message), scriptNonce, 400);
   }
 }

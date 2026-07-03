@@ -42,7 +42,7 @@ function errorMessage(error?: string): string | undefined {
 }
 
 /** Server-rendered forced password change form. */
-export function renderChangePasswordForm(error: string | undefined, scriptNonce: string): string {
+export function renderChangePasswordForm(scriptNonce: string, error?: string): string {
   const message = errorMessage(error);
   const errorBlock = message ? `<div class="auth-error" role="alert">${esc(message)}</div>` : "";
   const passwordRules = esc(`minlength: ${PASSWORD_MIN_LENGTH};`);
