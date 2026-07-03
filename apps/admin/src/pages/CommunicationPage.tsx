@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBlocker, useParams } from "react-router-dom";
-import { Badge, Button, Card, Input, PageHeader, Select, StatusBadge, Tabs } from "@admitto/ui";
+import { Badge, Button, Card, Input, PageHeader, Select, StatusBadge, Tabs, useToast } from "@admitto/ui";
 import {
   ApiError,
   createEventTemplate,
@@ -99,6 +99,7 @@ function isValidEmail(value: string): boolean {
 export function CommunicationPage() {
   const { eventId } = useParams();
   const { reportApiError } = useConnectionState();
+  const { addToast } = useToast();
 
   const [tab, setTab] = useState("compose");
   const [loading, setLoading] = useState(true);
@@ -123,7 +124,6 @@ export function CommunicationPage() {
   const [activeField, setActiveField] = useState<ActiveField>("body");
 
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [overrideConfirmOpen, setOverrideConfirmOpen] = useState(false);
   const [previewSubject, setPreviewSubject] = useState<string | null>(null);
@@ -240,7 +240,6 @@ export function CommunicationPage() {
       if (!eventId || (key === activeKey && !editorSnapshotMissing)) return;
       const seq = ++templateSelectionSeqRef.current;
       setValidationErrors([]);
-      setSaveStatus(null);
       setPreviewSubject(null);
       setPreviewHtml(null);
       setTemplateActionBusy(true);
@@ -252,9 +251,9 @@ export function CommunicationPage() {
         if (seq !== templateSelectionSeqRef.current) return;
         if (err instanceof ApiError) {
           reportApiError(err.status);
-          setSaveStatus("Failed to load template.");
+          addToast("Failed to load template.", "error");
         } else {
-          setSaveStatus("Failed to load template.");
+          addToast("Failed to load template.", "error");
         }
       } finally {
         if (seq === templateSelectionSeqRef.current) {
@@ -262,7 +261,7 @@ export function CommunicationPage() {
         }
       }
     },
-    [activeKey, applyLoadedTemplateSelection, editorSnapshotMissing, eventId, loadTemplateSelection, reportApiError],
+    [activeKey, applyLoadedTemplateSelection, editorSnapshotMissing, eventId, loadTemplateSelection, reportApiError, addToast],
   );
 
   const runDirtyProtectedAction = useCallback(
@@ -315,9 +314,9 @@ export function CommunicationPage() {
       if (seq !== createTemplateSeqRef.current) return;
       if (err instanceof ApiError) {
         reportApiError(err.status);
-        setSaveStatus(err.message);
+        addToast(err.message, "error");
       } else {
-        setSaveStatus("Create failed.");
+        addToast("Create failed.", "error");
       }
     } finally {
       createInFlightRef.current = false;
@@ -374,7 +373,7 @@ export function CommunicationPage() {
           setValidationErrors([]);
           setPreviewSubject(null);
           setPreviewHtml(null);
-          setSaveStatus("Template deleted. Could not load ticket template — reload the page.");
+          addToast("Template deleted. Could not load ticket template — reload the page.", "warning");
         }
       } else {
         try {
@@ -387,12 +386,13 @@ export function CommunicationPage() {
           if (legacyTemplateRef.current) {
             applyLegacyTemplate(legacyTemplateRef.current);
             setActiveKey("virtual-ticket");
-            setSaveStatus(
+            addToast(
               "Template deleted. Inherited ticket could not be refreshed — showing last known copy.",
+              "warning",
             );
           } else {
             setActiveKey("virtual-ticket");
-            setSaveStatus("Template deleted. Could not load inherited ticket — reload the page.");
+            addToast("Template deleted. Could not load inherited ticket — reload the page.", "warning");
           }
         }
       }
@@ -400,16 +400,16 @@ export function CommunicationPage() {
       if (seq !== deleteTemplateSeqRef.current || scopeEventId !== currentEventIdRef.current) return;
       if (err instanceof ApiError) {
         reportApiError(err.status);
-        setSaveStatus(mailTemplateDeleteErrorMessage(err));
+        addToast(mailTemplateDeleteErrorMessage(err), "error");
       } else {
-        setSaveStatus("Delete failed.");
+        addToast("Delete failed.", "error");
       }
     } finally {
       if (seq === deleteTemplateSeqRef.current) {
         setTemplateActionBusy(false);
       }
     }
-  }, [activeKey, applyDetailTemplate, applyLegacyTemplate, eventId, reportApiError]);
+  }, [activeKey, applyDetailTemplate, applyLegacyTemplate, eventId, reportApiError, addToast]);
 
   const sendTemplateId = editorSnapshotMissing
     ? undefined
@@ -490,7 +490,6 @@ export function CommunicationPage() {
           applyLegacyTemplate(data);
         }
         setValidationErrors([]);
-        setSaveStatus(null);
         setPreviewSubject(null);
         setPreviewHtml(null);
       } catch (err) {
@@ -503,8 +502,13 @@ export function CommunicationPage() {
             return;
           }
           setError(err.status === 403 ? "You do not have access to this event." : "Failed to load template.");
+          addToast(
+            err.status === 403 ? "You do not have access to this event." : "Failed to load template.",
+            "error",
+          );
         } else {
           setError("Failed to load template.");
+          addToast("Failed to load template.", "error");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -594,7 +598,6 @@ export function CommunicationPage() {
     if (!eventId || editorSnapshotMissing) return;
     setPreviewLoading(true);
     setValidationErrors([]);
-    setSaveStatus(null);
     try {
       const data =
         activeKey === "virtual-ticket"
@@ -609,9 +612,9 @@ export function CommunicationPage() {
         setValidationErrors(err.errors);
       } else if (err instanceof ApiError) {
         reportApiError(err.status);
-        setSaveStatus(err.message);
+        addToast(err.message, "error");
       } else {
-        setSaveStatus("Preview failed.");
+        addToast("Preview failed.", "error");
       }
     } finally {
       setPreviewLoading(false);
@@ -621,7 +624,6 @@ export function CommunicationPage() {
   const performSave = async () => {
     if (!eventId) return;
     setValidationErrors([]);
-    setSaveStatus(null);
     setSaving(true);
     try {
       if (activeKey === "virtual-ticket") {
@@ -644,7 +646,7 @@ export function CommunicationPage() {
           sortTemplates(prev.map((t) => (t.id === activeKey ? templateListItemFromDetail(saved) : t))),
         );
       }
-      setSaveStatus("Template saved.");
+      addToast("Template saved.", "success");
       setPreviewSubject(null);
       setPreviewHtml(null);
     } catch (err) {
@@ -652,9 +654,9 @@ export function CommunicationPage() {
         setValidationErrors(err.errors);
       } else if (err instanceof ApiError) {
         reportApiError(err.status);
-        setSaveStatus(err.message);
+        addToast(err.message, "error");
       } else {
-        setSaveStatus("Save failed.");
+        addToast("Save failed.", "error");
       }
     } finally {
       setSaving(false);
@@ -917,21 +919,6 @@ export function CommunicationPage() {
                     ))}
                   </ul>
                 </div>
-              )}
-
-              {saveStatus && (
-                <p
-                  role="status"
-                  aria-live="polite"
-                  className={[
-                    "communication-status",
-                    saveStatus.endsWith(".") && !saveStatus.toLowerCase().includes("fail")
-                      ? "communication-status--ok"
-                      : "communication-status--error",
-                  ].join(" ")}
-                >
-                  {saveStatus}
-                </p>
               )}
 
               <div className="communication-actions">

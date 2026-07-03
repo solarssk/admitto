@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InstanceUrlPanel } from "../../src/settings/InstanceUrlPanel.js";
+import { renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -33,7 +34,7 @@ afterEach(() => {
 describe("InstanceUrlPanel", () => {
   it("shows warning when instance URL is unset", async () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
-    render(<InstanceUrlPanel />);
+    renderWithToast(<InstanceUrlPanel />);
     await waitFor(() => {
       expect(screen.getByRole("alert").textContent).toContain("No instance URL configured");
     });
@@ -44,7 +45,7 @@ describe("InstanceUrlPanel", () => {
       ...emptySettings,
       instance_url: { value: "https://env.example.com", source: "env" },
     });
-    render(<InstanceUrlPanel />);
+    renderWithToast(<InstanceUrlPanel />);
     await waitFor(() => {
       expect(screen.getByText("Managed by environment")).toBeTruthy();
     });
@@ -57,7 +58,7 @@ describe("InstanceUrlPanel", () => {
       ...emptySettings,
       instance_url: { value: "https://tickets.example.com", source: "db" },
     });
-    render(<InstanceUrlPanel />);
+    renderWithToast(<InstanceUrlPanel />);
     await waitFor(() => {
       expect(screen.getByLabelText("Instance URL")).toBeTruthy();
     });
@@ -72,7 +73,7 @@ describe("InstanceUrlPanel", () => {
 
   it("rejects HTTP URL on save without calling API", async () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
-    render(<InstanceUrlPanel />);
+    renderWithToast(<InstanceUrlPanel />);
     await waitFor(() => {
       expect(screen.getByLabelText("Instance URL")).toBeTruthy();
     });
@@ -81,14 +82,14 @@ describe("InstanceUrlPanel", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(screen.getByText(/must use https/i)).toBeTruthy();
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/must use https/i);
     });
     expect(mockPatch).not.toHaveBeenCalled();
   });
 
   it("rejects query string on save without calling API", async () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
-    render(<InstanceUrlPanel />);
+    renderWithToast(<InstanceUrlPanel />);
     await waitFor(() => {
       expect(screen.getByLabelText("Instance URL")).toBeTruthy();
     });
@@ -97,14 +98,14 @@ describe("InstanceUrlPanel", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(screen.getByText(/a query/i)).toBeTruthy();
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/a query/i);
     });
     expect(mockPatch).not.toHaveBeenCalled();
   });
 
   it("rejects embedded credentials on save without calling API", async () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
-    render(<InstanceUrlPanel />);
+    renderWithToast(<InstanceUrlPanel />);
     await waitFor(() => {
       expect(screen.getByLabelText("Instance URL")).toBeTruthy();
     });
@@ -113,7 +114,7 @@ describe("InstanceUrlPanel", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(screen.getByText(/credentials/i)).toBeTruthy();
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/credentials/i);
     });
     expect(mockPatch).not.toHaveBeenCalled();
   });
@@ -127,7 +128,7 @@ describe("InstanceUrlPanel", () => {
       ...emptySettings,
       instance_url: { value: null, source: "default" },
     });
-    render(<InstanceUrlPanel />);
+    renderWithToast(<InstanceUrlPanel />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
     });

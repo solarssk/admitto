@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { applyThemeVars, Badge, Button, Card, Input } from "@admitto/ui";
+import { applyThemeVars, Badge, Button, Card, Input, useToast } from "@admitto/ui";
 import { ApiError, fetchStaffTheme, saveStaffTheme } from "../api/client.js";
 import type { BrandingThemeDto } from "../api/types.js";
 import {
@@ -12,14 +12,13 @@ import {
 
 /** Superadmin branding editor with live theme preview and anti-lockout guards. */
 export function BrandingPanel() {
+  const { addToast } = useToast();
   const [draft, setDraft] = useState<BrandingThemeDto>({});
   const [loading, setLoading] = useState(true);
   const [loadedOk, setLoadedOk] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<BrandingFieldErrors>({});
   const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const savedRef = useRef<BrandingThemeDto>({});
   const loadAbortRef = useRef<AbortController | null>(null);
 
@@ -41,12 +40,14 @@ export function BrandingPanel() {
       setLoadedOk(true);
     } catch {
       if (signal.aborted) return;
-      setLoadError("Failed to load branding settings. Use Retry to reload.");
+      const message = "Failed to load branding settings. Use Retry to reload.";
+      setLoadError(message);
+      addToast(message, "error");
       setDraft({});
     } finally {
       if (!signal.aborted) setLoading(false);
     }
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     void loadTheme();
@@ -66,16 +67,8 @@ export function BrandingPanel() {
     };
   }, [loadedOk]);
 
-  useEffect(() => {
-    if (!saveMessage) return;
-    const id = window.setTimeout(() => setSaveMessage(null), 2000);
-    return () => clearTimeout(id);
-  }, [saveMessage]);
-
   const updateDraft = (patch: Partial<BrandingThemeDto>) => {
     setDraft((prev) => ({ ...prev, ...patch }));
-    setSaveMessage(null);
-    setSaveError(null);
   };
 
   const handlePrimaryHexChange = (value: string) => {
@@ -90,8 +83,6 @@ export function BrandingPanel() {
     if (!loadedOk) return;
     setDraft(savedRef.current);
     setFieldErrors({});
-    setSaveMessage(null);
-    setSaveError(null);
   };
 
   const handleSave = async () => {
@@ -103,16 +94,14 @@ export function BrandingPanel() {
     }
     setFieldErrors({});
     setSaving(true);
-    setSaveError(null);
-    setSaveMessage(null);
     try {
       const body = brandingDraftForSave(draft);
       const response = await saveStaffTheme(body);
       savedRef.current = response.theme;
       setDraft(response.theme);
-      setSaveMessage("Branding saved.");
+      addToast("Branding saved.", "success");
     } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : "Failed to save branding.");
+      addToast(err instanceof ApiError ? err.message : "Failed to save branding.", "error");
     } finally {
       setSaving(false);
     }
@@ -129,11 +118,6 @@ export function BrandingPanel() {
       title="Branding"
       footer={
         <div className="foot-actions">
-          {saveMessage && (
-            <span className="settings-save-hint" role="status">
-              {saveMessage}
-            </span>
-          )}
           <Button variant="secondary" disabled={!loadedOk || formDisabled} onClick={handleReset}>
             Reset to saved
           </Button>
@@ -158,11 +142,6 @@ export function BrandingPanel() {
           <button type="button" className="settings-retry-link" onClick={() => void loadTheme()}>
             Retry
           </button>
-        </p>
-      )}
-      {saveError && (
-        <p className="text-error" role="alert">
-          {saveError}
         </p>
       )}
       {loadedOk && (

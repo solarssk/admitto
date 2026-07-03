@@ -24,6 +24,13 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+const TOAST_ICON: Record<ToastVariant, string> = {
+  success: "circle-check",
+  error: "circle-x",
+  warning: "alert-triangle",
+  info: "info-circle",
+};
+
 /** Clears and removes a pending auto-dismiss timer for the given toast id. */
 function clearToastTimer(
   timerRefs: MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>,
@@ -60,9 +67,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (message: string, variant: ToastVariant = "info", duration = 4000) => {
       const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       setToasts((prev) => {
-        const kept = prev.slice(-4);
-        const keptIds = new Set(kept.map((t) => t.id));
+        const withoutDup = prev.filter((t) => !(t.message === message && t.variant === variant));
         for (const toast of prev) {
+          if (!withoutDup.some((t) => t.id === toast.id)) {
+            clearToastTimer(timerRefs, toast.id);
+          }
+        }
+        const kept = withoutDup.slice(-4);
+        const keptIds = new Set(kept.map((t) => t.id));
+        for (const toast of withoutDup) {
           if (!keptIds.has(toast.id)) {
             clearToastTimer(timerRefs, toast.id);
           }
@@ -80,9 +93,24 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ addToast }}>
       {children}
-      <div className="at-toast-stack" role="region" aria-label="Notifications" aria-live="polite">
+      <div
+        className="at-toast-stack"
+        role="region"
+        aria-label="Notifications"
+        aria-live="polite"
+        aria-atomic="false"
+      >
         {toasts.map((toast) => (
-          <div key={toast.id} className={`at-toast at-toast--${toast.variant}`} role="alert">
+          <div
+            key={toast.id}
+            className={`at-toast at-toast--${toast.variant}`}
+            data-testid="at-toast"
+            data-variant={toast.variant}
+          >
+            <i
+              className={`ti ti-${TOAST_ICON[toast.variant]} at-toast__icon`}
+              aria-hidden="true"
+            />
             <span className="at-toast__message">{toast.message}</span>
             <button
               type="button"

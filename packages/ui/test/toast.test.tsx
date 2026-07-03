@@ -38,54 +38,75 @@ describe("Toast / useToast", () => {
   it("shows toast with success variant class", () => {
     renderWithToast(<ToastHarness />);
     fireEvent.click(screen.getByRole("button", { name: "Show toast" }));
-    const alert = screen.getByRole("alert");
-    expect(alert.className).toContain("at-toast--success");
+    const toast = screen.getByTestId("at-toast");
+    expect(toast.className).toContain("at-toast--success");
     expect(screen.getByText("Message")).toBeTruthy();
   });
 
   it("dismisses toast after duration", async () => {
     renderWithToast(<ToastHarness duration={100} />);
     fireEvent.click(screen.getByRole("button", { name: "Show toast" }));
-    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByTestId("at-toast")).toBeTruthy();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
   });
 
   it("dismisses toast immediately via dismiss button", () => {
     renderWithToast(<ToastHarness duration={0} />);
     fireEvent.click(screen.getByRole("button", { name: "Show toast" }));
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
   });
 
   it("keeps at most 5 toasts visible", () => {
+    renderWithToast(
+      <>
+        {Array.from({ length: 6 }, (_, i) => (
+          <ToastHarness key={i} message={`Message ${i}`} duration={0} label={`Show toast ${i}`} />
+        ))}
+      </>,
+    );
+    for (let i = 0; i < 6; i++) {
+      fireEvent.click(screen.getByRole("button", { name: `Show toast ${i}` }));
+    }
+    expect(screen.getAllByTestId("at-toast")).toHaveLength(5);
+  });
+
+  it("does not stack duplicate message and variant", () => {
     renderWithToast(<ToastHarness duration={0} />);
     const trigger = screen.getByRole("button", { name: "Show toast" });
-    for (let i = 0; i < 6; i++) {
-      fireEvent.click(trigger);
-    }
-    expect(screen.getAllByRole("alert")).toHaveLength(5);
+    fireEvent.click(trigger);
+    fireEvent.click(trigger);
+    fireEvent.click(trigger);
+    expect(screen.getAllByTestId("at-toast")).toHaveLength(1);
   });
 
   it("clears auto-dismiss timer for toast evicted by the 5-toast cap", async () => {
     renderWithToast(
       <>
         <ToastHarness message="First toast" duration={5000} label="Show first toast" />
-        <ToastHarness message="Later toast" duration={0} label="Show later toast" />
+        {Array.from({ length: 5 }, (_, i) => (
+          <ToastHarness
+            key={i}
+            message={`Later toast ${i}`}
+            duration={0}
+            label={`Show later toast ${i}`}
+          />
+        ))}
       </>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Show first toast" }));
     for (let i = 0; i < 5; i++) {
-      fireEvent.click(screen.getByRole("button", { name: "Show later toast" }));
+      fireEvent.click(screen.getByRole("button", { name: `Show later toast ${i}` }));
     }
-    expect(screen.getAllByRole("alert")).toHaveLength(5);
+    expect(screen.getAllByTestId("at-toast")).toHaveLength(5);
     expect(screen.queryByText("First toast")).toBeNull();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
-    expect(screen.getAllByRole("alert")).toHaveLength(5);
+    expect(screen.getAllByTestId("at-toast")).toHaveLength(5);
   });
 
   it("clears pending timers on unmount", async () => {

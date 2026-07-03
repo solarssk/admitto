@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
+import { renderWithToast } from "../test-utils.js";
 
 const fetchEventTemplates = vi.fn();
 const fetchEventTemplate = vi.fn();
@@ -98,7 +99,7 @@ const announcementRow = {
 };
 
 function renderPage() {
-  return render(
+  return renderWithToast(
     <MemoryRouter initialEntries={["/admin/events/evt-comm/communication"]}>
       <Routes>
         <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
@@ -108,7 +109,7 @@ function renderPage() {
 }
 
 function renderPageWithEventSwitch() {
-  return render(
+  return renderWithToast(
     <MemoryRouter initialEntries={["/admin/events/evt-a/communication"]}>
       <Routes>
         <Route

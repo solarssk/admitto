@@ -492,15 +492,13 @@ export function CheckInPage({
           setBuffer("");
           return true;
         }
-        const message =
-          results.length === 0
-            ? LOOKUP_NO_MATCH_MSG
-            : "Multiple matches — narrow your search or use manual lookup.";
         if (results.length === 0) {
           addToast(LOOKUP_NO_MATCH_MSG, "warning");
+        } else {
+          const message = "Multiple matches — narrow your search or use manual lookup.";
+          if (showMobileOverlay) setOverlayManualError(message);
+          else setTransportError(message);
         }
-        if (showMobileOverlay) setOverlayManualError(message);
-        else setTransportError(message);
         return false;
       } catch (err) {
         if (err instanceof ApiError) {

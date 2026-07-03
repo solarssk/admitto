@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, RouterProvider, createMemoryRouter } from "react-router-dom";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
+import { renderWithToast } from "../test-utils.js";
 
 const fetchEventOverview = vi.fn();
 const fetchEventTemplate = vi.fn();
@@ -57,7 +58,7 @@ const templatePayload = {
 };
 
 function renderPageAt(eventId: string) {
-  return render(
+  return renderWithToast(
     <MemoryRouter initialEntries={[`/admin/events/${eventId}/communication`]}>
       <Routes>
         <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
@@ -175,7 +176,7 @@ describe("CommunicationPage bounce banner", () => {
       [{ path: "/admin/events/:eventId/communication", element: <CommunicationPage /> }],
       { initialEntries: ["/admin/events/evt-1/communication"] },
     );
-    render(<RouterProvider router={router} />);
+    renderWithToast(<RouterProvider router={router} />);
 
     await waitFor(() => {
       expect(screen.getByText(/3 emails bounced/i)).toBeTruthy();

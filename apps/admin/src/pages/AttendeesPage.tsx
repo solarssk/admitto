@@ -129,9 +129,7 @@ export function AttendeesPage() {
   const [ticketTypeFilter, setTicketTypeFilter] = useState("");
   const [availableTypes, setAvailableTypes] = useState<string[]>([]);
   const [exportingFormat, setExportingFormat] = useState<"xlsx" | "csv" | "pdf" | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [sendTicketsOpen, setSendTicketsOpen] = useState(false);
   const [sendTarget, setSendTarget] = useState<"unsent" | "all">("unsent");
@@ -180,7 +178,6 @@ export function AttendeesPage() {
     listAbortRef.current = ac;
 
     setLoading(true);
-    setError(null);
     try {
       const data = await fetchEventAttendees(
         eventId,
@@ -208,9 +205,12 @@ export function AttendeesPage() {
           window.location.assign(`/login?next=${next}`);
           return;
         }
-        setError(err.status === 403 ? "You do not have access to this event." : "Failed to load attendees.");
+        addToast(
+          err.status === 403 ? "You do not have access to this event." : "Failed to load attendees.",
+          "error",
+        );
       } else {
-        setError("Failed to load attendees.");
+        addToast("Failed to load attendees.", "error");
       }
     } finally {
       if (!ac.signal.aborted) setLoading(false);
@@ -224,6 +224,7 @@ export function AttendeesPage() {
     ticketTypeFilter,
     rsvpStatusFilter,
     reportApiError,
+    addToast,
   ]);
 
   useEffect(() => {
@@ -242,7 +243,6 @@ export function AttendeesPage() {
       exportAbortRef.current = ac;
 
       setExportingFormat(format);
-      setExportError(null);
       try {
         await exportAttendees(
           eventId,
@@ -264,15 +264,15 @@ export function AttendeesPage() {
             window.location.assign(`/login?next=${next}`);
             return;
           }
-          setExportError(err.message);
+          addToast(err.message, "error");
         } else {
-          setExportError("Export failed.");
+          addToast("Export failed.", "error");
         }
       } finally {
         if (!ac.signal.aborted) setExportingFormat(null);
       }
     },
-    [eventId, searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, reportApiError],
+    [eventId, searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, reportApiError, addToast],
   );
 
   const handleCreated = (attendee: AttendeeDetailDto) => {
@@ -445,8 +445,6 @@ export function AttendeesPage() {
           </>
         }
       />
-      {error && <p className="text-error">{error}</p>}
-      {exportError && <p className="text-error">{exportError}</p>}
 
       <AttendeesTable
         items={items}

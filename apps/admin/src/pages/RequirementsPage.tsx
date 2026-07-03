@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Button, Card, Input, PageHeader, Switch } from "@admitto/ui";
+import { Button, Card, Input, PageHeader, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   createEventItem,
@@ -33,12 +33,12 @@ function configSummary(config: EventItemDto["config"]): string {
 export function RequirementsPage() {
   const { eventId } = useParams();
   const { reportApiError } = useConnectionState();
+  const { addToast } = useToast();
   const listAbortRef = useRef<AbortController | null>(null);
 
   const [items, setItems] = useState<EventItemDto[]>([]);
   const [opsConfig, setOpsConfig] = useState<OpsConfigDto | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<EventItemDto | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -50,14 +50,11 @@ export function RequirementsPage() {
   const addKeyPreview = uniqueItemKey(addLabel, items.map((i) => i.key));
 
   const [opsSaving, setOpsSaving] = useState(false);
-  const [opsError, setOpsError] = useState<string | null>(null);
 
   useEffect(() => {
     setItems([]);
     setOpsConfig(null);
     setSelectedItem(null);
-    setError(null);
-    setOpsError(null);
   }, [eventId]);
 
   const load = useCallback(async () => {
@@ -68,7 +65,6 @@ export function RequirementsPage() {
     listAbortRef.current = ac;
 
     setLoading(true);
-    setError(null);
     try {
       const [itemRows, ops] = await Promise.all([
         fetchEventItems(eventId, ac.signal),
@@ -89,14 +85,17 @@ export function RequirementsPage() {
           window.location.assign(`/login?next=${next}`);
           return;
         }
-        setError(err.status === 403 ? "You do not have access to this event." : "Failed to load requirements.");
+        addToast(
+          err.status === 403 ? "You do not have access to this event." : "Failed to load requirements.",
+          "error",
+        );
       } else {
-        setError("Failed to load requirements.");
+        addToast("Failed to load requirements.", "error");
       }
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [eventId, reportApiError]);
+  }, [eventId, reportApiError, addToast]);
 
   useEffect(() => {
     void load();
@@ -117,11 +116,12 @@ export function RequirementsPage() {
       setItems((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && err.message === "item_in_use") {
-        setError(
+        addToast(
           "This item has been issued to attendees — record returns before disabling it.",
+          "warning",
         );
       } else {
-        setError(err instanceof ApiError ? err.message : "Failed to update item.");
+        addToast(err instanceof ApiError ? err.message : "Failed to update item.", "error");
       }
     }
   }
@@ -142,6 +142,7 @@ export function RequirementsPage() {
       setAddLabel("");
       setAddOpen(false);
       setReloadToken((n) => n + 1);
+      addToast("Item added", "success");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setAddError("An item with this name already exists.");
@@ -159,15 +160,15 @@ export function RequirementsPage() {
   ) {
     if (!eventId || !opsConfig) return;
     setOpsSaving(true);
-    setOpsError(null);
     const prev = opsConfig;
     setOpsConfig({ ...opsConfig, [field]: value });
     try {
       const next = await updateOpsConfig(eventId, { [field]: value });
       setOpsConfig(next);
+      addToast("Setting updated", "success");
     } catch (err) {
       setOpsConfig(prev);
-      setOpsError(err instanceof ApiError ? err.message : "Failed to save event behaviour.");
+      addToast(err instanceof ApiError ? err.message : "Failed to save event behaviour.", "error");
     } finally {
       setOpsSaving(false);
     }
@@ -181,8 +182,6 @@ export function RequirementsPage() {
         title="Requirements"
         subtitle="Configure what this event issues to attendees and operational behaviour."
       />
-      {error && <p className="text-error">{error}</p>}
-
       <section className="requirements-section">
         <div className="requirements-section__header">
           <h2 className="requirements-section__title">Event items</h2>
@@ -299,7 +298,6 @@ export function RequirementsPage() {
 
       <section className="requirements-section">
         <h2 className="requirements-section__title">Event behaviour</h2>
-        {opsError && <p className="text-error">{opsError}</p>}
         <Card>
           {opsConfig == null && loading ? (
             <p>Loading…</p>

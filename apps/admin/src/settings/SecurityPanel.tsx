@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, Checkbox, Input } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, Input, useToast } from "@admitto/ui";
 import { ApiError, fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
 
@@ -37,13 +37,12 @@ function draftFromSettings(s: SystemSettingsDto): Draft {
 
 /** Settings panel — security policies: session TTL, remember-device duration, and MFA role requirements. Env-locked fields are read-only. */
 export function SecurityPanel() {
+  const { addToast } = useToast();
   const [settings, setSettings] = useState<SystemSettingsDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,11 +52,13 @@ export function SecurityPanel() {
       setSettings(data);
       setDraft(draftFromSettings(data));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load security settings.");
+      const message = err instanceof ApiError ? err.message : "Failed to load security settings.";
+      setError(message);
+      addToast(message, "error");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     void load();
@@ -66,8 +67,6 @@ export function SecurityPanel() {
   const handleSave = async () => {
     if (!settings || !draft) return;
     setSaving(true);
-    setSaveError(null);
-    setSaveStatus(null);
 
     const body: PatchSystemSettingsBody = {};
     let hasChanges = false;
@@ -100,7 +99,7 @@ export function SecurityPanel() {
     }
 
     if (!hasChanges) {
-      setSaveStatus("No changes to save.");
+      addToast("No changes to save.", "info");
       setSaving(false);
       return;
     }
@@ -109,9 +108,9 @@ export function SecurityPanel() {
       const updated = await patchSecuritySettings(body);
       setSettings(updated);
       setDraft(draftFromSettings(updated));
-      setSaveStatus("Settings saved.");
+      addToast("Settings saved.", "success");
     } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : "Failed to save settings.");
+      addToast(err instanceof ApiError ? err.message : "Failed to save settings.", "error");
     } finally {
       setSaving(false);
     }
@@ -120,8 +119,6 @@ export function SecurityPanel() {
   const handleReset = async () => {
     if (!settings) return;
     setSaving(true);
-    setSaveError(null);
-    setSaveStatus(null);
 
     const body: PatchSystemSettingsBody = {};
     if (!fieldLocked(settings.session_ttl_ms.source)) body.session_ttl_ms = null;
@@ -133,9 +130,9 @@ export function SecurityPanel() {
       const updated = await patchSecuritySettings(body);
       setSettings(updated);
       setDraft(draftFromSettings(updated));
-      setSaveStatus("Reset to defaults.");
+      addToast("Reset to defaults.", "success");
     } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : "Failed to reset settings.");
+      addToast(err instanceof ApiError ? err.message : "Failed to reset settings.", "error");
     } finally {
       setSaving(false);
     }
@@ -148,7 +145,6 @@ export function SecurityPanel() {
       ? current.filter((r) => r !== role)
       : [...current, role];
     setDraft({ ...draft, mfaRoles: next });
-    setSaveStatus(null);
   };
 
   if (loading) {
@@ -279,17 +275,6 @@ export function SecurityPanel() {
           </p>
         )}
       </div>
-
-      {saveError && (
-        <p role="alert" className="text-error">
-          {saveError}
-        </p>
-      )}
-      {saveStatus && !saveError && (
-        <p role="status" className="text-success">
-          {saveStatus}
-        </p>
-      )}
     </Card>
   );
 }
