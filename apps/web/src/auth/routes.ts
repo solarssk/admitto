@@ -38,10 +38,28 @@ import {
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
+import { resolveTrustProxy } from "../config.js";
 
 const AUTH_ERROR = { error: "unauthorized" } as const;
 
-function sessionCookieOptions(): {
+function firstForwardedValue(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const first = raw.split(",")[0]?.trim();
+  return first || undefined;
+}
+
+/** Whether the incoming request arrived over HTTPS (honours X-Forwarded-Proto when TRUST_PROXY). */
+export function isSecureRequest(c: Context): boolean {
+  const requestUrl = new URL(c.req.url);
+  let proto = requestUrl.protocol.replace(/:$/, "").toLowerCase();
+  if (resolveTrustProxy()) {
+    const forwarded = firstForwardedValue(c.req.header("x-forwarded-proto"));
+    if (forwarded) proto = forwarded.toLowerCase();
+  }
+  return proto === "https";
+}
+
+function sessionCookieOptions(c: Context): {
   httpOnly: true;
   secure: boolean;
   sameSite: "Lax";
@@ -49,7 +67,7 @@ function sessionCookieOptions(): {
 } {
   return {
     httpOnly: true,
-    secure: process.env["NODE_ENV"] !== "development",
+    secure: isSecureRequest(c),
     sameSite: "Lax",
     path: "/",
   };
@@ -57,7 +75,7 @@ function sessionCookieOptions(): {
 
 /** Set httpOnly session cookie after successful login. */
 export function setSessionCookie(c: Context, rawToken: string): void {
-  setCookie(c, SESSION_COOKIE_NAME, rawToken, sessionCookieOptions());
+  setCookie(c, SESSION_COOKIE_NAME, rawToken, sessionCookieOptions(c));
 }
 
 /** Set httpOnly trusted-device cookie with TTL from system settings. */
@@ -69,19 +87,29 @@ export async function setTrustedDeviceCookie(
   const days = await getTrustedDeviceDays(db);
   if (days === 0) return;
   setCookie(c, TRUSTED_DEVICE_COOKIE_NAME, rawToken, {
-    ...sessionCookieOptions(),
+    ...sessionCookieOptions(c),
     maxAge: days * 24 * 60 * 60,
   });
 }
 
 /** Clear session cookie (call after server-side revoke). */
 export function clearSessionCookie(c: Context): void {
-  deleteCookie(c, SESSION_COOKIE_NAME, { path: "/" });
+  const opts = sessionCookieOptions(c);
+  deleteCookie(c, SESSION_COOKIE_NAME, {
+    path: opts.path,
+    secure: opts.secure,
+    sameSite: opts.sameSite,
+  });
 }
 
 /** Clear trusted-device cookie (call on logout). */
 export function clearTrustedDeviceCookie(c: Context): void {
-  deleteCookie(c, TRUSTED_DEVICE_COOKIE_NAME, { path: "/" });
+  const opts = sessionCookieOptions(c);
+  deleteCookie(c, TRUSTED_DEVICE_COOKIE_NAME, {
+    path: opts.path,
+    secure: opts.secure,
+    sameSite: opts.sameSite,
+  });
 }
 
 /** POST /api/auth/login — rate-limited, sets session cookie on success. */
