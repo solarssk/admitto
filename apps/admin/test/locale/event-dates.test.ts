@@ -115,6 +115,21 @@ describe("parseFlexibleCalendarDate", () => {
     expect(parseFlexibleCalendarDate("2026/07/08")).toBe("2026-07-08");
   });
 
+  it("parses year-first input as ISO order in day-first locales", () => {
+    setPreferredLocale("pl-PL");
+    expect(parseFlexibleCalendarDate("2026.3.15")).toBe("2026-03-15");
+    expect(parseFlexibleCalendarDate("2026/3/15")).toBe("2026-03-15");
+    expect(parseFlexibleCalendarDate("2026.07.15")).toBe("2026-07-15");
+    expect(parseFlexibleCalendarDate("2026.3.7")).toBe("2026-03-07");
+    expect(parseFlexibleCalendarDate("2026/3/7")).toBe("2026-03-07");
+  });
+
+  it("parses year-first input as ISO order in de-DE locale", () => {
+    setPreferredLocale("de-DE");
+    expect(parseFlexibleCalendarDate("2026.3.15")).toBe("2026-03-15");
+    expect(parseFlexibleCalendarDate("2026-3-7")).toBe("2026-03-07");
+  });
+
   it("rejects invalid calendar dates", () => {
     expect(parseFlexibleCalendarDate("2026-02-30")).toBeNull();
   });
