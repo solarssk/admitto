@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
-import { Button, PageHeader, useToast } from "@admitto/ui";
+import { Button, EmptyState, PageHeader, useToast } from "@admitto/ui";
 import { ApiError, bulkResendTickets, exportAttendees, fetchEventAttendees, fetchTicketTypes, updateAttendee } from "../api/client.js";
 import type { AttendeeDetailDto, AttendeeRowDto, EventDto, RsvpStatus } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
@@ -130,6 +130,7 @@ export function AttendeesPage() {
   const [availableTypes, setAvailableTypes] = useState<string[]>([]);
   const [exportingFormat, setExportingFormat] = useState<"xlsx" | "csv" | "pdf" | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [sendTicketsOpen, setSendTicketsOpen] = useState(false);
   const [sendTarget, setSendTarget] = useState<"unsent" | "all">("unsent");
@@ -194,6 +195,7 @@ export function AttendeesPage() {
       if (ac.signal.aborted) return;
       setItems(data.items);
       setTotal(data.total);
+      setLoadError(null);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setItems([]);
@@ -205,12 +207,11 @@ export function AttendeesPage() {
           window.location.assign(`/login?next=${next}`);
           return;
         }
-        addToast(
+        setLoadError(
           err.status === 403 ? "You do not have access to this event." : "Failed to load attendees.",
-          "error",
         );
       } else {
-        addToast("Failed to load attendees.", "error");
+        setLoadError("Failed to load attendees.");
       }
     } finally {
       if (!ac.signal.aborted) setLoading(false);
@@ -446,7 +447,18 @@ export function AttendeesPage() {
         }
       />
 
-      <AttendeesTable
+      {loadError && !loading ? (
+        <EmptyState
+          title="Could not load attendees"
+          description={loadError}
+          action={
+            <Button type="button" variant="secondary" onClick={() => void loadList()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : (
+        <AttendeesTable
         items={items}
         total={total}
         page={page}
@@ -482,6 +494,7 @@ export function AttendeesPage() {
         onPageChange={setPage}
         eventTimezone={event.timezone}
       />
+      )}
 
       <AddAttendeeModal
         eventId={eventId}

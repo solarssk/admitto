@@ -150,7 +150,13 @@ export function ImportPage() {
         if (err.message === "invalid file content") return "The file could not be read. Check that it is a valid CSV or XLSX.";
         return err.message || "Request failed.";
       })();
-      addToast(msg, "error");
+      const duration =
+        err.message === "file too large" ||
+        err.message === "too many rows" ||
+        err.message === "invalid file content"
+          ? 7000
+          : undefined;
+      addToast(msg, "error", duration);
     } else {
       addToast("Request failed.", "error");
     }

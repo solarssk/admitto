@@ -55,8 +55,19 @@ function clearAllToastTimers(timerRefs: MutableRefObject<Map<string, ReturnType<
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const timerRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const prevToastIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => () => clearAllToastTimers(timerRefs), []);
+
+  useEffect(() => {
+    const currentIds = new Set(toasts.map((t) => t.id));
+    for (const prevId of prevToastIdsRef.current) {
+      if (!currentIds.has(prevId)) {
+        clearToastTimer(timerRefs, prevId);
+      }
+    }
+    prevToastIdsRef.current = currentIds;
+  }, [toasts]);
 
   const dismiss = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -68,18 +79,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       setToasts((prev) => {
         const withoutDup = prev.filter((t) => !(t.message === message && t.variant === variant));
-        for (const toast of prev) {
-          if (!withoutDup.some((t) => t.id === toast.id)) {
-            clearToastTimer(timerRefs, toast.id);
-          }
-        }
         const kept = withoutDup.slice(-4);
-        const keptIds = new Set(kept.map((t) => t.id));
-        for (const toast of withoutDup) {
-          if (!keptIds.has(toast.id)) {
-            clearToastTimer(timerRefs, toast.id);
-          }
-        }
         return [...kept, { id, message, variant, duration }];
       });
       if (duration > 0) {
@@ -106,6 +106,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             className={`at-toast at-toast--${toast.variant}`}
             data-testid="at-toast"
             data-variant={toast.variant}
+            role={toast.variant === "error" ? "alert" : "status"}
           >
             <i
               className={`ti ti-${TOAST_ICON[toast.variant]} at-toast__icon`}

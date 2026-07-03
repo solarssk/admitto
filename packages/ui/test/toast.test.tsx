@@ -83,6 +83,18 @@ describe("Toast / useToast", () => {
     expect(screen.getAllByTestId("at-toast")).toHaveLength(1);
   });
 
+  it("error variant uses role alert for screen readers", () => {
+    renderWithToast(<ToastHarness variant="error" label="Show error toast" />);
+    fireEvent.click(screen.getByRole("button", { name: "Show error toast" }));
+    expect(screen.getByTestId("at-toast").getAttribute("role")).toBe("alert");
+  });
+
+  it("success variant uses role status", () => {
+    renderWithToast(<ToastHarness label="Show success toast" />);
+    fireEvent.click(screen.getByRole("button", { name: "Show success toast" }));
+    expect(screen.getByTestId("at-toast").getAttribute("role")).toBe("status");
+  });
+
   it("clears auto-dismiss timer for toast evicted by the 5-toast cap", async () => {
     renderWithToast(
       <>

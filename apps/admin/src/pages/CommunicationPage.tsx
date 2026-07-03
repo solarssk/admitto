@@ -251,7 +251,7 @@ export function CommunicationPage() {
         if (seq !== templateSelectionSeqRef.current) return;
         if (err instanceof ApiError) {
           reportApiError(err.status);
-          addToast("Failed to load template.", "error");
+          addToast(err.message, "error");
         } else {
           addToast("Failed to load template.", "error");
         }
@@ -502,13 +502,8 @@ export function CommunicationPage() {
             return;
           }
           setError(err.status === 403 ? "You do not have access to this event." : "Failed to load template.");
-          addToast(
-            err.status === 403 ? "You do not have access to this event." : "Failed to load template.",
-            "error",
-          );
         } else {
           setError("Failed to load template.");
-          addToast("Failed to load template.", "error");
         }
       } finally {
         if (!cancelled) setLoading(false);
