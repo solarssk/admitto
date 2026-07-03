@@ -3,10 +3,9 @@ import {
   passwordStrengthAuthScript,
   renderAuthPasswordStrengthMeterHtml,
 } from "@admitto/auth/password-strength-script";
-import { AUTH_PAGE_ICON_CSP } from "./favicon.js";
-import { getLoginPageSecurityHeaders } from "./login-page.js";
+import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
 import {
-  AUTH_FORM_SUBMIT_SCRIPT,
+  authFormSubmitScript,
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
@@ -24,12 +23,8 @@ function esc(s: string): string {
 }
 
 /** Security headers for server-rendered first-run setup page. */
-export function getSetupPageSecurityHeaders(): Record<string, string> {
-  return {
-    ...getLoginPageSecurityHeaders(),
-    "Content-Security-Policy":
-      `default-src 'none'; ${AUTH_PAGE_ICON_CSP}; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'`,
-  };
+export function getSetupPageSecurityHeaders(scriptNonce: string): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce);
 }
 
 export type SetupErrorCode =
@@ -65,7 +60,11 @@ export function setupPasswordRulesAttribute(): string {
 }
 
 /** Render first-run superadmin bootstrap form (inline strength + confirm-match scripts). */
-export function renderSetupPage(error?: SetupErrorCode, values: SetupFormValues = {}): string {
+export function renderSetupPage(
+  error?: SetupErrorCode,
+  values: SetupFormValues = {},
+  scriptNonce: string,
+): string {
   const message = setupErrorMessage(error);
   const errorBlock = message ? `<div class="auth-error" role="alert">${esc(message)}</div>` : "";
   const emailValue = values.email ? ` value="${esc(values.email)}"` : "";
@@ -104,6 +103,6 @@ export function renderSetupPage(error?: SetupErrorCode, values: SetupFormValues 
     step: "Initial setup",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: `${passwordStrengthAuthScript()}\n${AUTH_FORM_SUBMIT_SCRIPT}`,
+    scripts: `${passwordStrengthAuthScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}`,
   });
 }

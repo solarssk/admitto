@@ -64,10 +64,10 @@ export function renderAuthPasswordStrengthMeterHtml(inputId: string): string {
 }
 
 /** Inline script for setup / change-password pages — embeds the same scorer as @admitto/auth. */
-export function passwordStrengthAuthScript(): string {
+export function passwordStrengthAuthScript(scriptNonce: string): string {
   const tooShortSource = tooShortProgressScore.toString();
   const scorerSource = scorePasswordStrengthInline.toString();
-  return `<script>
+  return `<script nonce="${scriptNonce}">
 (function () {
   var MIN = ${PASSWORD_MIN_LENGTH};
   var tooShortProgressScore = ${tooShortSource};

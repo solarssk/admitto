@@ -63,27 +63,30 @@ describe("scorePasswordStrengthInline parity", () => {
 });
 
 describe("passwordStrengthAuthScript", () => {
+  const SCRIPT_NONCE = "dGVzdC1zY3JpcHQtbm9uY2U=";
+
   it("embeds PASSWORD_MIN_LENGTH and scorer source", () => {
-    const script = passwordStrengthAuthScript();
+    const script = passwordStrengthAuthScript(SCRIPT_NONCE);
     expect(script).toContain(`var MIN = ${PASSWORD_MIN_LENGTH}`);
     expect(script).toContain("scorePasswordStrengthInline");
     expect(script).toContain("auth-password-strength");
+    expect(script).toContain(`nonce="${SCRIPT_NONCE}"`);
   });
 
   it("wires confirm field for match feedback only", () => {
-    const script = passwordStrengthAuthScript();
+    const script = passwordStrengthAuthScript(SCRIPT_NONCE);
     expect(script).toContain("wireMatch(confirm, password)");
     expect(script).not.toMatch(/updateMeter\s*\(\s*confirm/);
   });
 
   it("embeds tooShortProgressScore for sub-minimum passwords", () => {
-    const script = passwordStrengthAuthScript();
+    const script = passwordStrengthAuthScript(SCRIPT_NONCE);
     expect(script).toContain("var tooShortProgressScore =");
     expect(script).toContain("Too short");
   });
 
   it("positions meter in auth-password-slot without layout shift", () => {
-    const script = passwordStrengthAuthScript();
+    const script = passwordStrengthAuthScript(SCRIPT_NONCE);
     expect(script).toContain("auth-password-slot");
     expect(script).toContain("auth-password-strength--empty");
     expect(script).toContain("clearMeter");

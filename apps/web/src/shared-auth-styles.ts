@@ -674,6 +674,24 @@ ${scripts}
 /** Google-style icon used on SSO buttons (login page + admin preview). */
 export const AUTH_SSO_BUTTON_ICON_SVG = `<svg width="18" height="18" viewBox="0 0 21 21" fill="none" aria-hidden="true"><path d="M20.283 10.356h-8.327v3.451h4.792c-.446 2.193-2.313 3.453-4.792 3.453a5.27 5.27 0 01-5.279-5.28 5.27 5.27 0 015.279-5.279c1.259 0 2.397.447 3.29 1.178l2.6-2.599c-1.584-1.381-3.615-2.233-5.89-2.233a8.908 8.908 0 00-8.934 8.934 8.907 8.907 0 008.934 8.934c4.467 0 8.529-3.249 8.529-8.934 0-.528-.081-1.097-.202-1.625z" fill="#4285F4"/><path d="M1.329 6.817l3.005 2.204a5.268 5.268 0 015.245-3.643c1.259 0 2.397.447 3.29 1.178l2.6-2.599c-1.584-1.381-3.615-2.233-5.89-2.233-3.199 0-5.956 1.681-7.25 4.093z" fill="#EA4335"/><path d="M9.579 19.73c2.213 0 4.22-.725 5.779-1.96l-2.67-2.259a5.274 5.274 0 01-3.109.974 5.27 5.27 0 01-4.979-3.59L1.58 15.116c1.278 2.435 4.042 4.614 7.999 4.614z" fill="#34A853"/><path d="M20.283 10.356h-8.327v3.451h4.792c-.21 1.102-.87 2.064-1.822 2.72l2.67 2.258c1.556-1.439 2.687-3.673 2.687-8.429z" fill="#FBBC05"/></svg>`;
 
+export function authFormSubmitScript(scriptNonce: string): string {
+  return `<script nonce="${scriptNonce}">
+(function () {
+  document.querySelectorAll(".auth-page form").forEach(function (form) {
+    form.addEventListener("submit", function () {
+      var btn = form.querySelector('button[type="submit"]');
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      if (!btn.dataset.originalLabel) btn.dataset.originalLabel = btn.textContent || "";
+      btn.textContent = btn.dataset.loadingLabel || "Please wait…";
+    });
+  });
+})();
+</script>`;
+}
+
+/** Legacy inline submit helper — pages without nonce-gated CSP (login, MFA). */
 export const AUTH_FORM_SUBMIT_SCRIPT = `<script>
 (function () {
   document.querySelectorAll(".auth-page form").forEach(function (form) {

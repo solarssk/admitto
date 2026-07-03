@@ -82,6 +82,12 @@ describe("GET /setup", () => {
     expect(html).toContain("Create administrator account");
     expect(html).toContain("auth-password-strength");
     expect(html).toContain("scorePasswordStrengthInline");
+    const csp = res.headers.get("Content-Security-Policy") ?? "";
+    expect(csp).toMatch(/script-src 'nonce-[^']+'/);
+    expect(csp).not.toContain("script-src 'unsafe-inline'");
+    const nonce = csp.match(/script-src 'nonce-([^']+)'/)?.[1];
+    expect(nonce).toBeTruthy();
+    expect(html).toContain(`nonce="${nonce}"`);
   });
 
   it("redirects to /login when users exist", async () => {

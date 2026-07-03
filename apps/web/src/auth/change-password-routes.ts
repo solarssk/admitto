@@ -16,11 +16,12 @@ import {
   PASSWORD_TOO_SHORT,
   PASSWORD_COMPLETE_FAILED,
 } from "../change-password-page.js";
+import { createAuthPageScriptNonce } from "../auth-page-security.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 
-function htmlResponse(c: Context, html: string, status: 200 | 400 = 200): Response {
-  for (const [name, value] of Object.entries(getChangePasswordPageSecurityHeaders())) {
+function htmlResponse(c: Context, html: string, scriptNonce: string, status: 200 | 400 = 200): Response {
+  for (const [name, value] of Object.entries(getChangePasswordPageSecurityHeaders(scriptNonce))) {
     c.header(name, value);
   }
   return c.html(html, status);
@@ -65,7 +66,8 @@ async function requireForcedPasswordChange(
 export async function handleGetChangePassword(c: Context, db: PrismaClient): Promise<Response> {
   const gate = await requireForcedPasswordChange(c, db);
   if (gate instanceof Response) return gate;
-  return htmlResponse(c, renderChangePasswordForm());
+  const scriptNonce = createAuthPageScriptNonce();
+  return htmlResponse(c, renderChangePasswordForm(undefined, scriptNonce));
 }
 
 /** POST /change-password — update password, clear flag, revoke other sessions. */
@@ -78,10 +80,12 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
   const confirm = form.password_confirm ?? "";
 
   if (password.length < PASSWORD_MIN_LENGTH) {
-    return htmlResponse(c, renderChangePasswordForm(PASSWORD_TOO_SHORT), 400);
+    const scriptNonce = createAuthPageScriptNonce();
+    return htmlResponse(c, renderChangePasswordForm(PASSWORD_TOO_SHORT, scriptNonce), 400);
   }
   if (password !== confirm) {
-    return htmlResponse(c, renderChangePasswordForm(PASSWORD_MISMATCH), 400);
+    const scriptNonce = createAuthPageScriptNonce();
+    return htmlResponse(c, renderChangePasswordForm(PASSWORD_MISMATCH, scriptNonce), 400);
   }
 
   try {
@@ -112,6 +116,7 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
       err instanceof Error && err.message === "session_promotion_failed"
         ? PASSWORD_COMPLETE_FAILED
         : PASSWORD_INVALID;
-    return htmlResponse(c, renderChangePasswordForm(message), 400);
+    const scriptNonce = createAuthPageScriptNonce();
+    return htmlResponse(c, renderChangePasswordForm(message, scriptNonce), 400);
   }
 }

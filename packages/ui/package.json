@@ -17,9 +17,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "prebuild": "npm run build -w @admitto/auth",
+    "prebuild": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/auth",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "pretest": "npm run build -w @admitto/auth",
+    "pretest": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/auth",
     "test": "vitest run"
   },
   "peerDependencies": {

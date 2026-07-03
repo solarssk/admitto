@@ -3,14 +3,14 @@ import {
   passwordStrengthAuthScript,
   renderAuthPasswordStrengthMeterHtml,
 } from "@admitto/auth/password-strength-script";
+import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
 import {
-  AUTH_FORM_SUBMIT_SCRIPT,
+  authFormSubmitScript,
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
   renderAuthPage,
 } from "./shared-auth-styles.js";
-import { AUTH_PAGE_ICON_CSP } from "./favicon.js";
 
 function esc(s: string): string {
   return s
@@ -22,14 +22,8 @@ function esc(s: string): string {
 }
 
 /** Security headers for the forced password-change page. */
-export function getChangePasswordPageSecurityHeaders(): Record<string, string> {
-  return {
-    "Cache-Control": "private, no-store, max-age=0",
-    "Content-Security-Policy":
-      `default-src 'none'; ${AUTH_PAGE_ICON_CSP}; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'`,
-    "Referrer-Policy": "same-origin",
-    "X-Content-Type-Options": "nosniff",
-  };
+export function getChangePasswordPageSecurityHeaders(scriptNonce: string): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce);
 }
 
 const PASSWORD_MISMATCH = "password_mismatch";
@@ -48,7 +42,7 @@ function errorMessage(error?: string): string | undefined {
 }
 
 /** Server-rendered forced password change form. */
-export function renderChangePasswordForm(error?: string): string {
+export function renderChangePasswordForm(error: string | undefined, scriptNonce: string): string {
   const message = errorMessage(error);
   const errorBlock = message ? `<div class="auth-error" role="alert">${esc(message)}</div>` : "";
   const passwordRules = esc(`minlength: ${PASSWORD_MIN_LENGTH};`);
@@ -75,7 +69,7 @@ export function renderChangePasswordForm(error?: string): string {
     step: "Change password",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: `${passwordStrengthAuthScript()}\n${AUTH_FORM_SUBMIT_SCRIPT}`,
+    scripts: `${passwordStrengthAuthScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}`,
   });
 }
 
