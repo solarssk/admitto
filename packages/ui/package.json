@@ -17,7 +17,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prebuild": "npm run build -w @admitto/auth",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build -w @admitto/auth",
     "test": "vitest run"
   },
   "peerDependencies": {
