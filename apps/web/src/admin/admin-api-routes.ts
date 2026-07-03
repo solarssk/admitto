@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { canManageInstance, listAdminEvents } from "@admitto/auth";
-import { writeAdminAuditLog } from "@admitto/tickets";
+import { ensureDefaultEventItems, writeAdminAuditLog } from "@admitto/tickets";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { timezoneField } from "./timezone.js";
@@ -165,6 +165,10 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
           organization_id: orgId,
         },
       });
+
+      // Seed eagerly so Requirements lists items right after create (#238);
+      // lazy seed in check-in paths stays as safety net for legacy rows.
+      await ensureDefaultEventItems(created.id, tx);
 
       await writeAdminAuditLog(tx, {
         organizationId: orgId,

@@ -27,7 +27,7 @@ export {
   isReservedCustomDataSourceField,
   filterCustomDataAttributeFields,
 } from "./custom-data-reserved.js";
-export { DEFAULT_EVENT_ITEM_KEYS } from "./event-items.js";
+export { DEFAULT_EVENT_ITEM_KEYS, ensureDefaultEventItems } from "./event-items.js";
 export { parseEventOpsConfig, loadEventOpsConfig } from "./ops-config.js";
 export { writeActionLog, writeBulkActionLog } from "./ops-audit.js";
 export { writeAdminAuditLog } from "./admin-audit.js";
