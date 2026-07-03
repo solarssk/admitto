@@ -64,4 +64,10 @@ describe("passwordStrengthAuthScript", () => {
     expect(script).toContain("scorePasswordStrengthInline");
     expect(script).toContain("auth-password-strength");
   });
+
+  it("wires confirm field for match feedback only", () => {
+    const script = passwordStrengthAuthScript();
+    expect(script).toContain("wireMatch(confirm, password)");
+    expect(script).not.toMatch(/updateMeter\s*\(\s*confirm/);
+  });
 });

@@ -61,7 +61,7 @@ export function setupPasswordRulesAttribute(): string {
   return `minlength: ${PASSWORD_MIN_LENGTH};`;
 }
 
-/** Render first-run superadmin bootstrap form (no client-side scripts). */
+/** Render first-run superadmin bootstrap form (inline strength + confirm-match scripts). */
 export function renderSetupPage(error?: SetupErrorCode, values: SetupFormValues = {}): string {
   const message = setupErrorMessage(error);
   const errorBlock = message ? `<div class="auth-error" role="alert">${esc(message)}</div>` : "";

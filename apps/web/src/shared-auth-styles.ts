@@ -24,10 +24,14 @@ export const AUTH_PAGE_CSS = `
   --at-gray-100: #f1f5f9;
   --at-gray-200: #e2e8f0;
   --at-gray-500: #64748b;
+  --at-gray-600: #475569;
   --at-ink: #1d273b;
   --at-red: #d63939;
   --at-red-050: #fbeaea;
+  --at-yellow: #f59f00;
   --at-yellow-050: #fdf3e1;
+  --at-green: #2fb344;
+  --at-green-600: #279a39;
 }
 
 *, *::before, *::after { box-sizing: border-box; }

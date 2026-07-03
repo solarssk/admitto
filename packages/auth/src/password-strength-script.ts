@@ -29,7 +29,7 @@ export const AUTH_PASSWORD_STRENGTH_CSS = `
   font-weight: 500;
   color: var(--at-gray-600);
 }
-.auth-confirm-match--ok { color: var(--at-green-600, #279a39); }
+.auth-confirm-match--ok { color: var(--at-green-600); }
 .auth-confirm-match--warn { color: var(--at-gray-500); }
 `;
 
@@ -40,6 +40,12 @@ export function passwordStrengthAuthScript(): string {
 (function () {
   var MIN = ${PASSWORD_MIN_LENGTH};
   var score = ${scorerSource};
+
+  function appendDescribedBy(input, id) {
+    var tokens = (input.getAttribute("aria-describedby") || "").split(/\\s+/).filter(Boolean);
+    if (tokens.indexOf(id) === -1) tokens.push(id);
+    input.setAttribute("aria-describedby", tokens.join(" "));
+  }
 
   function ensureMeter(input) {
     var field = input.closest(".auth-field");
@@ -58,11 +64,7 @@ export function passwordStrengthAuthScript(): string {
       field.appendChild(meter);
       var meterId = input.id + "-strength";
       meter.id = meterId;
-      var describedBy = input.getAttribute("aria-describedby") || "";
-      input.setAttribute(
-        "aria-describedby",
-        describedBy ? describedBy + " " + meterId : meterId,
-      );
+      appendDescribedBy(input, meterId);
     }
     return meter;
   }
@@ -98,11 +100,7 @@ export function passwordStrengthAuthScript(): string {
       hint.setAttribute("role", "status");
       hint.setAttribute("aria-live", "polite");
       field.appendChild(hint);
-      var describedBy = confirmInput.getAttribute("aria-describedby") || "";
-      confirmInput.setAttribute(
-        "aria-describedby",
-        describedBy ? describedBy + " " + hint.id : hint.id,
-      );
+      appendDescribedBy(confirmInput, hint.id);
     }
     function update() {
       if (!confirmInput.value) {
@@ -125,8 +123,6 @@ export function passwordStrengthAuthScript(): string {
   }
   var confirm = document.getElementById("confirm_password") || document.getElementById("password_confirm");
   if (confirm && password) {
-    confirm.addEventListener("input", function () { updateMeter(confirm); });
-    updateMeter(confirm);
     wireMatch(confirm, password);
   }
 })();
