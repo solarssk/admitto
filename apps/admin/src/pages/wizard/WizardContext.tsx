@@ -45,7 +45,7 @@ type PersistedWizardContext = {
 };
 
 /** Coerce persisted summary JSON to a safe WizardSummary (ignore unknown/corrupt shapes). */
-function sanitizePersistedSummary(value: unknown): WizardSummary {
+export function sanitizePersistedSummary(value: unknown): WizardSummary {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return DEFAULT_SUMMARY;
   }
