@@ -19,8 +19,7 @@ vi.mock("../../src/api/client.js", () => ({
 }));
 
 const okChecks = {
-  database: { ok: true, detail: "Connected" },
-  migrations: { ok: true, detail: "Up to date" },
+  database: { ok: true, detail: "PostgreSQL connected · migrations current" },
   redis: { ok: true, detail: "Optional — not configured" },
   encryption: { ok: true, detail: "Key present" },
   base_url: { ok: true, detail: "https://tickets.example.com" },
@@ -52,7 +51,7 @@ describe("WizardStep1Checks", () => {
 
     await waitFor(() => {
       expect(fetchSetupChecks).toHaveBeenCalledTimes(2);
-      expect(screen.getByText("Connected")).toBeTruthy();
+      expect(screen.getByText("PostgreSQL connected · migrations current")).toBeTruthy();
     });
   });
 
@@ -99,8 +98,8 @@ describe("WizardStep1Checks", () => {
     renderStep();
 
     await waitFor(() => {
-      expect(screen.getByText("Connected")).toBeTruthy();
-      expect(screen.getByText("Up to date")).toBeTruthy();
+      expect(screen.getByText("PostgreSQL connected · migrations current")).toBeTruthy();
+      expect(screen.getByText("https://tickets.example.com")).toBeTruthy();
     });
   });
 });
