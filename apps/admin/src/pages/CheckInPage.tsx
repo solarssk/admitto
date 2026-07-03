@@ -493,7 +493,8 @@ export function CheckInPage({
           return true;
         }
         if (results.length === 0) {
-          addToast(LOOKUP_NO_MATCH_MSG, "warning");
+          if (showMobileOverlay) setOverlayManualError(LOOKUP_NO_MATCH_MSG);
+          else addToast(LOOKUP_NO_MATCH_MSG, "warning");
         } else {
           const message = "Multiple matches — narrow your search or use manual lookup.";
           if (showMobileOverlay) setOverlayManualError(message);
