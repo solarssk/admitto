@@ -54,7 +54,7 @@ async function seedPublicRefFixture(client: PrismaClient): Promise<void> {
       name: "Mode A Guest",
       token_hash: hashToken(MODE_A_TOKEN),
       token_enc: encryptToString(MODE_A_TOKEN),
-      status: "active",
+      status: "registered",
     },
   });
 }
