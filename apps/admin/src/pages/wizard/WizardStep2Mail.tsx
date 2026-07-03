@@ -2,6 +2,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useRef,
   useState,
@@ -392,39 +393,38 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
               )}
 
               {provider && provider !== "export_only" && (
-                <>
-                  <div className="setup-wizard__mail-test-row">
-                    <Button
-                      type="button"
-                      variant={testSent ? "secondary" : "primary"}
-                      disabled={testSending}
-                      icon={
-                        testSent ? (
-                          <i
-                            className="ti ti-circle-check setup-wizard__mail-test-icon--ok"
-                            aria-hidden="true"
-                          />
-                        ) : testSending ? (
-                          <i className="ti ti-loader-2 setup-wizard__spin" aria-hidden="true" />
-                        ) : (
-                          <i className="ti ti-send" aria-hidden="true" />
-                        )
-                      }
-                      onClick={() => void handleTestSend()}
-                    >
-                      {testSent
-                        ? "Test sent"
-                        : testSending
-                          ? "Sending…"
-                          : "Send test email"}
-                    </Button>
-                    {testSent && (
-                      <span className="setup-wizard__mail-test-hint">
-                        Test sent — check your inbox to confirm delivery.
-                      </span>
-                    )}
-                  </div>
-                </>
+                <div className="setup-wizard__mail-test-row">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={testSending}
+                    icon={
+                      testSent ? (
+                        <i
+                          className="ti ti-circle-check setup-wizard__mail-test-icon--ok"
+                          aria-hidden="true"
+                        />
+                      ) : testSending ? (
+                        <i className="ti ti-loader-2 setup-wizard__spin" aria-hidden="true" />
+                      ) : (
+                        <i className="ti ti-send" aria-hidden="true" />
+                      )
+                    }
+                    onClick={() => void handleTestSend()}
+                  >
+                    {testSent ? "Test sent" : testSending ? "Sending…" : "Send test email"}
+                  </Button>
+                  {testSent ? (
+                    <span className="setup-wizard__mail-test-hint">
+                      Check your inbox to confirm delivery.
+                    </span>
+                  ) : (
+                    <span className="setup-wizard__mail-test-hint">
+                      Optional — sends to your login email.
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           </>
@@ -449,6 +449,8 @@ function SecretInput({
   onValueChange: (value: string) => void;
   onCancel: () => void;
 }) {
+  const inputId = useId();
+
   if (field.locked) {
     return (
       <div className="setup-wizard__field">
@@ -488,17 +490,23 @@ function SecretInput({
   }
 
   return (
-    <div className="setup-wizard__secret-row setup-wizard__secret-row--edit">
-      <Input
-        label={label}
+    <div className="at-field setup-wizard__secret-field">
+      <div className="setup-wizard__label-row">
+        <label className="at-label" htmlFor={inputId}>
+          {label}
+        </label>
+        <button type="button" className="setup-wizard__inline-action" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+      <input
+        id={inputId}
+        className="at-input"
         type={label === "Webhook URL" ? "url" : "password"}
         autoComplete="new-password"
         value={edit.value}
         onChange={(e) => onValueChange(e.target.value)}
       />
-      <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
-        Cancel
-      </Button>
     </div>
   );
 }
