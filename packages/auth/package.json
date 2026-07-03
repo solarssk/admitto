@@ -34,6 +34,10 @@
     "./password-strength-script": {
       "types": "./dist/password-strength-script.d.ts",
       "default": "./dist/password-strength-script.js"
+    },
+    "./password-strength-fixtures": {
+      "types": "./dist/password-strength-fixtures.d.ts",
+      "default": "./dist/password-strength-fixtures.js"
     }
   },
   "scripts": {
@@ -59,6 +63,7 @@
   "devDependencies": {
     "@prisma/client": "^5.17.0",
     "@types/node": "^24.0.0",
+    "jsdom": "^26.1.0",
     "prisma": "^5.17.0",
     "tsx": "^4.19.2",
     "typescript": "^6.0.3",

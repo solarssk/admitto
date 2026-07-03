@@ -5,7 +5,7 @@ import {
   PASSWORD_STRENGTH_GOOD,
   PASSWORD_STRENGTH_STRONG,
   PASSWORD_STRENGTH_WEAK,
-} from "../../auth/test/password-strength-samples.js";
+} from "@admitto/auth/password-strength-fixtures";
 import { PasswordStrengthMeter } from "../src/components/PasswordStrengthMeter.js";
 
 describe("PasswordStrengthMeter", () => {

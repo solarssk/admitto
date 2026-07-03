@@ -11,7 +11,7 @@ import {
   PASSWORD_STRENGTH_GOOD,
   PASSWORD_STRENGTH_STRONG,
   PASSWORD_STRENGTH_WEAK,
-} from "./password-strength-samples.js";
+} from "../src/password-strength-fixtures.js";
 
 describe("scorePasswordStrength", () => {
   it("returns empty for blank input", () => {
