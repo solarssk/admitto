@@ -145,6 +145,20 @@ Schema change policy (expand-contract, CI guard): [packages/db/README.md](../pac
 
 For one-off CLI (bootstrap, MFA reset), the entrypoint passes through `node …` without starting the web server — see below. `npm`/`npx` are not available in the production image.
 
+## Container logs (what to expect where)
+
+Per-container stdout, by design (SECURITY-CONTROLS: logs are operational — no PII, secrets, or tokens; no built-in SIEM):
+
+| Container | What its logs show |
+|-----------|--------------------|
+| `app` | Entrypoint boot steps (migration status, backup, retention), `Admitto web running at …`, then: JSON access log (one line per request — method, redacted path, status, `duration_ms`) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
+| `proxy` | Nginx access/error log (image default) — includes client IPs; rotate/limit via Docker logging options if kept long-term |
+| `retention` | `[retention] …` prefixed lines per nightly run |
+| `db-backup` | `[db-backup] …` prefixed lines per nightly dump |
+| `db` / `redis` | Image defaults (Postgres startup/checkpoints, Redis notices) |
+
+**Decision (issue #237):** the `app` access log is the supported way to see request activity in Portainer/`docker logs`. It deliberately excludes IPs, user agents, cookies, and query strings; ticket/QR paths are logged as `/t/[redacted]` and `/q/[redacted]` so QR tokens never reach stdout. Successful `/healthz`/`/readyz` probes are skipped (Docker healthcheck fires every 10s); failing probes are logged. Request-level *attribution* (who did what) stays in the DB audit log; client IPs stay at the proxy layer. Disable with `LOG_HTTP_REQUESTS=0` in `deploy/.env`.
+
 ## First superadmin
 
 On a **fresh database** (no users), open the app URL — you are redirected to **`/setup`**
