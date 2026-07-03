@@ -96,7 +96,6 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     const [validationErrors, setValidationErrors] = useState<string[]>([]);
     const [testSending, setTestSending] = useState(false);
     const [testSent, setTestSent] = useState(false);
-    const [testError, setTestError] = useState<string | null>(null);
     const loadAbortRef = useRef<AbortController | null>(null);
 
     const fieldLocked = useCallback(
@@ -141,7 +140,6 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     const updateDraft = (patch: Partial<MailDraft>) => {
       setDraft((prev) => ({ ...prev, ...patch }));
       setValidationErrors([]);
-      setTestError(null);
       setTestSent(false);
       onDirtyChange?.(true);
     };
@@ -202,26 +200,19 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
         return;
       }
       setTestSending(true);
-      setTestError(null);
       try {
         const saved = await saveSettings();
         if (!saved) return;
         const result = await sendMailTransportTest(user.email);
         if (result.status === "sent") {
-          setTestError(null);
           setTestSent(true);
-          addToast(`Test email sent to ${user.email}.`, "success");
         } else {
-          const message = result.error ?? "Test email failed.";
-          setTestError(message);
           setTestSent(false);
-          addToast(message, "error");
+          addToast(result.error ?? "Test email failed.", "error");
         }
       } catch (err) {
-        const message = err instanceof ApiError ? err.message : "Test email failed.";
-        setTestError(message);
         setTestSent(false);
-        addToast(message, "error");
+        addToast(err instanceof ApiError ? err.message : "Test email failed.", "error");
       } finally {
         setTestSending(false);
       }
@@ -236,12 +227,11 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
 
     return (
       <>
-        <h2 className="setup-wizard__card-title">Mail transport</h2>
-        <p className="setup-wizard__card-desc">
+        <p className="setup-wizard__step-sub">
           Choose how Admitto sends ticket and lifecycle emails.
         </p>
 
-        {loading && <p>Loading mail settings…</p>}
+        {loading && <p className="setup-wizard__hint">Loading mail settings…</p>}
 
         {!loading && apiData && (
           <>
@@ -255,6 +245,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
 
             <div className="setup-wizard__mail-form">
               <Select
+                className="setup-wizard__transport-select"
                 label="Transport"
                 value={provider}
                 disabled={fieldLocked("provider")}
@@ -422,22 +413,17 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
                       onClick={() => void handleTestSend()}
                     >
                       {testSent
-                        ? "Send again"
+                        ? "Test sent"
                         : testSending
                           ? "Sending…"
                           : "Send test email"}
                     </Button>
                     {testSent && (
                       <span className="setup-wizard__mail-test-hint">
-                        Check your inbox to confirm delivery.
+                        Test sent — check your inbox to confirm delivery.
                       </span>
                     )}
                   </div>
-                  {testError && !testSent && (
-                    <p className="setup-wizard__test-error" role="alert">
-                      {testError}
-                    </p>
-                  )}
                 </>
               )}
             </div>
@@ -489,18 +475,20 @@ function SecretInput({
 
   if (edit.mode === "idle") {
     return (
-      <div className="setup-wizard__field">
+      <div className="setup-wizard__secret-row">
         <span className="at-label">{label}</span>
-        <p className="setup-wizard__hint">{field.set ? "Set ••••" : "Not set"}</p>
-        <Button type="button" variant="secondary" onClick={onReplace}>
-          {field.set ? "Replace" : "Set"}
-        </Button>
+        <div className="setup-wizard__secret-status">
+          <span className="setup-wizard__hint">{field.set ? "Set ••••" : "Not set"}</span>
+          <Button type="button" variant="ghost" size="sm" onClick={onReplace}>
+            {field.set ? "Replace" : "Set"}
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="setup-wizard__field">
+    <div className="setup-wizard__secret-row setup-wizard__secret-row--edit">
       <Input
         label={label}
         type={label === "Webhook URL" ? "url" : "password"}
@@ -508,7 +496,7 @@ function SecretInput({
         value={edit.value}
         onChange={(e) => onValueChange(e.target.value)}
       />
-      <Button type="button" variant="ghost" onClick={onCancel}>
+      <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
         Cancel
       </Button>
     </div>
