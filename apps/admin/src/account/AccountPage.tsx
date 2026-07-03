@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, Checkbox, Input, Spinner } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, Input, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
   confirmMfaTotp,
@@ -43,28 +43,22 @@ function redirectToLoginIfUnauthorized(err: unknown): boolean {
 }
 
 export function AccountPage() {
+  const { addToast } = useToast();
   const [account, setAccount] = useState<AccountDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [preferredLocale, setPreferredLocale] = useState<string | null>(null);
-  const [localeSaved, setLocaleSaved] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
-  const [profileStatus, setProfileStatus] = useState<string | null>(null);
-  const [profileError, setProfileError] = useState<string | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
-  const [passwordStatus, setPasswordStatus] = useState<string | null>(null);
-  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [enrollData, setEnrollData] = useState<MfaEnrollResponse | null>(null);
   const [backupSaved, setBackupSaved] = useState(false);
   const [totpCode, setTotpCode] = useState("");
   const [mfaEnrolling, setMfaEnrolling] = useState(false);
   const [mfaConfirming, setMfaConfirming] = useState(false);
-  const [mfaError, setMfaError] = useState<string | null>(null);
-  const [mfaStatus, setMfaStatus] = useState<string | null>(null);
   const [resetFormOpen, setResetFormOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetPassword, setResetPassword] = useState("");
@@ -153,20 +147,25 @@ export function AccountPage() {
   return (
     <>
       <Card title="Profile" footer={<div className="mail-transport-footer"><Button type="button" variant="primary" disabled={profileSaving || !profileDirty} onClick={async () => {
-        setProfileSaving(true); setProfileError(null); setProfileStatus(null); setLocaleSaved(false);
+        setProfileSaving(true);
+        const localeChanged = preferredLocale !== account.preferred_locale;
         try {
           const result = await patchAccountProfile({
             ...(displayName !== (account.display_name ?? "") && { display_name: displayName }),
-            ...(preferredLocale !== account.preferred_locale && { preferred_locale: preferredLocale }),
+            ...(localeChanged && { preferred_locale: preferredLocale }),
           });
           setDisplayName(result.display_name ?? "");
           setPreferredLocale(result.preferred_locale);
           setPreferredLocaleStore(result.preferred_locale ?? undefined);
-          setProfileStatus("Profile saved.");
-          if (preferredLocale !== account.preferred_locale) setLocaleSaved(true);
+          addToast(
+            localeChanged
+              ? "Profile saved. Reload this page to refresh session timestamps below."
+              : "Profile saved.",
+            "success",
+          );
           await loadAccount();
         } catch (err) {
-          setProfileError(err instanceof ApiError ? err.message : "Failed to save profile.");
+          addToast(err instanceof ApiError ? err.message : "Failed to save profile.", "error");
         } finally { setProfileSaving(false); }
       }}>Save</Button></div>}>
         <div className="mail-field-row">
@@ -181,7 +180,6 @@ export function AccountPage() {
             className="form-select"
             value={preferredLocale ?? ""}
             onChange={(e) => {
-              setLocaleSaved(false);
               setPreferredLocale(e.target.value || null);
             }}
             disabled={profileSaving}
@@ -218,13 +216,6 @@ export function AccountPage() {
             <p className="account-role-hint">Roles are read-only. Contact an administrator to change access.</p>
           </div>
         )}
-        {profileError && <p className="text-error" role="alert">{profileError}</p>}
-        {profileStatus && <p className="text-success" role="status">{profileStatus}</p>}
-        {localeSaved && (
-          <p className="mail-field-hint" style={{ color: "var(--success)" }}>
-            Saved. Most views use the new format immediately; reload this page to refresh session timestamps below.
-          </p>
-        )}
       </Card>
 
       <Card title="Password">
@@ -253,19 +244,20 @@ export function AccountPage() {
             </div>
             <div className="mail-transport-footer">
               <Button type="button" variant="primary" disabled={passwordSaving || !passwordFormValid} onClick={async () => {
-                setPasswordSaving(true); setPasswordError(null); setPasswordStatus(null);
+                setPasswordSaving(true);
                 try {
                   const { sessions_revoked } = await patchAccountPassword({ current_password: currentPassword, new_password: newPassword, new_password_confirm: confirmPassword });
                   setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
-                  setPasswordStatus(`Password changed.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} revoked.` : ""}`);
+                  addToast(
+                    `Password changed.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} revoked.` : ""}`,
+                    "success",
+                  );
                   await loadAccount(); await loadSessions();
                 } catch (err) {
-                  setPasswordError(err instanceof ApiError ? err.message : "Failed to change password.");
+                  addToast(err instanceof ApiError ? err.message : "Failed to change password.", "error");
                 } finally { setPasswordSaving(false); }
               }}>Change password</Button>
             </div>
-            {passwordError && <p className="text-error" role="alert">{passwordError}</p>}
-            {passwordStatus && <p className="text-success" role="status">{passwordStatus}</p>}
           </>
         )}
       </Card>
@@ -276,9 +268,9 @@ export function AccountPage() {
         </div>
         {!totpEnrolled && !enrollData && account.has_local_password && (
           <Button type="button" variant="primary" disabled={mfaEnrolling} onClick={async () => {
-            setMfaEnrolling(true); setMfaError(null); setMfaStatus(null); setBackupSaved(false); setTotpCode("");
+            setMfaEnrolling(true); setBackupSaved(false); setTotpCode("");
             try { setEnrollData(await enrollMfaTotp()); }
-            catch (err) { setMfaError(err instanceof ApiError ? err.message : "Failed to start 2FA setup."); }
+            catch (err) { addToast(err instanceof ApiError ? err.message : "Failed to start 2FA setup.", "error"); }
             finally { setMfaEnrolling(false); }
           }}>Set up authenticator</Button>
         )}
@@ -314,13 +306,13 @@ export function AccountPage() {
             </div>
             <div className="account-enroll-actions">
               <Button type="button" variant="primary" disabled={mfaConfirming || !totpCode.trim() || (!backupSaved && enrollData.backupCodes.length > 0)} onClick={async () => {
-                setMfaConfirming(true); setMfaError(null);
+                setMfaConfirming(true);
                 try {
                   await confirmMfaTotp({ code: totpCode.trim() });
                   setEnrollData(null); setTotpCode(""); setBackupSaved(false);
-                  setMfaStatus("Two-factor authentication is enabled.");
+                  addToast("Two-factor authentication is enabled.", "success");
                   await loadAccount();
-                } catch (err) { setMfaError(err instanceof ApiError ? err.message : "Invalid authenticator code."); }
+                } catch (err) { addToast(err instanceof ApiError ? err.message : "Invalid authenticator code.", "error"); }
                 finally { setMfaConfirming(false); }
               }}>Confirm setup</Button>
               <Button type="button" variant="secondary" onClick={() => setEnrollData(null)}>Cancel</Button>
@@ -351,8 +343,6 @@ export function AccountPage() {
             Two-factor reset requires a local password. Sign-in-only accounts must contact an administrator.
           </p>
         )}
-        {mfaError && <p className="text-error" role="alert">{mfaError}</p>}
-        {mfaStatus && <p className="text-success" role="status">{mfaStatus}</p>}
       </Card>
 
       <Card title="Active sessions" actions={otherSessions.length > 0 ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}>
@@ -422,8 +412,9 @@ export function AccountPage() {
         try {
           const { sessions_revoked } = await resetMfa({ password: resetPassword });
           setResetFormOpen(false); setResetPassword(""); setResetConfirmOpen(false);
-          setMfaStatus(
+          addToast(
             `Two-factor authentication reset.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} ended.` : ""}`,
+            "success",
           );
           await loadAccount(); await loadSessions();
         }
