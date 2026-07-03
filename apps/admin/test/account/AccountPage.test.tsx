@@ -3,6 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AccountPage } from "../../src/account/AccountPage.js";
 import type { AccountDto } from "../../src/api/types.js";
+import { PASSWORD_STRENGTH_STRONG } from "../../../../packages/auth/test/password-strength-samples.js";
 import { renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
@@ -157,6 +158,25 @@ describe("AccountPage toasts", () => {
 
     expect(screen.getByText("Passwords do not match.")).toBeTruthy();
     expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
+  it("shows password strength feedback while typing a new password", async () => {
+    mockLoadedAccount();
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("New password")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "short" },
+    });
+    expect(screen.getByText("Too short")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: PASSWORD_STRENGTH_STRONG },
+    });
+    expect(screen.getByText("Strong")).toBeTruthy();
   });
 
   it("toasts password change success", async () => {

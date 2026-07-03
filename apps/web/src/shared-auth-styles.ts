@@ -1,4 +1,5 @@
 /** Product name for auth HTML (browser tab, password managers, TOTP issuer). */
+import { AUTH_PASSWORD_STRENGTH_CSS } from "@admitto/auth";
 import { renderAdmittoFaviconLink } from "./favicon.js";
 import { TABLER_ICONS_CSS_PATH } from "./vendor-assets.js";
 
@@ -597,6 +598,7 @@ button[type=submit].adm-btn--secondary:hover { background: var(--at-gray-100); b
   .adm-main { grid-column: 1; }
   .adm-content { padding: 16px; }
 }
+${AUTH_PASSWORD_STRENGTH_CSS}
 `;
 
 const ADMIN_MARK_SVG = `<svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="30" height="30" rx="7.5" fill="#066fd1"/><path d="M9.5 16.5l4.2 4.2 7.5-9" stroke="#ffffff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><rect x="22.5" y="6" width="4" height="4" rx="1" fill="#ffffff" fill-opacity="0.55"/></svg>`;

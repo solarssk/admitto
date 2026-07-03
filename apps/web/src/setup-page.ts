@@ -1,6 +1,8 @@
-import { PASSWORD_MIN_LENGTH } from "@admitto/auth";
+import { PASSWORD_MIN_LENGTH, passwordStrengthAuthScript } from "@admitto/auth";
+import { AUTH_PAGE_ICON_CSP } from "./favicon.js";
 import { getLoginPageSecurityHeaders } from "./login-page.js";
 import {
+  AUTH_FORM_SUBMIT_SCRIPT,
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
@@ -17,9 +19,13 @@ function esc(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/** Security headers for server-rendered first-run setup page (no inline scripts). */
+/** Security headers for server-rendered first-run setup page. */
 export function getSetupPageSecurityHeaders(): Record<string, string> {
-  return getLoginPageSecurityHeaders();
+  return {
+    ...getLoginPageSecurityHeaders(),
+    "Content-Security-Policy":
+      `default-src 'none'; ${AUTH_PAGE_ICON_CSP}; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'`,
+  };
 }
 
 export type SetupErrorCode =
@@ -82,7 +88,7 @@ export function renderSetupPage(error?: SetupErrorCode, values: SetupFormValues 
       </div>
       <div class="auth-field">
         <label class="auth-label" for="confirm_password">Confirm password</label>
-        <input class="auth-input" id="confirm_password" type="password" name="confirm_password" required minlength="${PASSWORD_MIN_LENGTH}" autocomplete="new-password" autocapitalize="off" spellcheck="false">
+        <input class="auth-input" id="confirm_password" type="password" name="confirm_password" required minlength="${PASSWORD_MIN_LENGTH}" autocomplete="new-password" autocapitalize="off" spellcheck="false" aria-describedby="confirm_password-match">
       </div>
       <button class="auth-btn-primary" type="submit">Create administrator account</button>
     </form>
@@ -92,5 +98,6 @@ export function renderSetupPage(error?: SetupErrorCode, values: SetupFormValues 
     step: "Initial setup",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
+    scripts: `${passwordStrengthAuthScript()}\n${AUTH_FORM_SUBMIT_SCRIPT}`,
   });
 }

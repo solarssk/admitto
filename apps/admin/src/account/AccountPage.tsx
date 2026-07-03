@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, Checkbox, Input, Spinner, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, Input, PasswordStrengthMeter, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
   confirmMfaTotp,
@@ -234,7 +234,7 @@ export function AccountPage() {
             <div className="mail-field-row">
               <label className="mail-field-label" htmlFor="account-new-password">New password</label>
               <Input id="account-new-password" type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={12} />
-              <p className="mail-field-hint">Minimum 12 characters.</p>
+              <PasswordStrengthMeter password={newPassword} />
             </div>
             <div className="mail-field-row">
               <label className="mail-field-label" htmlFor="account-confirm-password">Confirm new password</label>

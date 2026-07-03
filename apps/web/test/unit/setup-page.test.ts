@@ -18,6 +18,8 @@ describe("setup-page", () => {
     expect(html).toContain('autocomplete="new-password"');
     expect(html).toContain('name="confirm_password"');
     expect(html).toContain('id="password-hint"');
+    expect(html).toContain("auth-password-strength");
+    expect(html).toContain("scorePasswordStrengthInline");
   });
 
   it("maps password_too_short to PASSWORD_MIN_LENGTH copy", () => {
