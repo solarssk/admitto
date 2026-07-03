@@ -1,4 +1,5 @@
-import { PASSWORD_MIN_LENGTH, passwordStrengthAuthScript } from "@admitto/auth";
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
+import { passwordStrengthAuthScript } from "@admitto/auth/password-strength-script";
 import {
   AUTH_FORM_SUBMIT_SCRIPT,
   AUTH_PAGE_CSS,

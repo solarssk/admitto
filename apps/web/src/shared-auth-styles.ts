@@ -1,5 +1,5 @@
 /** Product name for auth HTML (browser tab, password managers, TOTP issuer). */
-import { AUTH_PASSWORD_STRENGTH_CSS } from "@admitto/auth";
+import { AUTH_PASSWORD_STRENGTH_CSS } from "@admitto/auth/password-strength-script";
 import { renderAdmittoFaviconLink } from "./favicon.js";
 import { TABLER_ICONS_CSS_PATH } from "./vendor-assets.js";
 

@@ -1,4 +1,5 @@
-import { PASSWORD_MIN_LENGTH, passwordStrengthAuthScript } from "@admitto/auth";
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
+import { passwordStrengthAuthScript } from "@admitto/auth/password-strength-script";
 import { AUTH_PAGE_ICON_CSP } from "./favicon.js";
 import { getLoginPageSecurityHeaders } from "./login-page.js";
 import {

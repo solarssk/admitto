@@ -1,4 +1,4 @@
-import { scorePasswordStrength } from "@admitto/auth";
+import { scorePasswordStrength } from "@admitto/auth/password-strength";
 import { useId, type HTMLAttributes } from "react";
 
 export interface PasswordStrengthMeterProps extends HTMLAttributes<HTMLDivElement> {

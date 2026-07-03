@@ -26,6 +26,14 @@
     "./cli-helpers": {
       "types": "./dist/cli-helpers.d.ts",
       "default": "./dist/cli-helpers.js"
+    },
+    "./password-strength": {
+      "types": "./dist/password-strength.d.ts",
+      "default": "./dist/password-strength.js"
+    },
+    "./password-strength-script": {
+      "types": "./dist/password-strength-script.d.ts",
+      "default": "./dist/password-strength-script.js"
     }
   },
   "scripts": {
