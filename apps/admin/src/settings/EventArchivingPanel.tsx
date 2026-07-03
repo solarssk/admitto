@@ -28,7 +28,6 @@ export function EventArchivingPanel() {
       if (signal?.aborted) return;
       const message = err instanceof ApiError ? err.message : "Failed to load events.";
       setError(message);
-      addToast(message, "error");
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
@@ -65,7 +64,6 @@ export function EventArchivingPanel() {
       await load();
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : "Action failed.");
-      addToast(err instanceof ApiError ? err.message : "Action failed.", "error");
     } finally {
       setActing(false);
     }

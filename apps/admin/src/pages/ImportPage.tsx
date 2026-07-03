@@ -186,7 +186,7 @@ export function ImportPage() {
       setStep("done");
       setForceCapacity(false);
       addToast(
-        `Attendees imported: ${data.created} created, ${data.skipped.length} skipped`,
+        `Attendees imported: ${data.created} created, ${data.updated} updated, ${data.skipped.length} skipped`,
         "success",
       );
     } catch (err) {

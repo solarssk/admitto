@@ -56,15 +56,13 @@ export function EventsPickerPage() {
         const message =
           err.status === 403 ? "You do not have access to the admin panel." : "Failed to load events.";
         setError(message);
-        addToast(message, "error");
       } else {
         setError("Failed to load events.");
-        addToast("Failed to load events.", "error");
       }
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [reportApiError, addToast]);
+  }, [reportApiError]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -121,7 +119,6 @@ export function EventsPickerPage() {
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "Failed to unarchive event.";
       setUnarchiveError(message);
-      addToast(message, "error");
     } finally {
       setUnarchiving(false);
     }

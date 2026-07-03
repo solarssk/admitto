@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Button, Card, Input, PageHeader, Switch, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, Input, PageHeader, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   createEventItem,
@@ -39,6 +39,7 @@ export function RequirementsPage() {
   const [items, setItems] = useState<EventItemDto[]>([]);
   const [opsConfig, setOpsConfig] = useState<OpsConfigDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<EventItemDto | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -73,6 +74,7 @@ export function RequirementsPage() {
       if (ac.signal.aborted) return;
       setItems(itemRows);
       setOpsConfig(ops);
+      setLoadError(null);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setItems([]);
@@ -85,17 +87,16 @@ export function RequirementsPage() {
           window.location.assign(`/login?next=${next}`);
           return;
         }
-        addToast(
+        setLoadError(
           err.status === 403 ? "You do not have access to this event." : "Failed to load requirements.",
-          "error",
         );
       } else {
-        addToast("Failed to load requirements.", "error");
+        setLoadError("Failed to load requirements.");
       }
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [eventId, reportApiError, addToast]);
+  }, [eventId, reportApiError]);
 
   useEffect(() => {
     void load();
@@ -182,6 +183,18 @@ export function RequirementsPage() {
         title="Requirements"
         subtitle="Configure what this event issues to attendees and operational behaviour."
       />
+      {loadError && !loading ? (
+        <EmptyState
+          title="Could not load requirements"
+          description={loadError}
+          action={
+            <Button type="button" variant="secondary" onClick={() => void load()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : (
+        <>
       <section className="requirements-section">
         <div className="requirements-section__header">
           <h2 className="requirements-section__title">Event items</h2>
@@ -371,6 +384,8 @@ export function RequirementsPage() {
           ) : null}
         </Card>
       </section>
+        </>
+      )}
 
       {selectedItem && (
         <EventItemDrawer
