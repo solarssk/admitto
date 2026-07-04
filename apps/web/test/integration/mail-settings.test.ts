@@ -202,6 +202,34 @@ describe("GET /api/admin/mail-settings", () => {
     }
   });
 
+  it("does not lock host/fromAddress left at the shipped deploy/.env.example defaults (#264)", async () => {
+    const saved = {
+      EMAIL_PROVIDER: process.env.EMAIL_PROVIDER,
+      SMTP_HOST: process.env.SMTP_HOST,
+      MAIL_FROM_ADDRESS: process.env.MAIL_FROM_ADDRESS,
+    };
+    process.env.EMAIL_PROVIDER = "smtp";
+    process.env.SMTP_HOST = "smtp.example.com";
+    process.env.MAIL_FROM_ADDRESS = "events@example.com";
+    try {
+      const res = await app.request("/api/admin/mail-settings", {
+        headers: { Cookie: superCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as MailSettingsApi;
+      // provider="smtp" is a real, deliberate choice many deployments make — still locks.
+      expect(body.fields.provider?.locked).toBe(true);
+      // host/fromAddress at the unedited example.com placeholder must not lock.
+      expect(body.fields.host?.locked).toBe(false);
+      expect(body.fields.fromAddress?.locked).toBe(false);
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it("unlocks env-sourced fields during first-run wizard (setup_complete=false)", async () => {
     const saved = {
       EMAIL_PROVIDER: process.env.EMAIL_PROVIDER,

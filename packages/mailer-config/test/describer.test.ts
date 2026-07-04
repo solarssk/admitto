@@ -221,3 +221,32 @@ describe("describeMailConfigForOrg — org-scoped instance settings", () => {
     expect(desc.host.locked).toBe(true);
   });
 });
+
+describe("describeMailConfigForOrg — unedited deploy/.env.example placeholders (#264)", () => {
+  it("does not lock host/fromAddress left at the shipped example values", async () => {
+    const desc = await describeMailConfigForOrg("org-d-clean", prisma, {
+      EMAIL_PROVIDER: "smtp",
+      MAIL_FROM_ADDRESS: "events@example.com",
+      SMTP_HOST: "smtp.example.com",
+      SMTP_PORT: "587",
+    });
+    expect(desc.host.locked).toBe(false);
+    expect(desc.host.source).toBe("default");
+    expect(desc.fromAddress.locked).toBe(false);
+    expect(desc.fromAddress.source).toBe("default");
+    // Fields outside the narrow placeholder scope are unaffected.
+    expect(desc.provider.locked).toBe(true);
+    expect(desc.port.locked).toBe(true);
+  });
+
+  it("still locks a host/fromAddress an operator genuinely set in env", async () => {
+    const desc = await describeMailConfigForOrg("org-d-clean", prisma, {
+      SMTP_HOST: "smtp.example.com.mycompany.net",
+      MAIL_FROM_ADDRESS: "events@mycompany.net",
+    });
+    expect(desc.host.locked).toBe(true);
+    expect(desc.host.value).toBe("smtp.example.com.mycompany.net");
+    expect(desc.fromAddress.locked).toBe(true);
+    expect(desc.fromAddress.value).toBe("events@mycompany.net");
+  });
+});
