@@ -129,6 +129,7 @@ export function AttendeeCard({
   const showPrimaryActions = isPreview && onCheckIn && card.check_in_status === "not_admitted";
   const statusVariant = statusBadgeVariant(resolvedStatus);
   const displayMode = statusDisplayMode(resolvedStatus);
+  const remainingWarnings = displayMode === "alert" ? card.warnings.slice(1) : card.warnings;
   const hasTransientNote =
     pending ||
     (confirmed === false &&
@@ -185,9 +186,9 @@ export function AttendeeCard({
           </div>
         )}
 
-        {card.warnings.length > 0 && displayMode !== "alert" && (
+        {remainingWarnings.length > 0 && (
           <div className="checkin-card__warnings">
-            {card.warnings.map((w, i) => (
+            {remainingWarnings.map((w, i) => (
               <p key={`warning-${i}`} className="checkin-card__warning" role="alert">
                 {w}
               </p>
