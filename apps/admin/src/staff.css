@@ -239,28 +239,6 @@
 }
 
 /* Mailer indicator */
-.topbar__mailer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-  padding: 0 8px;
-  border-right: 1px solid var(--border-subtle);
-}
-
-.topbar__mailer-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--status-neutral, #ccc);
-  flex-shrink: 0;
-}
-
-.topbar__mailer-dot--ok {
-  background: var(--status-ok);
-}
-
 .topbar__mailer-label {
   white-space: nowrap;
 }
