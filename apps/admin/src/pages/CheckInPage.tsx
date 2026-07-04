@@ -113,6 +113,18 @@ export function CheckInPage({
   const wedgeTimerRef = useRef<number | null>(null);
   const recentAdmits = useRef(new Map<string, number>());
   const historyRef = useRef<CheckInHistoryEntry[]>([]);
+  // Serializes scan/lookup submissions (FIFO) so a wedge scan arriving while
+  // the previous one is still in flight is queued, not lost or interleaved.
+  const scanChainRef = useRef<Promise<unknown>>(Promise.resolve());
+
+  const runExclusive = useCallback(<T,>(fn: () => Promise<T>): Promise<T> => {
+    const run = scanChainRef.current.then(fn);
+    scanChainRef.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }, []);
 
   const prependAdmit = useCallback((entry: CheckInHistoryEntry, admittedAt: string) => {
     if (isAdmitDedupHit(recentAdmits.current, entry.attendee_id, admittedAt)) return;
@@ -299,26 +311,38 @@ export function CheckInPage({
     }
   };
 
+  /** Clears only the displayed result/error state — never the buffer or the
+   * wedge timer, which may already belong to a different, newer scan that's
+   * mid-burst (see maybeAutoAdvance below). */
+  const clearDisplayedResult = useCallback(() => {
+    setScanResult(null);
+    setCard(null);
+    setTransportError(null);
+    setOverlayManualError(null);
+  }, []);
+
+  /** User-initiated reset (Escape, Cancel button) — also clears the input and
+   * cancels any pending wedge timer, since the user explicitly wants a clean slate. */
   const resetScan = useCallback(() => {
     if (wedgeTimerRef.current != null) {
       window.clearTimeout(wedgeTimerRef.current);
       wedgeTimerRef.current = null;
     }
-    setScanResult(null);
-    setCard(null);
-    setTransportError(null);
-    setOverlayManualError(null);
+    clearDisplayedResult();
     setBuffer("");
     focusScan();
-  }, [focusScan]);
+  }, [clearDisplayedResult, focusScan]);
 
   const maybeAutoAdvance = useCallback(
     (response: CheckInScanResponse) => {
       if (autoAdvanceOnValid && response.status === "VALID" && response.confirmed) {
-        resetScan();
+        // Dismiss THIS scan's confirmation only — must not clear the buffer or
+        // cancel the wedge timer, which may already hold a different, newer
+        // scan's in-progress keystrokes (#277 follow-up review).
+        clearDisplayedResult();
       }
     },
-    [autoAdvanceOnValid, resetScan],
+    [autoAdvanceOnValid, clearDisplayedResult],
   );
 
   const runWithPending = async <T,>(fn: () => Promise<T>): Promise<T | null> => {
@@ -347,21 +371,16 @@ export function CheckInPage({
     }
   };
 
-  const runScan = useCallback(
-    async (raw: string) => {
-      if (!eventId || !canAct) return;
-      const scanned = normalizeScannedInput(raw);
-      if (!scanned) return;
-
-      const now = Date.now();
-      const last = lastScanRef.current;
-      if (last && last.value === scanned && now - last.at < CHECKIN_DUPLICATE_DEBOUNCE_MS) {
-        setBuffer("");
-        focusScan();
-        return;
-      }
-      lastScanRef.current = { value: scanned, at: now };
-
+  // The queued/deferred half of a scan: only the actual network round-trip.
+  // Dedup and buffer-clear must NOT live here — they'd measure time and clear
+  // visibility from whenever this reaches the front of the queue (dequeue
+  // time), not from when the physical scan actually happened (enqueue time).
+  // With a backlog, that gap can exceed CHECKIN_DUPLICATE_DEBOUNCE_MS and
+  // silently defeat the duplicate-scan guard, or leave stale text on screen
+  // for the next physical scan's keystrokes to land on top of.
+  const runScanImpl = useCallback(
+    async (scanned: string) => {
+      if (!eventId) return;
       setBusy(true);
       setTransportError(null);
       try {
@@ -374,7 +393,6 @@ export function CheckInPage({
           const loaded = await fetchAttendeeCard(eventId, response.attendeeId);
           setCard(loaded);
         }
-        setBuffer("");
         if (response.status === "VALID" && response.admittedAt) {
           applyLocalAdmit(response);
           void refreshStatsOnly();
@@ -389,7 +407,32 @@ export function CheckInPage({
         focusScan();
       }
     },
-    [canAct, deviceId, eventId, focusScan, maybeAutoAdvance, applyLocalAdmit, refreshSidebar, refreshStatsOnly, reportApiError],
+    [deviceId, eventId, focusScan, maybeAutoAdvance, applyLocalAdmit, refreshSidebar, refreshStatsOnly, reportApiError],
+  );
+
+  // Synchronous entry point: normalizes, dedups, and clears the buffer
+  // immediately at call time (not once its turn in the queue arrives), then
+  // enqueues only the network round-trip so it still runs FIFO behind any
+  // scan already in flight.
+  const runScan = useCallback(
+    (raw: string): Promise<void> => {
+      if (!eventId || !canAct) return Promise.resolve();
+      const scanned = normalizeScannedInput(raw);
+      if (!scanned) return Promise.resolve();
+
+      const now = Date.now();
+      const last = lastScanRef.current;
+      if (last && last.value === scanned && now - last.at < CHECKIN_DUPLICATE_DEBOUNCE_MS) {
+        setBuffer("");
+        focusScan();
+        return Promise.resolve();
+      }
+      lastScanRef.current = { value: scanned, at: now };
+      setBuffer("");
+
+      return runExclusive(() => runScanImpl(scanned));
+    },
+    [canAct, eventId, focusScan, runExclusive, runScanImpl],
   );
 
   const closeInlineCamera = useCallback(() => {
@@ -400,33 +443,42 @@ export function CheckInPage({
     }
   }, [isOperatorShell, setCameraActive]);
 
-  const admitCurrent = async (attendeeId: string, method: "scan" | "manual" = "manual") => {
-    if (!eventId || !canAct) return;
-    setBusy(true);
-    setTransportError(null);
-    try {
-      const response = await runWithPending(() =>
-        submitCheckInAdmit(eventId, attendeeId, deviceId, method),
-      );
-      if (response) {
-        applyResponse(response);
-        maybeAutoAdvance(response);
-        if (response.status === "VALID" && response.admittedAt) {
-          applyLocalAdmit(response);
-          void refreshStatsOnly();
-        } else {
-          void refreshSidebar();
+  // Queued alongside scans: this updates the same scanResult/card the
+  // operator is looking at, keyed to a specific attendeeId captured at click
+  // time. Without queueing, a scan for a different attendee could resolve
+  // first and then this (slower) response would overwrite the display back
+  // to the attendee the operator already moved past (#277 review).
+  const admitCurrent = (attendeeId: string, method: "scan" | "manual" = "manual") =>
+    runExclusive(async () => {
+      if (!eventId || !canAct) return;
+      setBusy(true);
+      setTransportError(null);
+      try {
+        const response = await runWithPending(() =>
+          submitCheckInAdmit(eventId, attendeeId, deviceId, method),
+        );
+        if (response) {
+          applyResponse(response);
+          maybeAutoAdvance(response);
+          if (response.status === "VALID" && response.admittedAt) {
+            applyLocalAdmit(response);
+            void refreshStatsOnly();
+          } else {
+            void refreshSidebar();
+          }
         }
+      } catch (err) {
+        handleApiFailure(err);
+      } finally {
+        setBusy(false);
+        focusScan();
       }
-    } catch (err) {
-      handleApiFailure(err);
-    } finally {
-      setBusy(false);
-      focusScan();
-    }
-  };
+    });
 
-  const openLookupResult = async (attendeeId: string) => {
+  // Raw implementation, called directly (not re-queued) from
+  // submitScanOrLookupImpl below, which is already running inside its own
+  // queue turn — wrapping this in runExclusive there would deadlock.
+  const openLookupResultImpl = async (attendeeId: string) => {
     if (!eventId) return;
     setBusy(true);
     try {
@@ -442,6 +494,10 @@ export function CheckInPage({
       focusScan();
     }
   };
+
+  // Queued wrapper for the manual-lookup panel's "select a result" click
+  // (an external entry point, unlike the internal auto-select call below).
+  const openLookupResult = (attendeeId: string) => runExclusive(() => openLookupResultImpl(attendeeId));
 
   const runLookup = async () => {
     if (!eventId || !canAct || !lookupQ.trim()) return;
@@ -463,16 +519,12 @@ export function CheckInPage({
     }
   };
 
-  const submitScanOrLookup = useCallback(
-    async (query: string): Promise<boolean> => {
-      const trimmed = query.trim();
-      if (!trimmed) return false;
-
-      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN) {
-        void runScan(trimmed);
-        return true;
-      }
-
+  // Queued/deferred half: manual-lookup API call only. The "is this actually
+  // a long scan token, not a manual query" branch lives in the synchronous
+  // wrapper below so a CR-terminated wedge scan is deduped/cleared at the
+  // moment it arrives, not delayed behind this function's own queue turn.
+  const submitScanOrLookupImpl = useCallback(
+    async (trimmed: string): Promise<boolean> => {
       if (!eventId || !canAct) return false;
 
       if (!allowManualLookup) {
@@ -488,8 +540,11 @@ export function CheckInPage({
       try {
         const results = await lookupCheckInAttendees(eventId, trimmed);
         if (results.length === 1) {
-          await openLookupResult(results[0].id);
-          setBuffer("");
+          // Buffer already cleared at call time by the submitScanOrLookup
+          // wrapper — do not clear it again here, or a newer query the
+          // operator started typing while this lookup was pending would be
+          // wiped out too.
+          await openLookupResultImpl(results[0].id);
           return true;
         }
         if (results.length === 0) {
@@ -520,53 +575,89 @@ export function CheckInPage({
         setBusy(false);
       }
     },
-    [allowManualLookup, addToast, canAct, eventId, reportApiError, runScan, showMobileOverlay],
+    [allowManualLookup, addToast, canAct, eventId, reportApiError, showMobileOverlay],
   );
 
-  const onItemAction = async (itemKey: string, targetState: string) => {
-    if (!eventId || !card || !canAct) return;
-    setBusy(true);
-    try {
-      const { card: updated } = await submitItemAction(eventId, card.id, itemKey, targetState, deviceId);
-      setCard(updated);
-      void refreshSidebar();
-    } catch (err) {
-      handleApiFailure(err);
-    } finally {
-      setBusy(false);
-      focusScan();
-    }
-  };
+  // Synchronous entry point, mirroring runScan above: a long buffer is
+  // recognized and delegated to runScan (which does its own dedup/clear)
+  // immediately at call time, regardless of queue backlog. Only genuine
+  // manual-lookup queries get enqueued behind in-flight scans/lookups.
+  //
+  // Clears the buffer here too (not only on the single-match success path
+  // inside submitScanOrLookupImpl) so a wedge scan arriving while a short
+  // lookup is still in flight can't get appended after the old query text —
+  // the combined string would otherwise cross the scan-length threshold and
+  // get auto-submitted as a corrupted, unmatchable scan payload (#277 review).
+  const submitScanOrLookup = useCallback(
+    (query: string): Promise<boolean> => {
+      const trimmed = query.trim();
+      if (!trimmed) return Promise.resolve(false);
 
-  const onAddNote = async (body: string) => {
-    if (!eventId || !card || !canAct) return;
-    setBusy(true);
-    try {
-      const { card: updated } = await submitAttendeeNote(eventId, card.id, body, deviceId);
-      setCard(updated);
-    } catch (err) {
-      handleApiFailure(err);
-      throw err;
-    } finally {
-      setBusy(false);
-    }
-  };
+      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN) {
+        void runScan(trimmed);
+        return Promise.resolve(true);
+      }
 
-  const onUndo = async () => {
-    if (!eventId || !canAct) return;
-    setBusy(true);
-    try {
-      const { card: updated } = await undoLastCheckIn(eventId, deviceId);
-      setCard(updated);
-      setScanResult({ status: "PREVIEW", confirmed: false, card: updated });
-      void refreshSidebar();
-    } catch (err) {
-      handleApiFailure(err);
-    } finally {
-      setBusy(false);
-      focusScan();
-    }
-  };
+      setBuffer("");
+      return runExclusive(() => submitScanOrLookupImpl(trimmed));
+    },
+    [runExclusive, runScan, submitScanOrLookupImpl],
+  );
+
+  // Queued: same rationale as admitCurrent — this reads card.id at run time
+  // and overwrites setCard, so it must not race a scan that could swap in a
+  // different attendee's card first (#277 review).
+  const onItemAction = (itemKey: string, targetState: string) =>
+    runExclusive(async () => {
+      if (!eventId || !card || !canAct) return;
+      setBusy(true);
+      try {
+        const { card: updated } = await submitItemAction(eventId, card.id, itemKey, targetState, deviceId);
+        setCard(updated);
+        void refreshSidebar();
+      } catch (err) {
+        handleApiFailure(err);
+      } finally {
+        setBusy(false);
+        focusScan();
+      }
+    });
+
+  const onAddNote = (body: string) =>
+    runExclusive(async () => {
+      if (!eventId || !card || !canAct) return;
+      setBusy(true);
+      try {
+        const { card: updated } = await submitAttendeeNote(eventId, card.id, body, deviceId);
+        setCard(updated);
+      } catch (err) {
+        handleApiFailure(err);
+        throw err;
+      } finally {
+        setBusy(false);
+      }
+    });
+
+  // Queued alongside scans: the backend picks whichever check-in is
+  // currently latest for this device at execution time (no specific id is
+  // sent), so a scan admitting a new attendee while undo is in flight could
+  // otherwise race ahead of it and get rolled back instead (#277 review).
+  const onUndo = () =>
+    runExclusive(async () => {
+      if (!eventId || !canAct) return;
+      setBusy(true);
+      try {
+        const { card: updated } = await undoLastCheckIn(eventId, deviceId);
+        setCard(updated);
+        setScanResult({ status: "PREVIEW", confirmed: false, card: updated });
+        void refreshSidebar();
+      } catch (err) {
+        handleApiFailure(err);
+      } finally {
+        setBusy(false);
+        focusScan();
+      }
+    });
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -685,7 +776,7 @@ export function CheckInPage({
               placeholder="Scan QR · type name, email or company…"
               aria-label="QR scan or search"
               aria-describedby="ck-scan-hint"
-              disabled={busy || !canAct}
+              disabled={!canAct}
               aria-busy={busy}
               {...checkinSearchFieldAttrs}
             />
