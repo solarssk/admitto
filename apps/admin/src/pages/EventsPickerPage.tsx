@@ -104,7 +104,9 @@ export function EventsPickerPage() {
   }, [loading, tabTouched, events.length, activeEvents.length]);
 
   const handleCreated = (event: EventDto) => {
-    navigate(`/admin/events/${event.id}/attendees`);
+    // Pass the event we already hold so EventLayout can render the shell
+    // immediately instead of re-fetching the events list (#274).
+    navigate(`/admin/events/${event.id}/attendees`, { state: { event } });
   };
 
   const handleUnarchive = async () => {
@@ -285,7 +287,12 @@ export function EventsPickerPage() {
           }
 
           return (
-            <Link key={event.id} to={`/admin/events/${event.id}/overview`} className="event-card-link">
+            <Link
+              key={event.id}
+              to={`/admin/events/${event.id}/overview`}
+              state={{ event }}
+              className="event-card-link"
+            >
               <Card className="event-card event-card--active">{cardBody}</Card>
             </Link>
           );
