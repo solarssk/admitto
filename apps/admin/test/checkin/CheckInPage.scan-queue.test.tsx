@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@admitto/ui";
@@ -61,6 +61,20 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+/**
+ * Flushes pending microtasks (never advances the fake clock — real timers'
+ * setTimeout-based waitFor would either hang or require a clock advance,
+ * defeating tests that specifically need elapsed time to stay near zero)
+ * until `predicate` is true or `maxTicks` is exhausted. Self-documenting
+ * alternative to awaiting a hardcoded number of `Promise.resolve()` calls,
+ * which silently breaks if the code's internal await depth ever changes.
+ */
+async function flushMicrotasksUntil(predicate: () => boolean, maxTicks = 50): Promise<void> {
+  for (let i = 0; i < maxTicks && !predicate(); i++) {
+    await Promise.resolve();
+  }
+}
+
 function cardResponse(token: string, name: string) {
   return {
     status: "VALID" as const,
@@ -108,7 +122,10 @@ function renderPage() {
 
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
+  // resetAllMocks (not clearAllMocks): also drops any queued
+  // mockResolvedValueOnce/mockReturnValueOnce left unconsumed by a test whose
+  // scan/lookup didn't actually fire, so it can't leak into the next test.
+  vi.resetAllMocks();
 });
 
 describe("CheckInPage scan queue (#261)", () => {
@@ -120,7 +137,10 @@ describe("CheckInPage scan queue (#261)", () => {
     renderPage();
 
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
-    fireEvent.change(input, { target: { value: "QRTOKEN-FIRSTPERSON01" } });
+    const tokenFirst = "QRTOKEN-FIRSTPERSON01";
+    for (let i = 1; i <= tokenFirst.length; i++) {
+      fireEvent.change(input, { target: { value: tokenFirst.slice(0, i) } });
+    }
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
@@ -146,14 +166,20 @@ describe("CheckInPage scan queue (#261)", () => {
 
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
 
-    fireEvent.change(input, { target: { value: "QRTOKEN-FIRSTPERSON01" } });
+    const tokenFirst = "QRTOKEN-FIRSTPERSON01";
+    for (let i = 1; i <= tokenFirst.length; i++) {
+      fireEvent.change(input, { target: { value: tokenFirst.slice(0, i) } });
+    }
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
     await waitFor(() => expect(submitCheckInScan).toHaveBeenCalledTimes(1));
 
     // Second wedge scan arrives before the first request has resolved.
-    fireEvent.change(input, { target: { value: "QRTOKEN-SECONDPERSON2" } });
+    const tokenSecond = "QRTOKEN-SECONDPERSON2";
+    for (let i = 1; i <= tokenSecond.length; i++) {
+      fireEvent.change(input, { target: { value: tokenSecond.slice(0, i) } });
+    }
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
@@ -195,7 +221,13 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     renderPage();
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
 
-    fireEvent.change(input, { target: { value: "QRTOKEN-SAMEPERSON0001" } });
+    const sameToken = "QRTOKEN-SAMEPERSON0001";
+    for (let i = 1; i <= sameToken.length; i++) {
+      fireEvent.change(input, { target: { value: sameToken.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
@@ -211,7 +243,12 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });
-    fireEvent.change(input, { target: { value: "QRTOKEN-SAMEPERSON0001" } });
+    for (let i = 1; i <= sameToken.length; i++) {
+      fireEvent.change(input, { target: { value: sameToken.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
@@ -241,7 +278,13 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     renderPage();
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
 
-    fireEvent.change(input, { target: { value: "QRTOKEN-FIRSTPERSON01" } });
+    const tokenFirst = "QRTOKEN-FIRSTPERSON01";
+    for (let i = 1; i <= tokenFirst.length; i++) {
+      fireEvent.change(input, { target: { value: tokenFirst.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
@@ -251,7 +294,13 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     // still in flight — its buffer-clear must happen right away, not only
     // once it is dequeued, so a third scan's keystrokes never land on top of
     // this still-visible text.
-    fireEvent.change(input, { target: { value: "QRTOKEN-SECONDPERSON2" } });
+    const tokenSecond = "QRTOKEN-SECONDPERSON2";
+    for (let i = 1; i <= tokenSecond.length; i++) {
+      fireEvent.change(input, { target: { value: tokenSecond.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
@@ -279,7 +328,12 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
 
     // Person A scanned via the length-based wedge path (no CR terminator).
-    fireEvent.change(input, { target: { value: tokenA } });
+    for (let i = 1; i <= tokenA.length; i++) {
+      fireEvent.change(input, { target: { value: tokenA.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
     await act(async () => {
       await vi.advanceTimersByTimeAsync(50); // WEDGE_DEBOUNCE_MS
     });
@@ -297,12 +351,15 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     expect(input.value).toBe(bPartial);
 
     // A's slow request resolves — auto-advance must dismiss only A's card,
-    // not wipe B's in-progress buffer.
+    // not wipe B's in-progress buffer. Flushed via microtasks only (no fake-
+    // clock advance) so the elapsed time since B's last keystroke stays near
+    // zero — a real wedge scan is a single uninterrupted physical burst; it
+    // is not paused by an unrelated server response arriving mid-scan.
     await act(async () => {
       first.resolve(cardResponse(tokenA, "Person A"));
-      await vi.advanceTimersByTimeAsync(50);
+      await flushMicrotasksUntil(() => screen.queryByText("Person A") !== null);
     });
-    await vi.waitFor(() => expect(screen.getByText("Person A")).toBeTruthy());
+    expect(screen.getByText("Person A")).toBeTruthy();
     expect(input.value).toBe(bPartial);
 
     // The wedge finishes injecting B's remaining characters.
@@ -348,7 +405,12 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    fireEvent.change(input, { target: { value: tokenA } });
+    for (let i = 1; i <= tokenA.length; i++) {
+      fireEvent.change(input, { target: { value: tokenA.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
       await vi.advanceTimersByTimeAsync(50);
@@ -364,7 +426,12 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     // A new wedge scan for person B arrives while the undo request (which
     // rolls back "whichever check-in is currently latest for this device" on
     // the server, with no specific id sent) is still pending.
-    fireEvent.change(input, { target: { value: tokenB } });
+    for (let i = 1; i <= tokenB.length; i++) {
+      fireEvent.change(input, { target: { value: tokenB.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
       await vi.advanceTimersByTimeAsync(50);
@@ -425,7 +492,12 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     });
 
     // Person A scans and requires explicit confirmation (not auto-admitted).
-    fireEvent.change(input, { target: { value: tokenA } });
+    for (let i = 1; i <= tokenA.length; i++) {
+      fireEvent.change(input, { target: { value: tokenA.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
@@ -439,7 +511,12 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     expect(submitCheckInAdmit).toHaveBeenCalledTimes(1);
 
     // Operator immediately scans person B while A's confirm is still pending.
-    fireEvent.change(input, { target: { value: tokenB } });
+    for (let i = 1; i <= tokenB.length; i++) {
+      fireEvent.change(input, { target: { value: tokenB.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
       await vi.advanceTimersByTimeAsync(50);
@@ -506,7 +583,12 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
 
     // A keyboard-wedge scan now injects a real token while the lookup for
     // "Alice" is still pending.
-    fireEvent.change(input, { target: { value: scanToken } });
+    for (let i = 1; i <= scanToken.length; i++) {
+      fireEvent.change(input, { target: { value: scanToken.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
     expect(input.value).toBe(scanToken); // not "Alice" + scanToken
     await act(async () => {
       await vi.advanceTimersByTimeAsync(50); // WEDGE_DEBOUNCE_MS
@@ -520,5 +602,168 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     // The clean token was submitted as its own scan, unmodified by "Alice".
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", scanToken, "desk-1"));
     await vi.waitFor(() => expect(screen.getByText("Real Person")).toBeTruthy());
+  });
+});
+
+describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("routes a slowly-typed long query to lookup on Enter, not to a scan", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValueOnce([]);
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    // A plausible operator workflow: typing an email copied by hand, one
+    // character at a time, well under burst speed (60ms > WEDGE_MAX_INTER_KEY_GAP_MS).
+    const query = "someone.long-name@international-trade-fair.example.com";
+    for (let i = 1; i <= query.length; i++) {
+      fireEvent.change(input, { target: { value: query.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60);
+      });
+    }
+    // The debounce timer must not have auto-submitted this as a scan while typing.
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+
+    // The field's own hint text ("Enter to confirm") is exactly what the
+    // operator is expected to do next.
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", query));
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a pasted long value as a wedge burst", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValueOnce([]);
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    // A paste delivers the whole value in one change event, with no prior
+    // keystroke to compare timing against — the same shape as autofill,
+    // swipe-to-type, or voice dictation.
+    const pasted = "someone.long-name@international-trade-fair.example.com";
+    fireEvent.paste(input);
+    fireEvent.change(input, { target: { value: pasted } });
+
+    // The auto-submit timer must not fire a scan for pasted text.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50); // WEDGE_DEBOUNCE_MS
+    });
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", pasted));
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a single-event long value dropped into an empty field as a burst without a paste event (Codex review)", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValueOnce([]);
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    // Browser autofill/autocomplete replacement, drag-and-drop text, IME
+    // composition, or voice dictation can all insert a long value into an
+    // empty field in one change event without ever firing a paste event —
+    // so `justPasted` alone can't catch this. Only the length-jump-per-event
+    // check does.
+    const value = "someone.long-name@international-trade-fair.example.com";
+    fireEvent.change(input, { target: { value } });
+
+    // The auto-submit timer must not fire a scan for this one-shot insert.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50); // WEDGE_DEBOUNCE_MS
+    });
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", value));
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+  });
+
+  it("still auto-submits a genuine fast wedge burst on Enter (no regression)", async () => {
+    mockPageBootstrap();
+    const token = "QRTOKEN-GENUINEWEDGE01";
+    submitCheckInScan.mockResolvedValueOnce(cardResponse(token, "Wedge Person"));
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    for (let i = 1; i <= token.length; i++) {
+      fireEvent.change(input, { target: { value: token.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+});
+
+describe("CheckInPage scan queue — event timestamp vs handler wall-clock (#262 review)", () => {
+  it("classifies a genuine fast burst correctly even when Date.now() would suggest otherwise", async () => {
+    mockPageBootstrap();
+    const token = "QRTOKEN-REALWEDGE00001"; // 23 chars
+    submitCheckInScan.mockResolvedValueOnce(cardResponse(token, "Real Wedge Person"));
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    // Date.now() is deliberately made unreliable, jumping 1000ms on every
+    // call — simulating a main thread so busy handling other work (e.g. the
+    // previous attendee's response resolving and re-rendering) that
+    // Date.now() at handler-execution time looks nothing like the real gap
+    // between keystrokes. If the code used Date.now() for the burst check,
+    // every character after the first would look like a >30ms human pause
+    // and the scan would incorrectly fall back to requiring Enter to be
+    // pressed and route through lookup instead once submitted.
+    let fakeNow = 0;
+    const dateSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+      fakeNow += 1000;
+      return fakeNow;
+    });
+
+    try {
+      // Each character's own event timestamp is a real, tightly-packed
+      // burst (2ms apart) — what the browser actually recorded when the
+      // wedge injected it, independent of whenever React gets around to
+      // running the handler.
+      const baseTime = 5_000;
+      for (let i = 1; i <= token.length; i++) {
+        const event = createEvent.change(input, { target: { value: token.slice(0, i) } });
+        Object.defineProperty(event, "timeStamp", { value: baseTime + i * 2, configurable: true });
+        fireEvent(input, event);
+      }
+    } finally {
+      dateSpy.mockRestore();
+    }
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
   });
 });

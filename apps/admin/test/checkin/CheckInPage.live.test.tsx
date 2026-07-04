@@ -177,7 +177,10 @@ describe("CheckInPage live feed", () => {
     });
 
     const input = screen.getByLabelText("QR scan or search");
-    fireEvent.change(input, { target: { value: "QRTOKEN-ABCDEFGHIJKLMN" } });
+    const token = "QRTOKEN-ABCDEFGHIJKLMN";
+    for (let i = 1; i <= token.length; i++) {
+      fireEvent.change(input, { target: { value: token.slice(0, i) } });
+    }
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
@@ -235,7 +238,10 @@ describe("CheckInPage live feed", () => {
     fetchCheckInHistory.mockResolvedValue([]);
 
     const input = screen.getByLabelText("QR scan or search");
-    fireEvent.change(input, { target: { value: "QRTOKEN-ABCDEFGHIJKLMN" } });
+    const token = "QRTOKEN-ABCDEFGHIJKLMN";
+    for (let i = 1; i <= token.length; i++) {
+      fireEvent.change(input, { target: { value: token.slice(0, i) } });
+    }
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });

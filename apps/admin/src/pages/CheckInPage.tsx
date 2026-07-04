@@ -41,6 +41,11 @@ import { ScanHistoryList } from "../checkin/ScanHistoryList.js";
 const PENDING_MS = 5000;
 const WEDGE_AUTO_SUBMIT_LEN = 20;
 const WEDGE_DEBOUNCE_MS = 50;
+// A hardware keyboard-wedge scanner injects characters far faster than a human
+// can type — even fast typists rarely sustain sub-30ms gaps across many
+// consecutive keystrokes. Used to tell "typing a long manual query" apart from
+// "a wedge scan without a CR terminator" so length alone doesn't auto-submit.
+const WEDGE_MAX_INTER_KEY_GAP_MS = 30;
 const HISTORY_CAP = 8;
 const LOOKUP_DISABLED_MSG =
   "Manual lookup is disabled for this event — use QR scan only.";
@@ -111,6 +116,15 @@ export function CheckInPage({
   const lastScanRef = useRef<{ value: string; at: number } | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
   const wedgeTimerRef = useRef<number | null>(null);
+  const wedgeLastCharAtRef = useRef(0);
+  const wedgeIsBurstRef = useRef(true);
+  // A clipboard paste (or autofill) delivers a long value in a single change
+  // event with no prior keystroke to compare timing against — mechanically
+  // identical, to handleBufferChange, to "the first character of a real
+  // wedge burst". Set by the input's onPaste handler and consumed on the
+  // very next buffer change so pasted text is never treated as a burst
+  // (#262 review).
+  const wedgeJustPastedRef = useRef(false);
   const recentAdmits = useRef(new Map<string, number>());
   const historyRef = useRef<CheckInHistoryEntry[]>([]);
   // Serializes scan/lookup submissions (FIFO) so a wedge scan arriving while
@@ -593,6 +607,38 @@ export function CheckInPage({
       const trimmed = query.trim();
       if (!trimmed) return Promise.resolve(false);
 
+      // Length alone is not enough here either (#262 review): an explicit
+      // Enter/Search-button submit of a long, slowly-typed or pasted query
+      // must route to lookup, not runScan, the same way handleBufferChange's
+      // auto-submit timer already does — otherwise pressing Enter (which the
+      // field's own hint text tells the operator to do) still misfires a
+      // manually-typed long query as a scan.
+      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN && wedgeIsBurstRef.current) {
+        void runScan(trimmed);
+        return Promise.resolve(true);
+      }
+
+      setBuffer("");
+      return runExclusive(() => submitScanOrLookupImpl(trimmed));
+    },
+    [runExclusive, runScan, submitScanOrLookupImpl],
+  );
+
+  // The mobile camera overlay's manual-entry field (onManualEntry below) is a
+  // paste/type fallback for tokens the camera couldn't read — its own
+  // placeholder invites "Paste token or search…". Nothing feeds that field
+  // via a keyboard wedge (a real wedge scan there would go through the
+  // camera's onScan instead), so gating on wedgeIsBurstRef — which tracks the
+  // *main* scan bar's typing, an entirely different, hidden field while the
+  // overlay is open — would be both irrelevant and wrong: it could misroute
+  // a genuinely pasted token to lookup, or vice versa, based on unrelated
+  // stale state. This keeps the original, burst-independent length heuristic
+  // for that one field (#262 review).
+  const submitManualTokenOrLookup = useCallback(
+    (query: string): Promise<boolean> => {
+      const trimmed = query.trim();
+      if (!trimmed) return Promise.resolve(false);
+
       if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN) {
         void runScan(trimmed);
         return Promise.resolve(true);
@@ -664,18 +710,52 @@ export function CheckInPage({
     void submitScanOrLookup(buffer);
   };
 
-  const handleBufferChange = (value: string) => {
+  const handleBufferChange = (value: string, eventTimestamp: number) => {
+    const justPasted = wedgeJustPastedRef.current;
+    wedgeJustPastedRef.current = false;
+
     if (value.includes("\r") || value.includes("\n")) {
       const cleaned = value.replace(/[\r\n]+/g, "").trim();
+      if (justPasted) wedgeIsBurstRef.current = false;
       setBuffer("");
       if (cleaned && canAct) void submitScanOrLookup(cleaned);
       return;
     }
 
+    // Use the DOM event's own timestamp, not Date.now() at handler-execution
+    // time: if the main thread is busy (e.g. a previous scan's response is
+    // resolving and re-rendering) when a fast wedge character arrives, React
+    // may not run this handler until after that work finishes — Date.now()
+    // would then measure the app's own delay, not the gap between
+    // keystrokes, and could permanently mark the rest of a genuine burst as
+    // manual typing. event.timeStamp is captured when the browser dispatches
+    // the input, independent of when a congested handler gets to it (#262 review).
+    const now = eventTimestamp;
+    // More than one new character appearing in a single change event is
+    // never a real keystroke, no matter the source — drag-and-drop text,
+    // browser autofill/autocomplete replacement, IME composition, voice
+    // dictation, or anything else that doesn't fire an explicit paste event.
+    // A genuine burst is only evidenced by characters arriving one at a time
+    // in quick succession; an empty field jumping straight to a long value
+    // in one shot is exactly the opposite of that evidence (#262 review).
+    const lengthJump = value.length - buffer.length;
+    if (justPasted || lengthJump > 1) {
+      wedgeIsBurstRef.current = false;
+    } else if (buffer.length === 0) {
+      // Fresh input, exactly one new character — nothing to compare its
+      // timing against yet, but this does look like a real single keystroke.
+      wedgeIsBurstRef.current = true;
+    } else if (now - wedgeLastCharAtRef.current > WEDGE_MAX_INTER_KEY_GAP_MS) {
+      // A gap this long means a human is typing, not a hardware wedge —
+      // length alone must not auto-submit this as a scan (#262).
+      wedgeIsBurstRef.current = false;
+    }
+    wedgeLastCharAtRef.current = now;
+
     setBuffer(value);
     if (wedgeTimerRef.current != null) window.clearTimeout(wedgeTimerRef.current);
 
-    if (value.length > WEDGE_AUTO_SUBMIT_LEN && canAct) {
+    if (value.length > WEDGE_AUTO_SUBMIT_LEN && wedgeIsBurstRef.current && canAct) {
       wedgeTimerRef.current = window.setTimeout(() => {
         void runScan(value);
       }, WEDGE_DEBOUNCE_MS);
@@ -769,7 +849,10 @@ export function CheckInPage({
               name="checkin-scan"
               className="ck-scan-bar__input"
               value={buffer}
-              onChange={(e) => handleBufferChange(e.target.value)}
+              onChange={(e) => handleBufferChange(e.target.value, e.timeStamp)}
+              onPaste={() => {
+                wedgeJustPastedRef.current = true;
+              }}
               onKeyDown={onKeyDown}
               autoFocus
               inputMode="none"
@@ -910,7 +993,7 @@ export function CheckInPage({
           wedgeActive={buffer.trim().length > 0}
           onClose={() => setCameraActive(false)}
           onScan={(raw) => void runScan(raw)}
-          onManualEntry={submitScanOrLookup}
+          onManualEntry={submitManualTokenOrLookup}
           manualError={overlayManualError}
           onClearManualError={() => setOverlayManualError(null)}
           scanResult={scanResult}
