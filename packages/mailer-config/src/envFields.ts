@@ -27,6 +27,31 @@ function str(v: string | undefined): string | undefined {
 }
 
 /**
+ * Literal defaults shipped in `deploy/.env.example`. An operator who copies the
+ * template and configures mail from the admin UI instead of env — without
+ * touching the mail section — ends up with these exact values in a real
+ * deployment env. Treated as unset so they don't falsely report as "managed by
+ * environment" (locked, read-only) in Settings, matching the intent already
+ * applied to the first-run wizard (which ignores env entirely).
+ *
+ * Scoped to `host`/`fromAddress` only: `example.com` is IANA/RFC 2606
+ * reserved and can never be a working production SMTP host or sender
+ * domain, so treating this exact value as a placeholder carries no risk of
+ * masking a genuine deployment's choice. Other example fields (ports,
+ * booleans, from name) are common real-world values too and are left as-is.
+ */
+const SMTP_HOST_EXAMPLE_PLACEHOLDER = "smtp.example.com";
+const MAIL_FROM_ADDRESS_EXAMPLE_PLACEHOLDER = "events@example.com";
+
+function strIgnoringExamplePlaceholder(
+  v: string | undefined,
+  placeholder: string,
+): string | undefined {
+  const value = str(v);
+  return value === placeholder ? undefined : value;
+}
+
+/**
  * Reads individual mailer fields from env vars without validating the whole config.
  * Uses the same env var names as configFromEnv() but returns a flat partial object,
  * enabling per-field precedence (env > event > org > default) in the resolver.
@@ -44,7 +69,7 @@ export function rawMailFieldsFromEnv(env: NodeJS.ProcessEnv): RawMailFields {
   return {
     provider,
     // smtp
-    host: str(env.SMTP_HOST),
+    host: strIgnoringExamplePlaceholder(env.SMTP_HOST, SMTP_HOST_EXAMPLE_PLACEHOLDER),
     port: parsePositiveInt(env.SMTP_PORT, "SMTP_PORT"),
     secure: parseBool(env.SMTP_SECURE, "SMTP_SECURE"),
     user: str(env.SMTP_USER),
@@ -69,7 +94,7 @@ export function rawMailFieldsFromEnv(env: NodeJS.ProcessEnv): RawMailFields {
     powerAutomateUrl: str(env.POWER_AUTOMATE_URL),
     powerAutomateKey: str(env.POWER_AUTOMATE_KEY),
     // shared sender
-    fromAddress: str(env.MAIL_FROM_ADDRESS),
+    fromAddress: strIgnoringExamplePlaceholder(env.MAIL_FROM_ADDRESS, MAIL_FROM_ADDRESS_EXAMPLE_PLACEHOLDER),
     fromName: str(env.MAIL_FROM_NAME),
     replyTo: str(env.MAIL_REPLY_TO),
     envelopeFrom: str(env.MAIL_ENVELOPE_FROM),
