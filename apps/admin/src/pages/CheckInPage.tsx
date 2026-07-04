@@ -118,6 +118,13 @@ export function CheckInPage({
   const wedgeTimerRef = useRef<number | null>(null);
   const wedgeLastCharAtRef = useRef(0);
   const wedgeIsBurstRef = useRef(true);
+  // A clipboard paste (or autofill) delivers a long value in a single change
+  // event with no prior keystroke to compare timing against — mechanically
+  // identical, to handleBufferChange, to "the first character of a real
+  // wedge burst". Set by the input's onPaste handler and consumed on the
+  // very next buffer change so pasted text is never treated as a burst
+  // (#262 review).
+  const wedgeJustPastedRef = useRef(false);
   const recentAdmits = useRef(new Map<string, number>());
   const historyRef = useRef<CheckInHistoryEntry[]>([]);
   // Serializes scan/lookup submissions (FIFO) so a wedge scan arriving while
@@ -600,6 +607,38 @@ export function CheckInPage({
       const trimmed = query.trim();
       if (!trimmed) return Promise.resolve(false);
 
+      // Length alone is not enough here either (#262 review): an explicit
+      // Enter/Search-button submit of a long, slowly-typed or pasted query
+      // must route to lookup, not runScan, the same way handleBufferChange's
+      // auto-submit timer already does — otherwise pressing Enter (which the
+      // field's own hint text tells the operator to do) still misfires a
+      // manually-typed long query as a scan.
+      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN && wedgeIsBurstRef.current) {
+        void runScan(trimmed);
+        return Promise.resolve(true);
+      }
+
+      setBuffer("");
+      return runExclusive(() => submitScanOrLookupImpl(trimmed));
+    },
+    [runExclusive, runScan, submitScanOrLookupImpl],
+  );
+
+  // The mobile camera overlay's manual-entry field (onManualEntry below) is a
+  // paste/type fallback for tokens the camera couldn't read — its own
+  // placeholder invites "Paste token or search…". Nothing feeds that field
+  // via a keyboard wedge (a real wedge scan there would go through the
+  // camera's onScan instead), so gating on wedgeIsBurstRef — which tracks the
+  // *main* scan bar's typing, an entirely different, hidden field while the
+  // overlay is open — would be both irrelevant and wrong: it could misroute
+  // a genuinely pasted token to lookup, or vice versa, based on unrelated
+  // stale state. This keeps the original, burst-independent length heuristic
+  // for that one field (#262 review).
+  const submitManualTokenOrLookup = useCallback(
+    (query: string): Promise<boolean> => {
+      const trimmed = query.trim();
+      if (!trimmed) return Promise.resolve(false);
+
       if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN) {
         void runScan(trimmed);
         return Promise.resolve(true);
@@ -672,15 +711,23 @@ export function CheckInPage({
   };
 
   const handleBufferChange = (value: string) => {
+    const justPasted = wedgeJustPastedRef.current;
+    wedgeJustPastedRef.current = false;
+
     if (value.includes("\r") || value.includes("\n")) {
       const cleaned = value.replace(/[\r\n]+/g, "").trim();
+      if (justPasted) wedgeIsBurstRef.current = false;
       setBuffer("");
       if (cleaned && canAct) void submitScanOrLookup(cleaned);
       return;
     }
 
     const now = Date.now();
-    if (buffer.length === 0) {
+    if (justPasted) {
+      // A paste/autofill delivered this value in one jump — never a burst,
+      // regardless of whether the field happened to be empty beforehand.
+      wedgeIsBurstRef.current = false;
+    } else if (buffer.length === 0) {
       // Fresh input — nothing to compare the first character's timing against yet.
       wedgeIsBurstRef.current = true;
     } else if (now - wedgeLastCharAtRef.current > WEDGE_MAX_INTER_KEY_GAP_MS) {
@@ -788,6 +835,9 @@ export function CheckInPage({
               className="ck-scan-bar__input"
               value={buffer}
               onChange={(e) => handleBufferChange(e.target.value)}
+              onPaste={() => {
+                wedgeJustPastedRef.current = true;
+              }}
               onKeyDown={onKeyDown}
               autoFocus
               inputMode="none"
@@ -928,7 +978,7 @@ export function CheckInPage({
           wedgeActive={buffer.trim().length > 0}
           onClose={() => setCameraActive(false)}
           onScan={(raw) => void runScan(raw)}
-          onManualEntry={submitScanOrLookup}
+          onManualEntry={submitManualTokenOrLookup}
           manualError={overlayManualError}
           onClearManualError={() => setOverlayManualError(null)}
           scanResult={scanResult}

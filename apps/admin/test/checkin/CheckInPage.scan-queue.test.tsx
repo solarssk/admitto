@@ -529,3 +529,91 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     await vi.waitFor(() => expect(screen.getByText("Real Person")).toBeTruthy());
   });
 });
+
+describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("routes a slowly-typed long query to lookup on Enter, not to a scan", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValueOnce([]);
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    // A plausible operator workflow: typing an email copied by hand, one
+    // character at a time, well under burst speed (60ms > WEDGE_MAX_INTER_KEY_GAP_MS).
+    const query = "someone.long-name@international-trade-fair.example.com";
+    for (let i = 1; i <= query.length; i++) {
+      fireEvent.change(input, { target: { value: query.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60);
+      });
+    }
+    // The debounce timer must not have auto-submitted this as a scan while typing.
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+
+    // The field's own hint text ("Enter to confirm") is exactly what the
+    // operator is expected to do next.
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", query));
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a pasted long value as a wedge burst", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValueOnce([]);
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    // A paste delivers the whole value in one change event, with no prior
+    // keystroke to compare timing against — the same shape as autofill,
+    // swipe-to-type, or voice dictation.
+    const pasted = "someone.long-name@international-trade-fair.example.com";
+    fireEvent.paste(input);
+    fireEvent.change(input, { target: { value: pasted } });
+
+    // The auto-submit timer must not fire a scan for pasted text.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50); // WEDGE_DEBOUNCE_MS
+    });
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", pasted));
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+  });
+
+  it("still auto-submits a genuine fast wedge burst on Enter (no regression)", async () => {
+    mockPageBootstrap();
+    const token = "QRTOKEN-GENUINEWEDGE01";
+    submitCheckInScan.mockResolvedValueOnce(cardResponse(token, "Wedge Person"));
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    for (let i = 1; i <= token.length; i++) {
+      fireEvent.change(input, { target: { value: token.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+});
