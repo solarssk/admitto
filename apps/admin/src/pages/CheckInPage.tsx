@@ -113,6 +113,18 @@ export function CheckInPage({
   const wedgeTimerRef = useRef<number | null>(null);
   const recentAdmits = useRef(new Map<string, number>());
   const historyRef = useRef<CheckInHistoryEntry[]>([]);
+  // Serializes scan/lookup submissions (FIFO) so a wedge scan arriving while
+  // the previous one is still in flight is queued, not lost or interleaved.
+  const scanChainRef = useRef<Promise<unknown>>(Promise.resolve());
+
+  const runExclusive = useCallback(<T,>(fn: () => Promise<T>): Promise<T> => {
+    const run = scanChainRef.current.then(fn);
+    scanChainRef.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }, []);
 
   const prependAdmit = useCallback((entry: CheckInHistoryEntry, admittedAt: string) => {
     if (isAdmitDedupHit(recentAdmits.current, entry.attendee_id, admittedAt)) return;
@@ -347,7 +359,7 @@ export function CheckInPage({
     }
   };
 
-  const runScan = useCallback(
+  const runScanImpl = useCallback(
     async (raw: string) => {
       if (!eventId || !canAct) return;
       const scanned = normalizeScannedInput(raw);
@@ -362,6 +374,9 @@ export function CheckInPage({
       }
       lastScanRef.current = { value: scanned, at: now };
 
+      // Clear before awaiting the request so the (never-disabled) scan input is
+      // immediately ready for the next physical scan instead of showing stale text.
+      setBuffer("");
       setBusy(true);
       setTransportError(null);
       try {
@@ -374,7 +389,6 @@ export function CheckInPage({
           const loaded = await fetchAttendeeCard(eventId, response.attendeeId);
           setCard(loaded);
         }
-        setBuffer("");
         if (response.status === "VALID" && response.admittedAt) {
           applyLocalAdmit(response);
           void refreshStatsOnly();
@@ -390,6 +404,13 @@ export function CheckInPage({
       }
     },
     [canAct, deviceId, eventId, focusScan, maybeAutoAdvance, applyLocalAdmit, refreshSidebar, refreshStatsOnly, reportApiError],
+  );
+
+  // Wraps runScanImpl so a scan arriving while a previous one is still in
+  // flight queues (FIFO) instead of dropping keystrokes or firing concurrently.
+  const runScan = useCallback(
+    (raw: string) => runExclusive(() => runScanImpl(raw)),
+    [runExclusive, runScanImpl],
   );
 
   const closeInlineCamera = useCallback(() => {
@@ -463,7 +484,7 @@ export function CheckInPage({
     }
   };
 
-  const submitScanOrLookup = useCallback(
+  const submitScanOrLookupImpl = useCallback(
     async (query: string): Promise<boolean> => {
       const trimmed = query.trim();
       if (!trimmed) return false;
@@ -521,6 +542,13 @@ export function CheckInPage({
       }
     },
     [allowManualLookup, addToast, canAct, eventId, reportApiError, runScan, showMobileOverlay],
+  );
+
+  // Wraps submitScanOrLookupImpl so it queues (FIFO) behind an in-flight scan
+  // or lookup instead of racing it — same rationale as runScan above.
+  const submitScanOrLookup = useCallback(
+    (query: string) => runExclusive(() => submitScanOrLookupImpl(query)),
+    [runExclusive, submitScanOrLookupImpl],
   );
 
   const onItemAction = async (itemKey: string, targetState: string) => {
@@ -685,7 +713,7 @@ export function CheckInPage({
               placeholder="Scan QR · type name, email or company…"
               aria-label="QR scan or search"
               aria-describedby="ck-scan-hint"
-              disabled={busy || !canAct}
+              disabled={!canAct}
               aria-busy={busy}
               {...checkinSearchFieldAttrs}
             />
