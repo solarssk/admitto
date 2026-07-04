@@ -10,6 +10,7 @@ const fetchCheckInStats = vi.fn();
 const fetchCheckInOpsConfig = vi.fn();
 const fetchCheckInEvents = vi.fn();
 const submitCheckInScan = vi.fn();
+const undoLastCheckIn = vi.fn();
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
   useEventStream: () => ({ connected: true, status: "connected" }),
@@ -46,7 +47,7 @@ vi.mock("../../src/api/client.js", () => ({
   submitCheckInAdmit: vi.fn(),
   submitCheckInScan: (...args: unknown[]) => submitCheckInScan(...args),
   submitItemAction: vi.fn(),
-  undoLastCheckIn: vi.fn(),
+  undoLastCheckIn: (...args: unknown[]) => undoLastCheckIn(...args),
 }));
 
 /** Deferred promise — lets the test control exactly when a scan "request" resolves. */
@@ -71,6 +72,10 @@ function cardResponse(token: string, name: string) {
       company: null,
       department: null,
       check_in_status: "admitted" as const,
+      admitted_at: "2026-06-01T10:00:00.000Z",
+      items: [],
+      notes: [],
+      warnings: [],
     },
   };
 }
@@ -262,13 +267,14 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
   it("does not lose a second wedge scan when auto-advance fires for an unrelated completed scan mid-burst", async () => {
     mockPageBootstrap();
     const first = deferred<ReturnType<typeof cardResponse>>();
-    submitCheckInScan.mockReturnValueOnce(first.promise);
+    const tokenA = "QRTOKEN-PERSONA00000001";
+    const tokenB = "QRTOKEN-PERSONB00000002";
+    submitCheckInScan
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(cardResponse(tokenB, "Person B"));
 
     renderPage();
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
-
-    const tokenA = "QRTOKEN-PERSONA00000001";
-    const tokenB = "QRTOKEN-PERSONB00000002";
 
     // Person A scanned via the length-based wedge path (no CR terminator).
     fireEvent.change(input, { target: { value: tokenA } });
@@ -310,5 +316,69 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     });
 
     expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", tokenB, "desk-1");
+    await vi.waitFor(() => expect(screen.getByText("Person B")).toBeTruthy());
+  });
+
+  it("queues a new scan behind an in-flight Undo instead of racing it (Codex review)", async () => {
+    mockPageBootstrap();
+    fetchCheckInOpsConfig.mockResolvedValue({
+      require_confirm_on_scan: false,
+      badge_at_entry: true,
+      allow_manual_lookup: true,
+      auto_advance_on_valid: false, // keep the confirmation (and Undo link) visible
+    });
+
+    const tokenA = "QRTOKEN-PERSONA00000001";
+    const tokenB = "QRTOKEN-PERSONB00000002";
+    submitCheckInScan
+      .mockResolvedValueOnce(cardResponse(tokenA, "Person A"))
+      .mockResolvedValueOnce(cardResponse(tokenB, "Person B"));
+    const undo = deferred<{ card: unknown }>();
+    undoLastCheckIn.mockReturnValueOnce(undo.promise);
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+    // Ensure the ops-config fetch (auto_advance_on_valid: false) has resolved
+    // and applied before scanning, or the component would still be using its
+    // auto-advance-on default and dismiss the card before Undo can be clicked.
+    await vi.waitFor(() => expect(fetchCheckInOpsConfig).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    fireEvent.change(input, { target: { value: tokenA } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    await vi.waitFor(() => expect(screen.getByText(/Undo last check-in/)).toBeTruthy());
+
+    fireEvent.click(screen.getByText(/Undo last check-in/));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(undoLastCheckIn).toHaveBeenCalledTimes(1);
+
+    // A new wedge scan for person B arrives while the undo request (which
+    // rolls back "whichever check-in is currently latest for this device" on
+    // the server, with no specific id sent) is still pending.
+    fireEvent.change(input, { target: { value: tokenB } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    // Must NOT have reached the server yet — if it had, it could admit person
+    // B before the undo's SELECT runs, causing undo to roll back B instead of A.
+    expect(submitCheckInScan).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      undo.resolve({ card: { id: tokenA, check_in_status: "not_admitted" } });
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    // Only now, after undo has resolved, does person B's scan run.
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledTimes(2));
+    expect(submitCheckInScan).toHaveBeenNthCalledWith(2, "evt-live", tokenB, "desk-1");
   });
 });

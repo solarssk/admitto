@@ -610,21 +610,26 @@ export function CheckInPage({
     }
   };
 
-  const onUndo = async () => {
-    if (!eventId || !canAct) return;
-    setBusy(true);
-    try {
-      const { card: updated } = await undoLastCheckIn(eventId, deviceId);
-      setCard(updated);
-      setScanResult({ status: "PREVIEW", confirmed: false, card: updated });
-      void refreshSidebar();
-    } catch (err) {
-      handleApiFailure(err);
-    } finally {
-      setBusy(false);
-      focusScan();
-    }
-  };
+  // Queued alongside scans: the backend picks whichever check-in is
+  // currently latest for this device at execution time (no specific id is
+  // sent), so a scan admitting a new attendee while undo is in flight could
+  // otherwise race ahead of it and get rolled back instead (#277 review).
+  const onUndo = () =>
+    runExclusive(async () => {
+      if (!eventId || !canAct) return;
+      setBusy(true);
+      try {
+        const { card: updated } = await undoLastCheckIn(eventId, deviceId);
+        setCard(updated);
+        setScanResult({ status: "PREVIEW", confirmed: false, card: updated });
+        void refreshSidebar();
+      } catch (err) {
+        handleApiFailure(err);
+      } finally {
+        setBusy(false);
+        focusScan();
+      }
+    });
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
