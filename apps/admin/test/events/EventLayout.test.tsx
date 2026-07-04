@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { createMemoryRouter, MemoryRouter, RouterProvider, Route, Routes } from "react-router-dom";
 import { EventLayout } from "../../src/App.js";
 import type { EventDto } from "../../src/api/types.js";
 
@@ -104,5 +104,41 @@ describe("EventLayout (#274)", () => {
     renderLayout({ pathname: "/admin/events/evt-old/overview" });
 
     await waitFor(() => expect(screen.getByText("shell:Past Conference")).toBeTruthy());
+  });
+
+  it("clears the one-shot navigation state after first use, so a later back/forward revisit re-validates via the fallback fetch (Codex review)", async () => {
+    fetchAdminEvents.mockResolvedValueOnce([eventDto("evt-1", "Spring Gala")]);
+
+    const router = createMemoryRouter(
+      [
+        { path: "/admin", element: <div>picker</div> },
+        { path: "/admin/events/:eventId/*", element: <EventLayout /> },
+      ],
+      {
+        initialEntries: [
+          { pathname: "/admin" },
+          { pathname: "/admin/events/evt-1/overview", state: { event: eventDto("evt-1", "Spring Gala") } },
+        ],
+        initialIndex: 1,
+      },
+    );
+    render(<RouterProvider router={router} />);
+
+    // Initial visit: fast path, no fetch — same as the plain fast-path test.
+    expect(screen.getByText("shell:Spring Gala")).toBeTruthy();
+    expect(fetchAdminEvents).not.toHaveBeenCalled();
+
+    // Navigate back to the picker, then forward again to the same history
+    // entry — simulating an admin whose org assignment was revoked in
+    // between returning (via browser back/forward) to a page already
+    // visited in this tab. If the stale event snapshot were trusted again,
+    // access would never be re-validated for this navigation.
+    await act(async () => router.navigate(-1));
+    await waitFor(() => expect(screen.getByText("picker")).toBeTruthy());
+
+    await act(async () => router.navigate(1));
+
+    await waitFor(() => expect(fetchAdminEvents).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText("shell:Spring Gala")).toBeTruthy());
   });
 });
