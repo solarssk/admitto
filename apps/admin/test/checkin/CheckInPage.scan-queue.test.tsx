@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
@@ -168,5 +168,147 @@ describe("CheckInPage scan queue (#261)", () => {
       second.resolve(cardResponse("QRTOKEN-SECONDPERSON2", "Second Person"));
     });
     await waitFor(() => expect(screen.getByText("Second Person")).toBeTruthy());
+  });
+});
+
+describe("CheckInPage scan queue — review follow-ups (#277)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("still suppresses a duplicate scan of the same token when the first request is slower than the dedup window", async () => {
+    mockPageBootstrap();
+    const first = deferred<ReturnType<typeof cardResponse>>();
+    submitCheckInScan.mockReturnValueOnce(first.promise);
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    fireEvent.change(input, { target: { value: "QRTOKEN-SAMEPERSON0001" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledTimes(1));
+
+    // The SAME physical scan resubmitted only 100ms later (well inside the
+    // 2500ms dedup window, CHECKIN_DUPLICATE_DEBOUNCE_MS) — while the first
+    // request is still pending and won't resolve for a long time. Dedup must
+    // be measured from when this second scan actually arrives, not from
+    // whenever it eventually reaches the front of the queue (which, before
+    // this fix, could be seconds later — long enough to appear outside the
+    // dedup window even though the two physical scans were 100ms apart).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    fireEvent.change(input, { target: { value: "QRTOKEN-SAMEPERSON0001" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    // The first request only resolves well after the dedup window would have
+    // closed (3000ms > 2500ms) — this is what used to defeat the dedup check.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await act(async () => {
+      first.resolve(cardResponse("QRTOKEN-SAMEPERSON0001", "Same Person"));
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    await vi.waitFor(() => expect(screen.getByText("Same Person")).toBeTruthy());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    expect(submitCheckInScan).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears the buffer for a queued second scan immediately, not only once it starts executing", async () => {
+    mockPageBootstrap();
+    const first = deferred<ReturnType<typeof cardResponse>>();
+    submitCheckInScan.mockReturnValueOnce(first.promise);
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    fireEvent.change(input, { target: { value: "QRTOKEN-FIRSTPERSON01" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledTimes(1));
+
+    // A second scan arrives and is accepted (enqueued) while the first is
+    // still in flight — its buffer-clear must happen right away, not only
+    // once it is dequeued, so a third scan's keystrokes never land on top of
+    // this still-visible text.
+    fireEvent.change(input, { target: { value: "QRTOKEN-SECONDPERSON2" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    expect(input.value).toBe("");
+    expect(submitCheckInScan).toHaveBeenCalledTimes(1); // second is still queued
+
+    await act(async () => {
+      first.resolve(cardResponse("QRTOKEN-FIRSTPERSON01", "First Person"));
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not lose a second wedge scan when auto-advance fires for an unrelated completed scan mid-burst", async () => {
+    mockPageBootstrap();
+    const first = deferred<ReturnType<typeof cardResponse>>();
+    submitCheckInScan.mockReturnValueOnce(first.promise);
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    const tokenA = "QRTOKEN-PERSONA00000001";
+    const tokenB = "QRTOKEN-PERSONB00000002";
+
+    // Person A scanned via the length-based wedge path (no CR terminator).
+    fireEvent.change(input, { target: { value: tokenA } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50); // WEDGE_DEBOUNCE_MS
+    });
+    expect(submitCheckInScan).toHaveBeenCalledTimes(1);
+
+    // Operator immediately starts scanning person B — wedge injects most (not
+    // all) of B's characters while A's request is still pending.
+    const bPartial = tokenB.slice(0, 15);
+    for (let i = 1; i <= bPartial.length; i++) {
+      fireEvent.change(input, { target: { value: bPartial.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
+    expect(input.value).toBe(bPartial);
+
+    // A's slow request resolves — auto-advance must dismiss only A's card,
+    // not wipe B's in-progress buffer.
+    await act(async () => {
+      first.resolve(cardResponse(tokenA, "Person A"));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    await vi.waitFor(() => expect(screen.getByText("Person A")).toBeTruthy());
+    expect(input.value).toBe(bPartial);
+
+    // The wedge finishes injecting B's remaining characters.
+    const bRemainder = tokenB.slice(15);
+    for (let i = 1; i <= bRemainder.length; i++) {
+      fireEvent.change(input, { target: { value: bPartial + bRemainder.slice(0, i) } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+    }
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", tokenB, "desk-1");
   });
 });

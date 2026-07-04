@@ -311,26 +311,38 @@ export function CheckInPage({
     }
   };
 
+  /** Clears only the displayed result/error state — never the buffer or the
+   * wedge timer, which may already belong to a different, newer scan that's
+   * mid-burst (see maybeAutoAdvance below). */
+  const clearDisplayedResult = useCallback(() => {
+    setScanResult(null);
+    setCard(null);
+    setTransportError(null);
+    setOverlayManualError(null);
+  }, []);
+
+  /** User-initiated reset (Escape, Cancel button) — also clears the input and
+   * cancels any pending wedge timer, since the user explicitly wants a clean slate. */
   const resetScan = useCallback(() => {
     if (wedgeTimerRef.current != null) {
       window.clearTimeout(wedgeTimerRef.current);
       wedgeTimerRef.current = null;
     }
-    setScanResult(null);
-    setCard(null);
-    setTransportError(null);
-    setOverlayManualError(null);
+    clearDisplayedResult();
     setBuffer("");
     focusScan();
-  }, [focusScan]);
+  }, [clearDisplayedResult, focusScan]);
 
   const maybeAutoAdvance = useCallback(
     (response: CheckInScanResponse) => {
       if (autoAdvanceOnValid && response.status === "VALID" && response.confirmed) {
-        resetScan();
+        // Dismiss THIS scan's confirmation only — must not clear the buffer or
+        // cancel the wedge timer, which may already hold a different, newer
+        // scan's in-progress keystrokes (#277 follow-up review).
+        clearDisplayedResult();
       }
     },
-    [autoAdvanceOnValid, resetScan],
+    [autoAdvanceOnValid, clearDisplayedResult],
   );
 
   const runWithPending = async <T,>(fn: () => Promise<T>): Promise<T | null> => {
@@ -359,24 +371,16 @@ export function CheckInPage({
     }
   };
 
+  // The queued/deferred half of a scan: only the actual network round-trip.
+  // Dedup and buffer-clear must NOT live here — they'd measure time and clear
+  // visibility from whenever this reaches the front of the queue (dequeue
+  // time), not from when the physical scan actually happened (enqueue time).
+  // With a backlog, that gap can exceed CHECKIN_DUPLICATE_DEBOUNCE_MS and
+  // silently defeat the duplicate-scan guard, or leave stale text on screen
+  // for the next physical scan's keystrokes to land on top of.
   const runScanImpl = useCallback(
-    async (raw: string) => {
-      if (!eventId || !canAct) return;
-      const scanned = normalizeScannedInput(raw);
-      if (!scanned) return;
-
-      const now = Date.now();
-      const last = lastScanRef.current;
-      if (last && last.value === scanned && now - last.at < CHECKIN_DUPLICATE_DEBOUNCE_MS) {
-        setBuffer("");
-        focusScan();
-        return;
-      }
-      lastScanRef.current = { value: scanned, at: now };
-
-      // Clear before awaiting the request so the (never-disabled) scan input is
-      // immediately ready for the next physical scan instead of showing stale text.
-      setBuffer("");
+    async (scanned: string) => {
+      if (!eventId) return;
       setBusy(true);
       setTransportError(null);
       try {
@@ -403,14 +407,32 @@ export function CheckInPage({
         focusScan();
       }
     },
-    [canAct, deviceId, eventId, focusScan, maybeAutoAdvance, applyLocalAdmit, refreshSidebar, refreshStatsOnly, reportApiError],
+    [deviceId, eventId, focusScan, maybeAutoAdvance, applyLocalAdmit, refreshSidebar, refreshStatsOnly, reportApiError],
   );
 
-  // Wraps runScanImpl so a scan arriving while a previous one is still in
-  // flight queues (FIFO) instead of dropping keystrokes or firing concurrently.
+  // Synchronous entry point: normalizes, dedups, and clears the buffer
+  // immediately at call time (not once its turn in the queue arrives), then
+  // enqueues only the network round-trip so it still runs FIFO behind any
+  // scan already in flight.
   const runScan = useCallback(
-    (raw: string) => runExclusive(() => runScanImpl(raw)),
-    [runExclusive, runScanImpl],
+    (raw: string): Promise<void> => {
+      if (!eventId || !canAct) return Promise.resolve();
+      const scanned = normalizeScannedInput(raw);
+      if (!scanned) return Promise.resolve();
+
+      const now = Date.now();
+      const last = lastScanRef.current;
+      if (last && last.value === scanned && now - last.at < CHECKIN_DUPLICATE_DEBOUNCE_MS) {
+        setBuffer("");
+        focusScan();
+        return Promise.resolve();
+      }
+      lastScanRef.current = { value: scanned, at: now };
+      setBuffer("");
+
+      return runExclusive(() => runScanImpl(scanned));
+    },
+    [canAct, eventId, focusScan, runExclusive, runScanImpl],
   );
 
   const closeInlineCamera = useCallback(() => {
@@ -484,16 +506,12 @@ export function CheckInPage({
     }
   };
 
+  // Queued/deferred half: manual-lookup API call only. The "is this actually
+  // a long scan token, not a manual query" branch lives in the synchronous
+  // wrapper below so a CR-terminated wedge scan is deduped/cleared at the
+  // moment it arrives, not delayed behind this function's own queue turn.
   const submitScanOrLookupImpl = useCallback(
-    async (query: string): Promise<boolean> => {
-      const trimmed = query.trim();
-      if (!trimmed) return false;
-
-      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN) {
-        void runScan(trimmed);
-        return true;
-      }
-
+    async (trimmed: string): Promise<boolean> => {
       if (!eventId || !canAct) return false;
 
       if (!allowManualLookup) {
@@ -541,14 +559,26 @@ export function CheckInPage({
         setBusy(false);
       }
     },
-    [allowManualLookup, addToast, canAct, eventId, reportApiError, runScan, showMobileOverlay],
+    [allowManualLookup, addToast, canAct, eventId, reportApiError, showMobileOverlay],
   );
 
-  // Wraps submitScanOrLookupImpl so it queues (FIFO) behind an in-flight scan
-  // or lookup instead of racing it — same rationale as runScan above.
+  // Synchronous entry point, mirroring runScan above: a long buffer is
+  // recognized and delegated to runScan (which does its own dedup/clear)
+  // immediately at call time, regardless of queue backlog. Only genuine
+  // manual-lookup queries get enqueued behind in-flight scans/lookups.
   const submitScanOrLookup = useCallback(
-    (query: string) => runExclusive(() => submitScanOrLookupImpl(query)),
-    [runExclusive, submitScanOrLookupImpl],
+    (query: string): Promise<boolean> => {
+      const trimmed = query.trim();
+      if (!trimmed) return Promise.resolve(false);
+
+      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN) {
+        void runScan(trimmed);
+        return Promise.resolve(true);
+      }
+
+      return runExclusive(() => submitScanOrLookupImpl(trimmed));
+    },
+    [runExclusive, runScan, submitScanOrLookupImpl],
   );
 
   const onItemAction = async (itemKey: string, targetState: string) => {
