@@ -71,10 +71,13 @@ export function CameraOverlay({
   const submitManual = useCallback(async () => {
     const raw = manualToken.trim();
     if (!raw || !canAct || pending) return;
-    const ok = await onManualEntry(raw);
-    if (!ok) return;
+    // Clear immediately (not only on success) so a wedge scan arriving while
+    // this request is in flight can't get typed after the old query text —
+    // this field has no disabled state of its own, mirroring the same fix
+    // applied to CheckInPage's main scan-bar buffer (#277 review).
     setManualToken("");
-    setManualMode(false);
+    const ok = await onManualEntry(raw);
+    if (ok) setManualMode(false);
   }, [canAct, manualToken, onManualEntry, pending]);
 
   const onManualKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
