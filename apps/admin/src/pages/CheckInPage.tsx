@@ -41,6 +41,11 @@ import { ScanHistoryList } from "../checkin/ScanHistoryList.js";
 const PENDING_MS = 5000;
 const WEDGE_AUTO_SUBMIT_LEN = 20;
 const WEDGE_DEBOUNCE_MS = 50;
+// A hardware keyboard-wedge scanner injects characters far faster than a human
+// can type — even fast typists rarely sustain sub-30ms gaps across many
+// consecutive keystrokes. Used to tell "typing a long manual query" apart from
+// "a wedge scan without a CR terminator" so length alone doesn't auto-submit.
+const WEDGE_MAX_INTER_KEY_GAP_MS = 30;
 const HISTORY_CAP = 8;
 const LOOKUP_DISABLED_MSG =
   "Manual lookup is disabled for this event — use QR scan only.";
@@ -111,6 +116,8 @@ export function CheckInPage({
   const lastScanRef = useRef<{ value: string; at: number } | null>(null);
   const pendingTimerRef = useRef<number | null>(null);
   const wedgeTimerRef = useRef<number | null>(null);
+  const wedgeLastCharAtRef = useRef(0);
+  const wedgeIsBurstRef = useRef(true);
   const recentAdmits = useRef(new Map<string, number>());
   const historyRef = useRef<CheckInHistoryEntry[]>([]);
   // Serializes scan/lookup submissions (FIFO) so a wedge scan arriving while
@@ -672,10 +679,21 @@ export function CheckInPage({
       return;
     }
 
+    const now = Date.now();
+    if (buffer.length === 0) {
+      // Fresh input — nothing to compare the first character's timing against yet.
+      wedgeIsBurstRef.current = true;
+    } else if (now - wedgeLastCharAtRef.current > WEDGE_MAX_INTER_KEY_GAP_MS) {
+      // A gap this long means a human is typing, not a hardware wedge —
+      // length alone must not auto-submit this as a scan (#262).
+      wedgeIsBurstRef.current = false;
+    }
+    wedgeLastCharAtRef.current = now;
+
     setBuffer(value);
     if (wedgeTimerRef.current != null) window.clearTimeout(wedgeTimerRef.current);
 
-    if (value.length > WEDGE_AUTO_SUBMIT_LEN && canAct) {
+    if (value.length > WEDGE_AUTO_SUBMIT_LEN && wedgeIsBurstRef.current && canAct) {
       wedgeTimerRef.current = window.setTimeout(() => {
         void runScan(value);
       }, WEDGE_DEBOUNCE_MS);
