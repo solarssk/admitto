@@ -108,7 +108,10 @@ function renderPage() {
 
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
+  // resetAllMocks (not clearAllMocks): also drops any queued
+  // mockResolvedValueOnce/mockReturnValueOnce left unconsumed by a test whose
+  // scan/lookup didn't actually fire, so it can't leak into the next test.
+  vi.resetAllMocks();
 });
 
 describe("CheckInPage scan queue (#261)", () => {
@@ -297,12 +300,16 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     expect(input.value).toBe(bPartial);
 
     // A's slow request resolves — auto-advance must dismiss only A's card,
-    // not wipe B's in-progress buffer.
+    // not wipe B's in-progress buffer. Flushed via microtasks only (no fake-
+    // clock advance) so the elapsed time since B's last keystroke stays near
+    // zero — a real wedge scan is a single uninterrupted physical burst; it
+    // is not paused by an unrelated server response arriving mid-scan.
     await act(async () => {
       first.resolve(cardResponse(tokenA, "Person A"));
-      await vi.advanceTimersByTimeAsync(50);
+      await Promise.resolve();
+      await Promise.resolve();
     });
-    await vi.waitFor(() => expect(screen.getByText("Person A")).toBeTruthy());
+    expect(screen.getByText("Person A")).toBeTruthy();
     expect(input.value).toBe(bPartial);
 
     // The wedge finishes injecting B's remaining characters.
