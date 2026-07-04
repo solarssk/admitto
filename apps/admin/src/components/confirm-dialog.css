@@ -16,7 +16,7 @@
 
 .confirm-dialog__panel {
   position: relative;
-  background: var(--surface);
+  background: var(--surface-card);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
   width: min(400px, 100%);

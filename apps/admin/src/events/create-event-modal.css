@@ -80,7 +80,7 @@
   font-size: var(--fs-base);
   font-family: inherit;
   color: var(--text-primary);
-  background: var(--surface);
+  background: var(--surface-card);
 }
 
 .create-event-modal__input:focus {

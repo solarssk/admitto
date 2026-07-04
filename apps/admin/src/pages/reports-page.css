@@ -137,7 +137,7 @@
   padding: 0.35rem 0.5rem;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--surface-card);
   color: var(--text);
 }
 
