@@ -10,6 +10,7 @@ const fetchCheckInStats = vi.fn();
 const fetchCheckInOpsConfig = vi.fn();
 const fetchCheckInEvents = vi.fn();
 const submitCheckInScan = vi.fn();
+const submitCheckInAdmit = vi.fn();
 const undoLastCheckIn = vi.fn();
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
@@ -44,7 +45,7 @@ vi.mock("../../src/api/client.js", () => ({
   fetchAttendeeCard: vi.fn(),
   lookupCheckInAttendees: vi.fn(),
   submitAttendeeNote: vi.fn(),
-  submitCheckInAdmit: vi.fn(),
+  submitCheckInAdmit: (...args: unknown[]) => submitCheckInAdmit(...args),
   submitCheckInScan: (...args: unknown[]) => submitCheckInScan(...args),
   submitItemAction: vi.fn(),
   undoLastCheckIn: (...args: unknown[]) => undoLastCheckIn(...args),
@@ -380,5 +381,102 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     // Only now, after undo has resolved, does person B's scan run.
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledTimes(2));
     expect(submitCheckInScan).toHaveBeenNthCalledWith(2, "evt-live", tokenB, "desk-1");
+  });
+
+  it("does not let a slow Confirm check-in response overwrite a scan that arrived after it (Codex review)", async () => {
+    mockPageBootstrap();
+    fetchCheckInOpsConfig.mockResolvedValue({
+      require_confirm_on_scan: true,
+      badge_at_entry: true,
+      allow_manual_lookup: true,
+      auto_advance_on_valid: false, // keep B's card visible instead of auto-dismissing
+    });
+    const tokenA = "QRTOKEN-PERSONA00000001";
+    const tokenB = "QRTOKEN-PERSONB00000002";
+
+    submitCheckInScan
+      .mockResolvedValueOnce({
+        status: "PREVIEW",
+        confirmed: false,
+        attendeeId: tokenA,
+        card: {
+          id: tokenA,
+          name: "Person A",
+          ticket_type: "Standard",
+          company: null,
+          department: null,
+          check_in_status: "not_admitted" as const,
+          admitted_at: null,
+          items: [],
+          notes: [],
+          warnings: [],
+        },
+      })
+      .mockResolvedValueOnce(cardResponse(tokenB, "Person B"));
+    const confirm = deferred<{ status: "VALID"; confirmed: true; admittedAt: string; card: unknown }>();
+    submitCheckInAdmit.mockReturnValueOnce(confirm.promise);
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+    await vi.waitFor(() => expect(fetchCheckInOpsConfig).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // Person A scans and requires explicit confirmation (not auto-admitted).
+    fireEvent.change(input, { target: { value: tokenA } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    await vi.waitFor(() => expect(screen.getByText("Confirm check-in")).toBeTruthy());
+
+    // Operator confirms A — this request is slow (deferred).
+    fireEvent.click(screen.getByText("Confirm check-in"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(submitCheckInAdmit).toHaveBeenCalledTimes(1);
+
+    // Operator immediately scans person B while A's confirm is still pending.
+    fireEvent.change(input, { target: { value: tokenB } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    // B's scan must not have reached the server yet — otherwise, if it
+    // resolved before A's slower confirm, A's response would later overwrite
+    // B's already-displayed card.
+    expect(submitCheckInScan).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      confirm.resolve({
+        status: "VALID",
+        confirmed: true,
+        admittedAt: "2026-06-01T10:05:00.000Z",
+        card: {
+          id: tokenA,
+          name: "Person A",
+          ticket_type: "Standard",
+          company: null,
+          department: null,
+          check_in_status: "admitted" as const,
+          admitted_at: "2026-06-01T10:05:00.000Z",
+          items: [],
+          notes: [],
+          warnings: [],
+        },
+      });
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    // Only now does B's scan run, and its card is what stays on screen (A
+    // still appears in the sidebar's admitted-history list — that is
+    // expected — but the main attendee card must show B, not be reverted
+    // back to A by A's late-arriving confirm response).
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(document.querySelector(".checkin-card__name")?.textContent).toBe("Person B"),
+    );
   });
 });

@@ -443,33 +443,42 @@ export function CheckInPage({
     }
   }, [isOperatorShell, setCameraActive]);
 
-  const admitCurrent = async (attendeeId: string, method: "scan" | "manual" = "manual") => {
-    if (!eventId || !canAct) return;
-    setBusy(true);
-    setTransportError(null);
-    try {
-      const response = await runWithPending(() =>
-        submitCheckInAdmit(eventId, attendeeId, deviceId, method),
-      );
-      if (response) {
-        applyResponse(response);
-        maybeAutoAdvance(response);
-        if (response.status === "VALID" && response.admittedAt) {
-          applyLocalAdmit(response);
-          void refreshStatsOnly();
-        } else {
-          void refreshSidebar();
+  // Queued alongside scans: this updates the same scanResult/card the
+  // operator is looking at, keyed to a specific attendeeId captured at click
+  // time. Without queueing, a scan for a different attendee could resolve
+  // first and then this (slower) response would overwrite the display back
+  // to the attendee the operator already moved past (#277 review).
+  const admitCurrent = (attendeeId: string, method: "scan" | "manual" = "manual") =>
+    runExclusive(async () => {
+      if (!eventId || !canAct) return;
+      setBusy(true);
+      setTransportError(null);
+      try {
+        const response = await runWithPending(() =>
+          submitCheckInAdmit(eventId, attendeeId, deviceId, method),
+        );
+        if (response) {
+          applyResponse(response);
+          maybeAutoAdvance(response);
+          if (response.status === "VALID" && response.admittedAt) {
+            applyLocalAdmit(response);
+            void refreshStatsOnly();
+          } else {
+            void refreshSidebar();
+          }
         }
+      } catch (err) {
+        handleApiFailure(err);
+      } finally {
+        setBusy(false);
+        focusScan();
       }
-    } catch (err) {
-      handleApiFailure(err);
-    } finally {
-      setBusy(false);
-      focusScan();
-    }
-  };
+    });
 
-  const openLookupResult = async (attendeeId: string) => {
+  // Raw implementation, called directly (not re-queued) from
+  // submitScanOrLookupImpl below, which is already running inside its own
+  // queue turn — wrapping this in runExclusive there would deadlock.
+  const openLookupResultImpl = async (attendeeId: string) => {
     if (!eventId) return;
     setBusy(true);
     try {
@@ -485,6 +494,10 @@ export function CheckInPage({
       focusScan();
     }
   };
+
+  // Queued wrapper for the manual-lookup panel's "select a result" click
+  // (an external entry point, unlike the internal auto-select call below).
+  const openLookupResult = (attendeeId: string) => runExclusive(() => openLookupResultImpl(attendeeId));
 
   const runLookup = async () => {
     if (!eventId || !canAct || !lookupQ.trim()) return;
@@ -527,7 +540,7 @@ export function CheckInPage({
       try {
         const results = await lookupCheckInAttendees(eventId, trimmed);
         if (results.length === 1) {
-          await openLookupResult(results[0].id);
+          await openLookupResultImpl(results[0].id);
           setBuffer("");
           return true;
         }
@@ -581,34 +594,39 @@ export function CheckInPage({
     [runExclusive, runScan, submitScanOrLookupImpl],
   );
 
-  const onItemAction = async (itemKey: string, targetState: string) => {
-    if (!eventId || !card || !canAct) return;
-    setBusy(true);
-    try {
-      const { card: updated } = await submitItemAction(eventId, card.id, itemKey, targetState, deviceId);
-      setCard(updated);
-      void refreshSidebar();
-    } catch (err) {
-      handleApiFailure(err);
-    } finally {
-      setBusy(false);
-      focusScan();
-    }
-  };
+  // Queued: same rationale as admitCurrent — this reads card.id at run time
+  // and overwrites setCard, so it must not race a scan that could swap in a
+  // different attendee's card first (#277 review).
+  const onItemAction = (itemKey: string, targetState: string) =>
+    runExclusive(async () => {
+      if (!eventId || !card || !canAct) return;
+      setBusy(true);
+      try {
+        const { card: updated } = await submitItemAction(eventId, card.id, itemKey, targetState, deviceId);
+        setCard(updated);
+        void refreshSidebar();
+      } catch (err) {
+        handleApiFailure(err);
+      } finally {
+        setBusy(false);
+        focusScan();
+      }
+    });
 
-  const onAddNote = async (body: string) => {
-    if (!eventId || !card || !canAct) return;
-    setBusy(true);
-    try {
-      const { card: updated } = await submitAttendeeNote(eventId, card.id, body, deviceId);
-      setCard(updated);
-    } catch (err) {
-      handleApiFailure(err);
-      throw err;
-    } finally {
-      setBusy(false);
-    }
-  };
+  const onAddNote = (body: string) =>
+    runExclusive(async () => {
+      if (!eventId || !card || !canAct) return;
+      setBusy(true);
+      try {
+        const { card: updated } = await submitAttendeeNote(eventId, card.id, body, deviceId);
+        setCard(updated);
+      } catch (err) {
+        handleApiFailure(err);
+        throw err;
+      } finally {
+        setBusy(false);
+      }
+    });
 
   // Queued alongside scans: the backend picks whichever check-in is
   // currently latest for this device at execution time (no specific id is
