@@ -361,6 +361,63 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     expect(body.admission_log[0]!.device_id).toBe("scanner-01");
     expect(body.admission_log[1]!.device_id).toBe("desk-01");
   });
+
+  it("buckets hourly admissions in the event timezone, not raw UTC (#268)", async () => {
+    const EVENT_TZ = "evt-reports-warsaw";
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_TZ } });
+    await prisma.event.deleteMany({ where: { id: EVENT_TZ } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_TZ,
+        title: "Warsaw Reports Event",
+        slug: "reports-event-warsaw",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        timezone: "Europe/Warsaw",
+        organization_id: ORG_REP,
+      },
+    });
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-rep-tz-1",
+          event_id: EVENT_TZ,
+          email: "tz1@example.com",
+          name: "Afternoon Warsaw",
+          ticket_type: "Standard",
+          // 14:05Z = 16:05 in Europe/Warsaw (CEST, +02:00)
+          admitted_at: new Date("2026-10-01T14:05:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-tz-2",
+          event_id: EVENT_TZ,
+          email: "tz2@example.com",
+          name: "Midnight Warsaw",
+          ticket_type: "Standard",
+          // 22:30Z = 00:30 next day in Europe/Warsaw — crosses local midnight
+          admitted_at: new Date("2026-10-01T22:30:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_TZ}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { by_hour: Array<{ hour: string; count: number }> };
+      const byHour = new Map(body.by_hour.map((row) => [row.hour, row.count]));
+      expect(byHour.get("16:00")).toBe(1);
+      expect(byHour.get("00:00")).toBe(1);
+      // Raw-UTC buckets must stay empty — regression guard for the AT TIME ZONE fix.
+      expect(byHour.get("14:00")).toBe(0);
+      expect(byHour.get("22:00")).toBe(0);
+    } finally {
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_TZ } });
+      await prisma.event.deleteMany({ where: { id: EVENT_TZ } });
+    }
+  });
 });
 
 describe("GET /api/admin/events/:eventId/reports/export", () => {

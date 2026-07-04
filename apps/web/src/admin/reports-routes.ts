@@ -157,7 +157,10 @@ async function loadReportsAggregates(
       db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
       db.$queryRaw<Array<{ hour: string; count: bigint }>>`
         SELECT
-          TO_CHAR(DATE_TRUNC('hour', admitted_at AT TIME ZONE ${timeZone}), 'HH24:00') AS hour,
+          -- admitted_at is a naive TIMESTAMP storing UTC: the first AT TIME ZONE tags
+          -- it as UTC, the second converts to the event timezone. A single AT TIME ZONE
+          -- would *interpret* the naive value as event-local and shift every bucket.
+          TO_CHAR(DATE_TRUNC('hour', (admitted_at AT TIME ZONE 'UTC') AT TIME ZONE ${timeZone}), 'HH24:00') AS hour,
           COUNT(*)::bigint AS count
         FROM "Attendee"
         WHERE event_id = ${eventId} AND admitted_at IS NOT NULL
