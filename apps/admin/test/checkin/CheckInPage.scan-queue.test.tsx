@@ -12,6 +12,7 @@ const fetchCheckInEvents = vi.fn();
 const submitCheckInScan = vi.fn();
 const submitCheckInAdmit = vi.fn();
 const undoLastCheckIn = vi.fn();
+const lookupCheckInAttendees = vi.fn();
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
   useEventStream: () => ({ connected: true, status: "connected" }),
@@ -43,7 +44,7 @@ vi.mock("../../src/api/client.js", () => ({
   fetchCheckInOpsConfig: (...args: unknown[]) => fetchCheckInOpsConfig(...args),
   fetchCheckInEvents: (...args: unknown[]) => fetchCheckInEvents(...args),
   fetchAttendeeCard: vi.fn(),
-  lookupCheckInAttendees: vi.fn(),
+  lookupCheckInAttendees: (...args: unknown[]) => lookupCheckInAttendees(...args),
   submitAttendeeNote: vi.fn(),
   submitCheckInAdmit: (...args: unknown[]) => submitCheckInAdmit(...args),
   submitCheckInScan: (...args: unknown[]) => submitCheckInScan(...args),
@@ -478,5 +479,46 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     await vi.waitFor(() =>
       expect(document.querySelector(".checkin-card__name")?.textContent).toBe("Person B"),
     );
+  });
+
+  it("does not let a wedge scan append onto a still-pending manual-lookup query (Codex review)", async () => {
+    mockPageBootstrap();
+    const lookup = deferred<Awaited<ReturnType<typeof lookupCheckInAttendees>>>();
+    lookupCheckInAttendees.mockReturnValueOnce(lookup.promise);
+    const scanToken = "QRTOKEN-REALPERSON0001"; // 22 chars
+    submitCheckInScan.mockResolvedValueOnce(cardResponse(scanToken, "Real Person"));
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    // Operator types a short manual query and submits it (< 20 chars, takes
+    // the lookup branch, not the scan branch).
+    fireEvent.change(input, { target: { value: "Alice" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", "Alice"));
+
+    // The buffer must already be empty at this point — cleared the moment
+    // the lookup was accepted, not only once it resolves — so a wedge scan
+    // arriving now cannot get appended after "Alice".
+    expect(input.value).toBe("");
+
+    // A keyboard-wedge scan now injects a real token while the lookup for
+    // "Alice" is still pending.
+    fireEvent.change(input, { target: { value: scanToken } });
+    expect(input.value).toBe(scanToken); // not "Alice" + scanToken
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50); // WEDGE_DEBOUNCE_MS
+    });
+
+    await act(async () => {
+      lookup.resolve([]);
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    // The clean token was submitted as its own scan, unmodified by "Alice".
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", scanToken, "desk-1"));
+    await vi.waitFor(() => expect(screen.getByText("Real Person")).toBeTruthy());
   });
 });

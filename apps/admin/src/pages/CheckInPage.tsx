@@ -540,8 +540,11 @@ export function CheckInPage({
       try {
         const results = await lookupCheckInAttendees(eventId, trimmed);
         if (results.length === 1) {
+          // Buffer already cleared at call time by the submitScanOrLookup
+          // wrapper — do not clear it again here, or a newer query the
+          // operator started typing while this lookup was pending would be
+          // wiped out too.
           await openLookupResultImpl(results[0].id);
-          setBuffer("");
           return true;
         }
         if (results.length === 0) {
@@ -579,6 +582,12 @@ export function CheckInPage({
   // recognized and delegated to runScan (which does its own dedup/clear)
   // immediately at call time, regardless of queue backlog. Only genuine
   // manual-lookup queries get enqueued behind in-flight scans/lookups.
+  //
+  // Clears the buffer here too (not only on the single-match success path
+  // inside submitScanOrLookupImpl) so a wedge scan arriving while a short
+  // lookup is still in flight can't get appended after the old query text —
+  // the combined string would otherwise cross the scan-length threshold and
+  // get auto-submitted as a corrupted, unmatchable scan payload (#277 review).
   const submitScanOrLookup = useCallback(
     (query: string): Promise<boolean> => {
       const trimmed = query.trim();
@@ -589,6 +598,7 @@ export function CheckInPage({
         return Promise.resolve(true);
       }
 
+      setBuffer("");
       return runExclusive(() => submitScanOrLookupImpl(trimmed));
     },
     [runExclusive, runScan, submitScanOrLookupImpl],
