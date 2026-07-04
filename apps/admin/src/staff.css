@@ -13,15 +13,6 @@
 
 /* nav-item base styles live in packages/ui/src/styles/shell.css */
 
-.nav-item__badge {
-  margin-left: auto;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
 .sidebar__section-label {
   font-size: 10px;
   font-weight: 600;

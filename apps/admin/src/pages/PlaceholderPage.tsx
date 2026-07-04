@@ -8,8 +8,8 @@ export interface PlaceholderPageProps {
 export function PlaceholderPage({ title, subtitle }: PlaceholderPageProps) {
   return (
     <Card>
-      <PageHeader title={title} subtitle={subtitle ?? "Coming soon in a future release."} />
-      <p className="placeholder-note">This lifecycle stage is part of the v0.4 shell — functionality arrives in later PRs.</p>
+      <PageHeader title={title} subtitle={subtitle ?? "Not available yet."} />
+      <p className="placeholder-note">This section isn’t available in this version of Admitto yet.</p>
     </Card>
   );
 }
