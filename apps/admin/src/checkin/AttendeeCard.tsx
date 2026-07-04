@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { Button, Card } from "@admitto/ui";
+import { Badge, Button, Card } from "@admitto/ui";
+import type { BadgeVariant } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInStatus } from "../api/types.js";
 import { formatEventTime } from "../utils/event-dates.js";
 import { NoteModal } from "./NoteModal.js";
+import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 
 type Props = {
   card: AttendeeCardDto;
@@ -70,11 +72,39 @@ function itemActionLabel(key: string, action: string): string {
   return `${action} ${key}`;
 }
 
-function itemStripClass(state: string): string {
+function itemBadgeVariant(state: string): BadgeVariant {
   const normalized = state.toLowerCase();
-  if (normalized === "issued") return "ck-item-strip--issued";
-  if (normalized === "returned") return "ck-item-strip--returned";
-  return "ck-item-strip--pending";
+  if (normalized === "issued") return "ok";
+  if (normalized === "returned") return "neutral";
+  return "warn";
+}
+
+function statusBadgeVariant(status: CheckInStatus): BadgeVariant {
+  switch (status) {
+    case "VALID":
+    case "PREVIEW":
+      return "ok";
+    case "ALREADY_CHECKED_IN":
+      return "warn";
+    case "REVOKED":
+    case "INVALID":
+    default:
+      return "error";
+  }
+}
+
+function statusDisplayMode(status: CheckInStatus): "inline" | "strip" | "alert" {
+  switch (status) {
+    case "VALID":
+    case "PREVIEW":
+      return "inline";
+    case "ALREADY_CHECKED_IN":
+      return "strip";
+    case "REVOKED":
+    case "INVALID":
+    default:
+      return "alert";
+  }
 }
 
 export function AttendeeCard({
@@ -96,63 +126,136 @@ export function AttendeeCard({
   const isPreview = resolvedStatus === "PREVIEW";
   const [noteOpen, setNoteOpen] = useState(false);
 
+  const showPrimaryActions = isPreview && onCheckIn && card.check_in_status === "not_admitted";
+  const statusVariant = statusBadgeVariant(resolvedStatus);
+  const displayMode = statusDisplayMode(resolvedStatus);
+  const hasTransientNote =
+    pending ||
+    (confirmed === false &&
+      !isPreview &&
+      resolvedStatus !== "INVALID" &&
+      resolvedStatus !== "REVOKED");
+
   return (
     <>
-      <Card className={cardClass} aria-live="polite">
-        <div className="checkin-card__header">
-          <i className={`ti ${statusIcon(resolvedStatus)} checkin-card__status-icon`} aria-hidden="true" />
-          <span className="checkin-card__status-title">{statusTitle(resolvedStatus)}</span>
-          {pending && <span className="checkin-card__pending">Pending — not confirmed</span>}
-          {card.ticket_type && <span className="checkin-card__ticket">{card.ticket_type}</span>}
+      <Card className={cardClass} padded={false} aria-live="polite">
+        {/* 1. Head (mockup ci-result__head): round tinted status icon +
+            identity block — name first, ticket/company meta beneath it. */}
+        <div className="checkin-card__head">
+          <div className={`checkin-card__status-icon checkin-card__status-icon--${statusVariant}`}>
+            <i className={`ti ${statusIcon(resolvedStatus)}`} aria-hidden="true" />
+          </div>
+          <div className="checkin-card__identity">
+            <h2 className="checkin-card__name">{card.name}</h2>
+            <div className="checkin-card__meta">
+              {card.ticket_type && <TicketTypeBadge ticketType={card.ticket_type} />}
+              {displayMode === "inline" && (
+                <Badge variant={statusVariant} dot>
+                  {statusTitle(resolvedStatus)}
+                </Badge>
+              )}
+              {(card.company || card.department) && (
+                <span>{[card.company, card.department].filter(Boolean).join(" · ")}</span>
+              )}
+            </div>
+          </div>
         </div>
 
-        {(card.company || card.department) && (
-          <p className="checkin-card__meta">
-            {[card.company, card.department].filter(Boolean).join(" · ")}
-          </p>
+        {/* Status strip: skipped for positive states unless there's a transient note.
+            Warning states get a subtle hairline strip; error states get a tinted alert row
+            that also absorbs the warnings list so badge + reason stay in one block. */}
+        {(displayMode !== "inline" || hasTransientNote) && (
+          <div className={`checkin-card__status checkin-card__status--${displayMode}`}>
+            {displayMode === "alert" ? (
+              <p className="checkin-card__alert-message">
+                {statusTitle(resolvedStatus)}
+                {card.warnings[0] && (
+                  <span className="checkin-card__alert-reason"> — {card.warnings[0]}</span>
+                )}
+              </p>
+            ) : displayMode !== "inline" ? (
+              <Badge variant={statusVariant} dot>
+                {statusTitle(resolvedStatus)}
+              </Badge>
+            ) : null}
+            {pending && <span className="checkin-card__status-note">Pending — not confirmed</span>}
+            {confirmed === false && !pending && !isPreview && resolvedStatus !== "INVALID" && resolvedStatus !== "REVOKED" && (
+              <span className="checkin-card__status-note">Awaiting server confirmation</span>
+            )}
+          </div>
         )}
 
-        <h2 className="checkin-card__name">{card.name}</h2>
+        {card.warnings.length > 0 && displayMode !== "alert" && (
+          <div className="checkin-card__warnings">
+            {card.warnings.map((w, i) => (
+              <p key={`warning-${i}`} className="checkin-card__warning" role="alert">
+                {w}
+              </p>
+            ))}
+          </div>
+        )}
 
-        {card.warnings.map((w, i) => (
-          <p key={`warning-${i}`} className="checkin-card__warning" role="alert">
-            {w}
-          </p>
-        ))}
+        {/* 2. Primary decision — stays above the requirements list. */}
+        {showPrimaryActions && (
+          <div className="checkin-card__primary-actions">
+            <Button
+              type="button"
+              variant="primary"
+              size="lg"
+              block
+              disabled={!canAct || pending}
+              onClick={onCheckIn}
+            >
+              Confirm check-in
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              block
+              className="checkin-card__aux-btn"
+              disabled={pending}
+              onClick={() => onCancel?.()}
+            >
+              Cancel
+            </Button>
+          </div>
+        )}
 
-        <div className="checkin-card__items">
-          {card.items.map((item) => (
-            <div key={item.key} className="checkin-card__item-row">
-              <span className="checkin-card__item-label">
+        {/* 3. Requirements (mockup ci-result__items): compact rows — icon,
+            label (flex), then state chip or inline action at the right edge. */}
+        {card.items.length > 0 && (
+          <div className="checkin-card__items">
+            {card.items.map((item) => (
+              <div key={item.key} className="checkin-card__item-row">
                 <i
                   className={`ti ti-${item.icon ?? "package"} checkin-card__item-icon`}
                   aria-hidden="true"
                 />
-                {item.label}
-              </span>
-              {item.actions.length > 0 ? (
-                <div className="checkin-card__item-actions">
-                  {item.actions.map((action) => (
+                <span className="checkin-card__item-label">
+                  {item.label}
+                  {item.detail && <span className="checkin-card__item-detail">{item.detail}</span>}
+                </span>
+                {item.actions.length > 0 ? (
+                  item.actions.map((action) => (
                     <button
                       key={`${item.key}-${action}`}
                       type="button"
-                      className="checkin-action-btn checkin-action-btn--sm"
+                      className="checkin-card__item-action"
                       disabled={!canAct || pending}
                       onClick={() => onItemAction?.(item.key, action)}
                     >
                       {itemActionLabel(item.key, action)}
                     </button>
-                  ))}
-                </div>
-              ) : (
-                <div className={`ck-item-strip ${itemStripClass(item.state)}`}>
-                  <span>{item.state}</span>
-                  {item.detail && <span className="checkin-card__item-detail"> ({item.detail})</span>}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+                  ))
+                ) : (
+                  <Badge variant={itemBadgeVariant(item.state)} className="checkin-card__item-badge">
+                    {item.state}
+                  </Badge>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {card.notes.length > 0 && (
           <div className="checkin-card__notes">
@@ -170,61 +273,38 @@ export function AttendeeCard({
           </div>
         )}
 
-        {isPreview && onCheckIn && card.check_in_status === "not_admitted" && (
-          <div className="checkin-card__preview-actions">
-            <Button
-              type="button"
-              variant="primary"
-              size="lg"
-              disabled={!canAct || pending}
-              onClick={onCheckIn}
-              className="checkin-action-btn--block"
-            >
-              Confirm check-in
-            </Button>
-            <button
-              type="button"
-              className="link-btn"
-              disabled={pending}
-              onClick={() => onCancel?.()}
-            >
-              Cancel
-            </button>
+        {/* 4. Secondary actions footer (mockup ci-result__actions). */}
+        {(showUndo || onAddNote) && (
+          <div className="checkin-card__footer">
+            {showUndo && onUndo && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="checkin-card__aux-btn"
+                disabled={!canAct || pending}
+                onClick={onUndo}
+                icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
+              >
+                Undo check-in
+              </Button>
+            )}
+            {onAddNote && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="checkin-card__aux-btn"
+                disabled={!canAct || pending}
+                onClick={() => setNoteOpen(true)}
+                icon={<i className="ti ti-pencil" aria-hidden="true" />}
+              >
+                Add note
+              </Button>
+            )}
           </div>
         )}
-
-        {confirmed === false &&
-          !isPreview &&
-          resolvedStatus !== "INVALID" &&
-          resolvedStatus !== "REVOKED" && (
-            <span className="checkin-card__meta">Awaiting server confirmation</span>
-          )}
       </Card>
-
-      {(showUndo || onAddNote) && (
-        <div className="ck-result-actions">
-          {showUndo && onUndo && (
-            <button
-              type="button"
-              className="link-btn"
-              disabled={!canAct || pending}
-              onClick={onUndo}
-            >
-              ↩ Undo last check-in
-            </button>
-          )}
-          {onAddNote && (
-            <button
-              type="button"
-              className="link-btn"
-              disabled={!canAct || pending}
-              onClick={() => setNoteOpen(true)}
-            >
-              ✏ Add note
-            </button>
-          )}
-        </div>
-      )}
 
       {onAddNote && (
         <NoteModal open={noteOpen} onClose={() => setNoteOpen(false)} onSubmit={onAddNote} />
