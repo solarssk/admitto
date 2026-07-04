@@ -583,11 +583,13 @@
   padding: 12px 16px;
 }
 
-/* Block 3 — requirements: compact rows, icon + label (flex) + right state. */
+/* Block 3 — requirements: compact rows, icon + label (flex) + right state.
+   gap ≥ 16px prevents 44px action-button touch areas (±8px margin) from
+   overlapping between adjacent rows when two rows both have inline actions. */
 .checkin-card__items {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 16px;
   padding: 10px 16px;
 }
 
