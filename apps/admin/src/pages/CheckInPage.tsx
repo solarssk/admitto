@@ -731,12 +731,19 @@ export function CheckInPage({
     // manual typing. event.timeStamp is captured when the browser dispatches
     // the input, independent of when a congested handler gets to it (#262 review).
     const now = eventTimestamp;
-    if (justPasted) {
-      // A paste/autofill delivered this value in one jump — never a burst,
-      // regardless of whether the field happened to be empty beforehand.
+    // More than one new character appearing in a single change event is
+    // never a real keystroke, no matter the source — drag-and-drop text,
+    // browser autofill/autocomplete replacement, IME composition, voice
+    // dictation, or anything else that doesn't fire an explicit paste event.
+    // A genuine burst is only evidenced by characters arriving one at a time
+    // in quick succession; an empty field jumping straight to a long value
+    // in one shot is exactly the opposite of that evidence (#262 review).
+    const lengthJump = value.length - buffer.length;
+    if (justPasted || lengthJump > 1) {
       wedgeIsBurstRef.current = false;
     } else if (buffer.length === 0) {
-      // Fresh input — nothing to compare the first character's timing against yet.
+      // Fresh input, exactly one new character — nothing to compare its
+      // timing against yet, but this does look like a real single keystroke.
       wedgeIsBurstRef.current = true;
     } else if (now - wedgeLastCharAtRef.current > WEDGE_MAX_INTER_KEY_GAP_MS) {
       // A gap this long means a human is typing, not a hardware wedge —

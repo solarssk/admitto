@@ -25,7 +25,13 @@ function WedgeDebounceProbe({
   // masquerade as an inter-keystroke gap (#262 review).
   const handleBufferChange = (value: string, eventTimestamp: number) => {
     const now = eventTimestamp;
-    if (buffer.length === 0) {
+    // A single change event inserting more than one new character is never a
+    // real keystroke (paste, autofill, IME, drag-and-drop, ...), regardless
+    // of source (#262 review).
+    const lengthJump = value.length - buffer.length;
+    if (lengthJump > 1) {
+      wedgeIsBurstRef.current = false;
+    } else if (buffer.length === 0) {
       wedgeIsBurstRef.current = true;
     } else if (now - wedgeLastCharAtRef.current > WEDGE_MAX_INTER_KEY_GAP_MS) {
       wedgeIsBurstRef.current = false;
@@ -75,7 +81,7 @@ describe("keyboard wedge debounce", () => {
     const input = getByLabelText("Scan field");
     const token = "A".repeat(21);
 
-    fireEvent.change(input, { target: { value: token } });
+    typeWithGap(input, token, 2);
     expect(onScan).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(WEDGE_DEBOUNCE_MS);
