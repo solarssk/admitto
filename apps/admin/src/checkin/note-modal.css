@@ -16,7 +16,7 @@
 
 .note-modal__panel {
   position: relative;
-  background: var(--surface);
+  background: var(--surface-card);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
   width: min(480px, 100%);

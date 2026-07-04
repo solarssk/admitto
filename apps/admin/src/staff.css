@@ -1607,11 +1607,11 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
-  background: var(--surface-muted, var(--surface));
+  background: var(--surface-page);
 }
 
 .error-boundary__panel {
-  background: var(--surface);
+  background: var(--surface-card);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
   width: min(420px, 100%);
