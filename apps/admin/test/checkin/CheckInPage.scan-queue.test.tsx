@@ -415,9 +415,9 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
       fireEvent.keyDown(input, { key: "Enter" });
       await vi.advanceTimersByTimeAsync(50);
     });
-    await vi.waitFor(() => expect(screen.getByText(/Undo last check-in/)).toBeTruthy());
+    await vi.waitFor(() => expect(screen.getByText(/Undo check-in/)).toBeTruthy());
 
-    fireEvent.click(screen.getByText(/Undo last check-in/));
+    fireEvent.click(screen.getByText(/Undo check-in/));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10);
     });

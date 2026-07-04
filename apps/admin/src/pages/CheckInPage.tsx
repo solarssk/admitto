@@ -320,7 +320,7 @@ export function CheckInPage({
     setScanResult(response);
     if (response.card) {
       setCard(response.card);
-    } else if (response.status === "INVALID") {
+    } else if (response.status === "INVALID" || response.status === "REVOKED") {
       setCard(null);
     }
   };
@@ -795,13 +795,12 @@ export function CheckInPage({
     scanResult &&
     (scanResult.status === "PREVIEW" ||
       scanResult.status === "VALID" ||
-      scanResult.status === "ALREADY_CHECKED_IN");
+      scanResult.status === "ALREADY_CHECKED_IN" ||
+      scanResult.status === "REVOKED");
 
   const showCompactFeedback =
     scanResult &&
-    (!card ||
-      scanResult.status === "INVALID" ||
-      scanResult.status === "REVOKED");
+    (!card || scanResult.status === "INVALID");
 
   return (
     <>
