@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Navigate, Outlet, Route, Routes, useParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { Spinner } from "@admitto/ui";
 import { ToastProvider } from "@admitto/ui";
 import { AdminGuard, AuthenticatedGuard, OperatorGuard, SuperadminGuard } from "./auth/RoleRouter.js";
@@ -47,15 +47,38 @@ const PLACEHOLDER_ROUTES = [
   { path: "reports", title: "Reports" },
 ] as const;
 
+/** Event passed through router navigation state (events picker, create-event
+ * flow), if it matches the route's eventId. */
+function eventFromNavigationState(state: unknown, eventId: string | undefined): EventDto | null {
+  if (!eventId || typeof state !== "object" || state === null) return null;
+  const candidate = (state as { event?: EventDto }).event;
+  return candidate && typeof candidate === "object" && candidate.id === eventId ? candidate : null;
+}
+
 /** Event-scoped layout: resolves event (incl. archived) and AdminShell. */
-function EventLayout() {
+export function EventLayout() {
   const { eventId } = useParams();
-  const [event, setEvent] = useState<EventDto | null>(null);
+  const location = useLocation();
+  // Fast path (#274): the events picker (and create-event flow) already hold
+  // the full EventDto and pass it via navigation state — render the shell
+  // immediately instead of re-fetching the whole events list and flashing a
+  // bare spinner. Held in a ref because in-event navigations (which carry no
+  // state) change `location` without changing `eventId`, and must not
+  // re-trigger the effect below or wipe an already-resolved event.
+  const navStateEvent = eventFromNavigationState(location.state, eventId);
+  const navStateEventRef = useRef(navStateEvent);
+  navStateEventRef.current = navStateEvent;
+
+  const [event, setEvent] = useState<EventDto | null>(navStateEvent);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    setEvent(null);
+    const fromState = navStateEventRef.current;
+    setEvent(fromState);
     setError(false);
+    if (fromState) return;
+    // Fallback (deep link, refresh without usable state): resolve the event
+    // from the API before the shell can render.
     let cancelled = false;
     (async () => {
       try {
