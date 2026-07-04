@@ -710,7 +710,7 @@ export function CheckInPage({
     void submitScanOrLookup(buffer);
   };
 
-  const handleBufferChange = (value: string) => {
+  const handleBufferChange = (value: string, eventTimestamp: number) => {
     const justPasted = wedgeJustPastedRef.current;
     wedgeJustPastedRef.current = false;
 
@@ -722,7 +722,15 @@ export function CheckInPage({
       return;
     }
 
-    const now = Date.now();
+    // Use the DOM event's own timestamp, not Date.now() at handler-execution
+    // time: if the main thread is busy (e.g. a previous scan's response is
+    // resolving and re-rendering) when a fast wedge character arrives, React
+    // may not run this handler until after that work finishes — Date.now()
+    // would then measure the app's own delay, not the gap between
+    // keystrokes, and could permanently mark the rest of a genuine burst as
+    // manual typing. event.timeStamp is captured when the browser dispatches
+    // the input, independent of when a congested handler gets to it (#262 review).
+    const now = eventTimestamp;
     if (justPasted) {
       // A paste/autofill delivered this value in one jump — never a burst,
       // regardless of whether the field happened to be empty beforehand.
@@ -834,7 +842,7 @@ export function CheckInPage({
               name="checkin-scan"
               className="ck-scan-bar__input"
               value={buffer}
-              onChange={(e) => handleBufferChange(e.target.value)}
+              onChange={(e) => handleBufferChange(e.target.value, e.timeStamp)}
               onPaste={() => {
                 wedgeJustPastedRef.current = true;
               }}

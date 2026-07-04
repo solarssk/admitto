@@ -20,8 +20,11 @@ function WedgeDebounceProbe({
   const wedgeIsBurstRef = useRef(true);
   const [buffer, setBuffer] = useState("");
 
-  const handleBufferChange = (value: string) => {
-    const now = Date.now();
+  // Uses the event's own timestamp (not Date.now() at handler-execution
+  // time), so a slow main thread when the event is finally processed can't
+  // masquerade as an inter-keystroke gap (#262 review).
+  const handleBufferChange = (value: string, eventTimestamp: number) => {
+    const now = eventTimestamp;
     if (buffer.length === 0) {
       wedgeIsBurstRef.current = true;
     } else if (now - wedgeLastCharAtRef.current > WEDGE_MAX_INTER_KEY_GAP_MS) {
@@ -43,7 +46,7 @@ function WedgeDebounceProbe({
     <input
       aria-label="Scan field"
       value={buffer}
-      onChange={(e) => handleBufferChange(e.target.value)}
+      onChange={(e) => handleBufferChange(e.target.value, e.timeStamp)}
     />
   );
 }

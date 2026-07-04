@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@admitto/ui";
@@ -59,6 +59,20 @@ function deferred<T>() {
     resolve = res;
   });
   return { promise, resolve };
+}
+
+/**
+ * Flushes pending microtasks (never advances the fake clock — real timers'
+ * setTimeout-based waitFor would either hang or require a clock advance,
+ * defeating tests that specifically need elapsed time to stay near zero)
+ * until `predicate` is true or `maxTicks` is exhausted. Self-documenting
+ * alternative to awaiting a hardcoded number of `Promise.resolve()` calls,
+ * which silently breaks if the code's internal await depth ever changes.
+ */
+async function flushMicrotasksUntil(predicate: () => boolean, maxTicks = 50): Promise<void> {
+  for (let i = 0; i < maxTicks && !predicate(); i++) {
+    await Promise.resolve();
+  }
 }
 
 function cardResponse(token: string, name: string) {
@@ -306,8 +320,7 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     // is not paused by an unrelated server response arriving mid-scan.
     await act(async () => {
       first.resolve(cardResponse(tokenA, "Person A"));
-      await Promise.resolve();
-      await Promise.resolve();
+      await flushMicrotasksUntil(() => screen.queryByText("Person A") !== null);
     });
     expect(screen.getByText("Person A")).toBeTruthy();
     expect(input.value).toBe(bPartial);
@@ -614,6 +627,53 @@ describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
     });
 
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+});
+
+describe("CheckInPage scan queue — event timestamp vs handler wall-clock (#262 review)", () => {
+  it("classifies a genuine fast burst correctly even when Date.now() would suggest otherwise", async () => {
+    mockPageBootstrap();
+    const token = "QRTOKEN-REALWEDGE00001"; // 23 chars
+    submitCheckInScan.mockResolvedValueOnce(cardResponse(token, "Real Wedge Person"));
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    // Date.now() is deliberately made unreliable, jumping 1000ms on every
+    // call — simulating a main thread so busy handling other work (e.g. the
+    // previous attendee's response resolving and re-rendering) that
+    // Date.now() at handler-execution time looks nothing like the real gap
+    // between keystrokes. If the code used Date.now() for the burst check,
+    // every character after the first would look like a >30ms human pause
+    // and the scan would incorrectly fall back to requiring Enter to be
+    // pressed and route through lookup instead once submitted.
+    let fakeNow = 0;
+    const dateSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+      fakeNow += 1000;
+      return fakeNow;
+    });
+
+    try {
+      // Each character's own event timestamp is a real, tightly-packed
+      // burst (2ms apart) — what the browser actually recorded when the
+      // wedge injected it, independent of whenever React gets around to
+      // running the handler.
+      const baseTime = 5_000;
+      for (let i = 1; i <= token.length; i++) {
+        const event = createEvent.change(input, { target: { value: token.slice(0, i) } });
+        Object.defineProperty(event, "timeStamp", { value: baseTime + i * 2, configurable: true });
+        fireEvent(input, event);
+      }
+    } finally {
+      dateSpy.mockRestore();
+    }
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
     expect(lookupCheckInAttendees).not.toHaveBeenCalled();
   });
 });
