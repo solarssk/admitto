@@ -10,20 +10,20 @@ type NavItem = {
   segment: string;
   icon: string;
   label: string;
-  /** Planned release label for disabled lifecycle segments (`"future"` → generic Soon badge). */
-  soon?: string;
 };
 
+// Segments outside LIVE_SEGMENTS render as plain disabled items — no release
+// labels or "Soon" badges in the UI, they drift out of date (#263).
 const LIFECYCLE_NAV: NavItem[] = [
   { segment: "overview", icon: "layout-dashboard", label: "Overview" },
   { segment: "attendees", icon: "users", label: "Attendees" },
   { segment: "requirements", icon: "clipboard-list", label: "Requirements" },
-  { segment: "approval", icon: "user-check", label: "Approval", soon: "v0.4.9" },
+  { segment: "approval", icon: "user-check", label: "Approval" },
   { segment: "communication", icon: "mail", label: "Communication" },
   { segment: "checkin", icon: "qrcode", label: "Check-in" },
-  { segment: "wallet", icon: "wallet", label: "Passes", soon: "v0.6" },
-  { segment: "fulfilment", icon: "package", label: "Fulfilment", soon: "future" },
-  { segment: "thank-you", icon: "heart", label: "Post-event", soon: "future" },
+  { segment: "wallet", icon: "wallet", label: "Passes" },
+  { segment: "fulfilment", icon: "package", label: "Fulfilment" },
+  { segment: "thank-you", icon: "heart", label: "Post-event" },
   { segment: "reports", icon: "chart-bar", label: "Reports" },
   { segment: "settings", icon: "adjustments", label: "Event settings" },
 ];
@@ -122,11 +122,9 @@ export function AdminShell({ event }: AdminShellProps) {
               type="button"
               disabled
               className="nav-item nav-item--soon"
-              title={item.soon !== "future" ? `Planned for ${item.soon}` : "Planned for a future version"}
             >
               <i className={`ti ti-${item.icon}`} aria-hidden="true" />
               <span>{item.label}</span>
-              <span className="nav-item__badge">{item.soon !== "future" ? item.soon! : "Soon"}</span>
             </button>
           );
         })}
