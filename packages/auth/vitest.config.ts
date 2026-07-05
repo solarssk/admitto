@@ -4,16 +4,8 @@ import { vitestCoverage } from "../../vitest.coverage.ts";
 export default defineConfig({
   test: {
     coverage: vitestCoverage,
-    include: ["test/**/*.test.ts"],
-    exclude: ["test/integration/**"],
-    environment: "node",
-    fileParallelism: false,
-    pool: "forks",
-    maxWorkers: 1,
-    env: {
-      DATABASE_URL: "postgresql://admitto:admitto@localhost:5432/admitto_auth_test",
-      NODE_ENV: "test",
-      ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-    },
+    projects: ["./vitest.unit.config.ts", "./vitest.integration.config.ts"],
+    // Unit tests import @admitto/auth while integration globalSetup runs migrate deploy.
+    sequence: { concurrent: false },
   },
 });

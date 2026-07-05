@@ -16,9 +16,3 @@ export const vitestCoverage: CoverageOptions = {
   reportsDirectory: "./coverage",
   exclude: sharedExclude,
 };
-
-/** Second Vitest invocation in the same package (e.g. auth integration after unit). */
-export const vitestCoverageMerge: CoverageOptions = {
-  ...vitestCoverage,
-  clean: false,
-};
