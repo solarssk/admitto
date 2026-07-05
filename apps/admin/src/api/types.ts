@@ -941,3 +941,21 @@ export interface TestResponse {
   ok: boolean;
   error?: string;
 }
+
+// --- Cloudflare Access editor (SPA Settings → Identity, #266 slice 4) ---
+
+/** PUT /api/admin/identity/cf-access body. Every field optional (patch semantics):
+ *  the server keeps the stored value for any omitted field, and overrides with the
+ *  env-locked value for any locked field. Arrays accept a comma-separated string too. */
+export interface CfAccessUpdateBody {
+  enabled?: boolean;
+  teamDomain?: string;
+  audience?: string[] | string;
+  protectedPrefixes?: string[] | string;
+}
+
+/** POST /api/admin/identity/cf-access/test result. */
+export interface CfAccessTestResult {
+  ok: boolean;
+  error?: string;
+}

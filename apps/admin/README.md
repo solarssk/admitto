@@ -2,7 +2,7 @@
 
 Staff **React SPA** — events picker, event admin sections, operator check-in UI, and instance Settings (including Identity & SSO). Served by `@admitto/web` at `/admin/*` (and related API routes).
 
-Login, first-run setup, and MFA enrollment remain **server-rendered HTML** from `apps/web`. Settings → Identity uses the SPA: OIDC provider list and editor live under `/admin/settings/identity/*`; Cloudflare Access still bridges to the legacy HTML editor until the SPA panel ships (#266 slice 4).
+Login, first-run setup, and MFA enrollment remain **server-rendered HTML** from `apps/web`. Settings → Identity uses the SPA: OIDC provider list, OIDC provider editor, and Cloudflare Access editor all live under `/admin/settings/identity/*` (`/providers`, `/providers/new`, `/providers/:id`, `/cloudflare`).
 
 ## Prerequisites
 

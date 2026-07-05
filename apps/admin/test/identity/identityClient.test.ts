@@ -7,8 +7,10 @@ import {
   fetchCfAccessSummary,
   fetchIdentityProvider,
   fetchIdentityProviders,
+  testCfAccess,
   testIdentityProvider,
   toggleIdentityProvider,
+  updateCfAccess,
   updateIdentityProvider,
 } from "../../src/api/client.js";
 
@@ -273,6 +275,61 @@ describe("identity API client", () => {
       jsonResponse({ ok: false, error: "Discovery failed" }, { status: 400, statusText: "Bad Request" }),
     );
     await expect(discoverIdentityProvider("p1")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 400,
+    });
+  });
+
+  it("updateCfAccess PUTs the CF Access config with CSRF Origin and returns the refreshed summary", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(CF_SUMMARY));
+    const body = { teamDomain: "https://team.cloudflareaccess.com", audience: ["aud-1"] };
+    const res = await updateCfAccess(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/identity/cf-access",
+      expect.objectContaining({
+        method: "PUT",
+        credentials: "same-origin",
+        headers: expect.objectContaining({
+          Origin: window.location.origin,
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify(body),
+      }),
+    );
+    expect(res.teamDomain).toBe("team.example.com");
+  });
+
+  it("testCfAccess POSTs the test endpoint with the team domain when provided", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const res = await testCfAccess("https://team.cloudflareaccess.com");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/identity/cf-access/test",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        headers: expect.objectContaining({
+          Origin: window.location.origin,
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify({ teamDomain: "https://team.cloudflareaccess.com" }),
+      }),
+    );
+    expect(res.ok).toBe(true);
+  });
+
+  it("testCfAccess sends an empty body when no team domain is given (server falls back to stored)", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: false, error: "JWKS unreachable" }));
+    const res = await testCfAccess();
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual({});
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe("JWKS unreachable");
+  });
+
+  it("updateCfAccess throws ApiError on a non-2xx response", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: "Invalid configuration" }, { status: 400, statusText: "Bad Request" }),
+    );
+    await expect(updateCfAccess({ enabled: true })).rejects.toMatchObject({
       name: "ApiError",
       status: 400,
     });

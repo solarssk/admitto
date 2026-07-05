@@ -73,6 +73,8 @@ import type {
   ProviderRequestBody,
   DiscoverResponse,
   TestResponse,
+  CfAccessUpdateBody,
+  CfAccessTestResult,
 } from "./types.js";
 
 export type EventFullMeta = {
@@ -1408,4 +1410,23 @@ export async function testIdentityProvider(providerId: string): Promise<TestResp
     jsonPostInit({}),
   );
   return parseJson<TestResponse>(res);
+}
+
+/** Save Cloudflare Access config (superadmin). Patch semantics: omitted fields keep
+ *  the stored value, env-locked fields are overridden server-side. Returns the full
+ *  refreshed config + locks. */
+export async function updateCfAccess(body: CfAccessUpdateBody): Promise<CfAccessSummaryDto> {
+  const res = await fetch("/api/admin/identity/cf-access", jsonPutInit(body));
+  return parseJson<CfAccessSummaryDto>(res);
+}
+
+/** Probe the Cloudflare Access team domain's JWKS endpoint. Sends the draft team
+ *  domain when provided so the operator can test before saving; otherwise the server
+ *  tests the stored value. */
+export async function testCfAccess(teamDomain?: string): Promise<CfAccessTestResult> {
+  const res = await fetch(
+    "/api/admin/identity/cf-access/test",
+    jsonPostInit(teamDomain === undefined ? {} : { teamDomain }),
+  );
+  return parseJson<CfAccessTestResult>(res);
 }

@@ -4,7 +4,6 @@ import { render } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { IdentityLayout } from "../../src/identity/IdentityLayout.js";
-import { CfAccessPlaceholder } from "../../src/identity/CfAccessPlaceholder.js";
 
 afterEach(() => {
   cleanup();
@@ -47,14 +46,5 @@ describe("IdentityLayout", () => {
     renderAt("/admin/settings/identity/cloudflare");
     fireEvent.click(screen.getByRole("tab", { name: "Providers" }));
     expect(screen.getByText("providers-panel")).toBeTruthy();
-  });
-});
-
-describe("CfAccessPlaceholder", () => {
-  it("renders the bridge card to the legacy CF Access editor", () => {
-    render(<CfAccessPlaceholder />);
-    expect(screen.getByText("Cloudflare Zero Trust protection")).toBeTruthy();
-    const link = screen.getByRole("link", { name: "Open current editor" });
-    expect(link.getAttribute("href")).toBe("/admin/auth/cf-access");
   });
 });
