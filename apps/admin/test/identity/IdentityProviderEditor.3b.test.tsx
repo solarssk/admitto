@@ -437,6 +437,9 @@ describe("IdentityProviderEditor — legacy invalid mapping role (Codex P2)", ()
     // The legacy role is outside MAPPING_ROLES → an "(invalid — pick a role)"
     // option is rendered so the operator sees the bad value.
     expect(screen.getByText(/owner \(invalid/)).toBeTruthy();
+    // The Role Select shows a visible invalid state (CodeRabbit).
+    const roleSelect = screen.getByLabelText("Role") as HTMLSelectElement;
+    expect(roleSelect.className).toContain("at-select--invalid");
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 

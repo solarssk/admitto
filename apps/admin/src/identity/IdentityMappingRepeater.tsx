@@ -58,6 +58,7 @@ export function IdentityMappingRepeater({ rows, errors, onChange }: IdentityMapp
                 label="Role"
                 value={row.role}
                 aria-invalid={roleInvalid || undefined}
+                className={roleInvalid ? "at-select--invalid" : undefined}
                 onChange={(e) => updateRow(index, { role: e.target.value as MappingRow["role"] })}
               >
                 {roleInvalid && (
@@ -80,6 +81,7 @@ export function IdentityMappingRepeater({ rows, errors, onChange }: IdentityMapp
                 label="Scope"
                 value={row.scope_type}
                 aria-invalid={scopeInvalid || undefined}
+                className={scopeInvalid ? "at-select--invalid" : undefined}
                 onChange={(e) =>
                   updateRow(index, {
                     scope_type: e.target.value as MappingRow["scope_type"],

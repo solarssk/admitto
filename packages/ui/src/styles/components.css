@@ -72,8 +72,8 @@
 .at-input:hover, .at-select:hover, .at-textarea:hover { border-color: var(--at-gray-400); }
 .at-input:focus, .at-select:focus, .at-textarea:focus { outline: none; border-color: var(--border-focus); box-shadow: var(--ring); }
 .at-input:disabled, .at-select:disabled, .at-textarea:disabled { background: var(--at-gray-100); color: var(--text-disabled); cursor: not-allowed; }
-.at-input--invalid, .at-textarea--invalid { border-color: var(--status-error); }
-.at-input--invalid:focus { box-shadow: 0 0 0 var(--ring-width) var(--status-error-tint); }
+.at-input--invalid, .at-textarea--invalid, .at-select--invalid { border-color: var(--status-error); }
+.at-input--invalid:focus, .at-textarea--invalid:focus, .at-select--invalid:focus { box-shadow: 0 0 0 var(--ring-width) var(--status-error-tint); }
 .at-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.6rem center; padding-right: 2rem; }
 
 .at-inputgroup { display: flex; align-items: center; position: relative; }
