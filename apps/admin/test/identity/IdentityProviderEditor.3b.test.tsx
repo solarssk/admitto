@@ -210,12 +210,132 @@ describe("IdentityProviderEditor — SSO preview (slice 3b)", () => {
   });
 });
 
-// Silence unused import in some configs.
-void createIdentityProvider;
+describe("IdentityProviderEditor — discover & test error paths", () => {
+  it("redirects to login when Discover returns 401", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockDiscover.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/settings/identity/providers/p1", assign: assignSpy },
+    });
+    try {
+      renderEditorAt("/admin/settings/identity/providers/p1");
+      await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+      await waitFor(() =>
+        expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
+      );
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
+  });
+
+  it("shows an error toast when Discover fails generically", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockDiscover.mockRejectedValueOnce(new ApiError(400, "Discovery failed."));
+    renderEditorAt("/admin/settings/identity/providers/p1");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+    await waitFor(() => expect(screen.getByText("Discovery failed.")).toBeTruthy());
+  });
+
+  it("redirects to login when Test returns 401", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockTest.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/settings/identity/providers/p1", assign: assignSpy },
+    });
+    try {
+      renderEditorAt("/admin/settings/identity/providers/p1");
+      await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+      await waitFor(() =>
+        expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
+      );
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
+  });
+
+  it("shows an error toast when Test fails generically", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockTest.mockRejectedValueOnce(new ApiError(500, "Connection test failed."));
+    renderEditorAt("/admin/settings/identity/providers/p1");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(screen.getByText("Connection test failed.")).toBeTruthy());
+  });
+});
+
+describe("IdentityProviderEditor — repeater onChange coverage", () => {
+  it("changing the Role select updates the saved mapping role", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockUpdate.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+    await waitFor(() => expect(screen.getByDisplayValue("admins")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "operator" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate.mock.calls[0][1].mappings[0].role).toBe("operator");
+  });
+
+  it("typing into the scope_id field is carried through on save", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockUpdate.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+    await waitFor(() => expect(screen.getByDisplayValue("admins")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "organization" } });
+    fireEvent.change(screen.getByLabelText("Organization ID"), { target: { value: "org-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate.mock.calls[0][1].mappings[0]).toMatchObject({
+      scope_type: "organization",
+      scope_id: "org-1",
+    });
+  });
+});
+
+describe("IdentityProviderEditor — create with a mapping", () => {
+  it("POSTs a new provider with the repeater mapping carried through", async () => {
+    mockCreate.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create provider" })).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google" } });
+    fireEvent.change(screen.getByLabelText("Issuer URL"), { target: { value: "https://accounts.google.com" } });
+    fireEvent.change(screen.getByLabelText("Client ID"), { target: { value: "client-123" } });
+    fireEvent.change(screen.getByLabelText("Client secret"), { target: { value: "secret-abc" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add mapping" }));
+    fireEvent.change(screen.getAllByLabelText("Group")[0], { target: { value: "admins" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create provider" }));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    const body = mockCreate.mock.calls[0][0];
+    expect(body.mappings).toEqual([{ group: "admins", role: "operator", scope_type: "instance", scope_id: null }]);
+  });
+});
 
 describe("IdentityProviderEditor — discover baseline refresh (Codex P2)", () => {
   it("does not flag the form dirty after Discover (endpoints already saved)", async () => {
     mockFetch.mockResolvedValueOnce(validDetail);
+    const discoveredProvider = {
+      ...validDetail,
+      issuer: "https://accounts.google.com",
+      authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+      token_endpoint: "https://oauth2.googleapis.com/token",
+      jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+      userinfo_endpoint: "https://openidconnect.googleapis.com/v1/userinfo",
+    };
     mockDiscover.mockResolvedValueOnce({
       ok: true,
       endpoints: {
@@ -225,7 +345,7 @@ describe("IdentityProviderEditor — discover baseline refresh (Codex P2)", () =
         jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
         userinfo_endpoint: "https://openidconnect.googleapis.com/v1/userinfo",
       },
-      provider: validDetail,
+      provider: discoveredProvider,
     });
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderEditorAt("/admin/settings/identity/providers/p1");
@@ -245,6 +365,59 @@ describe("IdentityProviderEditor — discover baseline refresh (Codex P2)", () =
     expect(confirmSpy).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
     confirmSpy.mockRestore();
+  });
+
+  it("falls back to a targeted baseline patch when Discover returns no provider echo", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockDiscover.mockResolvedValueOnce({
+      ok: true,
+      endpoints: {
+        issuer: "https://accounts.google.com",
+        authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_endpoint: "https://oauth2.googleapis.com/token",
+        jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+        userinfo_endpoint: "https://openidconnect.googleapis.com/v1/userinfo",
+      },
+      provider: null,
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("https://accounts.google.com/o/oauth2/v2/auth")).toBeTruthy(),
+    );
+    // Fallback path patches baseline with the discovered fields, so the form
+    // is not dirty and Cancel navigates without a prompt.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+    confirmSpy.mockRestore();
+  });
+});
+
+describe("IdentityProviderEditor — submit error paths", () => {
+  it("redirects to login when the update PUT returns 401", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockUpdate.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/settings/identity/providers/p1", assign: assignSpy },
+    });
+    try {
+      renderEditorAt("/admin/settings/identity/providers/p1");
+      await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      await waitFor(() =>
+        expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
+      );
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
   });
 });
 

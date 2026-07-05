@@ -44,7 +44,7 @@ export function IdentityMappingRepeater({ rows, errors, onChange }: IdentityMapp
         const roleInvalid = !MAPPING_ROLES.includes(row.role);
         const scopeInvalid = !MAPPING_SCOPES.includes(row.scope_type);
         return (
-          <div className="identity-mappings__row" key={index}>
+          <div className="identity-mappings__row" key={row.id}>
             <Input
               label="Group"
               value={row.group}

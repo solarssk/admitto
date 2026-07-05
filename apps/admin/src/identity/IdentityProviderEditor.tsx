@@ -13,9 +13,9 @@ import {
 import type { ProviderDetailDto, ProviderRequestBody } from "../api/types.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import {
-  areMappingsValid,
   emptyProviderDraft,
   isDraftDirty,
+  newMappingId,
   validateMappings,
   validateProviderDraft,
   type EditorMode,
@@ -35,9 +35,10 @@ interface IdentityProviderEditorProps {
 
 type LoadState = "loading" | "ready" | "error" | "not_found";
 
-/** Map a loaded provider's mappings into editable repeater rows. */
+/** Map a loaded provider's mappings into editable repeater rows (with stable ids). */
 function mappingsFromDetail(detail: ProviderDetailDto): MappingRow[] {
   return detail.mappings.map((m) => ({
+    id: newMappingId(),
     group: m.group,
     role: m.role as MappingRow["role"],
     scope_type: m.scope_type as MappingRow["scope_type"],
@@ -291,9 +292,10 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
       event.preventDefault();
       const validation = validateProviderDraft(draft, mode);
       const mappingValidation = validateMappings(mappings);
+      const mappingsOk = mappingValidation.every((e) => Object.keys(e).length === 0);
       setErrors(validation);
       setMappingErrors(mappingValidation);
-      if (Object.keys(validation).length > 0 || !areMappingsValid(mappings)) {
+      if (Object.keys(validation).length > 0 || !mappingsOk) {
         addToast("Please fix the highlighted fields.", "error");
         return;
       }
@@ -332,6 +334,9 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
     setDiscovering(true);
     try {
       const result = await discoverIdentityProvider(resolvedProviderId);
+      // Patch only the discovered endpoint fields on the draft so the operator's
+      // other unsaved edits (display_name, claims, label, secret, enabled,
+      // mappings) are preserved.
       const discovered = {
         authorization_endpoint: result.endpoints.authorization_endpoint,
         token_endpoint: result.endpoints.token_endpoint,
@@ -343,18 +348,26 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
         ...discovered,
         issuer: result.endpoints.issuer || d.issuer,
       }));
-      // Discover persists issuer + endpoints server-side, so fold them into the
-      // dirty baseline too — otherwise the dirty guard would warn on Cancel /
-      // browser-close even though those fields are already saved, and the
-      // "Discard unsaved changes?" prompt would misleadingly imply the
-      // discovered endpoints get undone (Codex P2). Other unsaved edits
-      // (display_name, claims, mappings, label, secret, enabled) stay dirty
-      // relative to the unchanged baseline for those fields.
-      setBaseline((b) => ({
-        ...b,
-        ...discovered,
-        issuer: result.endpoints.issuer || b.issuer,
-      }));
+      // Discover persists issuer + endpoints server-side, so fold the saved
+      // state into the dirty baseline too — otherwise the dirty guard would
+      // warn on Cancel / browser-close even though those fields are already
+      // saved, and "Discard unsaved changes?" would misleadingly imply the
+      // discovered endpoints get undone (Codex P2). Use the refreshed
+      // `result.provider` the API returns as the authoritative baseline
+      // (also syncs hasSecret + baselineMappings); fall back to a targeted
+      // baseline patch if the server didn't echo the provider.
+      if (result.provider) {
+        const refreshedDraft = draftFromDetail(result.provider);
+        setBaseline(refreshedDraft);
+        setBaselineMappings(mappingsFromDetail(result.provider));
+        setHasSecret(result.provider.has_client_secret);
+      } else {
+        setBaseline((b) => ({
+          ...b,
+          ...discovered,
+          issuer: result.endpoints.issuer || b.issuer,
+        }));
+      }
       addToast("Endpoints discovered from the issuer.", "success");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {

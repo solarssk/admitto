@@ -167,6 +167,10 @@ export const MAPPING_ROLES: MappingRole[] = ["superadmin", "admin", "operator"];
 export const MAPPING_SCOPES: MappingScope[] = ["instance", "organization", "event"];
 
 export interface MappingRow {
+  /** Stable client-side id for repeater keys; never sent to the server
+   * (mappingsToBody strips it). Lets React keep focus/cursor on the right row
+   * after a middle-row remove instead of reusing DOM nodes by index. */
+  id: string;
   group: string;
   role: MappingRole;
   scope_type: MappingScope;
@@ -183,8 +187,17 @@ export interface MappingRowError {
 const MAX_GROUP = 200;
 const MAX_SCOPE_ID = 200;
 
+/** Stable id for a repeater row. `crypto.randomUUID` is available in modern
+ *  browsers and the Vitest jsdom env; fall back to a counter for older runtimes. */
+export function newMappingId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `m${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export function emptyMappingRow(): MappingRow {
-  return { group: "", role: "operator", scope_type: "instance", scope_id: "" };
+  return { id: newMappingId(), group: "", role: "operator", scope_type: "instance", scope_id: "" };
 }
 
 /** Validate one mapping row. `scope_id` is required for organization/event scopes. */
