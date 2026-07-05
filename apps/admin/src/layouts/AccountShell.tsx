@@ -16,8 +16,7 @@ export function AccountShell() {
   const { assignments } = useAuth();
   const isAdmin = canAccessAdminPanel(assignments);
   const backTo = isAdmin ? "/admin" : "/operator";
-  const backLabel = isAdmin ? "All events" : "Check-in";
-  const backIcon = isAdmin ? "calendar-event" : "scan";
+  const backLabel = isAdmin ? "Back to events" : "Back to check-in";
 
   const sidebar = (
     <>
@@ -37,7 +36,7 @@ export function AccountShell() {
       </nav>
       <div className="sidebar__foot">
         <NavLink to={backTo} className="nav-item">
-          <i className={`ti ti-${backIcon}`} aria-hidden="true" />
+          <i className="ti ti-arrow-left" aria-hidden="true" />
           <span>{backLabel}</span>
         </NavLink>
       </div>
