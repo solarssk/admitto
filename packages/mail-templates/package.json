@@ -15,7 +15,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "pretest": "npm run build -w @admitto/db",
+    "precoverage": "npm run pretest",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@admitto/db": "*",

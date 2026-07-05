@@ -36,15 +36,21 @@ before making it public. We will credit researchers who follow this policy.
 
 Active automated checks in this repository:
 
-| Control | Scope | Workflow |
-|---|---|---|
-| CodeQL | SAST (JavaScript/TypeScript) | `.github/workflows/codeql.yml` |
-| Semgrep | SAST (JavaScript/TypeScript) | `.github/workflows/semgrep.yml` |
-| gitleaks | Secret scan (full history) | `.github/workflows/ci.yml` (`secret-scan`) |
-| npm audit | Dependency SCA (`--audit-level=high`) | `.github/workflows/ci.yml` (`build-test`) |
-| Dependabot | npm + GitHub Actions updates | `.github/dependabot.yml` |
-| Trivy | Container image scan (OS + libraries); **scan-before-push** on release tags | `.github/workflows/publish-container.yml` |
-| CycloneDX SBOM | Container image bill of materials | `.github/workflows/publish-container.yml` (artifact + release asset) |
+| Control | Scope | When | Workflow |
+|---|---|---|---|
+| CodeQL | SAST (JavaScript/TypeScript) | Every PR + weekly | `.github/workflows/codeql.yml` |
+| Semgrep | SAST (JavaScript/TypeScript) | Every merge to `main` + weekly | `.github/workflows/semgrep.yml` |
+| gitleaks | Secret scan (full history) | Every PR | `.github/workflows/ci.yml` (`secret-scan`) |
+| npm audit | Dependency SCA (`--audit-level=high`) | Every PR | `.github/workflows/ci.yml` (`build-test`) |
+| Dependabot | npm + GitHub Actions updates | Scheduled | `.github/dependabot.yml` |
+| Docker build smoke | Production `Dockerfile` builds | Every merge to `main` | `.github/workflows/ci.yml` (`docker-build`) |
+| Trivy | Container image scan (OS + libraries); **scan-before-push** on release tags | Release tags + manual dispatch | `.github/workflows/publish-container.yml` |
+| CycloneDX SBOM | Container image bill of materials | Release tags | `.github/workflows/publish-container.yml` (artifact + release asset) |
+| Codecov | Test coverage reporting (no merge gate) | Every PR | `.github/workflows/ci.yml` (`build-test`) |
+
+**PR pipeline:** application build, lint, typecheck, tests with coverage, dependency audit, secret scan, PII guard, migration safety, and CodeQL. Container image build smoke and Semgrep run on every merge to `main` (not on every PR) to keep PR feedback fast; release tags add Trivy CRITICAL gate, SBOM, and provenance.
+
+**SAST on PRs vs `main`:** CodeQL (`security-extended`) is the JavaScript/TypeScript gate on every PR. Semgrep (`p/javascript`, `p/typescript`) runs on every merge to `main` and weekly — the rule sets overlap but are not identical; this is an intentional trade-off (faster PR CI, dual coverage before code reaches `main`).
 
 Container image scanning fails the release pipeline on **CRITICAL** vulnerabilities
 with a known fix (`ignore-unfixed: true`). **HIGH** findings are reported (SARIF in the

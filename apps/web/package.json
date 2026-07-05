@@ -8,7 +8,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "pretest": "npm run build -w @admitto/shared && npm run build -w @admitto/ui && npm run build -w @admitto/admin",
+    "precoverage": "npm run pretest",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "typecheck": "tsc -p tsconfig.json --noEmit",
