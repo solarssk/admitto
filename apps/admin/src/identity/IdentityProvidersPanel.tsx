@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Badge, Button, Card, EmptyState, Skeleton, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -19,11 +20,11 @@ function redirectToLogin(): void {
   window.location.assign(`/login?next=${next}`);
 }
 
-/** Bridge to the legacy HTML editor until the SPA provider editor lands (slice 3, #266). */
-const LEGACY_NEW_PROVIDER_HREF = "/admin/auth/providers/new";
-function legacyEditProviderHref(id: string): string {
-  return `/admin/auth/providers/${encodeURIComponent(id)}`;
+function providerEditPath(id: string): string {
+  return `/admin/settings/identity/providers/${encodeURIComponent(id)}`;
 }
+
+const PROVIDER_NEW_PATH = "/admin/settings/identity/providers/new";
 /** Bridge to the legacy HTML editor until the SPA CF Access editor lands (slice 4, #266). */
 const LEGACY_CF_ACCESS_HREF = "/admin/auth/cf-access";
 
@@ -53,9 +54,9 @@ function ProviderRowItem({
         <p className="identity-provider-row__issuer">{provider.issuer}</p>
       </div>
       <div className="identity-provider-row__actions">
-        <a className="at-btn at-btn--ghost" href={legacyEditProviderHref(provider.id)}>
+        <Link className="at-btn at-btn--ghost" to={providerEditPath(provider.id)}>
           <span>Edit</span>
-        </a>
+        </Link>
         <Switch
           id={labelId}
           label="Enabled"
@@ -72,8 +73,8 @@ function ProviderRowItem({
 /**
  * Identity overview — Providers list (OIDC) + Cloudflare Access summary card.
  * Reachable at /admin/settings/identity/providers. The SPA editor for individual
- * providers and CF Access is delivered in slices 3 and 4; until then the Add/Edit
- * and CF Manage actions bridge to the legacy HTML pages.
+ * providers is delivered in slice 3 (this PR); the CF Access SPA editor lands in
+ * slice 4, so until then the CF Manage action bridges to the legacy HTML page.
  */
 export function IdentityProvidersPanel() {
   const { addToast } = useToast();
@@ -179,9 +180,9 @@ export function IdentityProvidersPanel() {
       <Card
         title="OIDC providers"
         actions={
-          <a className="at-btn at-btn--primary" href={LEGACY_NEW_PROVIDER_HREF}>
+          <Link className="at-btn at-btn--primary" to={PROVIDER_NEW_PATH}>
             <span>Add provider</span>
-          </a>
+          </Link>
         }
       >
         {providersState === "loading" && <ProviderListSkeleton />}
@@ -197,9 +198,9 @@ export function IdentityProvidersPanel() {
             title="No identity providers yet"
             description="Add an OpenID Connect provider to enable single sign-on for your team."
             action={
-              <a className="at-btn at-btn--primary" href={LEGACY_NEW_PROVIDER_HREF}>
+              <Link className="at-btn at-btn--primary" to={PROVIDER_NEW_PATH}>
                 <span>Add provider</span>
-              </a>
+              </Link>
             }
           />
         )}
@@ -217,7 +218,7 @@ export function IdentityProvidersPanel() {
         )}
         {providersState === "ready" && (
           <p className="identity-providers__hint">
-            {togglingIds.size > 0 ? "Saving changes…" : "Add and edit providers open the current editor in a new page."}
+            {togglingIds.size > 0 ? "Saving changes…" : "Add or edit a provider to configure OIDC endpoints, claims, and group→role mapping."}
           </p>
         )}
       </Card>

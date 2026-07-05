@@ -69,6 +69,8 @@ import type {
   IdentityProvidersListResponse,
   ToggleProviderResponse,
   CfAccessSummaryDto,
+  ProviderDetailDto,
+  ProviderRequestBody,
 } from "./types.js";
 
 export type EventFullMeta = {
@@ -1353,4 +1355,34 @@ export async function toggleIdentityProvider(providerId: string): Promise<Toggle
     jsonPostInit({}),
   );
   return parseJson<ToggleProviderResponse>(res);
+}
+
+/** Load one OIDC provider with mappings for the SPA editor (superadmin). */
+export async function fetchIdentityProvider(
+  providerId: string,
+  signal?: AbortSignal,
+): Promise<ProviderDetailDto> {
+  const res = await fetch(`/api/admin/identity/providers/${encodeURIComponent(providerId)}`, {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<ProviderDetailDto>(res);
+}
+
+/** Create a new OIDC identity provider (superadmin). Returns the saved provider. */
+export async function createIdentityProvider(body: ProviderRequestBody): Promise<ProviderDetailDto> {
+  const res = await fetch("/api/admin/identity/providers", jsonPostInit(body));
+  return parseJson<ProviderDetailDto>(res);
+}
+
+/** Update an existing OIDC provider (full-form PUT, mappings replace-all). */
+export async function updateIdentityProvider(
+  providerId: string,
+  body: ProviderRequestBody,
+): Promise<ProviderDetailDto> {
+  const res = await fetch(
+    `/api/admin/identity/providers/${encodeURIComponent(providerId)}`,
+    jsonPutInit(body),
+  );
+  return parseJson<ProviderDetailDto>(res);
 }

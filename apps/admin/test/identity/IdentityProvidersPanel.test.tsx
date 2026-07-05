@@ -2,8 +2,17 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
+import { MemoryRouter } from "react-router-dom";
 import { IdentityProvidersPanel } from "../../src/identity/IdentityProvidersPanel.js";
 import { renderWithToast } from "../test-utils.js";
+
+function renderPanel() {
+  return renderWithToast(
+    <MemoryRouter>
+      <IdentityProvidersPanel />
+    </MemoryRouter>,
+  );
+}
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -46,7 +55,7 @@ describe("IdentityProvidersPanel", () => {
       locks: { enabled: true, teamDomain: false, audience: false, protectedPrefixes: false },
     });
 
-    renderWithToast(<IdentityProvidersPanel />);
+    renderPanel();
 
     await waitFor(() => {
       expect(screen.getByText("Google")).toBeTruthy();
@@ -69,7 +78,7 @@ describe("IdentityProvidersPanel", () => {
       locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
     });
 
-    renderWithToast(<IdentityProvidersPanel />);
+    renderPanel();
 
     await waitFor(() => {
       expect(screen.getByText("No identity providers yet")).toBeTruthy();
@@ -86,7 +95,7 @@ describe("IdentityProvidersPanel", () => {
       locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
     });
 
-    renderWithToast(<IdentityProvidersPanel />);
+    renderPanel();
 
     await waitFor(() => {
       expect(screen.getByText("Couldn't load providers")).toBeTruthy();
@@ -114,7 +123,7 @@ describe("IdentityProvidersPanel", () => {
     });
     mockToggle.mockResolvedValueOnce({ id: "p1", enabled: false });
 
-    renderWithToast(<IdentityProvidersPanel />);
+    renderPanel();
 
     const toggleInput = await screen.findByRole("switch", { name: "Enabled" });
     expect(toggleInput).property("checked", true);
@@ -157,7 +166,7 @@ describe("IdentityProvidersPanel", () => {
         }),
     );
 
-    renderWithToast(<IdentityProvidersPanel />);
+    renderPanel();
 
     const switches = await screen.findAllByRole("switch");
     fireEvent.click(switches[0]!);
@@ -199,7 +208,7 @@ describe("IdentityProvidersPanel", () => {
     });
     mockToggle.mockRejectedValueOnce(new ApiError(409, "toggle_race"));
 
-    renderWithToast(<IdentityProvidersPanel />);
+    renderPanel();
 
     const toggleInput = await screen.findByRole("switch", { name: "Enabled" });
     fireEvent.click(toggleInput);
@@ -227,7 +236,7 @@ describe("IdentityProvidersPanel", () => {
         locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
       });
 
-      renderWithToast(<IdentityProvidersPanel />);
+      renderPanel();
 
       await waitFor(() =>
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
@@ -247,7 +256,7 @@ describe("IdentityProvidersPanel", () => {
       locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
     });
 
-    renderWithToast(<IdentityProvidersPanel />);
+    renderPanel();
 
     await waitFor(() => {
       expect(screen.getByText("(disabled)")).toBeTruthy();
@@ -260,7 +269,7 @@ describe("IdentityProvidersPanel", () => {
     mockProviders.mockResolvedValueOnce({ providers: [] });
     mockCf.mockRejectedValueOnce(new Error("cf boom"));
 
-    renderWithToast(<IdentityProvidersPanel />);
+    renderPanel();
 
     await waitFor(() => {
       expect(screen.getByText("Couldn't load Cloudflare Access")).toBeTruthy();
