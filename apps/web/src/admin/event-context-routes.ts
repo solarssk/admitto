@@ -1,11 +1,17 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
-import { assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import { writeAdminAuditLog } from "@admitto/tickets";
+import { assertEventManageAccess, adminAuditFromContext, requireEventId } from "./admin-helpers.js";
 
 function requireParam(c: Context, name: string): string | Response {
   const val = c.req.param(name);
   if (!val) return c.json({ error: "missing_param" }, 400);
   return val;
+}
+
+async function requireEventOrgId(db: PrismaClient, eventId: string): Promise<string | null> {
+  const ev = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } });
+  return ev?.organization_id ?? null;
 }
 
 // ── Pinned note ────────────────────────────────────────────────────────────
@@ -21,8 +27,23 @@ export async function handlePatchEventNote(c: Context, db: PrismaClient): Promis
 
   const body = await c.req.json<{ note: string | null }>();
   const note = typeof body.note === "string" ? body.note.trim() || null : null;
+  const audit = adminAuditFromContext(c);
 
-  await db.event.update({ where: { id: eventId }, data: { pinned_note: note } });
+  const updated = await db.event.update({
+    where: { id: eventId },
+    data: { pinned_note: note },
+    select: { organization_id: true },
+  });
+
+  await writeAdminAuditLog(db, {
+    organizationId: updated.organization_id,
+    actorUserId: audit.operator!,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    actionType: note ? "event_pinned_note_set" : "event_pinned_note_cleared",
+    metadata: { eventId },
+  });
+
   return c.json({ ok: true });
 }
 
@@ -48,6 +69,9 @@ export async function handleCreateContact(c: Context, db: PrismaClient): Promise
 
   if (!body.name?.trim()) return c.json({ error: "name_required" }, 400);
 
+  const audit = adminAuditFromContext(c);
+  const orgId = await requireEventOrgId(db, eventId);
+
   const contact = await db.eventContact.create({
     data: {
       event_id: eventId,
@@ -60,6 +84,16 @@ export async function handleCreateContact(c: Context, db: PrismaClient): Promise
     },
     select: { id: true, name: true, role: true, phone: true, email: true, note: true, sort_order: true },
   });
+
+  await writeAdminAuditLog(db, {
+    organizationId: orgId,
+    actorUserId: audit.operator!,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    actionType: "event_contact_created",
+    metadata: { eventId, contactId: contact.id, name: contact.name },
+  });
+
   return c.json(contact, 201);
 }
 
@@ -87,6 +121,9 @@ export async function handleUpdateContact(c: Context, db: PrismaClient): Promise
     sort_order?: number;
   }>();
 
+  const audit = adminAuditFromContext(c);
+  const orgId = await requireEventOrgId(db, eventId);
+
   const contact = await db.eventContact.update({
     where: { id: contactId },
     data: {
@@ -99,6 +136,16 @@ export async function handleUpdateContact(c: Context, db: PrismaClient): Promise
     },
     select: { id: true, name: true, role: true, phone: true, email: true, note: true, sort_order: true },
   });
+
+  await writeAdminAuditLog(db, {
+    organizationId: orgId,
+    actorUserId: audit.operator!,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    actionType: "event_contact_updated",
+    metadata: { eventId, contactId, name: contact.name },
+  });
+
   return c.json(contact);
 }
 
@@ -114,10 +161,25 @@ export async function handleDeleteContact(c: Context, db: PrismaClient): Promise
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const existing = await db.eventContact.findFirst({ where: { id: contactId, event_id: eventId } });
+  const existing = await db.eventContact.findFirst({
+    where: { id: contactId, event_id: eventId },
+    select: { id: true, name: true, event: { select: { organization_id: true } } },
+  });
   if (!existing) return c.json({ error: "not_found" }, 404);
 
+  const audit = adminAuditFromContext(c);
+
   await db.eventContact.delete({ where: { id: contactId } });
+
+  await writeAdminAuditLog(db, {
+    organizationId: existing.event.organization_id,
+    actorUserId: audit.operator!,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    actionType: "event_contact_deleted",
+    metadata: { eventId, contactId, name: existing.name },
+  });
+
   return c.json({ ok: true });
 }
 
@@ -146,6 +208,9 @@ export async function handleCreateResource(c: Context, db: PrismaClient): Promis
     return c.json({ error: "invalid_type" }, 400);
   }
 
+  const audit = adminAuditFromContext(c);
+  const orgId = await requireEventOrgId(db, eventId);
+
   const resource = await db.eventResource.create({
     data: {
       event_id: eventId,
@@ -157,6 +222,16 @@ export async function handleCreateResource(c: Context, db: PrismaClient): Promis
     },
     select: { id: true, title: true, type: true, url: true, description: true, sort_order: true },
   });
+
+  await writeAdminAuditLog(db, {
+    organizationId: orgId,
+    actorUserId: audit.operator!,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    actionType: "event_resource_created",
+    metadata: { eventId, resourceId: resource.id, title: resource.title, type: resource.type },
+  });
+
   return c.json(resource, 201);
 }
 
@@ -187,6 +262,9 @@ export async function handleUpdateResource(c: Context, db: PrismaClient): Promis
     return c.json({ error: "invalid_type" }, 400);
   }
 
+  const audit = adminAuditFromContext(c);
+  const orgId = await requireEventOrgId(db, eventId);
+
   const resource = await db.eventResource.update({
     where: { id: resourceId },
     data: {
@@ -198,6 +276,16 @@ export async function handleUpdateResource(c: Context, db: PrismaClient): Promis
     },
     select: { id: true, title: true, type: true, url: true, description: true, sort_order: true },
   });
+
+  await writeAdminAuditLog(db, {
+    organizationId: orgId,
+    actorUserId: audit.operator!,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    actionType: "event_resource_updated",
+    metadata: { eventId, resourceId, title: resource.title },
+  });
+
   return c.json(resource);
 }
 
@@ -213,9 +301,24 @@ export async function handleDeleteResource(c: Context, db: PrismaClient): Promis
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const existing = await db.eventResource.findFirst({ where: { id: resourceId, event_id: eventId } });
+  const existing = await db.eventResource.findFirst({
+    where: { id: resourceId, event_id: eventId },
+    select: { id: true, title: true, event: { select: { organization_id: true } } },
+  });
   if (!existing) return c.json({ error: "not_found" }, 404);
 
+  const audit = adminAuditFromContext(c);
+
   await db.eventResource.delete({ where: { id: resourceId } });
+
+  await writeAdminAuditLog(db, {
+    organizationId: existing.event.organization_id,
+    actorUserId: audit.operator!,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    actionType: "event_resource_deleted",
+    metadata: { eventId, resourceId, title: existing.title },
+  });
+
   return c.json({ ok: true });
 }
