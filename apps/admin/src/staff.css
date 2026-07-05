@@ -1869,15 +1869,15 @@
 }
 
 .cf-editor__info {
-  background: var(--surface-muted, var(--surface-2, #f6f7f9));
+  background: var(--surface-sunken);
   border: 1px solid var(--border);
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 
 .cf-editor__warn {
-  background: var(--warn-bg, #fff8e1);
-  border: 1px solid var(--warn-border, #f0c000);
-  color: var(--text);
+  background: var(--status-warn-tint);
+  border: 1px solid var(--status-warn);
+  color: var(--status-warn-fg);
 }
 
 @media (max-width: 860px) {

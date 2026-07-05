@@ -28,7 +28,7 @@ const mockTest = vi.mocked(testCfAccess);
 
 const noLocks = { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false };
 
-function summary(over: Partial<Parameters<typeof fetchCfAccessSummary>[0]> = {}) {
+function summary(over: Partial<Awaited<ReturnType<typeof fetchCfAccessSummary>>> = {}) {
   return {
     enabled: false,
     teamDomain: "",
@@ -36,7 +36,7 @@ function summary(over: Partial<Parameters<typeof fetchCfAccessSummary>[0]> = {})
     protectedPrefixes: [],
     locks: noLocks,
     ...over,
-  } as Awaited<ReturnType<typeof fetchCfAccessSummary>>;
+  };
 }
 
 function renderEditorAt(path = "/admin/settings/identity/cloudflare") {
@@ -145,14 +145,14 @@ describe("CfAccessEditor (slice 4)", () => {
     await waitFor(() => expect(screen.getByText("JWKS unreachable")).toBeTruthy());
   });
 
-  it("Test connection is disabled when the team domain field is env-locked", async () => {
+  it("Test connection stays enabled when the team domain field is env-locked", async () => {
     mockFetch.mockResolvedValueOnce(
       summary({ teamDomain: "https://t", locks: { enabled: false, teamDomain: true, audience: false, protectedPrefixes: false } }),
     );
     renderEditorAt();
     await waitFor(() => expect(screen.getByText("Locked by env")).toBeTruthy());
     const testBtn = screen.getByRole("button", { name: "Test connection" });
-    expect(testBtn.hasAttribute("disabled")).toBe(true);
+    expect(testBtn.hasAttribute("disabled")).toBe(false);
   });
 
   it("redirects to login when the load GET returns 401", async () => {
@@ -306,6 +306,24 @@ describe("CfAccessEditor (slice 4)", () => {
     await waitFor(() => expect(screen.getByText("Connection test failed.")).toBeTruthy());
   });
 
+  it("shows the default save toast when Save throws a non-ApiError", async () => {
+    mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }));
+    mockUpdate.mockRejectedValueOnce(new Error("network down"));
+    renderEditorAt();
+    await waitFor(() => expect(screen.getByDisplayValue("https://t")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(screen.getByText("Failed to save settings.")).toBeTruthy());
+  });
+
+  it("shows the default test toast when Test throws a non-ApiError", async () => {
+    mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }));
+    mockTest.mockRejectedValueOnce(new Error("network down"));
+    renderEditorAt();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(screen.getByText("Connection test failed.")).toBeTruthy());
+  });
+
   it("renders the env-locked info block when enabled is locked", async () => {
     mockFetch.mockResolvedValueOnce(
       summary({
@@ -324,11 +342,43 @@ describe("CfAccessEditor (slice 4)", () => {
     expect(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }).hasAttribute("disabled")).toBe(true);
   });
 
-  it("renders the before-enable warning when enabled but not locked", async () => {
+  it("shows the before-enable warning only on the off→on transition", async () => {
+    mockFetch.mockResolvedValueOnce(
+      summary({ enabled: false, teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }),
+    );
+    renderEditorAt();
+    await waitFor(() => expect(screen.getByRole("switch", { name: /Enable Cloudflare Access/ })).toBeTruthy());
+    expect(screen.queryByText(/Before you enable/)).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }));
+    await waitFor(() => expect(screen.getByText(/Before you enable/)).toBeTruthy());
+  });
+
+  it("does not show the before-enable warning for an already-active config", async () => {
     mockFetch.mockResolvedValueOnce(
       summary({ enabled: true, teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }),
     );
     renderEditorAt();
-    await waitFor(() => expect(screen.getByText(/Before you enable/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Active")).toBeTruthy());
+    expect(screen.queryByText(/Before you enable/)).toBeNull();
+  });
+
+  it("preserves a trailing comma while typing the AUD list (raw text)", async () => {
+    mockFetch.mockResolvedValueOnce(summary({ audience: ["a"] }));
+    renderEditorAt();
+    const audInput = await waitFor(() => screen.getByDisplayValue("a"));
+    fireEvent.change(audInput, { target: { value: "a, " } });
+    expect((audInput as HTMLInputElement).value).toBe("a, ");
+  });
+
+  it("blocks save when the team URL is http:// (not https://)", async () => {
+    mockFetch.mockResolvedValueOnce(summary({ enabled: false, teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }));
+    renderEditorAt();
+    const teamInput = await waitFor(() => screen.getByDisplayValue("https://t"));
+    fireEvent.change(teamInput, { target: { value: "http://team.cloudflareaccess.com" } });
+    fireEvent.click(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(screen.getByText("Please fix the highlighted fields.")).toBeTruthy());
+    expect(screen.getByText(/Team URL must start with https/)).toBeTruthy();
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

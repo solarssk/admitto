@@ -25,9 +25,10 @@ function summary(over: Partial<CfAccessSummaryDto> = {}): CfAccessSummaryDto {
 }
 
 describe("cfAccessValidation", () => {
-  it("parseListInput splits, trims, drops empties", () => {
+  it("parseListInput splits, trims, drops empties, and de-duplicates", () => {
     expect(parseListInput(" /admin ,  /api/admin , , ")).toEqual(["/admin", "/api/admin"]);
     expect(parseListInput("")).toEqual([]);
+    expect(parseListInput("aud-1, aud-1, aud-2")).toEqual(["aud-1", "aud-2"]);
   });
 
   it("joinListInput round-trips through parseListInput", () => {
@@ -37,51 +38,104 @@ describe("cfAccessValidation", () => {
 
   it("emptyCfDraft starts clean and cfDraftFromSummary seeds from the DTO", () => {
     expect(emptyCfDraft().enabled).toBe(false);
-    const d = cfDraftFromSummary(summary({ enabled: true, teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }));
-    expect(d).toEqual({ enabled: true, teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] });
+    const d = cfDraftFromSummary(
+      summary({ enabled: true, teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }),
+    );
+    expect(d).toEqual({
+      enabled: true,
+      teamDomain: "https://t",
+      audienceRaw: "a",
+      protectedPrefixesRaw: "/admin",
+    });
   });
 
   it("isCfDraftDirty is false for an unchanged draft and true for any field change", () => {
-    const base = cfDraftFromSummary(summary({ teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }));
+    const base = cfDraftFromSummary(
+      summary({ teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }),
+    );
     expect(isCfDraftDirty(base, base)).toBe(false);
     expect(isCfDraftDirty({ ...base, enabled: true }, base)).toBe(true);
     expect(isCfDraftDirty({ ...base, teamDomain: "https://t " }, base)).toBe(false); // trimmed equality
-    expect(isCfDraftDirty({ ...base, audience: ["a", "b"] }, base)).toBe(true);
-    expect(isCfDraftDirty({ ...base, protectedPrefixes: ["/admin", "/x"] }, base)).toBe(true);
+    // A trailing comma in the raw text is not a semantic change.
+    expect(isCfDraftDirty({ ...base, audienceRaw: "a, " }, base)).toBe(false);
+    expect(isCfDraftDirty({ ...base, audienceRaw: "a, b" }, base)).toBe(true);
+    expect(isCfDraftDirty({ ...base, protectedPrefixesRaw: "/admin, /x" }, base)).toBe(true);
   });
 
   it("validateCfDraft flags missing team domain + audience when enabled", () => {
-    const errors = validateCfDraft({ enabled: true, teamDomain: "", audience: [], protectedPrefixes: ["/admin"] });
+    const errors = validateCfDraft({
+      enabled: true,
+      teamDomain: "",
+      audienceRaw: "",
+      protectedPrefixesRaw: "/admin",
+    });
     expect(errors.teamDomain).toMatch(/Team URL is required/);
     expect(errors.audience).toMatch(/AUD/);
     expect(errors.protectedPrefixes).toBeUndefined();
   });
 
-  it("validateCfDraft flags a team domain without an http(s) scheme", () => {
-    const errors = validateCfDraft({ enabled: true, teamDomain: "team.cloudflareaccess.com", audience: ["a"], protectedPrefixes: ["/admin"] });
-    expect(errors.teamDomain).toMatch(/http/);
+  it("validateCfDraft rejects a team URL without an https scheme", () => {
+    const noScheme = validateCfDraft({
+      enabled: true,
+      teamDomain: "team.cloudflareaccess.com",
+      audienceRaw: "a",
+      protectedPrefixesRaw: "/admin",
+    });
+    expect(noScheme.teamDomain).toMatch(/https/);
+
+    const httpScheme = validateCfDraft({
+      enabled: true,
+      teamDomain: "http://team.cloudflareaccess.com",
+      audienceRaw: "a",
+      protectedPrefixesRaw: "/admin",
+    });
+    expect(httpScheme.teamDomain).toMatch(/https/);
   });
 
   it("validateCfDraft flags a protected prefix that does not start with /", () => {
-    const errors = validateCfDraft({ enabled: false, teamDomain: "", audience: [], protectedPrefixes: ["admin"] });
+    const errors = validateCfDraft({
+      enabled: false,
+      teamDomain: "",
+      audienceRaw: "",
+      protectedPrefixesRaw: "admin",
+    });
     expect(errors.protectedPrefixes).toMatch(/start with \//);
   });
 
   it("validateCfDraft passes a valid enabled config", () => {
-    const errors = validateCfDraft({ enabled: true, teamDomain: "https://team.cloudflareaccess.com", audience: ["a"], protectedPrefixes: ["/admin"] });
+    const errors = validateCfDraft({
+      enabled: true,
+      teamDomain: "https://team.cloudflareaccess.com",
+      audienceRaw: "a",
+      protectedPrefixesRaw: "/admin",
+    });
     expect(errors).toEqual({});
   });
 
-  it("buildCfUpdateBody includes unlocked fields and omits locked ones", () => {
-    const draft = { enabled: true, teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] };
-    const body = buildCfUpdateBody(draft, { enabled: true, teamDomain: false, audience: false, protectedPrefixes: false });
-    expect(body).toEqual({ teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] });
+  it("buildCfUpdateBody includes unlocked fields (parsed) and omits locked ones", () => {
+    const draft = {
+      enabled: true,
+      teamDomain: "https://t",
+      audienceRaw: "a, b",
+      protectedPrefixesRaw: "/admin, /api/admin",
+    };
+    const body = buildCfUpdateBody(draft, {
+      enabled: true,
+      teamDomain: false,
+      audience: false,
+      protectedPrefixes: false,
+    });
+    expect(body).toEqual({
+      teamDomain: "https://t",
+      audience: ["a", "b"],
+      protectedPrefixes: ["/admin", "/api/admin"],
+    });
     expect(body.enabled).toBeUndefined();
   });
 
   it("buildCfUpdateBody omits every field when all are locked", () => {
     const body = buildCfUpdateBody(
-      { enabled: true, teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] },
+      { enabled: true, teamDomain: "https://t", audienceRaw: "a", protectedPrefixesRaw: "/admin" },
       { enabled: true, teamDomain: true, audience: true, protectedPrefixes: true },
     );
     expect(body).toEqual({});

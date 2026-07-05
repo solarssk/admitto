@@ -9,8 +9,6 @@ import {
   cfDraftFromSummary,
   emptyCfDraft,
   isCfDraftDirty,
-  joinListInput,
-  parseListInput,
   validateCfDraft,
   type CfAccessDraft,
   type CfAccessFieldErrors,
@@ -165,7 +163,9 @@ export function CfAccessEditor() {
 
   // Test probes the team domain's JWKS endpoint. Send the draft team domain when
   // the operator typed one so they can test before saving; the server falls back to
-  // the stored value when the field is blank.
+  // the stored value when the field is blank. Available even when the team domain
+  // is env-locked — the locked value is seeded into the draft on load, so the
+  // operator can still verify an env-managed configuration from the UI.
   const handleTest = useCallback(async () => {
     setTesting(true);
     try {
@@ -187,8 +187,11 @@ export function CfAccessEditor() {
     }
   }, [draft.teamDomain, addToast]);
 
+  // "Before you enable" warning shows only on the off→on transition — once CF
+  // Access is already active (baseline.enabled), the operator is editing an active
+  // config, not enabling it, so the pre-enable caution is misleading.
   const enabledWarning =
-    draft.enabled && !locks.enabled ? (
+    draft.enabled && !locks.enabled && !baseline.enabled ? (
       <div className="cf-editor__warn" role="alert">
         <strong>Before you enable:</strong> run <strong>Test connection</strong> with your team
         URL. A wrong application token or team URL can block staff sign-in until you fix the
@@ -284,29 +287,25 @@ export function CfAccessEditor() {
 
             <Input
               label="Application token (AUD)"
-              value={joinListInput(draft.audience)}
+              value={draft.audienceRaw}
               invalid={Boolean(errors.audience)}
               error={errors.audience}
               disabled={locks.audience}
               hint="Zero Trust → Access → Applications → your app → Overview → Application Audience (AUD) Tag. One value, or comma-separated for multiple apps."
               placeholder="a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, audience: parseListInput(e.target.value) }))
-              }
+              onChange={(e) => setDraft((d) => ({ ...d, audienceRaw: e.target.value }))}
             />
             {locks.audience && <Badge variant="neutral">Locked by env</Badge>}
 
             <Input
               label="Protected URL paths"
-              value={joinListInput(draft.protectedPrefixes)}
+              value={draft.protectedPrefixesRaw}
               invalid={Boolean(errors.protectedPrefixes)}
               error={errors.protectedPrefixes}
               disabled={locks.protectedPrefixes}
               hint="Paths that require a Cloudflare Access JWT. Default covers the admin UI and admin API. Comma-separated (each must start with /)."
               placeholder="/admin, /api/admin"
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, protectedPrefixes: parseListInput(e.target.value) }))
-              }
+              onChange={(e) => setDraft((d) => ({ ...d, protectedPrefixesRaw: e.target.value }))}
             />
             {locks.protectedPrefixes && <Badge variant="neutral">Locked by env</Badge>}
           </div>
@@ -317,7 +316,7 @@ export function CfAccessEditor() {
               variant="secondary"
               size="sm"
               onClick={handleTest}
-              disabled={testing || saving || locks.teamDomain}
+              disabled={testing || saving}
               aria-busy={testing}
             >
               {testing ? "Testing…" : "Test connection"}
