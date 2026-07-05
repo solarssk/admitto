@@ -53,6 +53,13 @@ vi.mock("../../src/api/client.js", () => ({
     }
   },
   fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
+  patchEventNote: vi.fn(),
+  createEventContact: vi.fn(),
+  updateEventContact: vi.fn(),
+  deleteEventContact: vi.fn(),
+  createEventResource: vi.fn(),
+  updateEventResource: vi.fn(),
+  deleteEventResource: vi.fn(),
 }));
 
 const overviewFixture = (admitted = 5): EventOverviewDto => ({
@@ -66,6 +73,7 @@ const overviewFixture = (admitted = 5): EventOverviewDto => ({
     capacity: 100,
     archived_at: null,
     organization_id: "org-1",
+    pinned_note: null,
   },
   attendee_count: 50,
   admitted_count: admitted,
@@ -73,6 +81,11 @@ const overviewFixture = (admitted = 5): EventOverviewDto => ({
   email_failed: 0,
   email_bounced: 0,
   email_queued: 0,
+  requirements_count: 0,
+  checkin_staff_count: 1,
+  attendees_with_ticket: 50,
+  contacts: [],
+  resources: [],
 });
 
 const liveEvent: StreamCheckinEvent = {

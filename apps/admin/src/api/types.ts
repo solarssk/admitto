@@ -758,6 +758,25 @@ export interface ResetMfaResponse {
   sessions_revoked: number;
 }
 
+export interface EventContactDto {
+  id: string;
+  name: string;
+  role: string | null;
+  phone: string | null;
+  email: string | null;
+  note: string | null;
+  sort_order: number;
+}
+
+export interface EventResourceDto {
+  id: string;
+  title: string;
+  type: "link" | "file";
+  url: string;
+  description: string | null;
+  sort_order: number;
+}
+
 export interface EventOverviewDto {
   event: {
     id: string;
@@ -769,6 +788,7 @@ export interface EventOverviewDto {
     capacity: number | null;
     archived_at: string | null;
     organization_id: string;
+    pinned_note: string | null;
   };
   attendee_count: number;
   admitted_count: number;
@@ -779,6 +799,8 @@ export interface EventOverviewDto {
   requirements_count: number;
   checkin_staff_count: number;
   attendees_with_ticket: number;
+  contacts: EventContactDto[];
+  resources: EventResourceDto[];
 }
 
 export interface EventReportsResponse {

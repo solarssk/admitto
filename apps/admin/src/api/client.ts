@@ -55,6 +55,8 @@ import type {
   PatchSetupOrgBrandingBody,
   AuditLogResponse,
   EventOverviewDto,
+  EventContactDto,
+  EventResourceDto,
   EventReportsResponse,
   AccountDto,
   PatchAccountProfileBody,
@@ -1184,6 +1186,92 @@ export async function fetchEventOverview(
     { credentials: "same-origin", signal },
   );
   return parseJson<EventOverviewDto>(res);
+}
+
+export async function patchEventNote(eventId: string, note: string | null): Promise<void> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/note`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ note }),
+  });
+  await parseJson(res);
+}
+
+export async function createEventContact(
+  eventId: string,
+  data: { name: string; role?: string | null; phone?: string | null; email?: string | null; note?: string | null },
+): Promise<EventContactDto> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/contacts`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return parseJson<EventContactDto>(res);
+}
+
+export async function updateEventContact(
+  eventId: string,
+  contactId: string,
+  data: { name?: string; role?: string | null; phone?: string | null; email?: string | null; note?: string | null },
+): Promise<EventContactDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/contacts/${encodeURIComponent(contactId)}`,
+    {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    },
+  );
+  return parseJson<EventContactDto>(res);
+}
+
+export async function deleteEventContact(eventId: string, contactId: string): Promise<void> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/contacts/${encodeURIComponent(contactId)}`,
+    { method: "DELETE", credentials: "same-origin" },
+  );
+  await parseJson(res);
+}
+
+export async function createEventResource(
+  eventId: string,
+  data: { title: string; type?: "link" | "file"; url: string; description?: string | null },
+): Promise<EventResourceDto> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/resources`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return parseJson<EventResourceDto>(res);
+}
+
+export async function updateEventResource(
+  eventId: string,
+  resourceId: string,
+  data: { title?: string; type?: "link" | "file"; url?: string; description?: string | null },
+): Promise<EventResourceDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/resources/${encodeURIComponent(resourceId)}`,
+    {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    },
+  );
+  return parseJson<EventResourceDto>(res);
+}
+
+export async function deleteEventResource(eventId: string, resourceId: string): Promise<void> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/resources/${encodeURIComponent(resourceId)}`,
+    { method: "DELETE", credentials: "same-origin" },
+  );
+  await parseJson(res);
 }
 
 export async function fetchEventReports(
