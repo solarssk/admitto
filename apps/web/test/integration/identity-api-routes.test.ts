@@ -138,6 +138,7 @@ interface ProviderDetail {
   claim_name: string;
   claim_groups: string;
   enabled: boolean;
+  login_button_label: string | null;
   mappings: { group: string; role: string; scope_type: string; scope_id: string }[];
 }
 interface ProviderListResponse {
@@ -307,6 +308,59 @@ describe("identity providers API — update", () => {
       body: JSON.stringify({ issuer: "https://idp-api-test.example.com/" }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("rejects PUT without mappings (replace-all contract) with 400", async () => {
+    const res = await json(`/api/admin/identity/providers/${PROVIDER_ID}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        display_name: "API Test IdP (renamed)",
+        issuer: "https://idp-api-test.example.com/",
+        client_id: "api-test-client",
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "validation_failed" });
+  });
+
+  it("omitting login_button_label preserves the stored label; null clears it", async () => {
+    await prisma.identityProvider.update({
+      where: { id: PROVIDER_ID },
+      data: { login_button_label: "Sign in with Acme" },
+    });
+
+    // Omit login_button_label entirely → preserved.
+    const preserved = await json(`/api/admin/identity/providers/${PROVIDER_ID}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        display_name: "API Test IdP (renamed)",
+        issuer: "https://idp-api-test.example.com/",
+        client_id: "api-test-client",
+        authorization_endpoint: "https://idp-api-test.example.com/a",
+        token_endpoint: "https://idp-api-test.example.com/t",
+        jwks_uri: "https://idp-api-test.example.com/j",
+        mappings: [],
+      }),
+    });
+    expect(preserved.status).toBe(200);
+    expect((await jsonAs<ProviderDetail>(preserved)).login_button_label).toBe("Sign in with Acme");
+
+    // Explicit null → cleared.
+    const cleared = await json(`/api/admin/identity/providers/${PROVIDER_ID}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        display_name: "API Test IdP (renamed)",
+        issuer: "https://idp-api-test.example.com/",
+        client_id: "api-test-client",
+        authorization_endpoint: "https://idp-api-test.example.com/a",
+        token_endpoint: "https://idp-api-test.example.com/t",
+        jwks_uri: "https://idp-api-test.example.com/j",
+        login_button_label: null,
+        mappings: [],
+      }),
+    });
+    expect(cleared.status).toBe(200);
+    expect((await jsonAs<ProviderDetail>(cleared)).login_button_label).toBeNull();
   });
 });
 

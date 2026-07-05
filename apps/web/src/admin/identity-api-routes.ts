@@ -54,8 +54,17 @@ const providerBodySchema = z
     claim_name: z.union([z.string().trim().max(200), z.literal("")]).optional(),
     claim_groups: z.union([z.string().trim().max(200), z.literal("")]).optional(),
     enabled: z.boolean().optional(),
+    /**
+     * SSO login button copy. Omit to preserve the stored value; send `null` or `""`
+     * to clear back to the product default; send a string to set.
+     */
     login_button_label: z.union([z.string().trim().max(120), z.literal(""), z.null()]).optional(),
-    mappings: z.array(mappingSchema).optional(),
+    /**
+     * Full group→role mapping list (replace-all semantics, mirroring the legacy HTML
+     * form). Required on every PUT — omitting it would silently delete every mapping.
+     * Send the current list (from GET /:id) unchanged when editing other fields.
+     */
+    mappings: z.array(mappingSchema),
   })
   .strict();
 
@@ -126,7 +135,11 @@ function toProviderInput(body: z.infer<typeof providerBodySchema>): IdentityProv
     claim_name: body.claim_name?.trim() || undefined,
     claim_groups: body.claim_groups?.trim() || undefined,
     enabled: body.enabled,
-    login_button_label: body.login_button_label?.trim() || null,
+    // undefined preserves the stored label (auth layer); null/"" clears to default.
+    login_button_label:
+      body.login_button_label === undefined
+        ? undefined
+        : body.login_button_label?.trim() || null,
   };
 }
 
@@ -178,8 +191,7 @@ export async function handleApiCreateProvider(c: Context, db: PrismaClient): Pro
 
   let provider;
   try {
-    const mappings = (body.mappings ?? []).map(toMappingInput);
-    provider = await createIdentityProviderWithMappings(db, toProviderInput(body), mappings);
+    provider = await createIdentityProviderWithMappings(db, toProviderInput(body), body.mappings.map(toMappingInput));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to create provider";
     return c.json({ error: message }, 400);
@@ -209,8 +221,7 @@ export async function handleApiUpdateProvider(c: Context, db: PrismaClient): Pro
 
   let updated;
   try {
-    const mappings = (body.mappings ?? []).map(toMappingInput);
-    updated = await updateIdentityProviderWithMappings(db, id, toProviderInput(body), mappings);
+    updated = await updateIdentityProviderWithMappings(db, id, toProviderInput(body), body.mappings.map(toMappingInput));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to save provider";
     return c.json({ error: message }, 400);
