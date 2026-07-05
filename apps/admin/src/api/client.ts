@@ -71,6 +71,8 @@ import type {
   CfAccessSummaryDto,
   ProviderDetailDto,
   ProviderRequestBody,
+  DiscoverResponse,
+  TestResponse,
 } from "./types.js";
 
 export type EventFullMeta = {
@@ -1385,4 +1387,25 @@ export async function updateIdentityProvider(
     jsonPutInit(body),
   );
   return parseJson<ProviderDetailDto>(res);
+}
+
+/** Discover OIDC endpoints from the issuer's `.well-known/openid-configuration`
+ *  and persist them on the provider (edit mode only; superadmin). */
+export async function discoverIdentityProvider(
+  providerId: string,
+): Promise<DiscoverResponse> {
+  const res = await fetch(
+    `/api/admin/identity/providers/${encodeURIComponent(providerId)}/discover`,
+    jsonPostInit({}),
+  );
+  return parseJson<DiscoverResponse>(res);
+}
+
+/** Probe the provider's authorization/token/JWKS endpoints (edit mode only). */
+export async function testIdentityProvider(providerId: string): Promise<TestResponse> {
+  const res = await fetch(
+    `/api/admin/identity/providers/${encodeURIComponent(providerId)}/test`,
+    jsonPostInit({}),
+  );
+  return parseJson<TestResponse>(res);
 }
