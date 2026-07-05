@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { validateHttpUrl, InvalidHttpUrlError } from "@admitto/mail-templates";
@@ -122,34 +123,39 @@ export async function handleUpdateContact(c: Context, db: PrismaClient): Promise
     sort_order?: number;
   }>();
 
-  if (body.name !== undefined && !body.name.trim()) return c.json({ error: "name_required" }, 400);
+  if (body.name !== undefined && !body.name?.trim()) return c.json({ error: "name_required" }, 400);
 
   const audit = adminAuditFromContext(c);
   const orgId = await requireEventOrgId(db, eventId);
 
-  const contact = await db.eventContact.update({
-    where: { id: contactId },
-    data: {
-      ...(body.name !== undefined && { name: body.name.trim() }),
-      ...(body.role !== undefined && { role: body.role?.trim() || null }),
-      ...(body.phone !== undefined && { phone: body.phone?.trim() || null }),
-      ...(body.email !== undefined && { email: body.email?.trim() || null }),
-      ...(body.note !== undefined && { note: body.note?.trim() || null }),
-      ...(body.sort_order !== undefined && { sort_order: body.sort_order }),
-    },
-    select: { id: true, name: true, role: true, phone: true, email: true, note: true, sort_order: true },
-  });
-
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId: audit.operator!,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    actionType: "event_contact_updated",
-    metadata: { eventId, contactId, name: contact.name },
-  });
-
-  return c.json(contact);
+  try {
+    const contact = await db.eventContact.update({
+      where: { id: contactId },
+      data: {
+        ...(body.name !== undefined && { name: body.name!.trim() }),
+        ...(body.role !== undefined && { role: body.role?.trim() || null }),
+        ...(body.phone !== undefined && { phone: body.phone?.trim() || null }),
+        ...(body.email !== undefined && { email: body.email?.trim() || null }),
+        ...(body.note !== undefined && { note: body.note?.trim() || null }),
+        ...(body.sort_order !== undefined && { sort_order: body.sort_order }),
+      },
+      select: { id: true, name: true, role: true, phone: true, email: true, note: true, sort_order: true },
+    });
+    await writeAdminAuditLog(db, {
+      organizationId: orgId,
+      actorUserId: audit.operator!,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "event_contact_updated",
+      metadata: { eventId, contactId, name: contact.name },
+    });
+    return c.json(contact);
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") {
+      return c.json({ error: "not_found" }, 404);
+    }
+    throw e;
+  }
 }
 
 /** DELETE /api/admin/events/:eventId/contacts/:contactId */
@@ -172,7 +178,14 @@ export async function handleDeleteContact(c: Context, db: PrismaClient): Promise
 
   const audit = adminAuditFromContext(c);
 
-  await db.eventContact.delete({ where: { id: contactId } });
+  try {
+    await db.eventContact.delete({ where: { id: contactId } });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") {
+      return c.json({ error: "not_found" }, 404);
+    }
+    throw e;
+  }
 
   await writeAdminAuditLog(db, {
     organizationId: existing.event.organization_id,
@@ -268,7 +281,9 @@ export async function handleUpdateResource(c: Context, db: PrismaClient): Promis
   if (body.type && body.type !== "link" && body.type !== "file") {
     return c.json({ error: "invalid_type" }, 400);
   }
+  if (body.title !== undefined && !body.title?.trim()) return c.json({ error: "title_required" }, 400);
   if (body.url !== undefined) {
+    if (!body.url?.trim()) return c.json({ error: "url_required" }, 400);
     try { validateHttpUrl("url", body.url.trim()); } catch (e) {
       if (e instanceof InvalidHttpUrlError) return c.json({ error: "invalid_url" }, 400);
       throw e;
@@ -278,28 +293,33 @@ export async function handleUpdateResource(c: Context, db: PrismaClient): Promis
   const audit = adminAuditFromContext(c);
   const orgId = await requireEventOrgId(db, eventId);
 
-  const resource = await db.eventResource.update({
-    where: { id: resourceId },
-    data: {
-      ...(body.title !== undefined && { title: body.title.trim() }),
-      ...(body.type !== undefined && { type: body.type }),
-      ...(body.url !== undefined && { url: body.url.trim() }),
-      ...(body.description !== undefined && { description: body.description?.trim() || null }),
-      ...(body.sort_order !== undefined && { sort_order: body.sort_order }),
-    },
-    select: { id: true, title: true, type: true, url: true, description: true, sort_order: true },
-  });
-
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId: audit.operator!,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    actionType: "event_resource_updated",
-    metadata: { eventId, resourceId, title: resource.title },
-  });
-
-  return c.json(resource);
+  try {
+    const resource = await db.eventResource.update({
+      where: { id: resourceId },
+      data: {
+        ...(body.title !== undefined && { title: body.title!.trim() }),
+        ...(body.type !== undefined && { type: body.type }),
+        ...(body.url !== undefined && { url: body.url!.trim() }),
+        ...(body.description !== undefined && { description: body.description?.trim() || null }),
+        ...(body.sort_order !== undefined && { sort_order: body.sort_order }),
+      },
+      select: { id: true, title: true, type: true, url: true, description: true, sort_order: true },
+    });
+    await writeAdminAuditLog(db, {
+      organizationId: orgId,
+      actorUserId: audit.operator!,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "event_resource_updated",
+      metadata: { eventId, resourceId, title: resource.title },
+    });
+    return c.json(resource);
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") {
+      return c.json({ error: "not_found" }, 404);
+    }
+    throw e;
+  }
 }
 
 /** DELETE /api/admin/events/:eventId/resources/:resourceId */
@@ -322,7 +342,14 @@ export async function handleDeleteResource(c: Context, db: PrismaClient): Promis
 
   const audit = adminAuditFromContext(c);
 
-  await db.eventResource.delete({ where: { id: resourceId } });
+  try {
+    await db.eventResource.delete({ where: { id: resourceId } });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") {
+      return c.json({ error: "not_found" }, 404);
+    }
+    throw e;
+  }
 
   await writeAdminAuditLog(db, {
     organizationId: existing.event.organization_id,

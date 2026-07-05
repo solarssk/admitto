@@ -22,6 +22,7 @@ import {
   registerAdmitDedup,
 } from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
 const RECENT_CHECKINS_MAX = 8;
@@ -51,37 +52,6 @@ function AdmissionBar({ admitted, total }: { admitted: number; total: number }) 
   );
 }
 
-function EmailDeliveryBars({ overview }: { overview: EventOverviewDto }) {
-  const failed = overview.email_failed + overview.email_bounced;
-  const total = overview.email_sent + overview.email_queued + failed;
-  const pct = (val: number) =>
-    total > 0 ? `${Math.max(2, Math.round((val / total) * 100))}%` : "0%";
-
-  return (
-    <div className="overview-delivery">
-      {(
-        [
-          { label: "Sent", value: overview.email_sent, mod: "ok" },
-          { label: "Pending", value: overview.email_queued, mod: "warn" },
-          { label: "Failed", value: failed, mod: "error" },
-        ] as const
-      ).map(({ label, value, mod }) => (
-        <div key={label} className="overview-bar-row">
-          <span className="overview-bar-row__label">{label}</span>
-          <div className="overview-bar-row__track">
-            {value > 0 && (
-              <div
-                className={`overview-bar-row__fill overview-bar-row__fill--${mod}`}
-                style={{ width: pct(value) }}
-              />
-            )}
-          </div>
-          <b className="overview-bar-row__count">{value}</b>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 interface NeedsAttentionProps {
   overview: EventOverviewDto;
@@ -354,10 +324,12 @@ function EventInfoCard({
 
 function PinnedNoteCard({
   note,
+  loading,
   archived,
   onSave,
 }: {
   note: string | null;
+  loading: boolean;
   archived: boolean;
   onSave: (note: string | null) => Promise<void>;
 }) {
@@ -415,14 +387,16 @@ function PinnedNoteCard({
       <Card
         title="Pinned note"
         actions={
-          !archived ? (
+          !loading && !archived ? (
             <button className="btn btn-ghost btn-sm" onClick={handleEdit}>
               + Add note
             </button>
           ) : undefined
         }
       >
-        <p className="overview-muted">No operational note. Add one to share a quick reminder with all staff.</p>
+        <p className="overview-muted">
+          {loading ? "Loading…" : "No operational note. Add one to share a quick reminder with all staff."}
+        </p>
       </Card>
     );
   }
@@ -446,12 +420,14 @@ function PinnedNoteCard({
 
 function KeyContactsCard({
   contacts,
+  loading,
   archived,
   onAdd,
   onUpdate,
   onDelete,
 }: {
   contacts: EventContactDto[];
+  loading: boolean;
   archived: boolean;
   onAdd: (data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
   onUpdate: (id: string, data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
@@ -461,6 +437,8 @@ function KeyContactsCard({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", role: "", phone: "", email: "" });
   const [saving, setSaving] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const openAdd = () => {
     setForm({ name: "", role: "", phone: "", email: "" });
@@ -499,7 +477,15 @@ function KeyContactsCard({
 
   const handleDelete = async (id: string) => {
     setSaving(true);
-    try { await onDelete(id); } finally { setSaving(false); }
+    setDeleteError(null);
+    try {
+      await onDelete(id);
+      setConfirmDeleteId(null);
+    } catch {
+      setDeleteError("Failed to delete contact.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const cancel = () => { setAddOpen(false); setEditingId(null); };
@@ -531,7 +517,7 @@ function KeyContactsCard({
       }
     >
       {contacts.length === 0 && !addOpen ? (
-        <p className="overview-muted">No contacts yet.</p>
+        <p className="overview-muted">{loading ? "Loading…" : "No contacts yet."}</p>
       ) : (
         <ul className="overview-contacts">
           {contacts.map((contact) => (
@@ -562,7 +548,7 @@ function KeyContactsCard({
                         <button className="overview-contact__action" onClick={() => openEdit(contact)} aria-label={`Edit ${contact.name}`}>
                           <i className="ti ti-pencil" aria-hidden="true" />
                         </button>
-                        <button className="overview-contact__action overview-contact__action--delete" onClick={() => handleDelete(contact.id)} aria-label={`Delete ${contact.name}`} disabled={saving}>
+                        <button className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(contact.id); }} aria-label={`Delete ${contact.name}`}>
                           <i className="ti ti-trash" aria-hidden="true" />
                         </button>
                       </>
@@ -575,18 +561,31 @@ function KeyContactsCard({
           {addOpen && <li className="overview-contact overview-contact--form">{inlineForm}</li>}
         </ul>
       )}
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        title="Delete contact"
+        message="Remove this contact? This cannot be undone."
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        loading={saving}
+        errorMessage={deleteError}
+        onConfirm={() => { if (confirmDeleteId) void handleDelete(confirmDeleteId); }}
+        onCancel={() => { setConfirmDeleteId(null); setDeleteError(null); }}
+      />
     </Card>
   );
 }
 
 function ImportantLinksCard({
   resources,
+  loading,
   archived,
   onAdd,
   onUpdate,
   onDelete,
 }: {
   resources: EventResourceDto[];
+  loading: boolean;
   archived: boolean;
   onAdd: (data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
   onUpdate: (id: string, data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
@@ -598,6 +597,8 @@ function ImportantLinksCard({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ title: "", type: "link" as "link" | "file", url: "", description: "" });
   const [saving, setSaving] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const visible = showAll ? resources : resources.slice(0, PREVIEW_MAX);
   const hiddenCount = resources.length - PREVIEW_MAX;
@@ -634,7 +635,15 @@ function ImportantLinksCard({
 
   const handleDelete = async (id: string) => {
     setSaving(true);
-    try { await onDelete(id); } finally { setSaving(false); }
+    setDeleteError(null);
+    try {
+      await onDelete(id);
+      setConfirmDeleteId(null);
+    } catch {
+      setDeleteError("Failed to delete link.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const cancel = () => { setAddOpen(false); setEditingId(null); };
@@ -671,7 +680,7 @@ function ImportantLinksCard({
       }
     >
       {resources.length === 0 && !addOpen ? (
-        <p className="overview-muted">No links or files yet.</p>
+        <p className="overview-muted">{loading ? "Loading…" : "No links or files yet."}</p>
       ) : (
         <>
           <ul className="overview-resources">
@@ -701,7 +710,7 @@ function ImportantLinksCard({
                         <button className="overview-contact__action" onClick={() => openEdit(r)} aria-label={`Edit ${r.title}`}>
                           <i className="ti ti-pencil" aria-hidden="true" />
                         </button>
-                        <button className="overview-contact__action overview-contact__action--delete" onClick={() => handleDelete(r.id)} aria-label={`Delete ${r.title}`} disabled={saving}>
+                        <button className="overview-contact__action overview-contact__action--delete" onClick={() => { setDeleteError(null); setConfirmDeleteId(r.id); }} aria-label={`Delete ${r.title}`}>
                           <i className="ti ti-trash" aria-hidden="true" />
                         </button>
                       </div>
@@ -721,6 +730,17 @@ function ImportantLinksCard({
           )}
         </>
       )}
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        title="Delete link"
+        message="Remove this link? This cannot be undone."
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        loading={saving}
+        errorMessage={deleteError}
+        onConfirm={() => { if (confirmDeleteId) void handleDelete(confirmDeleteId); }}
+        onCancel={() => { setConfirmDeleteId(null); setDeleteError(null); }}
+      />
     </Card>
   );
 }
@@ -790,52 +810,87 @@ export function EventOverviewPage() {
 
   const handleSaveNote = useCallback(async (note: string | null) => {
     const capturedEventId = event.id;
-    await patchEventNote(capturedEventId, note);
-    if (currentEventIdRef.current !== capturedEventId) return;
-    setPinnedNote(note);
-  }, [event.id]);
+    try {
+      await patchEventNote(capturedEventId, note);
+      if (currentEventIdRef.current !== capturedEventId) return;
+      setPinnedNote(note);
+    } catch (err) {
+      addToast("Failed to save note.", "error");
+      throw err;
+    }
+  }, [event.id, addToast]);
 
   const handleAddContact = useCallback(async (data: Parameters<typeof createEventContact>[1]) => {
     const capturedEventId = event.id;
-    const created = await createEventContact(capturedEventId, data);
-    if (currentEventIdRef.current !== capturedEventId) return;
-    setContacts((prev) => [...prev, created]);
-  }, [event.id]);
+    try {
+      const created = await createEventContact(capturedEventId, data);
+      if (currentEventIdRef.current !== capturedEventId) return;
+      setContacts((prev) => [...prev, created]);
+    } catch (err) {
+      addToast("Failed to add contact.", "error");
+      throw err;
+    }
+  }, [event.id, addToast]);
 
   const handleUpdateContact = useCallback(async (id: string, data: Parameters<typeof updateEventContact>[2]) => {
     const capturedEventId = event.id;
-    const updated = await updateEventContact(capturedEventId, id, data);
-    if (currentEventIdRef.current !== capturedEventId) return;
-    setContacts((prev) => prev.map((c) => (c.id === id ? updated : c)));
-  }, [event.id]);
+    try {
+      const updated = await updateEventContact(capturedEventId, id, data);
+      if (currentEventIdRef.current !== capturedEventId) return;
+      setContacts((prev) => prev.map((c) => (c.id === id ? updated : c)));
+    } catch (err) {
+      addToast("Failed to update contact.", "error");
+      throw err;
+    }
+  }, [event.id, addToast]);
 
   const handleDeleteContact = useCallback(async (id: string) => {
     const capturedEventId = event.id;
-    await deleteEventContact(capturedEventId, id);
-    if (currentEventIdRef.current !== capturedEventId) return;
-    setContacts((prev) => prev.filter((c) => c.id !== id));
-  }, [event.id]);
+    try {
+      await deleteEventContact(capturedEventId, id);
+      if (currentEventIdRef.current !== capturedEventId) return;
+      setContacts((prev) => prev.filter((c) => c.id !== id));
+    } catch (err) {
+      addToast("Failed to delete contact.", "error");
+      throw err;
+    }
+  }, [event.id, addToast]);
 
   const handleAddResource = useCallback(async (data: Parameters<typeof createEventResource>[1]) => {
     const capturedEventId = event.id;
-    const created = await createEventResource(capturedEventId, data);
-    if (currentEventIdRef.current !== capturedEventId) return;
-    setResources((prev) => [...prev, created]);
-  }, [event.id]);
+    try {
+      const created = await createEventResource(capturedEventId, data);
+      if (currentEventIdRef.current !== capturedEventId) return;
+      setResources((prev) => [...prev, created]);
+    } catch (err) {
+      addToast("Failed to add link.", "error");
+      throw err;
+    }
+  }, [event.id, addToast]);
 
   const handleUpdateResource = useCallback(async (id: string, data: Parameters<typeof updateEventResource>[2]) => {
     const capturedEventId = event.id;
-    const updated = await updateEventResource(capturedEventId, id, data);
-    if (currentEventIdRef.current !== capturedEventId) return;
-    setResources((prev) => prev.map((r) => (r.id === id ? updated : r)));
-  }, [event.id]);
+    try {
+      const updated = await updateEventResource(capturedEventId, id, data);
+      if (currentEventIdRef.current !== capturedEventId) return;
+      setResources((prev) => prev.map((r) => (r.id === id ? updated : r)));
+    } catch (err) {
+      addToast("Failed to update link.", "error");
+      throw err;
+    }
+  }, [event.id, addToast]);
 
   const handleDeleteResource = useCallback(async (id: string) => {
     const capturedEventId = event.id;
-    await deleteEventResource(capturedEventId, id);
-    if (currentEventIdRef.current !== capturedEventId) return;
-    setResources((prev) => prev.filter((r) => r.id !== id));
-  }, [event.id]);
+    try {
+      await deleteEventResource(capturedEventId, id);
+      if (currentEventIdRef.current !== capturedEventId) return;
+      setResources((prev) => prev.filter((r) => r.id !== id));
+    } catch (err) {
+      addToast("Failed to delete link.", "error");
+      throw err;
+    }
+  }, [event.id, addToast]);
 
   useEffect(() => {
     abortRef.current?.abort();
@@ -977,6 +1032,7 @@ export function EventOverviewPage() {
           <EventReadinessCard overview={currentOverview} loading={loading} />
           <ImportantLinksCard
             resources={resources}
+            loading={loading}
             archived={!!event.archived_at}
             onAdd={handleAddResource}
             onUpdate={handleUpdateResource}
@@ -986,12 +1042,14 @@ export function EventOverviewPage() {
         <div className="overview-body__right">
           <PinnedNoteCard
             note={pinnedNote}
+            loading={loading}
             archived={!!event.archived_at}
             onSave={handleSaveNote}
           />
           <RecentCheckinsCard checkins={recentCheckins} timezone={eventTimezone} connected={streamConnected} />
           <KeyContactsCard
             contacts={contacts}
+            loading={loading}
             archived={!!event.archived_at}
             onAdd={handleAddContact}
             onUpdate={handleUpdateContact}
