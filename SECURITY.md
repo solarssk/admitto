@@ -48,9 +48,13 @@ Active automated checks in this repository:
 | CycloneDX SBOM | Container image bill of materials | Release tags | `.github/workflows/publish-container.yml` (artifact + release asset) |
 | Codecov | Test coverage reporting (no merge gate) | Every PR | `.github/workflows/ci.yml` (`build-test`) |
 
+**Codecov data:** CI uploads LCOV coverage reports (file paths and hit counts). No secrets, attendee PII, or production credentials are sent. Treat Codecov as development tooling; customer production data stays in customer PostgreSQL.
+
 **PR pipeline:** application build, lint, typecheck, tests with coverage, dependency audit, secret scan, PII guard, migration safety, and CodeQL. Container image build smoke and Semgrep run on every merge to `main` (not on every PR) to keep PR feedback fast; release tags add Trivy CRITICAL gate, SBOM, and provenance.
 
 **SAST on PRs vs `main`:** CodeQL (`security-extended`) is the JavaScript/TypeScript gate on every PR. Semgrep (`p/javascript`, `p/typescript`) runs on every merge to `main` and weekly — the rule sets overlap but are not identical; this is an intentional trade-off (faster PR CI, dual coverage before code reaches `main`).
+
+**Required merge checks on `main`:** GitHub branch protection currently requires `build-test`, `secret-scan`, and `pii-guard`. CodeQL (`analyze`) and `migration-safety` also run on pull requests but are not required checks yet — see repository branch protection settings.
 
 Container image scanning fails the release pipeline on **CRITICAL** vulnerabilities
 with a known fix (`ignore-unfixed: true`). **HIGH** findings are reported (SARIF in the

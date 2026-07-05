@@ -38,7 +38,7 @@ Images are built on `linux/amd64` (GitHub Actions) — suitable for typical VPS 
 cd deploy
 cp .env.example .env
 # Set secrets, then pin the release image (version without leading v):
-# ADMITTO_IMAGE=ghcr.io/solarssk/admitto:0.3.6
+# ADMITTO_IMAGE=ghcr.io/solarssk/admitto:0.4.11
 
 docker compose pull app
 docker compose up -d --no-build
@@ -63,7 +63,7 @@ docker compose up -d --build
 
 ## Platform and image architecture
 
-**Target runtime:** Linux containers. Official base images (`node:22-bookworm-slim`, `postgres:16`, `redis:7`, `nginx`) are multi-arch, but the **`app` image must match the CPU of the machine that runs it**.
+**Target runtime:** Linux containers. Official base images (`node:24-bookworm-slim`, `postgres:16`, `redis:7`, `nginx`) are multi-arch, but the **`app` image must match the CPU of the machine that runs it**.
 
 | Build where | Image CPU | Typical use |
 |-------------|-----------|---------------|
