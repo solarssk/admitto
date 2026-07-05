@@ -50,10 +50,15 @@ const IDENTITY_ROUTE = IDENTITY_PROVIDERS_ROUTE;
 /** Instance-level settings: grouped in-app tabs (branding, security, archiving, identity links). */
 export function SettingsPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState<SettingsTab>("general");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const initialTab: SettingsTab = (() => {
+    const t = searchParams.get("tab");
+    return t && t !== "identity" && isSettingsTab(t) ? t : "general";
+  })();
+  const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<SettingsTab>>(
-    () => new Set(INITIAL_VISITED_TABS),
+    () => new Set<SettingsTab>([...INITIAL_VISITED_TABS, initialTab]),
   );
 
   const openIdentity = useCallback(() => {
@@ -69,6 +74,18 @@ export function SettingsPage() {
     }
   }, [searchParams, navigate]);
 
+  // Restore the active in-page tab from the URL when navigating back from the Identity
+  // sub-section (or any external param change). Replaces the slice-5 TODO(#266): the
+  // operator returns to the tab they were on (e.g. Security) instead of resetting to
+  // General.
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t && t !== "identity" && isSettingsTab(t) && t !== tab) {
+      setTab(t);
+      setVisitedTabs((prev) => (prev.has(t) ? prev : new Set(prev).add(t)));
+    }
+  }, [searchParams, tab]);
+
   const handleTabChange = useCallback(
     (id: string) => {
       if (!isSettingsTab(id)) return;
@@ -81,13 +98,12 @@ export function SettingsPage() {
       }
       setTab(id);
       setVisitedTabs((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+      // Reflect the active tab in the URL (replace, so we don't stack one history
+      // entry per tab click); Back still crosses from Identity → Settings tab.
+      setSearchParams({ tab: id }, { replace: true });
     },
-    [openIdentity],
+    [openIdentity, setSearchParams],
   );
-
-  // TODO(#266 slice 5): persist the active in-page tab in the URL so Back from the
-  // Identity sub-section restores the tab the operator was on (e.g. Security) instead
-  // of resetting to General. Tracked with the SettingsPage hub cleanup.
 
   return (
     <div className="settings-page">

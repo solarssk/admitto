@@ -220,21 +220,6 @@ import { createStaffSpaHandlers } from "./staff-spa.js";
 import { serveTablerIcons } from "./vendor-assets.js";
 import { sweepExpiredOidcAuthStates } from "@admitto/auth";
 import {
-  handleListProviders,
-  handleGetNewProvider,
-  handlePostNewProvider,
-  handleGetEditProvider,
-  handlePostEditProvider,
-  handlePostDiscover,
-  handlePostTestConnection,
-  handleToggleProvider,
-} from "./admin/auth-providers-routes.js";
-import {
-  handleGetCfAccess,
-  handlePostCfAccess,
-  handlePostCfAccessTest,
-} from "./admin/cf-access-routes.js";
-import {
   handleApiListProviders,
   handleApiGetProvider,
   handleApiCreateProvider,
@@ -788,36 +773,8 @@ export function createApp(options: CreateAppOptions = {}) {
     return c.redirect(landing, 302);
   });
 
-  app.get("/admin/auth/providers", requireAdminAccess, (c) => handleListProviders(c, db));
-  app.get("/admin/auth/providers/new", requireAdminAccess, (c) => handleGetNewProvider(c));
-  app.post("/admin/auth/providers/new", htmlPostCsrf, requireAdminAccess, (c) =>
-    handlePostNewProvider(c, db),
-  );
-  app.get("/admin/auth/providers/:id", requireAdminAccess, (c) => handleGetEditProvider(c, db));
-  app.post("/admin/auth/providers/:id", htmlPostCsrf, requireAdminAccess, (c) =>
-    handlePostEditProvider(c, db),
-  );
-  app.post("/admin/auth/providers/:id/discover", htmlPostCsrf, requireAdminAccess, adminAuthProviderOpsRateLimit, (c) =>
-    handlePostDiscover(c, db),
-  );
-  app.post("/admin/auth/providers/:id/test", htmlPostCsrf, requireAdminAccess, adminAuthProviderOpsRateLimit, (c) =>
-    handlePostTestConnection(c, db),
-  );
-  app.post("/admin/auth/providers/:id/toggle", htmlPostCsrf, requireAdminAccess, (c) =>
-    handleToggleProvider(c, db),
-  );
-
-  app.get("/admin/auth/cf-access", requireAdminAccess, (c) => handleGetCfAccess(c, db));
-  app.post("/admin/auth/cf-access", htmlPostCsrf, requireAdminAccess, (c) =>
-    handlePostCfAccess(c, db),
-  );
-  app.post("/admin/auth/cf-access/test", htmlPostCsrf, requireAdminAccess, (c) =>
-    handlePostCfAccessTest(c, db),
-  );
-
   // Identity providers + Cloudflare Access JSON API for the SPA Settings → Identity section (#266).
-  // Uses requireAdminAccess (superadmin via canManageInstance) to match the legacy HTML routes'
-  // gating exactly; slice 5 removes the HTML routes above.
+  // Uses requireAdminAccess (superadmin via canManageInstance) to gate the editor.
   app.get("/api/admin/identity/providers", requireAdminAccess, (c) => handleApiListProviders(c, db));
   app.post("/api/admin/identity/providers", jsonPostCsrf, requireAdminAccess, (c) =>
     handleApiCreateProvider(c, db),

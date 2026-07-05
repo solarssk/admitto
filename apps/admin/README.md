@@ -22,7 +22,7 @@ npm run dev -w @admitto/web    # http://localhost:3000 — API, login/setup/MFA 
 npm run dev -w @admitto/admin  # http://localhost:5173 — Vite dev server
 ```
 
-Vite proxies `/api`, `/admin/auth`, `/login`, `/logout`, and `/mfa` to `:3000` (MFA enrollment stays server-rendered during first login). Open **http://localhost:5173**, sign in, and work on React pages with HMR.
+Vite proxies `/api`, `/login`, `/logout`, and `/mfa` to `:3000` (MFA enrollment stays server-rendered during first login). Open **http://localhost:5173**, sign in, and work on React pages with HMR.
 
 ## Dev — single server (production-like)
 

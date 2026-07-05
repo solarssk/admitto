@@ -26,7 +26,6 @@ const SUPER_ID = "cf-superadmin";
 const NO_ROLE_ID = "cf-norole";
 const SUPER_EMAIL = "cf-super@example.com";
 const NO_ROLE_EMAIL = "cf-norole@example.com";
-const sameOrigin = { Origin: "http://localhost" };
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 
 let prisma: PrismaClient;
@@ -137,7 +136,7 @@ afterAll(async () => {
 
 describe("CF Access admin collision point", () => {
   it("redirects /admin to /login when JWT absent and no session (not 401)", async () => {
-    const res = await app.request("/admin/auth/providers");
+    const res = await app.request("/admin");
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login");
   });
@@ -149,14 +148,14 @@ describe("CF Access admin collision point", () => {
   });
 
   it("allows break-glass session without CF JWT", async () => {
-    const res = await app.request("/admin/auth/providers", {
+    const res = await app.request("/admin", {
       headers: { Cookie: superCookie },
     });
     expect(res.status).toBe(200);
   });
 
   it("ignores stale CF_Authorization cookie and allows break-glass session", async () => {
-    const res = await app.request("/admin/auth/providers", {
+    const res = await app.request("/admin", {
       headers: {
         Cookie: `${superCookie}; CF_Authorization=invalid.stale.jwt`,
       },
@@ -164,14 +163,14 @@ describe("CF Access admin collision point", () => {
     expect(res.status).toBe(200);
   });
 
-  it("valid CF JWT + superadmin renders panel without login redirect", async () => {
+  it("valid CF JWT + superadmin renders SPA shell without login redirect", async () => {
     const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
-    const res = await app.request("/admin/auth/providers", {
+    const res = await app.request("/admin", {
       headers: { [CF_ACCESS_HEADER]: token },
     });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("Identity providers");
+    expect(html).toContain("staff-spa-fixture");
   });
 
   it("CF JWT without session bootstraps admin SPA and /api/admin/* APIs", async () => {
@@ -200,7 +199,9 @@ describe("CF Access admin collision point", () => {
       sub: "cf-norole-sub",
       email: NO_ROLE_EMAIL,
     });
-    const res = await app.request("/admin/auth/providers", {
+    // Probe a requireAdminAccess-gated route: the CF no-role branch returns the
+    // CF-specific text body (staffAdminGate on /admin returns a generic Forbidden).
+    const res = await app.request("/api/admin/identity/providers", {
       headers: { [CF_ACCESS_HEADER]: token },
     });
     expect(res.status).toBe(403);
@@ -209,7 +210,7 @@ describe("CF Access admin collision point", () => {
   });
 
   it("invalid CF JWT rejects even with valid session", async () => {
-    const res = await app.request("/admin/auth/providers", {
+    const res = await app.request("/admin", {
       headers: {
         Cookie: superCookie,
         [CF_ACCESS_HEADER]: "not.a.jwt",
@@ -236,7 +237,7 @@ describe("CF Access admin collision point", () => {
       });
 
       const token = await signCfAccessJwt(mock, { sub: "cf-orphan-sub", email: orphanEmail });
-      const res = await app.request("/admin/auth/providers", {
+      const res = await app.request("/admin", {
         headers: { [CF_ACCESS_HEADER]: token },
       });
       expect(res.status).toBe(403);
@@ -254,54 +255,5 @@ describe("CF Access admin collision point", () => {
   it("public /t does not require CF JWT", async () => {
     const res = await app.request("/t/nonexistent-token");
     expect(res.status).not.toBe(401);
-  });
-});
-
-describe("CF Access config UI", () => {
-  it("superadmin can open cf-access settings via session", async () => {
-    const res = await app.request("/admin/auth/cf-access", {
-      headers: { Cookie: superCookie },
-    });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("Cloudflare Access");
-    expect(html).toContain("<title>Admitto — Cloudflare Access</title>");
-    expect(html).toContain("<h1>Cloudflare Access</h1>");
-    expect(html).not.toMatch(/<h1>Admitto —/);
-  });
-
-  it("test JWKS endpoint via form", async () => {
-    const res = await app.request("/admin/auth/cf-access/test", {
-      method: "POST",
-      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ team_domain: mock.teamDomain }).toString(),
-    });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("Connection verified");
-  });
-
-  it("rejects enabling CF Access without team domain and AUD", async () => {
-    const res = await app.request("/admin/auth/cf-access", {
-      method: "POST",
-      headers: {
-        Cookie: superCookie,
-        ...sameOrigin,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        enabled: "1",
-        team_domain: "",
-        audience: "",
-        protected_prefixes: '["/admin","/api/admin"]',
-      }).toString(),
-    });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("CF_ACCESS_TEAM_DOMAIN");
-    const config = await prisma.systemSettings.findUnique({
-      where: { key: SETTING_CF_ACCESS_TEAM_DOMAIN },
-    });
-    expect(config?.value_json).toContain(mock.teamDomain);
   });
 });

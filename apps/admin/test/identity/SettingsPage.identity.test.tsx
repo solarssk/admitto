@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate, useLocation } from "react-router-dom";
 import { render } from "@testing-library/react";
 
 // Stub the settings panels so SettingsPage's routing behavior can be tested
@@ -125,5 +125,54 @@ describe("SettingsPage Identity tab", () => {
     await waitFor(() => {
       expect(screen.getByText("before-page")).toBeTruthy();
     });
+  });
+
+  it("reflects the active in-page tab in the URL via replace when clicked", async () => {
+    function LocationProbe() {
+      const loc = useLocation();
+      return <div data-testid="location-probe">{loc.search}</div>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/admin/settings"]}>
+        <Routes>
+          <Route
+            path="/admin/settings"
+            element={
+              <>
+                <SettingsPage />
+                <LocationProbe />
+              </>
+            }
+          />
+          <Route
+            path="/admin/settings/identity/providers"
+            element={<div>identity-providers-route</div>}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("location-probe").textContent).toBe("");
+    fireEvent.click(screen.getByRole("tab", { name: "Security" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("location-probe").textContent).toContain("tab=security");
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Archiving" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("location-probe").textContent).toContain("tab=archiving");
+    });
+  });
+
+  it("restores the active tab from ?tab= on initial load", async () => {
+    renderAt("/admin/settings?tab=security");
+    await waitFor(() => {
+      expect(screen.getByTestId("security-panel")).toBeTruthy();
+    });
+    expect(screen.getByTestId("security-panel").getAttribute("hidden")).toBeNull();
+  });
+
+  it("ignores an unknown ?tab= value and falls back to General", async () => {
+    renderAt("/admin/settings?tab=nonsense");
+    expect(screen.getByTestId("branding-panel")).toBeTruthy();
   });
 });
