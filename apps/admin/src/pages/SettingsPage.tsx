@@ -1,4 +1,5 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, PageHeader, Tabs } from "@admitto/ui";
 import { BrandingPanel } from "../settings/BrandingPanel.js";
 import { MailTransportPanel } from "../settings/MailTransportPanel.js";
@@ -24,31 +25,26 @@ function isSettingsTab(id: string): id is SettingsTab {
   return SETTINGS_TABS.some((tab) => tab.id === id);
 }
 
-/** Secondary action link — Button primitive has no native href support yet. */
-function SettingsManageLink({ href, children }: { href: string; children: ReactNode }) {
-  return (
-    <a className="at-btn at-btn--secondary" href={href}>
-      <span>{children}</span>
-    </a>
-  );
-}
-
-function IdentityProvidersCard() {
+/**
+ * Identity overview teaser rendered inside the Settings Identity tab. The full
+ * Identity & SSO section lives at /admin/settings/identity/* (IdentityLayout) —
+ * this card just routes the operator there. Kept as an in-tab card so the tab
+ * strip still has content for "identity" before the route hand-off (#266 slice 2).
+ */
+function IdentityProvidersCard({ onOpen }: { onOpen: () => void }) {
   return (
     <Card title="Identity providers">
       <div className="settings-row">
         <div className="settings-row__text">
-          <strong>OIDC providers</strong>
-          <p>Configure external OpenID Connect identity providers and group-to-role mapping.</p>
+          <strong>OIDC providers & Cloudflare Access</strong>
+          <p>
+            Manage OpenID Connect identity providers, group-to-role mapping, and Cloudflare Zero
+            Trust access from the unified Identity & SSO section.
+          </p>
         </div>
-        <SettingsManageLink href="/admin/auth/providers">Manage</SettingsManageLink>
-      </div>
-      <div className="settings-row">
-        <div className="settings-row__text">
-          <strong>Cloudflare Access</strong>
-          <p>Protect admin paths with Cloudflare Zero Trust while keeping a local break-glass path.</p>
-        </div>
-        <SettingsManageLink href="/admin/auth/cf-access">Manage</SettingsManageLink>
+        <button type="button" className="at-btn at-btn--secondary" onClick={onOpen}>
+          <span>Open Identity & SSO</span>
+        </button>
       </div>
     </Card>
   );
@@ -75,16 +71,40 @@ function SettingsTabPanel({ tab, activeTab, visited, label, className, children 
 
 /** Instance-level settings: grouped in-app tabs (branding, security, archiving, identity links). */
 export function SettingsPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<SettingsTab>("general");
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<SettingsTab>>(
     () => new Set(INITIAL_VISITED_TABS),
   );
 
-  const handleTabChange = useCallback((id: string) => {
-    if (!isSettingsTab(id)) return;
-    setTab(id);
-    setVisitedTabs((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
-  }, []);
+  const openIdentity = useCallback(() => {
+    navigate("/admin/settings/identity/providers");
+  }, [navigate]);
+
+  // Legacy entry: /admin/settings?tab=identity redirects to the canonical
+  // Identity & SSO route (deep-linkable, lives under the SPA shell). #266.
+  useEffect(() => {
+    if (searchParams.get("tab") === "identity") {
+      openIdentity();
+    }
+  }, [searchParams, openIdentity]);
+
+  const handleTabChange = useCallback(
+    (id: string) => {
+      if (!isSettingsTab(id)) return;
+      // Identity has its own routed sub-section (IdentityLayout) with canonical URLs
+      // for deep-linking; clicking the tab hands off to that route instead of an
+      // in-page panel (#266).
+      if (id === "identity") {
+        openIdentity();
+        return;
+      }
+      setTab(id);
+      setVisitedTabs((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    },
+    [openIdentity],
+  );
 
   return (
     <div className="settings-page">
@@ -127,7 +147,7 @@ export function SettingsPage() {
         <EventArchivingPanel />
       </SettingsTabPanel>
       <SettingsTabPanel tab="identity" activeTab={tab} visited={visitedTabs} label="Identity">
-        <IdentityProvidersCard />
+        <IdentityProvidersCard onOpen={openIdentity} />
       </SettingsTabPanel>
     </div>
   );

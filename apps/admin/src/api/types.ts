@@ -837,3 +837,36 @@ export interface EventReportsResponse {
   admission_log_truncated: boolean;
   admission_log_total: number;
 }
+
+// --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---
+
+export interface IdentityProviderListItem {
+  id: string;
+  display_name: string;
+  issuer: string;
+  enabled: boolean;
+}
+
+export interface IdentityProvidersListResponse {
+  providers: IdentityProviderListItem[];
+}
+
+export interface ToggleProviderResponse {
+  id: string;
+  enabled: boolean;
+}
+
+export interface CfAccessEnvLocks {
+  enabled: boolean;
+  teamDomain: boolean;
+  audience: boolean;
+  protectedPrefixes: boolean;
+}
+
+export interface CfAccessSummaryDto {
+  enabled: boolean;
+  teamDomain: string;
+  audience: string[];
+  protectedPrefixes: string[];
+  locks: CfAccessEnvLocks;
+}

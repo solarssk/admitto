@@ -1,0 +1,248 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Badge, Button, Card, EmptyState, Skeleton, Switch, useToast } from "@admitto/ui";
+import {
+  ApiError,
+  fetchCfAccessSummary,
+  fetchIdentityProviders,
+  toggleIdentityProvider,
+} from "../api/client.js";
+import type {
+  CfAccessSummaryDto,
+  IdentityProviderListItem,
+} from "../api/types.js";
+
+type LoadState = "loading" | "ready" | "error";
+
+interface ProviderRow {
+  id: string;
+  display_name: string;
+  issuer: string;
+  enabled: boolean;
+}
+
+/** Bridge to the legacy HTML editor until the SPA provider editor lands (slice 3, #266). */
+const LEGACY_NEW_PROVIDER_HREF = "/admin/auth/providers/new";
+function legacyEditProviderHref(id: string): string {
+  return `/admin/auth/providers/${encodeURIComponent(id)}`;
+}
+/** Bridge to the legacy HTML editor until the SPA CF Access editor lands (slice 4, #266). */
+const LEGACY_CF_ACCESS_HREF = "/admin/auth/cf-access";
+
+function ProviderListSkeleton() {
+  return (
+    <div className="identity-providers__skeleton" aria-hidden="true">
+      <Skeleton height={64} />
+      <Skeleton height={64} />
+    </div>
+  );
+}
+
+function ProviderRowItem({
+  provider,
+  onToggle,
+}: {
+  provider: ProviderRow;
+  onToggle: (provider: ProviderRow) => void;
+}) {
+  const labelId = `idp-enabled-${provider.id}`;
+  return (
+    <div className="settings-row identity-provider-row">
+      <div className="settings-row__text">
+        <strong>{provider.display_name}</strong>
+        <p className="identity-provider-row__issuer">{provider.issuer}</p>
+      </div>
+      <div className="identity-provider-row__actions">
+        <a className="at-btn at-btn--ghost" href={legacyEditProviderHref(provider.id)}>
+          <span>Edit</span>
+        </a>
+        <Switch
+          id={labelId}
+          label="Enabled"
+          checked={provider.enabled}
+          onChange={() => onToggle(provider)}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Identity overview — Providers list (OIDC) + Cloudflare Access summary card.
+ * Reachable at /admin/settings/identity/providers. The SPA editor for individual
+ * providers and CF Access is delivered in slices 3 and 4; until then the Add/Edit
+ * and CF Manage actions bridge to the legacy HTML pages.
+ */
+export function IdentityProvidersPanel() {
+  const { addToast } = useToast();
+  const [providers, setProviders] = useState<ProviderRow[]>([]);
+  const [cf, setCf] = useState<CfAccessSummaryDto | null>(null);
+  const [providersState, setProvidersState] = useState<LoadState>("loading");
+  const [cfState, setCfState] = useState<LoadState>("loading");
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const fetchedRef = useRef(false);
+
+  const loadProviders = useCallback(async (signal: AbortSignal) => {
+    setProvidersState((prev) => (prev === "ready" ? prev : "loading"));
+    try {
+      const data = await fetchIdentityProviders(signal);
+      setProviders(
+        data.providers.map((p: IdentityProviderListItem) => ({
+          id: p.id,
+          display_name: p.display_name,
+          issuer: p.issuer,
+          enabled: p.enabled,
+        })),
+      );
+      setProvidersState("ready");
+    } catch (err) {
+      if (signal.aborted || (err instanceof ApiError && err.status === 401)) return;
+      setProvidersState("error");
+    }
+  }, []);
+
+  const loadCf = useCallback(async (signal: AbortSignal) => {
+    setCfState((prev) => (prev === "ready" ? prev : "loading"));
+    try {
+      setCf(await fetchCfAccessSummary(signal));
+      setCfState("ready");
+    } catch (err) {
+      if (signal.aborted || (err instanceof ApiError && err.status === 401)) return;
+      setCfState("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    const controller = new AbortController();
+    void loadProviders(controller.signal);
+    void loadCf(controller.signal);
+    return () => controller.abort();
+  }, [loadProviders, loadCf]);
+
+  const handleToggle = useCallback(
+    async (provider: ProviderRow) => {
+      const next = !provider.enabled;
+      // Optimistic flip so the switch feels instant.
+      setProviders((prev) =>
+        prev.map((row) => (row.id === provider.id ? { ...row, enabled: next } : row)),
+      );
+      setTogglingId(provider.id);
+      try {
+        const result = await toggleIdentityProvider(provider.id);
+        setProviders((prev) =>
+          prev.map((row) => (row.id === provider.id ? { ...row, enabled: result.enabled } : row)),
+        );
+        addToast(
+          result.enabled ? "Provider enabled." : "Provider disabled.",
+          result.enabled ? "success" : "info",
+        );
+      } catch (err) {
+        // Revert on failure.
+        setProviders((prev) =>
+          prev.map((row) => (row.id === provider.id ? { ...row, enabled: provider.enabled } : row)),
+        );
+        const message = err instanceof ApiError ? err.message : "Failed to toggle provider";
+        addToast(message, "error");
+      } finally {
+        setTogglingId(null);
+      }
+    },
+    [addToast],
+  );
+
+  const retryProviders = useCallback(() => {
+    const controller = new AbortController();
+    void loadProviders(controller.signal);
+  }, [loadProviders]);
+
+  const retryCf = useCallback(() => {
+    const controller = new AbortController();
+    void loadCf(controller.signal);
+  }, [loadCf]);
+
+  return (
+    <div className="identity-section__panels">
+      <Card
+        title="OIDC providers"
+        actions={
+          <a className="at-btn at-btn--primary" href={LEGACY_NEW_PROVIDER_HREF}>
+            <span>Add provider</span>
+          </a>
+        }
+      >
+        {providersState === "loading" && <ProviderListSkeleton />}
+        {providersState === "error" && (
+          <EmptyState
+            title="Couldn't load providers"
+            description="Something went wrong while fetching identity providers."
+            action={<Button variant="secondary" onClick={retryProviders}>Retry</Button>}
+          />
+        )}
+        {providersState === "ready" && providers.length === 0 && (
+          <EmptyState
+            title="No identity providers yet"
+            description="Add an OpenID Connect provider to enable single sign-on for your team."
+            action={
+              <a className="at-btn at-btn--primary" href={LEGACY_NEW_PROVIDER_HREF}>
+                <span>Add provider</span>
+              </a>
+            }
+          />
+        )}
+        {providersState === "ready" && providers.length > 0 && (
+          <div className="identity-providers__list">
+            {providers.map((provider) => (
+              <ProviderRowItem
+                key={provider.id}
+                provider={provider}
+                onToggle={handleToggle}
+              />
+            ))}
+          </div>
+        )}
+        {providersState === "ready" && (
+          <p className="identity-providers__hint">
+            {togglingId ? "Saving…" : "Add and edit providers open the current editor in a new page."}
+          </p>
+        )}
+      </Card>
+
+      <Card title="Cloudflare Access">
+        {cfState === "loading" && <Skeleton height={56} />}
+        {cfState === "error" && (
+          <EmptyState
+            title="Couldn't load Cloudflare Access"
+            description="Something went wrong while fetching the Cloudflare Access configuration."
+            action={<Button variant="secondary" onClick={retryCf}>Retry</Button>}
+          />
+        )}
+        {cfState === "ready" && cf && (
+          <div className="settings-row cf-access-summary">
+            <div className="settings-row__text">
+              <strong>
+                Cloudflare Zero Trust {cf.enabled ? null : <span className="cf-access-summary__off">(disabled)</span>}
+              </strong>
+              <p>
+                {cf.teamDomain
+                  ? `Team domain: ${cf.teamDomain}`
+                  : "No team domain configured."}
+              </p>
+              <div className="cf-access-summary__badges">
+                {cf.enabled ? (
+                  <Badge variant="ok" dot>Enabled</Badge>
+                ) : (
+                  <Badge variant="neutral" dot>Disabled</Badge>
+                )}
+                {cf.locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
+              </div>
+            </div>
+            <a className="at-btn at-btn--secondary" href={LEGACY_CF_ACCESS_HREF}>
+              <span>Manage</span>
+            </a>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
