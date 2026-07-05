@@ -68,13 +68,17 @@ function buildSaveBody(
     display_name: draft.display_name.trim(),
     issuer: draft.issuer.trim(),
     client_id: draft.client_id.trim(),
-    authorization_endpoint: draft.authorization_endpoint.trim(),
-    token_endpoint: draft.token_endpoint.trim(),
-    jwks_uri: draft.jwks_uri.trim(),
-    userinfo_endpoint: draft.userinfo_endpoint.trim(),
-    claim_email: draft.claim_email.trim(),
-    claim_name: draft.claim_name.trim(),
-    claim_groups: draft.claim_groups.trim(),
+    // Optional endpoint/claim fields: send `undefined` when blank so the JSON
+    // body omits them (semantically "not configured"), matching how the server's
+    // toProviderInput maps "" → undefined. Sending "" would be accepted but is
+    // a different shape than omitting the field.
+    authorization_endpoint: draft.authorization_endpoint.trim() || undefined,
+    token_endpoint: draft.token_endpoint.trim() || undefined,
+    jwks_uri: draft.jwks_uri.trim() || undefined,
+    userinfo_endpoint: draft.userinfo_endpoint.trim() || undefined,
+    claim_email: draft.claim_email.trim() || undefined,
+    claim_name: draft.claim_name.trim() || undefined,
+    claim_groups: draft.claim_groups.trim() || undefined,
     enabled: draft.enabled,
     // Empty label clears to the product default; a string sets it.
     login_button_label: draft.login_button_label.trim() || null,
@@ -121,6 +125,12 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [hasSecret, setHasSecret] = useState(false);
+  // Retry tick drives the load effect (mount + Retry button), mirroring the
+  // providersRetry/cfRetry pattern in IdentityProvidersPanel (#296). Each effect
+  // run owns its AbortController and aborts on cleanup, so a StrictMode remount
+  // and a Retry both re-fetch cleanly — no one-shot ref (which stranded #296 in
+  // dev) and no ad-hoc AbortController on the Retry button (which leaked).
+  const [loadTick, setLoadTick] = useState(0);
 
   /** Session expired mid-fetch: hand off to login with a return path (matches the
    * pattern used across the admin SPA, e.g. IdentityProvidersPanel/ReportsPage). */
@@ -158,16 +168,20 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
   );
 
   // Re-fetch whenever the resolved provider id changes (deep link, or in-app nav
-  // from one provider's edit URL to another). No one-shot ref: a ref would keep
-  // the previous provider's data on the screen and let Save PUT it onto the new
-  // id. The cleanup aborts the in-flight fetch on param change / StrictMode
-  // remount so only the latest request can settle state.
+  // from one provider's edit URL to another) or when loadTick advances (Retry).
+  // No one-shot ref: a ref would keep the previous provider's data on the screen
+  // and let Save PUT it onto the new id, and would strand the editor on a loading
+  // skeleton under React StrictMode (the #296 regression). The cleanup aborts the
+  // in-flight fetch on param change / Retry / remount so only the latest request
+  // can settle state.
   useEffect(() => {
     if (mode !== "edit") return;
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
-  }, [mode, load]);
+  }, [mode, load, loadTick]);
+
+  const retryLoad = useCallback(() => setLoadTick((n) => n + 1), []);
 
   const dirty = isDraftDirty(draft, baseline);
 
@@ -237,13 +251,18 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
       setSaving(true);
       try {
         const body = buildSaveBody(draft, mode, mappings);
-        const saved = mode === "create"
-          ? await createIdentityProvider(body)
-          : await updateIdentityProvider(resolvedProviderId!, body);
+        if (mode === "create") {
+          await createIdentityProvider(body);
+        } else if (resolvedProviderId) {
+          // Runtime guard: edit mode with no resolvable id (mis-configured route)
+          // never reaches updateIdentityProvider with an undefined id.
+          await updateIdentityProvider(resolvedProviderId, body);
+        } else {
+          return;
+        }
         addToast(mode === "create" ? "Provider created." : "Provider updated.", "success");
         skipBlockRef.current = true;
         navigate(IDENTITY_PROVIDERS_ROUTE);
-        void saved;
       } catch (err) {
         const message = err instanceof ApiError ? err.message : "Failed to save provider.";
         addToast(message, "error");
@@ -268,10 +287,7 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
         <p>Couldn't load this provider.</p>
         <Button
           variant="secondary"
-          onClick={() => {
-            const controller = new AbortController();
-            void load(controller.signal);
-          }}
+          onClick={retryLoad}
         >
           Retry
         </Button>
@@ -406,7 +422,7 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
             value={draft.claim_groups}
             invalid={Boolean(errors.claim_groups)}
             error={errors.claim_groups}
-            hint="Groups are matched against the group-to-role mapping (slice 3b)."
+            hint="Groups are matched against the group-to-role mapping."
             onChange={(e) => setDraft((d) => setField(d, "claim_groups", e.target.value))}
             placeholder="groups"
           />
@@ -420,7 +436,7 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
             value={draft.login_button_label}
             invalid={Boolean(errors.login_button_label)}
             error={errors.login_button_label}
-            hint="Leave blank to use the product default. A live preview lands in slice 3b."
+            hint="Leave blank to use the product default."
             onChange={(e) => setDraft((d) => setField(d, "login_button_label", e.target.value))}
             placeholder="Continue with Google"
           />

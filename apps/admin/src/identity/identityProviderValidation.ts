@@ -55,6 +55,10 @@ export function validateProviderDraft(draft: ProviderDraft, mode: EditorMode): F
     errors.issuer = "Issuer URL is required.";
   } else if (trimmed(draft.issuer).length > MAX_ISSUER) {
     errors.issuer = `Keep it under ${MAX_ISSUER} characters.`;
+  // Issuer URL shape. The server schema (identity-api-routes.ts) only enforces
+  // non-empty/max-length, so this client check is UX-level, not OIDC-spec
+  // enforcement: accept http(s):// deliberately (localhost dev providers), and
+  // leave strict https-only / RFC 8414 conformance to the server/auth layer.
   } else if (!/^https?:\/\//i.test(trimmed(draft.issuer))) {
     errors.issuer = "Issuer must be a URL starting with http(s)://";
   }
@@ -104,8 +108,11 @@ export function validateProviderDraft(draft: ProviderDraft, mode: EditorMode): F
 /** True when any field differs from the snapshot taken after load (edit) or from the create empty state. */
 export function isDraftDirty(draft: ProviderDraft, baseline: ProviderDraft): boolean {
   return (Object.keys(draft) as Array<keyof ProviderDraft>).some((key) => {
-    if (key === "client_secret") {
-      // On edit, a touched (non-empty) secret counts as dirty; untouched never does.
+    // The secret is write-only, so compare via the touched flag once. Both
+    // `client_secret` and `client_secret_touched` would otherwise return the
+    // same boolean (baseline always has client_secret_touched=false), making
+    // the default branch a redundant second detection.
+    if (key === "client_secret" || key === "client_secret_touched") {
       return draft.client_secret_touched;
     }
     return draft[key] !== baseline[key];

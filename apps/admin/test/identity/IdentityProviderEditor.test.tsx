@@ -121,6 +121,9 @@ describe("IdentityProviderEditor — create", () => {
     expect(body.display_name).toBe("Google");
     expect(body.client_secret).toBe("secret-abc");
     expect(body.mappings).toEqual([]);
+    // Blank optional endpoint/claim fields are omitted (undefined), not sent as "".
+    expect(body.authorization_endpoint).toBeUndefined();
+    expect(body.claim_email).toBeUndefined();
     await waitFor(() => {
       expect(screen.getByText("providers-list")).toBeTruthy();
     });
@@ -213,6 +216,17 @@ describe("IdentityProviderEditor — edit", () => {
     } finally {
       if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
     }
+  });
+
+  it("recovers from a load error via the Retry button", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetch.mockRejectedValueOnce(new ApiError(500, "boom"));
+    mockFetch.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByText("Couldn't load this provider.")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
   });
 });
 
