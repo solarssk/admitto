@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useOutletContext } from "react-router-dom";
-import { Badge, Card, PageHeader, Stat, useToast } from "@admitto/ui";
+import { useOutletContext } from "react-router-dom";
+import { Avatar, Badge, Card, PageHeader, Stat, useToast } from "@admitto/ui";
 import { ApiError, fetchEventOverview } from "../api/client.js";
 import type { EventDto, EventOverviewDto } from "../api/types.js";
-import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates.js";
+import { formatEventCalendarDate, formatEventTime, formatUtcDateTime } from "../utils/event-dates.js";
 import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import {
@@ -32,13 +32,7 @@ function AdmissionBar({ admitted, total }: { admitted: number; total: number }) 
   );
 }
 
-const QUICK_LINKS = [
-  { segment: "attendees", icon: "users", label: "Attendees", desc: "Guest list, import, and export" },
-  { segment: "requirements", icon: "clipboard-list", label: "Requirements", desc: "Registration rules and fields" },
-  { segment: "communication", icon: "mail", label: "Communication", desc: "Ticket and lifecycle mail" },
-  { segment: "checkin", icon: "qrcode", label: "Check-in", desc: "Door scanning and admission" },
-  { segment: "reports", icon: "chart-bar", label: "Reports", desc: "Attendance stats and export" },
-] as const;
+const RECENT_CHECKINS_MAX = 8;
 
 function formatEmailDeliverySub(overview: EventOverviewDto): string {
   const parts: string[] = [];
@@ -55,6 +49,38 @@ function formatEmailDeliverySub(overview: EventOverviewDto): string {
     return `${overview.email_queued} queued`;
   }
   return "Delivered";
+}
+
+function EmailDeliveryBars({ overview }: { overview: EventOverviewDto }) {
+  const failed = overview.email_failed + overview.email_bounced;
+  const total = overview.email_sent + overview.email_queued + failed;
+  const pct = (val: number) =>
+    total > 0 ? `${Math.max(2, Math.round((val / total) * 100))}%` : "0%";
+
+  return (
+    <div className="overview-delivery">
+      {(
+        [
+          { label: "Sent", value: overview.email_sent, mod: "ok" },
+          { label: "Pending", value: overview.email_queued, mod: "warn" },
+          { label: "Failed", value: failed, mod: "error" },
+        ] as const
+      ).map(({ label, value, mod }) => (
+        <div key={label} className="overview-bar-row">
+          <span className="overview-bar-row__label">{label}</span>
+          <div className="overview-bar-row__track">
+            {value > 0 && (
+              <div
+                className={`overview-bar-row__fill overview-bar-row__fill--${mod}`}
+                style={{ width: pct(value) }}
+              />
+            )}
+          </div>
+          <b className="overview-bar-row__count">{value}</b>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /** Event-scoped dashboard — metrics, countdown, and shortcuts. */
@@ -75,6 +101,7 @@ export function EventOverviewPage() {
 
   const [overview, setOverview] = useState<EventOverviewDto | null>(null);
   const [optimisticAdmittedDelta, setOptimisticAdmittedDelta] = useState(0);
+  const [recentCheckins, setRecentCheckins] = useState<StreamCheckinEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   const currentOverview = overview?.event.id === event.id ? overview : null;
@@ -110,6 +137,7 @@ export function EventOverviewPage() {
       if (isAdmitDedupHit(seenCheckinsRef.current, checkin.attendeeId, checkin.admittedAt)) return;
       registerAdmitDedup(seenCheckinsRef.current, checkin.attendeeId, checkin.admittedAt);
       setOptimisticAdmittedDelta((delta) => delta + 1);
+      setRecentCheckins((prev) => [checkin, ...prev].slice(0, RECENT_CHECKINS_MAX));
       scheduleReconcile();
     },
     [scheduleReconcile],
@@ -128,6 +156,7 @@ export function EventOverviewPage() {
     statsErrorToastedRef.current = false;
     setOverview(null);
     setOptimisticAdmittedDelta(0);
+    setRecentCheckins([]);
 
     const load = () => {
       abortRef.current?.abort();
@@ -242,25 +271,35 @@ export function EventOverviewPage() {
         </p>
       )}
 
-      <section className="overview-section">
-        <h2 className="overview-section__title">Quick actions</h2>
-        <div className="overview-links">
-          {QUICK_LINKS.map((item) => (
-            <Link
-              key={item.segment}
-              to={`/admin/events/${event.id}/${item.segment}`}
-              className="overview-link-card"
-            >
-              <i className={`ti ti-${item.icon}`} aria-hidden="true" />
-              <span className="overview-link-card__text">
-                <strong>{item.label}</strong>
-                <span>{item.desc}</span>
-              </span>
-              <i className="ti ti-chevron-right overview-link-card__chevron" aria-hidden="true" />
-            </Link>
-          ))}
-        </div>
-      </section>
+      <div className="overview-two-col">
+        <Card title="Email delivery">
+          {currentOverview != null ? (
+            <EmailDeliveryBars overview={currentOverview} />
+          ) : (
+            <p className="overview-muted">{loading ? "Loading…" : "Delivery stats unavailable"}</p>
+          )}
+        </Card>
+        <Card title="Recent check-ins">
+          {recentCheckins.length === 0 ? (
+            <p className="overview-muted">No check-ins yet — events will appear as attendees scan in.</p>
+          ) : (
+            <ul className="overview-activity">
+              {recentCheckins.map((c) => (
+                <li key={`${c.attendeeId}-${c.admittedAt}`} className="overview-activity__item">
+                  <Avatar name={c.attendeeName} size="sm" />
+                  <div className="overview-activity__info">
+                    <strong>{c.attendeeName}</strong>
+                    <span>{c.ticketType ?? "—"}</span>
+                  </div>
+                  <time className="overview-activity__time">
+                    {formatEventTime(c.admittedAt, eventTimezone)}
+                  </time>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
