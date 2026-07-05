@@ -14,8 +14,10 @@ const BRAND_MARK = (
 /** Shell for /account — shared by admin and operator staff. */
 export function AccountShell() {
   const { assignments } = useAuth();
-  const backTo = canAccessAdminPanel(assignments) ? "/admin" : "/operator";
-  const backLabel = canAccessAdminPanel(assignments) ? "All events" : "Check-in";
+  const isAdmin = canAccessAdminPanel(assignments);
+  const backTo = isAdmin ? "/admin" : "/operator";
+  const backLabel = isAdmin ? "All events" : "Check-in";
+  const backIcon = isAdmin ? "calendar-event" : "scan";
 
   const sidebar = (
     <>
@@ -23,12 +25,7 @@ export function AccountShell() {
         {BRAND_MARK}
         <span>Admitto</span>
       </NavLink>
-      <div className="sidebar__nav" aria-hidden="true" />
-      <div className="sidebar__foot">
-        <NavLink to={backTo} className="nav-item">
-          <i className={`ti ti-${canAccessAdminPanel(assignments) ? "calendar-event" : "scan"}`} aria-hidden="true" />
-          <span>{backLabel}</span>
-        </NavLink>
+      <nav className="sidebar__nav">
         <NavLink
           to="/account"
           className={({ isActive }: { isActive: boolean }) => `nav-item${isActive ? " nav-item--active" : ""}`}
@@ -36,6 +33,12 @@ export function AccountShell() {
         >
           <i className="ti ti-user-circle" aria-hidden="true" />
           <span>My account</span>
+        </NavLink>
+      </nav>
+      <div className="sidebar__foot">
+        <NavLink to={backTo} className="nav-item">
+          <i className={`ti ti-${backIcon}`} aria-hidden="true" />
+          <span>{backLabel}</span>
         </NavLink>
       </div>
     </>
