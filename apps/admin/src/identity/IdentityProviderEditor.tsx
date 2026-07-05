@@ -5,16 +5,23 @@ import { Button, Card, Input, Spinner, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   createIdentityProvider,
+  discoverIdentityProvider,
   fetchIdentityProvider,
+  testIdentityProvider,
   updateIdentityProvider,
 } from "../api/client.js";
 import type { ProviderDetailDto, ProviderRequestBody } from "../api/types.js";
+import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import {
+  areMappingsValid,
   emptyProviderDraft,
   isDraftDirty,
+  validateMappings,
   validateProviderDraft,
   type EditorMode,
   type FieldErrors,
+  type MappingRow,
+  type MappingRowError,
   type ProviderDraft,
 } from "./identityProviderValidation.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
@@ -28,14 +35,34 @@ interface IdentityProviderEditorProps {
 
 type LoadState = "loading" | "ready" | "error" | "not_found";
 
-/** Mappings carried through unchanged in slice 3a; the repeater lands in slice 3b (#266). */
-function mappingsFromDetail(detail: ProviderDetailDto): ProviderRequestBody["mappings"] {
+/** Map a loaded provider's mappings into editable repeater rows. */
+function mappingsFromDetail(detail: ProviderDetailDto): MappingRow[] {
   return detail.mappings.map((m) => ({
     group: m.group,
-    role: m.role,
-    scope_type: m.scope_type,
-    scope_id: m.scope_id || null,
+    role: m.role as MappingRow["role"],
+    scope_type: m.scope_type as MappingRow["scope_type"],
+    scope_id: m.scope_id ?? "",
   }));
+}
+
+/** Map repeater rows into the request body shape (scope_id null for instance scope). */
+function mappingsToBody(rows: MappingRow[]): ProviderRequestBody["mappings"] {
+  return rows.map((r) => ({
+    group: r.group.trim(),
+    role: r.role,
+    scope_type: r.scope_type,
+    scope_id: r.scope_type === "instance" ? null : r.scope_id.trim() || null,
+  }));
+}
+
+function mappingsEqual(a: MappingRow[], b: MappingRow[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((row, i) =>
+    row.group === b[i].group &&
+    row.role === b[i].role &&
+    row.scope_type === b[i].scope_type &&
+    row.scope_id === b[i].scope_id,
+  );
 }
 
 function draftFromDetail(detail: ProviderDetailDto): ProviderDraft {
@@ -62,7 +89,7 @@ function draftFromDetail(detail: ProviderDetailDto): ProviderDraft {
 function buildSaveBody(
   draft: ProviderDraft,
   mode: EditorMode,
-  mappings: ProviderRequestBody["mappings"],
+  mappings: MappingRow[],
 ): ProviderRequestBody {
   const body: ProviderRequestBody = {
     display_name: draft.display_name.trim(),
@@ -82,7 +109,7 @@ function buildSaveBody(
     enabled: draft.enabled,
     // Empty label clears to the product default; a string sets it.
     login_button_label: draft.login_button_label.trim() || null,
-    mappings,
+    mappings: mappingsToBody(mappings),
   };
   // Send the secret only when it's actually being (re)set: always on create,
   // and on edit only when the operator typed a non-empty value. A touched-then
@@ -111,11 +138,11 @@ function setField<K extends keyof ProviderDraft>(
 }
 
 /**
- * OIDC identity provider editor — slice 3a (#266). Covers Basics, Endpoints,
- * Claims, and the SSO login button label. The group→role mapping repeater,
- * Discover/Test actions, and the live SSO button preview land in slice 3b.
- * Create mode POSTs a new provider; edit mode loads by id and PUTs the full form
- * (mappings are sent back unchanged until the repeater ships).
+ * OIDC identity provider editor (#266). Basics, Endpoints, Claims, and the SSO
+ * login button label shipped in slice 3a; slice 3b adds the group→role mapping
+ * repeater, Discover/Test actions, and a live SSO button preview. Create mode
+ * POSTs a new provider; edit mode loads by id and PUTs the full form (mappings
+ * use replace-all semantics — the slice-1 PUT contract requires `mappings`).
  */
 export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEditorProps) {
   const navigate = useNavigate();
@@ -124,11 +151,15 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
   const resolvedProviderId = providerId ?? (mode === "edit" ? routeParams.providerId : undefined);
   const [draft, setDraft] = useState<ProviderDraft>(() => emptyProviderDraft());
   const [baseline, setBaseline] = useState<ProviderDraft>(() => emptyProviderDraft());
-  const [mappings, setMappings] = useState<ProviderRequestBody["mappings"]>([]);
+  const [mappings, setMappings] = useState<MappingRow[]>([]);
+  const [baselineMappings, setBaselineMappings] = useState<MappingRow[]>([]);
+  const [mappingErrors, setMappingErrors] = useState<MappingRowError[]>([]);
   const [loadState, setLoadState] = useState<LoadState>(mode === "edit" ? "loading" : "ready");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [hasSecret, setHasSecret] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const [testing, setTesting] = useState(false);
   // Retry tick drives the load effect (mount + Retry button), mirroring the
   // providersRetry/cfRetry pattern in IdentityProvidersPanel (#296). Each effect
   // run owns its AbortController and aborts on cleanup, so a StrictMode remount
@@ -155,7 +186,10 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
         const nextDraft = draftFromDetail(detail);
         setDraft(nextDraft);
         setBaseline(nextDraft);
-        setMappings(mappingsFromDetail(detail));
+        const nextMappings = mappingsFromDetail(detail);
+        setMappings(nextMappings);
+        setBaselineMappings(nextMappings);
+        setMappingErrors([]);
         setHasSecret(detail.has_client_secret);
         setLoadState("ready");
       } catch (err) {
@@ -190,7 +224,13 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
 
   const retryLoad = useCallback(() => setLoadTick((n) => n + 1), []);
 
-  const dirty = isDraftDirty(draft, baseline);
+  const dirty = isDraftDirty(draft, baseline) || !mappingsEqual(mappings, baselineMappings);
+
+  const handleMappingsChange = useCallback((rows: MappingRow[]) => {
+    setMappings(rows);
+    // Clear row errors as the operator edits; full re-validation runs on submit.
+    setMappingErrors((prev) => (prev.length === 0 ? prev : rows.map(() => ({}))));
+  }, []);
 
   // Router-level dirty guard. The Identity tabs / Settings sidebar / SPA back
   // button are all in-app navigations, which `beforeunload` does not catch — so
@@ -250,8 +290,10 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
     async (event: React.FormEvent) => {
       event.preventDefault();
       const validation = validateProviderDraft(draft, mode);
+      const mappingValidation = validateMappings(mappings);
       setErrors(validation);
-      if (Object.keys(validation).length > 0) {
+      setMappingErrors(mappingValidation);
+      if (Object.keys(validation).length > 0 || !areMappingsValid(mappings)) {
         addToast("Please fix the highlighted fields.", "error");
         return;
       }
@@ -271,6 +313,10 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
         skipBlockRef.current = true;
         navigate(IDENTITY_PROVIDERS_ROUTE);
       } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          redirectToLogin();
+          return;
+        }
         const message = err instanceof ApiError ? err.message : "Failed to save provider.";
         addToast(message, "error");
       } finally {
@@ -279,6 +325,55 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
     },
     [draft, mode, mappings, resolvedProviderId, addToast, navigate],
   );
+
+  // Discover autofills endpoints from the issuer's .well-known config (edit mode only).
+  const handleDiscover = useCallback(async () => {
+    if (!resolvedProviderId) return;
+    setDiscovering(true);
+    try {
+      const result = await discoverIdentityProvider(resolvedProviderId);
+      setDraft((d) => ({
+        ...d,
+        issuer: result.endpoints.issuer || d.issuer,
+        authorization_endpoint: result.endpoints.authorization_endpoint,
+        token_endpoint: result.endpoints.token_endpoint,
+        jwks_uri: result.endpoints.jwks_uri,
+        userinfo_endpoint: result.endpoints.userinfo_endpoint ?? "",
+      }));
+      addToast("Endpoints discovered from the issuer.", "success");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        redirectToLogin();
+        return;
+      }
+      const message = err instanceof ApiError ? err.message : "Discovery failed.";
+      addToast(message, "error");
+    } finally {
+      setDiscovering(false);
+    }
+  }, [resolvedProviderId, addToast]);
+
+  // Test probes the provider's endpoints (edit mode only).
+  const handleTest = useCallback(async () => {
+    if (!resolvedProviderId) return;
+    setTesting(true);
+    try {
+      const result = await testIdentityProvider(resolvedProviderId);
+      addToast(
+        result.ok ? "Connection test passed." : result.error ?? "Connection test failed.",
+        result.ok ? "success" : "error",
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        redirectToLogin();
+        return;
+      }
+      const message = err instanceof ApiError ? err.message : "Connection test failed.";
+      addToast(message, "error");
+    } finally {
+      setTesting(false);
+    }
+  }, [resolvedProviderId, addToast]);
 
   const title = mode === "create" ? "Add identity provider" : "Edit identity provider";
 
@@ -369,7 +464,33 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
         </div>
       </Card>
 
-      <Card title="Endpoints">
+      <Card
+        title="Endpoints"
+        actions={
+          mode === "edit" ? (
+            <div className="identity-editor__card-actions">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleDiscover}
+                disabled={discovering || testing || saving}
+              >
+                {discovering ? "Discovering…" : "Discover"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleTest}
+                disabled={discovering || testing || saving}
+              >
+                {testing ? "Testing…" : "Test connection"}
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
         <div className="identity-editor__grid">
           <Input
             label="Authorization endpoint"
@@ -429,11 +550,23 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
             value={draft.claim_groups}
             invalid={Boolean(errors.claim_groups)}
             error={errors.claim_groups}
-            hint="Groups are matched against the group-to-role mapping."
+            hint="Groups from this claim are matched against the mapping below."
             onChange={(e) => setDraft((d) => setField(d, "claim_groups", e.target.value))}
             placeholder="groups"
           />
         </div>
+      </Card>
+
+      <Card title="Group → role mapping">
+        <p className="identity-mappings__intro">
+          Map OIDC groups (from the groups claim) to Admitto roles. The full list replaces the
+          stored mappings on every save.
+        </p>
+        <IdentityMappingRepeater
+          rows={mappings}
+          errors={mappingErrors}
+          onChange={handleMappingsChange}
+        />
       </Card>
 
       <Card title="Login button">
@@ -443,10 +576,16 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
             value={draft.login_button_label}
             invalid={Boolean(errors.login_button_label)}
             error={errors.login_button_label}
-            hint="Leave blank to use the product default."
+            hint="Leave blank to use the product default ('Continue with SSO')."
             onChange={(e) => setDraft((d) => setField(d, "login_button_label", e.target.value))}
             placeholder="Continue with Google"
           />
+        </div>
+        <div className="identity-sso-preview" aria-label="SSO login button preview">
+          <span className="identity-sso-preview__label">Preview</span>
+          <span className="identity-sso-preview__button">
+            {draft.login_button_label.trim() || "Continue with SSO"}
+          </span>
         </div>
       </Card>
 

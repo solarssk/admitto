@@ -218,3 +218,83 @@ describe("isDraftDirty", () => {
     expect(isDraftDirty(cleared, baseline)).toBe(false);
   });
 });
+
+import {
+  areMappingsValid,
+  emptyMappingRow,
+  validateMappingRow,
+  validateMappings,
+  type MappingRow,
+} from "../../src/identity/identityProviderValidation.js";
+
+describe("validateMappingRow", () => {
+  it("flags a missing group", () => {
+    const errors = validateMappingRow({ ...emptyMappingRow(), group: "  " });
+    expect(errors.group).toMatch(/required/);
+  });
+
+  it("passes a valid instance-scoped row without scope_id", () => {
+    const errors = validateMappingRow({
+      group: "admins",
+      role: "admin",
+      scope_type: "instance",
+      scope_id: "",
+    });
+    expect(Object.keys(errors)).toHaveLength(0);
+  });
+
+  it("requires scope_id for organization scope", () => {
+    const errors = validateMappingRow({
+      group: "admins",
+      role: "admin",
+      scope_type: "organization",
+      scope_id: "",
+    });
+    expect(errors.scope_id).toMatch(/required/);
+  });
+
+  it("requires scope_id for event scope", () => {
+    const errors = validateMappingRow({
+      group: "admins",
+      role: "operator",
+      scope_type: "event",
+      scope_id: "  ",
+    });
+    expect(errors.scope_id).toMatch(/required/);
+  });
+
+  it("passes an organization-scoped row with a scope_id", () => {
+    const errors = validateMappingRow({
+      group: "admins",
+      role: "admin",
+      scope_type: "organization",
+      scope_id: "org-uuid",
+    });
+    expect(Object.keys(errors)).toHaveLength(0);
+  });
+});
+
+describe("areMappingsValid", () => {
+  it("returns true for an empty list", () => {
+    expect(areMappingsValid([])).toBe(true);
+  });
+
+  it("returns false when any row is invalid", () => {
+    const rows: MappingRow[] = [
+      { group: "admins", role: "admin", scope_type: "instance", scope_id: "" },
+      { group: "", role: "admin", scope_type: "instance", scope_id: "" },
+    ];
+    expect(areMappingsValid(rows)).toBe(false);
+  });
+
+  it("validateMappings returns an aligned error array", () => {
+    const rows: MappingRow[] = [
+      { group: "admins", role: "admin", scope_type: "instance", scope_id: "" },
+      { group: "", role: "admin", scope_type: "organization", scope_id: "" },
+    ];
+    const errors = validateMappings(rows);
+    expect(Object.keys(errors[0])).toHaveLength(0);
+    expect(errors[1].group).toBeTruthy();
+    expect(errors[1].scope_id).toBeTruthy();
+  });
+});
