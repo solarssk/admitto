@@ -52,26 +52,41 @@ function HourlyChart({ byHour }: { byHour: EventReportsResponse["by_hour"] }) {
   const max = Math.max(...visible.map((row) => row.count), 1);
 
   return (
-    <div className="reports-chart" aria-label="Hourly admissions chart">
-      {visible.map((row) => (
-        <div
-          key={row.hour}
-          className="reports-chart__bar-wrap"
-          aria-label={`${row.hour}: ${row.count} admission${row.count !== 1 ? "s" : ""}`}
-        >
-          <div className="reports-chart__count" aria-hidden="true">
-            {row.count > 0 ? row.count : ""}
+    <div>
+      <div className="reports-chart" aria-hidden="true">
+        {visible.map((row) => (
+          <div key={row.hour} className="reports-chart__bar-wrap">
+            <div className="reports-chart__count">
+              {row.count > 0 ? row.count : ""}
+            </div>
+            <div
+              className="reports-chart__bar"
+              style={{
+                height: `${(row.count / max) * 100}%`,
+                background: row.count > 0 ? "var(--primary)" : "var(--surface-sunken)",
+              }}
+            />
+            <div className="reports-chart__label">{row.hour}</div>
           </div>
-          <div
-            className="reports-chart__bar"
-            style={{
-              height: `${(row.count / max) * 100}%`,
-              background: row.count > 0 ? "var(--primary)" : "var(--surface-sunken)",
-            }}
-          />
-          <div className="reports-chart__label" aria-hidden="true">{row.hour}</div>
-        </div>
-      ))}
+        ))}
+      </div>
+      <table className="sr-only">
+        <caption>Hourly admissions</caption>
+        <thead>
+          <tr>
+            <th scope="col">Hour</th>
+            <th scope="col">Admissions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visible.map((row) => (
+            <tr key={row.hour}>
+              <td>{row.hour}</td>
+              <td>{row.count}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
