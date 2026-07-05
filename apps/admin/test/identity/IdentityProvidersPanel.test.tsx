@@ -52,8 +52,8 @@ describe("IdentityProvidersPanel", () => {
       expect(screen.getByText("Okta")).toBeTruthy();
       expect(screen.getByText(/Team domain: team.example.com/)).toBeTruthy();
     });
-    // Two provider switches + one CF "Enabled" badge (CF enabled in this fixture).
-    expect(screen.getAllByText("Enabled").length).toBe(3);
+    // Two provider switches rendered (CF "Enabled" badge is not a switch role).
+    expect(screen.getAllByRole("switch").length).toBe(2);
     expect(screen.getByText("Add provider")).toBeTruthy();
   });
 

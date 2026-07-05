@@ -7,9 +7,10 @@ const IDENTITY_TABS: TabItem[] = [
   { id: "cloudflare", label: "Cloudflare Access" },
 ];
 
-/** Resolve the active Identity sub-tab from the current pathname. */
+/** Resolve the active Identity sub-tab from the current pathname. Uses `includes`
+ * so future sub-routes (e.g. /cloudflare/edit in slice 4) still highlight Cloudflare. */
 function activeTabFromPath(pathname: string): string {
-  if (pathname.endsWith("/cloudflare")) return "cloudflare";
+  if (pathname.includes("/cloudflare")) return "cloudflare";
   return "providers";
 }
 
@@ -36,7 +37,6 @@ export function IdentityLayout() {
         subtitle="OpenID Connect providers, group-to-role mapping, and Cloudflare Zero Trust access."
       />
       <Tabs value={activeTabFromPath(pathname)} onChange={handleTabChange} tabs={IDENTITY_TABS} />
-      {/* Hidden when used as the route anchor for the sub-tab aria; the routed panel below is the real tabpanel. */}
       <div className="identity-section__body">
         <Outlet />
       </div>

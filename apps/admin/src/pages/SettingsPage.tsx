@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Card, PageHeader, Tabs } from "@admitto/ui";
+import { PageHeader, Tabs } from "@admitto/ui";
 import { BrandingPanel } from "../settings/BrandingPanel.js";
 import { MailTransportPanel } from "../settings/MailTransportPanel.js";
 import { InstanceUrlPanel } from "../settings/InstanceUrlPanel.js";
@@ -25,31 +25,6 @@ function isSettingsTab(id: string): id is SettingsTab {
   return SETTINGS_TABS.some((tab) => tab.id === id);
 }
 
-/**
- * Identity overview teaser rendered inside the Settings Identity tab. The full
- * Identity & SSO section lives at /admin/settings/identity/* (IdentityLayout) —
- * this card just routes the operator there. Kept as an in-tab card so the tab
- * strip still has content for "identity" before the route hand-off (#266 slice 2).
- */
-function IdentityProvidersCard({ onOpen }: { onOpen: () => void }) {
-  return (
-    <Card title="Identity providers">
-      <div className="settings-row">
-        <div className="settings-row__text">
-          <strong>OIDC providers & Cloudflare Access</strong>
-          <p>
-            Manage OpenID Connect identity providers, group-to-role mapping, and Cloudflare Zero
-            Trust access from the unified Identity & SSO section.
-          </p>
-        </div>
-        <button type="button" className="at-btn at-btn--secondary" onClick={onOpen}>
-          <span>Open Identity & SSO</span>
-        </button>
-      </div>
-    </Card>
-  );
-}
-
 interface SettingsTabPanelProps {
   tab: SettingsTab;
   activeTab: SettingsTab;
@@ -69,6 +44,8 @@ function SettingsTabPanel({ tab, activeTab, visited, label, className, children 
   );
 }
 
+const IDENTITY_ROUTE = "/admin/settings/identity/providers";
+
 /** Instance-level settings: grouped in-app tabs (branding, security, archiving, identity links). */
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -79,23 +56,24 @@ export function SettingsPage() {
   );
 
   const openIdentity = useCallback(() => {
-    navigate("/admin/settings/identity/providers");
+    navigate(IDENTITY_ROUTE);
   }, [navigate]);
 
-  // Legacy entry: /admin/settings?tab=identity redirects to the canonical
-  // Identity & SSO route (deep-linkable, lives under the SPA shell). #266.
+  // Legacy entry: /admin/settings?tab=identity redirects (replace, not push) to the
+  // canonical Identity & SSO route. Using replace avoids a Back-button loop back into
+  // ?tab=identity, which would re-fire this effect and bounce the user forward again.
   useEffect(() => {
     if (searchParams.get("tab") === "identity") {
-      openIdentity();
+      navigate(IDENTITY_ROUTE, { replace: true });
     }
-  }, [searchParams, openIdentity]);
+  }, [searchParams, navigate]);
 
   const handleTabChange = useCallback(
     (id: string) => {
       if (!isSettingsTab(id)) return;
       // Identity has its own routed sub-section (IdentityLayout) with canonical URLs
       // for deep-linking; clicking the tab hands off to that route instead of an
-      // in-page panel (#266).
+      // in-page panel (#266). Push (not replace) so Back returns to Settings.
       if (id === "identity") {
         openIdentity();
         return;
@@ -105,6 +83,10 @@ export function SettingsPage() {
     },
     [openIdentity],
   );
+
+  // TODO(#266 slice 5): persist the active in-page tab in the URL so Back from the
+  // Identity sub-section restores the tab the operator was on (e.g. Security) instead
+  // of resetting to General. Tracked with the SettingsPage hub cleanup.
 
   return (
     <div className="settings-page">
@@ -146,9 +128,7 @@ export function SettingsPage() {
       <SettingsTabPanel tab="archiving" activeTab={tab} visited={visitedTabs} label="Archiving">
         <EventArchivingPanel />
       </SettingsTabPanel>
-      <SettingsTabPanel tab="identity" activeTab={tab} visited={visitedTabs} label="Identity">
-        <IdentityProvidersCard onOpen={openIdentity} />
-      </SettingsTabPanel>
     </div>
   );
 }
+

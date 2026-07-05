@@ -1328,7 +1328,6 @@ export function eventReportsPrintUrl(eventId: string): string {
   return `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=pdf`;
 }
 
-
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---
 
 /** List configured OIDC identity providers (superadmin). */

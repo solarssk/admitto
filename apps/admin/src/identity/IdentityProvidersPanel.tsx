@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, EmptyState, Skeleton, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -6,18 +6,17 @@ import {
   fetchIdentityProviders,
   toggleIdentityProvider,
 } from "../api/client.js";
-import type {
-  CfAccessSummaryDto,
-  IdentityProviderListItem,
-} from "../api/types.js";
+import type { CfAccessSummaryDto, IdentityProviderListItem } from "../api/types.js";
 
 type LoadState = "loading" | "ready" | "error";
+/** Row shape is 1:1 with the API list DTO. */
+type ProviderRow = IdentityProviderListItem;
 
-interface ProviderRow {
-  id: string;
-  display_name: string;
-  issuer: string;
-  enabled: boolean;
+/** Session expired mid-fetch: hand off to login with a return path (matches the
+ * pattern used across the admin SPA, e.g. ReportsPage/AttendeesPage). */
+function redirectToLogin(): void {
+  const next = encodeURIComponent(window.location.pathname);
+  window.location.assign(`/login?next=${next}`);
 }
 
 /** Bridge to the legacy HTML editor until the SPA provider editor lands (slice 3, #266). */
@@ -40,9 +39,11 @@ function ProviderListSkeleton() {
 function ProviderRowItem({
   provider,
   onToggle,
+  disabled,
 }: {
   provider: ProviderRow;
   onToggle: (provider: ProviderRow) => void;
+  disabled: boolean;
 }) {
   const labelId = `idp-enabled-${provider.id}`;
   return (
@@ -59,6 +60,8 @@ function ProviderRowItem({
           id={labelId}
           label="Enabled"
           checked={provider.enabled}
+          disabled={disabled}
+          aria-busy={disabled}
           onChange={() => onToggle(provider)}
         />
       </div>
@@ -79,23 +82,25 @@ export function IdentityProvidersPanel() {
   const [providersState, setProvidersState] = useState<LoadState>("loading");
   const [cfState, setCfState] = useState<LoadState>("loading");
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const fetchedRef = useRef(false);
+  // Retry ticks drive the load effects (mount + Retry button). Each effect owns its
+  // AbortController and aborts on cleanup, so a React StrictMode remount and a Retry
+  // both re-fetch cleanly without leaking in-flight requests or getting stuck on a
+  // one-shot ref.
+  const [providersRetry, setProvidersRetry] = useState(0);
+  const [cfRetry, setCfRetry] = useState(0);
 
   const loadProviders = useCallback(async (signal: AbortSignal) => {
     setProvidersState((prev) => (prev === "ready" ? prev : "loading"));
     try {
       const data = await fetchIdentityProviders(signal);
-      setProviders(
-        data.providers.map((p: IdentityProviderListItem) => ({
-          id: p.id,
-          display_name: p.display_name,
-          issuer: p.issuer,
-          enabled: p.enabled,
-        })),
-      );
+      setProviders(data.providers);
       setProvidersState("ready");
     } catch (err) {
-      if (signal.aborted || (err instanceof ApiError && err.status === 401)) return;
+      if (signal.aborted) return;
+      if (err instanceof ApiError && err.status === 401) {
+        redirectToLogin();
+        return;
+      }
       setProvidersState("error");
     }
   }, []);
@@ -106,19 +111,29 @@ export function IdentityProvidersPanel() {
       setCf(await fetchCfAccessSummary(signal));
       setCfState("ready");
     } catch (err) {
-      if (signal.aborted || (err instanceof ApiError && err.status === 401)) return;
+      if (signal.aborted) return;
+      if (err instanceof ApiError && err.status === 401) {
+        redirectToLogin();
+        return;
+      }
       setCfState("error");
     }
   }, []);
 
   useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
     const controller = new AbortController();
     void loadProviders(controller.signal);
+    return () => controller.abort();
+  }, [loadProviders, providersRetry]);
+
+  useEffect(() => {
+    const controller = new AbortController();
     void loadCf(controller.signal);
     return () => controller.abort();
-  }, [loadProviders, loadCf]);
+  }, [loadCf, cfRetry]);
+
+  const retryProviders = useCallback(() => setProvidersRetry((n) => n + 1), []);
+  const retryCf = useCallback(() => setCfRetry((n) => n + 1), []);
 
   const handleToggle = useCallback(
     async (provider: ProviderRow) => {
@@ -138,28 +153,18 @@ export function IdentityProvidersPanel() {
           result.enabled ? "success" : "info",
         );
       } catch (err) {
-        // Revert on failure.
-        setProviders((prev) =>
-          prev.map((row) => (row.id === provider.id ? { ...row, enabled: provider.enabled } : row)),
-        );
+        // Reconcile with the server: a 409 toggle_race (or any failure) means the
+        // optimistic flip may not match the persisted state, so refetch the list
+        // instead of reverting to a stale closure value.
+        retryProviders();
         const message = err instanceof ApiError ? err.message : "Failed to toggle provider";
         addToast(message, "error");
       } finally {
         setTogglingId(null);
       }
     },
-    [addToast],
+    [addToast, retryProviders],
   );
-
-  const retryProviders = useCallback(() => {
-    const controller = new AbortController();
-    void loadProviders(controller.signal);
-  }, [loadProviders]);
-
-  const retryCf = useCallback(() => {
-    const controller = new AbortController();
-    void loadCf(controller.signal);
-  }, [loadCf]);
 
   return (
     <div className="identity-section__panels">
@@ -197,13 +202,14 @@ export function IdentityProvidersPanel() {
                 key={provider.id}
                 provider={provider}
                 onToggle={handleToggle}
+                disabled={togglingId === provider.id}
               />
             ))}
           </div>
         )}
         {providersState === "ready" && (
           <p className="identity-providers__hint">
-            {togglingId ? "Saving…" : "Add and edit providers open the current editor in a new page."}
+            {togglingId ? "Saving changes…" : "Add and edit providers open the current editor in a new page."}
           </p>
         )}
       </Card>
