@@ -126,6 +126,17 @@ describe("CfAccessEditor (slice 4)", () => {
     });
   });
 
+  it("parses a pasted JSON-array AUD list into clean values on save (server parity)", async () => {
+    mockFetch.mockResolvedValueOnce(summary());
+    mockUpdate.mockResolvedValueOnce(summary({ audience: ["aud-1", "aud-2"], protectedPrefixes: ["/admin"] }));
+    renderEditorAt();
+    const audInput = await waitFor(() => screen.getByPlaceholderText("a1b2c3d4-e5f6-7890-abcd-ef1234567890"));
+    fireEvent.change(audInput, { target: { value: '["aud-1","aud-2"]' } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][0]).toMatchObject({ audience: ["aud-1", "aud-2"] });
+  });
+
   it("Test connection sends the draft team domain and toasts success", async () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://team.cloudflareaccess.com" }));
     mockTest.mockResolvedValueOnce({ ok: true });

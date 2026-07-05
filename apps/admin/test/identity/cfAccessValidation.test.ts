@@ -31,6 +31,17 @@ describe("cfAccessValidation", () => {
     expect(parseListInput("aud-1, aud-1, aud-2")).toEqual(["aud-1", "aud-2"]);
   });
 
+  it("parseListInput accepts a JSON-array form for parity with the server parser", () => {
+    expect(parseListInput('["aud-1","aud-2"]')).toEqual(["aud-1", "aud-2"]);
+    expect(parseListInput('["/admin","/api/admin"]')).toEqual(["/admin", "/api/admin"]);
+    // De-dup applies to the JSON form too.
+    expect(parseListInput('["aud-1","aud-1"]')).toEqual(["aud-1"]);
+    // Incomplete JSON falls through to comma split (matches server catch branch).
+    expect(parseListInput('["aud-1",')).toEqual(['["aud-1"']);
+    // A non-array JSON value falls through to comma split.
+    expect(parseListInput('{"a":1}')).toEqual(['{"a":1}']);
+  });
+
   it("joinListInput round-trips through parseListInput", () => {
     const values = ["/admin", "/api/admin"];
     expect(parseListInput(joinListInput(values))).toEqual(values);

@@ -17,11 +17,34 @@ export type CfAccessFieldErrors = {
   protectedPrefixes?: string;
 };
 
-/** Split a comma-separated text input into a trimmed, de-duplicated value list. */
+/** Normalize a single parsed value: trim, drop empties. */
+function toValue(v: unknown): string {
+  return String(v).trim();
+}
+
+/** Split a comma-separated text input into a trimmed, de-duplicated value list.
+ *  Accepts a JSON-array form (e.g. `["aud-1","aud-2"]`) for parity with the legacy
+ *  CF Access form and the server's `parseAudience` / `parsePrefixes` — otherwise
+ *  pasting a JSON array would split on commas and persist literal brackets/quotes
+ *  as AUD values, breaking Cloudflare JWT audience checks after enabling Access. */
 export function parseListInput(raw: string): string[] {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map(toValue)
+          .filter(Boolean)
+          .filter((v, i, a) => a.indexOf(v) === i);
+      }
+    } catch {
+      // fall through to comma split
+    }
+  }
   return raw
     .split(",")
-    .map((s) => s.trim())
+    .map(toValue)
     .filter(Boolean)
     .filter((v, i, a) => a.indexOf(v) === i);
 }
