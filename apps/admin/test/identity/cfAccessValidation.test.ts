@@ -74,15 +74,8 @@ describe("cfAccessValidation", () => {
     expect(errors.protectedPrefixes).toBeUndefined();
   });
 
-  it("validateCfDraft rejects a team URL without an https scheme", () => {
-    const noScheme = validateCfDraft({
-      enabled: true,
-      teamDomain: "team.cloudflareaccess.com",
-      audienceRaw: "a",
-      protectedPrefixesRaw: "/admin",
-    });
-    expect(noScheme.teamDomain).toMatch(/https/);
-
+  it("validateCfDraft rejects a team URL with a non-https scheme but accepts a schemeless host (server parity)", () => {
+    // http:// is rejected inline.
     const httpScheme = validateCfDraft({
       enabled: true,
       teamDomain: "http://team.cloudflareaccess.com",
@@ -90,6 +83,25 @@ describe("cfAccessValidation", () => {
       protectedPrefixesRaw: "/admin",
     });
     expect(httpScheme.teamDomain).toMatch(/https/);
+
+    // Other schemes are rejected too.
+    const ftpScheme = validateCfDraft({
+      enabled: true,
+      teamDomain: "ftp://team.cloudflareaccess.com",
+      audienceRaw: "a",
+      protectedPrefixesRaw: "/admin",
+    });
+    expect(ftpScheme.teamDomain).toMatch(/https/);
+
+    // Schemeless host is accepted — the server normalizer prepends https://, so
+    // an env-locked schemeless team domain must not block an otherwise-valid save.
+    const schemeless = validateCfDraft({
+      enabled: true,
+      teamDomain: "team.cloudflareaccess.com",
+      audienceRaw: "a",
+      protectedPrefixesRaw: "/admin",
+    });
+    expect(schemeless.teamDomain).toBeUndefined();
   });
 
   it("validateCfDraft flags a protected prefix that does not start with /", () => {

@@ -279,7 +279,7 @@ export function CfAccessEditor() {
               invalid={Boolean(errors.teamDomain)}
               error={errors.teamDomain}
               disabled={locks.teamDomain}
-              hint="Zero Trust → Settings → Custom Pages. Paste the team URL (issuer), not the application hostname."
+              hint="Zero Trust → Settings → Custom Pages. Paste the team URL (issuer), not the application hostname. https://<team>.cloudflareaccess.com or a schemeless <team>.cloudflareaccess.com host."
               placeholder="https://yourteam.cloudflareaccess.com"
               onChange={(e) => setDraft((d) => ({ ...d, teamDomain: e.target.value }))}
             />

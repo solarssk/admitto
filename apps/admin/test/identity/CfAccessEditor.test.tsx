@@ -378,7 +378,32 @@ describe("CfAccessEditor (slice 4)", () => {
     fireEvent.click(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(screen.getByText("Please fix the highlighted fields.")).toBeTruthy());
-    expect(screen.getByText(/Team URL must start with https/)).toBeTruthy();
+    expect(screen.getByText(/Team URL must use https/)).toBeTruthy();
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does not block save when an env-locked schemeless team domain is present (server parity)", async () => {
+    mockFetch.mockResolvedValueOnce(
+      summary({
+        enabled: false,
+        teamDomain: "team.cloudflareaccess.com",
+        audience: ["a"],
+        protectedPrefixes: ["/admin"],
+        locks: { enabled: false, teamDomain: true, audience: false, protectedPrefixes: false },
+      }),
+    );
+    mockUpdate.mockResolvedValueOnce(
+      summary({ enabled: true, teamDomain: "https://team.cloudflareaccess.com", audience: ["a"], protectedPrefixes: ["/admin"], locks: { enabled: false, teamDomain: true, audience: false, protectedPrefixes: false } }),
+    );
+    renderEditorAt();
+    await waitFor(() => expect(screen.getByRole("switch", { name: /Enable Cloudflare Access/ })).toBeTruthy());
+    // Team domain input is disabled (env-locked) and seeded with the schemeless host.
+    expect(screen.getByDisplayValue("team.cloudflareaccess.com").hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    // Locked team domain is omitted from the body; the server keeps the env value.
+    expect(mockUpdate.mock.calls[0][0]).toMatchObject({ enabled: true });
+    expect((mockUpdate.mock.calls[0][0] as { teamDomain?: string }).teamDomain).toBeUndefined();
   });
 });

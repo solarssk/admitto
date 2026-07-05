@@ -63,11 +63,12 @@ export function isCfDraftDirty(draft: CfAccessDraft, baseline: CfAccessDraft): b
 }
 
 /** Client-side validation mirroring the server's boot-config rules
- *  (`validateCfAccessBootConfigFromResolved`). The team domain must be HTTPS —
- *  Cloudflare Access team URLs are always served over HTTPS, so `http://` is
- *  rejected inline rather than letting the operator save a URL that JWKS / sign-in
- *  will reject. The server remains authoritative; these give the operator inline
- *  feedback before the round-trip. */
+ *  (`validateCfAccessBootConfigFromResolved`) and team-domain normalizer
+ *  (`normalizeCfAccessTeamDomain`). The server accepts either
+ *  `https://<team>.cloudflareaccess.com` or a schemeless host (it prepends
+ *  `https://`), and rejects `http://` / other schemes; this validation matches
+ *  that so an env-locked schemeless team domain doesn't block an otherwise-valid
+ *  save/toggle. The server remains authoritative on the host shape. */
 export function validateCfDraft(draft: CfAccessDraft): CfAccessFieldErrors {
   const errors: CfAccessFieldErrors = {};
   const teamDomain = draft.teamDomain.trim();
@@ -76,8 +77,14 @@ export function validateCfDraft(draft: CfAccessDraft): CfAccessFieldErrors {
 
   if (draft.enabled && !teamDomain) {
     errors.teamDomain = "Team URL is required when Cloudflare Access is enabled.";
-  } else if (teamDomain && !/^https:\/\//i.test(teamDomain)) {
-    errors.teamDomain = "Team URL must start with https://";
+  } else {
+    // Any explicit scheme must be https://; a schemeless host is accepted (the
+    // server normalizer prepends https://). http:// and other schemes are
+    // rejected inline so the operator doesn't save a URL sign-in will reject.
+    const schemeMatch = /^([a-z][a-z0-9+.-]*):\/\//i.exec(teamDomain);
+    if (schemeMatch && schemeMatch[1].toLowerCase() !== "https") {
+      errors.teamDomain = "Team URL must use https://";
+    }
   }
 
   if (draft.enabled && audience.length === 0) {
