@@ -128,6 +128,8 @@ VM snapshot. Standard build/run/test commands live in [README.md](README.md).
 - **Run the app:** `npm run build -w @admitto/admin` once, then `npm run dev -w @admitto/web`
   serves the SPA at http://localhost:3000 (`/admin` after login). For SPA hot-reload also run
   `npm run dev -w @admitto/admin` (Vite :5173, proxies API to :3000).
-- **First login needs MFA:** admin/superadmin roles must enroll TOTP on first login. Bootstrap an
-  account with `npm run auth:bootstrap -- --email you@example.com` (password read from stdin) and
-  reset MFA with `npm run cli -w @admitto/auth -- reset-mfa --email you@example.com`.
+- **First login needs MFA:** admin/superadmin roles must enroll TOTP on first login. Bootstrap a
+  new superadmin with `npm run auth:bootstrap -- --email you@example.com` (password read from
+  stdin); you will be prompted to enrol TOTP on first login. To clear an existing account's TOTP
+  (e.g. the snapshot's pre-seeded account), run
+  `npm run cli -w @admitto/auth -- reset-mfa --email you@example.com`.
