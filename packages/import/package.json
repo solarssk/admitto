@@ -16,6 +16,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "import": "tsx src/cli.ts"
   },
