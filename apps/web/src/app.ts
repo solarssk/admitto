@@ -122,6 +122,15 @@ import {
 } from "./admin/event-items-api-routes.js";
 import { handleGetReports, handleExportReports } from "./admin/reports-routes.js";
 import { handleGetEventOverview } from "./admin/overview-routes.js";
+import {
+  handlePatchEventNote,
+  handleCreateContact,
+  handleUpdateContact,
+  handleDeleteContact,
+  handleCreateResource,
+  handleUpdateResource,
+  handleDeleteResource,
+} from "./admin/event-context-routes.js";
 import { handlePostUpload } from "./admin/uploads-api-routes.js";
 import { resolveUploadDir } from "./admin/branding-upload.js";
 import {
@@ -622,6 +631,27 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/overview", staffAdminGate, (c) =>
     handleGetEventOverview(c, db),
   );
+  app.patch("/api/admin/events/:eventId/note", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePatchEventNote(c, db),
+  );
+  app.post("/api/admin/events/:eventId/contacts", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
+    handleCreateContact(c, db),
+  ));
+  app.put("/api/admin/events/:eventId/contacts/:contactId", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
+    handleUpdateContact(c, db),
+  ));
+  app.delete("/api/admin/events/:eventId/contacts/:contactId", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
+    handleDeleteContact(c, db),
+  ));
+  app.post("/api/admin/events/:eventId/resources", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
+    handleCreateResource(c, db),
+  ));
+  app.put("/api/admin/events/:eventId/resources/:resourceId", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
+    handleUpdateResource(c, db),
+  ));
+  app.delete("/api/admin/events/:eventId/resources/:resourceId", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
+    handleDeleteResource(c, db),
+  ));
   app.get("/api/admin/events/:eventId/reports", staffAdminGate, (c) => handleGetReports(c, db));
   app.get("/api/admin/events/:eventId/reports/export", staffAdminGate, adminExportRateLimit, (c) =>
     handleExportReports(c, db),

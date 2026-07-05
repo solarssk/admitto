@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { Avatar, Badge, Card, PageHeader, Stat, useToast } from "@admitto/ui";
-import { ApiError, fetchEventOverview } from "../api/client.js";
-import type { EventDto, EventOverviewDto } from "../api/types.js";
+import {
+  ApiError,
+  fetchEventOverview,
+  patchEventNote,
+  createEventContact,
+  updateEventContact,
+  deleteEventContact,
+  createEventResource,
+  updateEventResource,
+  deleteEventResource,
+} from "../api/client.js";
+import type { EventDto, EventOverviewDto, EventContactDto, EventResourceDto } from "../api/types.js";
 import { formatEventCalendarDate, formatEventTime, formatUtcDateTime } from "../utils/event-dates.js";
 import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
@@ -333,6 +343,381 @@ function EventInfoCard({
   );
 }
 
+function PinnedNoteCard({
+  note,
+  archived,
+  onSave,
+}: {
+  note: string | null;
+  archived: boolean;
+  onSave: (note: string | null) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(note ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const handleEdit = () => {
+    setDraft(note ?? "");
+    setEditing(true);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(draft.trim() || null);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setDraft(note ?? "");
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <Card title="Pinned note">
+        <div className="overview-note-edit">
+          <textarea
+            className="overview-note-textarea"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Short operational note visible to all staff…"
+            rows={3}
+            autoFocus
+          />
+          <div className="overview-note-actions">
+            <button className="btn btn-ghost btn-sm" onClick={handleCancel} disabled={saving}>
+              Cancel
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  if (!note) {
+    return (
+      <Card
+        title="Pinned note"
+        actions={
+          !archived ? (
+            <button className="btn btn-ghost btn-sm" onClick={handleEdit}>
+              + Add note
+            </button>
+          ) : undefined
+        }
+      >
+        <p className="overview-muted">No operational note. Add one to share a quick reminder with all staff.</p>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="overview-pinned-note">
+      <div className="overview-pinned-note__header">
+        <span className="overview-pinned-note__title">
+          <i className="ti ti-pin" aria-hidden="true" /> Pinned note
+        </span>
+        {!archived && (
+          <button className="btn btn-ghost btn-sm overview-pinned-note__edit" onClick={handleEdit} aria-label="Edit pinned note">
+            <i className="ti ti-pencil" aria-hidden="true" /> Edit
+          </button>
+        )}
+      </div>
+      <p className="overview-pinned-note__body">{note}</p>
+    </div>
+  );
+}
+
+function KeyContactsCard({
+  contacts,
+  archived,
+  onAdd,
+  onUpdate,
+  onDelete,
+}: {
+  contacts: EventContactDto[];
+  archived: boolean;
+  onAdd: (data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
+  onUpdate: (id: string, data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [addOpen, setAddOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: "", role: "", phone: "", email: "" });
+  const [saving, setSaving] = useState(false);
+
+  const openAdd = () => {
+    setForm({ name: "", role: "", phone: "", email: "" });
+    setEditingId(null);
+    setAddOpen(true);
+  };
+
+  const openEdit = (c: EventContactDto) => {
+    setForm({ name: c.name, role: c.role ?? "", phone: c.phone ?? "", email: c.email ?? "" });
+    setEditingId(c.id);
+    setAddOpen(false);
+  };
+
+  const handleSubmit = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    try {
+      const data = {
+        name: form.name.trim(),
+        role: form.role.trim() || null,
+        phone: form.phone.trim() || null,
+        email: form.email.trim() || null,
+      };
+      if (editingId) {
+        await onUpdate(editingId, data);
+        setEditingId(null);
+      } else {
+        await onAdd(data);
+        setAddOpen(false);
+      }
+      setForm({ name: "", role: "", phone: "", email: "" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setSaving(true);
+    try { await onDelete(id); } finally { setSaving(false); }
+  };
+
+  const cancel = () => { setAddOpen(false); setEditingId(null); };
+
+  const inlineForm = (
+    <div className="overview-contact-form">
+      <input className="input input-sm" placeholder="Name *" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+      <input className="input input-sm" placeholder="Role" value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} />
+      <input className="input input-sm" placeholder="Phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+      <input className="input input-sm" placeholder="Email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+      <div className="overview-contact-form__actions">
+        <button className="btn btn-ghost btn-sm" onClick={cancel} disabled={saving}>Cancel</button>
+        <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={saving || !form.name.trim()}>
+          {saving ? "Saving…" : editingId ? "Save" : "Add"}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <Card
+      title="Key contacts"
+      actions={
+        !archived ? (
+          <button className="btn btn-ghost btn-sm" onClick={openAdd} aria-label="Add contact">
+            + Add
+          </button>
+        ) : undefined
+      }
+    >
+      {contacts.length === 0 && !addOpen ? (
+        <p className="overview-muted">No contacts yet.</p>
+      ) : (
+        <ul className="overview-contacts">
+          {contacts.map((contact) => (
+            <li key={contact.id} className="overview-contact">
+              {editingId === contact.id ? (
+                inlineForm
+              ) : (
+                <>
+                  <Avatar name={contact.name} size="sm" />
+                  <div className="overview-contact__info">
+                    <strong>{contact.name}</strong>
+                    {contact.role && <span>{contact.role}</span>}
+                    {contact.note && <span className="overview-contact__note">{contact.note}</span>}
+                  </div>
+                  <div className="overview-contact__actions">
+                    {contact.phone && (
+                      <a href={`tel:${contact.phone}`} className="overview-contact__action" aria-label={`Call ${contact.name}`}>
+                        <i className="ti ti-phone" aria-hidden="true" />
+                      </a>
+                    )}
+                    {contact.email && (
+                      <a href={`mailto:${contact.email}`} className="overview-contact__action" aria-label={`Email ${contact.name}`}>
+                        <i className="ti ti-mail" aria-hidden="true" />
+                      </a>
+                    )}
+                    {!archived && (
+                      <>
+                        <button className="overview-contact__action" onClick={() => openEdit(contact)} aria-label={`Edit ${contact.name}`}>
+                          <i className="ti ti-pencil" aria-hidden="true" />
+                        </button>
+                        <button className="overview-contact__action overview-contact__action--delete" onClick={() => handleDelete(contact.id)} aria-label={`Delete ${contact.name}`} disabled={saving}>
+                          <i className="ti ti-trash" aria-hidden="true" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </li>
+          ))}
+          {addOpen && <li className="overview-contact overview-contact--form">{inlineForm}</li>}
+        </ul>
+      )}
+      {contacts.length === 0 && addOpen && inlineForm}
+    </Card>
+  );
+}
+
+function ImportantLinksCard({
+  resources,
+  archived,
+  onAdd,
+  onUpdate,
+  onDelete,
+}: {
+  resources: EventResourceDto[];
+  archived: boolean;
+  onAdd: (data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
+  onUpdate: (id: string, data: { title: string; type: "link" | "file"; url: string; description?: string | null }) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const PREVIEW_MAX = 4;
+  const [showAll, setShowAll] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({ title: "", type: "link" as "link" | "file", url: "", description: "" });
+  const [saving, setSaving] = useState(false);
+
+  const visible = showAll ? resources : resources.slice(0, PREVIEW_MAX);
+  const hiddenCount = resources.length - PREVIEW_MAX;
+
+  const openAdd = () => {
+    setForm({ title: "", type: "link", url: "", description: "" });
+    setEditingId(null);
+    setAddOpen(true);
+  };
+
+  const openEdit = (r: EventResourceDto) => {
+    setForm({ title: r.title, type: r.type, url: r.url, description: r.description ?? "" });
+    setEditingId(r.id);
+    setAddOpen(false);
+  };
+
+  const handleSubmit = async () => {
+    if (!form.title.trim() || !form.url.trim()) return;
+    setSaving(true);
+    try {
+      const data = { title: form.title.trim(), type: form.type, url: form.url.trim(), description: form.description.trim() || null };
+      if (editingId) {
+        await onUpdate(editingId, data);
+        setEditingId(null);
+      } else {
+        await onAdd(data);
+        setAddOpen(false);
+      }
+      setForm({ title: "", type: "link", url: "", description: "" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setSaving(true);
+    try { await onDelete(id); } finally { setSaving(false); }
+  };
+
+  const cancel = () => { setAddOpen(false); setEditingId(null); };
+
+  const inlineForm = (
+    <div className="overview-resource-form">
+      <input className="input input-sm" placeholder="Title *" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
+      <div className="overview-resource-form__row">
+        <select className="select select-sm" value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as "link" | "file" }))}>
+          <option value="link">Link</option>
+          <option value="file">File</option>
+        </select>
+        <input className="input input-sm" placeholder="URL *" value={form.url} onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))} />
+      </div>
+      <input className="input input-sm" placeholder="Description (optional)" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+      <div className="overview-resource-form__actions">
+        <button className="btn btn-ghost btn-sm" onClick={cancel} disabled={saving}>Cancel</button>
+        <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={saving || !form.title.trim() || !form.url.trim()}>
+          {saving ? "Saving…" : editingId ? "Save" : "Add"}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <Card
+      title="Important links & files"
+      actions={
+        !archived ? (
+          <button className="btn btn-ghost btn-sm" onClick={openAdd} aria-label="Add resource">
+            + Add
+          </button>
+        ) : undefined
+      }
+    >
+      {resources.length === 0 && !addOpen ? (
+        <p className="overview-muted">No links or files yet.</p>
+      ) : (
+        <>
+          <ul className="overview-resources">
+            {visible.map((r) => (
+              <li key={r.id} className="overview-resource">
+                {editingId === r.id ? (
+                  inlineForm
+                ) : (
+                  <>
+                    <i
+                      className={`ti ${r.type === "file" ? "ti-file" : "ti-link"} overview-resource__icon`}
+                      aria-hidden="true"
+                    />
+                    <div className="overview-resource__info">
+                      <a
+                        href={r.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="overview-resource__title"
+                      >
+                        {r.title}
+                      </a>
+                      {r.description && <span className="overview-resource__desc">{r.description}</span>}
+                    </div>
+                    {!archived && (
+                      <div className="overview-resource__actions">
+                        <button className="overview-contact__action" onClick={() => openEdit(r)} aria-label={`Edit ${r.title}`}>
+                          <i className="ti ti-pencil" aria-hidden="true" />
+                        </button>
+                        <button className="overview-contact__action overview-contact__action--delete" onClick={() => handleDelete(r.id)} aria-label={`Delete ${r.title}`} disabled={saving}>
+                          <i className="ti ti-trash" aria-hidden="true" />
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+          {!showAll && hiddenCount > 0 && (
+            <button className="overview-resources__show-more" onClick={() => setShowAll(true)}>
+              View all resources ({hiddenCount} more)
+            </button>
+          )}
+          {addOpen && (
+            <div className="overview-resource overview-resource--form">{inlineForm}</div>
+          )}
+        </>
+      )}
+      {resources.length === 0 && addOpen && inlineForm}
+    </Card>
+  );
+}
+
 /** Event-scoped dashboard — event command center with KPIs, alerts, readiness, and live check-in feed. */
 export function EventOverviewPage() {
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -352,6 +737,9 @@ export function EventOverviewPage() {
   const [optimisticAdmittedDelta, setOptimisticAdmittedDelta] = useState(0);
   const [recentCheckins, setRecentCheckins] = useState<StreamCheckinEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [contacts, setContacts] = useState<EventContactDto[]>([]);
+  const [resources, setResources] = useState<EventResourceDto[]>([]);
+  const [pinnedNote, setPinnedNote] = useState<string | null>(null);
 
   const currentOverview = overview?.event.id === event.id ? overview : null;
   const eventTimezone = currentOverview?.event.timezone ?? event.timezone;
@@ -363,6 +751,9 @@ export function EventOverviewPage() {
     pruneAdmitDedupMap(seenCheckinsRef.current);
     setOverview(data);
     setOptimisticAdmittedDelta(0);
+    setContacts(data.contacts);
+    setResources(data.resources);
+    setPinnedNote(data.event.pinned_note);
   }, []);
 
   const scheduleReconcile = useCallback(() => {
@@ -389,6 +780,41 @@ export function EventOverviewPage() {
   );
 
   const { connected: streamConnected } = useEventStream(event.id, handleLiveCheckin);
+
+  const handleSaveNote = useCallback(async (note: string | null) => {
+    await patchEventNote(event.id, note);
+    setPinnedNote(note);
+  }, [event.id]);
+
+  const handleAddContact = useCallback(async (data: Parameters<typeof createEventContact>[1]) => {
+    const created = await createEventContact(event.id, data);
+    setContacts((prev) => [...prev, created]);
+  }, [event.id]);
+
+  const handleUpdateContact = useCallback(async (id: string, data: Parameters<typeof updateEventContact>[2]) => {
+    const updated = await updateEventContact(event.id, id, data);
+    setContacts((prev) => prev.map((c) => (c.id === id ? updated : c)));
+  }, [event.id]);
+
+  const handleDeleteContact = useCallback(async (id: string) => {
+    await deleteEventContact(event.id, id);
+    setContacts((prev) => prev.filter((c) => c.id !== id));
+  }, [event.id]);
+
+  const handleAddResource = useCallback(async (data: Parameters<typeof createEventResource>[1]) => {
+    const created = await createEventResource(event.id, data);
+    setResources((prev) => [...prev, created]);
+  }, [event.id]);
+
+  const handleUpdateResource = useCallback(async (id: string, data: Parameters<typeof updateEventResource>[2]) => {
+    const updated = await updateEventResource(event.id, id, data);
+    setResources((prev) => prev.map((r) => (r.id === id ? updated : r)));
+  }, [event.id]);
+
+  const handleDeleteResource = useCallback(async (id: string) => {
+    await deleteEventResource(event.id, id);
+    setResources((prev) => prev.filter((r) => r.id !== id));
+  }, [event.id]);
 
   useEffect(() => {
     abortRef.current?.abort();
@@ -525,16 +951,28 @@ export function EventOverviewPage() {
             <NeedsAttentionCard overview={currentOverview} />
           ) : null}
           <EventReadinessCard overview={currentOverview} loading={loading} />
-          <Card title="Email delivery">
-            {currentOverview != null ? (
-              <EmailDeliveryBars overview={currentOverview} />
-            ) : (
-              <p className="overview-muted">{loading ? "Loading…" : "Unavailable"}</p>
-            )}
-          </Card>
+          <ImportantLinksCard
+            resources={resources}
+            archived={!!event.archived_at}
+            onAdd={handleAddResource}
+            onUpdate={handleUpdateResource}
+            onDelete={handleDeleteResource}
+          />
         </div>
         <div className="overview-body__right">
+          <PinnedNoteCard
+            note={pinnedNote}
+            archived={!!event.archived_at}
+            onSave={handleSaveNote}
+          />
           <RecentCheckinsCard checkins={recentCheckins} timezone={eventTimezone} connected={streamConnected} />
+          <KeyContactsCard
+            contacts={contacts}
+            archived={!!event.archived_at}
+            onAdd={handleAddContact}
+            onUpdate={handleUpdateContact}
+            onDelete={handleDeleteContact}
+          />
           <EventInfoCard overview={currentOverview} event={event} countdown={countdown} />
         </div>
       </div>

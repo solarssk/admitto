@@ -3,6 +3,25 @@ import type { PrismaClient } from "@prisma/client";
 import { assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 import { countActiveAdmittedAttendees, countActiveAttendees, CAPACITY_EXCLUDED_STATUSES } from "./event-capacity.js";
 
+export interface EventContactData {
+  id: string;
+  name: string;
+  role: string | null;
+  phone: string | null;
+  email: string | null;
+  note: string | null;
+  sort_order: number;
+}
+
+export interface EventResourceData {
+  id: string;
+  title: string;
+  type: "link" | "file";
+  url: string;
+  description: string | null;
+  sort_order: number;
+}
+
 export interface EventOverviewResponse {
   event: {
     id: string;
@@ -14,6 +33,7 @@ export interface EventOverviewResponse {
     archived_at: string | null;
     organization_id: string;
     timezone: string;
+    pinned_note: string | null;
   };
   attendee_count: number;
   admitted_count: number;
@@ -26,6 +46,8 @@ export interface EventOverviewResponse {
   checkin_staff_count: number;
   /** Distinct attendees with at least one successful initial ticket delivery. */
   attendees_with_ticket: number;
+  contacts: EventContactData[];
+  resources: EventResourceData[];
 }
 
 /** GET /api/admin/events/:eventId/overview — aggregated dashboard stats (read-only, no audit). */
@@ -49,6 +71,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       capacity: true,
       archived_at: true,
       organization_id: true,
+      pinned_note: true,
     },
   });
   if (!event) return c.json({ error: "not_found" }, 404);
@@ -60,6 +83,8 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     requirementsCount,
     checkinStaffCount,
     attendeesWithTicketRows,
+    contacts,
+    resources,
   ] = await Promise.all([
     countActiveAttendees(db, eventId),
     countActiveAdmittedAttendees(db, eventId),
@@ -70,8 +95,6 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     }),
     db.eventItem.count({ where: { event_id: eventId, enabled: true } }),
     // Count active users who can perform check-in: event-scope operators + org-scope admins.
-    // Superadmins are implicitly covered by org admin check in practice; their small count
-    // is not material enough to warrant a separate instance-scope join here.
     db.roleAssignment.count({
       where: {
         OR: [
@@ -91,7 +114,6 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       },
     }),
     // Distinct *active* attendees with at least one successful initial ticket delivery.
-    // Filters out revoked/cancelled attendees to stay consistent with attendee_count scope.
     db.emailDelivery.groupBy({
       by: ["attendee_id"],
       where: {
@@ -101,6 +123,16 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
         attendee: { status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
       },
       _count: { id: true },
+    }),
+    db.eventContact.findMany({
+      where: { event_id: eventId },
+      orderBy: [{ sort_order: "asc" }, { created_at: "asc" }],
+      select: { id: true, name: true, role: true, phone: true, email: true, note: true, sort_order: true },
+    }),
+    db.eventResource.findMany({
+      where: { event_id: eventId },
+      orderBy: [{ sort_order: "asc" }, { created_at: "asc" }],
+      select: { id: true, title: true, type: true, url: true, description: true, sort_order: true },
     }),
   ]);
 
@@ -128,6 +160,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       capacity: event.capacity,
       archived_at: event.archived_at?.toISOString() ?? null,
       organization_id: event.organization_id,
+      pinned_note: event.pinned_note,
     },
     attendee_count: activeAttendeeCount,
     admitted_count: activeAdmittedCount,
@@ -138,6 +171,8 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     requirements_count: requirementsCount,
     checkin_staff_count: checkinStaffCount,
     attendees_with_ticket: attendeesWithTicketRows.length,
+    contacts,
+    resources,
   };
 
   return c.json(body);

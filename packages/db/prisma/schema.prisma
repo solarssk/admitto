@@ -40,15 +40,55 @@ model Event {
   archived_at      DateTime?
   // Event-day ops (ADR 0010): require_confirm_on_scan, badge_at_entry, etc.
   ops_config       Json?
+  // Single operational sticky note shown on the overview page to all staff.
+  pinned_note      String?           @db.Text
   attendees        Attendee[]
   check_ins        CheckIn[]
   email_deliveries EmailDelivery[]
   event_items      EventItem[]
   attendee_notes   AttendeeNote[]
   action_logs      AttendeeActionLog[]
+  contacts         EventContact[]
+  resources        EventResource[]
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
+}
+
+model EventContact {
+  id         String   @id @default(cuid())
+  event_id   String
+  event      Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  name       String
+  role       String?
+  phone      String?
+  email      String?
+  note       String?
+  sort_order Int      @default(0)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([event_id, sort_order])
+}
+
+model EventResource {
+  id          String              @id @default(cuid())
+  event_id    String
+  event       Event               @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  title       String
+  type        EventResourceType   @default(link)
+  url         String
+  description String?
+  sort_order  Int                 @default(0)
+  created_at  DateTime            @default(now())
+  updated_at  DateTime            @updatedAt
+
+  @@index([event_id, sort_order])
+}
+
+enum EventResourceType {
+  link
+  file
 }
 
 model Attendee {
