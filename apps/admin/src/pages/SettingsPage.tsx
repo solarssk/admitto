@@ -8,10 +8,11 @@ import { EventArchivingPanel } from "../settings/EventArchivingPanel.js";
 import { SecurityPanel } from "../settings/SecurityPanel.js";
 import { AuditLogPanel } from "../settings/AuditLogPanel.js";
 
-type SettingsTab = "general" | "security" | "archiving" | "identity";
+type SettingsTab = "general" | "mail" | "security" | "archiving" | "identity";
 
 const SETTINGS_TABS = [
   { id: "general", label: "General" },
+  { id: "mail", label: "Mail" },
   { id: "security", label: "Security" },
   { id: "archiving", label: "Archiving" },
   { id: "identity", label: "Identity" },
@@ -100,9 +101,16 @@ export function SettingsPage() {
         className="settings-sections"
       >
         <BrandingPanel />
-        <MailTransportPanel />
         <InstanceUrlPanel />
-        <SessionsPanel />
+      </SettingsTabPanel>
+      <SettingsTabPanel
+        tab="mail"
+        activeTab={tab}
+        visited={visitedTabs}
+        label="Mail"
+        className="settings-sections"
+      >
+        <MailTransportPanel />
       </SettingsTabPanel>
       <SettingsTabPanel
         tab="security"
@@ -112,6 +120,7 @@ export function SettingsPage() {
         className="settings-sections"
       >
         <SecurityPanel />
+        <SessionsPanel />
         <AuditLogPanel />
       </SettingsTabPanel>
       <SettingsTabPanel tab="archiving" activeTab={tab} visited={visitedTabs} label="Archiving">
