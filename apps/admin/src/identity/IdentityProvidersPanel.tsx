@@ -8,6 +8,7 @@ import {
   toggleIdentityProvider,
 } from "../api/client.js";
 import type { CfAccessSummaryDto, IdentityProviderListItem } from "../api/types.js";
+import { IDENTITY_CLOUDFLARE_ROUTE } from "./routes.js";
 
 type LoadState = "loading" | "ready" | "error";
 /** Row shape is 1:1 with the API list DTO. */
@@ -25,8 +26,6 @@ function providerEditPath(id: string): string {
 }
 
 const PROVIDER_NEW_PATH = "/admin/settings/identity/providers/new";
-/** Bridge to the legacy HTML editor until the SPA CF Access editor lands (slice 4, #266). */
-const LEGACY_CF_ACCESS_HREF = "/admin/auth/cf-access";
 
 function ProviderListSkeleton() {
   return (
@@ -73,8 +72,8 @@ function ProviderRowItem({
 /**
  * Identity overview — Providers list (OIDC) + Cloudflare Access summary card.
  * Reachable at /admin/settings/identity/providers. The SPA editor for individual
- * providers is delivered in slice 3 (this PR); the CF Access SPA editor lands in
- * slice 4, so until then the CF Manage action bridges to the legacy HTML page.
+ * providers lives at providers/new | providers/:id; the CF Access SPA editor lives
+ * at /admin/settings/identity/cloudflare (slice 4).
  */
 export function IdentityProvidersPanel() {
   const { addToast } = useToast();
@@ -252,9 +251,9 @@ export function IdentityProvidersPanel() {
                 {cf.locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
               </div>
             </div>
-            <a className="at-btn at-btn--secondary" href={LEGACY_CF_ACCESS_HREF}>
+            <Link className="at-btn at-btn--secondary" to={IDENTITY_CLOUDFLARE_ROUTE}>
               <span>Manage</span>
-            </a>
+            </Link>
           </div>
         )}
       </Card>

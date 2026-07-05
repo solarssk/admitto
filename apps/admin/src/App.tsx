@@ -16,7 +16,7 @@ import { SettingsPage } from "./pages/SettingsPage.js";
 import { IdentityLayout } from "./identity/IdentityLayout.js";
 import { IdentityProvidersPanel } from "./identity/IdentityProvidersPanel.js";
 import { IdentityProviderEditor } from "./identity/IdentityProviderEditor.js";
-import { CfAccessPlaceholder } from "./identity/CfAccessPlaceholder.js";
+import { CfAccessEditor } from "./identity/CfAccessEditor.js";
 import { UsersPage } from "./pages/UsersPage.js";
 import { OperatorShell } from "./layouts/OperatorShell.js";
 import { AccountShell } from "./layouts/AccountShell.js";
@@ -153,7 +153,7 @@ function StaffRoutes() {
               <Route path="providers" element={<IdentityProvidersPanel />} />
               <Route path="providers/new" element={<IdentityProviderEditor mode="create" />} />
               <Route path="providers/:providerId" element={<IdentityProviderEditor mode="edit" />} />
-              <Route path="cloudflare" element={<CfAccessPlaceholder />} />
+              <Route path="cloudflare" element={<CfAccessEditor />} />
             </Route>
           </Route>
         </Route>
