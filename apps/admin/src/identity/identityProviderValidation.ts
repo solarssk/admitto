@@ -83,11 +83,27 @@ export function validateProviderDraft(draft: ProviderDraft, mode: EditorMode): F
     errors.client_secret = `Keep it under ${MAX_SECRET} characters.`;
   }
 
+  // OIDC endpoint fields: max length + a UX-level http(s):// shape check, the
+  // same lightweight guard used for `issuer` above. The server/auth layer is the
+  // source of truth for OIDC conformance (assertSafeOidcFetchUrl); this just
+  // catches garbage typing before the operator has to wait for a handshake.
+  for (const field of [
+    "authorization_endpoint",
+    "token_endpoint",
+    "jwks_uri",
+    "userinfo_endpoint",
+  ] as const) {
+    const value = draft[field];
+    if (!value) continue;
+    if (value.trim().length > MAX_ENDPOINT) {
+      errors[field] = `Keep it under ${MAX_ENDPOINT} characters.`;
+    } else if (!/^https?:\/\//i.test(value.trim())) {
+      errors[field] = "Endpoint must be a URL starting with http(s)://";
+    }
+  }
+
+  // Claim field names are not URLs — length only.
   for (const [field, max] of [
-    ["authorization_endpoint", MAX_ENDPOINT],
-    ["token_endpoint", MAX_ENDPOINT],
-    ["jwks_uri", MAX_ENDPOINT],
-    ["userinfo_endpoint", MAX_ENDPOINT],
     ["claim_email", MAX_CLAIM],
     ["claim_name", MAX_CLAIM],
     ["claim_groups", MAX_CLAIM],
@@ -119,7 +135,10 @@ export function isDraftDirty(draft: ProviderDraft, baseline: ProviderDraft): boo
   });
 }
 
-/** Empty draft for create mode. `client_secret_touched` starts false. */
+/** Empty draft for create mode. `client_secret_touched` starts false. New
+ * providers default to disabled — the auth layer treats omitted `enabled` as
+ * false, and the legacy HTML editor leaves the checkbox unchecked, so flipping
+ * it on is a deliberate operator action after the provider is configured. */
 export function emptyProviderDraft(): ProviderDraft {
   return {
     display_name: "",
@@ -134,7 +153,7 @@ export function emptyProviderDraft(): ProviderDraft {
     claim_email: "",
     claim_name: "",
     claim_groups: "",
-    enabled: true,
+    enabled: false,
     login_button_label: "",
   };
 }

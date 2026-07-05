@@ -101,7 +101,11 @@ function setField<K extends keyof ProviderDraft>(
 ): ProviderDraft {
   const next = { ...draft, [key]: value };
   if (key === "client_secret") {
-    next.client_secret_touched = true;
+    // touched tracks "operator entered a new secret to save". Clearing the field
+    // back to blank means "keep the stored secret" — no effective change — so
+    // reset touched so isDraftDirty and the dirty guard don't fire on a no-op,
+    // and buildSaveBody doesn't send an empty secret that would overwrite it.
+    next.client_secret_touched = next.client_secret.length > 0;
   }
   return next;
 }
@@ -143,6 +147,9 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
     async (signal: AbortSignal) => {
       if (mode !== "edit" || !resolvedProviderId) return;
       setLoadState("loading");
+      // Clear any stale field errors from a previous provider / failed submit so
+      // they don't attach to identically-named fields on the newly loaded one.
+      setErrors({});
       try {
         const detail = await fetchIdentityProvider(resolvedProviderId, signal);
         const nextDraft = draftFromDetail(detail);

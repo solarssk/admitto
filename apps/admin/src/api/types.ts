@@ -916,5 +916,7 @@ export interface ProviderRequestBody {
   claim_groups?: string;
   enabled?: boolean;
   login_button_label?: string | null;
-  mappings: Array<{ group: string; role: string; scope_type: string; scope_id: string | null }>;
+  /** Mapping shape mirrors `ProviderMappingDto` except `scope_id` is nullable on
+   * the request (instance scope sends null). Derived so the two can't drift. */
+  mappings: Array<Omit<ProviderMappingDto, "scope_id"> & { scope_id: string | null }>;
 }

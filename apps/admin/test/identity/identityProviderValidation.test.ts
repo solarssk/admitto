@@ -103,6 +103,99 @@ describe("validateProviderDraft", () => {
     expect(errors.display_name).toMatch(/under/);
     expect(errors.claim_email).toMatch(/under/);
   });
+
+  it("rejects an overlong issuer and client_id", () => {
+    const errors = validateProviderDraft(
+      draftWith({
+        display_name: "X",
+        issuer: `https://${"x".repeat(2000)}.example.com`,
+        client_id: "x".repeat(501),
+        client_secret: "s",
+      }),
+      "create" as EditorMode,
+    );
+    expect(errors.issuer).toMatch(/under/);
+    expect(errors.client_id).toMatch(/under/);
+  });
+
+  it("rejects an overlong client_secret on create", () => {
+    const errors = validateProviderDraft(
+      draftWith({
+        display_name: "X",
+        issuer: "https://x.example.com",
+        client_id: "c",
+        client_secret: "x".repeat(2001),
+      }),
+      "create" as EditorMode,
+    );
+    expect(errors.client_secret).toMatch(/under/);
+  });
+
+  it("rejects an overlong login button label", () => {
+    const errors = validateProviderDraft(
+      draftWith({
+        display_name: "X",
+        issuer: "https://x.example.com",
+        client_id: "c",
+        client_secret: "s",
+        login_button_label: "x".repeat(121),
+      }),
+      "create" as EditorMode,
+    );
+    expect(errors.login_button_label).toMatch(/under/);
+  });
+
+  it("rejects an overlong endpoint field", () => {
+    const errors = validateProviderDraft(
+      draftWith({
+        display_name: "X",
+        issuer: "https://x.example.com",
+        client_id: "c",
+        client_secret: "s",
+        authorization_endpoint: `https://${"x".repeat(2000)}.example.com`,
+      }),
+      "create" as EditorMode,
+    );
+    expect(errors.authorization_endpoint).toMatch(/under/);
+  });
+
+  it("rejects endpoint fields that are not http(s) URLs", () => {
+    const errors = validateProviderDraft(
+      draftWith({
+        display_name: "X",
+        issuer: "https://x.example.com",
+        client_id: "c",
+        client_secret: "s",
+        authorization_endpoint: "accounts.google.com/auth",
+        token_endpoint: "ftp://example.com/token",
+      }),
+      "create" as EditorMode,
+    );
+    expect(errors.authorization_endpoint).toMatch(/http\(s\):\/\//);
+    expect(errors.token_endpoint).toMatch(/http\(s\):\/\//);
+  });
+
+  it("accepts valid http(s) endpoint URLs under the length cap", () => {
+    const errors = validateProviderDraft(
+      draftWith({
+        display_name: "X",
+        issuer: "http://localhost:9000",
+        client_id: "c",
+        client_secret: "s",
+        authorization_endpoint: "http://localhost:9000/auth",
+        jwks_uri: "https://example.com/certs",
+      }),
+      "create" as EditorMode,
+    );
+    expect(errors.authorization_endpoint).toBeUndefined();
+    expect(errors.jwks_uri).toBeUndefined();
+  });
+});
+
+describe("emptyProviderDraft", () => {
+  it("defaults enabled to false (creating a provider does not enable it)", () => {
+    expect(emptyProviderDraft().enabled).toBe(false);
+  });
 });
 
 describe("isDraftDirty", () => {

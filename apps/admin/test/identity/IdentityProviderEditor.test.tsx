@@ -301,4 +301,132 @@ describe("IdentityProviderEditor — dirty guard", () => {
     await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?"));
     confirmSpy.mockRestore();
   });
+
+  it("clears stale field errors when navigating to another provider (A→B)", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail); // p1
+    const p2Detail = { ...validDetail, id: "p2", display_name: "Okta", issuer: "https://okta.example.com" };
+    mockFetch.mockResolvedValueOnce(p2Detail); // p2
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { router } = renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+
+    // Trigger a validation error on p1 by clearing a required field and submitting.
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(screen.getByText("Display name is required.")).toBeTruthy());
+
+    // Dirty (cleared field) → confirm discard → nav to p2 loads clean, no stale error.
+    router.navigate("/admin/settings/identity/providers/p2");
+    await waitFor(() => expect(screen.getByDisplayValue("Okta")).toBeTruthy());
+    expect(screen.queryByText("Display name is required.")).toBeNull();
+    confirmSpy.mockRestore();
+  });
+
+  it("does not mark the draft dirty when the secret is touched then cleared (keep stored)", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+
+    // Type then clear the secret: no effective change (blank = keep stored), so
+    // the dirty guard must not prompt on a subsequent in-app navigation.
+    fireEvent.change(screen.getByLabelText(/client secret/i), { target: { value: "x" } });
+    fireEvent.change(screen.getByLabelText(/client secret/i), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("link", { name: "Providers" }));
+
+    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+});
+
+describe("IdentityProviderEditor — coverage", () => {
+  it("shows an error toast when create rejects", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockCreate.mockRejectedValueOnce(new ApiError(409, "duplicate_issuer"));
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google" } });
+    fireEvent.change(screen.getByLabelText("Issuer URL"), { target: { value: "https://accounts.google.com" } });
+    fireEvent.change(screen.getByLabelText("Client ID"), { target: { value: "client-123" } });
+    fireEvent.change(screen.getByLabelText("Client secret"), { target: { value: "secret-abc" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create provider" }));
+
+    await waitFor(() => expect(screen.getByText("duplicate_issuer")).toBeTruthy());
+  });
+
+  it("navigates back to the list from the not-found state", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetch.mockRejectedValueOnce(new ApiError(404, "not_found", "not_found"));
+    renderEditorAt("/admin/settings/identity/providers/missing");
+
+    await waitFor(() => expect(screen.getByText("This provider no longer exists.")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Back to providers" }));
+    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+  });
+
+  it("edits endpoint, claim, label, and enabled fields and saves them", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockUpdate.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+
+    // Change every Endpoints / Claims / Login-button / Enabled input to a value
+    // DIFFERENT from what validDetail loaded, so the onChange arrows must fire
+    // (asserting the loaded values would pass without exercising them).
+    fireEvent.change(screen.getByLabelText("Authorization endpoint"), { target: { value: "https://auth.example.com" } });
+    fireEvent.change(screen.getByLabelText("Token endpoint"), { target: { value: "https://token.example.com" } });
+    fireEvent.change(screen.getByLabelText("JWKS URI"), { target: { value: "https://jwks.example.com" } });
+    fireEvent.change(screen.getByLabelText("UserInfo endpoint"), { target: { value: "https://userinfo.example.com" } });
+    fireEvent.change(screen.getByLabelText("Email claim"), { target: { value: "upn" } });
+    fireEvent.change(screen.getByLabelText("Name claim"), { target: { value: "displayName" } });
+    fireEvent.change(screen.getByLabelText("Groups claim"), { target: { value: "memberOf" } });
+    fireEvent.change(screen.getByLabelText("SSO login button label"), { target: { value: "Sign in with Google" } });
+    // Toggle Enabled off (loaded as true).
+    fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    const body = mockUpdate.mock.calls[0][1];
+    expect(body.authorization_endpoint).toBe("https://auth.example.com");
+    expect(body.token_endpoint).toBe("https://token.example.com");
+    expect(body.jwks_uri).toBe("https://jwks.example.com");
+    expect(body.userinfo_endpoint).toBe("https://userinfo.example.com");
+    expect(body.claim_email).toBe("upn");
+    expect(body.claim_name).toBe("displayName");
+    expect(body.claim_groups).toBe("memberOf");
+    expect(body.login_button_label).toBe("Sign in with Google");
+    expect(body.enabled).toBe(false);
+  });
+
+  it("Cancel with a dirty draft confirms discard then navigates to the list", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google X" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+    expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?");
+    confirmSpy.mockRestore();
+  });
+
+  it("install a beforeunload handler while dirty (reload/close guard)", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google X" } });
+
+    // Dispatching beforeunload should call preventDefault on the event.
+    const event = new Event("beforeunload", { cancelable: true });
+    const preventDefault = vi.spyOn(event, "preventDefault");
+    window.dispatchEvent(event);
+    expect(preventDefault).toHaveBeenCalled();
+  });
 });
