@@ -52,19 +52,24 @@ function HourlyChart({ byHour }: { byHour: EventReportsResponse["by_hour"] }) {
   const max = Math.max(...visible.map((row) => row.count), 1);
 
   return (
-    <div className="reports-chart" role="img" aria-label="Hourly admissions chart">
+    <div className="reports-chart" aria-label="Hourly admissions chart">
       {visible.map((row) => (
-        <div key={row.hour} className="reports-chart__bar-wrap">
-          <div className="reports-chart__count">{row.count > 0 ? row.count : ""}</div>
+        <div
+          key={row.hour}
+          className="reports-chart__bar-wrap"
+          aria-label={`${row.hour}: ${row.count} admission${row.count !== 1 ? "s" : ""}`}
+        >
+          <div className="reports-chart__count" aria-hidden="true">
+            {row.count > 0 ? row.count : ""}
+          </div>
           <div
             className="reports-chart__bar"
             style={{
               height: `${(row.count / max) * 100}%`,
-              background: row.count > 0 ? "var(--primary)" : "var(--surface-elevated)",
+              background: row.count > 0 ? "var(--primary)" : "var(--surface-sunken)",
             }}
-            title={`${row.hour}: ${row.count} admissions`}
           />
-          <div className="reports-chart__label">{row.hour}</div>
+          <div className="reports-chart__label" aria-hidden="true">{row.hour}</div>
         </div>
       ))}
     </div>
@@ -89,15 +94,7 @@ function ByTicketType({ rows }: { rows: EventReportsResponse["by_ticket_type"] }
           <div className="reports-bytype__track">
             <div
               className="reports-bytype__fill"
-              style={{
-                width: `${row.admission_pct}%`,
-                background:
-                  row.admission_pct > 80
-                    ? "var(--status-ok)"
-                    : row.admission_pct > 50
-                      ? "var(--primary)"
-                      : "var(--status-warn)",
-              }}
+              style={{ width: `${row.admission_pct}%` }}
             />
           </div>
         </div>
