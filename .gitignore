@@ -19,6 +19,7 @@ docs/*
 !.env.example
 *.log
 coverage/
+coverage-integration/
 .DS_Store
 uploads/
 emergency-exports/

@@ -76,7 +76,9 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: |
             packages/**/coverage/lcov.info
+            packages/**/coverage-integration/lcov.info
             apps/**/coverage/lcov.info
+            apps/**/coverage-integration/lcov.info
           fail_ci_if_error: false
 
   secret-scan:

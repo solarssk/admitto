@@ -2,6 +2,7 @@ import type { CoverageOptions } from "vitest/node";
 
 const sharedExclude = [
   "coverage/**",
+  "coverage-integration/**",
   "**/dist/**",
   "**/test/**",
   "**/*.test.ts",

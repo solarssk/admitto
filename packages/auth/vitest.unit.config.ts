@@ -1,7 +1,9 @@
 import { defineConfig } from "vitest/config";
+import { vitestCoverage } from "../../vitest.coverage.ts";
 
 export default defineConfig({
   test: {
+    coverage: vitestCoverage,
     name: "unit",
     include: ["test/**/*.test.ts"],
     exclude: ["test/integration/**"],

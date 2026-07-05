@@ -1,11 +1,7 @@
 import { defineConfig } from "vitest/config";
-import { vitestCoverage } from "../../vitest.coverage.ts";
 
 export default defineConfig({
   test: {
-    coverage: vitestCoverage,
     projects: ["./vitest.unit.config.ts", "./vitest.integration.config.ts"],
-    // Unit tests import @admitto/auth while integration globalSetup runs migrate deploy.
-    sequence: { concurrent: false },
   },
 });

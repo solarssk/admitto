@@ -46,7 +46,7 @@
     "pretest": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mail-templates -w @admitto/tickets",
     "precoverage": "npm run pretest",
     "test": "vitest run --project unit && vitest run --project auth-integration",
-    "coverage": "vitest run --coverage",
+    "coverage": "vitest run --coverage -c vitest.unit.config.ts && vitest run --coverage -c vitest.integration.config.ts",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project auth-integration",
     "precli": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mail-templates -w @admitto/tickets -w @admitto/auth",
