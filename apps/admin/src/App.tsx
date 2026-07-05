@@ -13,6 +13,9 @@ import { AdminShell } from "./layouts/AdminShell.js";
 import { EventsListShell } from "./layouts/EventsListShell.js";
 import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
+import { IdentityLayout } from "./identity/IdentityLayout.js";
+import { IdentityProvidersPanel } from "./identity/IdentityProvidersPanel.js";
+import { CfAccessPlaceholder } from "./identity/CfAccessPlaceholder.js";
 import { UsersPage } from "./pages/UsersPage.js";
 import { OperatorShell } from "./layouts/OperatorShell.js";
 import { AccountShell } from "./layouts/AccountShell.js";
@@ -144,6 +147,11 @@ function StaffRoutes() {
         <Route path="settings" element={<SuperadminGuard />}>
           <Route element={<InstanceSettingsShell />}>
             <Route index element={<SettingsPage />} />
+            <Route path="identity" element={<IdentityLayout />}>
+              <Route index element={<Navigate to="providers" replace />} />
+              <Route path="providers" element={<IdentityProvidersPanel />} />
+              <Route path="cloudflare" element={<CfAccessPlaceholder />} />
+            </Route>
           </Route>
         </Route>
         <Route path="events/:eventId" element={<EventLayout />}>

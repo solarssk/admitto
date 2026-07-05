@@ -1,5 +1,6 @@
-import { useCallback, useState, type ReactNode } from "react";
-import { Card, PageHeader, Tabs } from "@admitto/ui";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { PageHeader, Tabs } from "@admitto/ui";
 import { BrandingPanel } from "../settings/BrandingPanel.js";
 import { MailTransportPanel } from "../settings/MailTransportPanel.js";
 import { InstanceUrlPanel } from "../settings/InstanceUrlPanel.js";
@@ -7,6 +8,7 @@ import { SessionsPanel } from "../settings/SessionsPanel.js";
 import { EventArchivingPanel } from "../settings/EventArchivingPanel.js";
 import { SecurityPanel } from "../settings/SecurityPanel.js";
 import { AuditLogPanel } from "../settings/AuditLogPanel.js";
+import { IDENTITY_PROVIDERS_ROUTE } from "../identity/routes.js";
 
 type SettingsTab = "general" | "mail" | "security" | "archiving" | "identity";
 
@@ -22,36 +24,6 @@ const INITIAL_VISITED_TABS: SettingsTab[] = ["general"];
 
 function isSettingsTab(id: string): id is SettingsTab {
   return SETTINGS_TABS.some((tab) => tab.id === id);
-}
-
-/** Secondary action link — Button primitive has no native href support yet. */
-function SettingsManageLink({ href, children }: { href: string; children: ReactNode }) {
-  return (
-    <a className="at-btn at-btn--secondary" href={href}>
-      <span>{children}</span>
-    </a>
-  );
-}
-
-function IdentityProvidersCard() {
-  return (
-    <Card title="Identity providers">
-      <div className="settings-row">
-        <div className="settings-row__text">
-          <strong>OIDC providers</strong>
-          <p>Configure external OpenID Connect identity providers and group-to-role mapping.</p>
-        </div>
-        <SettingsManageLink href="/admin/auth/providers">Manage</SettingsManageLink>
-      </div>
-      <div className="settings-row">
-        <div className="settings-row__text">
-          <strong>Cloudflare Access</strong>
-          <p>Protect admin paths with Cloudflare Zero Trust while keeping a local break-glass path.</p>
-        </div>
-        <SettingsManageLink href="/admin/auth/cf-access">Manage</SettingsManageLink>
-      </div>
-    </Card>
-  );
 }
 
 interface SettingsTabPanelProps {
@@ -73,18 +45,49 @@ function SettingsTabPanel({ tab, activeTab, visited, label, className, children 
   );
 }
 
+const IDENTITY_ROUTE = IDENTITY_PROVIDERS_ROUTE;
+
 /** Instance-level settings: grouped in-app tabs (branding, security, archiving, identity links). */
 export function SettingsPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<SettingsTab>("general");
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<SettingsTab>>(
     () => new Set(INITIAL_VISITED_TABS),
   );
 
-  const handleTabChange = useCallback((id: string) => {
-    if (!isSettingsTab(id)) return;
-    setTab(id);
-    setVisitedTabs((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
-  }, []);
+  const openIdentity = useCallback(() => {
+    navigate(IDENTITY_ROUTE);
+  }, [navigate]);
+
+  // Legacy entry: /admin/settings?tab=identity redirects (replace, not push) to the
+  // canonical Identity & SSO route. Using replace avoids a Back-button loop back into
+  // ?tab=identity, which would re-fire this effect and bounce the user forward again.
+  useEffect(() => {
+    if (searchParams.get("tab") === "identity") {
+      navigate(IDENTITY_ROUTE, { replace: true });
+    }
+  }, [searchParams, navigate]);
+
+  const handleTabChange = useCallback(
+    (id: string) => {
+      if (!isSettingsTab(id)) return;
+      // Identity has its own routed sub-section (IdentityLayout) with canonical URLs
+      // for deep-linking; clicking the tab hands off to that route instead of an
+      // in-page panel (#266). Push (not replace) so Back returns to Settings.
+      if (id === "identity") {
+        openIdentity();
+        return;
+      }
+      setTab(id);
+      setVisitedTabs((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    },
+    [openIdentity],
+  );
+
+  // TODO(#266 slice 5): persist the active in-page tab in the URL so Back from the
+  // Identity sub-section restores the tab the operator was on (e.g. Security) instead
+  // of resetting to General. Tracked with the SettingsPage hub cleanup.
 
   return (
     <div className="settings-page">
@@ -126,9 +129,7 @@ export function SettingsPage() {
       <SettingsTabPanel tab="archiving" activeTab={tab} visited={visitedTabs} label="Archiving">
         <EventArchivingPanel />
       </SettingsTabPanel>
-      <SettingsTabPanel tab="identity" activeTab={tab} visited={visitedTabs} label="Identity">
-        <IdentityProvidersCard />
-      </SettingsTabPanel>
     </div>
   );
 }
+

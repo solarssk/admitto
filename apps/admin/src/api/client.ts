@@ -66,6 +66,9 @@ import type {
   ConfirmMfaTotpBody,
   ResetMfaBody,
   ResetMfaResponse,
+  IdentityProvidersListResponse,
+  ToggleProviderResponse,
+  CfAccessSummaryDto,
 } from "./types.js";
 
 export type EventFullMeta = {
@@ -1325,3 +1328,29 @@ export function eventReportsPrintUrl(eventId: string): string {
   return `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=pdf`;
 }
 
+// --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---
+
+/** List configured OIDC identity providers (superadmin). */
+export async function fetchIdentityProviders(
+  signal?: AbortSignal,
+): Promise<IdentityProvidersListResponse> {
+  const res = await fetch("/api/admin/identity/providers", { credentials: "same-origin", signal });
+  return parseJson<IdentityProvidersListResponse>(res);
+}
+
+/** Load Cloudflare Access config + env locks for the Identity overview summary card. */
+export async function fetchCfAccessSummary(
+  signal?: AbortSignal,
+): Promise<CfAccessSummaryDto> {
+  const res = await fetch("/api/admin/identity/cf-access", { credentials: "same-origin", signal });
+  return parseJson<CfAccessSummaryDto>(res);
+}
+
+/** Toggle an OIDC provider's enabled flag (superadmin). Returns the new enabled state. */
+export async function toggleIdentityProvider(providerId: string): Promise<ToggleProviderResponse> {
+  const res = await fetch(
+    `/api/admin/identity/providers/${encodeURIComponent(providerId)}/toggle`,
+    jsonPostInit({}),
+  );
+  return parseJson<ToggleProviderResponse>(res);
+}
