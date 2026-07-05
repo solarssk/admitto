@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { PageHeader, Tabs, type TabItem } from "@admitto/ui";
+import { IDENTITY_BASE } from "./routes.js";
 
 const IDENTITY_TABS: TabItem[] = [
   { id: "providers", label: "Providers" },
@@ -25,7 +26,7 @@ export function IdentityLayout() {
 
   const handleTabChange = useCallback(
     (id: string) => {
-      navigate(`/admin/settings/identity/${id}`);
+      navigate(`${IDENTITY_BASE}/${id}`);
     },
     [navigate],
   );

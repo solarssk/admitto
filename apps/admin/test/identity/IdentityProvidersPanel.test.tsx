@@ -123,6 +123,58 @@ describe("IdentityProvidersPanel", () => {
     await waitFor(() => {
       expect(mockToggle).toHaveBeenCalledTimes(1);
     });
+    // Persisted state: the switch settles to unchecked once { enabled: false } resolves.
+    await waitFor(() => expect(toggleInput).property("checked", false));
+  });
+
+  it("keeps both switches disabled while two providers toggle concurrently", async () => {
+    mockProviders.mockResolvedValueOnce({
+      providers: [
+        { id: "p1", display_name: "Google", issuer: "https://accounts.google.com", enabled: true },
+        { id: "p2", display_name: "Okta", issuer: "https://okta.example.com", enabled: false },
+      ],
+    });
+    mockCf.mockResolvedValueOnce({
+      enabled: false,
+      teamDomain: "",
+      audience: [],
+      protectedPrefixes: [],
+      locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
+    });
+    // Resolve both toggles only after we assert; lets us observe the in-flight state.
+    let resolveP1: (value: { id: string; enabled: boolean }) => void = () => {};
+    let resolveP2: (value: { id: string; enabled: boolean }) => void = () => {};
+    mockToggle.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveP1 = resolve;
+        }),
+    );
+    mockToggle.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveP2 = resolve;
+        }),
+    );
+
+    renderWithToast(<IdentityProvidersPanel />);
+
+    const switches = await screen.findAllByRole("switch");
+    fireEvent.click(switches[0]!);
+    fireEvent.click(switches[1]!);
+
+    // Both switches are disabled while their respective toggles are in flight —
+    // the second click must not re-enable the first row.
+    await waitFor(() => expect(switches[0]).property("disabled", true));
+    expect(switches[1]).property("disabled", true);
+
+    resolveP1({ id: "p1", enabled: false });
+    // After p1 settles, only p1's switch re-enables; p2 stays disabled.
+    await waitFor(() => expect(switches[0]).property("disabled", false));
+    expect(switches[1]).property("disabled", true);
+
+    resolveP2({ id: "p2", enabled: true });
+    await waitFor(() => expect(switches[1]).property("disabled", false));
   });
 
   it("refetches the list when a toggle fails (e.g. 409 race) instead of reverting to a stale value", async () => {

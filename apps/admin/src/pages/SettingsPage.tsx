@@ -8,6 +8,7 @@ import { SessionsPanel } from "../settings/SessionsPanel.js";
 import { EventArchivingPanel } from "../settings/EventArchivingPanel.js";
 import { SecurityPanel } from "../settings/SecurityPanel.js";
 import { AuditLogPanel } from "../settings/AuditLogPanel.js";
+import { IDENTITY_PROVIDERS_ROUTE } from "../identity/routes.js";
 
 type SettingsTab = "general" | "mail" | "security" | "archiving" | "identity";
 
@@ -44,7 +45,7 @@ function SettingsTabPanel({ tab, activeTab, visited, label, className, children 
   );
 }
 
-const IDENTITY_ROUTE = "/admin/settings/identity/providers";
+const IDENTITY_ROUTE = IDENTITY_PROVIDERS_ROUTE;
 
 /** Instance-level settings: grouped in-app tabs (branding, security, archiving, identity links). */
 export function SettingsPage() {

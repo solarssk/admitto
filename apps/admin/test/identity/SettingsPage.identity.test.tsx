@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { render } from "@testing-library/react";
 
 // Stub the settings panels so SettingsPage's routing behavior can be tested
@@ -80,6 +80,50 @@ describe("SettingsPage Identity tab", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Mail" }));
     await waitFor(() => {
       expect(screen.getByTestId("mail-panel")).toBeTruthy();
+    });
+  });
+
+  it("uses replace (not push) for the legacy ?tab=identity redirect so Back does not loop", async () => {
+    // Two initial entries; the router starts at the legacy ?tab=identity entry.
+    // A Back probe at the canonical route calls navigate(-1).
+    function BackProbe() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" onClick={() => navigate(-1)}>
+          back-probe
+        </button>
+      );
+    }
+
+    render(
+      <MemoryRouter initialEntries={["/admin/somewhere-before", "/admin/settings?tab=identity"]}>
+        <Routes>
+          <Route path="/admin/somewhere-before" element={<div>before-page</div>} />
+          <Route path="/admin/settings" element={<SettingsPage />} />
+          <Route
+            path="/admin/settings/identity/providers"
+            element={
+              <>
+                <div>identity-providers-route</div>
+                <BackProbe />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    // Legacy redirect fires and lands on the canonical route.
+    await waitFor(() => {
+      expect(screen.getByText("identity-providers-route")).toBeTruthy();
+    });
+
+    // With replace, the ?tab=identity entry was overwritten, so Back goes to the
+    // pre-legacy page — NOT back into ?tab=identity (which would re-fire the
+    // redirect and loop). With push, Back would land on ?tab=identity instead.
+    fireEvent.click(screen.getByRole("button", { name: "back-probe" }));
+    await waitFor(() => {
+      expect(screen.getByText("before-page")).toBeTruthy();
     });
   });
 });
