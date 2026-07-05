@@ -335,6 +335,10 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     expect(body.email_failed).toBe(0);
     expect(body.email_bounced).toBe(0);
     expect(body.email_queued).toBe(0);
+    expect(body.requirements_count).toBe(0);
+    // EVENT_EMPTY has no event-level operators, but ORG_OV admin can perform check-in
+    expect(body.checkin_staff_count).toBe(1);
+    expect(body.attendees_with_ticket).toBe(0);
   });
 
   it("returns admitted_count scoped to active attendees", async () => {
@@ -344,6 +348,10 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as EventOverviewResponse;
     expect(body.event.timezone).toBe("Europe/Warsaw");
+    // 1 event-level operator (opId) + 1 org admin (adminId) for ORG_OV
+    expect(body.checkin_staff_count).toBe(2);
+    // 5 sent + 2 delivered + 1 accepted = 8 distinct attendees with initial ticket
+    expect(body.attendees_with_ticket).toBe(8);
     const activeWhere = {
       event_id: EVENT_MAIN,
       status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] },

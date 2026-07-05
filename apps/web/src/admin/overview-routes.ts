@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { assertEventManageAccess, requireEventId } from "./admin-helpers.js";
-import { countActiveAdmittedAttendees, countActiveAttendees } from "./event-capacity.js";
+import { countActiveAdmittedAttendees, countActiveAttendees, CAPACITY_EXCLUDED_STATUSES } from "./event-capacity.js";
 
 export interface EventOverviewResponse {
   event: {
@@ -21,6 +21,11 @@ export interface EventOverviewResponse {
   email_failed: number;
   email_bounced: number;
   email_queued: number;
+  requirements_count: number;
+  /** Active users who can perform check-in: event operators + org admins. */
+  checkin_staff_count: number;
+  /** Distinct attendees with at least one successful initial ticket delivery. */
+  attendees_with_ticket: number;
 }
 
 /** GET /api/admin/events/:eventId/overview — aggregated dashboard stats (read-only, no audit). */
@@ -48,12 +53,53 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
   });
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const [activeAttendeeCount, activeAdmittedCount, deliveryStats] = await Promise.all([
+  const [
+    activeAttendeeCount,
+    activeAdmittedCount,
+    deliveryStats,
+    requirementsCount,
+    checkinStaffCount,
+    attendeesWithTicketRows,
+  ] = await Promise.all([
     countActiveAttendees(db, eventId),
     countActiveAdmittedAttendees(db, eventId),
     db.emailDelivery.groupBy({
       by: ["status"],
       where: { event_id: eventId },
+      _count: { id: true },
+    }),
+    db.eventItem.count({ where: { event_id: eventId, enabled: true } }),
+    // Count active users who can perform check-in: event-scope operators + org-scope admins.
+    // Superadmins are implicitly covered by org admin check in practice; their small count
+    // is not material enough to warrant a separate instance-scope join here.
+    db.roleAssignment.count({
+      where: {
+        OR: [
+          {
+            role: "operator",
+            scope_type: "event",
+            scope_id: eventId,
+            user: { is_active: true },
+          },
+          {
+            role: "admin",
+            scope_type: "organization",
+            scope_id: event.organization_id,
+            user: { is_active: true },
+          },
+        ],
+      },
+    }),
+    // Distinct *active* attendees with at least one successful initial ticket delivery.
+    // Filters out revoked/cancelled attendees to stay consistent with attendee_count scope.
+    db.emailDelivery.groupBy({
+      by: ["attendee_id"],
+      where: {
+        event_id: eventId,
+        purpose: "initial",
+        status: { in: ["accepted", "sent", "delivered"] },
+        attendee: { status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
+      },
       _count: { id: true },
     }),
   ]);
@@ -89,6 +135,9 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     email_failed: emailFailed,
     email_bounced: emailBounced,
     email_queued: emailQueued,
+    requirements_count: requirementsCount,
+    checkin_staff_count: checkinStaffCount,
+    attendees_with_ticket: attendeesWithTicketRows.length,
   };
 
   return c.json(body);
