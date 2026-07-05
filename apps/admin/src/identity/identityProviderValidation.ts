@@ -65,14 +65,18 @@ export function validateProviderDraft(draft: ProviderDraft, mode: EditorMode): F
     errors.client_id = `Keep it under ${MAX_CLIENT_ID} characters.`;
   }
 
-  // client_secret: required on create; on edit only when the user typed a new value.
+  // client_secret: required on create. On edit, blank means "keep the stored
+  // secret" (even after the field was touched and cleared), so only enforce a
+  // length cap when the operator actually typed a new value.
   const secretValue = draft.client_secret;
-  if (mode === "create" || draft.client_secret_touched) {
+  if (mode === "create") {
     if (secretValue.trim().length < 1) {
       errors.client_secret = "Client secret is required.";
     } else if (secretValue.length > MAX_SECRET) {
       errors.client_secret = `Keep it under ${MAX_SECRET} characters.`;
     }
+  } else if (secretValue.trim().length > 0 && secretValue.length > MAX_SECRET) {
+    errors.client_secret = `Keep it under ${MAX_SECRET} characters.`;
   }
 
   for (const [field, max] of [

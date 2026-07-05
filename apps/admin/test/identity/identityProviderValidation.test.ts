@@ -61,7 +61,7 @@ describe("validateProviderDraft", () => {
     expect(errors.client_secret).toBeUndefined();
   });
 
-  it("requires client_secret on edit when the operator typed a new value", () => {
+  it("does not require client_secret on edit when touched and cleared (blank keeps the stored secret)", () => {
     const errors = validateProviderDraft(
       draftWith({
         display_name: "Google",
@@ -72,7 +72,21 @@ describe("validateProviderDraft", () => {
       }),
       "edit" as EditorMode,
     );
-    expect(errors.client_secret).toBeTruthy();
+    expect(errors.client_secret).toBeUndefined();
+  });
+
+  it("enforces the length cap on edit when a new non-empty secret is typed", () => {
+    const errors = validateProviderDraft(
+      draftWith({
+        display_name: "Google",
+        issuer: "https://accounts.google.com",
+        client_id: "client-123",
+        client_secret: "x".repeat(2001),
+        client_secret_touched: true,
+      }),
+      "edit" as EditorMode,
+    );
+    expect(errors.client_secret).toMatch(/under/);
   });
 
   it("rejects overlong fields", () => {

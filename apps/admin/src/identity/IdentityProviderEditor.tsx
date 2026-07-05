@@ -80,8 +80,11 @@ function buildSaveBody(
     login_button_label: draft.login_button_label.trim() || null,
     mappings,
   };
-  // Send the secret only when it's actually being (re)set.
-  if (mode === "create" || draft.client_secret_touched) {
+  // Send the secret only when it's actually being (re)set: always on create,
+  // and on edit only when the operator typed a non-empty value. A touched-then
+  // cleared field means "keep the stored secret", so we must not send an empty
+  // string (the server treats present-but-empty as an overwrite).
+  if (mode === "create" || (draft.client_secret_touched && draft.client_secret.trim().length > 0)) {
     body.client_secret = draft.client_secret;
   }
   return body;
@@ -118,7 +121,13 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [hasSecret, setHasSecret] = useState(false);
-  const fetchedRef = useRef(false);
+
+  /** Session expired mid-fetch: hand off to login with a return path (matches the
+   * pattern used across the admin SPA, e.g. IdentityProvidersPanel/ReportsPage). */
+  function redirectToLogin(): void {
+    const next = encodeURIComponent(window.location.pathname);
+    window.location.assign(`/login?next=${next}`);
+  }
 
   const load = useCallback(
     async (signal: AbortSignal) => {
@@ -138,17 +147,23 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
           setLoadState("not_found");
           return;
         }
-        if (err instanceof ApiError && err.status === 401) return;
+        if (err instanceof ApiError && err.status === 401) {
+          redirectToLogin();
+          return;
+        }
         setLoadState("error");
       }
     },
     [mode, resolvedProviderId],
   );
 
+  // Re-fetch whenever the resolved provider id changes (deep link, or in-app nav
+  // from one provider's edit URL to another). No one-shot ref: a ref would keep
+  // the previous provider's data on the screen and let Save PUT it onto the new
+  // id. The cleanup aborts the in-flight fetch on param change / StrictMode
+  // remount so only the latest request can settle state.
   useEffect(() => {
     if (mode !== "edit") return;
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();

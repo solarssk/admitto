@@ -55,11 +55,11 @@ function renderEditorAt(path: string) {
     ],
     { initialEntries: [path] },
   );
-  return render(
+  return { router, ...render(
     <ToastProvider>
       <RouterProvider router={router} />
     </ToastProvider>,
-  );
+  ) };
 }
 
 const validDetail = {
@@ -158,6 +158,61 @@ describe("IdentityProviderEditor — edit", () => {
     await waitFor(() => {
       expect(screen.getByText("This provider no longer exists.")).toBeTruthy();
     });
+  });
+
+  it("re-fetches when navigating from one provider edit URL to another (no stale save)", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail); // p1
+    const p2Detail = { ...validDetail, id: "p2", display_name: "Okta", issuer: "https://okta.example.com" };
+    mockFetch.mockResolvedValueOnce(p2Detail); // p2
+    mockUpdate.mockResolvedValueOnce(p2Detail);
+    const { router } = renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+
+    // In-app nav to a different provider's edit URL: the editor must re-fetch,
+    // not keep p1's data on screen (which would let Save PUT p1's config onto p2).
+    router.navigate("/admin/settings/identity/providers/p2");
+
+    await waitFor(() => expect(screen.getByDisplayValue("Okta")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("p2", expect.anything()));
+  });
+
+  it("keeps the stored secret when the field is touched then cleared on edit", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockUpdate.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+
+    // Type then clear the secret: touched=true, value="". Validation must pass
+    // (blank = keep stored) and the save body must NOT send an empty secret.
+    fireEvent.change(screen.getByLabelText(/client secret/i), { target: { value: "x" } });
+    fireEvent.change(screen.getByLabelText(/client secret/i), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate.mock.calls[0][1].client_secret).toBeUndefined();
+  });
+
+  it("redirects to login when the edit fetch returns 401", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/settings/identity/providers/p1", assign: assignSpy },
+    });
+    try {
+      mockFetch.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
+      renderEditorAt("/admin/settings/identity/providers/p1");
+
+      await waitFor(() =>
+        expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
+      );
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
   });
 });
 
