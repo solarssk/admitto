@@ -157,3 +157,79 @@ export function emptyProviderDraft(): ProviderDraft {
     login_button_label: "",
   };
 }
+
+// --- Group → role mapping repeater (slice 3b) ---
+
+export type MappingRole = "superadmin" | "admin" | "operator";
+export type MappingScope = "instance" | "organization" | "event";
+
+export const MAPPING_ROLES: MappingRole[] = ["superadmin", "admin", "operator"];
+export const MAPPING_SCOPES: MappingScope[] = ["instance", "organization", "event"];
+
+export interface MappingRow {
+  /** Stable client-side id for repeater keys; never sent to the server
+   * (mappingsToBody strips it). Lets React keep focus/cursor on the right row
+   * after a middle-row remove instead of reusing DOM nodes by index. */
+  id: string;
+  group: string;
+  role: MappingRole;
+  scope_type: MappingScope;
+  scope_id: string;
+}
+
+export interface MappingRowError {
+  group?: string;
+  role?: string;
+  scope_type?: string;
+  scope_id?: string;
+}
+
+const MAX_GROUP = 200;
+const MAX_SCOPE_ID = 200;
+
+/** Stable id for a repeater row. `crypto.randomUUID` is available in modern
+ *  browsers and the Vitest jsdom env; fall back to a counter for older runtimes. */
+export function newMappingId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `m${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+export function emptyMappingRow(): MappingRow {
+  return { id: newMappingId(), group: "", role: "operator", scope_type: "instance", scope_id: "" };
+}
+
+/** Validate one mapping row. `scope_id` is required for organization/event scopes. */
+export function validateMappingRow(row: MappingRow): MappingRowError {
+  const errors: MappingRowError = {};
+  if (row.group.trim().length < 1) {
+    errors.group = "Group is required.";
+  } else if (row.group.trim().length > MAX_GROUP) {
+    errors.group = `Keep it under ${MAX_GROUP} characters.`;
+  }
+  if (!MAPPING_ROLES.includes(row.role)) {
+    errors.role = "Pick a role.";
+  }
+  if (!MAPPING_SCOPES.includes(row.scope_type)) {
+    errors.scope_type = "Pick a scope.";
+  }
+  if (row.scope_type !== "instance") {
+    if (row.scope_id.trim().length < 1) {
+      errors.scope_id = "Scope ID is required for this scope.";
+    } else if (row.scope_id.trim().length > MAX_SCOPE_ID) {
+      errors.scope_id = `Keep it under ${MAX_SCOPE_ID} characters.`;
+    }
+  }
+  return errors;
+}
+
+/** Validate a full mapping list; returns an array aligned with `rows` (empty objects = valid). */
+export function validateMappings(rows: MappingRow[]): MappingRowError[] {
+  return rows.map(validateMappingRow);
+}
+
+/** True when every row validates. */
+export function areMappingsValid(rows: MappingRow[]): boolean {
+  return validateMappings(rows).every((e) => Object.keys(e).length === 0);
+}

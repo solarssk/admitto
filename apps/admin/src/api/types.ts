@@ -920,3 +920,24 @@ export interface ProviderRequestBody {
    * the request (instance scope sends null). Derived so the two can't drift. */
   mappings: Array<Omit<ProviderMappingDto, "scope_id"> & { scope_id: string | null }>;
 }
+
+/** Discover autofill result (POST /api/admin/identity/providers/:id/discover). */
+export interface DiscoverEndpointsDto {
+  issuer: string;
+  authorization_endpoint: string;
+  token_endpoint: string;
+  jwks_uri: string;
+  userinfo_endpoint: string | null;
+}
+
+export interface DiscoverResponse {
+  ok: true;
+  endpoints: DiscoverEndpointsDto;
+  provider: ProviderDetailDto | null;
+}
+
+/** Test connection result (POST /api/admin/identity/providers/:id/test). */
+export interface TestResponse {
+  ok: boolean;
+  error?: string;
+}

@@ -3,9 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   createIdentityProvider,
+  discoverIdentityProvider,
   fetchCfAccessSummary,
   fetchIdentityProvider,
   fetchIdentityProviders,
+  testIdentityProvider,
   toggleIdentityProvider,
   updateIdentityProvider,
 } from "../../src/api/client.js";
@@ -209,5 +211,70 @@ describe("identity API client", () => {
         body: JSON.stringify(body),
       }),
     );
+  });
+
+  it("discoverIdentityProvider POSTs the discover endpoint with CSRF Origin and URL-encodes the id", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        endpoints: {
+          issuer: "https://accounts.google.com",
+          authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+          token_endpoint: "https://oauth2.googleapis.com/token",
+          jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+          userinfo_endpoint: null,
+        },
+        provider: null,
+      }),
+    );
+    const res = await discoverIdentityProvider("p 1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/identity/providers/p%201/discover",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        headers: expect.objectContaining({
+          Origin: window.location.origin,
+          "Content-Type": "application/json",
+        }),
+      }),
+    );
+    expect(res.ok).toBe(true);
+    expect(res.endpoints.userinfo_endpoint).toBeNull();
+    expect(res.provider).toBeNull();
+  });
+
+  it("testIdentityProvider POSTs the test endpoint with CSRF Origin", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const res = await testIdentityProvider("p1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/identity/providers/p1/test",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        headers: expect.objectContaining({
+          Origin: window.location.origin,
+          "Content-Type": "application/json",
+        }),
+      }),
+    );
+    expect(res.ok).toBe(true);
+  });
+
+  it("testIdentityProvider surfaces a failure payload", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: false, error: "JWKS unreachable" }));
+    const res = await testIdentityProvider("p1");
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe("JWKS unreachable");
+  });
+
+  it("discoverIdentityProvider throws ApiError on a non-2xx response", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ ok: false, error: "Discovery failed" }, { status: 400, statusText: "Bad Request" }),
+    );
+    await expect(discoverIdentityProvider("p1")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 400,
+    });
   });
 });

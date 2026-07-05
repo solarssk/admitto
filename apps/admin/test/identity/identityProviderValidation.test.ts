@@ -218,3 +218,104 @@ describe("isDraftDirty", () => {
     expect(isDraftDirty(cleared, baseline)).toBe(false);
   });
 });
+
+import {
+  areMappingsValid,
+  emptyMappingRow,
+  newMappingId,
+  validateMappingRow,
+  validateMappings,
+  type MappingRow,
+} from "../../src/identity/identityProviderValidation.js";
+
+function rowWith(overrides: Partial<MappingRow> = {}): MappingRow {
+  return { ...emptyMappingRow(), ...overrides };
+}
+
+describe("validateMappingRow", () => {
+  it("flags a missing group", () => {
+    const errors = validateMappingRow(rowWith({ group: "  " }));
+    expect(errors.group).toMatch(/required/);
+  });
+
+  it("flags an overlong group", () => {
+    const errors = validateMappingRow(rowWith({ group: "x".repeat(201) }));
+    expect(errors.group).toMatch(/under 200/);
+  });
+
+  it("passes a valid instance-scoped row without scope_id", () => {
+    const errors = validateMappingRow(rowWith({ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }));
+    expect(Object.keys(errors)).toHaveLength(0);
+  });
+
+  it("requires scope_id for organization scope", () => {
+    const errors = validateMappingRow(rowWith({ group: "admins", role: "admin", scope_type: "organization", scope_id: "" }));
+    expect(errors.scope_id).toMatch(/required/);
+  });
+
+  it("flags an overlong scope_id", () => {
+    const errors = validateMappingRow(rowWith({ group: "admins", scope_type: "organization", scope_id: "x".repeat(201) }));
+    expect(errors.scope_id).toMatch(/under 200/);
+  });
+
+  it("requires scope_id for event scope", () => {
+    const errors = validateMappingRow(rowWith({ group: "admins", role: "operator", scope_type: "event", scope_id: "  " }));
+    expect(errors.scope_id).toMatch(/required/);
+  });
+
+  it("passes an organization-scoped row with a scope_id", () => {
+    const errors = validateMappingRow(rowWith({ group: "admins", role: "admin", scope_type: "organization", scope_id: "org-uuid" }));
+    expect(Object.keys(errors)).toHaveLength(0);
+  });
+
+  it("flags a legacy invalid role", () => {
+    const errors = validateMappingRow(rowWith({ group: "admins", role: "owner" as MappingRow["role"] }));
+    expect(errors.role).toMatch(/Pick a role/);
+  });
+
+  it("flags a legacy invalid scope_type", () => {
+    const errors = validateMappingRow(rowWith({ group: "admins", scope_type: "tenant" as MappingRow["scope_type"] }));
+    expect(errors.scope_type).toMatch(/Pick a scope/);
+  });
+});
+
+describe("newMappingId", () => {
+  it("falls back to a non-crypto id when crypto.randomUUID is unavailable", () => {
+    const realRandomUUID = crypto.randomUUID;
+    // @ts-expect-error — simulating an older runtime without crypto.randomUUID
+    crypto.randomUUID = undefined;
+    try {
+      const id = newMappingId();
+      expect(id).toBeTruthy();
+      expect(typeof id).toBe("string");
+      expect(id).not.toBe("");
+    } finally {
+      crypto.randomUUID = realRandomUUID;
+    }
+  });
+});
+
+describe("areMappingsValid", () => {
+  it("returns true for an empty list", () => {
+    expect(areMappingsValid([])).toBe(true);
+  });
+
+  it("returns false when any row is invalid", () => {
+    const rows: MappingRow[] = [
+      rowWith({ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }),
+      rowWith({ group: "", role: "admin", scope_type: "instance", scope_id: "" }),
+    ];
+    expect(areMappingsValid(rows)).toBe(false);
+  });
+
+  it("validateMappings returns an aligned error array", () => {
+    const rows: MappingRow[] = [
+      rowWith({ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }),
+      rowWith({ group: "", role: "admin", scope_type: "organization", scope_id: "" }),
+    ];
+    const errors = validateMappings(rows);
+    expect(Object.keys(errors[0])).toHaveLength(0);
+    expect(errors[1].group).toBeTruthy();
+    expect(errors[1].scope_id).toBeTruthy();
+  });
+});
