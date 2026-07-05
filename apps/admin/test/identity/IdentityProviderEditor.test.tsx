@@ -265,4 +265,26 @@ describe("IdentityProviderEditor — dirty guard", () => {
     expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
   });
+
+  it("re-arms the dirty guard after a confirmed discard navigation (A→B)", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail); // p1
+    const p2Detail = { ...validDetail, id: "p2", display_name: "Okta", issuer: "https://okta.example.com" };
+    mockFetch.mockResolvedValueOnce(p2Detail); // p2
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { router } = renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByDisplayValue("Google")).toBeTruthy());
+
+    // Dirty p1, then in-app nav to p2 → prompt → confirm → discard → p2 loads.
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google X" } });
+    router.navigate("/admin/settings/identity/providers/p2");
+    await waitFor(() => expect(screen.getByDisplayValue("Okta")).toBeTruthy());
+
+    // The bypass must be one-shot: dirty p2 + another navigation must prompt again.
+    confirmSpy.mockClear();
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Okta Y" } });
+    router.navigate("/admin/settings/identity/providers");
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?"));
+    confirmSpy.mockRestore();
+  });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useBlocker, useNavigate, useParams } from "react-router-dom";
+import { useBlocker, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { BlockerFunction } from "react-router";
 import { Button, Card, Input, Spinner, Switch, useToast } from "@admitto/ui";
 import {
@@ -179,6 +179,14 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
   // blocked-state effect sets it before `proceed()` so the retried navigation
   // isn't re-blocked (which would loop).
   const skipBlockRef = useRef(false);
+  const location = useLocation();
+  // Re-arm the dirty guard after any completed navigation. skipBlock is a one-shot
+  // bypass for programmatic exits (Cancel/Save/proceed); without this reset it
+  // would stay `true` and suppress the prompt for the next dirty edit too — most
+  // visibly when the editor instance persists across an A→B provider navigation.
+  useEffect(() => {
+    skipBlockRef.current = false;
+  }, [location.pathname]);
   const blocker = useBlocker(
     useCallback<BlockerFunction>(
       ({ currentLocation, nextLocation }) => {
