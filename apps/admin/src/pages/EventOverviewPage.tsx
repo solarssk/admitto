@@ -168,15 +168,15 @@ function EventReadinessCard({
       status:
         overview.attendee_count === 0
           ? "neutral"
-          : overview.email_sent >= overview.attendee_count
+          : overview.attendees_with_ticket >= overview.attendee_count
             ? "ok"
-            : overview.email_sent > 0
+            : overview.attendees_with_ticket > 0
               ? "warn"
               : "error",
       value:
         overview.attendee_count === 0
           ? "—"
-          : `${overview.email_sent} / ${overview.attendee_count}`,
+          : `${overview.attendees_with_ticket} / ${overview.attendee_count}`,
     },
     {
       label: "Delivery healthy",
@@ -184,12 +184,20 @@ function EventReadinessCard({
       value: failed === 0 ? "No failures" : `${failed} failed`,
     },
     {
-      label: "Operators assigned",
+      label: "Check-in staff",
       status: overview.checkin_staff_count > 0 ? "ok" : "warn",
       value:
         overview.checkin_staff_count > 0
-          ? `${overview.checkin_staff_count} operator${overview.checkin_staff_count > 1 ? "s" : ""}`
-          : "None assigned",
+          ? `${overview.checkin_staff_count} user${overview.checkin_staff_count > 1 ? "s" : ""}`
+          : "None active",
+    },
+    {
+      label: "Event items",
+      status: "neutral",
+      value:
+        overview.requirements_count > 0
+          ? `${overview.requirements_count} configured`
+          : "None",
     },
   ];
 
@@ -232,15 +240,17 @@ function EventReadinessCard({
 function RecentCheckinsCard({
   checkins,
   timezone,
+  connected,
 }: {
   checkins: StreamCheckinEvent[];
   timezone: string;
+  connected: boolean;
 }) {
   return (
     <Card
       title="Recent check-ins"
       actions={
-        checkins.length > 0 ? (
+        connected ? (
           <span className="overview-live-badge">
             <span className="overview-live-dot" aria-hidden="true" />
             live
@@ -377,7 +387,7 @@ export function EventOverviewPage() {
     [scheduleReconcile],
   );
 
-  useEventStream(event.id, handleLiveCheckin);
+  const { connected: streamConnected } = useEventStream(event.id, handleLiveCheckin);
 
   useEffect(() => {
     abortRef.current?.abort();
@@ -523,7 +533,7 @@ export function EventOverviewPage() {
           </Card>
         </div>
         <div className="overview-body__right">
-          <RecentCheckinsCard checkins={recentCheckins} timezone={eventTimezone} />
+          <RecentCheckinsCard checkins={recentCheckins} timezone={eventTimezone} connected={streamConnected} />
           <EventInfoCard overview={currentOverview} event={event} countdown={countdown} />
         </div>
       </div>
