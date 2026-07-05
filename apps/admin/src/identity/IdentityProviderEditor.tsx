@@ -179,6 +179,18 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
   const providerIdRef = useRef(resolvedProviderId);
   providerIdRef.current = resolvedProviderId;
 
+  // Reset the Discover/Test busy flags whenever the resolved provider changes.
+  // The stale-response guard in handleDiscover/handleTest intentionally does
+  // NOT clear the flag when a stale request completes on a different provider
+  // (`targetId !== providerIdRef.current`), so without this reset an A→B
+  // navigation mid-discover would leave `discovering` stuck `true` on B and
+  // permanently disable Discover/Test/Save. `load` re-fetches on the same
+  // change, so the flags are re-armed only by a fresh click on B.
+  useEffect(() => {
+    setDiscovering(false);
+    setTesting(false);
+  }, [resolvedProviderId]);
+
   /** Session expired mid-fetch: hand off to login with a return path (matches the
    * pattern used across the admin SPA, e.g. IdentityProvidersPanel/ReportsPage). */
   function redirectToLogin(): void {

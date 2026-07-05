@@ -53,51 +53,55 @@ export function IdentityMappingRepeater({ rows, errors, onChange }: IdentityMapp
               onChange={(e) => updateRow(index, { group: e.target.value })}
               placeholder="admins"
             />
-            <Select
-              label="Role"
-              value={row.role}
-              aria-invalid={roleInvalid || undefined}
-              onChange={(e) => updateRow(index, { role: e.target.value as MappingRow["role"] })}
-            >
-              {roleInvalid && (
-                <option value={row.role}>
-                  {row.role} (invalid — pick a role)
-                </option>
+            <div className="identity-mappings__cell">
+              <Select
+                label="Role"
+                value={row.role}
+                aria-invalid={roleInvalid || undefined}
+                onChange={(e) => updateRow(index, { role: e.target.value as MappingRow["role"] })}
+              >
+                {roleInvalid && (
+                  <option value={row.role}>
+                    {row.role} (invalid — pick a role)
+                  </option>
+                )}
+                {MAPPING_ROLES.map((role) => (
+                  <option key={role} value={role}>
+                    {role}
+                  </option>
+                ))}
+              </Select>
+              {rowError.role && (
+                <span className="at-hint at-hint--error">{rowError.role}</span>
               )}
-              {MAPPING_ROLES.map((role) => (
-                <option key={role} value={role}>
-                  {role}
-                </option>
-              ))}
-            </Select>
-            {rowError.role && (
-              <span className="at-hint at-hint--error">{rowError.role}</span>
-            )}
-            <Select
-              label="Scope"
-              value={row.scope_type}
-              aria-invalid={scopeInvalid || undefined}
-              onChange={(e) =>
-                updateRow(index, {
-                  scope_type: e.target.value as MappingRow["scope_type"],
-                  scope_id: e.target.value === "instance" ? "" : row.scope_id,
-                })
-              }
-            >
-              {scopeInvalid && (
-                <option value={row.scope_type}>
-                  {row.scope_type} (invalid — pick a scope)
-                </option>
+            </div>
+            <div className="identity-mappings__cell">
+              <Select
+                label="Scope"
+                value={row.scope_type}
+                aria-invalid={scopeInvalid || undefined}
+                onChange={(e) =>
+                  updateRow(index, {
+                    scope_type: e.target.value as MappingRow["scope_type"],
+                    scope_id: e.target.value === "instance" ? "" : row.scope_id,
+                  })
+                }
+              >
+                {scopeInvalid && (
+                  <option value={row.scope_type}>
+                    {row.scope_type} (invalid — pick a scope)
+                  </option>
+                )}
+                {MAPPING_SCOPES.map((scope) => (
+                  <option key={scope} value={scope}>
+                    {scope}
+                  </option>
+                ))}
+              </Select>
+              {rowError.scope_type && (
+                <span className="at-hint at-hint--error">{rowError.scope_type}</span>
               )}
-              {MAPPING_SCOPES.map((scope) => (
-                <option key={scope} value={scope}>
-                  {scope}
-                </option>
-              ))}
-            </Select>
-            {rowError.scope_type && (
-              <span className="at-hint at-hint--error">{rowError.scope_type}</span>
-            )}
+            </div>
             {needsScopeId ? (
               <Input
                 label={row.scope_type === "organization" ? "Organization ID" : "Event ID"}

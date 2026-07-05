@@ -442,6 +442,18 @@ describe("IdentityProviderEditor — legacy invalid mapping role (Codex P2)", ()
 
     await waitFor(() => expect(screen.getByText("Pick a role.")).toBeTruthy());
     expect(mockUpdate).not.toHaveBeenCalled();
+
+    // Bug 2: the role/scope error spans must not become extra grid items — each
+    // Select + its error span is wrapped in a single grid cell, so the row keeps
+    // exactly 5 direct children (Group, Role cell, Scope cell, ScopeId/hidden,
+    // Remove) regardless of which errors are showing.
+    const row = document.querySelector(".identity-mappings__row");
+    expect(row).toBeTruthy();
+    expect(row!.children).toHaveLength(5);
+    // The role error span is nested inside the Role cell, not a direct grid child.
+    const roleError = screen.getByText("Pick a role.");
+    expect(row!.contains(roleError)).toBe(true);
+    expect(Array.from(row!.children).includes(roleError as Element)).toBe(false);
   });
 });
 
@@ -516,5 +528,11 @@ describe("IdentityProviderEditor — stale discover guard (Bugbot high)", () => 
     expect(screen.queryByText("Endpoints discovered from the issuer.")).toBeNull();
     // B's endpoints are unchanged — A's values did not leak across.
     expect(screen.getByDisplayValue("https://b.example/auth")).toBeTruthy();
+    // Bug 1: the busy flags must be reset on B, so Discover/Test/Save are not
+    // permanently disabled by A's in-flight request.
+    await waitFor(() => {
+      const discoverBtn = screen.getByRole("button", { name: "Discover" });
+      expect(discoverBtn.hasAttribute("disabled")).toBe(false);
+    });
   });
 });
