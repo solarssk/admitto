@@ -202,13 +202,14 @@ function EventReadinessCard({
   ];
 
   const okCount = items.filter((i) => i.status === "ok").length;
+  const actionableCount = items.filter((i) => i.status !== "neutral").length;
 
   return (
     <Card
       title="Event readiness"
       actions={
         <span className="overview-readiness-score">
-          {okCount}/{items.length}
+          {okCount}/{actionableCount}
         </span>
       }
     >

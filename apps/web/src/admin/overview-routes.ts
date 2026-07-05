@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { assertEventManageAccess, requireEventId } from "./admin-helpers.js";
-import { countActiveAdmittedAttendees, countActiveAttendees } from "./event-capacity.js";
+import { countActiveAdmittedAttendees, countActiveAttendees, CAPACITY_EXCLUDED_STATUSES } from "./event-capacity.js";
 
 export interface EventOverviewResponse {
   event: {
@@ -90,14 +90,15 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
         ],
       },
     }),
-    // Distinct attendees who have at least one successful initial ticket delivery.
-    // Using groupBy to avoid COUNT(DISTINCT) raw SQL while staying within Prisma's typed API.
+    // Distinct *active* attendees with at least one successful initial ticket delivery.
+    // Filters out revoked/cancelled attendees to stay consistent with attendee_count scope.
     db.emailDelivery.groupBy({
       by: ["attendee_id"],
       where: {
         event_id: eventId,
         purpose: "initial",
         status: { in: ["accepted", "sent", "delivered"] },
+        attendee: { status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
       },
       _count: { id: true },
     }),
