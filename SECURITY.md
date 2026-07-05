@@ -50,6 +50,8 @@ Active automated checks in this repository:
 
 **PR pipeline:** application build, lint, typecheck, tests with coverage, dependency audit, secret scan, PII guard, migration safety, and CodeQL. Container image build smoke and Semgrep run on every merge to `main` (not on every PR) to keep PR feedback fast; release tags add Trivy CRITICAL gate, SBOM, and provenance.
 
+**SAST on PRs vs `main`:** CodeQL (`security-extended`) is the JavaScript/TypeScript gate on every PR. Semgrep (`p/javascript`, `p/typescript`) runs on every merge to `main` and weekly — the rule sets overlap but are not identical; this is an intentional trade-off (faster PR CI, dual coverage before code reaches `main`).
+
 Container image scanning fails the release pipeline on **CRITICAL** vulnerabilities
 with a known fix (`ignore-unfixed: true`). **HIGH** findings are reported (SARIF in the
 Security tab) but do not block the pipeline.

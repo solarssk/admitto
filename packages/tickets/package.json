@@ -20,7 +20,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates",
-    "precoverage": "npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates",
+    "precoverage": "npm run pretest",
     "test": "vitest run",
     "coverage": "vitest run --coverage"
   },

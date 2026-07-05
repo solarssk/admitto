@@ -1,5 +1,9 @@
 name: Semgrep
 
+# PRs: CodeQL (security-extended) is the SAST gate. This workflow blocks merges to
+# `main` and runs weekly — Semgrep and CodeQL rule sets are complementary, not
+# identical (see SECURITY.md).
+
 on:
   push:
     branches: [main]

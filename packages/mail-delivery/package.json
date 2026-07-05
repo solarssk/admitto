@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mail-templates -w @admitto/tickets -w @admitto/mailer -w @admitto/mailer-config",
-    "precoverage": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mail-templates -w @admitto/tickets -w @admitto/mailer -w @admitto/mailer-config",
+    "precoverage": "npm run pretest",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "precli": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/tickets -w @admitto/mailer -w @admitto/mailer-config -w @admitto/mail-templates -w @admitto/mail-delivery",

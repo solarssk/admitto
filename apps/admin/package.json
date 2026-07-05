@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build -w @admitto/db && npm run build -w @admitto/shared && npm run build -w @admitto/tickets && npm run build -w @admitto/ui && npm run build -w @admitto/auth",
-    "precoverage": "npm run build -w @admitto/db && npm run build -w @admitto/shared && npm run build -w @admitto/tickets && npm run build -w @admitto/ui && npm run build -w @admitto/auth",
+    "precoverage": "npm run pretest",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "preview": "vite preview"
