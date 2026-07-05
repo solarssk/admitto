@@ -34,7 +34,13 @@ Admitto is a self-hostable **internal event access gateway**: attendee import (C
 npm test
 ```
 
-Integration tests need Postgres — run `npm run db:test-setup` once per environment. Do not commit with a broken suite unless the PR explicitly documents why.
+Integration tests need Postgres — run `npm run db:test-setup` once per environment. For coverage reports (same tests + LCOV, matches CI):
+
+```bash
+npm run coverage
+```
+
+Do not commit with a broken suite unless the PR explicitly documents why.
 
 ## Commits and branches
 

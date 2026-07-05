@@ -39,7 +39,7 @@ Mention follow-up milestones/prompts when relevant.
 
 - [ ] No secrets / keys / passwords in the diff
 - [ ] No real personal data (seed/sample data uses synthetic `@example.com` addresses)
-- [ ] Tests pass locally (`npm test`)
+- [ ] Tests pass locally (`npm test`; optional: `npm run coverage` to match CI)
 - [ ] New fields containing personal data are justified and minimised
 - [ ] No PII in logs; token/QR contains no personal data
 - [ ] DB schema changes include a migration

@@ -1,12 +1,12 @@
 # @admitto/admin
 
-Staff **React SPA** — events picker, event admin sections, operator check-in UI. Served by `@admitto/web` at `/admin/*` (and related API routes).
+Staff **React SPA** — events picker, event admin sections, operator check-in UI, and instance Settings (including Identity & SSO). Served by `@admitto/web` at `/admin/*` (and related API routes).
 
-SSR settings pages (Identity providers, Cloudflare Access) are rendered by `apps/web` directly; this package is the main Tabler-based shell for day-to-day staff workflows.
+Login, first-run setup, and MFA enrollment remain **server-rendered HTML** from `apps/web`. Settings → Identity uses the SPA: OIDC provider list and editor live under `/admin/settings/identity/*`; Cloudflare Access still bridges to the legacy HTML editor until the SPA panel ships (#266 slice 4).
 
 ## Prerequisites
 
-Same as the monorepo dev stack — see [README.md](../../README.md#run-locally) and [infra/README.md](../../infra/README.md):
+Same as the monorepo dev stack — see [README.md](../../README.md#quick-start) and [infra/README.md](../../infra/README.md):
 
 - Postgres (and optional Redis) via `infra/docker-compose.yml`
 - `packages/db/.env` with `DATABASE_URL`
@@ -18,7 +18,7 @@ Same as the monorepo dev stack — see [README.md](../../README.md#run-locally) 
 Two terminals from the repo root:
 
 ```bash
-npm run dev -w @admitto/web    # http://localhost:3000 — API, login, SSR settings
+npm run dev -w @admitto/web    # http://localhost:3000 — API, login/setup/MFA SSR
 npm run dev -w @admitto/admin  # http://localhost:5173 — Vite dev server
 ```
 

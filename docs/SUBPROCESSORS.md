@@ -17,6 +17,7 @@ Replace generic rows with your actual vendor names in your internal compliance r
 | **Email — SMTP relay** | Corporate relay, transactional SMTP vendor | Email fallback or primary SMTP | Same as above | When SMTP mailer configured |
 | **Edge / CDN (optional)** | Cloudflare, Akamai, corporate CDN | TLS, routing, optional staff URL protection | IP, HTTP metadata, identity claims from access gateway | When used in front of origin |
 | **Wallet passes (optional, future)** | Third-party pass platform | Apple / Google Wallet tickets | Name, pass fields, opaque ticket reference | When wallet feature enabled |
+| **CI / dev tooling (repository only)** | Codecov (coverage uploads), GitHub Actions | Test coverage reports from CI pipeline | LCOV source paths and line hit counts; no production attendee PII | When using project CI; not part of customer production stack |
 
 **Not subprocessors for application logic:**
 

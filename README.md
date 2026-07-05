@@ -80,7 +80,7 @@ npm run db:migrate
 npm run db:seed
 npm run db:test-setup
 
-# 4. Run tests
+# 4. Run tests (coverage: npm run coverage — same tests + LCOV reports)
 npm test
 
 # 5. Bootstrap the first superadmin (password read from stdin — never pass on argv)
@@ -98,6 +98,15 @@ Sign in with the bootstrapped account. MFA enrolment is required on first login 
 
 More detail: [infra/README.md](infra/README.md) · [apps/web/README.md](apps/web/README.md) · [apps/admin/README.md](apps/admin/README.md)
 
+## Documentation map
+
+| You are… | Start here |
+|----------|------------|
+| **Developer** (local setup, tests) | This README · [infra/README.md](infra/README.md) · [AGENTS.md](AGENTS.md) |
+| **Operator** (production deploy) | [deploy/README.md](deploy/README.md) |
+| **Security / privacy reviewer** | [SECURITY.md](SECURITY.md) · [docs/SECURITY-CONTROLS.md](docs/SECURITY-CONTROLS.md) · [docs/ARCHITECTURE-FOR-AUDITORS.md](docs/ARCHITECTURE-FOR-AUDITORS.md) |
+| **DPO / GDPR** | [DATA-PROTECTION.md](DATA-PROTECTION.md) · [docs/GDPR-ONE-PAGER.md](docs/GDPR-ONE-PAGER.md) · [docs/DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md) |
+
 ## Production deployment
 
 Self-hosted **Docker Compose** only. Images are published to `ghcr.io/solarssk/admitto` on each `vX.Y.Z` git tag.
@@ -109,6 +118,8 @@ See [deploy/README.md](deploy/README.md).
 |---------|-------|-------------|
 | [`apps/web`](apps/web/README.md) | server | Hono HTTP server — routes, HTML, rate limits |
 | [`apps/admin`](apps/admin/README.md) | frontend | Staff React SPA — events, check-in, admin tooling |
+| [`apps/cli`](deploy/README.md#emergency-cli-event-day-failover) | ops | Emergency CLI (`checkin`, export, mail retry, auth recovery) — see deploy runbook |
+| [`packages/ui`](packages/ui/package.json) | shared | Shared React components, tokens, toast stack |
 | [`packages/auth`](packages/auth/README.md) | shared | Sessions, 2FA, OIDC, Cloudflare Access, RBAC |
 | [`packages/crypto`](packages/crypto/README.md) | shared | AES-256-GCM at-rest encryption |
 | [`packages/db`](packages/db/README.md) | shared | Prisma schema + PostgreSQL client |
