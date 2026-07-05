@@ -26,6 +26,15 @@ import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream
 const OVERVIEW_REFRESH_MS = 30_000;
 const RECENT_CHECKINS_MAX = 8;
 
+function safeHref(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? url : "#";
+  } catch {
+    return "#";
+  }
+}
+
 function AdmissionBar({ admitted, total }: { admitted: number; total: number }) {
   const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
   return (
@@ -566,7 +575,6 @@ function KeyContactsCard({
           {addOpen && <li className="overview-contact overview-contact--form">{inlineForm}</li>}
         </ul>
       )}
-      {contacts.length === 0 && addOpen && inlineForm}
     </Card>
   );
 }
@@ -679,7 +687,7 @@ function ImportantLinksCard({
                     />
                     <div className="overview-resource__info">
                       <a
-                        href={r.url}
+                        href={safeHref(r.url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="overview-resource__title"
@@ -713,7 +721,6 @@ function ImportantLinksCard({
           )}
         </>
       )}
-      {resources.length === 0 && addOpen && inlineForm}
     </Card>
   );
 }
@@ -782,37 +789,51 @@ export function EventOverviewPage() {
   const { connected: streamConnected } = useEventStream(event.id, handleLiveCheckin);
 
   const handleSaveNote = useCallback(async (note: string | null) => {
-    await patchEventNote(event.id, note);
+    const capturedEventId = event.id;
+    await patchEventNote(capturedEventId, note);
+    if (currentEventIdRef.current !== capturedEventId) return;
     setPinnedNote(note);
   }, [event.id]);
 
   const handleAddContact = useCallback(async (data: Parameters<typeof createEventContact>[1]) => {
-    const created = await createEventContact(event.id, data);
+    const capturedEventId = event.id;
+    const created = await createEventContact(capturedEventId, data);
+    if (currentEventIdRef.current !== capturedEventId) return;
     setContacts((prev) => [...prev, created]);
   }, [event.id]);
 
   const handleUpdateContact = useCallback(async (id: string, data: Parameters<typeof updateEventContact>[2]) => {
-    const updated = await updateEventContact(event.id, id, data);
+    const capturedEventId = event.id;
+    const updated = await updateEventContact(capturedEventId, id, data);
+    if (currentEventIdRef.current !== capturedEventId) return;
     setContacts((prev) => prev.map((c) => (c.id === id ? updated : c)));
   }, [event.id]);
 
   const handleDeleteContact = useCallback(async (id: string) => {
-    await deleteEventContact(event.id, id);
+    const capturedEventId = event.id;
+    await deleteEventContact(capturedEventId, id);
+    if (currentEventIdRef.current !== capturedEventId) return;
     setContacts((prev) => prev.filter((c) => c.id !== id));
   }, [event.id]);
 
   const handleAddResource = useCallback(async (data: Parameters<typeof createEventResource>[1]) => {
-    const created = await createEventResource(event.id, data);
+    const capturedEventId = event.id;
+    const created = await createEventResource(capturedEventId, data);
+    if (currentEventIdRef.current !== capturedEventId) return;
     setResources((prev) => [...prev, created]);
   }, [event.id]);
 
   const handleUpdateResource = useCallback(async (id: string, data: Parameters<typeof updateEventResource>[2]) => {
-    const updated = await updateEventResource(event.id, id, data);
+    const capturedEventId = event.id;
+    const updated = await updateEventResource(capturedEventId, id, data);
+    if (currentEventIdRef.current !== capturedEventId) return;
     setResources((prev) => prev.map((r) => (r.id === id ? updated : r)));
   }, [event.id]);
 
   const handleDeleteResource = useCallback(async (id: string) => {
-    await deleteEventResource(event.id, id);
+    const capturedEventId = event.id;
+    await deleteEventResource(capturedEventId, id);
+    if (currentEventIdRef.current !== capturedEventId) return;
     setResources((prev) => prev.filter((r) => r.id !== id));
   }, [event.id]);
 
@@ -828,6 +849,9 @@ export function EventOverviewPage() {
     setOverview(null);
     setOptimisticAdmittedDelta(0);
     setRecentCheckins([]);
+    setContacts([]);
+    setResources([]);
+    setPinnedNote(null);
 
     const load = () => {
       abortRef.current?.abort();

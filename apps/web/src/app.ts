@@ -631,9 +631,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/overview", staffAdminGate, (c) =>
     handleGetEventOverview(c, db),
   );
-  app.patch("/api/admin/events/:eventId/note", jsonPostCsrf, staffAdminGate, (c) =>
+  app.patch("/api/admin/events/:eventId/note", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
     handlePatchEventNote(c, db),
-  );
+  ));
   app.post("/api/admin/events/:eventId/contacts", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
     handleCreateContact(c, db),
   ));

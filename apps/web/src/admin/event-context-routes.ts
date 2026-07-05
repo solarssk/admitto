@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { writeAdminAuditLog } from "@admitto/tickets";
+import { validateHttpUrl, InvalidHttpUrlError } from "@admitto/mail-templates";
 import { assertEventManageAccess, adminAuditFromContext, requireEventId } from "./admin-helpers.js";
 
 function requireParam(c: Context, name: string): string | Response {
@@ -121,6 +122,8 @@ export async function handleUpdateContact(c: Context, db: PrismaClient): Promise
     sort_order?: number;
   }>();
 
+  if (body.name !== undefined && !body.name.trim()) return c.json({ error: "name_required" }, 400);
+
   const audit = adminAuditFromContext(c);
   const orgId = await requireEventOrgId(db, eventId);
 
@@ -207,6 +210,10 @@ export async function handleCreateResource(c: Context, db: PrismaClient): Promis
   if (body.type && body.type !== "link" && body.type !== "file") {
     return c.json({ error: "invalid_type" }, 400);
   }
+  try { validateHttpUrl("url", body.url.trim()); } catch (e) {
+    if (e instanceof InvalidHttpUrlError) return c.json({ error: "invalid_url" }, 400);
+    throw e;
+  }
 
   const audit = adminAuditFromContext(c);
   const orgId = await requireEventOrgId(db, eventId);
@@ -260,6 +267,12 @@ export async function handleUpdateResource(c: Context, db: PrismaClient): Promis
 
   if (body.type && body.type !== "link" && body.type !== "file") {
     return c.json({ error: "invalid_type" }, 400);
+  }
+  if (body.url !== undefined) {
+    try { validateHttpUrl("url", body.url.trim()); } catch (e) {
+      if (e instanceof InvalidHttpUrlError) return c.json({ error: "invalid_url" }, 400);
+      throw e;
+    }
   }
 
   const audit = adminAuditFromContext(c);
