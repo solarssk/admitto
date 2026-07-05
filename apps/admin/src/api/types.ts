@@ -870,3 +870,51 @@ export interface CfAccessSummaryDto {
   protectedPrefixes: string[];
   locks: CfAccessEnvLocks;
 }
+
+// --- Identity provider editor (SPA Settings → Identity, #266 slice 3) ---
+
+export interface ProviderMappingDto {
+  group: string;
+  role: string;
+  scope_type: string;
+  scope_id: string;
+}
+
+export interface ProviderDetailDto {
+  id: string;
+  provider_type: string;
+  display_name: string;
+  issuer: string;
+  client_id: string;
+  has_client_secret: boolean;
+  authorization_endpoint: string;
+  token_endpoint: string;
+  jwks_uri: string;
+  userinfo_endpoint: string | null;
+  claim_email: string;
+  claim_name: string;
+  claim_groups: string;
+  enabled: boolean;
+  login_button_label: string | null;
+  mappings: ProviderMappingDto[];
+}
+
+/** Request body for POST/PUT /api/admin/identity/providers[/:id].
+ * `mappings` is required (replace-all). `client_secret` omitted preserves the
+ * stored secret on update. `login_button_label` omitted preserves; null/"" clears. */
+export interface ProviderRequestBody {
+  display_name: string;
+  issuer: string;
+  client_id: string;
+  client_secret?: string;
+  authorization_endpoint?: string;
+  token_endpoint?: string;
+  jwks_uri?: string;
+  userinfo_endpoint?: string;
+  claim_email?: string;
+  claim_name?: string;
+  claim_groups?: string;
+  enabled?: boolean;
+  login_button_label?: string | null;
+  mappings: Array<{ group: string; role: string; scope_type: string; scope_id: string | null }>;
+}
