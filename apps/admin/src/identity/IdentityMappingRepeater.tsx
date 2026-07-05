@@ -41,6 +41,8 @@ export function IdentityMappingRepeater({ rows, errors, onChange }: IdentityMapp
       {rows.map((row, index) => {
         const rowError = errors[index] ?? {};
         const needsScopeId = row.scope_type !== "instance";
+        const roleInvalid = !MAPPING_ROLES.includes(row.role);
+        const scopeInvalid = !MAPPING_SCOPES.includes(row.scope_type);
         return (
           <div className="identity-mappings__row" key={index}>
             <Input
@@ -54,17 +56,27 @@ export function IdentityMappingRepeater({ rows, errors, onChange }: IdentityMapp
             <Select
               label="Role"
               value={row.role}
+              aria-invalid={roleInvalid || undefined}
               onChange={(e) => updateRow(index, { role: e.target.value as MappingRow["role"] })}
             >
+              {roleInvalid && (
+                <option value={row.role}>
+                  {row.role} (invalid — pick a role)
+                </option>
+              )}
               {MAPPING_ROLES.map((role) => (
                 <option key={role} value={role}>
                   {role}
                 </option>
               ))}
             </Select>
+            {rowError.role && (
+              <span className="at-hint at-hint--error">{rowError.role}</span>
+            )}
             <Select
               label="Scope"
               value={row.scope_type}
+              aria-invalid={scopeInvalid || undefined}
               onChange={(e) =>
                 updateRow(index, {
                   scope_type: e.target.value as MappingRow["scope_type"],
@@ -72,12 +84,20 @@ export function IdentityMappingRepeater({ rows, errors, onChange }: IdentityMapp
                 })
               }
             >
+              {scopeInvalid && (
+                <option value={row.scope_type}>
+                  {row.scope_type} (invalid — pick a scope)
+                </option>
+              )}
               {MAPPING_SCOPES.map((scope) => (
                 <option key={scope} value={scope}>
                   {scope}
                 </option>
               ))}
             </Select>
+            {rowError.scope_type && (
+              <span className="at-hint at-hint--error">{rowError.scope_type}</span>
+            )}
             {needsScopeId ? (
               <Input
                 label={row.scope_type === "organization" ? "Organization ID" : "Event ID"}

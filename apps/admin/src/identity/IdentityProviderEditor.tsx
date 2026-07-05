@@ -332,13 +332,28 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
     setDiscovering(true);
     try {
       const result = await discoverIdentityProvider(resolvedProviderId);
-      setDraft((d) => ({
-        ...d,
-        issuer: result.endpoints.issuer || d.issuer,
+      const discovered = {
         authorization_endpoint: result.endpoints.authorization_endpoint,
         token_endpoint: result.endpoints.token_endpoint,
         jwks_uri: result.endpoints.jwks_uri,
         userinfo_endpoint: result.endpoints.userinfo_endpoint ?? "",
+      };
+      setDraft((d) => ({
+        ...d,
+        ...discovered,
+        issuer: result.endpoints.issuer || d.issuer,
+      }));
+      // Discover persists issuer + endpoints server-side, so fold them into the
+      // dirty baseline too — otherwise the dirty guard would warn on Cancel /
+      // browser-close even though those fields are already saved, and the
+      // "Discard unsaved changes?" prompt would misleadingly imply the
+      // discovered endpoints get undone (Codex P2). Other unsaved edits
+      // (display_name, claims, mappings, label, secret, enabled) stay dirty
+      // relative to the unchanged baseline for those fields.
+      setBaseline((b) => ({
+        ...b,
+        ...discovered,
+        issuer: result.endpoints.issuer || b.issuer,
       }));
       addToast("Endpoints discovered from the issuer.", "success");
     } catch (err) {

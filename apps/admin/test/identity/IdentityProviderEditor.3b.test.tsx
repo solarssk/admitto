@@ -212,3 +212,59 @@ describe("IdentityProviderEditor — SSO preview (slice 3b)", () => {
 
 // Silence unused import in some configs.
 void createIdentityProvider;
+
+describe("IdentityProviderEditor — discover baseline refresh (Codex P2)", () => {
+  it("does not flag the form dirty after Discover (endpoints already saved)", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockDiscover.mockResolvedValueOnce({
+      ok: true,
+      endpoints: {
+        issuer: "https://accounts.google.com",
+        authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_endpoint: "https://oauth2.googleapis.com/token",
+        jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+        userinfo_endpoint: "https://openidconnect.googleapis.com/v1/userinfo",
+      },
+      provider: validDetail,
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+
+    await waitFor(() => expect(mockDiscover).toHaveBeenCalledWith("p1"));
+    // Wait for the discovered endpoint to land in the field so setDraft/setBaseline
+    // have both applied before we exercise the dirty guard.
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("https://accounts.google.com/o/oauth2/v2/auth")).toBeTruthy(),
+    );
+    // Endpoints were persisted by Discover, so the form must not be dirty —
+    // Cancel navigates away WITHOUT a discard prompt.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText("providers-list")).toBeTruthy());
+    confirmSpy.mockRestore();
+  });
+});
+
+describe("IdentityProviderEditor — legacy invalid mapping role (Codex P2)", () => {
+  it("renders the invalid role inline and blocks save with a row error", async () => {
+    const legacyDetail = {
+      ...validDetail,
+      mappings: [{ group: "admins", role: "owner", scope_type: "instance", scope_id: "" }],
+    };
+    mockFetch.mockResolvedValueOnce(legacyDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByDisplayValue("admins")).toBeTruthy());
+    // The legacy role is outside MAPPING_ROLES → an "(invalid — pick a role)"
+    // option is rendered so the operator sees the bad value.
+    expect(screen.getByText(/owner \(invalid/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(screen.getByText("Pick a role.")).toBeTruthy());
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});
