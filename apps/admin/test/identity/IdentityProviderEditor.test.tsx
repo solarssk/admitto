@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { createMemoryRouter, Link, Outlet, RouterProvider } from "react-router-dom";
 import { render } from "@testing-library/react";
 import { ToastProvider } from "@admitto/ui";
 import { IdentityProviderEditor } from "../../src/identity/IdentityProviderEditor.js";
@@ -27,21 +27,37 @@ const mockCreate = vi.mocked(createIdentityProvider);
 const mockUpdate = vi.mocked(updateIdentityProvider);
 
 function renderEditorAt(path: string) {
+  // createMemoryRouter + RouterProvider (not the component <MemoryRouter>) so the
+  // editor's `useBlocker` has a DataRouterContext. The pathless layout route
+  // renders a "Providers" link so in-app navigation away from a dirty draft can
+  // be exercised — that path is what the router-level dirty guard must catch.
+  const router = createMemoryRouter(
+    [
+      {
+        element: (
+          <div>
+            <Link to="/admin/settings/identity/providers">Providers</Link>
+            <Outlet />
+          </div>
+        ),
+        children: [
+          { path: "/admin/settings/identity/providers/new", element: <IdentityProviderEditor mode="create" /> },
+          {
+            path: "/admin/settings/identity/providers/:providerId",
+            element: <IdentityProviderEditor mode="edit" />,
+          },
+          {
+            path: "/admin/settings/identity/providers",
+            element: <div>providers-list</div>,
+          },
+        ],
+      },
+    ],
+    { initialEntries: [path] },
+  );
   return render(
     <ToastProvider>
-      <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route path="/admin/settings/identity/providers/new" element={<IdentityProviderEditor mode="create" />} />
-          <Route
-            path="/admin/settings/identity/providers/:providerId"
-            element={<IdentityProviderEditor mode="edit" />}
-          />
-          <Route
-            path="/admin/settings/identity/providers"
-            element={<div>providers-list</div>}
-          />
-        </Routes>
-      </MemoryRouter>
+      <RouterProvider router={router} />
     </ToastProvider>,
   );
 }
@@ -142,5 +158,56 @@ describe("IdentityProviderEditor — edit", () => {
     await waitFor(() => {
       expect(screen.getByText("This provider no longer exists.")).toBeTruthy();
     });
+  });
+});
+
+describe("IdentityProviderEditor — dirty guard", () => {
+  it("prompts on in-app navigation away from a dirty draft and discards on confirm", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    // Make the draft dirty.
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google" } });
+
+    // In-app navigation via the sidebar "Providers" link (not the Cancel button).
+    fireEvent.click(screen.getByRole("link", { name: "Providers" }));
+
+    await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?");
+    });
+    // On confirm, the blocker proceeds and the providers list renders.
+    await waitFor(() => {
+      expect(screen.getByText("providers-list")).toBeTruthy();
+    });
+    confirmSpy.mockRestore();
+  });
+
+  it("keeps the dirty draft when the prompt is cancelled", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google" } });
+    fireEvent.click(screen.getByRole("link", { name: "Providers" }));
+
+    await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalled();
+    });
+    // Cancelled → editor stays, the typed value is preserved, list does not render.
+    expect(screen.getByDisplayValue("Google")).toBeTruthy();
+    expect(screen.queryByText("providers-list")).toBeNull();
+    confirmSpy.mockRestore();
+  });
+
+  it("does not prompt when navigating away from a clean draft", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    fireEvent.click(screen.getByRole("link", { name: "Providers" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("providers-list")).toBeTruthy();
+    });
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 });

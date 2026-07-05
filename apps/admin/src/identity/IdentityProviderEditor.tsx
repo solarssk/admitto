@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useBlocker, useNavigate, useParams } from "react-router-dom";
+import type { BlockerFunction } from "react-router";
 import { Button, Card, Input, Spinner, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -16,6 +17,7 @@ import {
   type FieldErrors,
   type ProviderDraft,
 } from "./identityProviderValidation.js";
+import { IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
 
 interface IdentityProviderEditorProps {
   mode: EditorMode;
@@ -154,7 +156,36 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
 
   const dirty = isDraftDirty(draft, baseline);
 
-  // Warn on close/navigation when there are unsaved changes.
+  // Router-level dirty guard. The Identity tabs / Settings sidebar / SPA back
+  // button are all in-app navigations, which `beforeunload` does not catch — so
+  // a superadmin could leave the editor with unsaved changes and no prompt.
+  // `useBlocker` intercepts those; programmatic exits (Cancel after confirm,
+  // Save) set `skipBlockRef` first so they don't re-trigger the prompt, and the
+  // blocked-state effect sets it before `proceed()` so the retried navigation
+  // isn't re-blocked (which would loop).
+  const skipBlockRef = useRef(false);
+  const blocker = useBlocker(
+    useCallback<BlockerFunction>(
+      ({ currentLocation, nextLocation }) => {
+        if (skipBlockRef.current) return false;
+        if (!dirty) return false;
+        return nextLocation.pathname !== currentLocation.pathname;
+      },
+      [dirty],
+    ),
+  );
+  useEffect(() => {
+    if (blocker.state !== "blocked") return;
+    if (window.confirm("Discard unsaved changes?")) {
+      skipBlockRef.current = true;
+      blocker.proceed();
+    } else {
+      blocker.reset();
+    }
+  }, [blocker]);
+
+  // Browser reload/close is not an in-app navigation; the router blocker doesn't
+  // cover it, so keep the native beforeunload prompt as well.
   useEffect(() => {
     if (!dirty) return;
     const handler = (event: BeforeUnloadEvent) => {
@@ -167,7 +198,8 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
 
   const handleCancel = useCallback(() => {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
-    navigate("/admin/settings/identity/providers");
+    skipBlockRef.current = true;
+    navigate(IDENTITY_PROVIDERS_ROUTE);
   }, [dirty, navigate]);
 
   const handleSubmit = useCallback(
@@ -186,7 +218,8 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
           ? await createIdentityProvider(body)
           : await updateIdentityProvider(resolvedProviderId!, body);
         addToast(mode === "create" ? "Provider created." : "Provider updated.", "success");
-        navigate("/admin/settings/identity/providers");
+        skipBlockRef.current = true;
+        navigate(IDENTITY_PROVIDERS_ROUTE);
         void saved;
       } catch (err) {
         const message = err instanceof ApiError ? err.message : "Failed to save provider.";
@@ -227,7 +260,7 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
     <Card title={title}>
       <div className="identity-editor__error">
         <p>This provider no longer exists.</p>
-        <Button variant="secondary" onClick={() => navigate("/admin/settings/identity/providers")}>
+        <Button variant="secondary" onClick={() => navigate(IDENTITY_PROVIDERS_ROUTE)}>
           Back to providers
         </Button>
       </div>
