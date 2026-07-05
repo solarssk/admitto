@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../src/api/client.js";
 import { IdentityProvidersPanel } from "../../src/identity/IdentityProvidersPanel.js";
 import { renderWithToast } from "../test-utils.js";
 
@@ -42,7 +43,7 @@ describe("IdentityProvidersPanel", () => {
       teamDomain: "team.example.com",
       audience: ["aud-1"],
       protectedPrefixes: ["/admin"],
-      locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
+      locks: { enabled: true, teamDomain: false, audience: false, protectedPrefixes: false },
     });
 
     renderWithToast(<IdentityProvidersPanel />);
@@ -54,6 +55,7 @@ describe("IdentityProvidersPanel", () => {
     });
     // Two provider switches rendered (CF "Enabled" badge is not a switch role).
     expect(screen.getAllByRole("switch").length).toBe(2);
+    expect(screen.getByText("Managed by environment")).toBeTruthy();
     expect(screen.getByText("Add provider")).toBeTruthy();
   });
 
@@ -120,6 +122,107 @@ describe("IdentityProvidersPanel", () => {
     expect(mockToggle).toHaveBeenCalledWith("p1");
     await waitFor(() => {
       expect(mockToggle).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("refetches the list when a toggle fails (e.g. 409 race) instead of reverting to a stale value", async () => {
+    mockProviders.mockResolvedValueOnce({
+      providers: [
+        { id: "p1", display_name: "Google", issuer: "https://accounts.google.com", enabled: true },
+      ],
+    });
+    mockCf.mockResolvedValueOnce({
+      enabled: false,
+      teamDomain: "",
+      audience: [],
+      protectedPrefixes: [],
+      locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
+    });
+    // After the failed toggle, the refetch returns the server truth: a concurrent
+    // toggle won, so the provider is still enabled.
+    mockProviders.mockResolvedValueOnce({
+      providers: [
+        { id: "p1", display_name: "Google", issuer: "https://accounts.google.com", enabled: true },
+      ],
+    });
+    mockToggle.mockRejectedValueOnce(new ApiError(409, "toggle_race"));
+
+    renderWithToast(<IdentityProvidersPanel />);
+
+    const toggleInput = await screen.findByRole("switch", { name: "Enabled" });
+    fireEvent.click(toggleInput);
+    await waitFor(() => expect(mockToggle).toHaveBeenCalledTimes(1));
+    // Initial load + refetch after the failed toggle.
+    await waitFor(() => expect(mockProviders).toHaveBeenCalledTimes(2));
+    // The switch reflects the server truth (enabled), not the optimistic flip (disabled).
+    await waitFor(() => expect(toggleInput).property("checked", true));
+  });
+
+  it("redirects to login when the providers fetch returns 401", async () => {
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/settings/identity/providers", assign: assignSpy },
+    });
+    try {
+      mockProviders.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
+      mockCf.mockResolvedValueOnce({
+        enabled: false,
+        teamDomain: "",
+        audience: [],
+        protectedPrefixes: [],
+        locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
+      });
+
+      renderWithToast(<IdentityProvidersPanel />);
+
+      await waitFor(() =>
+        expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
+      );
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
+  });
+
+  it("renders the CF Access summary card for a disabled, unconfigured CF Access", async () => {
+    mockProviders.mockResolvedValueOnce({ providers: [] });
+    mockCf.mockResolvedValueOnce({
+      enabled: false,
+      teamDomain: "",
+      audience: [],
+      protectedPrefixes: [],
+      locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
+    });
+
+    renderWithToast(<IdentityProvidersPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("(disabled)")).toBeTruthy();
+      expect(screen.getByText("No team domain configured.")).toBeTruthy();
+      expect(screen.getByText("Disabled")).toBeTruthy();
+    });
+  });
+
+  it("shows CF error state with retry and recovers", async () => {
+    mockProviders.mockResolvedValueOnce({ providers: [] });
+    mockCf.mockRejectedValueOnce(new Error("cf boom"));
+
+    renderWithToast(<IdentityProvidersPanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Couldn't load Cloudflare Access")).toBeTruthy();
+    });
+    mockCf.mockResolvedValueOnce({
+      enabled: false,
+      teamDomain: "",
+      audience: [],
+      protectedPrefixes: [],
+      locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(screen.getByText("No team domain configured.")).toBeTruthy();
     });
   });
 });

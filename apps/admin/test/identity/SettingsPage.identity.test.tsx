@@ -65,4 +65,21 @@ describe("SettingsPage Identity tab", () => {
       expect(screen.getByText("identity-providers-route")).toBeTruthy();
     });
   });
+
+  it("renders the Security panel when the Security tab is clicked", async () => {
+    renderAt("/admin/settings");
+    fireEvent.click(screen.getByRole("tab", { name: "Security" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("security-panel")).toBeTruthy();
+    });
+  });
+
+  it("renders the General panel by default and switches to Mail", async () => {
+    renderAt("/admin/settings");
+    expect(screen.getByTestId("branding-panel")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Mail" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("mail-panel")).toBeTruthy();
+    });
+  });
 });
