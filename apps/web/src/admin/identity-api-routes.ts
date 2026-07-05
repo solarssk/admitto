@@ -33,40 +33,47 @@ import {
 const MAPPING_ROLE = z.enum(["superadmin", "admin", "operator"]);
 const MAPPING_SCOPE = z.enum(["instance", "organization", "event"]);
 
-const mappingSchema = z.object({
-  group: z.string().trim().min(1).max(200),
-  role: MAPPING_ROLE,
-  scope_type: MAPPING_SCOPE,
-  scope_id: z.union([z.string().trim().max(200), z.null()]).optional(),
-});
-
-const providerBodySchema = z
+const mappingSchema = z
   .object({
-    display_name: z.string().trim().min(1).max(200),
-    issuer: z.string().trim().min(1).max(2000),
-    client_id: z.string().trim().min(1).max(500),
-    client_secret: z.string().max(2000).optional(),
-    authorization_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-    token_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-    jwks_uri: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-    userinfo_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-    claim_email: z.union([z.string().trim().max(200), z.literal("")]).optional(),
-    claim_name: z.union([z.string().trim().max(200), z.literal("")]).optional(),
-    claim_groups: z.union([z.string().trim().max(200), z.literal("")]).optional(),
-    enabled: z.boolean().optional(),
-    /**
-     * SSO login button copy. Omit to preserve the stored value; send `null` or `""`
-     * to clear back to the product default; send a string to set.
-     */
-    login_button_label: z.union([z.string().trim().max(120), z.literal(""), z.null()]).optional(),
-    /**
-     * Full group→role mapping list (replace-all semantics, mirroring the legacy HTML
-     * form). Required on every PUT — omitting it would silently delete every mapping.
-     * Send the current list (from GET /:id) unchanged when editing other fields.
-     */
-    mappings: z.array(mappingSchema),
+    group: z.string().trim().min(1).max(200),
+    role: MAPPING_ROLE,
+    scope_type: MAPPING_SCOPE,
+    scope_id: z.union([z.string().trim().max(200), z.null()]).optional(),
   })
-  .strict();
+  .refine(
+    (m) =>
+      m.scope_type === "instance" ||
+      (typeof m.scope_id === "string" && m.scope_id.trim().length > 0),
+    { message: "scope_id is required for organization/event scoped mappings", path: ["scope_id"] },
+  );
+
+const providerBodySchema = z.strictObject({
+  display_name: z.string().trim().min(1).max(200),
+  issuer: z.string().trim().min(1).max(2000),
+  client_id: z.string().trim().min(1).max(500),
+  client_secret: z.string().max(2000).optional(),
+  authorization_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
+  token_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
+  jwks_uri: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
+  userinfo_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
+  claim_email: z.union([z.string().trim().max(200), z.literal("")]).optional(),
+  claim_name: z.union([z.string().trim().max(200), z.literal("")]).optional(),
+  claim_groups: z.union([z.string().trim().max(200), z.literal("")]).optional(),
+  enabled: z.boolean().optional(),
+  /**
+   * SSO login button copy. Omit to preserve the stored value; send `null` or `""`
+   * to clear back to the product default; send a string to set.
+   */
+  login_button_label: z.union([z.string().trim().max(120), z.literal(""), z.null()]).optional(),
+  /**
+   * Group→role mapping list (replace-all semantics, mirroring the legacy HTML form).
+   * Optional on create (defaults to an empty list); **required on every PUT** — the
+   * update handler rejects the request with `mappings_required` when it is omitted,
+   * so editing other fields can never silently delete every mapping. Send the
+   * current list (from GET /:id) unchanged when editing other fields.
+   */
+  mappings: z.array(mappingSchema).optional(),
+});
 
 /** Accept an array of strings or a comma/JSON string and return a clean string array. */
 function toStringArray(value: unknown): string[] {
@@ -89,20 +96,16 @@ function toStringArray(value: unknown): string[] {
   return raw.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-const cfAccessBodySchema = z
-  .object({
-    enabled: z.boolean().optional(),
-    teamDomain: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-    audience: z.union([z.array(z.string()), z.string()]).optional(),
-    protectedPrefixes: z.union([z.array(z.string()), z.string()]).optional(),
-  })
-  .strict();
+const cfAccessBodySchema = z.strictObject({
+  enabled: z.boolean().optional(),
+  teamDomain: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
+  audience: z.union([z.array(z.string()), z.string()]).optional(),
+  protectedPrefixes: z.union([z.array(z.string()), z.string()]).optional(),
+});
 
-const cfAccessTestBodySchema = z
-  .object({
-    teamDomain: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-  })
-  .strict();
+const cfAccessTestBodySchema = z.strictObject({
+  teamDomain: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
+});
 
 interface ProviderDetailDto extends IdentityProviderFormView {
   mappings: { group: string; role: string; scope_type: string; scope_id: string }[];
@@ -191,7 +194,11 @@ export async function handleApiCreateProvider(c: Context, db: PrismaClient): Pro
 
   let provider;
   try {
-    provider = await createIdentityProviderWithMappings(db, toProviderInput(body), body.mappings.map(toMappingInput));
+    provider = await createIdentityProviderWithMappings(
+      db,
+      toProviderInput(body),
+      (body.mappings ?? []).map(toMappingInput),
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to create provider";
     return c.json({ error: message }, 400);
@@ -218,6 +225,11 @@ export async function handleApiUpdateProvider(c: Context, db: PrismaClient): Pro
   } catch {
     return c.json({ error: "validation_failed" }, 400);
   }
+  // PUT is replace-all: the client must send the full mapping list. Omitting it
+  // would silently delete every group→role mapping, so reject explicitly.
+  if (!body.mappings) {
+    return c.json({ error: "mappings_required" }, 400);
+  }
 
   let updated;
   try {
@@ -242,14 +254,24 @@ export async function handleApiToggleProvider(c: Context, db: PrismaClient): Pro
   const provider = await findOidcProviderById(db, id);
   if (!provider) return c.json({ error: "not_found" }, 404);
 
-  await db.identityProvider.update({ where: { id }, data: { enabled: !provider.enabled } });
+  // Atomic conditional update: only flip when the row still matches the value we
+  // read. Two concurrent toggles can't both succeed — the loser affects 0 rows and
+  // gets a 409 so the client can refetch, avoiding a silent lost toggle (TOCTOU).
+  const intended = !provider.enabled;
+  const result = await db.identityProvider.updateMany({
+    where: { id, enabled: provider.enabled },
+    data: { enabled: intended },
+  });
+  if (result.count === 0) {
+    return c.json({ error: "toggle_race" }, 409);
+  }
   logAuthSettingsChanged({
     actorUserId: actorUserId(c),
     resource: "oidc_provider",
     action: provider.enabled ? "disable" : "enable",
     targetId: id,
   });
-  return c.json({ id, enabled: !provider.enabled });
+  return c.json({ id, enabled: intended });
 }
 
 /** POST /api/admin/identity/providers/:id/discover */

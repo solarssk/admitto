@@ -849,8 +849,12 @@ export function createApp(options: CreateAppOptions = {}) {
   app.put("/api/admin/identity/cf-access", jsonPostCsrf, requireAdminAccess, (c) =>
     handleApiUpdateCfAccess(c, db),
   );
-  app.post("/api/admin/identity/cf-access/test", jsonPostCsrf, requireAdminAccess, (c) =>
-    handleApiTestCfAccess(c, db),
+  app.post(
+    "/api/admin/identity/cf-access/test",
+    jsonPostCsrf,
+    requireAdminAccess,
+    adminAuthProviderOpsRateLimit,
+    (c) => handleApiTestCfAccess(c, db),
   );
 
   app.get("/setup", (c) => handleGetSetup(c, db));

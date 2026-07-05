@@ -320,6 +320,20 @@ describe("identity providers API — update", () => {
       }),
     });
     expect(res.status).toBe(400);
+    expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "mappings_required" });
+  });
+
+  it("rejects organization-scoped mapping without scope_id with 400", async () => {
+    const res = await json(`/api/admin/identity/providers/${PROVIDER_ID}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        display_name: "API Test IdP (renamed)",
+        issuer: "https://idp-api-test.example.com/",
+        client_id: "api-test-client",
+        mappings: [{ group: "ops", role: "operator", scope_type: "organization" }],
+      }),
+    });
+    expect(res.status).toBe(400);
     expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "validation_failed" });
   });
 
@@ -385,6 +399,26 @@ describe("identity providers API — create", () => {
     const createdId = body.id;
     await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: createdId } });
     await prisma.identityProvider.delete({ where: { id: createdId } });
+  });
+
+  it("creates a provider without mappings (defaults to empty list)", async () => {
+    const res = await json("/api/admin/identity/providers", {
+      method: "POST",
+      body: JSON.stringify({
+        display_name: "Created No Mappings",
+        issuer: "https://idp-api-create-nomap.example.com/",
+        client_id: "created-nomap-client",
+        authorization_endpoint: "https://idp-api-create-nomap.example.com/a",
+        token_endpoint: "https://idp-api-create-nomap.example.com/t",
+        jwks_uri: "https://idp-api-create-nomap.example.com/j",
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = await jsonAs<ProviderDetail>(res);
+    expect(body.display_name).toBe("Created No Mappings");
+    expect(body.mappings).toEqual([]);
+    await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: body.id } });
+    await prisma.identityProvider.delete({ where: { id: body.id } });
   });
 });
 
