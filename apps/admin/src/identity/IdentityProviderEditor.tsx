@@ -168,6 +168,17 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
   // dev) and no ad-hoc AbortController on the Retry button (which leaked).
   const [loadTick, setLoadTick] = useState(0);
 
+  // Latest resolvedProviderId for stale-response guards on button-triggered
+  // async actions (Discover/Test). `load` is effect-driven and aborts on
+  // provider change via its AbortController cleanup, but Discover/Test are
+  // click-triggered with no abort signal — if the operator navigates A→B while
+  // a discover is in flight, the late setDraft/setBaseline would merge A's
+  // discovered endpoints onto B's editor (and a Save could PUT them onto the
+  // wrong provider). Capturing the id at call time and comparing against this
+  // ref after `await` lets the handler bail on a stale resolution.
+  const providerIdRef = useRef(resolvedProviderId);
+  providerIdRef.current = resolvedProviderId;
+
   /** Session expired mid-fetch: hand off to login with a return path (matches the
    * pattern used across the admin SPA, e.g. IdentityProvidersPanel/ReportsPage). */
   function redirectToLogin(): void {
@@ -331,9 +342,15 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
   // Discover autofills endpoints from the issuer's .well-known config (edit mode only).
   const handleDiscover = useCallback(async () => {
     if (!resolvedProviderId) return;
+    const targetId = resolvedProviderId;
     setDiscovering(true);
     try {
-      const result = await discoverIdentityProvider(resolvedProviderId);
+      const result = await discoverIdentityProvider(targetId);
+      // Bail if the operator navigated to a different provider while discovery
+      // was in flight — otherwise the late setDraft/setBaseline would merge A's
+      // discovered endpoints onto B's editor and a Save could PUT them onto the
+      // wrong provider (Bugbot high).
+      if (targetId !== providerIdRef.current) return;
       // Patch only the discovered endpoint fields on the draft so the operator's
       // other unsaved edits (display_name, claims, label, secret, enabled,
       // mappings) are preserved.
@@ -370,6 +387,7 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
       }
       addToast("Endpoints discovered from the issuer.", "success");
     } catch (err) {
+      if (targetId !== providerIdRef.current) return;
       if (err instanceof ApiError && err.status === 401) {
         redirectToLogin();
         return;
@@ -377,21 +395,26 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
       const message = err instanceof ApiError ? err.message : "Discovery failed.";
       addToast(message, "error");
     } finally {
-      setDiscovering(false);
+      if (targetId === providerIdRef.current) setDiscovering(false);
     }
   }, [resolvedProviderId, addToast]);
 
   // Test probes the provider's endpoints (edit mode only).
   const handleTest = useCallback(async () => {
     if (!resolvedProviderId) return;
+    const targetId = resolvedProviderId;
     setTesting(true);
     try {
-      const result = await testIdentityProvider(resolvedProviderId);
+      const result = await testIdentityProvider(targetId);
+      // Bail on a stale resolution so the toast doesn't fire on the wrong
+      // provider's editor after an A→B navigation mid-test.
+      if (targetId !== providerIdRef.current) return;
       addToast(
         result.ok ? "Connection test passed." : result.error ?? "Connection test failed.",
         result.ok ? "success" : "error",
       );
     } catch (err) {
+      if (targetId !== providerIdRef.current) return;
       if (err instanceof ApiError && err.status === 401) {
         redirectToLogin();
         return;
@@ -399,7 +422,7 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
       const message = err instanceof ApiError ? err.message : "Connection test failed.";
       addToast(message, "error");
     } finally {
-      setTesting(false);
+      if (targetId === providerIdRef.current) setTesting(false);
     }
   }, [resolvedProviderId, addToast]);
 

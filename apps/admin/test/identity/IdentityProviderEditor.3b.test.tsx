@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, act } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { render } from "@testing-library/react";
@@ -34,7 +34,8 @@ const mockTest = vi.mocked(testIdentityProvider);
 
 function renderEditorAt(path: string) {
   // createMemoryRouter + RouterProvider (not <MemoryRouter>) so the editor's
-  // `useBlocker` has a DataRouterContext.
+  // `useBlocker` has a DataRouterContext. Returns the router so tests can
+  // drive in-app navigation (e.g. A→B mid-discover for the stale-response guard).
   const router = createMemoryRouter(
     [
       {
@@ -52,11 +53,14 @@ function renderEditorAt(path: string) {
     ],
     { initialEntries: [path] },
   );
-  return render(
-    <ToastProvider>
-      <RouterProvider router={router} />
-    </ToastProvider>,
-  );
+  return {
+    router,
+    ...render(
+      <ToastProvider>
+        <RouterProvider router={router} />
+      </ToastProvider>,
+    ),
+  };
 }
 
 const validDetail = {
@@ -398,8 +402,7 @@ describe("IdentityProviderEditor — discover baseline refresh (Codex P2)", () =
 });
 
 describe("IdentityProviderEditor — submit error paths", () => {
-  it("redirects to login when the update PUT returns 401", async () => {
-    const { ApiError } = await import("../../src/api/client.js");
+  it("redirects to login when the update PUT returns 401", async () => {    const { ApiError } = await import("../../src/api/client.js");
     mockFetch.mockResolvedValueOnce(validDetail);
     mockUpdate.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
     const assignSpy = vi.fn();
@@ -439,5 +442,79 @@ describe("IdentityProviderEditor — legacy invalid mapping role (Codex P2)", ()
 
     await waitFor(() => expect(screen.getByText("Pick a role.")).toBeTruthy());
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("IdentityProviderEditor — stale discover guard (Bugbot high)", () => {
+  it("does not merge A's discovered endpoints onto B after an A→B navigation mid-discover", async () => {
+    const detailA = {
+      ...validDetail,
+      id: "a",
+      display_name: "Provider A",
+      authorization_endpoint: "https://a.example/auth",
+      token_endpoint: "https://a.example/token",
+      jwks_uri: "https://a.example/jwks",
+      userinfo_endpoint: "https://a.example/userinfo",
+    };
+    const detailB = {
+      ...validDetail,
+      id: "b",
+      display_name: "Provider B",
+      authorization_endpoint: "https://b.example/auth",
+      token_endpoint: "https://b.example/token",
+      jwks_uri: "https://b.example/jwks",
+      userinfo_endpoint: "https://b.example/userinfo",
+      mappings: [],
+    };
+    mockFetch.mockResolvedValueOnce(detailA);
+    mockFetch.mockResolvedValueOnce(detailB);
+
+    // A pending discover we resolve manually after navigating to B.
+    let resolveDiscover!: (value: {
+      ok: true;
+      endpoints: {
+        issuer: string;
+        authorization_endpoint: string;
+        token_endpoint: string;
+        jwks_uri: string;
+        userinfo_endpoint: string | null;
+      };
+      provider: typeof validDetail;
+    }) => void;
+    mockDiscover.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveDiscover = resolve;
+        }),
+    );
+
+    const { router } = renderEditorAt("/admin/settings/identity/providers/a");
+    await waitFor(() => expect(screen.getByDisplayValue("Provider A")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+
+    // Navigate to B while A's discover is still in flight.
+    await act(async () => {
+      await router.navigate("/admin/settings/identity/providers/b");
+    });
+    await waitFor(() => expect(screen.getByDisplayValue("Provider B")).toBeTruthy());
+
+    // Now resolve A's discover — it must NOT touch B's draft.
+    resolveDiscover({
+      ok: true,
+      endpoints: {
+        issuer: "https://a.example",
+        authorization_endpoint: "https://a.example/auth",
+        token_endpoint: "https://a.example/token",
+        jwks_uri: "https://a.example/jwks",
+        userinfo_endpoint: "https://a.example/userinfo",
+      },
+      provider: detailA,
+    });
+
+    // Give the stale resolution a chance to (incorrectly) apply.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText("Endpoints discovered from the issuer.")).toBeNull();
+    // B's endpoints are unchanged — A's values did not leak across.
+    expect(screen.getByDisplayValue("https://b.example/auth")).toBeTruthy();
   });
 });
