@@ -171,8 +171,105 @@ describe("SettingsPage Identity tab", () => {
     expect(screen.getByTestId("security-panel").getAttribute("hidden")).toBeNull();
   });
 
+  it("does not mount the General panels on a non-General deep link", async () => {
+    renderAt("/admin/settings?tab=security");
+    await waitFor(() => {
+      expect(screen.getByTestId("security-panel")).toBeTruthy();
+    });
+    // General is not visited on a ?tab=security deep link, so BrandingPanel and
+    // InstanceUrlPanel are not mounted (their load effects do not fire).
+    expect(screen.queryByTestId("branding-panel")).toBeNull();
+    expect(screen.queryByTestId("instance-url-panel")).toBeNull();
+  });
+
   it("ignores an unknown ?tab= value and falls back to General", async () => {
     renderAt("/admin/settings?tab=nonsense");
     expect(screen.getByTestId("branding-panel")).toBeTruthy();
+  });
+
+  it("restores the active tab after navigating to Identity and Back", async () => {
+    function BackProbe() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" onClick={() => navigate(-1)}>
+          back-probe
+        </button>
+      );
+    }
+    render(
+      <MemoryRouter
+        initialEntries={["/admin/settings?tab=security", "/admin/settings/identity/providers"]}
+        initialIndex={0}
+      >
+        <Routes>
+          <Route path="/admin/settings" element={<SettingsPage />} />
+          <Route
+            path="/admin/settings/identity/providers"
+            element={
+              <>
+                <div>identity-providers-route</div>
+                <BackProbe />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    // Starts on Security (URL ?tab=security).
+    await waitFor(() => {
+      expect(screen.getByTestId("security-panel")).toBeTruthy();
+    });
+    // Click the Identity tab → SPA-navigates to the Identity route (pushed onto history).
+    fireEvent.click(screen.getByRole("tab", { name: "Identity" }));
+    await waitFor(() => {
+      expect(screen.getByText("identity-providers-route")).toBeTruthy();
+    });
+    // Back → returns to /admin/settings?tab=security and restores the Security tab.
+    fireEvent.click(screen.getByRole("button", { name: "back-probe" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("security-panel")).toBeTruthy();
+    });
+    expect(screen.getByTestId("security-panel").getAttribute("hidden")).toBeNull();
+  });
+
+  it("realigns to General when the URL param is cleared while mounted", async () => {
+    function SettingsLink() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" onClick={() => navigate("/admin/settings")}>
+          settings-link
+        </button>
+      );
+    }
+    render(
+      <MemoryRouter initialEntries={["/admin/settings?tab=mail"]}>
+        <Routes>
+          <Route
+            path="/admin/settings"
+            element={
+              <>
+                <SettingsPage />
+                <SettingsLink />
+              </>
+            }
+          />
+          <Route
+            path="/admin/settings/identity/providers"
+            element={<div>identity-providers-route</div>}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    // Starts on Mail.
+    expect(screen.getByRole("tab", { name: "Mail" }).getAttribute("aria-selected")).toBe("true");
+    // Sidebar Settings link navigates to /admin/settings (no param) — URL is the
+    // source of truth, so the active tab realigns to General instead of desyncing.
+    fireEvent.click(screen.getByRole("button", { name: "settings-link" }));
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
+    });
+    expect(screen.getByRole("tab", { name: "Mail" }).getAttribute("aria-selected")).toBe("false");
   });
 });

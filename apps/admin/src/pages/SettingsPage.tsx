@@ -20,8 +20,6 @@ const SETTINGS_TABS = [
   { id: "identity", label: "Identity" },
 ] as const;
 
-const INITIAL_VISITED_TABS: SettingsTab[] = ["general"];
-
 function isSettingsTab(id: string): id is SettingsTab {
   return SETTINGS_TABS.some((tab) => tab.id === id);
 }
@@ -58,7 +56,7 @@ export function SettingsPage() {
   })();
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<SettingsTab>>(
-    () => new Set<SettingsTab>([...INITIAL_VISITED_TABS, initialTab]),
+    () => new Set<SettingsTab>([initialTab]),
   );
 
   const openIdentity = useCallback(() => {
@@ -74,15 +72,17 @@ export function SettingsPage() {
     }
   }, [searchParams, navigate]);
 
-  // Restore the active in-page tab from the URL when navigating back from the Identity
-  // sub-section (or any external param change). Replaces the slice-5 TODO(#266): the
-  // operator returns to the tab they were on (e.g. Security) instead of resetting to
-  // General.
+  // The URL is the source of truth for the active in-page tab. On any param change
+  // (Back from the Identity sub-section, sidebar Settings link clearing the query, or
+  // an external deep link) realign React state to what the URL says — restoring the
+  // operator's tab instead of resetting to General (closes the #296 TODO).
   useEffect(() => {
-    const t = searchParams.get("tab");
-    if (t && t !== "identity" && isSettingsTab(t) && t !== tab) {
-      setTab(t);
-      setVisitedTabs((prev) => (prev.has(t) ? prev : new Set(prev).add(t)));
+    const raw = searchParams.get("tab");
+    const valid = raw && raw !== "identity" && isSettingsTab(raw) ? raw : null;
+    const target: SettingsTab = valid ?? "general";
+    if (target !== tab) {
+      setTab(target);
+      setVisitedTabs((prev) => (prev.has(target) ? prev : new Set(prev).add(target)));
     }
   }, [searchParams, tab]);
 
@@ -99,8 +99,16 @@ export function SettingsPage() {
       setTab(id);
       setVisitedTabs((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
       // Reflect the active tab in the URL (replace, so we don't stack one history
-      // entry per tab click); Back still crosses from Identity → Settings tab.
-      setSearchParams({ tab: id }, { replace: true });
+      // entry per tab click); merge into existing params so unrelated query keys
+      // survive a tab switch.
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("tab", id);
+          return next;
+        },
+        { replace: true },
+      );
     },
     [openIdentity, setSearchParams],
   );

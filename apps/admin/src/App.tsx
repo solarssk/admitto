@@ -131,6 +131,12 @@ export function EventLayout() {
   return <AdminShell event={event} />;
 }
 
+/** Redirect a legacy `/admin/auth/providers/:id` bookmark to the SPA editor route. */
+export function LegacyProviderRedirect() {
+  const { providerId } = useParams();
+  return <Navigate to={`/admin/settings/identity/providers/${providerId ?? ""}`} replace />;
+}
+
 function StaffRoutes() {
   const { assignments, setupComplete, refresh } = useAuth();
 
@@ -157,6 +163,13 @@ function StaffRoutes() {
             </Route>
           </Route>
         </Route>
+        {/* Legacy identity admin URLs — redirect to the SPA Identity section (#266 slice 5).
+            The server-rendered /admin/auth/* routes were removed; without these redirects
+            old bookmarks/docs links would land on a blank SPA outlet. */}
+        <Route path="auth/providers" element={<Navigate to="/admin/settings/identity/providers" replace />} />
+        <Route path="auth/providers/new" element={<Navigate to="/admin/settings/identity/providers/new" replace />} />
+        <Route path="auth/providers/:providerId" element={<LegacyProviderRedirect />} />
+        <Route path="auth/cf-access" element={<Navigate to="/admin/settings/identity/cloudflare" replace />} />
         <Route path="events/:eventId" element={<EventLayout />}>
           <Route index element={<Navigate to="overview" replace />} />
           {PLACEHOLDER_ROUTES.map((r) => (
