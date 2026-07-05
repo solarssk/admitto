@@ -14,9 +14,9 @@ const BRAND_MARK = (
 /** Shell for /account — shared by admin and operator staff. */
 export function AccountShell() {
   const { assignments } = useAuth();
-  const isAdmin = canAccessAdminPanel(assignments);
-  const backTo = isAdmin ? "/admin" : "/operator";
-  const backLabel = isAdmin ? "Back to events" : "Back to check-in";
+  const canAccessAdmin = canAccessAdminPanel(assignments);
+  const backTo = canAccessAdmin ? "/admin" : "/operator";
+  const backLabel = canAccessAdmin ? "Back to events" : "Back to check-in";
 
   const sidebar = (
     <>
