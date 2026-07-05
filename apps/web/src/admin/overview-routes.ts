@@ -21,6 +21,8 @@ export interface EventOverviewResponse {
   email_failed: number;
   email_bounced: number;
   email_queued: number;
+  requirements_count: number;
+  checkin_staff_count: number;
 }
 
 /** GET /api/admin/events/:eventId/overview — aggregated dashboard stats (read-only, no audit). */
@@ -48,7 +50,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
   });
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const [activeAttendeeCount, activeAdmittedCount, deliveryStats] = await Promise.all([
+  const [activeAttendeeCount, activeAdmittedCount, deliveryStats, requirementsCount, checkinStaffCount] = await Promise.all([
     countActiveAttendees(db, eventId),
     countActiveAdmittedAttendees(db, eventId),
     db.emailDelivery.groupBy({
@@ -56,6 +58,8 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       where: { event_id: eventId },
       _count: { id: true },
     }),
+    db.eventItem.count({ where: { event_id: eventId, enabled: true } }),
+    db.roleAssignment.count({ where: { scope_type: "event", scope_id: eventId, role: "operator" } }),
   ]);
 
   const emailByStatus = Object.fromEntries(
@@ -89,6 +93,8 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     email_failed: emailFailed,
     email_bounced: emailBounced,
     email_queued: emailQueued,
+    requirements_count: requirementsCount,
+    checkin_staff_count: checkinStaffCount,
   };
 
   return c.json(body);

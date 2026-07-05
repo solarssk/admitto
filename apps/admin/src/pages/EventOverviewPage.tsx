@@ -13,8 +13,8 @@ import {
 } from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 
-/** Auto-refresh interval for event overview stats (ms). */
 const OVERVIEW_REFRESH_MS = 30_000;
+const RECENT_CHECKINS_MAX = 8;
 
 function AdmissionBar({ admitted, total }: { admitted: number; total: number }) {
   const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
@@ -30,25 +30,6 @@ function AdmissionBar({ admitted, total }: { admitted: number; total: number }) 
       <div className="overview-admission-bar__fill" style={{ width: `${pct}%` }} />
     </div>
   );
-}
-
-const RECENT_CHECKINS_MAX = 8;
-
-function formatEmailDeliverySub(overview: EventOverviewDto): string {
-  const parts: string[] = [];
-  if (overview.email_bounced > 0) {
-    parts.push(`${overview.email_bounced} bounced`);
-  }
-  if (overview.email_failed > 0) {
-    parts.push(`${overview.email_failed} failed`);
-  }
-  if (parts.length > 0) {
-    return parts.join(" · ");
-  }
-  if (overview.email_queued > 0) {
-    return `${overview.email_queued} queued`;
-  }
-  return "Delivered";
 }
 
 function EmailDeliveryBars({ overview }: { overview: EventOverviewDto }) {
@@ -83,7 +64,265 @@ function EmailDeliveryBars({ overview }: { overview: EventOverviewDto }) {
   );
 }
 
-/** Event-scoped dashboard — metrics, countdown, and shortcuts. */
+interface NeedsAttentionProps {
+  overview: EventOverviewDto;
+}
+
+function NeedsAttentionCard({ overview }: NeedsAttentionProps) {
+  const failed = overview.email_failed + overview.email_bounced;
+  const alerts: Array<{ icon: string; level: "error" | "warn"; title: string; desc: string }> = [];
+
+  if (failed > 0) {
+    alerts.push({
+      icon: "ti-mail-x",
+      level: "error",
+      title: `${failed} email ${failed === 1 ? "delivery" : "deliveries"} failed`,
+      desc: `${overview.email_bounced > 0 ? `${overview.email_bounced} bounced` : ""}${overview.email_bounced > 0 && overview.email_failed > 0 ? " · " : ""}${overview.email_failed > 0 ? `${overview.email_failed} rejected` : ""}`.trim(),
+    });
+  }
+
+  if (overview.email_queued > 0) {
+    alerts.push({
+      icon: "ti-mail-forward",
+      level: "warn",
+      title: `${overview.email_queued} ${overview.email_queued === 1 ? "ticket" : "tickets"} still in send queue`,
+      desc: "Mailer queue processing — check mailer status if delayed",
+    });
+  }
+
+  if (overview.checkin_staff_count === 0 && !overview.event.archived_at) {
+    alerts.push({
+      icon: "ti-qrcode",
+      level: "warn",
+      title: "No operators assigned for check-in",
+      desc: "Assign at least one operator so staff can scan tickets",
+    });
+  }
+
+  if (alerts.length === 0) {
+    return (
+      <Card title="Needs attention">
+        <p className="overview-muted overview-all-clear">
+          <i className="ti ti-circle-check" aria-hidden="true" />
+          All good — no issues to action
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card
+      title="Needs attention"
+      actions={
+        <Badge variant={alerts.some((a) => a.level === "error") ? "error" : "warn"}>
+          {alerts.length}
+        </Badge>
+      }
+    >
+      <div className="overview-alerts">
+        {alerts.map((alert) => (
+          <div key={alert.title} className={`overview-alert overview-alert--${alert.level}`}>
+            <i className={`ti ${alert.icon} overview-alert__icon`} aria-hidden="true" />
+            <div className="overview-alert__body">
+              <strong className="overview-alert__title">{alert.title}</strong>
+              {alert.desc && <span className="overview-alert__desc">{alert.desc}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+interface ReadinessItem {
+  label: string;
+  status: "ok" | "warn" | "error" | "neutral";
+  value: string;
+}
+
+function EventReadinessCard({
+  overview,
+  loading,
+}: {
+  overview: EventOverviewDto | null;
+  loading: boolean;
+}) {
+  if (!overview) {
+    return (
+      <Card title="Event readiness">
+        <p className="overview-muted">{loading ? "Loading…" : "Unavailable"}</p>
+      </Card>
+    );
+  }
+
+  const failed = overview.email_failed + overview.email_bounced;
+
+  const items: ReadinessItem[] = [
+    {
+      label: "Attendees imported",
+      status: overview.attendee_count > 0 ? "ok" : "warn",
+      value: overview.attendee_count > 0 ? `${overview.attendee_count} guests` : "None yet",
+    },
+    {
+      label: "Tickets sent",
+      status:
+        overview.attendee_count === 0
+          ? "neutral"
+          : overview.email_sent >= overview.attendee_count
+            ? "ok"
+            : overview.email_sent > 0
+              ? "warn"
+              : "error",
+      value:
+        overview.attendee_count === 0
+          ? "—"
+          : `${overview.email_sent} / ${overview.attendee_count}`,
+    },
+    {
+      label: "Delivery healthy",
+      status: failed === 0 ? "ok" : "error",
+      value: failed === 0 ? "No failures" : `${failed} failed`,
+    },
+    {
+      label: "Operators assigned",
+      status: overview.checkin_staff_count > 0 ? "ok" : "warn",
+      value:
+        overview.checkin_staff_count > 0
+          ? `${overview.checkin_staff_count} operator${overview.checkin_staff_count > 1 ? "s" : ""}`
+          : "None assigned",
+    },
+  ];
+
+  const okCount = items.filter((i) => i.status === "ok").length;
+
+  return (
+    <Card
+      title="Event readiness"
+      actions={
+        <span className="overview-readiness-score">
+          {okCount}/{items.length}
+        </span>
+      }
+    >
+      <div className="overview-readiness">
+        {items.map((item) => (
+          <div key={item.label} className="overview-readiness__row">
+            <span className={`overview-readiness__dot overview-readiness__dot--${item.status}`}>
+              {item.status === "ok" ? (
+                <i className="ti ti-check" aria-hidden="true" />
+              ) : item.status === "error" ? (
+                <i className="ti ti-x" aria-hidden="true" />
+              ) : item.status === "warn" ? (
+                <i className="ti ti-alert-triangle" aria-hidden="true" />
+              ) : (
+                <i className="ti ti-minus" aria-hidden="true" />
+              )}
+            </span>
+            <span className="overview-readiness__label">{item.label}</span>
+            <span className={`overview-readiness__value overview-readiness__value--${item.status}`}>
+              {item.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function RecentCheckinsCard({
+  checkins,
+  timezone,
+}: {
+  checkins: StreamCheckinEvent[];
+  timezone: string;
+}) {
+  return (
+    <Card
+      title="Recent check-ins"
+      actions={
+        checkins.length > 0 ? (
+          <span className="overview-live-badge">
+            <span className="overview-live-dot" aria-hidden="true" />
+            live
+          </span>
+        ) : undefined
+      }
+    >
+      {checkins.length === 0 ? (
+        <p className="overview-muted">
+          No check-ins yet — events will appear as attendees scan in.
+        </p>
+      ) : (
+        <ul className="overview-activity">
+          {checkins.map((c) => (
+            <li key={`${c.attendeeId}-${c.admittedAt}`} className="overview-activity__item">
+              <Avatar name={c.attendeeName} size="sm" />
+              <div className="overview-activity__info">
+                <strong>{c.attendeeName}</strong>
+                <span>{c.ticketType ?? "—"}</span>
+              </div>
+              <time className="overview-activity__time">
+                {formatEventTime(c.admittedAt, timezone)}
+              </time>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function EventInfoCard({
+  overview,
+  event,
+  countdown,
+}: {
+  overview: EventOverviewDto | null;
+  event: EventDto;
+  countdown: string;
+}) {
+  const location = overview?.event.location ?? event.location;
+  const timezone = overview?.event.timezone ?? event.timezone;
+  const dateIso = overview?.event.date ?? event.date;
+  const capacity = overview?.event.capacity ?? null;
+
+  const rows: Array<{ icon: string; label: string; value: string }> = [
+    {
+      icon: "ti-calendar",
+      label: "Date",
+      value: `${formatEventCalendarDate(dateIso)} · ${countdown}`,
+    },
+    ...(location ? [{ icon: "ti-map-pin", label: "Venue", value: location }] : []),
+    { icon: "ti-world", label: "Timezone", value: timezone },
+    ...(capacity != null
+      ? [
+          {
+            icon: "ti-users",
+            label: "Capacity",
+            value: `${overview?.attendee_count ?? "—"} of ${capacity}`,
+          },
+        ]
+      : []),
+  ];
+
+  return (
+    <Card title="Event info">
+      <div className="overview-info">
+        {rows.map((row) => (
+          <div key={row.label} className="overview-info__row">
+            <i className={`ti ${row.icon} overview-info__icon`} aria-hidden="true" />
+            <div className="overview-info__content">
+              <span className="overview-info__label">{row.label}</span>
+              <span className="overview-info__value">{row.value}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/** Event-scoped dashboard — event command center with KPIs, alerts, readiness, and live check-in feed. */
 export function EventOverviewPage() {
   const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
@@ -91,7 +330,6 @@ export function EventOverviewPage() {
   const abortRef = useRef<AbortController | null>(null);
   const seenCheckinsRef = useRef(new Map<string, number>());
   const statsErrorToastedRef = useRef(false);
-  /** Recent admits within admitDedup TTL — not cleared on server refresh (replay dedup); pruned instead. */
   const reconcileTimerRef = useRef<number | null>(null);
   const currentEventIdRef = useRef(event.id);
 
@@ -123,12 +361,8 @@ export function EventOverviewPage() {
     reconcileTimerRef.current = window.setTimeout(() => {
       reconcileTimerRef.current = null;
       void fetchEventOverview(event.id)
-        .then((data) => {
-          absorbServerOverview(data);
-        })
-        .catch(() => {
-          /* keep optimistic value until next poll */
-        });
+        .then((data) => { absorbServerOverview(data); })
+        .catch(() => { /* keep optimistic value until next poll */ });
     }, 3000);
   }, [absorbServerOverview, event.id]);
 
@@ -171,12 +405,9 @@ export function EventOverviewPage() {
         })
         .catch((err) => {
           if (err instanceof DOMException && err.name === "AbortError") return;
-          const message = "Failed to load event stats.";
-          if (err instanceof ApiError) {
-            reportApiError(err.status);
-          }
+          if (err instanceof ApiError) reportApiError(err.status);
           if (!statsErrorToastedRef.current) {
-            addToast(message, "error");
+            addToast("Failed to load event stats.", "error");
             statsErrorToastedRef.current = true;
           }
         })
@@ -198,10 +429,6 @@ export function EventOverviewPage() {
     };
   }, [absorbServerOverview, event.id, reportApiError, addToast]);
 
-  const meta = [formatEventCalendarDate(eventDateIso), event.location]
-    .filter(Boolean)
-    .join(" · ");
-
   const attendeeCount = currentOverview?.attendee_count ?? event.attendee_count ?? null;
   const admittedCount =
     currentOverview?.admitted_count != null
@@ -211,14 +438,27 @@ export function EventOverviewPage() {
     attendeeCount != null && admittedCount != null && attendeeCount > 0
       ? Math.round((admittedCount / attendeeCount) * 100)
       : null;
+  const emailFailedTotal =
+    currentOverview != null
+      ? currentOverview.email_failed + currentOverview.email_bounced
+      : 0;
 
   return (
     <div className="screen">
       <PageHeader
         title={event.title}
-        subtitle={meta ? `${meta} · ${countdown}` : countdown}
+        subtitle={
+          [formatEventCalendarDate(eventDateIso), event.location].filter(Boolean).join(" · ")
+        }
         actions={event.archived_at ? <Badge variant="neutral">Archived · read-only</Badge> : undefined}
       />
+
+      {event.archived_at && (
+        <p className="overview-archived-note">
+          Archived on {formatUtcDateTime(event.archived_at)}. Restore from event settings if you
+          need to edit again.
+        </p>
+      )}
 
       <div className="overview-stats">
         <Card>
@@ -249,9 +489,13 @@ export function EventOverviewPage() {
             sub={
               currentOverview == null
                 ? loading
-                  ? "Loading delivery stats"
-                  : "Delivery stats unavailable"
-                : formatEmailDeliverySub(currentOverview)
+                  ? "Loading…"
+                  : "Unavailable"
+                : emailFailedTotal > 0
+                  ? `${emailFailedTotal} failed`
+                  : currentOverview.email_queued > 0
+                    ? `${currentOverview.email_queued} queued`
+                    : "Delivered"
             }
           />
         </Card>
@@ -264,41 +508,24 @@ export function EventOverviewPage() {
         </Card>
       </div>
 
-      {event.archived_at && (
-        <p className="overview-archived-note">
-          Archived on {formatUtcDateTime(event.archived_at)}. Restore from event
-          settings if you need to edit again.
-        </p>
-      )}
-
-      <div className="overview-two-col">
-        <Card title="Email delivery">
+      <div className="overview-body">
+        <div className="overview-body__left">
           {currentOverview != null ? (
-            <EmailDeliveryBars overview={currentOverview} />
-          ) : (
-            <p className="overview-muted">{loading ? "Loading…" : "Delivery stats unavailable"}</p>
-          )}
-        </Card>
-        <Card title="Recent check-ins">
-          {recentCheckins.length === 0 ? (
-            <p className="overview-muted">No check-ins yet — events will appear as attendees scan in.</p>
-          ) : (
-            <ul className="overview-activity">
-              {recentCheckins.map((c) => (
-                <li key={`${c.attendeeId}-${c.admittedAt}`} className="overview-activity__item">
-                  <Avatar name={c.attendeeName} size="sm" />
-                  <div className="overview-activity__info">
-                    <strong>{c.attendeeName}</strong>
-                    <span>{c.ticketType ?? "—"}</span>
-                  </div>
-                  <time className="overview-activity__time">
-                    {formatEventTime(c.admittedAt, eventTimezone)}
-                  </time>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+            <NeedsAttentionCard overview={currentOverview} />
+          ) : null}
+          <EventReadinessCard overview={currentOverview} loading={loading} />
+          <Card title="Email delivery">
+            {currentOverview != null ? (
+              <EmailDeliveryBars overview={currentOverview} />
+            ) : (
+              <p className="overview-muted">{loading ? "Loading…" : "Unavailable"}</p>
+            )}
+          </Card>
+        </div>
+        <div className="overview-body__right">
+          <RecentCheckinsCard checkins={recentCheckins} timezone={eventTimezone} />
+          <EventInfoCard overview={currentOverview} event={event} countdown={countdown} />
+        </div>
       </div>
     </div>
   );

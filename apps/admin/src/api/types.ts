@@ -776,6 +776,8 @@ export interface EventOverviewDto {
   email_failed: number;
   email_bounced: number;
   email_queued: number;
+  requirements_count: number;
+  checkin_staff_count: number;
 }
 
 export interface EventReportsResponse {
