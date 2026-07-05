@@ -234,6 +234,18 @@ import {
   handlePostCfAccess,
   handlePostCfAccessTest,
 } from "./admin/cf-access-routes.js";
+import {
+  handleApiListProviders,
+  handleApiGetProvider,
+  handleApiCreateProvider,
+  handleApiUpdateProvider,
+  handleApiToggleProvider,
+  handleApiDiscoverProvider,
+  handleApiTestProvider,
+  handleApiGetCfAccess,
+  handleApiUpdateCfAccess,
+  handleApiTestCfAccess,
+} from "./admin/identity-api-routes.js";
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
 import { createRequestLogMiddleware, resolveLogHttpRequests } from "./request-log.js";
 import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
@@ -801,6 +813,44 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/admin/auth/cf-access/test", htmlPostCsrf, requireAdminAccess, (c) =>
     handlePostCfAccessTest(c, db),
+  );
+
+  // Identity providers + Cloudflare Access JSON API for the SPA Settings → Identity section (#266).
+  // Uses requireAdminAccess (superadmin via canManageInstance) to match the legacy HTML routes'
+  // gating exactly; slice 5 removes the HTML routes above.
+  app.get("/api/admin/identity/providers", requireAdminAccess, (c) => handleApiListProviders(c, db));
+  app.post("/api/admin/identity/providers", jsonPostCsrf, requireAdminAccess, (c) =>
+    handleApiCreateProvider(c, db),
+  );
+  app.get("/api/admin/identity/providers/:id", requireAdminAccess, (c) =>
+    handleApiGetProvider(c, db),
+  );
+  app.put("/api/admin/identity/providers/:id", jsonPostCsrf, requireAdminAccess, (c) =>
+    handleApiUpdateProvider(c, db),
+  );
+  app.post("/api/admin/identity/providers/:id/toggle", jsonPostCsrf, requireAdminAccess, (c) =>
+    handleApiToggleProvider(c, db),
+  );
+  app.post(
+    "/api/admin/identity/providers/:id/discover",
+    jsonPostCsrf,
+    requireAdminAccess,
+    adminAuthProviderOpsRateLimit,
+    (c) => handleApiDiscoverProvider(c, db),
+  );
+  app.post(
+    "/api/admin/identity/providers/:id/test",
+    jsonPostCsrf,
+    requireAdminAccess,
+    adminAuthProviderOpsRateLimit,
+    (c) => handleApiTestProvider(c, db),
+  );
+  app.get("/api/admin/identity/cf-access", requireAdminAccess, (c) => handleApiGetCfAccess(c, db));
+  app.put("/api/admin/identity/cf-access", jsonPostCsrf, requireAdminAccess, (c) =>
+    handleApiUpdateCfAccess(c, db),
+  );
+  app.post("/api/admin/identity/cf-access/test", jsonPostCsrf, requireAdminAccess, (c) =>
+    handleApiTestCfAccess(c, db),
   );
 
   app.get("/setup", (c) => handleGetSetup(c, db));
