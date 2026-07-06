@@ -205,15 +205,29 @@
   margin-bottom: 0;
 }
 
-/* The PasswordStrengthMeter is position:absolute, overflowing ~12 px below
-   the input slot. Increase the margin after the new-password row so the
-   bar doesn't crowd "Confirm new password". */
-.account-password-form .mail-field-row--password {
-  margin-bottom: 2rem;
+/* Render the strength bar in normal flow (not position:absolute) so it
+   occupies space between the new-password input and "Confirm new password". */
+.account-password-form .at-password-slot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 0.25rem);
 }
 
-/* Constrain the password form — a stack of three inputs doesn't need to
-   span the full card width. Left-aligns naturally on all viewports. */
-.account-password-form {
-  max-width: 26rem;
+.account-password-form .at-password-strength {
+  position: static;
+  height: auto;
+}
+
+/* Password + 2FA side-by-side on wide screens */
+.account-security-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5, 1.5rem);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .account-security-grid {
+    grid-template-columns: 1fr;
+  }
 }

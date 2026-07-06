@@ -228,6 +228,7 @@ export function AccountPage() {
         </div>
       </Card>
 
+      <div className="account-security-grid">
       <Card title="Password">
         {!account.has_local_password ? (
           <p className="account-info-block">Password is managed by your identity provider.</p>
@@ -431,6 +432,7 @@ export function AccountPage() {
           </p>
         )}
       </Card>
+      </div>
 
       <Card title="Active sessions" actions={otherSessions.length > 0 ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}>
         {sessionsLoading && (
