@@ -38,7 +38,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@testcontainers/redis": "^12.0.3",
+    "@testcontainers/redis": "^12.0.4",
     "@types/node": "^24.0.0",
     "@types/pdfkit": "^0.17.6",
     "jose": "^6.0.11",
