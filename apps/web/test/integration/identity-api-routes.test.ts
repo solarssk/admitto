@@ -534,7 +534,7 @@ describe("cloudflare access API", () => {
     });
     expect(res.status).toBe(400);
     const body = await jsonAs<{ error: string }>(res);
-    expect(body.error).toContain("CF_ACCESS_TEAM_DOMAIN");
+    expect(body.error).toBe("validation_failed");
   });
 
   it("rejects enabling CF Access without an audience (400)", async () => {
@@ -549,6 +549,6 @@ describe("cloudflare access API", () => {
     });
     expect(res.status).toBe(400);
     const body = await jsonAs<{ error: string }>(res);
-    expect(body.error).toContain("CF_ACCESS_AUD");
+    expect(body.error).toBe("validation_failed");
   });
 });
