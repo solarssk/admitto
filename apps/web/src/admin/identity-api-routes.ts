@@ -218,8 +218,8 @@ export async function handleApiCreateProvider(c: Context, db: PrismaClient): Pro
       (body.mappings ?? []).map(toMappingInput),
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to create provider";
-    return c.json({ error: message }, 400);
+    console.error("[identity] create provider failed:", err);
+    return c.json({ error: "save_failed" }, 500);
   }
 
   logAuthSettingsChanged({
@@ -253,8 +253,8 @@ export async function handleApiUpdateProvider(c: Context, db: PrismaClient): Pro
   try {
     updated = await updateIdentityProviderWithMappings(db, id, toProviderInput(body), body.mappings.map(toMappingInput));
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to save provider";
-    return c.json({ error: message }, 400);
+    console.error("[identity] update provider failed:", err);
+    return c.json({ error: "save_failed" }, 500);
   }
 
   logAuthSettingsChanged({
@@ -302,8 +302,8 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
   try {
     discovery = await fetchOidcDiscovery(provider.issuer);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Discovery failed";
-    return c.json({ ok: false, error: message }, 400);
+    console.warn("[identity] OIDC discovery failed:", err);
+    return c.json({ ok: false, error: "discovery_failed" }, 400);
   }
 
   try {
@@ -319,8 +319,8 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
       enabled: provider.enabled,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to persist discovery";
-    return c.json({ ok: false, error: message }, 400);
+    console.error("[identity] persist discovery failed:", err);
+    return c.json({ ok: false, error: "save_failed" }, 500);
   }
 
   logAuthSettingsChanged({
@@ -357,9 +357,8 @@ export async function handleApiTestProviderDraft(c: Context): Promise<Response> 
   try {
     // Mirror the same guard resolveEndpoints applies on save: issuer must be a safe HTTPS URL.
     assertSafeOidcFetchUrl(issuer.endsWith("/") ? issuer : `${issuer}/`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid issuer URL";
-    return c.json({ ok: false, error: message }, 400);
+  } catch {
+    return c.json({ ok: false, error: "invalid_issuer" }, 400);
   }
   const auth = optionalOidcEndpoint(body.authorization_endpoint);
   const token = optionalOidcEndpoint(body.token_endpoint);
@@ -395,8 +394,8 @@ export async function handleApiDiscoverProviderPreview(c: Context): Promise<Resp
       },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Discovery failed";
-    return c.json({ ok: false, error: message }, 400);
+    console.warn("[identity] discovery preview failed:", err);
+    return c.json({ ok: false, error: "discovery_failed" }, 400);
   }
 }
 
@@ -477,9 +476,8 @@ export async function handleApiUpdateCfAccess(c: Context, db: PrismaClient): Pro
     if (resolved.enabled) {
       validateCfAccessBootConfigFromResolved(resolved);
     }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid configuration";
-    return c.json({ error: message }, 400);
+  } catch {
+    return c.json({ error: "validation_failed" }, 400);
   }
 
   const wasEnabled = current.enabled;
@@ -500,8 +498,8 @@ export async function handleApiUpdateCfAccess(c: Context, db: PrismaClient): Pro
       await ensureCloudflareAccessProvider(tx, resolved);
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Save failed";
-    return c.json({ error: message }, 400);
+    console.error("[identity] CF Access save failed:", err);
+    return c.json({ error: "save_failed" }, 500);
   }
 
   clearCfAccessRuntimeConfigCache();
@@ -531,13 +529,12 @@ export async function handleApiTestCfAccess(c: Context, db: PrismaClient): Promi
     teamDomain = body.teamDomain?.trim()
       ? resolveCfAccessTeamDomainForConnection(body.teamDomain.trim())
       : (await getCfAccessConfig(db)).teamDomain;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid team domain";
-    return c.json({ ok: false, error: message }, 400);
+  } catch {
+    return c.json({ ok: false, error: "invalid_team_domain" }, 400);
   }
 
   if (!teamDomain) {
-    return c.json({ ok: false, error: "Team domain is required to test connection" }, 400);
+    return c.json({ ok: false, error: "team_domain_required" }, 400);
   }
 
   const result = await testCfAccessConnection({ teamDomain });
