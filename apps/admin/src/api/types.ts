@@ -936,6 +936,20 @@ export interface DiscoverResponse {
   provider: ProviderDetailDto | null;
 }
 
+/** Discover preview result (POST /api/admin/identity/providers/discover-preview). */
+export interface DiscoverPreviewResponse {
+  ok: true;
+  endpoints: DiscoverEndpointsDto;
+}
+
+/** Draft body for POST /api/admin/identity/providers/test (stateless probe). */
+export interface ProviderTestDraftBody {
+  issuer: string;
+  authorization_endpoint?: string;
+  token_endpoint?: string;
+  jwks_uri?: string;
+}
+
 /** Test connection result (POST /api/admin/identity/providers/:id/test). */
 export interface TestResponse {
   ok: boolean;

@@ -226,6 +226,8 @@ import {
   handleApiUpdateProvider,
   handleApiToggleProvider,
   handleApiDiscoverProvider,
+  handleApiDiscoverProviderPreview,
+  handleApiTestProviderDraft,
   handleApiTestProvider,
   handleApiGetCfAccess,
   handleApiUpdateCfAccess,
@@ -778,6 +780,20 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/identity/providers", requireAdminAccess, (c) => handleApiListProviders(c, db));
   app.post("/api/admin/identity/providers", jsonPostCsrf, requireAdminAccess, (c) =>
     handleApiCreateProvider(c, db),
+  );
+  app.post(
+    "/api/admin/identity/providers/test",
+    jsonPostCsrf,
+    requireAdminAccess,
+    adminAuthProviderOpsRateLimit,
+    (c) => handleApiTestProviderDraft(c),
+  );
+  app.post(
+    "/api/admin/identity/providers/discover-preview",
+    jsonPostCsrf,
+    requireAdminAccess,
+    adminAuthProviderOpsRateLimit,
+    (c) => handleApiDiscoverProviderPreview(c),
   );
   app.get("/api/admin/identity/providers/:id", requireAdminAccess, (c) =>
     handleApiGetProvider(c, db),

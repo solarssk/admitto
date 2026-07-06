@@ -75,6 +75,22 @@ const providerBodySchema = z.strictObject({
   mappings: z.array(mappingSchema).optional(),
 });
 
+const oidcProviderTestBodySchema = z.strictObject({
+  issuer: z.string().trim().min(1).max(2000),
+  authorization_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
+  token_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
+  jwks_uri: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
+});
+
+const oidcDiscoverPreviewBodySchema = z.strictObject({
+  issuer: z.string().trim().min(1).max(2000),
+});
+
+function optionalOidcEndpoint(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 /** Accept an array of strings or a comma/JSON string and return a clean string array. */
 function toStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
@@ -324,6 +340,52 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
     },
     provider: refreshed ? await providerDetailDto(db, refreshed) : null,
   });
+}
+
+/** POST /api/admin/identity/providers/test — probe endpoints from a draft (no persist). */
+export async function handleApiTestProviderDraft(c: Context): Promise<Response> {
+  let body: z.infer<typeof oidcProviderTestBodySchema>;
+  try {
+    body = oidcProviderTestBodySchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
+  const result = await testOidcConnection({
+    issuer: body.issuer.trim(),
+    authorization_endpoint: optionalOidcEndpoint(body.authorization_endpoint),
+    token_endpoint: optionalOidcEndpoint(body.token_endpoint),
+    jwks_uri: optionalOidcEndpoint(body.jwks_uri),
+  });
+  if (result.ok) return c.json({ ok: true });
+  return c.json({ ok: false, error: result.error }, 400);
+}
+
+/** POST /api/admin/identity/providers/discover-preview — autofill endpoints without persist. */
+export async function handleApiDiscoverProviderPreview(c: Context): Promise<Response> {
+  let body: z.infer<typeof oidcDiscoverPreviewBodySchema>;
+  try {
+    body = oidcDiscoverPreviewBodySchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
+  try {
+    const discovery = await fetchOidcDiscovery(body.issuer.trim());
+    return c.json({
+      ok: true,
+      endpoints: {
+        issuer: discovery.issuer,
+        authorization_endpoint: discovery.authorization_endpoint,
+        token_endpoint: discovery.token_endpoint,
+        jwks_uri: discovery.jwks_uri,
+        userinfo_endpoint: discovery.userinfo_endpoint ?? null,
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Discovery failed";
+    return c.json({ ok: false, error: message }, 400);
+  }
 }
 
 /** POST /api/admin/identity/providers/:id/test */
