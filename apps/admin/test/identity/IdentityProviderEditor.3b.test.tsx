@@ -418,6 +418,71 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await waitFor(() => expect(screen.getByText("Connection test failed.")).toBeTruthy());
   });
+
+  it("ignores stale discover-preview response when issuer changed mid-flight (create mode)", async () => {
+    let resolveDiscover!: (v: ReturnType<typeof mockDiscoverPreview.mock.results[0]["value"]>) => void;
+    mockDiscoverPreview.mockReturnValueOnce(
+      new Promise((res) => {
+        resolveDiscover = res as typeof resolveDiscover;
+      }),
+    );
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://a.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+
+    // Change issuer while request is in flight — triggers nonce mismatch.
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://b.example.com" },
+    });
+
+    // Resolve the stale (A) response — should not touch the draft or show a toast.
+    resolveDiscover({
+      ok: true,
+      endpoints: {
+        issuer: "https://a.example.com",
+        authorization_endpoint: "https://a.example.com/auth",
+        token_endpoint: "https://a.example.com/token",
+        jwks_uri: "https://a.example.com/jwks",
+        userinfo_endpoint: null,
+      },
+    } as Awaited<ReturnType<typeof mockDiscoverPreview>>);
+
+    // Give React a chance to flush any state updates the stale response might cause.
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Issuer must remain B, and no endpoints for A should appear.
+    expect(screen.getByDisplayValue("https://b.example.com")).toBeTruthy();
+    expect(screen.queryByDisplayValue("https://a.example.com/auth")).toBeNull();
+    expect(screen.queryByText("Endpoints discovered from the issuer.")).toBeNull();
+  });
+
+  it("ignores stale draft-test response when issuer changed mid-flight (create mode)", async () => {
+    let resolveTest!: (v: { ok: boolean }) => void;
+    mockTestDraft.mockReturnValueOnce(new Promise((res) => { resolveTest = res; }));
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://a.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    // Change issuer while test request is in flight.
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://b.example.com" },
+    });
+
+    // Resolve the stale (A) test — should not show a toast.
+    resolveTest({ ok: true });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.queryByText("Connection test passed.")).toBeNull();
+  });
 });
 
 describe("IdentityProviderEditor — repeater onChange coverage", () => {

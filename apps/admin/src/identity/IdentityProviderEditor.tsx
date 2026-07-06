@@ -191,6 +191,17 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
   const providerIdRef = useRef(resolvedProviderId);
   providerIdRef.current = resolvedProviderId;
 
+  // Mirrors `providerIdRef` for create mode: capture the issuer at click time and
+  // compare it after `await` so a stale response (user edited the issuer while the
+  // request was in flight) does not overwrite the current draft or show a toast.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+
+  // Nonce counters guard against parallel discover / test requests (e.g. double-
+  // click). The issuer-change guard uses draftRef instead.
+  const createDiscoverNonceRef = useRef(0);
+  const createTestNonceRef = useRef(0);
+
   // Reset the Discover/Test busy flags whenever the resolved provider changes.
   // The stale-response guard in handleDiscover/handleTest intentionally does
   // NOT clear the flag when a stale request completes on a different provider
@@ -372,9 +383,13 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
     }
 
     if (mode === "create") {
+      const nonce = ++createDiscoverNonceRef.current;
+      const issuerAtRequest = issuer;
       setDiscovering(true);
       try {
         const result = await discoverIdentityProviderPreview(issuer);
+        if (createDiscoverNonceRef.current !== nonce) return;
+        if (draftRef.current.issuer.trim() !== issuerAtRequest) return;
         const discovered = {
           authorization_endpoint: result.endpoints.authorization_endpoint,
           token_endpoint: result.endpoints.token_endpoint,
@@ -388,6 +403,8 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
         }));
         addToast("Endpoints discovered from the issuer.", "success");
       } catch (err) {
+        if (createDiscoverNonceRef.current !== nonce) return;
+        if (draftRef.current.issuer.trim() !== issuerAtRequest) return;
         if (err instanceof ApiError && err.status === 401) {
           redirectToLogin();
           return;
@@ -465,18 +482,20 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
       return;
     }
     const targetId = mode === "edit" ? resolvedProviderId : "create";
+    const createNonce = mode === "create" ? ++createTestNonceRef.current : 0;
+    const issuerAtRequest = draft.issuer.trim();
     setTesting(true);
     try {
       const result = await testIdentityProviderDraft(oidcTestBodyFromDraft(draft));
-      // Bail on a stale resolution so the toast doesn't fire on the wrong
-      // provider's editor after an A→B navigation mid-test.
       if (mode === "edit" && targetId !== providerIdRef.current) return;
+      if (mode === "create" && (createTestNonceRef.current !== createNonce || draftRef.current.issuer.trim() !== issuerAtRequest)) return;
       addToast(
         result.ok ? "Connection test passed." : result.error ?? "Connection test failed.",
         result.ok ? "success" : "error",
       );
     } catch (err) {
       if (mode === "edit" && targetId !== providerIdRef.current) return;
+      if (mode === "create" && (createTestNonceRef.current !== createNonce || draftRef.current.issuer.trim() !== issuerAtRequest)) return;
       if (err instanceof ApiError && err.status === 401) {
         redirectToLogin();
         return;
