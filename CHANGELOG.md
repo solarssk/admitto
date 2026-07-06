@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.12] - 2026-07-06
+
 ### Added
 - Vitest code coverage (`npm run coverage`) across workspaces with LCOV upload to Codecov on CI — reporting only, no coverage gate yet.
 - CI PR pipeline shortened: lint merged into `build-test`, Semgrep and Docker build smoke run on `main` merge (not every PR); `SECURITY.md` documents when each control runs.
@@ -613,7 +615,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.11...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.12...HEAD
+[0.4.12]: https://github.com/solarssk/admitto/compare/v0.4.11...v0.4.12
 [0.4.11]: https://github.com/solarssk/admitto/compare/v0.4.10...v0.4.11
 [0.4.10]: https://github.com/solarssk/admitto/compare/v0.4.9...v0.4.10
 [0.4.9]: https://github.com/solarssk/admitto/compare/v0.4.8...v0.4.9

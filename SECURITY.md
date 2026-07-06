@@ -76,7 +76,7 @@ deploy time — never committed. See **What counts as a secret** above.
 
 ### Supported versions
 
-Only the **latest minor release** is supported (currently `0.4.x`, latest <!-- admitto:latest-patch -->`0.4.11`<!-- /admitto:latest-patch -->). Deploy from signed
+Only the **latest minor release** is supported (currently `0.4.x`, latest <!-- admitto:latest-patch -->`0.4.12`<!-- /admitto:latest-patch -->). Deploy from signed
 semver tags (`v0.4.y`) published to `ghcr.io/solarssk/admitto`.
 
 ### Data protection
