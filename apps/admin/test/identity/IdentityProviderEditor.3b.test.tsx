@@ -539,6 +539,30 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
 
     expect(screen.queryByText("Connection test passed.")).toBeNull();
   });
+
+  it("ignores stale draft-test response when endpoint changed mid-flight (create mode)", async () => {
+    let resolveTest!: (v: { ok: boolean }) => void;
+    mockTestDraft.mockReturnValueOnce(new Promise((res) => { resolveTest = res; }));
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://idp.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    // Change an endpoint while issuer stays the same — old guard would not catch this.
+    fireEvent.change(screen.getByLabelText("Authorization endpoint"), {
+      target: { value: "https://idp.example.com/new-auth" },
+    });
+
+    // Resolve the stale test — should not show a toast.
+    resolveTest({ ok: true });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.queryByText("Connection test passed.")).toBeNull();
+  });
 });
 
 describe("IdentityProviderEditor — repeater onChange coverage", () => {
