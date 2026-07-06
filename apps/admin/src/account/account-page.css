@@ -12,11 +12,13 @@
   }
 }
 
-/* Editable profile fields */
+/* Editable profile fields — capped at 28 rem so inputs don't stretch to the
+   full column width on wide screens. Matches password form width below. */
 .account-profile-editable {
   display: flex;
   flex-direction: column;
   gap: var(--space-3, 0.75rem);
+  max-width: 28rem;
 }
 
 /* Select from @admitto/ui renders <div class="at-field"> — force it to fill the
@@ -226,8 +228,19 @@
   align-items: start;
 }
 
+/* Prevent grid items from overflowing their column (e.g. QR code, long text) */
+.account-security-grid > * {
+  min-width: 0;
+}
+
 @media (max-width: 900px) {
   .account-security-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Cap the password form at the same width as the profile editable column
+   so all text inputs across the page share the same visual width. */
+.account-password-form {
+  max-width: 28rem;
 }

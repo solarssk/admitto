@@ -184,20 +184,22 @@ export function AccountPage() {
               <Input id="account-display-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={120} />
               <p className="mail-field-hint">{displayName.length}/120 characters</p>
             </div>
-            <Select
-              id="account-locale"
-              label="Regional format"
-              hint={`Affects how dates are displayed. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}. Interface language stays English.`}
-              value={preferredLocale ?? ""}
-              onChange={(e) => setPreferredLocale(e.target.value || null)}
-              disabled={profileSaving}
-            >
-              {LOCALE_OPTIONS.map((opt) => (
-                <option key={opt.value ?? "_system"} value={opt.value ?? ""}>
-                  {opt.label} — {opt.example}
-                </option>
-              ))}
-            </Select>
+            <div className="mail-field-row">
+              <Select
+                id="account-locale"
+                label="Regional format"
+                hint={`Affects how dates are displayed. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}. Interface language stays English.`}
+                value={preferredLocale ?? ""}
+                onChange={(e) => setPreferredLocale(e.target.value || null)}
+                disabled={profileSaving}
+              >
+                {LOCALE_OPTIONS.map((opt) => (
+                  <option key={opt.value ?? "_system"} value={opt.value ?? ""}>
+                    {opt.label} — {opt.example}
+                  </option>
+                ))}
+              </Select>
+            </div>
           </div>
           <dl className="account-info-rows">
             <div className="account-info-row">
