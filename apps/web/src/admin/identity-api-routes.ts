@@ -11,6 +11,7 @@ import {
   listProviderGroupMappings,
   fetchOidcDiscovery,
   testOidcConnection,
+  assertSafeOidcFetchUrl,
   logAuthSettingsChanged,
   getCfAccessConfig,
   isSettingEnvLocked,
@@ -52,19 +53,19 @@ const providerBodySchema = z.strictObject({
   issuer: z.string().trim().min(1).max(2000),
   client_id: z.string().trim().min(1).max(500),
   client_secret: z.string().max(2000).optional(),
-  authorization_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-  token_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-  jwks_uri: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-  userinfo_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-  claim_email: z.union([z.string().trim().max(200), z.literal("")]).optional(),
-  claim_name: z.union([z.string().trim().max(200), z.literal("")]).optional(),
-  claim_groups: z.union([z.string().trim().max(200), z.literal("")]).optional(),
+  authorization_endpoint: z.string().trim().max(2000).optional(),
+  token_endpoint: z.string().trim().max(2000).optional(),
+  jwks_uri: z.string().trim().max(2000).optional(),
+  userinfo_endpoint: z.string().trim().max(2000).optional(),
+  claim_email: z.string().trim().max(200).optional(),
+  claim_name: z.string().trim().max(200).optional(),
+  claim_groups: z.string().trim().max(200).optional(),
   enabled: z.boolean().optional(),
   /**
    * SSO login button copy. Omit to preserve the stored value; send `null` or `""`
    * to clear back to the product default; send a string to set.
    */
-  login_button_label: z.union([z.string().trim().max(120), z.literal(""), z.null()]).optional(),
+  login_button_label: z.union([z.string().trim().max(120), z.null()]).optional(),
   /**
    * Group→role mapping list (replace-all semantics, mirroring the legacy HTML form).
    * Optional on create (defaults to an empty list); **required on every PUT** — the
@@ -74,6 +75,23 @@ const providerBodySchema = z.strictObject({
    */
   mappings: z.array(mappingSchema).optional(),
 });
+
+const oidcProviderTestBodySchema = z.strictObject({
+  issuer: z.string().trim().min(1).max(2000),
+  authorization_endpoint: z.string().trim().max(2000).optional(),
+  token_endpoint: z.string().trim().max(2000).optional(),
+  jwks_uri: z.string().trim().max(2000).optional(),
+  userinfo_endpoint: z.string().trim().max(2000).optional(),
+});
+
+const oidcDiscoverPreviewBodySchema = z.strictObject({
+  issuer: z.string().trim().min(1).max(2000),
+});
+
+function optionalOidcEndpoint(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
 
 /** Accept an array of strings or a comma/JSON string and return a clean string array. */
 function toStringArray(value: unknown): string[] {
@@ -324,6 +342,62 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
     },
     provider: refreshed ? await providerDetailDto(db, refreshed) : null,
   });
+}
+
+/** POST /api/admin/identity/providers/test — probe endpoints from a draft (no persist). */
+export async function handleApiTestProviderDraft(c: Context): Promise<Response> {
+  let body: z.infer<typeof oidcProviderTestBodySchema>;
+  try {
+    body = oidcProviderTestBodySchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
+  const issuer = body.issuer.trim();
+  try {
+    // Mirror the same guard resolveEndpoints applies on save: issuer must be a safe HTTPS URL.
+    assertSafeOidcFetchUrl(issuer.endsWith("/") ? issuer : `${issuer}/`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Invalid issuer URL";
+    return c.json({ ok: false, error: message }, 400);
+  }
+  const auth = optionalOidcEndpoint(body.authorization_endpoint);
+  const token = optionalOidcEndpoint(body.token_endpoint);
+  const jwks = optionalOidcEndpoint(body.jwks_uri);
+  const userinfo = optionalOidcEndpoint(body.userinfo_endpoint);
+  const result = await testOidcConnection({
+    issuer,
+    ...(auth && token && jwks ? { authorization_endpoint: auth, token_endpoint: token, jwks_uri: jwks } : {}),
+    ...(userinfo ? { userinfo_endpoint: userinfo } : {}),
+  });
+  return c.json({ ok: result.ok, ...(result.ok ? {} : { error: result.error }) });
+}
+
+/** POST /api/admin/identity/providers/discover-preview — autofill endpoints without persist. */
+export async function handleApiDiscoverProviderPreview(c: Context): Promise<Response> {
+  let body: z.infer<typeof oidcDiscoverPreviewBodySchema>;
+  try {
+    body = oidcDiscoverPreviewBodySchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
+  try {
+    const discovery = await fetchOidcDiscovery(body.issuer.trim());
+    return c.json({
+      ok: true,
+      endpoints: {
+        issuer: discovery.issuer,
+        authorization_endpoint: discovery.authorization_endpoint,
+        token_endpoint: discovery.token_endpoint,
+        jwks_uri: discovery.jwks_uri,
+        userinfo_endpoint: discovery.userinfo_endpoint ?? null,
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Discovery failed";
+    return c.json({ ok: false, error: message }, 400);
+  }
 }
 
 /** POST /api/admin/identity/providers/:id/test */

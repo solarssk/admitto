@@ -58,8 +58,10 @@ export async function testOidcConnection(input: {
   authorization_endpoint?: string;
   token_endpoint?: string;
   jwks_uri?: string;
+  userinfo_endpoint?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
+    if (input.userinfo_endpoint) assertSafeOidcFetchUrl(input.userinfo_endpoint);
     let jwksUri = input.jwks_uri;
     if (input.authorization_endpoint && input.token_endpoint && input.jwks_uri) {
       assertSafeOidcFetchUrl(input.authorization_endpoint);

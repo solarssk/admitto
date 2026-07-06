@@ -71,6 +71,8 @@ import type {
   CfAccessSummaryDto,
   ProviderDetailDto,
   ProviderRequestBody,
+  ProviderTestDraftBody,
+  DiscoverPreviewResponse,
   DiscoverResponse,
   TestResponse,
   CfAccessUpdateBody,
@@ -1410,6 +1412,21 @@ export async function testIdentityProvider(providerId: string): Promise<TestResp
     jsonPostInit({}),
   );
   return parseJson<TestResponse>(res);
+}
+
+/** Probe OIDC endpoints from a draft body without persisting a provider (create + edit). */
+export async function testIdentityProviderDraft(body: ProviderTestDraftBody): Promise<TestResponse> {
+  const res = await fetch("/api/admin/identity/providers/test", jsonPostInit(body));
+  return parseJson<TestResponse>(res);
+}
+
+/** Discover OIDC endpoints from an issuer without persisting (create mode autofill). */
+export async function discoverIdentityProviderPreview(issuer: string): Promise<DiscoverPreviewResponse> {
+  const res = await fetch(
+    "/api/admin/identity/providers/discover-preview",
+    jsonPostInit({ issuer }),
+  );
+  return parseJson<DiscoverPreviewResponse>(res);
 }
 
 /** Save Cloudflare Access config (superadmin). Patch semantics: omitted fields keep

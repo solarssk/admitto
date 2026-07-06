@@ -4,11 +4,13 @@ import {
   ApiError,
   createIdentityProvider,
   discoverIdentityProvider,
+  discoverIdentityProviderPreview,
   fetchCfAccessSummary,
   fetchIdentityProvider,
   fetchIdentityProviders,
   testCfAccess,
   testIdentityProvider,
+  testIdentityProviderDraft,
   toggleIdentityProvider,
   updateCfAccess,
   updateIdentityProvider,
@@ -268,6 +270,77 @@ describe("identity API client", () => {
     const res = await testIdentityProvider("p1");
     expect(res.ok).toBe(false);
     expect(res.error).toBe("JWKS unreachable");
+  });
+
+  it("testIdentityProviderDraft POSTs the draft test endpoint with CSRF Origin", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const body = {
+      issuer: "https://accounts.google.com",
+      authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+    };
+    const res = await testIdentityProviderDraft(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/identity/providers/test",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        headers: expect.objectContaining({
+          Origin: window.location.origin,
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify(body),
+      }),
+    );
+    expect(res.ok).toBe(true);
+  });
+
+  it("discoverIdentityProviderPreview POSTs the issuer with CSRF Origin", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ok: true,
+        endpoints: {
+          issuer: "https://accounts.google.com",
+          authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+          token_endpoint: "https://oauth2.googleapis.com/token",
+          jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+          userinfo_endpoint: null,
+        },
+      }),
+    );
+    const res = await discoverIdentityProviderPreview("https://accounts.google.com");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/identity/providers/discover-preview",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        headers: expect.objectContaining({
+          Origin: window.location.origin,
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify({ issuer: "https://accounts.google.com" }),
+      }),
+    );
+    expect(res.ok).toBe(true);
+    expect(res.endpoints.jwks_uri).toBe("https://www.googleapis.com/oauth2/v3/certs");
+  });
+
+  it("testIdentityProviderDraft resolves with ok:false when the connection test fails", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ ok: false, error: "JWKS URI is required" }),
+    );
+    const res = await testIdentityProviderDraft({ issuer: "https://accounts.google.com" });
+    expect(res.ok).toBe(false);
+    expect((res as { ok: false; error?: string }).error).toBe("JWKS URI is required");
+  });
+
+  it("discoverIdentityProviderPreview throws ApiError when discovery fails (400)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ ok: false, error: "No OIDC metadata found" }, { status: 400, statusText: "Bad Request" }),
+    );
+    await expect(discoverIdentityProviderPreview("https://accounts.google.com")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 400,
+    });
   });
 
   it("discoverIdentityProvider throws ApiError on a non-2xx response", async () => {
