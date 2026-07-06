@@ -27,10 +27,6 @@
   max-width: 480px;
 }
 
-.event-settings-page {
-  max-width: 720px;
-}
-
 .event-settings-page .field-hint {
   font-size: var(--fs-sm);
   color: var(--text-muted);
