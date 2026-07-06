@@ -19,6 +19,13 @@
   gap: var(--space-3, 0.75rem);
 }
 
+/* Select from @admitto/ui renders <div class="at-field"> — force it to fill the
+   column and align its label-to-control gap with the mail-field-row pattern. */
+.account-profile-editable .at-field {
+  width: 100%;
+  gap: var(--space-2, 0.5rem);
+}
+
 /* Read-only profile info rows (dl/dt/dd) */
 .account-info-rows {
   margin: 0;
@@ -196,4 +203,17 @@
 }
 .account-password-form .mail-field-row:last-of-type {
   margin-bottom: 0;
+}
+
+/* The PasswordStrengthMeter is position:absolute, overflowing ~12 px below
+   the input slot. Increase the margin after the new-password row so the
+   bar doesn't crowd "Confirm new password". */
+.account-password-form .mail-field-row--password {
+  margin-bottom: 2rem;
+}
+
+/* Constrain the password form — a stack of three inputs doesn't need to
+   span the full card width. Left-aligns naturally on all viewports. */
+.account-password-form {
+  max-width: 26rem;
 }
