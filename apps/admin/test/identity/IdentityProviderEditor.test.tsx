@@ -354,7 +354,7 @@ describe("IdentityProviderEditor — coverage", () => {
     fireEvent.change(screen.getByLabelText("Client secret"), { target: { value: "secret-abc" } });
     fireEvent.click(screen.getByRole("button", { name: "Create provider" }));
 
-    await waitFor(() => expect(screen.getByText("duplicate_issuer")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/issuer already exists/i)).toBeTruthy());
   });
 
   it("navigates back to the list from the not-found state", async () => {

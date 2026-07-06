@@ -42,6 +42,46 @@ describe("operatorApiErrorMessage", () => {
     warn.mockRestore();
   });
 
+  it("prefers specific template codes over shorter substring keys", () => {
+    expect(
+      operatorApiErrorMessage(new ApiError(404, "template_not_found", "template_not_found"), "Failed."),
+    ).toBe("Template not found.");
+    expect(
+      operatorApiErrorMessage(
+        new ApiError(400, "template_validation_failed", "template_validation_failed"),
+        "Failed.",
+      ),
+    ).toBe("Fix template validation errors and try again.");
+    expect(
+      operatorApiErrorMessage(new ApiError(404, "template_not_found: ticket-123"), "Failed."),
+    ).toBe("Template not found.");
+  });
+
+  it("suppresses SQL-like and stack detail leaks", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(operatorApiErrorMessage(new ApiError(500, "syntax error at or near SELECT"), "Failed.")).toBe(
+      "Failed.",
+    );
+    expect(operatorApiErrorMessage(new ApiError(500, "at /dist/index.js:12:5"), "Failed.")).toBe("Failed.");
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("maps session revoke and template naming codes", () => {
+    expect(
+      operatorApiErrorMessage(
+        new ApiError(403, "cannot_revoke_own_session", "cannot_revoke_own_session"),
+        "Failed.",
+      ),
+    ).toBe("You cannot revoke your current session.");
+    expect(
+      operatorApiErrorMessage(new ApiError(409, "template_name_conflict", "template_name_conflict"), "Failed."),
+    ).toBe("A template with this name already exists.");
+    expect(
+      operatorApiErrorMessage(new ApiError(415, "unsupported_file_type", "unsupported_file_type"), "Failed."),
+    ).toMatch(/Unsupported file type/);
+  });
+
   it("returns fallback for non-ApiError", () => {
     expect(operatorApiErrorMessage(new Error("boom"), "Failed.")).toBe("Failed.");
   });
@@ -55,6 +95,9 @@ describe("hasApiErrorCode", () => {
     );
     expect(hasApiErrorCode(new ApiError(400, "other"), "validation_failed")).toBe(false);
     expect(hasApiErrorCode(new ApiError(404, "not_found", "not_found"), "not")).toBe(false);
+    expect(hasApiErrorCode(new ApiError(400, "template_validation_failed", "template_validation_failed"), "validation_failed")).toBe(
+      false,
+    );
   });
 });
 

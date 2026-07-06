@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { ApiError, fetchMe, fetchStaffTheme } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuthUser, RoleAssignment } from "../api/types.js";
 import { applyThemeVars } from "@admitto/ui";
 import { setPreferredLocale } from "../utils/locale-store.js";
@@ -57,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.location.assign(`/login?next=${next}`);
         return;
       }
-      setAuthError("Failed to load session");
+      setAuthError(operatorApiErrorMessage(err, "Failed to load session"));
       setUser(null);
       setAssignments([]);
       setDeviceLabel(null);

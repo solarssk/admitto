@@ -6,7 +6,7 @@ import {
   saveMailSettings,
   sendMailTransportTest,
 } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
   MailPlainFieldDto,
   MailProvider,
@@ -269,7 +269,7 @@ export function MailTransportPanel() {
       }
     } catch (err) {
       const message =
-        err instanceof ApiError && err.status === 400
+        err instanceof ApiError && err.status === 400 && hasApiErrorCode(err, "validation_failed")
           ? "Enter a valid email address."
           : operatorApiErrorMessage(err, "Send failed.");
       addToast(message, "error");

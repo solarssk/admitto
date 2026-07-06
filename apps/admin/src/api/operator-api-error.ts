@@ -9,10 +9,12 @@ const CODE_MESSAGES: Record<string, string> = {
   body_required: "Request body is required.",
   cannot_deactivate_self: "You cannot deactivate your own account.",
   cannot_revoke_current: "You cannot revoke your current session.",
+  cannot_revoke_own_session: "You cannot revoke your current session.",
   conflicting_custom_data_field_options: "Conflicting custom field options.",
   default_item_not_deletable: "This default item cannot be deleted.",
   delivery_not_created: "Could not create the delivery.",
   delivery_not_found: "Delivery not found.",
+  duplicate_issuer: "An identity provider with this issuer already exists.",
   email_conflict: "That email is already in use.",
   email_taken: "A user with this email already exists.",
   empty_file: "The file is empty.",
@@ -37,6 +39,7 @@ const CODE_MESSAGES: Record<string, string> = {
   stale_write: "Someone else changed this record. Reload and try again.",
   template_in_use: "This template already has deliveries and cannot be deleted.",
   template_limit_reached: "Template limit reached for this event.",
+  template_name_conflict: "A template with this name already exists.",
   template_not_found: "Template not found.",
   template_required: "Ticket template cannot be deleted.",
   template_validation_failed: "Fix template validation errors and try again.",
@@ -46,11 +49,15 @@ const CODE_MESSAGES: Record<string, string> = {
   too_many_streams: "Too many live connections. Try again shortly.",
   unauthorized: "Your session has expired. Sign in again.",
   unknown_custom_data_field: "Unknown custom field.",
+  unsupported_file_type: "Unsupported file type. Upload a PNG, JPG, or WebP image.",
   "unsupported file type": "Unsupported file type. Upload a .csv or .xlsx file.",
   validation_failed: "Check the form and try again.",
   wrong_password: "Current password is incorrect.",
   "file too large": "File exceeds the 5 MB limit. Split the file and import in parts.",
 };
+
+/** Longest keys first so substring fallback prefers specific codes over shorter ones. */
+const CODE_MESSAGE_ENTRIES = Object.entries(CODE_MESSAGES).sort((a, b) => b[0].length - a[0].length);
 
 function normalizedCode(err: ApiError): string | undefined {
   const fromField = err.code?.trim();
@@ -77,7 +84,7 @@ function messageForKnownCode(err: ApiError): string | undefined {
   const code = normalizedCode(err);
   if (code && CODE_MESSAGES[code]) return CODE_MESSAGES[code];
 
-  for (const [key, copy] of Object.entries(CODE_MESSAGES)) {
+  for (const [key, copy] of CODE_MESSAGE_ENTRIES) {
     if (err.message.includes(key)) return copy;
   }
   return undefined;
@@ -86,13 +93,24 @@ function messageForKnownCode(err: ApiError): string | undefined {
 function isOperatorSafeDetail(detail: string): boolean {
   if (detail.length > 200) return false;
   if (/at\s+\S+\s+\(/.test(detail)) return false;
-  if (/[/\\](?:src|node_modules|packages|apps)\//.test(detail)) return false;
-  if (/\b(prisma|postgres|sequelize|ECONNREFUSED)\b/i.test(detail)) return false;
+  if (/at\s+[^\s]+\s*:\d+/.test(detail)) return false;
+  if (/[/\\](?:src|node_modules|packages|apps)[/\\]/.test(detail)) return false;
+  if (/^[A-Za-z]:\\/.test(detail)) return false;
+  if (/\b(?:SELECT|INSERT|UPDATE|DELETE|syntax error)\b/i.test(detail)) return false;
+  if (
+    /\b(?:prisma|postgres|sequelize|mysql|mongodb|redis|sqlite|knex|typeorm|ECONNREFUSED)\b/i.test(
+      detail,
+    )
+  ) {
+    return false;
+  }
+  if (/\b(?:Traceback|Exception in thread)\b/i.test(detail)) return false;
   return true;
 }
 
 function statusFallback(err: ApiError, fallback: string): string {
   const code = normalizedCode(err);
+  if (code && CODE_MESSAGES[code]) return CODE_MESSAGES[code]!;
   if (err.status === 401) {
     if (!code || code === "unauthorized") {
       return CODE_MESSAGES.unauthorized ?? fallback;
