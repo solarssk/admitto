@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { render } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
@@ -36,5 +36,12 @@ describe("SettingsLayout on Identity routes", () => {
     expect(screen.getByText("cloudflare-panel")).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Identity" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByRole("tab", { name: "Cloudflare Access" })).toBeNull();
+  });
+
+  it("shows General tab selected on non-identity settings path (covers inPageTabFromSearch branch)", () => {
+    renderAt("/admin/settings?tab=mail");
+    expect(screen.getByText("settings-index")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Mail" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Identity" }).getAttribute("aria-selected")).toBe("false");
   });
 });
