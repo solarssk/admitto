@@ -1,11 +1,28 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import {
   hashPassword,
   createSession,
   SESSION_STAGE,
   encryptClientSecret,
+  createIdentityProviderWithMappings,
+  updateIdentityProviderWithMappings,
+  fetchOidcDiscovery,
+  updateIdentityProvider,
 } from "@admitto/auth";
+
+// Wrap the four functions we need to override in error-path tests so vi.mocked()
+// can queue one-time rejections/resolutions without breaking the happy-path tests.
+vi.mock("@admitto/auth", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("@admitto/auth")>();
+  return {
+    ...orig,
+    createIdentityProviderWithMappings: vi.fn(orig.createIdentityProviderWithMappings),
+    updateIdentityProviderWithMappings: vi.fn(orig.updateIdentityProviderWithMappings),
+    fetchOidcDiscovery: vi.fn(orig.fetchOidcDiscovery),
+    updateIdentityProvider: vi.fn(orig.updateIdentityProvider),
+  };
+});
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
@@ -550,5 +567,124 @@ describe("cloudflare access API", () => {
     expect(res.status).toBe(400);
     const body = await jsonAs<{ error: string }>(res);
     expect(body.error).toBe("validation_failed");
+  });
+});
+
+describe("identity providers API — stable error codes", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // --- Naturally-triggerable paths (no mocking needed) ---
+
+  it("draft test with non-https issuer returns invalid_issuer (400)", async () => {
+    const res = await json("/api/admin/identity/providers/test", {
+      method: "POST",
+      body: JSON.stringify({ issuer: "http://not-https.example.com/" }),
+    });
+    expect(res.status).toBe(400);
+    expect(await jsonAs<TestResult>(res)).toEqual({ ok: false, error: "invalid_issuer" });
+  });
+
+  it("discover returns discovery_failed when provider issuer is unreachable (400)", async () => {
+    // PROVIDER_ID has issuer https://idp-api-test.example.com/ which has no OpenID config
+    const res = await json(`/api/admin/identity/providers/${PROVIDER_ID}/discover`, {
+      method: "POST",
+    });
+    expect(res.status).toBe(400);
+    expect(await jsonAs<TestResult>(res)).toMatchObject({ ok: false, error: "discovery_failed" });
+  }, 10_000);
+
+  it("discover-preview returns discovery_failed on unreachable issuer (400)", async () => {
+    // .invalid is RFC 2606–reserved — DNS returns NXDOMAIN immediately
+    const res = await json("/api/admin/identity/providers/discover-preview", {
+      method: "POST",
+      body: JSON.stringify({ issuer: "https://oidc-test-fail.invalid/" }),
+    });
+    expect(res.status).toBe(400);
+    expect(await jsonAs<TestResult>(res)).toMatchObject({ ok: false, error: "discovery_failed" });
+  });
+
+  it("CF Access test with malformed team domain returns invalid_team_domain (400)", async () => {
+    const res = await json("/api/admin/identity/cf-access/test", {
+      method: "POST",
+      body: JSON.stringify({ teamDomain: "not-a-valid-url" }),
+    });
+    expect(res.status).toBe(400);
+    expect(await jsonAs<TestResult>(res)).toMatchObject({ ok: false, error: "invalid_team_domain" });
+  });
+
+  it("CF Access test with no configured team domain returns team_domain_required (400)", async () => {
+    // No CF Access configured in test DB → teamDomain is empty
+    const res = await json("/api/admin/identity/cf-access/test", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    expect(await jsonAs<TestResult>(res)).toMatchObject({ ok: false, error: "team_domain_required" });
+  });
+
+  // --- DB / infrastructure failure paths (vi.mock factory wraps auth fns as vi.fn) ---
+
+  it("create provider returns save_failed when DB throws (500)", async () => {
+    vi.mocked(createIdentityProviderWithMappings).mockRejectedValueOnce(
+      new Error("simulated DB constraint violation"),
+    );
+    const res = await json("/api/admin/identity/providers", {
+      method: "POST",
+      body: JSON.stringify({
+        display_name: "DB-fail provider",
+        issuer: "https://db-fail.example.com/",
+        client_id: "db-fail-client",
+        authorization_endpoint: "https://db-fail.example.com/a",
+        token_endpoint: "https://db-fail.example.com/t",
+        jwks_uri: "https://db-fail.example.com/j",
+        mappings: [],
+      }),
+    });
+    expect(res.status).toBe(500);
+    expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "save_failed" });
+  });
+
+  it("update provider returns save_failed when DB throws (500)", async () => {
+    vi.mocked(updateIdentityProviderWithMappings).mockRejectedValueOnce(
+      new Error("simulated DB failure"),
+    );
+    const res = await json(`/api/admin/identity/providers/${PROVIDER_ID}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        display_name: "DB-fail update",
+        issuer: "https://idp-api-test.example.com/",
+        client_id: "api-test-client",
+        mappings: [],
+      }),
+    });
+    expect(res.status).toBe(500);
+    expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "save_failed" });
+  });
+
+  it("discover returns save_failed when DB update fails after successful discovery (500)", async () => {
+    vi.mocked(fetchOidcDiscovery).mockResolvedValueOnce({
+      issuer: "https://idp-api-test.example.com/",
+      authorization_endpoint: "https://idp-api-test.example.com/a",
+      token_endpoint: "https://idp-api-test.example.com/t",
+      jwks_uri: "https://idp-api-test.example.com/j",
+    });
+    vi.mocked(updateIdentityProvider).mockRejectedValueOnce(new Error("simulated DB failure"));
+    const res = await json(`/api/admin/identity/providers/${PROVIDER_ID}/discover`, {
+      method: "POST",
+    });
+    expect(res.status).toBe(500);
+    expect(await jsonAs<TestResult>(res)).toMatchObject({ ok: false, error: "save_failed" });
+  });
+
+  it("CF Access save returns save_failed when DB transaction throws (500)", async () => {
+    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("simulated DB failure"));
+    const res = await json("/api/admin/identity/cf-access", {
+      method: "PUT",
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(res.status).toBe(500);
+    expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "save_failed" });
   });
 });

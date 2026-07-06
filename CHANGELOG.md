@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
-- Identity JSON API (`/api/admin/identity/providers*`, `/api/admin/identity/cf-access*`): catch blocks no longer forward raw `err.message` to the client. Unexpected/Prisma errors now return `{ error: "save_failed" }` (HTTP 500) with full details logged server-side only; domain validation errors return `{ error: "validation_failed" }` (HTTP 400); discovery failures return `discovery_failed`; invalid issuer URL returns `invalid_issuer`; invalid/missing CF Access team domain returns `invalid_team_domain` / `team_domain_required`.
+- Identity JSON API (`/api/admin/identity/providers*`, `/api/admin/identity/cf-access*`): catch blocks no longer forward raw `err.message` to the client. Unexpected/Prisma errors now return `{ error: "save_failed" }` (HTTP 500) with full details logged server-side only; domain validation errors return `{ error: "validation_failed" }` (HTTP 400); discovery failures return `discovery_failed`; invalid issuer URL returns `invalid_issuer`; invalid/missing CF Access team domain returns `invalid_team_domain` / `team_domain_required`. Integration tests cover all error code paths including simulated DB failures via `vi.mock("@admitto/auth")` factory.
 
 ## [0.4.12] - 2026-07-06
 
