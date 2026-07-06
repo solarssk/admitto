@@ -19,7 +19,6 @@ import { IdentityProviderEditor } from "./identity/IdentityProviderEditor.js";
 import { CfAccessEditor } from "./identity/CfAccessEditor.js";
 import { UsersPage } from "./pages/UsersPage.js";
 import { OperatorShell } from "./layouts/OperatorShell.js";
-import { AccountShell } from "./layouts/AccountShell.js";
 import { AccountLayout } from "./account/AccountLayout.js";
 import { EventsPickerPage } from "./pages/EventsPickerPage.js";
 import { CheckInEntryPage } from "./pages/CheckInEntryPage.js";
@@ -203,7 +202,7 @@ function StaffRoutes() {
         </Route>
       </Route>
       <Route path="/account" element={<AuthenticatedGuard />}>
-        <Route element={<AccountShell />}>
+        <Route element={<EventsListShell />}>
           <Route index element={<AccountLayout />} />
         </Route>
       </Route>
