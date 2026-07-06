@@ -24,8 +24,8 @@ export function isIdentitySettingsPath(pathname: string): boolean {
 }
 
 /** Resolve the active in-page tab from `?tab=` (never returns `identity`). */
-export function inPageTabFromSearch(searchParams: URLSearchParams): SettingsTab {
+export function inPageTabFromSearch(searchParams: URLSearchParams): Exclude<SettingsTab, "identity"> {
   const raw = searchParams.get("tab");
-  if (raw && raw !== "identity" && isSettingsTab(raw)) return raw;
+  if (raw && raw !== "identity" && isSettingsTab(raw)) return raw as Exclude<SettingsTab, "identity">;
   return "general";
 }

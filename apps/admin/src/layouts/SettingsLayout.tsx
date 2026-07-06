@@ -37,8 +37,9 @@ export function SettingsLayout() {
         navigate(IDENTITY_PROVIDERS_ROUTE);
         return;
       }
-      // Leaving an Identity detail view triggers the editor's `useBlocker` when dirty.
-      navigate(`/admin/settings?tab=${id}`, { replace: onIdentity });
+      // Always replace so tab clicks don't accumulate history entries. Leaving an
+      // Identity detail view triggers the editor's `useBlocker` when dirty.
+      navigate(`/admin/settings?tab=${id}`, { replace: true });
     },
     [navigate, onIdentity],
   );
