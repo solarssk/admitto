@@ -128,9 +128,11 @@ function oidcTestBodyFromDraft(draft: ProviderDraft): ProviderTestDraftBody {
   const authorization = draft.authorization_endpoint.trim();
   const token = draft.token_endpoint.trim();
   const jwks = draft.jwks_uri.trim();
+  const userinfo = draft.userinfo_endpoint.trim();
   if (authorization) body.authorization_endpoint = authorization;
   if (token) body.token_endpoint = token;
   if (jwks) body.jwks_uri = jwks;
+  if (userinfo) body.userinfo_endpoint = userinfo;
   return body;
 }
 

@@ -948,6 +948,7 @@ export interface ProviderTestDraftBody {
   authorization_endpoint?: string;
   token_endpoint?: string;
   jwks_uri?: string;
+  userinfo_endpoint?: string;
 }
 
 /** Test connection result (POST /api/admin/identity/providers/:id/test). */

@@ -81,6 +81,7 @@ const oidcProviderTestBodySchema = z.strictObject({
   authorization_endpoint: z.string().trim().max(2000).optional(),
   token_endpoint: z.string().trim().max(2000).optional(),
   jwks_uri: z.string().trim().max(2000).optional(),
+  userinfo_endpoint: z.string().trim().max(2000).optional(),
 });
 
 const oidcDiscoverPreviewBodySchema = z.strictObject({
@@ -363,9 +364,11 @@ export async function handleApiTestProviderDraft(c: Context): Promise<Response> 
   const auth = optionalOidcEndpoint(body.authorization_endpoint);
   const token = optionalOidcEndpoint(body.token_endpoint);
   const jwks = optionalOidcEndpoint(body.jwks_uri);
+  const userinfo = optionalOidcEndpoint(body.userinfo_endpoint);
   const result = await testOidcConnection({
     issuer,
     ...(auth && token && jwks ? { authorization_endpoint: auth, token_endpoint: token, jwks_uri: jwks } : {}),
+    ...(userinfo ? { userinfo_endpoint: userinfo } : {}),
   });
   return c.json({ ok: result.ok, ...(result.ok ? {} : { error: result.error }) });
 }
