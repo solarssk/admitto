@@ -7,6 +7,7 @@ import {
   exportEventReportsCsv,
   fetchEventReports,
 } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventReportsResponse } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { formatEventCalendarDate, formatEventDateTime, formatEventTime } from "../utils/event-dates.js";
@@ -269,7 +270,7 @@ export function ReportsPage() {
           window.location.assign(`/login?next=${next}`);
           return;
         }
-        setError(err.status === 403 ? "You do not have access to this event." : err.message);
+        setError(err.status === 403 ? "You do not have access to this event." : operatorApiErrorMessage(err, "Request failed."));
       } else {
         setError("Failed to load report.");
       }
@@ -304,7 +305,7 @@ export function ReportsPage() {
           window.location.assign(`/login?next=${next}`);
           return;
         }
-        addToast(err.message, "error");
+        addToast(operatorApiErrorMessage(err, "Request failed."), "error");
       } else {
         addToast("Export failed", "error");
       }

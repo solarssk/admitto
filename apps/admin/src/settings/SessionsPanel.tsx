@@ -7,6 +7,7 @@ import {
   revokeAllOperatorSessions,
   revokeSessionById,
 } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
@@ -69,7 +70,7 @@ export function SessionsPanel() {
       const data = await fetchSessions();
       setSessions(data.sessions);
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to load sessions.";
+      const message = operatorApiErrorMessage(err, "Failed to load sessions.");
       setError(message);
       addToast(message, "error");
     } finally {
@@ -99,7 +100,7 @@ export function SessionsPanel() {
       addToast("Session revoked.", "success");
       await load();
     } catch (err) {
-      addToast(err instanceof ApiError ? err.message : "Failed to revoke session.", "error");
+      addToast(operatorApiErrorMessage(err, "Failed to revoke session."), "error");
     } finally {
       setRevoking(false);
     }
@@ -117,7 +118,7 @@ export function SessionsPanel() {
       setBulkConfirmOpen(false);
       await load();
     } catch (err) {
-      addToast(err instanceof ApiError ? err.message : "Failed to revoke sessions.", "error");
+      addToast(operatorApiErrorMessage(err, "Failed to revoke sessions."), "error");
     } finally {
       setBulkRevoking(false);
     }

@@ -11,6 +11,7 @@ import {
   patchAccountProfile,
   resetMfa,
 } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AccountDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
@@ -85,7 +86,7 @@ export function AccountPage() {
     } catch (err) {
       if (signal?.aborted) return;
       if (redirectToLoginIfUnauthorized(err)) return;
-      setError(err instanceof ApiError ? err.message : "Failed to load account.");
+      setError(operatorApiErrorMessage(err, "Failed to load account."));
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
@@ -100,7 +101,7 @@ export function AccountPage() {
     } catch (err) {
       if (signal?.aborted) return;
       if (redirectToLoginIfUnauthorized(err)) return;
-      setSessionsError(err instanceof ApiError ? err.message : "Failed to load sessions.");
+      setSessionsError(operatorApiErrorMessage(err, "Failed to load sessions."));
     } finally {
       if (!signal?.aborted) setSessionsLoading(false);
     }
@@ -166,7 +167,7 @@ export function AccountPage() {
           );
           await loadAccount();
         } catch (err) {
-          addToast(err instanceof ApiError ? err.message : "Failed to save profile.", "error");
+          addToast(operatorApiErrorMessage(err, "Failed to save profile."), "error");
         } finally { setProfileSaving(false); }
       }}>Save</Button></div>}>
         <div className="mail-field-row">
@@ -251,7 +252,7 @@ export function AccountPage() {
                   await loadAccount();
                   await loadSessions();
                 } catch (err) {
-                  addToast(err instanceof ApiError ? err.message : "Failed to change password.", "error");
+                  addToast(operatorApiErrorMessage(err, "Failed to change password."), "error");
                 } finally {
                   setPasswordSaving(false);
                 }
@@ -338,7 +339,7 @@ export function AccountPage() {
           <Button type="button" variant="primary" disabled={mfaEnrolling} onClick={async () => {
             setMfaEnrolling(true); setBackupSaved(false); setTotpCode("");
             try { setEnrollData(await enrollMfaTotp()); }
-            catch (err) { addToast(err instanceof ApiError ? err.message : "Failed to start 2FA setup.", "error"); }
+            catch (err) { addToast(operatorApiErrorMessage(err, "Failed to start 2FA setup."), "error"); }
             finally { setMfaEnrolling(false); }
           }}>Set up authenticator</Button>
         )}
@@ -380,7 +381,7 @@ export function AccountPage() {
                   setEnrollData(null); setTotpCode(""); setBackupSaved(false);
                   addToast("Two-factor authentication is enabled.", "success");
                   await loadAccount();
-                } catch (err) { addToast(err instanceof ApiError ? err.message : "Invalid authenticator code.", "error"); }
+                } catch (err) { addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error"); }
                 finally { setMfaConfirming(false); }
               }}>Confirm setup</Button>
               <Button type="button" variant="secondary" onClick={() => setEnrollData(null)}>Cancel</Button>
@@ -467,7 +468,7 @@ export function AccountPage() {
         if (!revokeTarget) return;
         setRevoking(true); setRevokeError(null);
         try { await deleteAccountSession(revokeTarget.id); setRevokeTarget(null); await loadSessions(); }
-        catch (err) { setRevokeError(err instanceof ApiError ? err.message : "Failed to revoke session."); }
+        catch (err) { setRevokeError(operatorApiErrorMessage(err, "Failed to revoke session.")); }
         finally { setRevoking(false); }
       }} onCancel={() => { if (!revoking) { setRevokeTarget(null); setRevokeError(null); } }} />
 
@@ -479,7 +480,7 @@ export function AccountPage() {
           setRevokeError(null);
           await loadSessions();
         } catch (err) {
-          setRevokeError(err instanceof ApiError ? err.message : "Failed to revoke sessions.");
+          setRevokeError(operatorApiErrorMessage(err, "Failed to revoke sessions."));
           await loadSessions();
         } finally { setRevokeAllBusy(false); }
       }} onCancel={() => { if (!revokeAllBusy) { setRevokeAllOpen(false); setRevokeError(null); } }} />
@@ -495,7 +496,7 @@ export function AccountPage() {
           );
           await loadAccount(); await loadSessions();
         }
-        catch (err) { setResetError(err instanceof ApiError ? err.message : "Failed to reset 2FA."); }
+        catch (err) { setResetError(operatorApiErrorMessage(err, "Failed to reset 2FA.")); }
         finally { setResetting(false); }
       }} onCancel={() => { if (!resetting) setResetConfirmOpen(false); }} />
     </>

@@ -18,6 +18,7 @@ import {
   testSendEventTemplate,
   testSendEventTemplateById,
 } from "../api/client.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
   DeliveryDto,
   EventDeliveriesListParams,
@@ -67,15 +68,7 @@ function templateListItemFromDetail(detail: MailTemplateDetail): MailTemplateLis
 
 /** Map API delete errors to operator-facing copy. */
 function mailTemplateDeleteErrorMessage(err: ApiError): string {
-  if (err.code === "template_required") {
-    return "Ticket template cannot be deleted.";
-  }
-  if (err.code === "template_in_use") {
-    return "This template already has deliveries and cannot be deleted.";
-  }
-  const detail = err.message.trim();
-  if (detail && !/^[a-z][a-z0-9_]*$/.test(detail)) return detail;
-  return "Delete failed.";
+  return operatorApiErrorMessage(err, "Delete failed.");
 }
 
 type TemplateSelectionLoad =
@@ -251,7 +244,7 @@ export function CommunicationPage() {
         if (seq !== templateSelectionSeqRef.current) return;
         if (err instanceof ApiError) {
           reportApiError(err.status);
-          addToast(err.message, "error");
+          addToast(operatorApiErrorMessage(err, "Request failed."), "error");
         } else {
           addToast("Failed to load template.", "error");
         }
@@ -314,7 +307,7 @@ export function CommunicationPage() {
       if (seq !== createTemplateSeqRef.current) return;
       if (err instanceof ApiError) {
         reportApiError(err.status);
-        addToast(err.message, "error");
+        addToast(operatorApiErrorMessage(err, "Request failed."), "error");
       } else {
         addToast("Create failed.", "error");
       }
@@ -607,7 +600,7 @@ export function CommunicationPage() {
         setValidationErrors(err.errors);
       } else if (err instanceof ApiError) {
         reportApiError(err.status);
-        addToast(err.message, "error");
+        addToast(operatorApiErrorMessage(err, "Request failed."), "error");
       } else {
         addToast("Preview failed.", "error");
       }
@@ -649,7 +642,7 @@ export function CommunicationPage() {
         setValidationErrors(err.errors);
       } else if (err instanceof ApiError) {
         reportApiError(err.status);
-        addToast(err.message, "error");
+        addToast(operatorApiErrorMessage(err, "Request failed."), "error");
       } else {
         addToast("Save failed.", "error");
       }
@@ -691,9 +684,9 @@ export function CommunicationPage() {
       if (err instanceof ApiError) {
         reportApiError(err.status);
         const message =
-          err.status === 400 && err.message === "validation_failed"
+          err.status === 400 && hasApiErrorCode(err, "validation_failed")
             ? "Enter a valid email address."
-            : err.message;
+            : operatorApiErrorMessage(err, "Send failed.");
         setTestStatus({ kind: "error", message });
       } else {
         setTestStatus({ kind: "error", message: "Send failed." });

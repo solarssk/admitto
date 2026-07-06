@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, Checkbox, Input, useToast } from "@admitto/ui";
 import { ApiError, fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
 
 const MS_PER_HOUR = 3_600_000;
@@ -52,7 +53,7 @@ export function SecurityPanel() {
       setSettings(data);
       setDraft(draftFromSettings(data));
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to load security settings.";
+      const message = operatorApiErrorMessage(err, "Failed to load security settings.");
       setError(message);
       addToast(message, "error");
     } finally {
@@ -110,7 +111,7 @@ export function SecurityPanel() {
       setDraft(draftFromSettings(updated));
       addToast("Settings saved.", "success");
     } catch (err) {
-      addToast(err instanceof ApiError ? err.message : "Failed to save settings.", "error");
+      addToast(operatorApiErrorMessage(err, "Failed to save settings."), "error");
     } finally {
       setSaving(false);
     }
@@ -132,7 +133,7 @@ export function SecurityPanel() {
       setDraft(draftFromSettings(updated));
       addToast("Reset to defaults.", "success");
     } catch (err) {
-      addToast(err instanceof ApiError ? err.message : "Failed to reset settings.", "error");
+      addToast(operatorApiErrorMessage(err, "Failed to reset settings."), "error");
     } finally {
       setSaving(false);
     }

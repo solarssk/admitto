@@ -66,7 +66,7 @@ describe("LogoUploadZone", () => {
     const file = new File(["x"], "bad.exe", { type: "application/octet-stream" });
     fireEvent.change(input, { target: { files: [file] } });
     await waitFor(() => {
-      expect(screen.getByRole("alert").textContent).toContain("unsupported_file_type");
+      expect(screen.getByRole("alert").textContent).toMatch(/Unsupported file type/);
     });
   });
 

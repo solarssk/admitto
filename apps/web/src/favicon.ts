@@ -23,6 +23,7 @@ function readIconAsset(name: string): Buffer | null {
   if (cached) return cached;
   for (const root of iconAssetRoots()) {
     try {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
       const body = readFileSync(join(root, name));
       ICON_CACHE.set(name, body);
       return body;

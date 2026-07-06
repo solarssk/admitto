@@ -11,6 +11,7 @@ import {
   testIdentityProviderDraft,
   updateIdentityProvider,
 } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import {
@@ -367,7 +368,7 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
           redirectToLogin();
           return;
         }
-        const message = err instanceof ApiError ? err.message : "Failed to save provider.";
+        const message = operatorApiErrorMessage(err, "Failed to save provider.");
         addToast(message, "error");
       } finally {
         setSaving(false);
@@ -411,7 +412,7 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
           redirectToLogin();
           return;
         }
-        const message = err instanceof ApiError ? err.message : "Discovery failed.";
+        const message = operatorApiErrorMessage(err, "Discovery failed.");
         addToast(message, "error");
       } finally {
         setDiscovering(false);
@@ -470,7 +471,7 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
         redirectToLogin();
         return;
       }
-      const message = err instanceof ApiError ? err.message : "Discovery failed.";
+      const message = operatorApiErrorMessage(err, "Discovery failed.");
       addToast(message, "error");
     } finally {
       if (targetId === providerIdRef.current) setDiscovering(false);
@@ -507,7 +508,7 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
         redirectToLogin();
         return;
       }
-      const message = err instanceof ApiError ? err.message : "Connection test failed.";
+      const message = operatorApiErrorMessage(err, "Connection test failed.");
       addToast(message, "error");
     } finally {
       if (mode === "create" || targetId === providerIdRef.current) setTesting(false);

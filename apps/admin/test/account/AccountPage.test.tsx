@@ -33,7 +33,10 @@ import {
   enrollMfaTotp,
   confirmMfaTotp,
   resetMfa,
+  deleteAccountSession,
 } from "../../src/api/client.js";
+
+const mockDeleteSession = vi.mocked(deleteAccountSession);
 
 const mockFetchAccount = vi.mocked(fetchAccount);
 const mockFetchSessions = vi.mocked(fetchAccountSessions);
@@ -233,7 +236,7 @@ describe("AccountPage toasts", () => {
   it("toasts password change errors", async () => {
     mockLoadedAccount();
     const { ApiError } = await import("../../src/api/client.js");
-    mockPatchPassword.mockRejectedValueOnce(new ApiError(400, "wrong_password"));
+    mockPatchPassword.mockRejectedValueOnce(new ApiError(401, "wrong_password", "wrong_password"));
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
@@ -244,14 +247,14 @@ describe("AccountPage toasts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Change password" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/wrong_password/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Current password is incorrect/);
     });
   });
 
   it("toasts MFA enrollment errors", async () => {
     mockLoadedAccount();
     const { ApiError } = await import("../../src/api/client.js");
-    mockEnrollMfaTotp.mockRejectedValueOnce(new ApiError(400, "mfa_already_enabled"));
+    mockEnrollMfaTotp.mockRejectedValueOnce(new ApiError(409, "already_enrolled", "already_enrolled"));
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
@@ -261,7 +264,7 @@ describe("AccountPage toasts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Set up authenticator" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/mfa_already_enabled/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/already enabled/i);
     });
   });
 
@@ -305,7 +308,7 @@ describe("AccountPage toasts", () => {
       backupCodesAlreadyShown: true,
     });
     const { ApiError } = await import("../../src/api/client.js");
-    mockConfirmMfaTotp.mockRejectedValueOnce(new ApiError(400, "invalid_code"));
+    mockConfirmMfaTotp.mockRejectedValueOnce(new ApiError(400, "invalid_code", "invalid_code"));
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
@@ -321,7 +324,7 @@ describe("AccountPage toasts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm setup" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/invalid_code/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Invalid authenticator code/);
     });
   });
 
@@ -350,6 +353,120 @@ describe("AccountPage toasts", () => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(
         /Two-factor authentication reset\. 1 other session ended\./,
       );
+    });
+  });
+
+  it("shows load account failure", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetchAccount.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    mockFetchSessions.mockResolvedValueOnce({ sessions: [] });
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to load account/)).toBeTruthy();
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("shows load sessions failure", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetchAccount.mockResolvedValueOnce(baseAccount);
+    mockFetchSessions.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to load sessions/)).toBeTruthy();
+    });
+  });
+
+  it("shows revoke session failure", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    const otherSession = {
+      id: "sess-2",
+      userId: "usr-1",
+      userEmail: "admin@example.com",
+      userDisplayName: "Admin",
+      role: "superadmin" as const,
+      deviceLabel: "Other",
+      ip: null,
+      userAgent: null,
+      loginAt: "2026-01-01T00:00:00.000Z",
+      lastSeenAt: "2026-01-01T01:00:00.000Z",
+      expiresAt: "2026-01-02T00:00:00.000Z",
+      authMethod: "local",
+      stage: "active",
+      isCurrent: false,
+    };
+    mockLoadedAccount();
+    mockFetchSessions.mockResolvedValue({ sessions: [otherSession] });
+    mockDeleteSession.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Revoke" }).length).toBeGreaterThan(0);
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Revoke" })[0]!);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+    await waitFor(() => {
+      expect(within(dialog).getByText(/Failed to revoke session/)).toBeTruthy();
+    });
+  });
+
+  it("shows revoke all sessions failure", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    const currentSession = {
+      id: "sess-1",
+      userId: "usr-1",
+      userEmail: "admin@example.com",
+      userDisplayName: "Admin",
+      role: "superadmin" as const,
+      deviceLabel: "This device",
+      ip: null,
+      userAgent: null,
+      loginAt: "2026-01-01T00:00:00.000Z",
+      lastSeenAt: "2026-01-01T01:00:00.000Z",
+      expiresAt: "2026-01-02T00:00:00.000Z",
+      authMethod: "local",
+      stage: "active",
+      isCurrent: true,
+    };
+    const otherSession = {
+      ...currentSession,
+      id: "sess-2",
+      deviceLabel: "Other device",
+      isCurrent: false,
+    };
+    mockLoadedAccount();
+    mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
+    mockDeleteSession.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Revoke all other sessions" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all other sessions" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all" }));
+    await waitFor(() => {
+      expect(within(dialog).getByText(/Failed to revoke sessions/)).toBeTruthy();
+    });
+  });
+
+  it("shows reset 2FA failure", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockResetMfa.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Reset 2FA" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+    fireEvent.change(screen.getByLabelText("Current password", { selector: "#account-reset-password" }), {
+      target: { value: "current-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+    await waitFor(() => {
+      expect(within(dialog).getByText(/Failed to reset 2FA/)).toBeTruthy();
     });
   });
 });

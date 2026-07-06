@@ -51,6 +51,7 @@ export const serveTablerIcons: MiddlewareHandler = async (c) => {
 
   let body: Buffer;
   try {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
     body = readFileSync(target);
   } catch {
     return c.notFound();

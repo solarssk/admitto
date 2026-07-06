@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, Card, Input, useToast } from "@admitto/ui";
 import { ApiError, fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
 
 function fieldLocked(source: SettingSource): boolean {
@@ -47,7 +48,7 @@ export function InstanceUrlPanel() {
       setSettings(data);
       setDraft(data.instance_url.value ?? "");
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to load instance settings.";
+      const message = operatorApiErrorMessage(err, "Failed to load instance settings.");
       setError(message);
       addToast(message, "error");
     } finally {
@@ -104,7 +105,7 @@ export function InstanceUrlPanel() {
       setDraft(updated.instance_url.value ?? "");
       addToast("Settings saved.", "success");
     } catch (err) {
-      addToast(err instanceof ApiError ? err.message : "Failed to save settings.", "error");
+      addToast(operatorApiErrorMessage(err, "Failed to save settings."), "error");
     } finally {
       setSaving(false);
     }
@@ -120,7 +121,7 @@ export function InstanceUrlPanel() {
       setDraft("");
       addToast("Reset to default.", "success");
     } catch (err) {
-      addToast(err instanceof ApiError ? err.message : "Failed to reset settings.", "error");
+      addToast(operatorApiErrorMessage(err, "Failed to reset settings."), "error");
     } finally {
       setSaving(false);
     }

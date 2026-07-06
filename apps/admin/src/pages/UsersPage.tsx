@@ -11,6 +11,7 @@ import {
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ApiError, fetchAdminUsers, revokeUserSessions } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { UserListItemDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { InviteUserModal } from "./users/InviteUserModal.js";
@@ -112,7 +113,7 @@ export function UsersPage() {
       setTotal(data.total);
     } catch (err) {
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
-      setError(err instanceof ApiError ? err.message : "Failed to load users.");
+      setError(operatorApiErrorMessage(err, "Failed to load users."));
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
@@ -140,7 +141,7 @@ export function UsersPage() {
       addToast(`Sessions revoked for ${label}`, "success");
       await load();
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to revoke sessions.";
+      const message = operatorApiErrorMessage(err, "Failed to revoke sessions.");
       setRevokeError(message);
       addToast(message, "error");
     } finally {

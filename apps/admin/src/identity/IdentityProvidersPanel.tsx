@@ -7,6 +7,7 @@ import {
   fetchIdentityProviders,
   toggleIdentityProvider,
 } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto, IdentityProviderListItem } from "../api/types.js";
 import { IDENTITY_CLOUDFLARE_ROUTE } from "./routes.js";
 
@@ -161,7 +162,7 @@ export function IdentityProvidersPanel() {
         // optimistic flip may not match the persisted state, so refetch the list
         // instead of reverting to a stale closure value.
         retryProviders();
-        const message = err instanceof ApiError ? err.message : "Failed to toggle provider";
+        const message = operatorApiErrorMessage(err, "Failed to toggle provider");
         addToast(message, "error");
       } finally {
         setTogglingIds((prev) => {

@@ -92,6 +92,7 @@ function validateSetupForm(form: Record<string, string>): {
   if (password.length < PASSWORD_MIN_LENGTH) {
     return { ok: false, code: "password_too_short", values };
   }
+  // eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret auth probe status string
   if (password !== confirm) {
     return { ok: false, code: "password_mismatch", values };
   }

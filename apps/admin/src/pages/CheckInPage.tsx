@@ -15,6 +15,7 @@ import {
   submitItemAction,
   undoLastCheckIn,
 } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeCardDto, CheckInHistoryEntry, CheckInScanResponse, OpsConfigDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
@@ -378,7 +379,7 @@ export function CheckInPage({
       setTransportError(
         err.status === 401
           ? "Session expired — sign in again."
-          : err.message || "Request failed.",
+          : operatorApiErrorMessage(err, "Request failed."),
       );
     } else {
       setTransportError("Request failed. Try again.");
@@ -577,7 +578,7 @@ export function CheckInPage({
           const message =
             err.status === 401
               ? "Session expired — sign in again."
-              : err.message || "Request failed.";
+              : operatorApiErrorMessage(err, "Request failed.");
           if (showMobileOverlay) setOverlayManualError(message);
           else setTransportError(message);
         } else if (showMobileOverlay) {

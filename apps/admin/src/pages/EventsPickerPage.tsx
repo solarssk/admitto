@@ -4,6 +4,7 @@ import { Badge, Button, Card, EmptyState, PageHeader, Spinner, Tabs, useToast } 
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ApiError, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
@@ -100,7 +101,7 @@ export function EventsPickerPage() {
       addToast("Event unarchived.", "success");
       await load();
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to unarchive event.";
+      const message = operatorApiErrorMessage(err, "Failed to unarchive event.");
       setUnarchiveError(message);
     } finally {
       setUnarchiving(false);

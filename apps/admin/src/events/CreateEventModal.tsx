@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@admitto/ui";
 import { ApiError, createEvent } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto } from "../api/types.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
@@ -76,7 +77,7 @@ export function CreateEventModal({ open, onClose, onCreated }: CreateEventModalP
       if (err instanceof ApiError && err.status === 409) {
         setError("Slug is already in use. Choose another.");
       } else {
-        setError(err instanceof ApiError ? err.message : "Failed to create event. Try again.");
+        setError(operatorApiErrorMessage(err, "Failed to create event. Try again."));
       }
     } finally {
       setSubmitting(false);

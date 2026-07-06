@@ -10,6 +10,7 @@ import {
   resetUserPassword,
   revokeUserRole,
 } from "../../api/client.js";
+import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { EventDto, UserListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
@@ -28,16 +29,6 @@ function roleLabel(role: string): string {
   if (role === "admin") return "Admin";
   if (role === "operator") return "Operator";
   return role;
-}
-
-function mapApiError(message: string): string {
-  if (message.includes("cannot_deactivate_self")) return "You cannot deactivate your own account.";
-  if (message.includes("last_superadmin")) return "Cannot remove or deactivate the last superadmin.";
-  if (message.includes("managed_by_idp")) {
-    return "This role is managed by an identity provider and cannot be removed.";
-  }
-  if (message.includes("already_assigned")) return "This role assignment already exists.";
-  return message;
 }
 
 export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalProps) {
@@ -137,7 +128,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
       onUpdated(updated, "Profile updated");
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? mapApiError(err.message) : "Failed to save changes.");
+      setError(operatorApiErrorMessage(err, "Failed to save changes."));
     } finally {
       setSubmitting(false);
       setDeactivateConfirm(false);
@@ -169,7 +160,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
       setNewEventId("");
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? mapApiError(err.message) : "Failed to assign role.");
+      setError(operatorApiErrorMessage(err, "Failed to assign role."));
     } finally {
       setRoleBusy(false);
     }
@@ -184,7 +175,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
       onClose();
       onUpdated(user, "Role removed");
     } catch (err) {
-      setError(err instanceof ApiError ? mapApiError(err.message) : "Failed to remove role.");
+      setError(operatorApiErrorMessage(err, "Failed to remove role."));
     } finally {
       setRoleBusy(false);
     }
@@ -199,7 +190,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
       onUpdated(user, "2FA reset — user must sign in again");
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to reset 2FA.");
+      setError(operatorApiErrorMessage(err, "Failed to reset 2FA."));
     } finally {
       setResetMfaBusy(false);
     }
@@ -216,7 +207,7 @@ export function UserEditModal({ open, user, onClose, onUpdated }: UserEditModalP
       onUpdated(user, "Password reset — sessions revoked");
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to reset password.");
+      setError(operatorApiErrorMessage(err, "Failed to reset password."));
     } finally {
       setResetPasswordBusy(false);
     }

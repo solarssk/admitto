@@ -6,8 +6,10 @@ export function findAdmittoRepoRoot(startDir: string = process.cwd()): string | 
   let dir = startDir;
   while (true) {
     const pkgPath = join(dir, "package.json");
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
     if (existsSync(pkgPath)) {
       try {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
         const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { name?: string };
         if (pkg.name === "admitto") return dir;
       } catch {

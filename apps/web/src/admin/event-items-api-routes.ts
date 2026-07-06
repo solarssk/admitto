@@ -19,6 +19,7 @@ import {
 
 const slugField = z.string().trim().regex(/^[a-z0-9_]+$/, "invalid slug");
 
+  // eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
 const tablerIconNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const iconNameSchema = z

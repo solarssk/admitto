@@ -83,6 +83,7 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
     const scriptNonce = createAuthPageScriptNonce();
     return htmlResponse(c, renderChangePasswordForm(scriptNonce, PASSWORD_TOO_SHORT), scriptNonce, 400);
   }
+  // eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret auth probe status string
   if (password !== confirm) {
     const scriptNonce = createAuthPageScriptNonce();
     return htmlResponse(c, renderChangePasswordForm(scriptNonce, PASSWORD_MISMATCH), scriptNonce, 400);

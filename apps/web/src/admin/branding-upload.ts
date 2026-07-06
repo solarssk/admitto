@@ -91,7 +91,9 @@ async function validateAndWriteImage(file: File, dir: string): Promise<string> {
 
   const ext = ALLOWED_EXT.get(detectedMime)!;
   const filename = `${randomUUID()}${ext}`;
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
   await mkdir(dir, { recursive: true });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
   await writeFile(join(dir, filename), buf);
   return filename;
 }

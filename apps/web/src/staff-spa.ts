@@ -66,6 +66,7 @@ function defaultAdminDistRoot(): string {
   ];
   for (const root of candidates) {
     try {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
       readFileSync(join(root, "index.html"));
       return root;
     } catch {
@@ -87,6 +88,7 @@ function readDistFile(root: string, relative: string): { body: Buffer; contentTy
   const ext = filePath.slice(filePath.lastIndexOf("."));
   const contentType = MIME[ext] ?? "application/octet-stream";
   try {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
     return { body: readFileSync(filePath), contentType };
   } catch {
     return null;

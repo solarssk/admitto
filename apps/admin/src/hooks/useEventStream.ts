@@ -118,6 +118,7 @@ export function useEventStream(
             if (initialFailureCount >= MAX_INITIAL_FAILURES) {
               const auth = await probeStreamAuth(eventId);
               if (cancelled) return;
+  // eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret auth probe status string
               if (auth === "denied") {
                 setStatus("auth_error");
                 return;

@@ -8,6 +8,7 @@ import {
 import { Input, useToast } from "@admitto/ui";
 import { LogoUploadZone } from "../../components/LogoUploadZone.js";
 import { ApiError, fetchOrgBranding, patchOrgBranding } from "../../api/client.js";
+import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import { safeBrandingLogoHref } from "../../utils/safeBrandingLogoHref.js";
 import { useWizard } from "./WizardContext.js";
 
@@ -42,7 +43,7 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
         } catch (err) {
           if (ac.signal.aborted) return;
           addToast(
-            err instanceof ApiError ? err.message : "Failed to load branding.",
+            operatorApiErrorMessage(err, "Failed to load branding."),
             "error",
           );
         } finally {
@@ -77,7 +78,7 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
         setSummary({ brandingLabel: name });
         return true;
       } catch (err) {
-        addToast(err instanceof ApiError ? err.message : "Failed to save branding.", "error");
+        addToast(operatorApiErrorMessage(err, "Failed to save branding."), "error");
         return false;
       }
     };

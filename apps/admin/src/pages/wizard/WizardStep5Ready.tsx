@@ -8,6 +8,7 @@ import {
 import { Button, useToast } from "@admitto/ui";
 import { useNavigate } from "react-router-dom";
 import { ApiError, completeSetup } from "../../api/client.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import { useWizard } from "./WizardContext.js";
 
 type WizardStep5ReadyProps = {
@@ -82,17 +83,14 @@ export const WizardStep5Ready = forwardRef<WizardStep5ReadyHandle, WizardStep5Re
         navigate("/admin", { replace: true });
       }
     } catch (err) {
-      if (
-        err instanceof ApiError &&
-        (err.code === "setup_not_ready" || err.message === "setup_not_ready")
-      ) {
+      if (err instanceof ApiError && hasApiErrorCode(err, "setup_not_ready")) {
         setChecksNotReady(true);
         setBusy(false);
         return;
       }
       setChecksNotReady(false);
       const message =
-        err instanceof ApiError ? err.message : "Failed to complete setup.";
+        operatorApiErrorMessage(err, "Failed to complete setup.");
       addToast(message, "error");
       setBusy(false);
     }

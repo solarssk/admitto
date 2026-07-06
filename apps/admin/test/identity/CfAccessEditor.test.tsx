@@ -317,6 +317,28 @@ describe("CfAccessEditor (slice 4)", () => {
     await waitFor(() => expect(screen.getByText("Connection test failed.")).toBeTruthy());
   });
 
+  it("maps invalid_team_domain to actionable team URL guidance", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetch.mockResolvedValueOnce(summary({ teamDomain: "not-a-url", audience: ["a"], protectedPrefixes: ["/admin"] }));
+    mockTest.mockRejectedValueOnce(new ApiError(400, "invalid_team_domain", "invalid_team_domain"));
+    renderEditorAt();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(screen.getByText(/HTTPS Cloudflare Access team URL/)).toBeTruthy());
+    expect(screen.queryByText("Connection test failed.")).toBeNull();
+  });
+
+  it("maps team_domain_required when no team URL is configured", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetch.mockResolvedValueOnce(summary({ teamDomain: "", audience: ["a"], protectedPrefixes: ["/admin"] }));
+    mockTest.mockRejectedValueOnce(new ApiError(400, "team_domain_required", "team_domain_required"));
+    renderEditorAt();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(screen.getByText(/team URL before testing/i)).toBeTruthy());
+    expect(screen.queryByText("Connection test failed.")).toBeNull();
+  });
+
   it("shows the default save toast when Save throws a non-ApiError", async () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t", audience: ["a"], protectedPrefixes: ["/admin"] }));
     mockUpdate.mockRejectedValueOnce(new Error("network down"));

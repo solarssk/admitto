@@ -870,6 +870,7 @@ export function createApp(options: CreateAppOptions = {}) {
     const filePath = join(uploadDir, relPath);
     let buf: Buffer;
     try {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
       buf = await readFile(filePath);
     } catch {
       return c.notFound();

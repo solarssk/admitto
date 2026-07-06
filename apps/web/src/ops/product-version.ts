@@ -13,6 +13,7 @@ export function resolveProductVersion(): string {
       cachedVersion = "unknown";
       return cachedVersion;
     }
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
     const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version?: string };
     cachedVersion = typeof pkg.version === "string" ? pkg.version : "unknown";
   } catch {

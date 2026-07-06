@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Button, EmptyState, Skeleton, useToast } from "@admitto/ui";
 import { ApiError, fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
+import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { RoleAssignmentListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { useAuth } from "../../auth/AuthProvider.js";
@@ -13,16 +14,6 @@ function scopeLabel(row: RoleAssignmentListItemDto): string {
   if (row.scope_type === "event" && row.event) return row.event.title;
   if (row.scope_type === "organization" && row.organization) return row.organization.name;
   return row.scope_id ?? "—";
-}
-
-function mapRevokeError(message: string): string {
-  if (message.includes("managed_by_idp")) {
-    return "This role is managed by an identity provider and cannot be removed.";
-  }
-  if (message.includes("last_superadmin")) {
-    return "Cannot remove the last superadmin assignment.";
-  }
-  return message;
 }
 
 type AssignmentRowProps = {
@@ -125,7 +116,7 @@ export function RoleAssignmentsTab() {
       setTotal(data.total);
     } catch (err) {
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
-      setError(err instanceof ApiError ? err.message : "Failed to load role assignments.");
+      setError(operatorApiErrorMessage(err, "Failed to load role assignments."));
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
@@ -151,7 +142,7 @@ export function RoleAssignmentsTab() {
       await load();
     } catch (err) {
       const message =
-        err instanceof ApiError ? mapRevokeError(err.message) : "Failed to revoke role.";
+        operatorApiErrorMessage(err, "Failed to revoke role.");
       setRevokeError(message);
       addToast(message, "error");
     } finally {

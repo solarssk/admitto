@@ -8,6 +8,7 @@ import {
   resendTicket,
   updateAttendee,
 } from "../api/client.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeDetailDto, DeliveryDto, UpdateAttendeePatch } from "../api/types.js";
 import { CustomDataFieldInput } from "./CustomDataFieldInput.js";
 import {
@@ -182,7 +183,7 @@ export function AttendeeDetailDrawer({
         setItemsWarning(itemsWarning);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : "Failed to load attendee.");
+          setError(operatorApiErrorMessage(err, "Failed to load attendee."));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -268,9 +269,9 @@ export function AttendeeDetailDrawer({
     } catch (err) {
       if (!isStillSelected(target)) return;
       if (err instanceof ApiError && err.status === 409) {
-        if (err.message === "email_conflict") {
+        if (hasApiErrorCode(err, "email_conflict")) {
           setEmailConflict(true);
-        } else if (err.code === "stale_write") {
+        } else if (hasApiErrorCode(err, "stale_write")) {
           setStaleWrite(true);
         } else {
           setError("Could not save changes. Reload and try again.");
@@ -278,17 +279,17 @@ export function AttendeeDetailDrawer({
       } else if (
         err instanceof ApiError &&
         err.status === 400 &&
-        (err.message === "unknown_custom_data_field" ||
-          err.message === "required_custom_data_field_missing" ||
-          err.message === "validation_failed")
+        (hasApiErrorCode(err, "unknown_custom_data_field") ||
+          hasApiErrorCode(err, "required_custom_data_field_missing") ||
+          hasApiErrorCode(err, "validation_failed"))
       ) {
         setError(
-          err.message === "unknown_custom_data_field"
+          hasApiErrorCode(err, "unknown_custom_data_field")
             ? "Event configuration changed — close and reopen this attendee to edit attributes."
             : "Could not save attribute fields — check required values and options.",
         );
       } else {
-        setError(err instanceof ApiError ? err.message : "Failed to save changes.");
+        setError(operatorApiErrorMessage(err, "Failed to save changes."));
       }
     } finally {
       setSaving(false);
@@ -317,11 +318,7 @@ export function AttendeeDetailDrawer({
       setItemsWarning(itemsWarning);
     } catch (err) {
       if (!isStillSelected(target)) return;
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : "Failed to reload — please try again.",
-      );
+      setError(operatorApiErrorMessage(err, "Failed to reload — please try again."));
     } finally {
       setReloading(false);
     }
@@ -358,7 +355,7 @@ export function AttendeeDetailDrawer({
       );
       onUpdated();
     } catch (err) {
-      setResendError(err instanceof ApiError ? err.message : "Resend failed.");
+      setResendError(operatorApiErrorMessage(err, "Resend failed."));
     } finally {
       setResending(false);
     }

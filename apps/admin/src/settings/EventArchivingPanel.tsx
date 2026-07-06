@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Card, useToast } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { ApiError, archiveEvent, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto } from "../api/types.js";
 import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates.js";
 
@@ -26,7 +27,7 @@ export function EventArchivingPanel() {
       setEvents(list);
     } catch (err) {
       if (signal?.aborted) return;
-      const message = err instanceof ApiError ? err.message : "Failed to load events.";
+      const message = operatorApiErrorMessage(err, "Failed to load events.");
       setError(message);
     } finally {
       if (!signal?.aborted) setLoading(false);
@@ -63,7 +64,7 @@ export function EventArchivingPanel() {
       setConfirmAction(null);
       await load();
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : "Action failed.");
+      setActionError(operatorApiErrorMessage(err, "Action failed."));
     } finally {
       setActing(false);
     }

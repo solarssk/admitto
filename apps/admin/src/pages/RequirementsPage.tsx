@@ -9,6 +9,7 @@ import {
   updateEventItem,
   updateOpsConfig,
 } from "../api/client.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventItemDto, OpsConfigDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
@@ -116,13 +117,13 @@ export function RequirementsPage() {
       const updated = await updateEventItem(eventId, item.id, { enabled: !item.enabled });
       setItems((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409 && err.message === "item_in_use") {
+      if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
         addToast(
           "This item has been issued to attendees — record returns before disabling it.",
           "warning",
         );
       } else {
-        addToast(err instanceof ApiError ? err.message : "Failed to update item.", "error");
+        addToast(operatorApiErrorMessage(err, "Failed to update item."), "error");
       }
     }
   }
@@ -148,7 +149,7 @@ export function RequirementsPage() {
       if (err instanceof ApiError && err.status === 409) {
         setAddError("An item with this name already exists.");
       } else {
-        setAddError(err instanceof ApiError ? err.message : "Failed to create item.");
+        setAddError(operatorApiErrorMessage(err, "Failed to create item."));
       }
     } finally {
       setAdding(false);
@@ -169,7 +170,7 @@ export function RequirementsPage() {
       addToast("Setting updated", "success");
     } catch (err) {
       setOpsConfig(prev);
-      addToast(err instanceof ApiError ? err.message : "Failed to save event behaviour.", "error");
+      addToast(operatorApiErrorMessage(err, "Failed to save event behaviour."), "error");
     } finally {
       setOpsSaving(false);
     }

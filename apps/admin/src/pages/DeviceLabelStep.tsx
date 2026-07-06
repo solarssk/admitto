@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Card, PageHeader } from "@admitto/ui";
 import { ApiError, submitSessionDeviceLabel } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { parseDeviceName } from "../utils/parseDeviceName.js";
 
 type DeviceLabelStepProps = {
@@ -28,7 +29,7 @@ export function DeviceLabelStep({ onSaved, onSkip }: DeviceLabelStepProps) {
       await submitSessionDeviceLabel(trimmed);
       await onSaved();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not save device label.");
+      setError(operatorApiErrorMessage(err, "Could not save device label."));
     } finally {
       setBusy(false);
     }

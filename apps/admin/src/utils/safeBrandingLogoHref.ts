@@ -1,5 +1,6 @@
 /** Keep in sync with `BRANDING_UPLOAD_PATH` in `@admitto/mail-templates` escape.ts. */
 const BRANDING_UPLOAD_PATH =
+  // eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
   /^\/uploads\/[a-z0-9][a-z0-9_-]{0,63}(\/events\/[a-z0-9][a-z0-9_-]{0,127})?\/[^/]+\.(png|jpe?g|webp)$/i;
 
 /** Return a logo URL safe for img src: HTTPS external or validated local `/uploads/` path. */
