@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useParams } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
 import type { EventDto } from "../api/types.js";
 import { StaffShell } from "./StaffShell.js";
 import { BrandMark } from "./BrandMark.js";
@@ -37,16 +37,20 @@ const LIVE_SEGMENTS = new Set([
   "settings",
 ]);
 
-/** Format a location string as a Google Maps search URL. */
-function mapsUrl(location: string): string {
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+/** Format event date and optional location for the sidebar event switcher. */
+function formatEventMeta(event: EventDto): string {
+  const date = formatEventCalendarDate(event.date);
+  return event.location ? `${date} · ${event.location}` : date;
 }
 
 export interface AdminShellProps {
   event: EventDto;
-}/** Event-scoped admin layout: lifecycle sidebar, top bar, and nested route outlet. */
+}
+
+/** Event-scoped admin layout: lifecycle sidebar, top bar, and nested route outlet. */
 export function AdminShell({ event }: AdminShellProps) {
   const { eventId } = useParams();
+  const navigate = useNavigate();
 
   const sidebar = (
     <>
@@ -56,26 +60,11 @@ export function AdminShell({ event }: AdminShellProps) {
       </NavLink>
       <div className="sidebar__event">
         <div className="overline">Event</div>
-        <div className="sidebar__event-info">
-          <strong className="sidebar__event-title">{event.title}</strong>
-          <div className="sidebar__event-detail">
-            <i className="ti ti-calendar" aria-hidden="true" />
-            <span>{formatEventCalendarDate(event.date)}</span>
-          </div>
-          {event.location && (
-            <div className="sidebar__event-detail">
-              <i className="ti ti-map-pin" aria-hidden="true" />
-              <a
-                href={mapsUrl(event.location)}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Open in Google Maps"
-              >
-                {event.location}
-              </a>
-            </div>
-          )}
-        </div>
+        <button type="button" className="event-switch" onClick={() => navigate("/admin")}>
+          <span>{event.title}</span>
+          <i className="ti ti-selector" aria-hidden="true" />
+        </button>
+        <div className="event-switch__meta">{formatEventMeta(event)}</div>
       </div>
       <nav className="sidebar__nav" aria-label="Event lifecycle">
         {LIFECYCLE_NAV.map((item) => {

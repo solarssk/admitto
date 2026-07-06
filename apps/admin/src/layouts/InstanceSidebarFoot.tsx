@@ -1,5 +1,10 @@
 import { NavLink } from "react-router-dom";
-import { canAccessAdminPanel, isAdmin, isSuperadmin } from "../auth/capabilities.js";
+import {
+  canAccessAdminPanel,
+  canAccessCheckInPanel,
+  isAdmin,
+  isSuperadmin,
+} from "../auth/capabilities.js";
 import { useAuth } from "../auth/AuthProvider.js";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
@@ -9,6 +14,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
 export function InstanceSidebarFoot() {
   const { assignments } = useAuth();
   const canAdmin = canAccessAdminPanel(assignments);
+  const canCheckIn = canAccessCheckInPanel(assignments);
 
   return (
     <>
@@ -17,12 +23,12 @@ export function InstanceSidebarFoot() {
           <i className="ti ti-calendar-event" aria-hidden="true" />
           <span>All events</span>
         </NavLink>
-      ) : (
+      ) : canCheckIn ? (
         <NavLink to="/operator" className={navClass}>
           <i className="ti ti-qrcode" aria-hidden="true" />
           <span>Check-in</span>
         </NavLink>
-      )}
+      ) : null}
       {isAdmin(assignments) && (
         <>
           <div className="sidebar__section-label">Administration</div>

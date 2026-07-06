@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CheckInPage.scan-queue.test.tsx`: extracted `typeWedge(input, token, { gapMs?, baseTime?, prefix? })` helper — replaces 17 identical character-by-character typing loops; future timing tweaks are a one-line change.
 
 ### Changed
+- Unified instance-level admin sidebar (#323): `/account` uses the same sidebar chrome as `/admin` and instance settings instead of a stripped-down `AccountShell`; shared `InstanceSidebarFoot` adds All events (or Check-in for operators), Administration, My account, Documentation link, and app version; `BrandMark` extracted to a shared component.
 - `SECURITY.md`: document Semgrep-on-PRs decision (Option B chosen — CodeQL remains the sole PR SAST gate, Semgrep stays on `main`-push + weekly); update required merge checks list to include `analyze` (CodeQL) and `migration-safety`.
 - `docs/ARCHITECTURE-FOR-AUDITORS.md`: sync Semgrep trigger note with the recorded decision.
 - Staff admin content now fills the full width beside the sidebar on wide monitors: removed `max-width: 1100px; margin: 0 auto` from `.screen` and the per-page `max-width: 720px` from `.event-settings-page` (Event Overview, Communication, and Event Settings pages are all affected); dropped the now-redundant `.events-picker-screen` rule. Intentionally narrow surfaces (operator check-in `720px`, auth forms, danger-zone description text) are unchanged.
