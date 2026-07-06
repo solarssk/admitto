@@ -20,8 +20,6 @@ const SETTINGS_TABS = [
   { id: "identity", label: "Identity" },
 ] as const;
 
-const INITIAL_VISITED_TABS: SettingsTab[] = ["general"];
-
 function isSettingsTab(id: string): id is SettingsTab {
   return SETTINGS_TABS.some((tab) => tab.id === id);
 }
@@ -50,10 +48,15 @@ const IDENTITY_ROUTE = IDENTITY_PROVIDERS_ROUTE;
 /** Instance-level settings: grouped in-app tabs (branding, security, archiving, identity links). */
 export function SettingsPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState<SettingsTab>("general");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const initialTab: SettingsTab = (() => {
+    const t = searchParams.get("tab");
+    return t && t !== "identity" && isSettingsTab(t) ? t : "general";
+  })();
+  const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<SettingsTab>>(
-    () => new Set(INITIAL_VISITED_TABS),
+    () => new Set<SettingsTab>([initialTab]),
   );
 
   const openIdentity = useCallback(() => {
@@ -69,6 +72,20 @@ export function SettingsPage() {
     }
   }, [searchParams, navigate]);
 
+  // The URL is the source of truth for the active in-page tab. On any param change
+  // (Back from the Identity sub-section, sidebar Settings link clearing the query, or
+  // an external deep link) realign React state to what the URL says — restoring the
+  // operator's tab instead of resetting to General (closes the #296 TODO).
+  useEffect(() => {
+    const raw = searchParams.get("tab");
+    const valid = raw && raw !== "identity" && isSettingsTab(raw) ? raw : null;
+    const target: SettingsTab = valid ?? "general";
+    if (target !== tab) {
+      setTab(target);
+      setVisitedTabs((prev) => (prev.has(target) ? prev : new Set(prev).add(target)));
+    }
+  }, [searchParams, tab]);
+
   const handleTabChange = useCallback(
     (id: string) => {
       if (!isSettingsTab(id)) return;
@@ -81,13 +98,20 @@ export function SettingsPage() {
       }
       setTab(id);
       setVisitedTabs((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+      // Reflect the active tab in the URL (replace, so we don't stack one history
+      // entry per tab click); merge into existing params so unrelated query keys
+      // survive a tab switch.
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("tab", id);
+          return next;
+        },
+        { replace: true },
+      );
     },
-    [openIdentity],
+    [openIdentity, setSearchParams],
   );
-
-  // TODO(#266 slice 5): persist the active in-page tab in the URL so Back from the
-  // Identity sub-section restores the tab the operator was on (e.g. Security) instead
-  // of resetting to General. Tracked with the SettingsPage hub cleanup.
 
   return (
     <div className="settings-page">

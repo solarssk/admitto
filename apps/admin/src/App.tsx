@@ -187,6 +187,9 @@ function StaffRoutes() {
           <Route path="settings" element={<EventSettingsPage />} />
           <Route path="*" element={<Navigate to="overview" replace />} />
         </Route>
+        {/* Catch-all: any unmatched /admin/* (e.g. removed legacy /admin/auth/* URLs)
+            redirects to the events picker instead of rendering a blank outlet. */}
+        <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
       <Route path="/operator" element={<OperatorGuard />}>
         <Route element={<OperatorDeviceGate />}>

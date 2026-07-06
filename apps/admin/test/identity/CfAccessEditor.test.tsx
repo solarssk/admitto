@@ -417,4 +417,36 @@ describe("CfAccessEditor (slice 4)", () => {
     expect(mockUpdate.mock.calls[0][0]).toMatchObject({ enabled: true });
     expect((mockUpdate.mock.calls[0][0] as { teamDomain?: string }).teamDomain).toBeUndefined();
   });
+
+  it("navigates back on Cancel without prompting when there are no edits", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm");
+    mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
+    const { router } = renderEditorAt();
+    await waitFor(() => expect(screen.getByDisplayValue("https://t")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/admin/settings/identity/providers"));
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it("renders a Locked-by-env badge on every env-locked field and disables the inputs", async () => {
+    mockFetch.mockResolvedValueOnce(
+      summary({
+        enabled: true,
+        teamDomain: "https://t",
+        audience: ["a"],
+        protectedPrefixes: ["/admin"],
+        locks: { enabled: true, teamDomain: true, audience: true, protectedPrefixes: true },
+      }),
+    );
+    renderEditorAt();
+    await waitFor(() => expect(screen.getByText(/enabled and locked by environment/)).toBeTruthy());
+    // Every field is env-locked → every input is disabled and carries a badge.
+    expect(screen.getByRole("switch", { name: /Enable Cloudflare Access/ }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByDisplayValue("https://t").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByDisplayValue("a").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByDisplayValue("/admin").hasAttribute("disabled")).toBe(true);
+    expect(screen.getAllByText("Locked by env").length).toBeGreaterThanOrEqual(4);
+    // Test connection stays enabled (only gated by testing/saving).
+    expect(screen.getByRole("button", { name: "Test connection" }).hasAttribute("disabled")).toBe(false);
+  });
 });

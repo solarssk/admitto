@@ -161,8 +161,8 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 
 | Surface | Bucket | Limit / window |
 |---------|--------|----------------|
-| `POST /admin/auth/providers/:id/discover` | user + provider | 10 / 60 s |
-| `POST /admin/auth/providers/:id/test` | user + provider | 10 / 60 s |
+| `POST /api/admin/identity/providers/:id/discover` | user + provider | 10 / 60 s |
+| `POST /api/admin/identity/providers/:id/test` | user + provider | 10 / 60 s |
 
 **Body size caps** (separate from rate limits): import uploads ≤ 5 MB; template JSON sized for
 ≤ 200k character body field — see `apps/web/src/admin/import-api-routes.ts` and
