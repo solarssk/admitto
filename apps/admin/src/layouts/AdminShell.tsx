@@ -58,21 +58,22 @@ export function AdminShell({ event }: AdminShellProps) {
         <div className="overline">Event</div>
         <div className="sidebar__event-info">
           <strong className="sidebar__event-title">{event.title}</strong>
-          <span className="sidebar__event-meta">
+          <div className="sidebar__event-detail">
             <i className="ti ti-calendar" aria-hidden="true" />
-            {formatEventCalendarDate(event.date)}
-          </span>
+            <span>{formatEventCalendarDate(event.date)}</span>
+          </div>
           {event.location && (
-            <a
-              className="sidebar__event-meta sidebar__event-location"
-              href={mapsUrl(event.location)}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Open in Google Maps"
-            >
+            <div className="sidebar__event-detail">
               <i className="ti ti-map-pin" aria-hidden="true" />
-              {event.location}
-            </a>
+              <a
+                href={mapsUrl(event.location)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open in Google Maps"
+              >
+                {event.location}
+              </a>
+            </div>
           )}
         </div>
       </div>
