@@ -249,4 +249,19 @@ describe("CommunicationSendDialog", () => {
       expect(screen.getByText(/Send failed/)).toBeTruthy();
     });
   });
+
+  it("shows instance URL guidance when mail base URL is unset", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    sendEventBulk.mockRejectedValueOnce(
+      new ApiError(422, "instance_url_required", "instance_url_required"),
+    );
+    render(
+      <CommunicationSendDialog open eventId="evt-1" templateId="tpl-1" onClose={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Instance URL/)).toBeTruthy();
+    });
+    expect(screen.queryByText(/Send failed/)).toBeNull();
+  });
 });

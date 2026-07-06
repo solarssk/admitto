@@ -40,9 +40,11 @@ vi.mock("@admitto/ui", async (importOriginal) => {
 vi.mock("../../src/api/client.js", () => ({
   ApiError: class ApiError extends Error {
     status: number;
-    constructor(status: number, message: string) {
+    code?: string;
+    constructor(status: number, message: string, code?: string) {
       super(message);
       this.status = status;
+      this.code = code;
     }
   },
   fetchCheckInHistory: (...args: unknown[]) => fetchCheckInHistory(...args),
@@ -115,6 +117,38 @@ describe("CheckInPage lookup feedback", () => {
       expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", "filip");
       expect(addToast).toHaveBeenCalledWith("No attendees matched that search.", "warning");
     });
+  });
+
+  it("shows lookup-disabled copy when manual lookup was turned off server-side", async () => {
+    mockPageBootstrap();
+    const { ApiError } = await import("../../src/api/client.js");
+    lookupCheckInAttendees.mockRejectedValueOnce(
+      new ApiError(403, "manual_lookup_disabled", "manual_lookup_disabled"),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Manual lookup" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Manual lookup" }));
+
+    const lookupPanel = screen.getByRole("searchbox", {
+      name: "Search attendees by name, email, or company",
+    }).closest(".checkin-lookup");
+    expect(lookupPanel).toBeTruthy();
+
+    const lookupInput = within(lookupPanel as HTMLElement).getByRole("searchbox", {
+      name: "Search attendees by name, email, or company",
+    });
+    fireEvent.change(lookupInput, { target: { value: "filip" } });
+    fireEvent.click(within(lookupPanel as HTMLElement).getByRole("button", { name: "Search" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Manual lookup is disabled for this event/)).toBeTruthy();
+    });
+    expect(screen.queryByText(/do not have access/i)).toBeNull();
   });
 
   it("marks scan and lookup inputs with password-manager ignore hints", async () => {

@@ -131,6 +131,15 @@ describe("operatorApiErrorMessage", () => {
     expect(operatorApiErrorMessage(new ApiError(400, "delivery_not_found"), "Failed.")).toBe(
       "Delivery not found.",
     );
+    expect(
+      operatorApiErrorMessage(new ApiError(422, "instance_url_required", "instance_url_required"), "Send failed."),
+    ).toMatch(/Instance URL/);
+    expect(
+      operatorApiErrorMessage(
+        new ApiError(403, "manual_lookup_disabled", "manual_lookup_disabled"),
+        "Request failed.",
+      ),
+    ).toBe("Manual lookup is disabled for this event — use QR scan only.");
   });
 
   it("suppresses stack frames with at File ( pattern", () => {

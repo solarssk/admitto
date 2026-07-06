@@ -25,10 +25,13 @@ const CODE_MESSAGES: Record<string, string> = {
   forbidden: "You do not have access.",
   invalid_code: "Invalid authenticator code.",
   invalid_json: "Invalid request.",
+  instance_url_required:
+    "Set the Instance URL in Settings → General before sending ticket emails.",
   "invalid file content": "The file could not be read. Check that it is a valid CSV or XLSX.",
   item_in_use: "This item is in use and cannot be changed.",
   last_superadmin: "Cannot remove or deactivate the last superadmin.",
   managed_by_idp: "This role is managed by an identity provider and cannot be removed.",
+  manual_lookup_disabled: "Manual lookup is disabled for this event — use QR scan only.",
   mappings_required: "Role mappings are required before enabling this provider.",
   no_local_password: "Password is managed by your identity provider.",
   not_found: "The requested item was not found.",
