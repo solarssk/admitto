@@ -419,6 +419,28 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     await waitFor(() => expect(screen.getByText("Connection test failed.")).toBeTruthy());
   });
 
+  it("ignores stale draft-test response when issuer changed mid-flight (edit mode)", async () => {
+    let resolveTest!: (v: { ok: boolean }) => void;
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockTestDraft.mockReturnValueOnce(new Promise((res) => { resolveTest = res; }));
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    // Test request fires with current issuer (accounts.google.com).
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    // Change issuer while test request is in flight — draft diverges from testedBody.
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://different.example.com" },
+    });
+
+    // Resolve the stale response — should not show a toast.
+    resolveTest({ ok: true });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.queryByText("Connection test passed.")).toBeNull();
+  });
+
   it("Save is disabled while discover preview is in flight (create mode)", async () => {
     let resolveDiscover!: (v: Awaited<ReturnType<typeof mockDiscoverPreview>>) => void;
     mockDiscoverPreview.mockReturnValueOnce(new Promise((res) => { resolveDiscover = res; }));

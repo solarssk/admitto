@@ -117,6 +117,22 @@ describe("identity draft endpoints — success paths via stub OIDC IdP", () => {
     expect(body.ok).toBe(true);
   });
 
+  it("POST /providers/test with partial endpoints falls back to discovery and returns ok:true", async () => {
+    // Sending only 2 of 3 endpoints → all-or-nothing normalization → falls back to discovery.
+    const res = await json("/api/admin/identity/providers/test", {
+      method: "POST",
+      body: JSON.stringify({
+        issuer: stubBase,
+        authorization_endpoint: `${stubBase}/authorize`,
+        token_endpoint: `${stubBase}/token`,
+        // jwks_uri intentionally omitted — partial set must not be passed as-is
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean };
+    expect(body.ok).toBe(true);
+  });
+
   it("POST /providers/test with explicit endpoints skips discovery and returns ok:true", async () => {
     const res = await json("/api/admin/identity/providers/test", {
       method: "POST",

@@ -484,17 +484,21 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
     const targetId = mode === "edit" ? resolvedProviderId : "create";
     const createNonce = mode === "create" ? ++createTestNonceRef.current : 0;
     const issuerAtRequest = draft.issuer.trim();
+    const testedBody = oidcTestBodyFromDraft(draft);
+    const isEditStale = () =>
+      targetId !== providerIdRef.current ||
+      JSON.stringify(oidcTestBodyFromDraft(draftRef.current)) !== JSON.stringify(testedBody);
     setTesting(true);
     try {
-      const result = await testIdentityProviderDraft(oidcTestBodyFromDraft(draft));
-      if (mode === "edit" && targetId !== providerIdRef.current) return;
+      const result = await testIdentityProviderDraft(testedBody);
+      if (mode === "edit" && isEditStale()) return;
       if (mode === "create" && (createTestNonceRef.current !== createNonce || draftRef.current.issuer.trim() !== issuerAtRequest)) return;
       addToast(
         result.ok ? "Connection test passed." : result.error ?? "Connection test failed.",
         result.ok ? "success" : "error",
       );
     } catch (err) {
-      if (mode === "edit" && targetId !== providerIdRef.current) return;
+      if (mode === "edit" && isEditStale()) return;
       if (mode === "create" && (createTestNonceRef.current !== createNonce || draftRef.current.issuer.trim() !== issuerAtRequest)) return;
       if (err instanceof ApiError && err.status === 401) {
         redirectToLogin();

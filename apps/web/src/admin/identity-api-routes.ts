@@ -351,11 +351,12 @@ export async function handleApiTestProviderDraft(c: Context): Promise<Response> 
     return c.json({ error: "validation_failed" }, 400);
   }
 
+  const auth = optionalOidcEndpoint(body.authorization_endpoint);
+  const token = optionalOidcEndpoint(body.token_endpoint);
+  const jwks = optionalOidcEndpoint(body.jwks_uri);
   const result = await testOidcConnection({
     issuer: body.issuer.trim(),
-    authorization_endpoint: optionalOidcEndpoint(body.authorization_endpoint),
-    token_endpoint: optionalOidcEndpoint(body.token_endpoint),
-    jwks_uri: optionalOidcEndpoint(body.jwks_uri),
+    ...(auth && token && jwks ? { authorization_endpoint: auth, token_endpoint: token, jwks_uri: jwks } : {}),
   });
   if (result.ok) return c.json({ ok: true });
   return c.json({ ok: false, error: result.error }, 400);
