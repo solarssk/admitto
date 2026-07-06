@@ -33,9 +33,9 @@ export function SettingsTabContent() {
   const [searchParams] = useSearchParams();
 
   const initialTab = inPageTabFromSearch(searchParams);
-  const [tab, setTab] = useState<SettingsTab>(initialTab);
-  const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<SettingsTab>>(
-    () => new Set<SettingsTab>([initialTab]),
+  const [tab, setTab] = useState<Exclude<SettingsTab, "identity">>(initialTab);
+  const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<Exclude<SettingsTab, "identity">>>(
+    () => new Set([initialTab]),
   );
 
   // The URL is the source of truth for the active in-page tab. On any param change

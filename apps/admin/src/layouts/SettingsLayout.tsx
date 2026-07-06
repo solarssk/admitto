@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router-
 import { PageHeader, Tabs } from "@admitto/ui";
 import { IDENTITY_PROVIDERS_ROUTE } from "../identity/routes.js";
 import {
+  SETTINGS_INDEX_PATH,
   SETTINGS_TABS,
   inPageTabFromSearch,
   isIdentitySettingsPath,
@@ -39,7 +40,7 @@ export function SettingsLayout() {
       }
       // Always replace so tab clicks don't accumulate history entries. Leaving an
       // Identity detail view triggers the editor's `useBlocker` when dirty.
-      navigate(`/admin/settings?tab=${id}`, { replace: true });
+      navigate(`${SETTINGS_INDEX_PATH}?tab=${id}`, { replace: true });
     },
     [navigate, onIdentity],
   );

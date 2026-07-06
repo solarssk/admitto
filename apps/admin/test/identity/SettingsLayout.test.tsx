@@ -38,7 +38,7 @@ describe("SettingsLayout on Identity routes", () => {
     expect(screen.queryByRole("tab", { name: "Cloudflare Access" })).toBeNull();
   });
 
-  it("shows General tab selected on non-identity settings path (covers inPageTabFromSearch branch)", () => {
+  it("shows Mail tab selected on non-identity settings path (covers inPageTabFromSearch branch)", () => {
     renderAt("/admin/settings?tab=mail");
     expect(screen.getByText("settings-index")).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Mail" }).getAttribute("aria-selected")).toBe("true");
