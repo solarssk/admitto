@@ -15,8 +15,7 @@ const BRAND_MARK = (
 export function InstanceSettingsShell() {
   const { pathname } = useLocation();
   const { assignments } = useAuth();
-  const settingsActive =
-    pathname.startsWith("/admin/settings") || pathname.startsWith("/admin/auth/");
+  const settingsActive = pathname.startsWith("/admin/settings");
 
   const sidebar = (
     <>

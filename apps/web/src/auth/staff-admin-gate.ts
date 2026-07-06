@@ -6,7 +6,10 @@ import { resolveStaffAuthFromRequest } from "./resolve-staff-auth.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 
 function isAdminSpaPath(path: string): boolean {
-  return path === "/admin" || (path.startsWith("/admin/") && !path.startsWith("/admin/auth/"));
+  // Every /admin/* path is served by the SPA shell now that the legacy
+  // /admin/auth/* HTML routes were removed (#266 slice 5); the SPA router
+  // redirects unknown paths (e.g. old /admin/auth/* bookmarks) to /admin.
+  return path === "/admin" || path.startsWith("/admin/");
 }
 
 function isAdminApiPath(path: string): boolean {

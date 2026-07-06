@@ -458,4 +458,34 @@ describe("cloudflare access API", () => {
     const body = await jsonAs<TestResult>(res);
     expect(typeof body.ok).toBe("boolean");
   });
+
+  it("rejects enabling CF Access without a team domain (400)", async () => {
+    const res = await json("/api/admin/identity/cf-access", {
+      method: "PUT",
+      body: JSON.stringify({
+        enabled: true,
+        teamDomain: "",
+        audience: ["aud-x"],
+        protectedPrefixes: ["/admin"],
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = await jsonAs<{ error: string }>(res);
+    expect(body.error).toContain("CF_ACCESS_TEAM_DOMAIN");
+  });
+
+  it("rejects enabling CF Access without an audience (400)", async () => {
+    const res = await json("/api/admin/identity/cf-access", {
+      method: "PUT",
+      body: JSON.stringify({
+        enabled: true,
+        teamDomain: "https://team.cloudflareaccess.com",
+        audience: [],
+        protectedPrefixes: ["/admin"],
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = await jsonAs<{ error: string }>(res);
+    expect(body.error).toContain("CF_ACCESS_AUD");
+  });
 });
