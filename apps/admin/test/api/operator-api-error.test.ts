@@ -33,6 +33,9 @@ describe("operatorApiErrorMessage", () => {
     expect(operatorApiErrorMessage(new ApiError(401, "unauthorized"), "Failed.")).toBe(
       "Your session has expired. Sign in again.",
     );
+    expect(operatorApiErrorMessage(new ApiError(401, "authentication_required"), "Failed to load sessions.")).toBe(
+      "Your session has expired. Sign in again.",
+    );
   });
 
   it("uses 401 session fallback when human detail is suppressed", () => {

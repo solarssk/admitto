@@ -6,6 +6,7 @@ const MACHINE_CODE = /^[a-z][a-z0-9_]*$/;
 const CODE_MESSAGES: Record<string, string> = {
   already_assigned: "This role assignment already exists.",
   already_enrolled: "Two-factor authentication is already enabled.",
+  authentication_required: "Your session has expired. Sign in again.",
   body_required: "Request body is required.",
   cannot_deactivate_self: "You cannot deactivate your own account.",
   cannot_revoke_current: "You cannot revoke your current session.",
@@ -112,7 +113,7 @@ function statusFallback(err: ApiError, fallback: string): string {
   const code = normalizedCode(err);
   if (code && CODE_MESSAGES[code]) return CODE_MESSAGES[code]!;
   if (err.status === 401) {
-    if (!code || code === "unauthorized") {
+    if (!code || code === "unauthorized" || code === "authentication_required") {
       return CODE_MESSAGES.unauthorized ?? fallback;
     }
     return fallback;
