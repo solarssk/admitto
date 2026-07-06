@@ -244,6 +244,38 @@ describe("IdentityProviderEditor — discover & test (slice 3b)", () => {
       expect(screen.getByDisplayValue("https://accounts.google.com/o/oauth2/v2/auth")).toBeTruthy(),
     );
   });
+
+  it("Test connection includes non-empty endpoints in the draft body", async () => {
+    // Fill in all endpoint fields manually in create mode so oidcTestBodyFromDraft
+    // hits the truthy branches for authorization_endpoint, token_endpoint, jwks_uri.
+    mockTestDraft.mockResolvedValueOnce({ ok: true });
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://accounts.google.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Authorization endpoint"), {
+      target: { value: "https://accounts.google.com/o/oauth2/v2/auth" },
+    });
+    fireEvent.change(screen.getByLabelText("Token endpoint"), {
+      target: { value: "https://oauth2.googleapis.com/token" },
+    });
+    fireEvent.change(screen.getByLabelText("JWKS URI"), {
+      target: { value: "https://www.googleapis.com/oauth2/v3/certs" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() =>
+      expect(mockTestDraft).toHaveBeenCalledWith({
+        issuer: "https://accounts.google.com",
+        authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_endpoint: "https://oauth2.googleapis.com/token",
+        jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+      }),
+    );
+  });
 });
 
 describe("IdentityProviderEditor — SSO preview (slice 3b)", () => {
@@ -267,6 +299,62 @@ describe("IdentityProviderEditor — SSO preview (slice 3b)", () => {
 });
 
 describe("IdentityProviderEditor — discover & test error paths", () => {
+  it("shows error toast when Discover is clicked without an issuer (create mode)", async () => {
+    renderEditorAt("/admin/settings/identity/providers/new");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+    await waitFor(() =>
+      expect(screen.getByText("Issuer URL is required for discovery.")).toBeTruthy(),
+    );
+    expect(mockDiscoverPreview).not.toHaveBeenCalled();
+  });
+
+  it("shows error toast when Test is clicked without an issuer", async () => {
+    renderEditorAt("/admin/settings/identity/providers/new");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() =>
+      expect(screen.getByText("Issuer URL is required to test the connection.")).toBeTruthy(),
+    );
+    expect(mockTestDraft).not.toHaveBeenCalled();
+  });
+
+  it("redirects to login when discover preview returns 401 (create mode)", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockDiscoverPreview.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/settings/identity/providers/new", assign: assignSpy },
+    });
+    try {
+      renderEditorAt("/admin/settings/identity/providers/new");
+      await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+      fireEvent.change(screen.getByLabelText("Issuer URL"), {
+        target: { value: "https://accounts.google.com" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+      await waitFor(() =>
+        expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
+      );
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
+  });
+
+  it("shows error toast when discover preview fails generically (create mode)", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockDiscoverPreview.mockRejectedValueOnce(new ApiError(400, "No OIDC metadata found."));
+    renderEditorAt("/admin/settings/identity/providers/new");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://accounts.google.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+    await waitFor(() => expect(screen.getByText("No OIDC metadata found.")).toBeTruthy());
+  });
+
   it("redirects to login when Discover returns 401", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockFetch.mockResolvedValueOnce(validDetail);

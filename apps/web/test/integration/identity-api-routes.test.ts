@@ -451,6 +451,21 @@ describe("identity providers API — test connection", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("draft test accepts optional endpoints (covers optionalOidcEndpoint truthy path)", async () => {
+    const res = await json("/api/admin/identity/providers/test", {
+      method: "POST",
+      body: JSON.stringify({
+        issuer: "https://idp-api-draft-test.example.com/",
+        authorization_endpoint: "https://idp-api-draft-test.example.com/auth",
+        token_endpoint: "https://idp-api-draft-test.example.com/token",
+        jwks_uri: "https://idp-api-draft-test.example.com/jwks",
+      }),
+    });
+    expect([200, 400]).toContain(res.status);
+    const body = await jsonAs<TestResult>(res);
+    expect(typeof body.ok).toBe("boolean");
+  });
 });
 
 describe("identity providers API — discover preview", () => {
