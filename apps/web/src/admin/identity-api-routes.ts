@@ -302,7 +302,7 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
   try {
     discovery = await fetchOidcDiscovery(provider.issuer);
   } catch (err) {
-    console.error("[identity] OIDC discovery failed:", err);
+    console.warn("[identity] OIDC discovery failed:", err);
     return c.json({ ok: false, error: "discovery_failed" }, 400);
   }
 
@@ -394,7 +394,7 @@ export async function handleApiDiscoverProviderPreview(c: Context): Promise<Resp
       },
     });
   } catch (err) {
-    console.error("[identity] discovery preview failed:", err);
+    console.warn("[identity] discovery preview failed:", err);
     return c.json({ ok: false, error: "discovery_failed" }, 400);
   }
 }
