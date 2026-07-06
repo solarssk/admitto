@@ -57,7 +57,7 @@ body {
 }
 
 .sidebar__event {
-  padding: 10px 6px 12px;
+  padding: 10px 10px 12px;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
@@ -66,30 +66,44 @@ body {
   margin-bottom: 6px;
 }
 
-.event-switch {
-  width: 100%;
+.sidebar__event-info {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px 10px;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sidebar__event-title {
   font-size: var(--fs-body);
   font-weight: 600;
   color: var(--text-primary);
-  cursor: pointer;
-  font-family: var(--font-sans);
+  line-height: 1.3;
+  margin-bottom: 2px;
 }
 
-.event-switch:hover {
-  border-color: var(--border-strong);
-}
-
-.event-switch__meta {
+.sidebar__event-detail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--fs-xs);
   color: var(--text-muted);
-  margin-top: 6px;
+  line-height: 1.4;
+}
+
+.sidebar__event-detail i {
+  font-size: 14px;
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+
+.sidebar__event-detail a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sidebar__event-detail a:hover {
+  color: var(--text-secondary);
+  text-decoration: underline;
 }
 
 .sidebar__nav {
@@ -439,7 +453,6 @@ body {
   .shell--sidebar-unpinned .sidebar .sidebar__brand span,
   .shell--sidebar-unpinned .sidebar .sidebar__event,
   .shell--sidebar-unpinned .sidebar .sidebar__section-label,
-  .shell--sidebar-unpinned .sidebar .event-switch__meta,
   .shell--sidebar-unpinned .sidebar .sidebar__version {
     opacity: 0;
     pointer-events: none;
@@ -455,7 +468,6 @@ body {
   .shell--sidebar-unpinned.shell--sidebar-expanded .sidebar .sidebar__brand span,
   .shell--sidebar-unpinned.shell--sidebar-expanded .sidebar .sidebar__event,
   .shell--sidebar-unpinned.shell--sidebar-expanded .sidebar .sidebar__section-label,
-  .shell--sidebar-unpinned.shell--sidebar-expanded .sidebar .event-switch__meta,
   .shell--sidebar-unpinned.shell--sidebar-expanded .sidebar .sidebar__version {
     opacity: 1;
   }
