@@ -142,6 +142,27 @@ describe("operatorApiErrorMessage", () => {
     ).toBe("Manual lookup is disabled for this event — use QR scan only.");
   });
 
+  it("maps identity provider and Cloudflare Access validation codes", () => {
+    expect(
+      operatorApiErrorMessage(new ApiError(400, "invalid_issuer", "invalid_issuer"), "Connection test failed."),
+    ).toMatch(/HTTPS/);
+    expect(
+      operatorApiErrorMessage(new ApiError(400, "discovery_failed", "discovery_failed"), "Discovery failed."),
+    ).toMatch(/OIDC discovery/);
+    expect(
+      operatorApiErrorMessage(
+        new ApiError(400, "invalid_team_domain", "invalid_team_domain"),
+        "Connection test failed.",
+      ),
+    ).toMatch(/team URL/i);
+    expect(
+      operatorApiErrorMessage(
+        new ApiError(400, "team_domain_required", "team_domain_required"),
+        "Connection test failed.",
+      ),
+    ).toMatch(/team URL/i);
+  });
+
   it("suppresses stack frames with at File ( pattern", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(operatorApiErrorMessage(new ApiError(500, "at main (index.js:1:1)"), "Failed.")).toBe("Failed.");

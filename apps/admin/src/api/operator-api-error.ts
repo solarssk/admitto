@@ -16,6 +16,8 @@ const CODE_MESSAGES: Record<string, string> = {
   delivery_not_created: "Could not create the delivery.",
   delivery_not_found: "Delivery not found.",
   duplicate_issuer: "An identity provider with this issuer already exists.",
+  discovery_failed:
+    "Could not fetch OIDC discovery from the issuer URL. Check the URL is reachable and exposes .well-known/openid-configuration.",
   email_conflict: "That email is already in use.",
   email_taken: "A user with this email already exists.",
   empty_file: "The file is empty.",
@@ -24,7 +26,10 @@ const CODE_MESSAGES: Record<string, string> = {
   export_too_large: "Export is too large. Narrow filters or export in parts.",
   forbidden: "You do not have access.",
   invalid_code: "Invalid authenticator code.",
+  invalid_issuer:
+    "Issuer URL must use HTTPS (http://localhost or http://127.0.0.1 is allowed in development only).",
   invalid_json: "Invalid request.",
+  invalid_team_domain: "Enter a valid HTTPS Cloudflare Access team URL.",
   instance_url_required:
     "Set the Instance URL in Settings → General before sending ticket emails.",
   "invalid file content": "The file could not be read. Check that it is a valid CSV or XLSX.",
@@ -47,6 +52,7 @@ const CODE_MESSAGES: Record<string, string> = {
   template_not_found: "Template not found.",
   template_required: "Ticket template cannot be deleted.",
   template_validation_failed: "Fix template validation errors and try again.",
+  team_domain_required: "Enter the Cloudflare Access team URL before testing the connection.",
   toggle_race: "Provider state changed. Reload and try again.",
   too_many_attendees: "Too many attendees selected.",
   too_many_rows: "File exceeds the 50 000 row limit. Split the file and import in parts.",

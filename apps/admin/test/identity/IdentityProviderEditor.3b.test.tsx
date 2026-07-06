@@ -387,6 +387,17 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     await waitFor(() => expect(screen.getByText("Discovery failed.")).toBeTruthy());
   });
 
+  it("maps discovery_failed machine code to actionable issuer guidance", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockDiscover.mockRejectedValueOnce(new ApiError(400, "discovery_failed", "discovery_failed"));
+    renderEditorAt("/admin/settings/identity/providers/p1");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+    await waitFor(() => expect(screen.getByText(/OIDC discovery/)).toBeTruthy());
+    expect(screen.queryByText("Discovery failed.")).toBeNull();
+  });
+
   it("redirects to login when Test returns 401", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockFetch.mockResolvedValueOnce(validDetail);
@@ -417,6 +428,17 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await waitFor(() => expect(screen.getByText("Connection test failed.")).toBeTruthy());
+  });
+
+  it("maps invalid_issuer machine code to HTTPS guidance on test", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockTestDraft.mockRejectedValueOnce(new ApiError(400, "invalid_issuer", "invalid_issuer"));
+    renderEditorAt("/admin/settings/identity/providers/p1");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(screen.getByText(/Issuer URL must use HTTPS/)).toBeTruthy());
+    expect(screen.queryByText("Connection test failed.")).toBeNull();
   });
 
   it("ignores stale draft-test response when issuer changed mid-flight (edit mode)", async () => {
