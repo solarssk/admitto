@@ -85,15 +85,6 @@
   max-width: 1100px;
 }
 
-.events-picker-toolbar {
-  margin-top: 16px;
-}
-
-.events-picker-search {
-  max-width: 360px;
-  margin: 0;
-}
-
 .event-grid--touch {
   grid-template-columns: 1fr;
 }
