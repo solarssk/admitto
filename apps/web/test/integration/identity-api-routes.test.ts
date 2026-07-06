@@ -438,7 +438,7 @@ describe("identity providers API — test connection", () => {
         issuer: "https://idp-api-draft-test.example.com/",
       }),
     });
-    expect([200, 400]).toContain(res.status);
+    expect(res.status).toBe(200);
     const body = await jsonAs<TestResult>(res);
     expect(typeof body.ok).toBe("boolean");
     if (!body.ok) expect(typeof body.error).toBe("string");
@@ -462,7 +462,7 @@ describe("identity providers API — test connection", () => {
         jwks_uri: "https://idp-api-draft-test.example.com/jwks",
       }),
     });
-    expect([200, 400]).toContain(res.status);
+    expect(res.status).toBe(200);
     const body = await jsonAs<TestResult>(res);
     expect(typeof body.ok).toBe("boolean");
   });

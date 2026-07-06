@@ -53,19 +53,19 @@ const providerBodySchema = z.strictObject({
   issuer: z.string().trim().min(1).max(2000),
   client_id: z.string().trim().min(1).max(500),
   client_secret: z.string().max(2000).optional(),
-  authorization_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-  token_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-  jwks_uri: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-  userinfo_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-  claim_email: z.union([z.string().trim().max(200), z.literal("")]).optional(),
-  claim_name: z.union([z.string().trim().max(200), z.literal("")]).optional(),
-  claim_groups: z.union([z.string().trim().max(200), z.literal("")]).optional(),
+  authorization_endpoint: z.string().trim().max(2000).optional(),
+  token_endpoint: z.string().trim().max(2000).optional(),
+  jwks_uri: z.string().trim().max(2000).optional(),
+  userinfo_endpoint: z.string().trim().max(2000).optional(),
+  claim_email: z.string().trim().max(200).optional(),
+  claim_name: z.string().trim().max(200).optional(),
+  claim_groups: z.string().trim().max(200).optional(),
   enabled: z.boolean().optional(),
   /**
    * SSO login button copy. Omit to preserve the stored value; send `null` or `""`
    * to clear back to the product default; send a string to set.
    */
-  login_button_label: z.union([z.string().trim().max(120), z.literal(""), z.null()]).optional(),
+  login_button_label: z.union([z.string().trim().max(120), z.null()]).optional(),
   /**
    * Group→role mapping list (replace-all semantics, mirroring the legacy HTML form).
    * Optional on create (defaults to an empty list); **required on every PUT** — the
@@ -78,9 +78,9 @@ const providerBodySchema = z.strictObject({
 
 const oidcProviderTestBodySchema = z.strictObject({
   issuer: z.string().trim().min(1).max(2000),
-  authorization_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-  token_endpoint: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
-  jwks_uri: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
+  authorization_endpoint: z.string().trim().max(2000).optional(),
+  token_endpoint: z.string().trim().max(2000).optional(),
+  jwks_uri: z.string().trim().max(2000).optional(),
 });
 
 const oidcDiscoverPreviewBodySchema = z.strictObject({
@@ -367,8 +367,7 @@ export async function handleApiTestProviderDraft(c: Context): Promise<Response> 
     issuer,
     ...(auth && token && jwks ? { authorization_endpoint: auth, token_endpoint: token, jwks_uri: jwks } : {}),
   });
-  if (result.ok) return c.json({ ok: true });
-  return c.json({ ok: false, error: result.error }, 400);
+  return c.json({ ok: result.ok, ...(result.ok ? {} : { error: result.error }) });
 }
 
 /** POST /api/admin/identity/providers/discover-preview — autofill endpoints without persist. */

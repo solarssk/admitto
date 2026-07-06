@@ -324,14 +324,13 @@ describe("identity API client", () => {
     expect(res.endpoints.jwks_uri).toBe("https://www.googleapis.com/oauth2/v3/certs");
   });
 
-  it("testIdentityProviderDraft throws ApiError when the connection test fails (400)", async () => {
+  it("testIdentityProviderDraft resolves with ok:false when the connection test fails", async () => {
     fetchMock.mockResolvedValueOnce(
-      jsonResponse({ ok: false, error: "JWKS URI is required" }, { status: 400, statusText: "Bad Request" }),
+      jsonResponse({ ok: false, error: "JWKS URI is required" }),
     );
-    await expect(testIdentityProviderDraft({ issuer: "https://accounts.google.com" })).rejects.toMatchObject({
-      name: "ApiError",
-      status: 400,
-    });
+    const res = await testIdentityProviderDraft({ issuer: "https://accounts.google.com" });
+    expect(res.ok).toBe(false);
+    expect((res as { ok: false; error?: string }).error).toBe("JWKS URI is required");
   });
 
   it("discoverIdentityProviderPreview throws ApiError when discovery fails (400)", async () => {
