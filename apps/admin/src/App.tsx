@@ -12,8 +12,8 @@ import { DemoBar } from "./components/DemoBar.js";
 import { AdminShell } from "./layouts/AdminShell.js";
 import { EventsListShell } from "./layouts/EventsListShell.js";
 import { InstanceSettingsShell } from "./layouts/InstanceSettingsShell.js";
-import { SettingsPage } from "./pages/SettingsPage.js";
-import { IdentityLayout } from "./identity/IdentityLayout.js";
+import { SettingsLayout } from "./layouts/SettingsLayout.js";
+import { SettingsTabContent } from "./pages/SettingsPage.js";
 import { IdentityProvidersPanel } from "./identity/IdentityProvidersPanel.js";
 import { IdentityProviderEditor } from "./identity/IdentityProviderEditor.js";
 import { CfAccessEditor } from "./identity/CfAccessEditor.js";
@@ -147,13 +147,15 @@ function StaffRoutes() {
         </Route>
         <Route path="settings" element={<SuperadminGuard />}>
           <Route element={<InstanceSettingsShell />}>
-            <Route index element={<SettingsPage />} />
-            <Route path="identity" element={<IdentityLayout />}>
-              <Route index element={<Navigate to="providers" replace />} />
-              <Route path="providers" element={<IdentityProvidersPanel />} />
-              <Route path="providers/new" element={<IdentityProviderEditor mode="create" />} />
-              <Route path="providers/:providerId" element={<IdentityProviderEditor mode="edit" />} />
-              <Route path="cloudflare" element={<CfAccessEditor />} />
+            <Route element={<SettingsLayout />}>
+              <Route index element={<SettingsTabContent />} />
+              <Route path="identity">
+                <Route index element={<Navigate to="providers" replace />} />
+                <Route path="providers" element={<IdentityProvidersPanel />} />
+                <Route path="providers/new" element={<IdentityProviderEditor mode="create" />} />
+                <Route path="providers/:providerId" element={<IdentityProviderEditor mode="edit" />} />
+                <Route path="cloudflare" element={<CfAccessEditor />} />
+              </Route>
             </Route>
           </Route>
         </Route>

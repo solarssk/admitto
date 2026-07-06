@@ -1649,17 +1649,7 @@
   font-size: var(--fs-sm);
 }
 
-/* Identity & SSO section (Settings → Identity, #266) */
-.identity-section__body {
-  margin-top: var(--space-4);
-}
-
-.identity-section__panels {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
+/* Identity & SSO panels (Settings → Identity tab, #266) */
 .identity-providers__list {
   display: flex;
   flex-direction: column;
