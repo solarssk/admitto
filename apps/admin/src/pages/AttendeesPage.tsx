@@ -144,6 +144,7 @@ export function AttendeesPage() {
   const [passActionBusyVersion, setPassActionBusyVersion] = useState(0);
   const passActionBusyIds = useMemo(
     () => new Set(passActionBusyRef.current),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- passActionBusyVersion is a version counter; the ref holds the data, the state is the invalidation signal
     [passActionBusyVersion],
   );
 
@@ -225,7 +226,6 @@ export function AttendeesPage() {
     ticketTypeFilter,
     rsvpStatusFilter,
     reportApiError,
-    addToast,
   ]);
 
   useEffect(() => {

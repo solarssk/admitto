@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `eslint-plugin-react-hooks` enabled for `apps/admin` and `apps/web` (`rules-of-hooks` as error, `exhaustive-deps` as warning); lint script extended to cover `apps/*/src`. All 8 pre-existing dependency warnings triaged: 3 accidental deps removed, 2 version-counter/fast-path patterns annotated with inline disable comments, 2 plain-function cases annotated pending #280 refactor.
+
 ### Changed
 - `SECURITY.md`: document Semgrep-on-PRs decision (Option B chosen — CodeQL remains the sole PR SAST gate, Semgrep stays on `main`-push + weekly); update required merge checks list to include `analyze` (CodeQL) and `migration-safety`.
 - `docs/ARCHITECTURE-FOR-AUDITORS.md`: sync Semgrep trigger note with the recorded decision.

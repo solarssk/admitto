@@ -96,6 +96,7 @@ export const WizardStep5Ready = forwardRef<WizardStep5ReadyHandle, WizardStep5Re
       addToast(message, "error");
       setBusy(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- setBusy is a plain wrapper (setSubmitting + onSubmittingChange); adding it would recreate this callback every render
   }, [addToast, navigate, onComplete, selectedEventId, submitting]);
 
   useImperativeHandle(
