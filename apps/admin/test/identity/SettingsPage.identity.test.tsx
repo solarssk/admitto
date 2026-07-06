@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useNavigate, useLocation } from "react-router-dom";
 import { render } from "@testing-library/react";
 
-// Stub the settings panels so SettingsPage's routing behavior can be tested
-// in isolation without wiring up every panel's API surface.
 vi.mock("../../src/settings/BrandingPanel.js", () => ({
   BrandingPanel: () => <div data-testid="branding-panel" />,
 }));
@@ -28,35 +27,38 @@ vi.mock("../../src/settings/AuditLogPanel.js", () => ({
   AuditLogPanel: () => <div data-testid="audit-panel" />,
 }));
 
-import { SettingsPage } from "../../src/pages/SettingsPage.js";
+import { SettingsLayout } from "../../src/layouts/SettingsLayout.js";
+import { SettingsTabContent } from "../../src/pages/SettingsPage.js";
 
 afterEach(() => {
   cleanup();
 });
 
+function settingsRoutes(identityOutlet: ReactNode = <div>identity-providers-route</div>) {
+  return (
+    <Route path="/admin/settings" element={<SettingsLayout />}>
+      <Route index element={<SettingsTabContent />} />
+      <Route path="identity/providers" element={identityOutlet} />
+    </Route>
+  );
+}
+
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/admin/settings" element={<SettingsPage />} />
-        <Route
-          path="/admin/settings/identity/providers"
-          element={<div>identity-providers-route</div>}
-        />
-      </Routes>
+      <Routes>{settingsRoutes()}</Routes>
     </MemoryRouter>,
   );
 }
 
-describe("SettingsPage Identity tab", () => {
+describe("SettingsLayout Identity tab", () => {
   it("hands off to the canonical Identity route when the tab is clicked", async () => {
     renderAt("/admin/settings");
-    // The Identity tab button is rendered by the Tabs component.
-    const identityTab = screen.getByRole("tab", { name: "Identity" });
-    fireEvent.click(identityTab);
+    fireEvent.click(screen.getByRole("tab", { name: "Identity" }));
     await waitFor(() => {
       expect(screen.getByText("identity-providers-route")).toBeTruthy();
     });
+    expect(screen.getByRole("tab", { name: "Identity" }).getAttribute("aria-selected")).toBe("true");
   });
 
   it("redirects legacy ?tab=identity to the canonical Identity route", async () => {
@@ -84,8 +86,6 @@ describe("SettingsPage Identity tab", () => {
   });
 
   it("uses replace (not push) for the legacy ?tab=identity redirect so Back does not loop", async () => {
-    // Two initial entries; the router starts at the legacy ?tab=identity entry.
-    // A Back probe at the canonical route calls navigate(-1).
     function BackProbe() {
       const navigate = useNavigate();
       return (
@@ -99,28 +99,20 @@ describe("SettingsPage Identity tab", () => {
       <MemoryRouter initialEntries={["/admin/somewhere-before", "/admin/settings?tab=identity"]}>
         <Routes>
           <Route path="/admin/somewhere-before" element={<div>before-page</div>} />
-          <Route path="/admin/settings" element={<SettingsPage />} />
-          <Route
-            path="/admin/settings/identity/providers"
-            element={
-              <>
-                <div>identity-providers-route</div>
-                <BackProbe />
-              </>
-            }
-          />
+          {settingsRoutes(
+            <>
+              <div>identity-providers-route</div>
+              <BackProbe />
+            </>,
+          )}
         </Routes>
       </MemoryRouter>,
     );
 
-    // Legacy redirect fires and lands on the canonical route.
     await waitFor(() => {
       expect(screen.getByText("identity-providers-route")).toBeTruthy();
     });
 
-    // With replace, the ?tab=identity entry was overwritten, so Back goes to the
-    // pre-legacy page — NOT back into ?tab=identity (which would re-fire the
-    // redirect and loop). With push, Back would land on ?tab=identity instead.
     fireEvent.click(screen.getByRole("button", { name: "back-probe" }));
     await waitFor(() => {
       expect(screen.getByText("before-page")).toBeTruthy();
@@ -135,19 +127,18 @@ describe("SettingsPage Identity tab", () => {
     render(
       <MemoryRouter initialEntries={["/admin/settings"]}>
         <Routes>
-          <Route
-            path="/admin/settings"
-            element={
-              <>
-                <SettingsPage />
-                <LocationProbe />
-              </>
-            }
-          />
-          <Route
-            path="/admin/settings/identity/providers"
-            element={<div>identity-providers-route</div>}
-          />
+          <Route path="/admin/settings" element={<SettingsLayout />}>
+            <Route
+              index
+              element={
+                <>
+                  <SettingsTabContent />
+                  <LocationProbe />
+                </>
+              }
+            />
+            <Route path="identity/providers" element={<div>identity-providers-route</div>} />
+          </Route>
         </Routes>
       </MemoryRouter>,
     );
@@ -176,8 +167,6 @@ describe("SettingsPage Identity tab", () => {
     await waitFor(() => {
       expect(screen.getByTestId("security-panel")).toBeTruthy();
     });
-    // General is not visited on a ?tab=security deep link, so BrandingPanel and
-    // InstanceUrlPanel are not mounted (their load effects do not fire).
     expect(screen.queryByTestId("branding-panel")).toBeNull();
     expect(screen.queryByTestId("instance-url-panel")).toBeNull();
   });
@@ -202,30 +191,23 @@ describe("SettingsPage Identity tab", () => {
         initialIndex={0}
       >
         <Routes>
-          <Route path="/admin/settings" element={<SettingsPage />} />
-          <Route
-            path="/admin/settings/identity/providers"
-            element={
-              <>
-                <div>identity-providers-route</div>
-                <BackProbe />
-              </>
-            }
-          />
+          {settingsRoutes(
+            <>
+              <div>identity-providers-route</div>
+              <BackProbe />
+            </>,
+          )}
         </Routes>
       </MemoryRouter>,
     );
 
-    // Starts on Security (URL ?tab=security).
     await waitFor(() => {
       expect(screen.getByTestId("security-panel")).toBeTruthy();
     });
-    // Click the Identity tab → SPA-navigates to the Identity route (pushed onto history).
     fireEvent.click(screen.getByRole("tab", { name: "Identity" }));
     await waitFor(() => {
       expect(screen.getByText("identity-providers-route")).toBeTruthy();
     });
-    // Back → returns to /admin/settings?tab=security and restores the Security tab.
     fireEvent.click(screen.getByRole("button", { name: "back-probe" }));
     await waitFor(() => {
       expect(screen.getByTestId("security-panel")).toBeTruthy();
@@ -249,27 +231,31 @@ describe("SettingsPage Identity tab", () => {
             path="/admin/settings"
             element={
               <>
-                <SettingsPage />
+                <SettingsLayout />
                 <SettingsLink />
               </>
             }
-          />
-          <Route
-            path="/admin/settings/identity/providers"
-            element={<div>identity-providers-route</div>}
-          />
+          >
+            <Route index element={<SettingsTabContent />} />
+            <Route path="identity/providers" element={<div>identity-providers-route</div>} />
+          </Route>
         </Routes>
       </MemoryRouter>,
     );
 
-    // Starts on Mail.
     expect(screen.getByRole("tab", { name: "Mail" }).getAttribute("aria-selected")).toBe("true");
-    // Sidebar Settings link navigates to /admin/settings (no param) — URL is the
-    // source of truth, so the active tab realigns to General instead of desyncing.
     fireEvent.click(screen.getByRole("button", { name: "settings-link" }));
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
     });
     expect(screen.getByRole("tab", { name: "Mail" }).getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("keeps primary Settings tabs visible on the Identity overview route", async () => {
+    renderAt("/admin/settings/identity/providers");
+    expect(screen.getByRole("tab", { name: "General" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Identity" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByRole("tab", { name: "Providers" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Cloudflare Access" })).toBeNull();
   });
 });

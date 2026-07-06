@@ -175,7 +175,7 @@ export function IdentityProvidersPanel() {
   );
 
   return (
-    <div className="identity-section__panels">
+    <div className="settings-sections">
       <Card
         title="OIDC providers"
         actions={
@@ -196,11 +196,6 @@ export function IdentityProvidersPanel() {
           <EmptyState
             title="No identity providers yet"
             description="Add an OpenID Connect provider to enable single sign-on for your team."
-            action={
-              <Link className="at-btn at-btn--primary" to={PROVIDER_NEW_PATH}>
-                <span>Add provider</span>
-              </Link>
-            }
           />
         )}
         {providersState === "ready" && providers.length > 0 && (
