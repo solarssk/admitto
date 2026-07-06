@@ -81,9 +81,6 @@
   }
 }
 
-.events-picker-screen {
-  max-width: 1100px;
-}
 
 .event-grid--touch {
   grid-template-columns: 1fr;
