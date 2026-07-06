@@ -419,6 +419,40 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     await waitFor(() => expect(screen.getByText("Connection test failed.")).toBeTruthy());
   });
 
+  it("Save is disabled while discover preview is in flight (create mode)", async () => {
+    let resolveDiscover!: (v: Awaited<ReturnType<typeof mockDiscoverPreview>>) => void;
+    mockDiscoverPreview.mockReturnValueOnce(new Promise((res) => { resolveDiscover = res; }));
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://accounts.google.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+
+    // Save must be disabled while discovering is true.
+    expect(
+      (screen.getByRole("button", { name: "Create provider" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    resolveDiscover({
+      ok: true,
+      endpoints: {
+        issuer: "https://accounts.google.com",
+        authorization_endpoint: "https://accounts.google.com/auth",
+        token_endpoint: "https://accounts.google.com/token",
+        jwks_uri: "https://accounts.google.com/jwks",
+        userinfo_endpoint: null,
+      },
+    });
+
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Create provider" }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+  });
+
   it("ignores stale discover-preview response when issuer changed mid-flight (create mode)", async () => {
     let resolveDiscover!: (v: ReturnType<typeof mockDiscoverPreview.mock.results[0]["value"]>) => void;
     mockDiscoverPreview.mockReturnValueOnce(

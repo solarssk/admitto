@@ -725,7 +725,7 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
         <Button
           type="submit"
           variant="primary"
-          disabled={saving || testing || (mode === "edit" && loadState !== "ready")}
+          disabled={saving || testing || discovering || (mode === "edit" && loadState !== "ready")}
         >
           {saving ? "Saving…" : mode === "create" ? "Create provider" : "Save changes"}
         </Button>
