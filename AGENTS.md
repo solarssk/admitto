@@ -99,7 +99,7 @@ Toasts dedupe identical `message + variant`, cap at five, and sit below the chec
 Do **not** pass `ApiError.message` straight into toasts or inline error strings. Server JSON may include machine codes or, in future, internal detail.
 
 - Use `operatorApiErrorMessage(err, fallback)` from `apps/admin/src/api/operator-api-error.ts` for operator-visible copy.
-- Use `hasApiErrorCode(err, "code")` when branching on a known API failure (conflict handling, wizard guards, etc.).
+- Use `hasApiErrorCode(err, "code")` when branching on a known API failure (exact match on normalized `err.code` / machine-readable `err.message`).
 - Known codes are mapped to fixed UI strings; short human `detail` text is shown only when it passes the helper's safety checks; everything else logs in dev and returns `fallback`.
 - `TemplateValidationError` and client-side validation stay separate — they never go through `operatorApiErrorMessage`.
 

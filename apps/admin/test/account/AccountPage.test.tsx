@@ -233,7 +233,7 @@ describe("AccountPage toasts", () => {
   it("toasts password change errors", async () => {
     mockLoadedAccount();
     const { ApiError } = await import("../../src/api/client.js");
-    mockPatchPassword.mockRejectedValueOnce(new ApiError(400, "wrong_password"));
+    mockPatchPassword.mockRejectedValueOnce(new ApiError(401, "wrong_password", "wrong_password"));
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
@@ -244,14 +244,14 @@ describe("AccountPage toasts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Change password" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/wrong_password/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Current password is incorrect/);
     });
   });
 
   it("toasts MFA enrollment errors", async () => {
     mockLoadedAccount();
     const { ApiError } = await import("../../src/api/client.js");
-    mockEnrollMfaTotp.mockRejectedValueOnce(new ApiError(400, "mfa_already_enabled"));
+    mockEnrollMfaTotp.mockRejectedValueOnce(new ApiError(409, "already_enrolled", "already_enrolled"));
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
@@ -261,7 +261,7 @@ describe("AccountPage toasts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Set up authenticator" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/mfa_already_enabled/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/already enabled/i);
     });
   });
 
@@ -305,7 +305,7 @@ describe("AccountPage toasts", () => {
       backupCodesAlreadyShown: true,
     });
     const { ApiError } = await import("../../src/api/client.js");
-    mockConfirmMfaTotp.mockRejectedValueOnce(new ApiError(400, "invalid_code"));
+    mockConfirmMfaTotp.mockRejectedValueOnce(new ApiError(400, "invalid_code", "invalid_code"));
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
@@ -321,7 +321,7 @@ describe("AccountPage toasts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm setup" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/invalid_code/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Invalid authenticator code/);
     });
   });
 

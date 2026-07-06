@@ -5,8 +5,10 @@ const MACHINE_CODE = /^[a-z][a-z0-9_]*$/;
 /** Known API error codes and operator-safe literals mapped to UI copy. */
 const CODE_MESSAGES: Record<string, string> = {
   already_assigned: "This role assignment already exists.",
+  already_enrolled: "Two-factor authentication is already enabled.",
   body_required: "Request body is required.",
   cannot_deactivate_self: "You cannot deactivate your own account.",
+  cannot_revoke_current: "You cannot revoke your current session.",
   conflicting_custom_data_field_options: "Conflicting custom field options.",
   default_item_not_deletable: "This default item cannot be deleted.",
   delivery_not_created: "Could not create the delivery.",
@@ -18,12 +20,14 @@ const CODE_MESSAGES: Record<string, string> = {
   event_full: "Event is at capacity.",
   export_too_large: "Export is too large. Narrow filters or export in parts.",
   forbidden: "You do not have access.",
+  invalid_code: "Invalid authenticator code.",
   invalid_json: "Invalid request.",
   "invalid file content": "The file could not be read. Check that it is a valid CSV or XLSX.",
   item_in_use: "This item is in use and cannot be changed.",
   last_superadmin: "Cannot remove or deactivate the last superadmin.",
   managed_by_idp: "This role is managed by an identity provider and cannot be removed.",
   mappings_required: "Role mappings are required before enabling this provider.",
+  no_local_password: "Password is managed by your identity provider.",
   not_found: "The requested item was not found.",
   required_custom_data_field_missing: "A required custom field is missing.",
   resend_skipped: "Ticket email was not sent.",
@@ -44,6 +48,7 @@ const CODE_MESSAGES: Record<string, string> = {
   unknown_custom_data_field: "Unknown custom field.",
   "unsupported file type": "Unsupported file type. Upload a .csv or .xlsx file.",
   validation_failed: "Check the form and try again.",
+  wrong_password: "Current password is incorrect.",
   "file too large": "File exceeds the 5 MB limit. Split the file and import in parts.",
 };
 
@@ -65,8 +70,7 @@ export function hasApiErrorCode(err: unknown, code: string): boolean {
   if (!(err instanceof ApiError)) return false;
   const needle = code.trim();
   if (!needle) return false;
-  if (err.code === needle || err.message === needle) return true;
-  return err.message.includes(needle);
+  return normalizedCode(err) === needle;
 }
 
 function messageForKnownCode(err: ApiError): string | undefined {
@@ -88,8 +92,19 @@ function isOperatorSafeDetail(detail: string): boolean {
 }
 
 function statusFallback(err: ApiError, fallback: string): string {
-  if (err.status === 401) return CODE_MESSAGES.unauthorized ?? fallback;
-  if (err.status === 403) return CODE_MESSAGES.forbidden ?? fallback;
+  const code = normalizedCode(err);
+  if (err.status === 401) {
+    if (!code || code === "unauthorized") {
+      return CODE_MESSAGES.unauthorized ?? fallback;
+    }
+    return fallback;
+  }
+  if (err.status === 403) {
+    if (!code || code === "forbidden" || (code && MACHINE_CODE.test(code))) {
+      return CODE_MESSAGES.forbidden ?? fallback;
+    }
+    return fallback;
+  }
   return fallback;
 }
 

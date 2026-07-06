@@ -12,11 +12,19 @@ describe("operatorApiErrorMessage", () => {
     expect(operatorApiErrorMessage(err, "Failed.")).toBe("That email is already in use.");
   });
 
+  it("maps wrong_password on 401 without session-expired copy", () => {
+    const err = new ApiError(401, "wrong_password", "wrong_password");
+    expect(operatorApiErrorMessage(err, "Failed to change password.")).toBe(
+      "Current password is incorrect.",
+    );
+  });
+
   it("uses status fallbacks when detail is unknown", () => {
     expect(operatorApiErrorMessage(new ApiError(403, "secret_internal"), "Failed.")).toBe(
       "You do not have access.",
     );
-    expect(operatorApiErrorMessage(new ApiError(401, "secret_internal"), "Failed.")).toBe(
+    expect(operatorApiErrorMessage(new ApiError(401, "secret_internal"), "Failed.")).toBe("Failed.");
+    expect(operatorApiErrorMessage(new ApiError(401, "unauthorized"), "Failed.")).toBe(
       "Your session has expired. Sign in again.",
     );
   });
@@ -40,12 +48,13 @@ describe("operatorApiErrorMessage", () => {
 });
 
 describe("hasApiErrorCode", () => {
-  it("matches code field and message", () => {
+  it("matches normalized code only", () => {
     expect(hasApiErrorCode(new ApiError(400, "validation_failed"), "validation_failed")).toBe(true);
     expect(hasApiErrorCode(new ApiError(400, "validation_failed", "validation_failed"), "validation_failed")).toBe(
       true,
     );
     expect(hasApiErrorCode(new ApiError(400, "other"), "validation_failed")).toBe(false);
+    expect(hasApiErrorCode(new ApiError(404, "not_found", "not_found"), "not")).toBe(false);
   });
 });
 
