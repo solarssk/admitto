@@ -113,10 +113,10 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Date format")).toBeTruthy();
+      expect(screen.getByLabelText("Regional format")).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("Date format"), { target: { value: "pl-PL" } });
+    fireEvent.change(screen.getByLabelText("Regional format"), { target: { value: "pl-PL" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -467,6 +467,56 @@ describe("AccountPage toasts", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
     await waitFor(() => {
       expect(within(dialog).getByText(/Failed to reset 2FA/)).toBeTruthy();
+    });
+  });
+});
+
+describe("AccountPage profile: sign-in method", () => {
+  it("shows 'Local password' for accounts with only local password", async () => {
+    mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: true, roles: [] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Local password")).toBeTruthy();
+    });
+  });
+
+  it("shows 'Identity provider (SSO)' for accounts without local password", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      has_local_password: false,
+      roles: [{ id: "r1", role: "admin", is_oidc: true }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Identity provider (SSO)")).toBeTruthy();
+    });
+  });
+
+  it("shows 'Local password + Identity provider' when both are present", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      has_local_password: true,
+      roles: [{ id: "r1", role: "admin", is_oidc: true }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Local password + Identity provider")).toBeTruthy();
+    });
+  });
+
+  it("shows 'Regional format' label for locale select", async () => {
+    mockFetchAccount.mockResolvedValue(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Regional format")).toBeTruthy();
     });
   });
 });

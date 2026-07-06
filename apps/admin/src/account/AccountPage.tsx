@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, Checkbox, Input, PasswordStrengthMeter, Spinner, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, Input, PasswordStrengthMeter, Select, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
   confirmMfaTotp,
@@ -32,6 +32,13 @@ function formatDate(iso: string): string {
 
 function isTotpEnrolled(account: AccountDto): boolean {
   return account.mfa_methods.some((m) => m.type === "totp" && m.confirmed);
+}
+
+function signInMethod(account: AccountDto): string {
+  const hasOidc = account.roles.some((r) => r.is_oidc);
+  if (account.has_local_password && hasOidc) return "Local password + Identity provider";
+  if (!account.has_local_password) return "Identity provider (SSO)";
+  return "Local password";
 }
 
 function redirectToLoginIfUnauthorized(err: unknown): boolean {
@@ -170,54 +177,55 @@ export function AccountPage() {
           addToast(operatorApiErrorMessage(err, "Failed to save profile."), "error");
         } finally { setProfileSaving(false); }
       }}>Save</Button></div>}>
-        <div className="mail-field-row">
-          <label className="mail-field-label" htmlFor="account-display-name">Display name</label>
-          <Input id="account-display-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={120} />
-          <p className="mail-field-hint">{displayName.length}/120 characters</p>
-        </div>
-        <div className="mail-field-row">
-          <label className="mail-field-label" htmlFor="account-locale">Date format</label>
-          <select
-            id="account-locale"
-            className="form-select"
-            value={preferredLocale ?? ""}
-            onChange={(e) => {
-              setPreferredLocale(e.target.value || null);
-            }}
-            disabled={profileSaving}
-          >
-            {LOCALE_OPTIONS.map((opt) => (
-              <option key={opt.value ?? "_system"} value={opt.value ?? ""}>
-                {opt.label} — {opt.example}
-              </option>
-            ))}
-          </select>
-          <p className="mail-field-hint">
-            How dates are displayed in the admin panel. Example:{" "}
-            <strong>
-              {new Date("2026-06-28T12:00:00Z").toLocaleDateString(
-                preferredLocale ?? undefined,
-                { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" },
-              )}
-            </strong>
-          </p>
-        </div>
-        <div className="mail-field-row">
-          <span className="mail-field-label">Email</span>
-          <p className="account-readonly-field">{account.email}</p>
-          <p className="mail-field-hint">Email cannot be changed here.</p>
-        </div>
-        {account.roles.length > 0 && (
-          <div className="mail-field-row">
-            <span className="mail-field-label">Roles</span>
-            <div className="account-role-list">
-              {account.roles.map((r) => (
-                <Badge key={r.id} variant="neutral">{r.role}{r.is_oidc ? " (IdP)" : ""}</Badge>
-              ))}
+        <div className="account-profile-grid">
+          <div className="account-profile-editable">
+            <div className="mail-field-row">
+              <label className="mail-field-label" htmlFor="account-display-name">Display name</label>
+              <Input id="account-display-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={120} />
+              <p className="mail-field-hint">{displayName.length}/120 characters</p>
             </div>
-            <p className="account-role-hint">Roles are read-only. Contact an administrator to change access.</p>
+            <Select
+              id="account-locale"
+              label="Regional format"
+              hint={`Affects how dates are displayed. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}. Interface language stays English.`}
+              value={preferredLocale ?? ""}
+              onChange={(e) => setPreferredLocale(e.target.value || null)}
+              disabled={profileSaving}
+            >
+              {LOCALE_OPTIONS.map((opt) => (
+                <option key={opt.value ?? "_system"} value={opt.value ?? ""}>
+                  {opt.label} — {opt.example}
+                </option>
+              ))}
+            </Select>
           </div>
-        )}
+          <dl className="account-info-rows">
+            <div className="account-info-row">
+              <dt>Email</dt>
+              <dd>
+                <span>{account.email}</span>
+                <span className="account-info-hint">Email cannot be changed here.</span>
+              </dd>
+            </div>
+            <div className="account-info-row">
+              <dt>Sign-in</dt>
+              <dd><span>{signInMethod(account)}</span></dd>
+            </div>
+            {account.roles.length > 0 && (
+              <div className="account-info-row">
+                <dt>Roles</dt>
+                <dd>
+                  <div className="account-role-list">
+                    {account.roles.map((r) => (
+                      <Badge key={r.id} variant="neutral">{r.role}{r.is_oidc ? " (IdP)" : ""}</Badge>
+                    ))}
+                  </div>
+                  <span className="account-info-hint">Roles are read-only. Contact an administrator to change access.</span>
+                </dd>
+              </div>
+            )}
+          </dl>
+        </div>
       </Card>
 
       <Card title="Password">
@@ -332,17 +340,20 @@ export function AccountPage() {
       </Card>
 
       <Card title="Two-factor authentication">
-        <div className="account-mfa-status">
+        <div className="account-mfa-status-row">
           <Badge variant={totpEnrolled ? "ok" : "neutral"}>{totpEnrolled ? "Enabled" : "Not configured"}</Badge>
+          {!totpEnrolled && !enrollData && account.has_local_password && (
+            <Button type="button" variant="primary" size="sm" disabled={mfaEnrolling} onClick={async () => {
+              setMfaEnrolling(true); setBackupSaved(false); setTotpCode("");
+              try { setEnrollData(await enrollMfaTotp()); }
+              catch (err) { addToast(operatorApiErrorMessage(err, "Failed to start 2FA setup."), "error"); }
+              finally { setMfaEnrolling(false); }
+            }}>Set up authenticator</Button>
+          )}
+          {totpEnrolled && account.has_local_password && !resetFormOpen && (
+            <Button type="button" variant="danger" size="sm" onClick={() => setResetFormOpen(true)}>Reset 2FA</Button>
+          )}
         </div>
-        {!totpEnrolled && !enrollData && account.has_local_password && (
-          <Button type="button" variant="primary" disabled={mfaEnrolling} onClick={async () => {
-            setMfaEnrolling(true); setBackupSaved(false); setTotpCode("");
-            try { setEnrollData(await enrollMfaTotp()); }
-            catch (err) { addToast(operatorApiErrorMessage(err, "Failed to start 2FA setup."), "error"); }
-            finally { setMfaEnrolling(false); }
-          }}>Set up authenticator</Button>
-        )}
         {!totpEnrolled && !enrollData && !account.has_local_password && (
           <p className="account-info-block">
             Two-factor setup requires a local password. Sign-in-only accounts must use their identity provider or contact an administrator.
@@ -391,9 +402,7 @@ export function AccountPage() {
         {totpEnrolled && account.has_local_password && (
           <>
             <p className="account-info-block">Resetting 2FA will end your other active sessions. You will stay signed in on this device.</p>
-            {!resetFormOpen ? (
-              <Button type="button" variant="danger" onClick={() => setResetFormOpen(true)}>Reset 2FA</Button>
-            ) : (
+            {resetFormOpen && (
               <>
                 <div className="mail-field-row">
                   <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>

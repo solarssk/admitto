@@ -1,3 +1,87 @@
+/* Profile 2-column grid */
+.account-profile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5, 1.5rem);
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .account-profile-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Editable profile fields */
+.account-profile-editable {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 0.75rem);
+}
+
+/* Read-only profile info rows (dl/dt/dd) */
+.account-info-rows {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.account-info-row {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  align-items: start;
+  gap: var(--space-3, 0.75rem);
+  padding: var(--space-3, 0.75rem) var(--space-3, 0.75rem);
+  border-bottom: 1px solid var(--border);
+}
+
+.account-info-row:last-child {
+  border-bottom: 0;
+}
+
+.account-info-row dt {
+  font-size: var(--fs-sm, 0.875rem);
+  color: var(--text-muted);
+  font-weight: 500;
+  padding-top: 2px;
+}
+
+.account-info-row dd {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 0.25rem);
+  font-size: var(--fs-sm, 0.875rem);
+  color: var(--text-primary);
+}
+
+.account-info-hint {
+  font-size: var(--fs-xs, 0.75rem);
+  color: var(--text-muted);
+}
+
+/* Compact 2FA status row: badge + action on one line */
+.account-mfa-status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  margin-bottom: var(--space-3, 0.75rem);
+}
+
+/* Sessions scroll */
+.sessions-table-wrap {
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.sessions-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-card, var(--surface));
+  z-index: 1;
+}
+
 .account-warn-block {
   background: var(--status-warning-bg, #fff8e1);
   border: 1px solid var(--status-warning-border, #f59f00);
@@ -73,17 +157,11 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2, 0.5rem);
-  margin-top: var(--space-2, 0.5rem);
 }
 
-.account-role-hint,
 .account-info-block {
   font-size: var(--fs-sm, 0.875rem);
   color: var(--text-muted);
-  margin-top: var(--space-2, 0.5rem);
-}
-
-.account-info-block {
   margin-top: 0;
 }
 
