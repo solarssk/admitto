@@ -430,6 +430,69 @@ describe("identity providers API — test connection", () => {
     expect(typeof body.ok).toBe("boolean");
     if (!body.ok) expect(typeof body.error).toBe("string");
   });
+
+  it("draft test endpoint returns ok/false shape without a saved provider", async () => {
+    const res = await json("/api/admin/identity/providers/test", {
+      method: "POST",
+      body: JSON.stringify({
+        issuer: "https://idp-api-draft-test.example.com/",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = await jsonAs<TestResult>(res);
+    expect(typeof body.ok).toBe("boolean");
+    if (!body.ok) expect(typeof body.error).toBe("string");
+  });
+
+  it("rejects draft test without an issuer (400)", async () => {
+    const res = await json("/api/admin/identity/providers/test", {
+      method: "POST",
+      body: JSON.stringify({ issuer: "" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("draft test accepts optional endpoints (covers optionalOidcEndpoint truthy path)", async () => {
+    const res = await json("/api/admin/identity/providers/test", {
+      method: "POST",
+      body: JSON.stringify({
+        issuer: "https://idp-api-draft-test.example.com/",
+        authorization_endpoint: "https://idp-api-draft-test.example.com/auth",
+        token_endpoint: "https://idp-api-draft-test.example.com/token",
+        jwks_uri: "https://idp-api-draft-test.example.com/jwks",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = await jsonAs<TestResult>(res);
+    expect(typeof body.ok).toBe("boolean");
+  });
+});
+
+describe("identity providers API — discover preview", () => {
+  it("returns endpoints or a failure without persisting", async () => {
+    const res = await json("/api/admin/identity/providers/discover-preview", {
+      method: "POST",
+      body: JSON.stringify({ issuer: "https://idp-api-discover-preview.example.com/" }),
+    });
+    expect([200, 400]).toContain(res.status);
+    if (res.status === 200) {
+      const body = await jsonAs<{ ok: true; endpoints: { issuer: string } }>(res);
+      expect(body.ok).toBe(true);
+      expect(typeof body.endpoints.issuer).toBe("string");
+    } else {
+      const body = await jsonAs<{ ok: false; error: string }>(res);
+      expect(body.ok).toBe(false);
+      expect(typeof body.error).toBe("string");
+    }
+  });
+
+  it("rejects discover preview without an issuer (400)", async () => {
+    const res = await json("/api/admin/identity/providers/discover-preview", {
+      method: "POST",
+      body: JSON.stringify({ issuer: "" }),
+    });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("cloudflare access API", () => {
@@ -457,5 +520,35 @@ describe("cloudflare access API", () => {
     expect([200, 400]).toContain(res.status);
     const body = await jsonAs<TestResult>(res);
     expect(typeof body.ok).toBe("boolean");
+  });
+
+  it("rejects enabling CF Access without a team domain (400)", async () => {
+    const res = await json("/api/admin/identity/cf-access", {
+      method: "PUT",
+      body: JSON.stringify({
+        enabled: true,
+        teamDomain: "",
+        audience: ["aud-x"],
+        protectedPrefixes: ["/admin"],
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = await jsonAs<{ error: string }>(res);
+    expect(body.error).toContain("CF_ACCESS_TEAM_DOMAIN");
+  });
+
+  it("rejects enabling CF Access without an audience (400)", async () => {
+    const res = await json("/api/admin/identity/cf-access", {
+      method: "PUT",
+      body: JSON.stringify({
+        enabled: true,
+        teamDomain: "https://team.cloudflareaccess.com",
+        audience: [],
+        protectedPrefixes: ["/admin"],
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = await jsonAs<{ error: string }>(res);
+    expect(body.error).toContain("CF_ACCESS_AUD");
   });
 });

@@ -14,7 +14,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     createIdentityProvider: vi.fn(),
     updateIdentityProvider: vi.fn(),
     discoverIdentityProvider: vi.fn(),
-    testIdentityProvider: vi.fn(),
+    discoverIdentityProviderPreview: vi.fn(),
+    testIdentityProviderDraft: vi.fn(),
   };
 });
 
@@ -23,14 +24,16 @@ import {
   createIdentityProvider,
   updateIdentityProvider,
   discoverIdentityProvider,
-  testIdentityProvider,
+  discoverIdentityProviderPreview,
+  testIdentityProviderDraft,
 } from "../../src/api/client.js";
 
 const mockFetch = vi.mocked(fetchIdentityProvider);
 const mockCreate = vi.mocked(createIdentityProvider);
 const mockUpdate = vi.mocked(updateIdentityProvider);
 const mockDiscover = vi.mocked(discoverIdentityProvider);
-const mockTest = vi.mocked(testIdentityProvider);
+const mockDiscoverPreview = vi.mocked(discoverIdentityProviderPreview);
+const mockTestDraft = vi.mocked(testIdentityProviderDraft);
 
 function renderEditorAt(path: string) {
   // createMemoryRouter + RouterProvider (not <MemoryRouter>) so the editor's
@@ -172,25 +175,106 @@ describe("IdentityProviderEditor — discover & test (slice 3b)", () => {
 
   it("Test connection shows a success toast", async () => {
     mockFetch.mockResolvedValueOnce(validDetail);
-    mockTest.mockResolvedValueOnce({ ok: true });
+    mockTestDraft.mockResolvedValueOnce({ ok: true });
     renderEditorAt("/admin/settings/identity/providers/p1");
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
 
-    await waitFor(() => expect(mockTest).toHaveBeenCalledWith("p1"));
+    await waitFor(() =>
+      expect(mockTestDraft).toHaveBeenCalledWith({
+        issuer: "https://accounts.google.com",
+      }),
+    );
     await waitFor(() => expect(screen.getByText("Connection test passed.")).toBeTruthy());
   });
 
   it("Test connection surfaces a failure message", async () => {
     mockFetch.mockResolvedValueOnce(validDetail);
-    mockTest.mockResolvedValueOnce({ ok: false, error: "JWKS unreachable" });
+    mockTestDraft.mockResolvedValueOnce({ ok: false, error: "JWKS unreachable" });
     renderEditorAt("/admin/settings/identity/providers/p1");
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
 
     await waitFor(() => expect(screen.getByText("JWKS unreachable")).toBeTruthy());
+  });
+
+  it("Test connection on create sends the draft issuer", async () => {
+    mockTestDraft.mockResolvedValueOnce({ ok: true });
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://accounts.google.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() =>
+      expect(mockTestDraft).toHaveBeenCalledWith({
+        issuer: "https://accounts.google.com",
+      }),
+    );
+    await waitFor(() => expect(screen.getByText("Connection test passed.")).toBeTruthy());
+  });
+
+  it("Discover on create autofills endpoints from the preview API", async () => {
+    mockDiscoverPreview.mockResolvedValueOnce({
+      ok: true,
+      endpoints: {
+        issuer: "https://accounts.google.com",
+        authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_endpoint: "https://oauth2.googleapis.com/token",
+        jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+        userinfo_endpoint: "https://openidconnect.googleapis.com/v1/userinfo",
+      },
+    });
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://accounts.google.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+
+    await waitFor(() =>
+      expect(mockDiscoverPreview).toHaveBeenCalledWith("https://accounts.google.com"),
+    );
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("https://accounts.google.com/o/oauth2/v2/auth")).toBeTruthy(),
+    );
+  });
+
+  it("Test connection includes non-empty endpoints in the draft body", async () => {
+    // Fill in all endpoint fields manually in create mode so oidcTestBodyFromDraft
+    // hits the truthy branches for authorization_endpoint, token_endpoint, jwks_uri.
+    mockTestDraft.mockResolvedValueOnce({ ok: true });
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://accounts.google.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Authorization endpoint"), {
+      target: { value: "https://accounts.google.com/o/oauth2/v2/auth" },
+    });
+    fireEvent.change(screen.getByLabelText("Token endpoint"), {
+      target: { value: "https://oauth2.googleapis.com/token" },
+    });
+    fireEvent.change(screen.getByLabelText("JWKS URI"), {
+      target: { value: "https://www.googleapis.com/oauth2/v3/certs" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() =>
+      expect(mockTestDraft).toHaveBeenCalledWith({
+        issuer: "https://accounts.google.com",
+        authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        token_endpoint: "https://oauth2.googleapis.com/token",
+        jwks_uri: "https://www.googleapis.com/oauth2/v3/certs",
+      }),
+    );
   });
 });
 
@@ -215,6 +299,62 @@ describe("IdentityProviderEditor — SSO preview (slice 3b)", () => {
 });
 
 describe("IdentityProviderEditor — discover & test error paths", () => {
+  it("shows error toast when Discover is clicked without an issuer (create mode)", async () => {
+    renderEditorAt("/admin/settings/identity/providers/new");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+    await waitFor(() =>
+      expect(screen.getByText("Issuer URL is required for discovery.")).toBeTruthy(),
+    );
+    expect(mockDiscoverPreview).not.toHaveBeenCalled();
+  });
+
+  it("shows error toast when Test is clicked without an issuer", async () => {
+    renderEditorAt("/admin/settings/identity/providers/new");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() =>
+      expect(screen.getByText("Issuer URL is required to test the connection.")).toBeTruthy(),
+    );
+    expect(mockTestDraft).not.toHaveBeenCalled();
+  });
+
+  it("redirects to login when discover preview returns 401 (create mode)", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockDiscoverPreview.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/settings/identity/providers/new", assign: assignSpy },
+    });
+    try {
+      renderEditorAt("/admin/settings/identity/providers/new");
+      await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+      fireEvent.change(screen.getByLabelText("Issuer URL"), {
+        target: { value: "https://accounts.google.com" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+      await waitFor(() =>
+        expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
+      );
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
+  });
+
+  it("shows error toast when discover preview fails generically (create mode)", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockDiscoverPreview.mockRejectedValueOnce(new ApiError(400, "No OIDC metadata found."));
+    renderEditorAt("/admin/settings/identity/providers/new");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Discover" })).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://accounts.google.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+    await waitFor(() => expect(screen.getByText("No OIDC metadata found.")).toBeTruthy());
+  });
+
   it("redirects to login when Discover returns 401", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockFetch.mockResolvedValueOnce(validDetail);
@@ -250,7 +390,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
   it("redirects to login when Test returns 401", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockFetch.mockResolvedValueOnce(validDetail);
-    mockTest.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
+    mockTestDraft.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
     const assignSpy = vi.fn();
     const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
     Object.defineProperty(window, "location", {
@@ -272,11 +412,156 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
   it("shows an error toast when Test fails generically", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockFetch.mockResolvedValueOnce(validDetail);
-    mockTest.mockRejectedValueOnce(new ApiError(500, "Connection test failed."));
+    mockTestDraft.mockRejectedValueOnce(new ApiError(500, "Connection test failed."));
     renderEditorAt("/admin/settings/identity/providers/p1");
     await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await waitFor(() => expect(screen.getByText("Connection test failed.")).toBeTruthy());
+  });
+
+  it("ignores stale draft-test response when issuer changed mid-flight (edit mode)", async () => {
+    let resolveTest!: (v: { ok: boolean }) => void;
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockTestDraft.mockReturnValueOnce(new Promise((res) => { resolveTest = res; }));
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy());
+    // Test request fires with current issuer (accounts.google.com).
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    // Change issuer while test request is in flight — draft diverges from testedBody.
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://different.example.com" },
+    });
+
+    // Resolve the stale response — should not show a toast.
+    resolveTest({ ok: true });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.queryByText("Connection test passed.")).toBeNull();
+  });
+
+  it("Save is disabled while discover preview is in flight (create mode)", async () => {
+    let resolveDiscover!: (v: Awaited<ReturnType<typeof mockDiscoverPreview>>) => void;
+    mockDiscoverPreview.mockReturnValueOnce(new Promise((res) => { resolveDiscover = res; }));
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://accounts.google.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+
+    // Save must be disabled while discovering is true.
+    expect(
+      (screen.getByRole("button", { name: "Create provider" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    resolveDiscover({
+      ok: true,
+      endpoints: {
+        issuer: "https://accounts.google.com",
+        authorization_endpoint: "https://accounts.google.com/auth",
+        token_endpoint: "https://accounts.google.com/token",
+        jwks_uri: "https://accounts.google.com/jwks",
+        userinfo_endpoint: null,
+      },
+    });
+
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Create provider" }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+  });
+
+  it("ignores stale discover-preview response when issuer changed mid-flight (create mode)", async () => {
+    let resolveDiscover!: (v: ReturnType<typeof mockDiscoverPreview.mock.results[0]["value"]>) => void;
+    mockDiscoverPreview.mockReturnValueOnce(
+      new Promise((res) => {
+        resolveDiscover = res as typeof resolveDiscover;
+      }),
+    );
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://a.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+
+    // Change issuer while request is in flight — triggers nonce mismatch.
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://b.example.com" },
+    });
+
+    // Resolve the stale (A) response — should not touch the draft or show a toast.
+    resolveDiscover({
+      ok: true,
+      endpoints: {
+        issuer: "https://a.example.com",
+        authorization_endpoint: "https://a.example.com/auth",
+        token_endpoint: "https://a.example.com/token",
+        jwks_uri: "https://a.example.com/jwks",
+        userinfo_endpoint: null,
+      },
+    } as Awaited<ReturnType<typeof mockDiscoverPreview>>);
+
+    // Give React a chance to flush any state updates the stale response might cause.
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Issuer must remain B, and no endpoints for A should appear.
+    expect(screen.getByDisplayValue("https://b.example.com")).toBeTruthy();
+    expect(screen.queryByDisplayValue("https://a.example.com/auth")).toBeNull();
+    expect(screen.queryByText("Endpoints discovered from the issuer.")).toBeNull();
+  });
+
+  it("ignores stale draft-test response when issuer changed mid-flight (create mode)", async () => {
+    let resolveTest!: (v: { ok: boolean }) => void;
+    mockTestDraft.mockReturnValueOnce(new Promise((res) => { resolveTest = res; }));
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://a.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    // Change issuer while test request is in flight.
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://b.example.com" },
+    });
+
+    // Resolve the stale (A) test — should not show a toast.
+    resolveTest({ ok: true });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.queryByText("Connection test passed.")).toBeNull();
+  });
+
+  it("ignores stale draft-test response when endpoint changed mid-flight (create mode)", async () => {
+    let resolveTest!: (v: { ok: boolean }) => void;
+    mockTestDraft.mockReturnValueOnce(new Promise((res) => { resolveTest = res; }));
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    await waitFor(() => expect(screen.getByLabelText("Issuer URL")).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://idp.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    // Change an endpoint while issuer stays the same — old guard would not catch this.
+    fireEvent.change(screen.getByLabelText("Authorization endpoint"), {
+      target: { value: "https://idp.example.com/new-auth" },
+    });
+
+    // Resolve the stale test — should not show a toast.
+    resolveTest({ ok: true });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.queryByText("Connection test passed.")).toBeNull();
   });
 });
 

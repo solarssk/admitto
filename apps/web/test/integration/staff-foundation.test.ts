@@ -484,6 +484,14 @@ describe("staff SPA routes", () => {
     expect(res.headers.get("location")).toBe("/operator");
   });
 
+  it("redirects operator-only away from /admin subpaths", async () => {
+    const res = await app.request("/admin/users", {
+      headers: { Cookie: await sessionCookieFor(opId) },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/operator");
+  });
+
   it("serves operator SPA for operator", async () => {
     const res = await app.request("/operator", {
       headers: { Cookie: await sessionCookieFor(opId) },

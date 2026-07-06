@@ -6,11 +6,12 @@ import {
   ApiError,
   createIdentityProvider,
   discoverIdentityProvider,
+  discoverIdentityProviderPreview,
   fetchIdentityProvider,
-  testIdentityProvider,
+  testIdentityProviderDraft,
   updateIdentityProvider,
 } from "../api/client.js";
-import type { ProviderDetailDto, ProviderRequestBody } from "../api/types.js";
+import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import {
   emptyProviderDraft,
@@ -122,6 +123,19 @@ function buildSaveBody(
   return body;
 }
 
+function oidcTestBodyFromDraft(draft: ProviderDraft): ProviderTestDraftBody {
+  const body: ProviderTestDraftBody = { issuer: draft.issuer.trim() };
+  const authorization = draft.authorization_endpoint.trim();
+  const token = draft.token_endpoint.trim();
+  const jwks = draft.jwks_uri.trim();
+  const userinfo = draft.userinfo_endpoint.trim();
+  if (authorization) body.authorization_endpoint = authorization;
+  if (token) body.token_endpoint = token;
+  if (jwks) body.jwks_uri = jwks;
+  if (userinfo) body.userinfo_endpoint = userinfo;
+  return body;
+}
+
 function setField<K extends keyof ProviderDraft>(
   draft: ProviderDraft,
   key: K,
@@ -178,6 +192,17 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
   // ref after `await` lets the handler bail on a stale resolution.
   const providerIdRef = useRef(resolvedProviderId);
   providerIdRef.current = resolvedProviderId;
+
+  // Mirrors `providerIdRef` for create mode: capture the issuer at click time and
+  // compare it after `await` so a stale response (user edited the issuer while the
+  // request was in flight) does not overwrite the current draft or show a toast.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+
+  // Nonce counters guard against parallel discover / test requests (e.g. double-
+  // click). The issuer-change guard uses draftRef instead.
+  const createDiscoverNonceRef = useRef(0);
+  const createTestNonceRef = useRef(0);
 
   // Reset the Discover/Test busy flags whenever the resolved provider changes.
   // The stale-response guard in handleDiscover/handleTest intentionally does
@@ -351,8 +376,49 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
     [draft, mode, mappings, resolvedProviderId, addToast, navigate],
   );
 
-  // Discover autofills endpoints from the issuer's .well-known config (edit mode only).
+  // Discover autofills endpoints from the issuer's .well-known config.
   const handleDiscover = useCallback(async () => {
+    const issuer = draft.issuer.trim();
+    if (!issuer) {
+      addToast("Issuer URL is required for discovery.", "error");
+      return;
+    }
+
+    if (mode === "create") {
+      const nonce = ++createDiscoverNonceRef.current;
+      const issuerAtRequest = issuer;
+      setDiscovering(true);
+      try {
+        const result = await discoverIdentityProviderPreview(issuer);
+        if (createDiscoverNonceRef.current !== nonce) return;
+        if (draftRef.current.issuer.trim() !== issuerAtRequest) return;
+        const discovered = {
+          authorization_endpoint: result.endpoints.authorization_endpoint,
+          token_endpoint: result.endpoints.token_endpoint,
+          jwks_uri: result.endpoints.jwks_uri,
+          userinfo_endpoint: result.endpoints.userinfo_endpoint ?? "",
+        };
+        setDraft((d) => ({
+          ...d,
+          ...discovered,
+          issuer: result.endpoints.issuer || d.issuer,
+        }));
+        addToast("Endpoints discovered from the issuer.", "success");
+      } catch (err) {
+        if (createDiscoverNonceRef.current !== nonce) return;
+        if (draftRef.current.issuer.trim() !== issuerAtRequest) return;
+        if (err instanceof ApiError && err.status === 401) {
+          redirectToLogin();
+          return;
+        }
+        const message = err instanceof ApiError ? err.message : "Discovery failed.";
+        addToast(message, "error");
+      } finally {
+        setDiscovering(false);
+      }
+      return;
+    }
+
     if (!resolvedProviderId) return;
     const targetId = resolvedProviderId;
     setDiscovering(true);
@@ -409,24 +475,34 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
     } finally {
       if (targetId === providerIdRef.current) setDiscovering(false);
     }
-  }, [resolvedProviderId, addToast]);
+  }, [draft.issuer, mode, resolvedProviderId, addToast]);
 
-  // Test probes the provider's endpoints (edit mode only).
+  // Test probes the draft endpoints (create + edit) without requiring a prior save.
   const handleTest = useCallback(async () => {
-    if (!resolvedProviderId) return;
-    const targetId = resolvedProviderId;
+    if (!draft.issuer.trim()) {
+      addToast("Issuer URL is required to test the connection.", "error");
+      return;
+    }
+    const targetId = mode === "edit" ? resolvedProviderId : "create";
+    const createNonce = mode === "create" ? ++createTestNonceRef.current : 0;
+    const testedBody = oidcTestBodyFromDraft(draft);
+    const testedBodyJson = JSON.stringify(testedBody);
+    const isStale = () =>
+      mode === "edit"
+        ? targetId !== providerIdRef.current ||
+          JSON.stringify(oidcTestBodyFromDraft(draftRef.current)) !== testedBodyJson
+        : createTestNonceRef.current !== createNonce ||
+          JSON.stringify(oidcTestBodyFromDraft(draftRef.current)) !== testedBodyJson;
     setTesting(true);
     try {
-      const result = await testIdentityProvider(targetId);
-      // Bail on a stale resolution so the toast doesn't fire on the wrong
-      // provider's editor after an A→B navigation mid-test.
-      if (targetId !== providerIdRef.current) return;
+      const result = await testIdentityProviderDraft(testedBody);
+      if (isStale()) return;
       addToast(
         result.ok ? "Connection test passed." : result.error ?? "Connection test failed.",
         result.ok ? "success" : "error",
       );
     } catch (err) {
-      if (targetId !== providerIdRef.current) return;
+      if (isStale()) return;
       if (err instanceof ApiError && err.status === 401) {
         redirectToLogin();
         return;
@@ -434,9 +510,9 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
       const message = err instanceof ApiError ? err.message : "Connection test failed.";
       addToast(message, "error");
     } finally {
-      if (targetId === providerIdRef.current) setTesting(false);
+      if (mode === "create" || targetId === providerIdRef.current) setTesting(false);
     }
-  }, [resolvedProviderId, addToast]);
+  }, [draft, mode, resolvedProviderId, addToast]);
 
   const title = mode === "create" ? "Add identity provider" : "Edit identity provider";
 
@@ -530,28 +606,17 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
       <Card
         title="Endpoints"
         actions={
-          mode === "edit" ? (
-            <div className="identity-editor__card-actions">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={handleDiscover}
-                disabled={discovering || testing || saving}
-              >
-                {discovering ? "Discovering…" : "Discover"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleTest}
-                disabled={discovering || testing || saving}
-              >
-                {testing ? "Testing…" : "Test connection"}
-              </Button>
-            </div>
-          ) : undefined
+          <div className="identity-editor__card-actions">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleDiscover}
+              disabled={discovering || testing || saving}
+            >
+              {discovering ? "Discovering…" : "Discover"}
+            </Button>
+          </div>
         }
       >
         <div className="identity-editor__grid">
@@ -653,10 +718,22 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
       </Card>
 
       <div className="identity-editor__actions">
-        <Button type="button" variant="ghost" onClick={handleCancel} disabled={saving}>
+        <Button type="button" variant="ghost" onClick={handleCancel} disabled={saving || testing || discovering}>
           Cancel
         </Button>
-        <Button type="submit" variant="primary" disabled={saving || loadState !== "ready"}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={handleTest}
+          disabled={discovering || testing || saving || (mode === "edit" && loadState !== "ready")}
+        >
+          {testing ? "Testing…" : "Test connection"}
+        </Button>
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={saving || testing || discovering || (mode === "edit" && loadState !== "ready")}
+        >
           {saving ? "Saving…" : mode === "create" ? "Create provider" : "Save changes"}
         </Button>
       </div>
