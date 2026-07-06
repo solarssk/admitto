@@ -350,6 +350,13 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     }
     expect(input.value).toBe(bPartial);
 
+    // Capture performance.now() immediately after the last bPartial character.
+    // With shouldAdvanceTime:true, real time elapsed inside the act() below
+    // advances the fake clock (and thus event.timeStamp) by an unpredictable
+    // amount. Pinning bRemainder events to this timestamp keeps inter-character
+    // gaps well below WEDGE_MAX_INTER_KEY_GAP_MS (30ms) on any machine speed.
+    const lastBurstTime = performance.now();
+
     // A's slow request resolves — auto-advance must dismiss only A's card,
     // not wipe B's in-progress buffer. Flushed via microtasks only (no fake-
     // clock advance) so the elapsed time since B's last keystroke stays near
@@ -362,10 +369,15 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
     expect(screen.getByText("Person A")).toBeTruthy();
     expect(input.value).toBe(bPartial);
 
-    // The wedge finishes injecting B's remaining characters.
+    // The wedge finishes injecting B's remaining characters. Each event is
+    // stamped relative to lastBurstTime so the burst window is maintained
+    // regardless of how much real time elapsed during the act() above.
     const bRemainder = tokenB.slice(15);
     for (let i = 1; i <= bRemainder.length; i++) {
-      fireEvent.change(input, { target: { value: bPartial + bRemainder.slice(0, i) } });
+      const value = bPartial + bRemainder.slice(0, i);
+      const event = createEvent.change(input, { target: { value } });
+      Object.defineProperty(event, "timeStamp", { value: lastBurstTime + i * 2, configurable: true });
+      fireEvent(input, event);
       await act(async () => {
         await vi.advanceTimersByTimeAsync(2);
       });
