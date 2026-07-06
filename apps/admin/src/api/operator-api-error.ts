@@ -40,6 +40,8 @@ const CODE_MESSAGES: Record<string, string> = {
   mappings_required: "Role mappings are required before enabling this provider.",
   no_local_password: "Password is managed by your identity provider.",
   not_found: "The requested item was not found.",
+  password_change_required:
+    "You must change your password before continuing. Update it in Account or go to /change-password.",
   required_custom_data_field_missing: "A required custom field is missing.",
   resend_skipped: "Ticket email was not sent.",
   save_failed: "Save failed. Try again.",
@@ -128,7 +130,7 @@ function statusFallback(err: ApiError, fallback: string): string {
     return fallback;
   }
   if (err.status === 403) {
-    if (!code || code === "forbidden" || (code && MACHINE_CODE.test(code))) {
+    if (!code || code === "forbidden") {
       return CODE_MESSAGES.forbidden ?? fallback;
     }
     return fallback;

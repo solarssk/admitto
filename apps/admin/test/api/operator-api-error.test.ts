@@ -26,7 +26,8 @@ describe("operatorApiErrorMessage", () => {
   });
 
   it("uses status fallbacks when detail is unknown", () => {
-    expect(operatorApiErrorMessage(new ApiError(403, "secret_internal"), "Failed.")).toBe(
+    expect(operatorApiErrorMessage(new ApiError(403, "secret_internal"), "Failed.")).toBe("Failed.");
+    expect(operatorApiErrorMessage(new ApiError(403, "forbidden", "forbidden"), "Failed.")).toBe(
       "You do not have access.",
     );
     expect(operatorApiErrorMessage(new ApiError(401, "secret_internal"), "Failed.")).toBe("Failed.");
@@ -161,6 +162,18 @@ describe("operatorApiErrorMessage", () => {
         "Connection test failed.",
       ),
     ).toMatch(/team URL/i);
+    expect(
+      operatorApiErrorMessage(
+        new ApiError(403, "password_change_required", "password_change_required"),
+        "Request failed.",
+      ),
+    ).toMatch(/change your password/i);
+    expect(
+      operatorApiErrorMessage(
+        new ApiError(403, "password_change_required", "password_change_required"),
+        "Request failed.",
+      ),
+    ).not.toBe("You do not have access.");
   });
 
   it("suppresses stack frames with at File ( pattern", () => {
