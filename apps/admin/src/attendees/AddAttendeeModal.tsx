@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input } from "@admitto/ui";
 import { ApiError, createAttendee, fetchEventItems } from "../api/client.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeDetailDto } from "../api/types.js";
 import { CustomDataFieldInput } from "./CustomDataFieldInput.js";
 import {
@@ -125,11 +126,11 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
       } else if (
         err instanceof ApiError &&
         err.status === 400 &&
-        (err.message === "required_custom_data_field_missing" || err.message === "validation_failed")
+        (hasApiErrorCode(err, "required_custom_data_field_missing") || hasApiErrorCode(err, "validation_failed"))
       ) {
         setError("Check required attribute fields and option values.");
       } else {
-        setError(err instanceof ApiError ? err.message : "Failed to add attendee. Try again.");
+        setError(operatorApiErrorMessage(err, "Failed to add attendee. Try again."));
       }
     } finally {
       setSubmitting(false);

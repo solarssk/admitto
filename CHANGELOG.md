@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `eslint-plugin-react-hooks` enabled for `apps/admin` and `apps/web` (`rules-of-hooks` as error, `exhaustive-deps` as warning); lint script extended to cover `apps/*/src`. All 8 pre-existing dependency warnings triaged: 3 accidental deps removed, 2 version-counter/fast-path patterns annotated with inline disable comments, 2 plain-function cases annotated pending #280 refactor.
+- `eslint-plugin-security` enabled for `apps/*/src` (admin, web, cli) with `detect-object-injection` off as a typed-record false-positive; remaining SAST hits annotated inline.
+- `operatorApiErrorMessage()` / `hasApiErrorCode()` helper (`apps/admin/src/api/operator-api-error.ts`) — central mapping for operator-safe admin API error copy; AGENTS.md documents the convention.
 - `CheckInPage.scan-queue.test.tsx`: extracted `typeWedge(input, token, { gapMs?, baseTime?, prefix? })` helper — replaces 17 identical character-by-character typing loops; future timing tweaks are a one-line change.
 
 ### Changed
@@ -17,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Staff admin content now fills the full width beside the sidebar on wide monitors: removed `max-width: 1100px; margin: 0 auto` from `.screen` and the per-page `max-width: 720px` from `.event-settings-page` (Event Overview, Communication, and Event Settings pages are all affected); dropped the now-redundant `.events-picker-screen` rule. Intentionally narrow surfaces (operator check-in `720px`, auth forms, danger-zone description text) are unchanged.
 
 ### Security
+- Admin SPA: audit `ApiError.message` exposure — toasts and inline errors now go through `operatorApiErrorMessage()` so unknown server detail is suppressed with a generic fallback (dev console warning only).
 - Identity JSON API (`/api/admin/identity/providers*`, `/api/admin/identity/cf-access*`): catch blocks no longer forward raw `err.message` to the client. Unexpected/Prisma errors now return `{ error: "save_failed" }` (HTTP 500) with full details logged server-side only; domain validation errors return `{ error: "validation_failed" }` (HTTP 400); discovery failures return `discovery_failed`; invalid issuer URL returns `invalid_issuer`; invalid/missing CF Access team domain returns `invalid_team_domain` / `team_domain_required`. Integration tests cover all error code paths including simulated DB failures via `vi.mock("@admitto/auth")` factory.
 
 ## [0.4.12] - 2026-07-06

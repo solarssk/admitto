@@ -9,6 +9,7 @@ import {
   patchEvent,
   unarchiveEvent,
 } from "../api/client.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventSettingsDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
@@ -106,7 +107,7 @@ export function EventSettingsPage() {
       if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
         setNotFound(true);
       } else {
-        addToast(err instanceof ApiError ? err.message : "Failed to load event settings", "error");
+        addToast(operatorApiErrorMessage(err, "Failed to load event settings"), "error");
       }
     } finally {
       setLoading(false);
@@ -148,10 +149,10 @@ export function EventSettingsPage() {
     } catch (err) {
       if (err instanceof Error && err.message === "invalid_capacity") {
         addToast("Capacity must be a positive whole number", "error");
-      } else if (err instanceof ApiError && err.message === "event_archived") {
+      } else if (err instanceof ApiError && hasApiErrorCode(err, "event_archived")) {
         addToast("Cannot edit archived event", "error");
       } else {
-        addToast(err instanceof ApiError ? err.message : "Failed to save settings", "error");
+        addToast(operatorApiErrorMessage(err, "Failed to save settings"), "error");
       }
     } finally {
       setSaving(false);
@@ -172,7 +173,7 @@ export function EventSettingsPage() {
       setArchiveOpen(false);
       await load();
     } catch (err) {
-      addToast(err instanceof ApiError ? err.message : "Action failed", "error");
+      addToast(operatorApiErrorMessage(err, "Action failed"), "error");
     } finally {
       setArchiving(false);
     }
@@ -204,7 +205,7 @@ export function EventSettingsPage() {
         truncated ? "warning" : "success",
       );
     } catch (err) {
-      addToast(err instanceof ApiError ? err.message : "Export failed", "error");
+      addToast(operatorApiErrorMessage(err, "Export failed"), "error");
     } finally {
       setExporting(false);
     }

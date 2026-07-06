@@ -131,6 +131,7 @@ function buildTzEntry(iana: string, now: Date): TzEntry {
   const offsetLabel =
     offsetParts.find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
 
+  // eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
   const m = offsetLabel.match(/GMT([+-])(\d+)(?::(\d+))?/);
   const offsetHours = m
     ? (m[1] === "+" ? 1 : -1) * (parseInt(m[2] ?? "0", 10) + parseInt(m[3] ?? "0", 10) / 60)
@@ -204,6 +205,7 @@ function searchTz(index: TzEntry[], query: string): TzEntry[] {
     return entriesForIanas(index, bundle);
   }
 
+  // eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
   const om = q.match(/^(gmt)?([+-])(\d{1,2})(?:[:.，,](\d{1,2}))?$/);
   if (om) {
     const sign = om[2] === "+" ? 1 : -1;

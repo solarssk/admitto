@@ -1,5 +1,6 @@
 /** Extract Admitto ticket token from a full ticket URL (trailing slash / query tolerated). */
 function extractTicketTokenFromUrl(input: string): string | null {
+  // eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
   const match = /\/t\/([A-Za-z0-9_-]{40,60})(?:\/)?(?:[?#].*)?$/.exec(input);
   return match?.[1] ?? null;
 }

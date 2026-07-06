@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { applyThemeVars, Badge, Button, Card, Input, useToast } from "@admitto/ui";
 import { ApiError, fetchStaffTheme, saveStaffTheme } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingThemeDto } from "../api/types.js";
 import {
   brandingDraftForSave,
@@ -101,7 +102,7 @@ export function BrandingPanel() {
       setDraft(response.theme);
       addToast("Branding saved.", "success");
     } catch (err) {
-      addToast(err instanceof ApiError ? err.message : "Failed to save branding.", "error");
+      addToast(operatorApiErrorMessage(err, "Failed to save branding."), "error");
     } finally {
       setSaving(false);
     }

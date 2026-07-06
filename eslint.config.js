@@ -18,6 +18,7 @@ export default [
   {
     files: ["apps/*/src/**/*.{ts,tsx}"],
     plugins: {
+      security,
       "react-hooks": reactHooks,
     },
     languageOptions: {
@@ -29,6 +30,9 @@ export default [
       },
     },
     rules: {
+      ...security.configs.recommended.rules,
+      // Typed records, React state, and route params — false positives (same as packages/*).
+      "security/detect-object-injection": "off",
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
     },

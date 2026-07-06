@@ -20,6 +20,7 @@ import {
   updateAttendee,
   type EventFullMeta,
 } from "../api/client.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeDetailDto, EventDto, RsvpStatus, UpdateAttendeePatch } from "../api/types.js";
 import {
   formatDateTime,
@@ -112,7 +113,7 @@ export function AttendeeDetailPage() {
       if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
         setNotFound(true);
       } else {
-        setError(err instanceof ApiError ? err.message : "Failed to load attendee.");
+        setError(operatorApiErrorMessage(err, "Failed to load attendee."));
       }
     } finally {
       if (isStillSelected(target)) setLoading(false);
@@ -167,7 +168,7 @@ export function AttendeeDetailPage() {
       setItemsWarning(warn);
     } catch (err) {
       if (!isStillSelected(target)) return;
-      setError(err instanceof ApiError ? err.message : "Failed to reload — please try again.");
+      setError(operatorApiErrorMessage(err, "Failed to reload — please try again."));
     } finally {
       if (isStillSelected(target)) setReloading(false);
     }
@@ -216,8 +217,8 @@ export function AttendeeDetailPage() {
     } catch (err) {
       if (!isStillSelected(target)) return;
       if (err instanceof ApiError && err.status === 409) {
-        if (err.message === "email_conflict") setEmailConflict(true);
-        else if (err.code === "stale_write") {
+        if (hasApiErrorCode(err, "email_conflict")) setEmailConflict(true);
+        else if (hasApiErrorCode(err, "stale_write")) {
           setStaleWrite(true);
           addToast("Someone else updated this attendee — page will reload", "warning");
           void handleReload();
@@ -225,17 +226,17 @@ export function AttendeeDetailPage() {
       } else if (
         err instanceof ApiError &&
         err.status === 400 &&
-        (err.message === "unknown_custom_data_field" ||
-          err.message === "required_custom_data_field_missing" ||
-          err.message === "validation_failed")
+        (hasApiErrorCode(err, "unknown_custom_data_field") ||
+          hasApiErrorCode(err, "required_custom_data_field_missing") ||
+          hasApiErrorCode(err, "validation_failed"))
       ) {
         setError(
-          err.message === "unknown_custom_data_field"
+          hasApiErrorCode(err, "unknown_custom_data_field")
             ? "Event configuration changed — reload this page to edit attributes."
             : "Could not save attribute fields — check required values and options.",
         );
       } else {
-        setError(err instanceof ApiError ? err.message : "Failed to save changes.");
+        setError(operatorApiErrorMessage(err, "Failed to save changes."));
       }
     } finally {
       if (isStillSelected(target)) setSaving(false);
@@ -265,7 +266,7 @@ export function AttendeeDetailPage() {
         addToast("Someone else updated this attendee — page will reload", "warning");
         void handleReload();
       } else {
-        addToast(err instanceof ApiError ? err.message : "Failed to update status", "error");
+        addToast(operatorApiErrorMessage(err, "Failed to update status"), "error");
       }
     } finally {
       if (isStillSelected(target)) setRsvpSaving(false);
@@ -298,7 +299,7 @@ export function AttendeeDetailPage() {
       );
     } catch (err) {
       if (!isStillSelected(target)) return;
-      setResendError(err instanceof ApiError ? err.message : "Resend failed.");
+      setResendError(operatorApiErrorMessage(err, "Resend failed."));
     } finally {
       if (isStillSelected(target)) setResending(false);
     }
@@ -360,7 +361,7 @@ export function AttendeeDetailPage() {
           setRevokeError("Could not update pass status.");
         }
       } else {
-        setRevokeError(err instanceof ApiError ? err.message : "Could not update pass status.");
+        setRevokeError(operatorApiErrorMessage(err, "Could not update pass status."));
       }
     } finally {
       if (isStillSelected(target)) setRevokeBusy(false);

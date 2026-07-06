@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@admitto/ui";
 import { ApiError, fetchAuditLog } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto } from "../api/types.js";
 import { formatUtcDateTime, utcDayEndIso, utcDayStartIso } from "../utils/event-dates.js";
 
@@ -104,7 +105,7 @@ export function AuditLogPanel() {
       setTotal(data.total);
     } catch (err) {
       if (ac.signal.aborted) return;
-      setError(err instanceof ApiError ? err.message : "Failed to load audit log.");
+      setError(operatorApiErrorMessage(err, "Failed to load audit log."));
       setEntries([]);
       setTotal(0);
     } finally {

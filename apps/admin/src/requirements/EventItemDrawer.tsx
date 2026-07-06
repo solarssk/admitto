@@ -5,6 +5,7 @@ import {
   deleteEventItem,
   updateEventItem,
 } from "../api/client.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventItemConfigDto, EventItemContentDto, EventItemDto } from "../api/types.js";
 import {
   type ContentRow,
@@ -130,12 +131,12 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
       onUpdated();
       onClose();
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409 && err.message === "item_in_use") {
+      if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
         setError(
           "This item has been issued to attendees — record returns before disabling it.",
         );
       } else {
-        setError(err instanceof ApiError ? err.message : "Failed to save item.");
+        setError(operatorApiErrorMessage(err, "Failed to save item."));
       }
     } finally {
       setSaving(false);
@@ -153,10 +154,10 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setDeleteBlockReason(
-          err.message === "default_item_not_deletable" ? "default" : "in_use",
+          hasApiErrorCode(err, "default_item_not_deletable") ? "default" : "in_use",
         );
       } else {
-        setError(err instanceof ApiError ? err.message : "Failed to delete item.");
+        setError(operatorApiErrorMessage(err, "Failed to delete item."));
       }
     } finally {
       setDeleting(false);

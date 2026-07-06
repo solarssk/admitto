@@ -6,6 +6,7 @@ import {
 } from "react";
 import { Input, useToast } from "@admitto/ui";
 import { ApiError, createEvent, fetchAdminEvents } from "../../api/client.js";
+import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import { DatePicker } from "../../components/DatePicker.js";
 import { TimezoneSelect } from "../../components/TimezoneSelect.js";
 import { slugFromTitle } from "../../events/slug.js";
@@ -87,7 +88,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
         if (err instanceof ApiError && err.status === 409) {
           addToast("Slug is already in use. Change the event name and try again.", "error");
         } else {
-          addToast(err instanceof ApiError ? err.message : "Failed to create event.", "error");
+          addToast(operatorApiErrorMessage(err, "Failed to create event."), "error");
         }
         return false;
       } finally {

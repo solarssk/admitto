@@ -35,6 +35,7 @@ function resolveMigrationsDir(): string | null {
   }
 
   for (const dir of candidates) {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
     if (existsSync(dir)) return dir;
   }
   if (process.env.NODE_ENV !== "test") {
@@ -52,7 +53,9 @@ function listMigrationNamesOnDisk(): Set<string> {
 
   try {
     return new Set(
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
       readdirSync(migrationsDir).filter((name) =>
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
         existsSync(join(migrationsDir, name, "migration.sql")),
       ),
     );

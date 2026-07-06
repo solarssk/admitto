@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Select } from "@admitto/ui";
 import { ApiError, fetchBulkSendStatus, sendEventBulk } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BulkSendFilter, RsvpStatus } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 
@@ -129,7 +130,7 @@ export function CommunicationSendDialog({
       }
     } catch (err) {
       if (runId !== runIdRef.current || !openRef.current) return;
-      setError(err instanceof ApiError ? err.message : "Dry run failed.");
+      setError(operatorApiErrorMessage(err, "Dry run failed."));
     } finally {
       if (runId === runIdRef.current && openRef.current) {
         setBusy(false);
@@ -177,7 +178,7 @@ export function CommunicationSendDialog({
       setResultMessage(`Queued ${body.queued} — sending in progress…`);
     } catch (err) {
       if (runId !== runIdRef.current || !openRef.current) return;
-      setError(err instanceof ApiError ? err.message : "Send failed.");
+      setError(operatorApiErrorMessage(err, "Send failed."));
     } finally {
       if (runId === runIdRef.current && openRef.current) {
         setBusy(false);

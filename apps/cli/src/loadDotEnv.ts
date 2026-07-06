@@ -6,7 +6,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Load key=value lines from a .env file (no expansion). */
 function loadEnvFile(envPath: string): void {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
   if (!fs.existsSync(envPath)) return;
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
   const text = fs.readFileSync(envPath, "utf8");
   for (const line of text.split("\n")) {
     const trimmed = line.trim();

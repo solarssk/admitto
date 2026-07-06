@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.location.assign(`/login?next=${next}`);
         return;
       }
-      setAuthError(err instanceof Error ? err.message : "Failed to load session");
+      setAuthError("Failed to load session");
       setUser(null);
       setAssignments([]);
       setDeviceLabel(null);

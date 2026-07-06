@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Button, EmptyState, PageHeader, useToast } from "@admitto/ui";
 import { ApiError, bulkResendTickets, exportAttendees, fetchEventAttendees, fetchTicketTypes, updateAttendee } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeDetailDto, AttendeeRowDto, EventDto, RsvpStatus } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
@@ -265,7 +266,7 @@ export function AttendeesPage() {
             window.location.assign(`/login?next=${next}`);
             return;
           }
-          addToast(err.message, "error");
+          addToast(operatorApiErrorMessage(err, "Request failed."), "error");
         } else {
           addToast("Export failed.", "error");
         }
@@ -324,9 +325,9 @@ export function AttendeesPage() {
           }
         }
         if (revokeOpen) {
-          setRevokeError(err instanceof ApiError ? err.message : "Could not update pass status.");
+          setRevokeError(operatorApiErrorMessage(err, "Could not update pass status."));
         } else {
-          addToast(err instanceof ApiError ? err.message : "Could not update pass status.", "error");
+          addToast(operatorApiErrorMessage(err, "Could not update pass status."), "error");
         }
       } finally {
         if (passActionBusyRef.current.delete(row.id)) {
@@ -379,7 +380,7 @@ export function AttendeesPage() {
           window.location.assign(`/login?next=${next}`);
           return;
         }
-        setSendError(err.message);
+        setSendError(operatorApiErrorMessage(err, "Send failed."));
       } else {
         setSendError("Failed to queue tickets.");
       }

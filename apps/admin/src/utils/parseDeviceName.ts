@@ -19,6 +19,7 @@ export function parseDeviceName(
     return `iPhone${version ? ` (iOS ${version})` : ""}`;
   }
   if (/Android/i.test(ua)) {
+  // eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
     const match = ua.match(/Android ([\d.]+);?\s*([^;)]+)?/);
     const device = match?.[2]?.trim() ?? "Android";
     return device;

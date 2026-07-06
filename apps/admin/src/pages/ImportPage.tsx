@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button, Card, PageHeader, useToast } from "@admitto/ui";
 import { ApiError, commitImport, fetchEventItems, previewImport, type EventFullMeta } from "../api/client.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ImportCommitResponse, ImportPreviewResponse, ImportSampleRow } from "../api/types.js";
 import {
   flattenCustomDataFieldsFromItems,
@@ -141,19 +142,11 @@ export function ImportPage() {
         window.location.assign(`/login?next=${next}`);
         return;
       }
-      const msg = (() => {
-        if (err.status === 403) return "You do not have access to this event.";
-        if (err.message === "file too large") return "File exceeds the 5 MB limit. Split the file and import in parts.";
-        if (err.message === "too many rows") return "File exceeds the 50 000 row limit. Split the file and import in parts.";
-        if (err.message === "unsupported file type") return "Unsupported file type. Upload a .csv or .xlsx file.";
-        if (err.message === "empty file") return "The file is empty.";
-        if (err.message === "invalid file content") return "The file could not be read. Check that it is a valid CSV or XLSX.";
-        return err.message || "Request failed.";
-      })();
+      const msg = operatorApiErrorMessage(err, "Request failed.");
       const duration =
-        err.message === "file too large" ||
-        err.message === "too many rows" ||
-        err.message === "invalid file content"
+        hasApiErrorCode(err, "file too large") ||
+        hasApiErrorCode(err, "too many rows") ||
+        hasApiErrorCode(err, "invalid file content")
           ? 7000
           : undefined;
       addToast(msg, "error", duration);

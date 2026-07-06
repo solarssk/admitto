@@ -6,6 +6,7 @@ import {
   saveMailSettings,
   sendMailTransportTest,
 } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
   MailPlainFieldDto,
   MailProvider,
@@ -234,7 +235,7 @@ export function MailTransportPanel() {
       applyResponse(data);
       addToast("Mail settings saved.", "success");
     } catch (err) {
-      addToast(err instanceof ApiError ? err.message : "Failed to save mail settings.", "error");
+      addToast(operatorApiErrorMessage(err, "Failed to save mail settings."), "error");
     } finally {
       setSaving(false);
     }
@@ -267,14 +268,10 @@ export function MailTransportPanel() {
         addToast(result.error ?? "Send failed.", "error");
       }
     } catch (err) {
-      let message = "Send failed.";
-      if (err instanceof ApiError) {
-        if (err.status === 400) {
-          message = "Enter a valid email address.";
-        } else {
-          message = err.message;
-        }
-      }
+      const message =
+        err instanceof ApiError && err.status === 400
+          ? "Enter a valid email address."
+          : operatorApiErrorMessage(err, "Send failed.");
       addToast(message, "error");
     } finally {
       setTestSending(false);

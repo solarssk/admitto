@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@admitto/ui";
 import { ApiError, uploadFile } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import "./logo-upload.css";
 
@@ -56,7 +57,7 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
       onDirty?.();
     } catch (err) {
       if (seq !== uploadSeqRef.current) return;
-      setZoneError(err instanceof ApiError ? err.message : "Upload failed.");
+      setZoneError(operatorApiErrorMessage(err, "Upload failed."));
     } finally {
       if (seq === uploadSeqRef.current) setUploading(false);
     }

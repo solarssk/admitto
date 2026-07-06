@@ -87,6 +87,7 @@ export async function runAttendeesExport(db: PrismaClient): Promise<void> {
     });
   } catch (err) {
     try {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from trusted repo root or upload dir
       fs.unlinkSync(exportPath);
     } catch {
       // Best-effort rollback when audit fails after write.

@@ -7,6 +7,7 @@ import {
   fetchAdminOrganizations,
   grantUserRole,
 } from "../../api/client.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { EventDto, UserListItemDto } from "../../api/types.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
 
@@ -24,11 +25,7 @@ type InviteUserModalProps = {
 type InitialRole = "" | "superadmin" | "admin" | "operator";
 
 function mapRoleGrantError(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.message.includes("already_assigned")) return "This role assignment already exists.";
-    return err.message;
-  }
-  return "Failed to assign role.";
+  return operatorApiErrorMessage(err, "Failed to assign role.");
 }
 
 export function InviteUserModal({ open, onClose, onCreated }: InviteUserModalProps) {
@@ -136,10 +133,10 @@ export function InviteUserModal({ open, onClose, onCreated }: InviteUserModalPro
       resetForm();
       onClose();
     } catch (err) {
-      if (err instanceof ApiError && (err.message.includes("email_taken") || err.message.includes("email_conflict"))) {
+      if (err instanceof ApiError && (hasApiErrorCode(err, "email_taken") || hasApiErrorCode(err, "email_conflict"))) {
         setError("A user with this email already exists.");
       } else {
-        setError(err instanceof ApiError ? err.message : "Failed to invite user.");
+        setError(operatorApiErrorMessage(err, "Failed to invite user."));
       }
     } finally {
       setSubmitting(false);

@@ -14,6 +14,7 @@ import {
   saveMailSettings,
   sendMailTransportTest,
 } from "../../api/client.js";
+import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import { useAuth } from "../../auth/AuthProvider.js";
 import type {
   MailPlainFieldDto,
@@ -128,7 +129,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
         } catch (err) {
           if (ac.signal.aborted) return;
           addToast(
-            err instanceof ApiError ? err.message : "Failed to load mail settings.",
+            operatorApiErrorMessage(err, "Failed to load mail settings."),
             "error",
           );
         } finally {
@@ -181,7 +182,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
         });
         return true;
       } catch (err) {
-        addToast(err instanceof ApiError ? err.message : "Failed to save mail settings.", "error");
+        addToast(operatorApiErrorMessage(err, "Failed to save mail settings."), "error");
         return false;
       }
     };
@@ -213,7 +214,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
         }
       } catch (err) {
         setTestSent(false);
-        addToast(err instanceof ApiError ? err.message : "Test email failed.", "error");
+        addToast(operatorApiErrorMessage(err, "Test email failed."), "error");
       } finally {
         setTestSending(false);
       }

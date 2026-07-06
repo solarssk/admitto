@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@admitto/ui";
 import { ApiError, fetchSetupChecks } from "../../api/client.js";
+import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { SetupChecksResponse } from "../../api/types.js";
 import {
   SETUP_CHECK_LABELS,
@@ -40,7 +41,7 @@ export function WizardStep1Checks({ onChecksOk }: WizardStep1ChecksProps) {
       } catch (err) {
         if (ac.signal.aborted) return;
         setLoadError(
-          err instanceof ApiError ? err.message : "Failed to load system checks.",
+          operatorApiErrorMessage(err, "Failed to load system checks."),
         );
         setChecks(null);
       } finally {

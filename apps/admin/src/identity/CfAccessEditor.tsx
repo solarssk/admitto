@@ -3,6 +3,7 @@ import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 import type { BlockerFunction } from "react-router";
 import { Badge, Button, Card, Input, Spinner, Switch, useToast } from "@admitto/ui";
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
 import {
   buildCfUpdateBody,
@@ -153,7 +154,7 @@ export function CfAccessEditor() {
           redirectToLogin();
           return;
         }
-        const message = err instanceof ApiError ? err.message : "Failed to save settings.";
+        const message = operatorApiErrorMessage(err, "Failed to save settings.");
         addToast(message, "error");
       } finally {
         setSaving(false);
@@ -181,7 +182,7 @@ export function CfAccessEditor() {
         redirectToLogin();
         return;
       }
-      const message = err instanceof ApiError ? err.message : "Connection test failed.";
+      const message = operatorApiErrorMessage(err, "Connection test failed.");
       addToast(message, "error");
     } finally {
       setTesting(false);

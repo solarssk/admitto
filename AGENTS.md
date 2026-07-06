@@ -94,6 +94,15 @@ Staff UI uses `useToast()` from `@admitto/ui` (`ToastProvider` in the admin shel
 
 Toasts dedupe identical `message + variant`, cap at five, and sit below the check-in overlay (`--z-toast` &lt; `--z-overlay`). Prefer `renderWithToast()` in admin tests when asserting toast behavior.
 
+### Admin API errors in the UI
+
+Do **not** pass `ApiError.message` straight into toasts or inline error strings. Server JSON may include machine codes or, in future, internal detail.
+
+- Use `operatorApiErrorMessage(err, fallback)` from `apps/admin/src/api/operator-api-error.ts` for operator-visible copy.
+- Use `hasApiErrorCode(err, "code")` when branching on a known API failure (conflict handling, wizard guards, etc.).
+- Known codes are mapped to fixed UI strings; short human `detail` text is shown only when it passes the helper's safety checks; everything else logs in dev and returns `fallback`.
+- `TemplateValidationError` and client-side validation stay separate — they never go through `operatorApiErrorMessage`.
+
 ## Compounding rules
 
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
