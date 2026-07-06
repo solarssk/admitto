@@ -1,19 +1,21 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CreateEventModal } from "../../src/events/CreateEventModal.js";
 import * as eventDates from "../../src/utils/event-dates.js";
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
-  createEvent: vi.fn(),
-}));
+vi.mock("../../src/api/client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/api/client.js")>();
+  return {
+    ...actual,
+    createEvent: vi.fn(),
+  };
+});
+
+import { createEvent } from "../../src/api/client.js";
+import { ApiError } from "../../src/api/client.js";
+
+const mockCreateEvent = vi.mocked(createEvent);
 
 afterEach(cleanup);
 
@@ -64,5 +66,17 @@ describe("CreateEventModal", () => {
     expect((screen.getByRole("button", { name: "Create event" }) as HTMLButtonElement).disabled).toBe(
       false,
     );
+  });
+
+  it("shows operator-safe create failure", async () => {
+    mockCreateEvent.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to create event/)).toBeTruthy();
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
   });
 });

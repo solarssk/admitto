@@ -6,17 +6,14 @@ import { CommunicationSendDialog } from "../../src/communication/CommunicationSe
 const sendEventBulk = vi.fn();
 const fetchBulkSendStatus = vi.fn();
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
-  sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
-  fetchBulkSendStatus: (...args: unknown[]) => fetchBulkSendStatus(...args),
-}));
+vi.mock("../../src/api/client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/api/client.js")>();
+  return {
+    ...actual,
+    sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
+    fetchBulkSendStatus: (...args: unknown[]) => fetchBulkSendStatus(...args),
+  };
+});
 
 afterEach(() => {
   cleanup();
@@ -226,5 +223,30 @@ describe("CommunicationSendDialog", () => {
 
     expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
     expect(screen.queryByText(/No recipients matched/i)).toBeNull();
+  });
+
+  it("shows operator-safe dry run failure", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    sendEventBulk.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    render(
+      <CommunicationSendDialog open eventId="evt-1" templateId="tpl-1" onClose={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Dry run failed/)).toBeTruthy();
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("shows operator-safe send failure", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    sendEventBulk.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    render(
+      <CommunicationSendDialog open eventId="evt-1" templateId="tpl-1" onClose={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Send failed/)).toBeTruthy();
+    });
   });
 });

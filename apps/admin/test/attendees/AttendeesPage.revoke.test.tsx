@@ -7,6 +7,8 @@ import type { AttendeeDetailDto, AttendeeRowDto } from "../../src/api/types.js";
 
 const updateAttendee = vi.fn();
 const fetchEventAttendees = vi.fn();
+const exportAttendees = vi.fn();
+const bulkResendTickets = vi.fn();
 const addToast = vi.fn();
 const reportApiError = vi.fn();
 
@@ -125,8 +127,8 @@ vi.mock("../../src/api/client.js", () => ({
   },
   fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  exportAttendees: vi.fn(),
-  bulkResendTickets: vi.fn(),
+  exportAttendees: (...args: unknown[]) => exportAttendees(...args),
+  bulkResendTickets: (...args: unknown[]) => bulkResendTickets(...args),
   updateAttendee: (...args: unknown[]) => updateAttendee(...args),
 }));
 
@@ -395,5 +397,63 @@ describe("AttendeesPage revoke/restore", () => {
       expect(screen.queryByRole("dialog", { name: "Revoke pass?" })).toBeNull();
     });
     expect(updateAttendee).not.toHaveBeenCalled();
+  });
+
+  it("toasts operator-safe export failure", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    exportAttendees.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export XLSX" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Export XLSX" }));
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Request failed.", "error");
+    });
+  });
+
+  it("shows operator-safe revoke pass failure in dialog", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    updateAttendee.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderPage();
+    await waitFor(() => {
+      expect(tableActions().getByRole("button", { name: "Revoke pass" })).toBeTruthy();
+    });
+    fireEvent.click(tableActions().getByRole("button", { name: "Revoke pass" }));
+    const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke pass" }));
+    await waitFor(() => {
+      expect(within(dialog).getByText(/Could not update pass status/)).toBeTruthy();
+    });
+  });
+
+  it("toasts operator-safe restore failure without dialog", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    const revokedRow = { ...sampleRow, status: "revoked" as const };
+    setListItems([revokedRow]);
+    updateAttendee.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderPage();
+    await waitFor(() => {
+      expect(findRowByName("Jane Doe").getByRole("button", { name: "Restore pass" })).toBeTruthy();
+    });
+    fireEvent.click(findRowByName("Jane Doe").getByRole("button", { name: "Restore pass" }));
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Could not update pass status.", "error");
+    });
+  });
+
+  it("shows operator-safe bulk send failure", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    bulkResendTickets.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Send tickets" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Send tickets" })[0]!);
+    const dialog = screen.getByRole("dialog", { name: "Send tickets" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send tickets" }));
+    await waitFor(() => {
+      expect(within(dialog).getByText(/Send failed/)).toBeTruthy();
+    });
   });
 });

@@ -43,6 +43,39 @@ describe("InstanceUrlPanel", () => {
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
 
+  it("toasts save failure without leaking server detail", async () => {
+    mockFetch.mockResolvedValueOnce(emptySettings);
+    mockPatch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<InstanceUrlPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Instance URL")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Instance URL"), {
+      target: { value: "https://tickets.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save settings/);
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("toasts reset failure without leaking server detail", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ...emptySettings,
+      instance_url: { value: "https://old.example.com", source: "db" },
+    });
+    mockPatch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<InstanceUrlPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to reset settings/);
+    });
+  });
+
   it("shows warning when instance URL is unset", async () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
     renderWithToast(<InstanceUrlPanel />);

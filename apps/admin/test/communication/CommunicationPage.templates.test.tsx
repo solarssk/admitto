@@ -13,6 +13,10 @@ const fetchEventDeliveries = vi.fn();
 const sendEventBulk = vi.fn();
 const createEventTemplate = vi.fn();
 const deleteEventTemplate = vi.fn();
+const previewEventTemplate = vi.fn();
+const previewEventTemplateById = vi.fn();
+const saveEventTemplateById = vi.fn();
+const testSendEventTemplateById = vi.fn();
 
 const reportApiError = vi.fn();
 
@@ -36,14 +40,14 @@ vi.mock("../../src/api/client.js", () => ({
   fetchEventTemplateById: (...args: unknown[]) => fetchEventTemplateById(...args),
   fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
   fetchEventDeliveries: (...args: unknown[]) => fetchEventDeliveries(...args),
-  previewEventTemplate: vi.fn(),
-  previewEventTemplateById: vi.fn(),
+  previewEventTemplate: (...args: unknown[]) => previewEventTemplate(...args),
+  previewEventTemplateById: (...args: unknown[]) => previewEventTemplateById(...args),
   saveEventTemplate: vi.fn(),
-  saveEventTemplateById: vi.fn(),
+  saveEventTemplateById: (...args: unknown[]) => saveEventTemplateById(...args),
   createEventTemplate: (...args: unknown[]) => createEventTemplate(...args),
   deleteEventTemplate: (...args: unknown[]) => deleteEventTemplate(...args),
   testSendEventTemplate: vi.fn(),
-  testSendEventTemplateById: vi.fn(),
+  testSendEventTemplateById: (...args: unknown[]) => testSendEventTemplateById(...args),
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
   fetchBulkSendStatus: vi.fn(),
 }));
@@ -168,6 +172,10 @@ afterEach(() => {
   fetchEventTemplateById.mockReset();
   deleteEventTemplate.mockReset();
   createEventTemplate.mockReset();
+  previewEventTemplate.mockReset();
+  previewEventTemplateById.mockReset();
+  saveEventTemplateById.mockReset();
+  testSendEventTemplateById.mockReset();
 });
 
 describe("CommunicationPage templates", () => {
@@ -448,6 +456,95 @@ describe("CommunicationPage templates", () => {
         template_format: "mjml",
       });
       expect(screen.getByDisplayValue("Announcement")).toBeTruthy();
+    });
+  });
+
+  it("toasts operator-safe message when create template fails", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    createEventTemplate.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "New" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    const createDialog = await screen.findByRole("dialog", { name: "New template" });
+    fireEvent.change(within(createDialog).getByLabelText("Template label"), {
+      target: { value: "Announcement" },
+    });
+    fireEvent.click(within(createDialog).getByRole("button", { name: "Create" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+    });
+  });
+
+  it("toasts operator-safe preview failure", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    fetchEventTemplateById.mockResolvedValue({
+      source: "custom" as const,
+      allowed_placeholders: ["first_name"],
+      required_url_placeholders: [],
+      subject_template: "Ticket",
+      body_template: "<mjml></mjml>",
+      template_format: "mjml" as const,
+    });
+    previewEventTemplateById.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+    });
+  });
+
+  it("toasts operator-safe template switch failure", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Reminder" })).toBeTruthy();
+    });
+    fetchEventTemplateById.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+    });
+  });
+
+  it("toasts operator-safe save failure", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Updated ticket subject" } });
+    saveEventTemplateById.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+    });
+  });
+
+  it("shows validation message on invalid test send email", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Recipient email")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Recipient email"), {
+      target: { value: "ops@example.com" },
+    });
+    testSendEventTemplateById.mockRejectedValueOnce(
+      new ApiError(400, "validation_failed", "validation_failed"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toMatch(/valid email address/);
     });
   });
 

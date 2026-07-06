@@ -121,6 +121,24 @@ describe("operatorApiErrorMessage", () => {
     ).toBe("Access denied.");
   });
 
+  it("maps additional known API codes", () => {
+    expect(operatorApiErrorMessage(new ApiError(400, "forbidden", "forbidden"), "Failed.")).toBe(
+      "You do not have access.",
+    );
+    expect(operatorApiErrorMessage(new ApiError(400, "cannot_revoke_current"), "Failed.")).toMatch(
+      /current session/,
+    );
+    expect(operatorApiErrorMessage(new ApiError(400, "delivery_not_found"), "Failed.")).toBe(
+      "Delivery not found.",
+    );
+  });
+
+  it("suppresses stack frames with at File ( pattern", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(operatorApiErrorMessage(new ApiError(500, "at main (index.js:1:1)"), "Failed.")).toBe("Failed.");
+    warn.mockRestore();
+  });
+
   it("returns fallback for non-ApiError", () => {
     expect(operatorApiErrorMessage(new Error("boom"), "Failed.")).toBe("Failed.");
   });
