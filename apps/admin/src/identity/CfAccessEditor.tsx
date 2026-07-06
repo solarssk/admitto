@@ -25,11 +25,12 @@ function redirectToLogin(): void {
 }
 
 /**
- * Cloudflare Access SPA editor (#266 slice 4). Replaces the legacy HTML form at
- * /admin/auth/cf-access with the StaffShell-consistent Identity sub-tab. Loads the
- * singleton CF Access config + per-field env locks, lets the operator edit team
- * domain / AUD / protected prefixes, test the team URL's JWKS endpoint, and save
- * (PATCH semantics: omitted fields keep their stored value; env-locked fields stay
+ * Cloudflare Access SPA editor (#266 slice 4). Renders the CF Zero Trust config
+ * editor under the StaffShell-consistent Identity sub-tab at
+ * /admin/settings/identity/cloudflare. Loads the singleton CF Access config +
+ * per-field env locks, lets the operator edit team domain / AUD / protected
+ * prefixes, test the team URL's JWKS endpoint, and save (PATCH semantics:
+ * omitted fields keep their stored value; env-locked fields stay
  * locked). Mirrors the IdentityProviderEditor dirty-guard + loadTick patterns so a
  * superadmin can't silently drop unsaved edits via an in-app navigation.
  */
