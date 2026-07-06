@@ -42,7 +42,7 @@ export function SettingsLayout() {
       // Identity detail view triggers the editor's `useBlocker` when dirty.
       navigate(`${SETTINGS_INDEX_PATH}?tab=${id}`, { replace: true });
     },
-    [navigate, onIdentity],
+    [navigate],
   );
 
   return (

@@ -117,6 +117,7 @@ export function EventLayout() {
     return () => {
       cancelled = true;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only re-fetches on eventId change; location/navigate are navigation side-effects, not data deps (re-adding them caused blank-shell re-fetch on every in-event nav, fixed in #282)
   }, [eventId]);
 
   if (error) return <Navigate to="/admin" replace />;

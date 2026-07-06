@@ -421,6 +421,7 @@ export function CheckInPage({
         focusScan();
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleApiFailure and runWithPending are plain component functions (not useCallback); adding them would recreate this callback every render — to be refactored in #280
     [deviceId, eventId, focusScan, maybeAutoAdvance, applyLocalAdmit, refreshSidebar, refreshStatsOnly, reportApiError],
   );
 
@@ -589,6 +590,7 @@ export function CheckInPage({
         setBusy(false);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- openLookupResultImpl is a plain component function (not useCallback); adding it would recreate this callback every render — to be refactored in #280
     [allowManualLookup, addToast, canAct, eventId, reportApiError, showMobileOverlay],
   );
 

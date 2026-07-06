@@ -31,7 +31,7 @@ export function EventArchivingPanel() {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [addToast]);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();

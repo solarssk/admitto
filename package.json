@@ -13,7 +13,7 @@
     "coverage": "npm run coverage --workspaces --if-present",
     "build": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/mailer && npm run build -w @admitto/import && npm run build -w @admitto/mailer-config && npm run build -w @admitto/mail-delivery && npm run build -w @admitto/auth && npm run build -w @admitto/ui && npm run build -w @admitto/admin && npm run build -w @admitto/web && npm run build -w @admitto/cli",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "eslint 'packages/*/src/**/*.ts'",
+    "lint": "eslint 'packages/*/src/**/*.ts' 'apps/*/src/**/*.{ts,tsx}'",
     "db:migrate": "npm run db:migrate -w @admitto/db",
     "db:migrate:status": "npm run db:migrate:status -w @admitto/db",
     "db:seed": "npm run db:seed -w @admitto/db",
@@ -38,9 +38,10 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "4.1.9",
     "@typescript-eslint/parser": "^8.61.1",
+    "@vitest/coverage-v8": "4.1.9",
     "eslint": "10.6.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-security": "4.0.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
