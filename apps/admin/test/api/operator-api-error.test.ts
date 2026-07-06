@@ -12,6 +12,12 @@ describe("operatorApiErrorMessage", () => {
     expect(operatorApiErrorMessage(err, "Failed.")).toBe("That email is already in use.");
   });
 
+  it("prefers err.code over message when they differ", () => {
+    expect(
+      operatorApiErrorMessage(new ApiError(409, "ignored detail", "email_conflict"), "Failed."),
+    ).toBe("That email is already in use.");
+  });
+
   it("maps wrong_password on 401 without session-expired copy", () => {
     const err = new ApiError(401, "wrong_password", "wrong_password");
     expect(operatorApiErrorMessage(err, "Failed to change password.")).toBe(
@@ -27,6 +33,14 @@ describe("operatorApiErrorMessage", () => {
     expect(operatorApiErrorMessage(new ApiError(401, "unauthorized"), "Failed.")).toBe(
       "Your session has expired. Sign in again.",
     );
+  });
+
+  it("uses 401 session fallback when human detail is suppressed", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(operatorApiErrorMessage(new ApiError(401, "syntax error at or near"), "Failed.")).toBe(
+      "Your session has expired. Sign in again.",
+    );
+    warn.mockRestore();
   });
 
   it("allows short operator-safe detail text", () => {
@@ -57,12 +71,22 @@ describe("operatorApiErrorMessage", () => {
     ).toBe("Template not found.");
   });
 
-  it("suppresses SQL-like and stack detail leaks", () => {
+  it("maps legacy spaced import error literals", () => {
+    expect(operatorApiErrorMessage(new ApiError(400, "file too large"), "Failed.")).toMatch(/5 MB/);
+    expect(operatorApiErrorMessage(new ApiError(400, "unsupported file type"), "Failed.")).toMatch(/csv/);
+    expect(operatorApiErrorMessage(new ApiError(400, "invalid file content"), "Failed.")).toMatch(/could not be read/);
+  });
+
+  it("suppresses SQL-like, stack, ORM, Windows path, and traceback detail", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(operatorApiErrorMessage(new ApiError(500, "syntax error at or near SELECT"), "Failed.")).toBe(
       "Failed.",
     );
     expect(operatorApiErrorMessage(new ApiError(500, "at /dist/index.js:12:5"), "Failed.")).toBe("Failed.");
+    expect(operatorApiErrorMessage(new ApiError(500, "mysql connection lost"), "Failed.")).toBe("Failed.");
+    expect(operatorApiErrorMessage(new ApiError(500, "C:\\Users\\secret\\file"), "Failed.")).toBe("Failed.");
+    expect(operatorApiErrorMessage(new ApiError(500, "Exception in thread main"), "Failed.")).toBe("Failed.");
+    expect(operatorApiErrorMessage(new ApiError(500, "a".repeat(201)), "Failed.")).toBe("Failed.");
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -82,6 +106,18 @@ describe("operatorApiErrorMessage", () => {
     ).toMatch(/Unsupported file type/);
   });
 
+  it("shows safe human detail for 403 when message is operator-facing", () => {
+    expect(
+      operatorApiErrorMessage(new ApiError(403, "human detail", "HumanReadable"), "Access denied."),
+    ).toBe("human detail");
+  });
+
+  it("returns fallback for 403 with non-machine code field and machine message", () => {
+    expect(
+      operatorApiErrorMessage(new ApiError(403, "unknown_perm", "HumanReadable"), "Access denied."),
+    ).toBe("Access denied.");
+  });
+
   it("returns fallback for non-ApiError", () => {
     expect(operatorApiErrorMessage(new Error("boom"), "Failed.")).toBe("Failed.");
   });
@@ -95,9 +131,18 @@ describe("hasApiErrorCode", () => {
     );
     expect(hasApiErrorCode(new ApiError(400, "other"), "validation_failed")).toBe(false);
     expect(hasApiErrorCode(new ApiError(404, "not_found", "not_found"), "not")).toBe(false);
-    expect(hasApiErrorCode(new ApiError(400, "template_validation_failed", "template_validation_failed"), "validation_failed")).toBe(
-      false,
-    );
+    expect(
+      hasApiErrorCode(
+        new ApiError(400, "template_validation_failed", "template_validation_failed"),
+        "validation_failed",
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects empty needle and non-ApiError", () => {
+    expect(hasApiErrorCode(null, "validation_failed")).toBe(false);
+    expect(hasApiErrorCode(new ApiError(400, "validation_failed"), "")).toBe(false);
+    expect(hasApiErrorCode(new ApiError(400, "validation_failed"), "   ")).toBe(false);
   });
 });
 
@@ -105,5 +150,9 @@ describe("apiErrorCode", () => {
   it("reads code from ApiError", () => {
     expect(apiErrorCode(new ApiError(400, "event_archived", "event_archived"))).toBe("event_archived");
     expect(apiErrorCode(new ApiError(400, "event_archived"))).toBe("event_archived");
+  });
+
+  it("returns undefined for non-ApiError", () => {
+    expect(apiErrorCode(new Error("boom"))).toBeUndefined();
   });
 });

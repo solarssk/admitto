@@ -13,7 +13,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
-import { fetchSecuritySettings, patchSecuritySettings } from "../../src/api/client.js";
+import { ApiError, fetchSecuritySettings, patchSecuritySettings } from "../../src/api/client.js";
 
 const mockFetch = vi.mocked(fetchSecuritySettings);
 const mockPatch = vi.mocked(patchSecuritySettings);
@@ -32,6 +32,17 @@ afterEach(() => {
 });
 
 describe("InstanceUrlPanel", () => {
+  it("shows operator-safe message when settings fail to load", async () => {
+    mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<InstanceUrlPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    });
+    const panel = document.querySelector(".sessions-status p");
+    expect(panel?.textContent).toMatch(/Failed to load instance settings/);
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
   it("shows warning when instance URL is unset", async () => {
     mockFetch.mockResolvedValueOnce(emptySettings);
     renderWithToast(<InstanceUrlPanel />);
