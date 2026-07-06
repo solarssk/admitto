@@ -324,6 +324,26 @@ describe("identity API client", () => {
     expect(res.endpoints.jwks_uri).toBe("https://www.googleapis.com/oauth2/v3/certs");
   });
 
+  it("testIdentityProviderDraft throws ApiError when the connection test fails (400)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ ok: false, error: "JWKS URI is required" }, { status: 400, statusText: "Bad Request" }),
+    );
+    await expect(testIdentityProviderDraft({ issuer: "https://accounts.google.com" })).rejects.toMatchObject({
+      name: "ApiError",
+      status: 400,
+    });
+  });
+
+  it("discoverIdentityProviderPreview throws ApiError when discovery fails (400)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ ok: false, error: "No OIDC metadata found" }, { status: 400, statusText: "Bad Request" }),
+    );
+    await expect(discoverIdentityProviderPreview("https://accounts.google.com")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 400,
+    });
+  });
+
   it("discoverIdentityProvider throws ApiError on a non-2xx response", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ ok: false, error: "Discovery failed" }, { status: 400, statusText: "Bad Request" }),

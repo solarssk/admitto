@@ -11,6 +11,7 @@ import {
   listProviderGroupMappings,
   fetchOidcDiscovery,
   testOidcConnection,
+  assertSafeOidcFetchUrl,
   logAuthSettingsChanged,
   getCfAccessConfig,
   isSettingEnvLocked,
@@ -351,11 +352,19 @@ export async function handleApiTestProviderDraft(c: Context): Promise<Response> 
     return c.json({ error: "validation_failed" }, 400);
   }
 
+  const issuer = body.issuer.trim();
+  try {
+    // Mirror the same guard resolveEndpoints applies on save: issuer must be a safe HTTPS URL.
+    assertSafeOidcFetchUrl(issuer.endsWith("/") ? issuer : `${issuer}/`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Invalid issuer URL";
+    return c.json({ ok: false, error: message }, 400);
+  }
   const auth = optionalOidcEndpoint(body.authorization_endpoint);
   const token = optionalOidcEndpoint(body.token_endpoint);
   const jwks = optionalOidcEndpoint(body.jwks_uri);
   const result = await testOidcConnection({
-    issuer: body.issuer.trim(),
+    issuer,
     ...(auth && token && jwks ? { authorization_endpoint: auth, token_endpoint: token, jwks_uri: jwks } : {}),
   });
   if (result.ok) return c.json({ ok: true });

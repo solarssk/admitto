@@ -715,7 +715,7 @@ export function IdentityProviderEditor({ mode, providerId }: IdentityProviderEdi
       </Card>
 
       <div className="identity-editor__actions">
-        <Button type="button" variant="ghost" onClick={handleCancel} disabled={saving || testing}>
+        <Button type="button" variant="ghost" onClick={handleCancel} disabled={saving || testing || discovering}>
           Cancel
         </Button>
         <Button
