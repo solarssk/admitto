@@ -52,9 +52,9 @@ Active automated checks in this repository:
 
 **PR pipeline:** application build, lint, typecheck, tests with coverage, dependency audit, secret scan, PII guard, migration safety, and CodeQL. Container image build smoke and Semgrep run on every merge to `main` (not on every PR) to keep PR feedback fast; release tags add Trivy CRITICAL gate, SBOM, and provenance.
 
-**SAST on PRs vs `main`:** CodeQL (`security-extended`) is the JavaScript/TypeScript gate on every PR. Semgrep (`p/javascript`, `p/typescript`) runs on every merge to `main` and weekly — the rule sets overlap but are not identical; this is an intentional trade-off (faster PR CI, dual coverage before code reaches `main`).
+**SAST on PRs vs `main` — decision (2026-07-06):** We keep Semgrep on `main`-push and weekly schedule only (Option B). CodeQL `security-extended` is the JavaScript/TypeScript SAST gate on every PR; Semgrep (`p/javascript`, `p/typescript`) provides complementary post-merge coverage — the rule sets overlap but are not identical. Restoring Semgrep to every PR (Option A) would add ~2–3 min to PR CI for marginal incremental coverage, since CodeQL `security-extended` already covers the highest-value rules. The current setup gives dual SAST coverage before code can reach a release tag while keeping PR feedback fast.
 
-**Required merge checks on `main`:** GitHub branch protection currently requires `build-test`, `secret-scan`, and `pii-guard`. CodeQL (`analyze`) and `migration-safety` also run on pull requests but are not required checks yet — see repository branch protection settings.
+**Required merge checks on `main`:** GitHub branch protection requires `build-test`, `secret-scan`, `pii-guard`, `analyze` (CodeQL), and `migration-safety`. All five must pass before a PR can merge.
 
 Container image scanning fails the release pipeline on **CRITICAL** vulnerabilities
 with a known fix (`ignore-unfixed: true`). **HIGH** findings are reported (SARIF in the
