@@ -225,11 +225,9 @@
   height: auto;
 }
 
-/* Password + 2FA live inside ONE card as two internal grid columns (same
-   pattern as .account-profile-grid) so both columns divide the same content
-   width/gap math as Display name — guaranteeing equal field widths. Using two
-   separate <Card>s here instead would make each pay its own card padding
-   twice, making this column narrower than Display name by one card-padding. */
+/* Password and 2FA are two independent Cards, side by side — each sizes to
+   its own content (align-items: start), so 2FA growing taller during
+   enrollment never stretches or distorts Password's card. */
 .account-security-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -248,100 +246,31 @@
   }
 }
 
-.account-security-col__title {
-  margin: 0 0 var(--space-3, 0.75rem);
-  font-size: var(--fs-body, 0.875rem);
-  font-weight: var(--fw-semibold, 600);
-  color: var(--text-primary);
-}
-
-/* Enrollment: QR + backup codes side by side on top, then a compact actions
-   row below (checkbox, then code input + buttons sharing one line), instead
-   of one tall vertical stack — so the whole block stays within the Password
-   column's natural height (Password is the height reference for this card —
-   see .account-security-grid above) instead of pushing the card taller. */
-.account-security-enroll {
+/* Enrollment: QR on the left, everything else (backup codes, checkbox, code
+   input, confirm/cancel) stacked in one column on the right — a real
+   horizontal split that uses the card's full width instead of leaving it
+   blank next to a small QR image. */
+.account-2fa-enroll {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2, 0.5rem);
-}
-
-.account-security-enroll__top {
-  display: flex;
-  gap: var(--space-3, 0.75rem);
+  gap: var(--space-4, 1rem);
   align-items: flex-start;
 }
 
-.account-security-enroll__qr {
+.account-2fa-enroll__qr {
   flex: 0 0 auto;
-  max-width: 10rem;
 }
 
-.account-security-enroll__qr .account-totp-qr {
-  margin: 4px 0;
-}
-
-.account-security-enroll__qr .account-uri-details {
-  margin-top: 0;
-}
-
-.account-security-enroll__codes {
+.account-2fa-enroll__info {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.account-security-enroll__codes .account-auth-backup {
-  padding: var(--space-2, 0.5rem);
-  margin: 0;
+.account-2fa-enroll__info .account-checkbox-row {
+  margin-top: var(--space-2, 0.5rem);
 }
 
-/* 10 codes as a 2-column grid at a slightly smaller size — still legible,
-   but a fifth of the height of a single-column list. */
-.account-security-enroll__codes .account-auth-backup ul {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 2px var(--space-1, 0.25rem);
-}
-
-.account-security-enroll__codes .account-auth-backup code {
-  font-size: 0.65rem;
-}
-
-.account-security-enroll__actions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1, 0.25rem);
-}
-
-.account-security-enroll__actions .account-checkbox-row {
-  margin: 0;
-}
-
-/* Code input and Confirm/Cancel share one row (wraps on narrow viewports). */
-.account-security-enroll__actions-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--space-2, 0.5rem);
-}
-
-.account-security-enroll__actions-row .mail-field-row--totp {
-  flex: 0 0 auto;
-  margin-bottom: 0;
-}
-
-/* 6 digits don't need the full 16rem input used elsewhere — keep it short so
-   it comfortably shares this row with the Confirm/Cancel buttons. */
-.account-security-enroll__actions-row .mail-field-row--totp .at-input {
-  max-width: 7rem;
-}
-
-.account-security-enroll__actions-row .account-enroll-actions {
-  margin-top: 0;
-}
-
-@media (max-width: 560px) {
-  .account-security-enroll__top {
+@media (max-width: 480px) {
+  .account-2fa-enroll {
     flex-direction: column;
   }
 }
