@@ -79,4 +79,28 @@ describe("TotpDigitInput", () => {
     const inputs = screen.getAllByRole("textbox");
     expect(inputs[0]!.id).toBe("account-totp-code");
   });
+
+  it("disables all digit inputs when disabled", () => {
+    render(<TotpDigitInput value="123" onChange={vi.fn()} disabled />);
+    for (const input of screen.getAllByRole("textbox")) {
+      expect(input.hasAttribute("disabled")).toBe(true);
+    }
+  });
+
+  it("does not move past the last box with ArrowRight", () => {
+    render(<TotpDigitInput value="123456" onChange={vi.fn()} />);
+    const inputs = screen.getAllByRole("textbox") as HTMLInputElement[];
+    inputs[5]!.focus();
+    fireEvent.keyDown(inputs[5]!, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(inputs[5]);
+  });
+
+  it("fills remaining boxes when multi-character input starts mid-code", () => {
+    const onChange = vi.fn();
+    render(<TotpDigitInput value="12" onChange={onChange} />);
+    const inputs = screen.getAllByRole("textbox");
+
+    fireEvent.change(inputs[2]!, { target: { value: "3456" } });
+    expect(onChange).toHaveBeenLastCalledWith("123456");
+  });
 });

@@ -23,7 +23,22 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 });
 
 vi.mock("../../src/account/TotpQrCode.js", () => ({
-  TotpQrCode: () => <div data-testid="totp-qr" />,
+  TotpQrCode: ({
+    onRenderFailed,
+    onRenderSuccess,
+  }: {
+    onRenderFailed?: () => void;
+    onRenderSuccess?: () => void;
+  }) => (
+    <div data-testid="totp-qr">
+      <button type="button" onClick={() => onRenderFailed?.()}>
+        Simulate QR fail
+      </button>
+      <button type="button" onClick={() => onRenderSuccess?.()}>
+        Simulate QR ok
+      </button>
+    </div>
+  ),
 }));
 
 import {
@@ -532,6 +547,119 @@ describe("AccountPage toasts", () => {
       vi.useRealTimers();
       Object.assign(navigator, { clipboard: originalClipboard });
     }
+  });
+
+  it("shows the otpauth URI when QR rendering fails", async () => {
+    mockLoadedAccount();
+    mockEnrollMfaTotp.mockResolvedValueOnce({
+      otpauthUri: "otpauth://totp/Admitto?secret=QRFAIL",
+      backupCodes: [],
+      backupCodesAlreadyShown: true,
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Simulate QR fail" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Simulate QR fail" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("otpauth://totp/Admitto?secret=QRFAIL")).toBeTruthy();
+    });
+  });
+
+  it("keeps the otpauth URI visible after copy when QR rendering failed", async () => {
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    try {
+      mockLoadedAccount();
+      mockEnrollMfaTotp.mockResolvedValueOnce({
+        otpauthUri: "otpauth://totp/Admitto?secret=QRCLIP",
+        backupCodes: [],
+        backupCodesAlreadyShown: true,
+      });
+
+      renderWithToast(<AccountPage />);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Simulate QR fail" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Simulate QR fail" }));
+      fireEvent.click(screen.getByRole("button", { name: "Copy URI" }));
+
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith("otpauth://totp/Admitto?secret=QRCLIP");
+        expect(screen.getByText("otpauth://totp/Admitto?secret=QRCLIP")).toBeTruthy();
+      });
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("copies via execCommand when clipboard API is unavailable", async () => {
+    const originalClipboard = navigator.clipboard;
+    Object.assign(navigator, { clipboard: undefined });
+    const originalExecCommand = document.execCommand;
+    const execCommand = vi.fn().mockReturnValue(true);
+    document.execCommand = execCommand as typeof document.execCommand;
+
+    try {
+      mockLoadedAccount();
+      mockEnrollMfaTotp.mockResolvedValueOnce({
+        otpauthUri: "otpauth://totp/Admitto?secret=EXEC",
+        backupCodes: [],
+        backupCodesAlreadyShown: true,
+      });
+
+      renderWithToast(<AccountPage />);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Copy URI" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Copy URI" }));
+
+      await waitFor(() => {
+        expect(execCommand).toHaveBeenCalledWith("copy");
+        expect(screen.getByRole("button", { name: "Copied!" })).toBeTruthy();
+      });
+    } finally {
+      document.execCommand = originalExecCommand;
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("continues MFA setup when canceling a missing pending enrollment fails", async () => {
+    mockLoadedAccount();
+    mockCancelMfaEnroll.mockRejectedValueOnce(new Error("no pending enrollment"));
+    mockEnrollMfaTotp.mockResolvedValueOnce({
+      otpauthUri: "otpauth://totp/Admitto?secret=ABC",
+      backupCodes: [],
+      backupCodesAlreadyShown: true,
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+
+    await waitFor(() => {
+      expect(mockCancelMfaEnroll).toHaveBeenCalled();
+      expect(mockEnrollMfaTotp).toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Copy URI" })).toBeTruthy();
+    });
   });
 
   it("shows the otpauth URI when clipboard is unavailable", async () => {
