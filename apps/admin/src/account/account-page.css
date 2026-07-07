@@ -107,16 +107,16 @@
   margin: var(--space-3, 0.75rem) 0;
 }
 
-/* 10 backup codes in a 3-column grid spanning the full card width (~427px).
-   Each column is ~137px — comfortably fits XXXX-XXXX-XXXX-XXXX at 0.75rem
-   without wrapping. 10 codes → 4 rows instead of 10 single-column rows. */
+/* 10 backup codes in a 2-column grid inside the right enrollment column.
+   At ~300px right column, each column ≈ 145px — comfortably fits
+   XXXX-XXXX-XXXX-XXXX at 0.65rem without wrapping. */
 .account-auth-backup ul {
   margin: var(--space-2, 0.5rem) 0 0;
   padding-left: 0;
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px var(--space-3, 0.75rem);
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px var(--space-2, 0.5rem);
 }
 
 .account-auth-backup code {
@@ -226,14 +226,18 @@
   height: auto;
 }
 
-/* Password and 2FA are two independent Cards, side by side — each sizes to
-   its own content (align-items: start), so 2FA growing taller during
-   enrollment never stretches or distorts Password's card. */
+/* Password and 2FA are two independent Cards, side by side — stretch keeps
+   both cards the same height (Password is the taller reference). */
 .account-security-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-5, 1.5rem);
-  align-items: start;
+  align-items: stretch;
+}
+
+/* Force each card to fill the row height so both cards are always equal. */
+.account-security-grid > .at-card {
+  height: 100%;
 }
 
 /* Prevent grid items from overflowing their column (e.g. QR code, long text) */
@@ -247,55 +251,81 @@
   }
 }
 
-/* Enrollment: flex column — QR+hint row at top, backup codes full-width
-   in a 3-column grid below, then actions row. */
+/* Enrollment: two-column grid — QR on the left, all info on the right. */
 .account-2fa-enroll {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: var(--space-4, 1rem);
+  align-items: start;
+}
+
+/* Left column: QR canvas + raw URI details */
+.account-2fa-enroll__qr {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3, 0.75rem);
+  gap: var(--space-2, 0.5rem);
 }
 
-/* QR image sits next to the hint/raw-URI text */
-.account-2fa-enroll__scan {
+/* Right column: hint, backup codes, checkbox, code input, actions */
+.account-2fa-enroll__info {
   display: flex;
-  gap: var(--space-4, 1rem);
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.account-2fa-enroll__scan-text {
-  flex: 1 1 auto;
-  min-width: 0;
+.account-2fa-enroll__info .account-auth-backup {
+  margin: 0;
+  padding: 10px 12px;
 }
 
-/* Totp input + Confirm/Cancel share one line */
-.account-2fa-enroll__confirm {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--space-3, 0.75rem);
-}
-
-.account-2fa-enroll__confirm .mail-field-row--totp {
-  flex: 0 0 auto;
-  margin-bottom: 0;
-}
-
-.account-2fa-enroll__confirm .mail-field-row--totp .at-input {
-  max-width: 8rem;
-}
-
-.account-2fa-enroll__confirm .account-enroll-actions {
-  margin-top: 0;
-}
-
-.account-2fa-enroll .account-checkbox-row {
+.account-2fa-enroll__info .account-checkbox-row {
   margin: 0;
 }
 
-@media (max-width: 480px) {
-  .account-2fa-enroll__scan {
-    flex-direction: column;
+.account-2fa-enroll__info .account-enroll-actions {
+  margin-top: 0;
+}
+
+.account-2fa-enroll__info .mail-field-row {
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .account-2fa-enroll {
+    grid-template-columns: 1fr;
   }
+}
+
+/* Six individual digit boxes for TOTP code entry */
+.account-otp-digits {
+  display: flex;
+  gap: 6px;
+}
+
+.account-otp-digit {
+  width: 2.25rem;
+  height: 2.5rem;
+  padding: 0;
+  text-align: center;
+  font-size: 1.125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--at-ink);
+  border: 1px solid var(--at-gray-200);
+  border-radius: 6px;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.account-otp-digit:focus {
+  border-color: var(--at-blue);
+  box-shadow: 0 0 0 3px rgba(6, 111, 209, 0.15);
+}
+
+.account-otp-digit:disabled {
+  background: var(--at-gray-50, #f8f9fa);
+  color: var(--text-muted);
 }
 
 /* TOTP code is 6 digits — keep the input compact. Input renders <input class="at-input">

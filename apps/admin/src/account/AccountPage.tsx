@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, Checkbox, Input, PasswordStrengthMeter, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
+  cancelMfaEnroll,
   confirmMfaTotp,
   deleteAccountSession,
   enrollMfaTotp,
@@ -16,6 +17,7 @@ import type { AccountDto, MfaEnrollResponse, SessionListDto } from "../api/types
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 import { LOCALE_OPTIONS, setPreferredLocale as setPreferredLocaleStore } from "../utils/locale-store.js";
+import { TotpDigitInput } from "./TotpDigitInput.js";
 import { TotpQrCode } from "./TotpQrCode.js";
 
 function parseUserAgent(ua: string | null): string {
@@ -65,6 +67,7 @@ export function AccountPage() {
   const [enrollData, setEnrollData] = useState<MfaEnrollResponse | null>(null);
   const [backupSaved, setBackupSaved] = useState(false);
   const [totpCode, setTotpCode] = useState("");
+  const totpInputKey = useRef(0);
   const [mfaEnrolling, setMfaEnrolling] = useState(false);
   const [mfaConfirming, setMfaConfirming] = useState(false);
   const [resetFormOpen, setResetFormOpen] = useState(false);
@@ -374,49 +377,66 @@ export function AccountPage() {
             )}
             {enrollData && (
               <div className="account-2fa-enroll">
-                {/* QR + hint in a horizontal row */}
-                <div className="account-2fa-enroll__scan">
+                {/* Left column: QR code + raw URI */}
+                <div className="account-2fa-enroll__qr">
                   <TotpQrCode uri={enrollData.otpauthUri} />
-                  <div className="account-2fa-enroll__scan-text">
-                    <p className="mail-field-hint">Scan this QR code with your authenticator app.</p>
-                    <details className="account-uri-details">
-                      <summary className="account-uri-details__toggle">Show raw URI (advanced)</summary>
-                      <code className="account-uri-code">{enrollData.otpauthUri}</code>
-                    </details>
-                  </div>
+                  <details className="account-uri-details">
+                    <summary className="account-uri-details__toggle">Show raw URI</summary>
+                    <code className="account-uri-code">{enrollData.otpauthUri}</code>
+                  </details>
                 </div>
-                {/* Backup codes full width — grid layout uses full card width */}
-                {enrollData.backupCodes.length > 0 ? (
-                  <div className="account-auth-backup">
-                    <strong>Backup codes</strong>
-                    <p className="mail-field-hint">Save these codes somewhere safe. They are shown only once.</p>
-                    <ul>{enrollData.backupCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
-                  </div>
-                ) : enrollData.backupCodesAlreadyShown ? (
-                  <p className="mail-field-hint">Backup codes were already shown. Use your saved codes if needed.</p>
-                ) : null}
-                {/* Checkbox + code input + confirm/cancel on one row */}
-                <label className="account-checkbox-row">
-                  <Checkbox checked={backupSaved} onChange={(e) => setBackupSaved(e.target.checked)} />
-                  <span>I&apos;ve saved my backup codes</span>
-                </label>
-                <div className="account-2fa-enroll__confirm">
-                  <div className="mail-field-row mail-field-row--totp">
+                {/* Right column: all setup info stacked */}
+                <div className="account-2fa-enroll__info">
+                  <p className="mail-field-hint">Scan the QR code with your authenticator app.</p>
+                  {enrollData.backupCodes.length > 0 ? (
+                    <div className="account-auth-backup">
+                      <strong>Backup codes — save all 10, shown once</strong>
+                      <ul>{enrollData.backupCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
+                    </div>
+                  ) : enrollData.backupCodesAlreadyShown ? (
+                    <p className="mail-field-hint">Backup codes were shown at first setup. Use your saved codes if you need to recover access.</p>
+                  ) : null}
+                  {enrollData.backupCodes.length > 0 && (
+                    <label className="account-checkbox-row">
+                      <Checkbox checked={backupSaved} onChange={(e) => setBackupSaved(e.target.checked)} />
+                      <span>I&apos;ve saved my backup codes</span>
+                    </label>
+                  )}
+                  <div className="mail-field-row">
                     <label className="mail-field-label" htmlFor="account-totp-code">Authenticator code</label>
-                    <Input id="account-totp-code" value={totpCode} onChange={(e) => setTotpCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" disabled={!backupSaved && enrollData.backupCodes.length > 0} />
+                    <TotpDigitInput
+                      key={totpInputKey.current}
+                      id="account-totp-code"
+                      value={totpCode}
+                      onChange={setTotpCode}
+                      disabled={enrollData.backupCodes.length > 0 && !backupSaved}
+                    />
                   </div>
                   <div className="account-enroll-actions">
-                    <Button type="button" variant="primary" disabled={mfaConfirming || !totpCode.trim() || (!backupSaved && enrollData.backupCodes.length > 0)} onClick={async () => {
-                      setMfaConfirming(true);
-                      try {
-                        await confirmMfaTotp({ code: totpCode.trim() });
+                    <Button
+                      type="button"
+                      variant="primary"
+                      disabled={mfaConfirming || totpCode.length < 6 || (enrollData.backupCodes.length > 0 && !backupSaved)}
+                      onClick={async () => {
+                        setMfaConfirming(true);
+                        try {
+                          await confirmMfaTotp({ code: totpCode });
+                          setEnrollData(null); setTotpCode(""); setBackupSaved(false);
+                          addToast("Two-factor authentication is enabled.", "success");
+                          await loadAccount();
+                        } catch (err) { addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error"); }
+                        finally { setMfaConfirming(false); }
+                      }}>Confirm setup</Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={async () => {
+                        totpInputKey.current += 1;
+                        setMfaEnrolling(true);
                         setEnrollData(null); setTotpCode(""); setBackupSaved(false);
-                        addToast("Two-factor authentication is enabled.", "success");
-                        await loadAccount();
-                      } catch (err) { addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error"); }
-                      finally { setMfaConfirming(false); }
-                    }}>Confirm setup</Button>
-                    <Button type="button" variant="secondary" onClick={() => setEnrollData(null)}>Cancel</Button>
+                        try { await cancelMfaEnroll(); } catch { /* best-effort */ }
+                        finally { setMfaEnrolling(false); }
+                      }}>Cancel</Button>
                   </div>
                 </div>
               </div>

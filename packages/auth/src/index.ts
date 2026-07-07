@@ -185,6 +185,7 @@ export {
   startTotpEnrollment,
   getOrStartTotpEnrollment,
   resumePendingTotpEnrollment,
+  cancelPendingTotpEnrollment,
   confirmTotpEnrollment,
   verifyUserTotpCode,
   resetUserMfa,

@@ -15,6 +15,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     patchAccountProfile: vi.fn(),
     patchAccountPassword: vi.fn(),
     enrollMfaTotp: vi.fn(),
+    cancelMfaEnroll: vi.fn().mockResolvedValue(undefined),
     confirmMfaTotp: vi.fn(),
     resetMfa: vi.fn(),
     deleteAccountSession: vi.fn(),
