@@ -20,7 +20,7 @@ describe("TotpQrCode", () => {
       expect(QRCode.toCanvas).toHaveBeenCalledWith(
         expect.any(HTMLCanvasElement),
         TEST_URI,
-        expect.objectContaining({ width: 200 }),
+        expect.objectContaining({ width: 140 }),
       );
     });
   });

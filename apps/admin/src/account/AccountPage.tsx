@@ -238,6 +238,11 @@ export function AccountPage() {
         <div className="account-security-grid">
           <div className="account-security-col">
             <h3 className="account-security-col__title">Password</h3>
+        {account.has_local_password && (
+          <p className="account-info-block">
+            Use at least 12 characters, mixing upper and lowercase letters, numbers, and symbols for a stronger password.
+          </p>
+        )}
         {!account.has_local_password ? (
           <p className="account-info-block">Password is managed by your identity provider.</p>
         ) : (
@@ -349,98 +354,106 @@ export function AccountPage() {
           </div>
           <div className="account-security-col">
             <h3 className="account-security-col__title">Two-factor authentication</h3>
-            <div className="account-security-col__scroll">
-              <div className="account-mfa-status-row">
-                <Badge variant={totpEnrolled ? "ok" : "neutral"}>{totpEnrolled ? "Enabled" : "Not configured"}</Badge>
-                {!totpEnrolled && !enrollData && account.has_local_password && (
-                  <Button type="button" variant="primary" size="sm" disabled={mfaEnrolling} onClick={async () => {
-                    setMfaEnrolling(true); setBackupSaved(false); setTotpCode("");
-                    try { setEnrollData(await enrollMfaTotp()); }
-                    catch (err) { addToast(operatorApiErrorMessage(err, "Failed to start 2FA setup."), "error"); }
-                    finally { setMfaEnrolling(false); }
-                  }}>Set up authenticator</Button>
-                )}
-                {totpEnrolled && account.has_local_password && !resetFormOpen && (
-                  <Button type="button" variant="danger" size="sm" onClick={() => setResetFormOpen(true)}>Reset 2FA</Button>
-                )}
-              </div>
-              {!totpEnrolled && !enrollData && !account.has_local_password && (
-                <p className="account-info-block">
-                  Two-factor setup requires a local password. Sign-in-only accounts must use their identity provider or contact an administrator.
-                </p>
+            <div className="account-mfa-status-row">
+              <Badge variant={totpEnrolled ? "ok" : "neutral"}>{totpEnrolled ? "Enabled" : "Not configured"}</Badge>
+              {!totpEnrolled && !enrollData && account.has_local_password && (
+                <Button type="button" variant="primary" size="sm" disabled={mfaEnrolling} onClick={async () => {
+                  setMfaEnrolling(true); setBackupSaved(false); setTotpCode("");
+                  try { setEnrollData(await enrollMfaTotp()); }
+                  catch (err) { addToast(operatorApiErrorMessage(err, "Failed to start 2FA setup."), "error"); }
+                  finally { setMfaEnrolling(false); }
+                }}>Set up authenticator</Button>
               )}
-              {enrollData && (
-                <>
-                  <p className="mail-field-hint">Scan this code in your authenticator app:</p>
-                  <TotpQrCode uri={enrollData.otpauthUri} />
-                  <details className="account-uri-details">
-                    <summary className="account-uri-details__toggle">Show raw URI (advanced)</summary>
-                    <code className="account-uri-code">{enrollData.otpauthUri}</code>
-                  </details>
-                  {enrollData.backupCodes.length > 0 ? (
-                    <div className="account-auth-backup">
-                      <strong>Backup codes</strong>
-                      <p className="mail-field-hint">Save these codes somewhere safe. They are shown only once.</p>
-                      <ul>{enrollData.backupCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
-                    </div>
-                  ) : enrollData.backupCodesAlreadyShown ? (
-                    <p className="mail-field-hint">Backup codes were already shown. Use your saved codes if needed.</p>
-                  ) : null}
+              {totpEnrolled && account.has_local_password && !resetFormOpen && (
+                <Button type="button" variant="danger" size="sm" onClick={() => setResetFormOpen(true)}>Reset 2FA</Button>
+              )}
+            </div>
+            {!totpEnrolled && !enrollData && !account.has_local_password && (
+              <p className="account-info-block">
+                Two-factor setup requires a local password. Sign-in-only accounts must use their identity provider or contact an administrator.
+              </p>
+            )}
+            {enrollData && (
+              <div className="account-security-enroll">
+                <div className="account-security-enroll__top">
+                  <div className="account-security-enroll__qr">
+                    <p className="mail-field-hint">Scan this QR code:</p>
+                    <TotpQrCode uri={enrollData.otpauthUri} />
+                    <details className="account-uri-details">
+                      <summary className="account-uri-details__toggle">Show raw URI (advanced)</summary>
+                      <code className="account-uri-code">{enrollData.otpauthUri}</code>
+                    </details>
+                  </div>
+                  <div className="account-security-enroll__codes">
+                    {enrollData.backupCodes.length > 0 ? (
+                      <div className="account-auth-backup">
+                        <strong>Backup codes</strong>
+                        <p className="mail-field-hint">Shown only once — save them now.</p>
+                        <ul>{enrollData.backupCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
+                      </div>
+                    ) : enrollData.backupCodesAlreadyShown ? (
+                      <p className="mail-field-hint">Backup codes were already shown. Use your saved codes if needed.</p>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="account-security-enroll__actions">
                   <label className="account-checkbox-row">
                     <Checkbox checked={backupSaved} onChange={(e) => setBackupSaved(e.target.checked)} />
                     <span>I&apos;ve saved my backup codes</span>
                   </label>
-                  <div className="mail-field-row mail-field-row--totp">
-                    <label className="mail-field-label" htmlFor="account-totp-code">Authenticator code</label>
-                    <Input id="account-totp-code" value={totpCode} onChange={(e) => setTotpCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" disabled={!backupSaved && enrollData.backupCodes.length > 0} />
+                  <div className="account-security-enroll__actions-row">
+                    <div className="mail-field-row mail-field-row--totp">
+                      <label className="mail-field-label" htmlFor="account-totp-code">Authenticator code</label>
+                      <Input id="account-totp-code" value={totpCode} onChange={(e) => setTotpCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" disabled={!backupSaved && enrollData.backupCodes.length > 0} />
+                    </div>
+                    <div className="account-enroll-actions">
+                      <Button type="button" variant="primary" disabled={mfaConfirming || !totpCode.trim() || (!backupSaved && enrollData.backupCodes.length > 0)} onClick={async () => {
+                        setMfaConfirming(true);
+                        try {
+                          await confirmMfaTotp({ code: totpCode.trim() });
+                          setEnrollData(null); setTotpCode(""); setBackupSaved(false);
+                          addToast("Two-factor authentication is enabled.", "success");
+                          await loadAccount();
+                        } catch (err) { addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error"); }
+                        finally { setMfaConfirming(false); }
+                      }}>Confirm setup</Button>
+                      <Button type="button" variant="secondary" onClick={() => setEnrollData(null)}>Cancel</Button>
+                    </div>
                   </div>
-                  <div className="account-enroll-actions">
-                    <Button type="button" variant="primary" disabled={mfaConfirming || !totpCode.trim() || (!backupSaved && enrollData.backupCodes.length > 0)} onClick={async () => {
-                      setMfaConfirming(true);
-                      try {
-                        await confirmMfaTotp({ code: totpCode.trim() });
-                        setEnrollData(null); setTotpCode(""); setBackupSaved(false);
-                        addToast("Two-factor authentication is enabled.", "success");
-                        await loadAccount();
-                      } catch (err) { addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error"); }
-                      finally { setMfaConfirming(false); }
-                    }}>Confirm setup</Button>
-                    <Button type="button" variant="secondary" onClick={() => setEnrollData(null)}>Cancel</Button>
-                  </div>
-                </>
-              )}
-              {totpEnrolled && account.has_local_password && (
-                <>
-                  <p className="account-info-block">Resetting 2FA will end your other active sessions. You will stay signed in on this device.</p>
-                  {resetFormOpen && (
-                    <>
-                      <div className="mail-field-row">
-                        <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
-                        <Input
-                          id="account-reset-password"
-                          name="current-password"
-                          type="password"
-                          autoComplete="current-password"
-                          autoCapitalize="off"
-                          spellCheck={false}
-                          value={resetPassword}
-                          onChange={(e) => setResetPassword(e.target.value)}
-                        />
-                      </div>
-                      <div className="account-enroll-actions">
-                        <Button type="button" variant="danger" disabled={!resetPassword} onClick={() => setResetConfirmOpen(true)}>Reset 2FA</Button>
-                        <Button type="button" variant="secondary" onClick={() => { setResetFormOpen(false); setResetPassword(""); setResetError(null); }}>Cancel</Button>
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-              {totpEnrolled && !account.has_local_password && (
-                <p className="account-info-block">
-                  Two-factor reset requires a local password. Sign-in-only accounts must contact an administrator.
-                </p>
-              )}
-            </div>
+                </div>
+              </div>
+            )}
+            {totpEnrolled && account.has_local_password && (
+              <>
+                <p className="account-info-block">Resetting 2FA will end your other active sessions. You will stay signed in on this device.</p>
+                {resetFormOpen && (
+                  <>
+                    <div className="mail-field-row">
+                      <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
+                      <Input
+                        id="account-reset-password"
+                        name="current-password"
+                        type="password"
+                        autoComplete="current-password"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        value={resetPassword}
+                        onChange={(e) => setResetPassword(e.target.value)}
+                      />
+                    </div>
+                    <div className="account-enroll-actions">
+                      <Button type="button" variant="danger" disabled={!resetPassword} onClick={() => setResetConfirmOpen(true)}>Reset 2FA</Button>
+                      <Button type="button" variant="secondary" onClick={() => { setResetFormOpen(false); setResetPassword(""); setResetError(null); }}>Cancel</Button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+            {totpEnrolled && !account.has_local_password && (
+              <p className="account-info-block">
+                Two-factor reset requires a local password. Sign-in-only accounts must contact an administrator.
+              </p>
+            )}
           </div>
         </div>
       </Card>
