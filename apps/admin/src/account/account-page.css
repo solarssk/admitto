@@ -187,23 +187,11 @@
 }
 
 /* Inline row: digit inputs on left, action buttons on right */
-.account-totp-confirm-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3, 0.75rem);
-  flex-wrap: wrap;
-  margin-top: var(--space-3, 0.75rem);
-}
-
 .account-totp-confirm-row__inputs {
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-
-.account-totp-confirm-row .account-enroll-actions {
-  margin-top: 0;
-  flex-wrap: nowrap;
+  margin-top: var(--space-3, 0.75rem);
 }
 
 .account-role-list {
@@ -273,9 +261,31 @@
   align-items: stretch;
 }
 
-/* Force each card to fill the row height so both cards are always equal. */
+/* Force each card to fill the row height so both cards are always equal.
+   Flex-column layout so action footers can use margin-top: auto to reach card bottom. */
 .account-security-grid > .at-card {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.account-security-grid > .at-card .at-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Password form fills the card body */
+.account-security-grid .account-password-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Push action footers to the bottom of their card */
+.account-security-grid .mail-transport-footer {
+  margin-top: auto;
+  padding-top: var(--space-3);
 }
 
 /* Prevent grid items from overflowing their column (e.g. QR code, long text) */

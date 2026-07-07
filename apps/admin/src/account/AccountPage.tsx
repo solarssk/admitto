@@ -433,7 +433,7 @@ export function AccountPage() {
                     {uriCopied ? "Copied!" : "Copy URI"}
                   </button>
                 </div>
-                {/* Right column: all setup info stacked */}
+                {/* Right column: hint, backup codes, digit input */}
                 <div className="account-2fa-enroll__info">
                   <p className="mail-field-hint">Scan the QR code with your authenticator app.</p>
                   {enrollData.backupCodes.length > 0 ? (
@@ -444,42 +444,14 @@ export function AccountPage() {
                   ) : enrollData.backupCodesAlreadyShown ? (
                     <p className="mail-field-hint">Backup codes were shown at first setup. Use your saved codes if you need to recover access.</p>
                   ) : null}
-                  <div className="account-totp-confirm-row">
-                    <div className="account-totp-confirm-row__inputs">
-                      <label className="mail-field-label" htmlFor="account-totp-code">Authenticator code</label>
-                      <TotpDigitInput
-                        key={totpInputKey.current}
-                        id="account-totp-code"
-                        value={totpCode}
-                        onChange={setTotpCode}
-                      />
-                    </div>
-                    <div className="account-enroll-actions">
-                      <Button
-                        type="button"
-                        variant="primary"
-                        disabled={mfaConfirming || totpCode.length < 6}
-                        onClick={async () => {
-                          setMfaConfirming(true);
-                          try {
-                            await confirmMfaTotp({ code: totpCode });
-                            setEnrollData(null); setTotpCode("");
-                            addToast("Two-factor authentication is enabled.", "success");
-                            await loadAccount();
-                          } catch (err) { addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error"); }
-                          finally { setMfaConfirming(false); }
-                        }}>Confirm setup</Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={async () => {
-                          totpInputKey.current += 1;
-                          setMfaEnrolling(true);
-                          setEnrollData(null); setTotpCode(""); setUriCopied(false);
-                          try { await cancelMfaEnroll(); } catch { /* best-effort */ }
-                          finally { setMfaEnrolling(false); }
-                        }}>Cancel</Button>
-                    </div>
+                  <div className="account-totp-confirm-row__inputs">
+                    <label className="mail-field-label" htmlFor="account-totp-code">Authenticator code</label>
+                    <TotpDigitInput
+                      key={totpInputKey.current}
+                      id="account-totp-code"
+                      value={totpCode}
+                      onChange={setTotpCode}
+                    />
                   </div>
                 </div>
               </div>
@@ -488,25 +460,19 @@ export function AccountPage() {
               <>
                 <p className="account-info-block" style={{ marginTop: "var(--space-3)" }}>Resetting 2FA will end your other active sessions. You will need to sign in again.</p>
                 {resetFormOpen && (
-                  <>
-                    <div className="mail-field-row">
-                      <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
-                      <Input
-                        id="account-reset-password"
-                        name="current-password"
-                        type="password"
-                        autoComplete="current-password"
-                        autoCapitalize="off"
-                        spellCheck={false}
-                        value={resetPassword}
-                        onChange={(e) => setResetPassword(e.target.value)}
-                      />
-                    </div>
-                    <div className="account-enroll-actions">
-                      <Button type="button" variant="danger" disabled={!resetPassword} onClick={() => setResetConfirmOpen(true)}>Reset 2FA</Button>
-                      <Button type="button" variant="secondary" onClick={() => { setResetFormOpen(false); setResetPassword(""); setResetError(null); }}>Cancel</Button>
-                    </div>
-                  </>
+                  <div className="mail-field-row">
+                    <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
+                    <Input
+                      id="account-reset-password"
+                      name="current-password"
+                      type="password"
+                      autoComplete="current-password"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      value={resetPassword}
+                      onChange={(e) => setResetPassword(e.target.value)}
+                    />
+                  </div>
                 )}
               </>
             )}
@@ -514,6 +480,41 @@ export function AccountPage() {
               <p className="account-info-block">
                 Two-factor reset requires a local password. Sign-in-only accounts must contact an administrator.
               </p>
+            )}
+            {/* Action footer — aligned to card bottom alongside "Change password" */}
+            {enrollData && (
+              <div className="mail-transport-footer">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={async () => {
+                    totpInputKey.current += 1;
+                    setMfaEnrolling(true);
+                    setEnrollData(null); setTotpCode(""); setUriCopied(false);
+                    try { await cancelMfaEnroll(); } catch { /* best-effort */ }
+                    finally { setMfaEnrolling(false); }
+                  }}>Cancel</Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={mfaConfirming || totpCode.length < 6}
+                  onClick={async () => {
+                    setMfaConfirming(true);
+                    try {
+                      await confirmMfaTotp({ code: totpCode });
+                      setEnrollData(null); setTotpCode("");
+                      addToast("Two-factor authentication is enabled.", "success");
+                      await loadAccount();
+                    } catch (err) { addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error"); }
+                    finally { setMfaConfirming(false); }
+                  }}>Confirm setup</Button>
+              </div>
+            )}
+            {resetFormOpen && (
+              <div className="mail-transport-footer">
+                <Button type="button" variant="secondary" onClick={() => { setResetFormOpen(false); setResetPassword(""); setResetError(null); }}>Cancel</Button>
+                <Button type="button" variant="danger" disabled={!resetPassword} onClick={() => setResetConfirmOpen(true)}>Reset 2FA</Button>
+              </div>
             )}
         </Card>
       </div>
