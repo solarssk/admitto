@@ -65,7 +65,9 @@ describe("SecurityPanel — Require 2FA for roles", () => {
     renderWithToast(<SecurityPanel />);
 
     const superadmin = await screen.findByLabelText<HTMLInputElement>("Superadmin");
-    expect(superadmin.disabled).toBe(true);
+    // <fieldset disabled> disables descendants functionally without reflecting
+    // on each input's .disabled property — assert on the fieldset itself.
+    expect(superadmin.closest("fieldset")!.disabled).toBe(true);
     expect(superadmin.checked).toBe(true);
     expect(screen.getByText("Managed by environment")).toBeTruthy();
   });

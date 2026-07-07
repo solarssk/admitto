@@ -374,7 +374,13 @@ describe("AccountPage toasts", () => {
 
       expect(createObjectURL).toHaveBeenCalledOnce();
       const blob = createObjectURL.mock.calls[0]![0] as Blob;
-      expect(await blob.text()).toBe("1111-2222\n3333-4444\n");
+      const text = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(blob);
+      });
+      expect(text).toBe("1111-2222\n3333-4444\n");
       expect(blob.type).toContain("text/plain");
       expect(anchorClicks).toEqual(["admitto-backup-codes.txt"]);
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock-codes");
