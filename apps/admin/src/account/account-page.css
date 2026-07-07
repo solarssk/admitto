@@ -137,14 +137,18 @@
 .account-totp-qr {
   display: flex;
   justify-content: flex-start;
-  margin: 8px 0;
+  margin: 0;
 }
 
 .account-totp-qr canvas {
+  display: block;
+  width: 160px;
+  height: 160px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   padding: 8px;
   background: #fff;
+  box-sizing: content-box;
 }
 
 .account-totp-qr__error {
@@ -299,31 +303,53 @@
   }
 }
 
-/* Enrollment: two-column grid — QR on the left, all info on the right. */
+/* Enrollment: QR column sized to canvas + padding; info column takes the rest. */
 .account-2fa-enroll {
+  --account-totp-qr-size: 160px;
   display: grid;
-  grid-template-columns: 110px 1fr;
-  gap: var(--space-4, 1rem);
+  grid-template-columns: calc(var(--account-totp-qr-size) + 18px) minmax(0, 1fr);
+  gap: var(--space-3, 0.75rem);
   align-items: start;
 }
 
-/* Left column: QR canvas + raw URI details */
+/* Left column: fixed width so the 160px canvas never bleeds into backup codes */
 .account-2fa-enroll__qr {
   display: flex;
   flex-direction: column;
   gap: var(--space-2, 0.5rem);
+  width: calc(var(--account-totp-qr-size) + 18px);
+  flex-shrink: 0;
 }
 
-/* Right column: hint, backup codes, checkbox, code input, actions */
+/* Right column: hint, backup codes, digit input — must shrink inside the 2FA card */
 .account-2fa-enroll__info {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+}
+
+.account-2fa-enroll__info > .mail-field-hint {
+  font-size: var(--fs-xs, 0.75rem);
+  line-height: 1.35;
+  margin: 0;
 }
 
 .account-2fa-enroll__info .account-auth-backup {
   margin: 0;
-  padding: 10px 12px;
+  padding: 8px 10px;
+  font-size: var(--fs-xs, 0.75rem);
+}
+
+/* Two columns — 5 rows beside the QR, not 10 rows stacked downward */
+.account-2fa-enroll__info .account-auth-backup ul {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px var(--space-2, 0.5rem);
+}
+
+.account-2fa-enroll__info .account-auth-backup code {
+  font-size: 0.62rem;
+  letter-spacing: -0.02em;
 }
 
 .account-2fa-enroll__info .account-checkbox-row {
