@@ -83,4 +83,24 @@ describe("OperatorShell", () => {
     expect(screen.queryByTestId("connection-banner")).toBeNull();
     expect(connectionBanner).not.toHaveBeenCalled();
   });
+
+  it("omits location detail when the event has no location", async () => {
+    mockFetchCheckInEvents.mockResolvedValueOnce([{ ...sampleEvent, location: null }]);
+    renderShell("/operator/events/evt-1/checkin");
+
+    await waitFor(() => {
+      expect(screen.getByText("Operator Gala")).toBeTruthy();
+    });
+    expect(screen.queryByText("Kraków")).toBeNull();
+  });
+
+  it("clears sidebar event details when event lookup fails", async () => {
+    mockFetchCheckInEvents.mockRejectedValueOnce(new Error("network"));
+    renderShell("/operator/events/evt-1/checkin");
+
+    await waitFor(() => {
+      expect(mockFetchCheckInEvents).toHaveBeenCalled();
+    });
+    expect(screen.queryByText("Operator Gala")).toBeNull();
+  });
 });

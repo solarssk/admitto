@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword, createSession } from "@admitto/auth";
 import { createApp } from "../../src/app.js";
@@ -364,6 +364,36 @@ describe("GET /login", () => {
     const html = await res.text();
     expect(html).toMatch(/sign in|login/i);
     await prisma.user.delete({ where: { id: orphan.id } });
+  });
+
+  it("does not redirect when next targets /login with query (avoids loop)", async () => {
+    const { rawToken } = await createSession(prisma, { userId: operatorId });
+    const res = await app.request("/login?next=%2Flogin%3Ferror%3Doidc_failed", {
+      redirect: "manual",
+      headers: { Cookie: `admitto_session=${rawToken}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toMatch(/sign in|login/i);
+  });
+
+  it("shows login form when post-login redirect resolution fails", async () => {
+    const { rawToken } = await createSession(prisma, { userId: operatorId });
+    const postLogin = await import("../../src/auth/post-login-redirect.js");
+    const spy = vi
+      .spyOn(postLogin, "resolvePostLoginRedirectForUser")
+      .mockRejectedValueOnce(new Error("redirect failed"));
+    try {
+      const res = await app.request("/login", {
+        redirect: "manual",
+        headers: { Cookie: `admitto_session=${rawToken}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toMatch(/sign in|login/i);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
