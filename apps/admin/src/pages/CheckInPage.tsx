@@ -797,8 +797,8 @@ export function CheckInPage({
 
   return (
     <>
-      {!isOperatorShell && <CheckinConnectionLiveRegion />}
-      {!isOperatorShell && <CheckinConnectionBanner />}
+      <CheckinConnectionLiveRegion />
+      <CheckinConnectionBanner />
 
       {streamStatus === "auth_error" && (
         <p className="check-in__offline-banner" role="status">

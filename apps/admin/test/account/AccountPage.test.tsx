@@ -259,10 +259,10 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Set up authenticator" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Set up authenticator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/already enabled/i);
@@ -283,10 +283,10 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Set up authenticator" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Set up authenticator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
     await waitFor(() => {
       expect(screen.getByLabelText("Authenticator code")).toBeTruthy();
     });
@@ -313,10 +313,10 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Set up authenticator" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Set up authenticator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
     await waitFor(() => {
       expect(screen.getByLabelText("Authenticator code")).toBeTruthy();
     });
@@ -338,10 +338,10 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Reset 2FA" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     fireEvent.change(screen.getByLabelText("Current password", { selector: "#account-reset-password" }), {
       target: { value: "current-password" },
     });
@@ -457,9 +457,9 @@ describe("AccountPage toasts", () => {
     mockResetMfa.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Reset 2FA" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     fireEvent.change(screen.getByLabelText("Current password", { selector: "#account-reset-password" }), {
       target: { value: "current-password" },
     });

@@ -189,9 +189,10 @@
 /* Inline row: digit inputs on left, action buttons on right */
 .account-totp-confirm-row {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: var(--space-3, 0.75rem);
   flex-wrap: wrap;
+  margin-top: var(--space-3, 0.75rem);
 }
 
 .account-totp-confirm-row__inputs {
@@ -369,4 +370,74 @@
    directly (no .at-field wrapper — that's only used by Select), so target .at-input. */
 .mail-field-row--totp .at-input {
   max-width: 16rem;
+}
+
+
+/* ── Security methods list ──────────────────────────────── */
+.account-mfa-methods {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 var(--space-2, 0.5rem);
+}
+
+.account-mfa-method {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  padding: var(--space-3, 0.75rem) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.account-mfa-method:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.account-mfa-method--soon {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.account-mfa-method__icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-subtle, var(--at-gray-100));
+  border-radius: var(--radius, 4px);
+  font-size: 18px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.account-mfa-method__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.account-mfa-method__name {
+  font-size: var(--fs-sm, 0.875rem);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.account-mfa-method__status {
+  font-size: var(--fs-xs, 0.75rem);
+  color: var(--text-muted);
+}
+
+.account-mfa-method__status--ok {
+  color: var(--status-ok, var(--at-green-700, #15803d));
+}
+
+.account-mfa-method__status--soon {
+  font-style: italic;
+}
+
+.account-mfa-method__action {
+  flex-shrink: 0;
 }

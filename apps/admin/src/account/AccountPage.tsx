@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Button, Card, Checkbox, Input, PasswordStrengthMeter, Spinner, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Input, PasswordStrengthMeter, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
   cancelMfaEnroll,
@@ -65,7 +65,6 @@ export function AccountPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [enrollData, setEnrollData] = useState<MfaEnrollResponse | null>(null);
-  const [backupSaved, setBackupSaved] = useState(false);
   const [totpCode, setTotpCode] = useState("");
   const totpInputKey = useRef(0);
   const [mfaEnrolling, setMfaEnrolling] = useState(false);
@@ -355,30 +354,66 @@ export function AccountPage() {
         )}
         </Card>
         <Card title="Two-factor authentication">
-            {!enrollData && (
-              <div className="account-mfa-status-row">
-                <Badge variant={totpEnrolled ? "ok" : "neutral"}>{totpEnrolled ? "Enabled" : "Not configured"}</Badge>
-                {!totpEnrolled && !enrollData && account.has_local_password && (
-                  <Button type="button" variant="primary" size="sm" disabled={mfaEnrolling} onClick={async () => {
-                    setMfaEnrolling(true); setBackupSaved(false); setTotpCode(""); setUriCopied(false);
-                    try {
-                      await cancelMfaEnroll().catch(() => { /* ignore — no pending enrollment */ });
-                      setEnrollData(await enrollMfaTotp());
-                    }
-                    catch (err) { addToast(operatorApiErrorMessage(err, "Failed to start 2FA setup."), "error"); }
-                    finally { setMfaEnrolling(false); }
-                  }}>Set up authenticator</Button>
-                )}
-                {totpEnrolled && account.has_local_password && !resetFormOpen && (
-                  <Button type="button" variant="danger" size="sm" onClick={() => setResetFormOpen(true)}>Reset 2FA</Button>
+            {/* Methods list — always visible */}
+            <div className="account-mfa-methods">
+              {/* ── Authenticator app row ── */}
+              <div className="account-mfa-method">
+                <span className="account-mfa-method__icon">
+                  <i className="ti ti-shield-lock" aria-hidden="true" />
+                </span>
+                <div className="account-mfa-method__body">
+                  <span className="account-mfa-method__name">Authenticator app (TOTP)</span>
+                  <span className={`account-mfa-method__status${totpEnrolled ? " account-mfa-method__status--ok" : ""}`}>
+                    {totpEnrolled ? "Enabled" : "Not configured"}
+                  </span>
+                </div>
+                {!enrollData && account.has_local_password && (
+                  <div className="account-mfa-method__action">
+                    {!totpEnrolled && (
+                      <Button type="button" variant="primary" size="sm" disabled={mfaEnrolling} onClick={async () => {
+                        setMfaEnrolling(true); setTotpCode(""); setUriCopied(false);
+                        try {
+                          await cancelMfaEnroll().catch(() => { /* ignore — no pending enrollment */ });
+                          setEnrollData(await enrollMfaTotp());
+                        }
+                        catch (err) { addToast(operatorApiErrorMessage(err, "Failed to start 2FA setup."), "error"); }
+                        finally { setMfaEnrolling(false); }
+                      }}>Set up</Button>
+                    )}
+                    {totpEnrolled && !resetFormOpen && (
+                      <Button type="button" variant="danger" size="sm" onClick={() => setResetFormOpen(true)}>Reset</Button>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
+              {/* ── Passkey / WebAuthn placeholder ── */}
+              <div className="account-mfa-method account-mfa-method--soon">
+                <span className="account-mfa-method__icon">
+                  <i className="ti ti-fingerprint" aria-hidden="true" />
+                </span>
+                <div className="account-mfa-method__body">
+                  <span className="account-mfa-method__name">Passkey / WebAuthn</span>
+                  <span className="account-mfa-method__status account-mfa-method__status--soon">Coming soon</span>
+                </div>
+              </div>
+              {/* ── Security key placeholder ── */}
+              <div className="account-mfa-method account-mfa-method--soon">
+                <span className="account-mfa-method__icon">
+                  <i className="ti ti-key" aria-hidden="true" />
+                </span>
+                <div className="account-mfa-method__body">
+                  <span className="account-mfa-method__name">Security key (YubiKey)</span>
+                  <span className="account-mfa-method__status account-mfa-method__status--soon">Coming soon</span>
+                </div>
+              </div>
+            </div>
+
             {!totpEnrolled && !enrollData && !account.has_local_password && (
-              <p className="account-info-block">
+              <p className="account-info-block" style={{ marginTop: "var(--space-3)" }}>
                 Two-factor setup requires a local password. Sign-in-only accounts must use their identity provider or contact an administrator.
               </p>
             )}
+
             {enrollData && (
               <div className="account-2fa-enroll">
                 {/* Left column: QR code + copy URI */}
@@ -409,12 +444,6 @@ export function AccountPage() {
                   ) : enrollData.backupCodesAlreadyShown ? (
                     <p className="mail-field-hint">Backup codes were shown at first setup. Use your saved codes if you need to recover access.</p>
                   ) : null}
-                  {enrollData.backupCodes.length > 0 && (
-                    <label className="account-checkbox-row">
-                      <Checkbox checked={backupSaved} onChange={(e) => setBackupSaved(e.target.checked)} />
-                      <span>I&apos;ve saved my backup codes</span>
-                    </label>
-                  )}
                   <div className="account-totp-confirm-row">
                     <div className="account-totp-confirm-row__inputs">
                       <label className="mail-field-label" htmlFor="account-totp-code">Authenticator code</label>
@@ -423,19 +452,18 @@ export function AccountPage() {
                         id="account-totp-code"
                         value={totpCode}
                         onChange={setTotpCode}
-                        disabled={enrollData.backupCodes.length > 0 && !backupSaved}
                       />
                     </div>
                     <div className="account-enroll-actions">
                       <Button
                         type="button"
                         variant="primary"
-                        disabled={mfaConfirming || totpCode.length < 6 || (enrollData.backupCodes.length > 0 && !backupSaved)}
+                        disabled={mfaConfirming || totpCode.length < 6}
                         onClick={async () => {
                           setMfaConfirming(true);
                           try {
                             await confirmMfaTotp({ code: totpCode });
-                            setEnrollData(null); setTotpCode(""); setBackupSaved(false);
+                            setEnrollData(null); setTotpCode("");
                             addToast("Two-factor authentication is enabled.", "success");
                             await loadAccount();
                           } catch (err) { addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error"); }
@@ -447,7 +475,7 @@ export function AccountPage() {
                         onClick={async () => {
                           totpInputKey.current += 1;
                           setMfaEnrolling(true);
-                          setEnrollData(null); setTotpCode(""); setBackupSaved(false); setUriCopied(false);
+                          setEnrollData(null); setTotpCode(""); setUriCopied(false);
                           try { await cancelMfaEnroll(); } catch { /* best-effort */ }
                           finally { setMfaEnrolling(false); }
                         }}>Cancel</Button>
@@ -458,7 +486,7 @@ export function AccountPage() {
             )}
             {totpEnrolled && account.has_local_password && (
               <>
-                <p className="account-info-block">Resetting 2FA will end your other active sessions. You will need to sign in again.</p>
+                <p className="account-info-block" style={{ marginTop: "var(--space-3)" }}>Resetting 2FA will end your other active sessions. You will need to sign in again.</p>
                 {resetFormOpen && (
                   <>
                     <div className="mail-field-row">
