@@ -1043,7 +1043,7 @@ export function CommunicationPage() {
                       </td>
                       <td className="mono muted">{formatDateTime(row.queued_at)}</td>
                       <td className="mono muted">
-                        {formatDateTime(row.sent_at ?? row.failed_at)}
+                        {formatDateTime(row.sent_at ?? row.accepted_at ?? row.failed_at)}
                       </td>
                       <td className="muted">{row.error_code ?? "—"}</td>
                     </tr>

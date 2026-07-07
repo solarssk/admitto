@@ -8,6 +8,7 @@ export interface DeliveryDto {
   recipient_email: string | null;
   rendered_subject: string | null;
   queued_at: string;
+  accepted_at: string | null;
   sent_at: string | null;
   failed_at: string | null;
   error_code: string | null;
@@ -27,6 +28,7 @@ export function toDeliveryDto(entry: DeliveryLogEntry): DeliveryDto {
     recipient_email: entry.recipient_email,
     rendered_subject: entry.rendered_subject,
     queued_at: entry.queued_at.toISOString(),
+    accepted_at: isoOrNull(entry.accepted_at),
     sent_at: isoOrNull(entry.sent_at),
     failed_at: isoOrNull(entry.failed_at),
     error_code: entry.error_code,

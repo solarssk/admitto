@@ -160,6 +160,7 @@ export interface DeliveryDto {
   recipient_email: string | null;
   rendered_subject: string | null;
   queued_at: string;
+  accepted_at: string | null;
   sent_at: string | null;
   failed_at: string | null;
   error_code: string | null;
