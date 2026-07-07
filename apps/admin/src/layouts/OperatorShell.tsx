@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useParams } from "react-router-dom";
+import { ConnectionBanner } from "../connection/ConnectionStateProvider.js";
 import { StaffShell } from "./StaffShell.js";
 import { BrandMark } from "./BrandMark.js";
 import { InstanceSidebarFoot } from "./InstanceSidebarFoot.js";
@@ -55,6 +56,7 @@ function OperatorSidebar() {
 export function OperatorShell() {
   return (
     <StaffShell sidebar={<OperatorSidebar />}>
+      <ConnectionBanner />
       <Outlet />
     </StaffShell>
   );

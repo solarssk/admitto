@@ -15,7 +15,7 @@ export function TotpQrCode({ uri }: TotpQrCodeProps) {
     setRenderFailed(false);
     if (!canvasRef.current) return;
     void QRCode.toCanvas(canvasRef.current, uri, {
-      width: 110,
+      width: 160,
       margin: 2,
       color: { dark: "#0f172a", light: "#ffffff" },
     }).catch(() => {

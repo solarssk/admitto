@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Button, Card, Input, PasswordStrengthMeter, Spinner, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Input, PasswordStrengthMeter, Select, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
   cancelMfaEnroll,
@@ -187,26 +187,20 @@ export function AccountPage() {
               <Input id="account-display-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={120} />
               <p className="mail-field-hint">{displayName.length}/120 characters</p>
             </div>
-            <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-locale">Regional format</label>
-              <select
-                id="account-locale"
-                className="at-select"
-                value={preferredLocale ?? ""}
-                onChange={(e) => setPreferredLocale(e.target.value || null)}
-                disabled={profileSaving}
-                aria-describedby="account-locale-hint"
-              >
-                {LOCALE_OPTIONS.map((opt) => (
-                  <option key={opt.value ?? "_system"} value={opt.value ?? ""}>
-                    {opt.label} — {opt.example}
-                  </option>
-                ))}
-              </select>
-              <p className="mail-field-hint" id="account-locale-hint">
-                {`Affects how dates are displayed. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}. Interface language stays English.`}
-              </p>
-            </div>
+            <Select
+              id="account-locale"
+              label="Regional format"
+              value={preferredLocale ?? ""}
+              onChange={(e) => setPreferredLocale(e.target.value || null)}
+              disabled={profileSaving}
+              hint={`Affects how dates are displayed. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}. Interface language stays English.`}
+            >
+              {LOCALE_OPTIONS.map((opt) => (
+                <option key={opt.value ?? "_system"} value={opt.value ?? ""}>
+                  {opt.label} — {opt.example}
+                </option>
+              ))}
+            </Select>
           </div>
           <dl className="account-info-rows">
             <div className="account-info-row">
@@ -458,7 +452,7 @@ export function AccountPage() {
             )}
             {totpEnrolled && account.has_local_password && (
               <>
-                <p className="account-info-block" style={{ marginTop: "var(--space-3)" }}>Resetting 2FA will end your other active sessions. You will need to sign in again.</p>
+                <p className="account-info-block" style={{ marginTop: "var(--space-3)" }}>Resetting 2FA removes your authenticator and backup codes, and ends your other active sessions. Your current session stays signed in.</p>
                 {resetFormOpen && (
                   <div className="mail-field-row">
                     <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
@@ -581,7 +575,7 @@ export function AccountPage() {
         } finally { setRevokeAllBusy(false); }
       }} onCancel={() => { if (!revokeAllBusy) { setRevokeAllOpen(false); setRevokeError(null); } }} />
 
-      <ConfirmDialog open={resetConfirmOpen} title="Reset two-factor authentication" message="This removes your authenticator app and all backup codes, and ends your other active sessions. You will need to sign in again." confirmLabel="Reset 2FA" confirmVariant="danger" loading={resetting} errorMessage={resetError ?? undefined} onConfirm={async () => {
+      <ConfirmDialog open={resetConfirmOpen} title="Reset two-factor authentication" message="This removes your authenticator app and all backup codes, and ends your other active sessions. You will stay signed in on this device." confirmLabel="Reset 2FA" confirmVariant="danger" loading={resetting} errorMessage={resetError ?? undefined} onConfirm={async () => {
         setResetting(true); setResetError(null);
         try {
           const { sessions_revoked } = await resetMfa({ password: resetPassword });

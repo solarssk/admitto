@@ -20,8 +20,16 @@ describe("TotpQrCode", () => {
       expect(QRCode.toCanvas).toHaveBeenCalledWith(
         expect.any(HTMLCanvasElement),
         TEST_URI,
-        expect.objectContaining({ width: 110 }),
+        expect.objectContaining({ width: 160 }),
       );
+    });
+  });
+
+  it("shows a fallback alert when QR rendering fails", async () => {
+    vi.mocked(QRCode.toCanvas).mockRejectedValueOnce(new Error("canvas failed"));
+    const { getByRole } = render(<TotpQrCode uri={TEST_URI} />);
+    await waitFor(() => {
+      expect(getByRole("alert").textContent).toMatch(/Could not render QR code/);
     });
   });
 });

@@ -10,6 +10,7 @@ import {
   startTotpEnrollment,
   getOrStartTotpEnrollment,
   resumePendingTotpEnrollment,
+  cancelPendingTotpEnrollment,
   confirmTotpEnrollment,
   resetUserMfa,
   verifyUserTotpCode,
@@ -495,6 +496,57 @@ describe("TOTP verify", () => {
     const code = generateTotpCode(secret);
     expect(await verifyUserTotpCode(prisma, userId, code)).toBe(true);
     expect(await verifyUserTotpCode(prisma, userId, code)).toBe(false);
+  });
+});
+
+describe("cancelPendingTotpEnrollment", () => {
+  it("removes pending TOTP and enrollment backup codes", async () => {
+    const userId = "user-cancel-pending";
+    await prisma.user.create({
+      data: { id: userId, email: "cancel-pending@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+
+    const started = await startTotpEnrollment(prisma, userId);
+    expect(started).not.toBeNull();
+
+    await cancelPendingTotpEnrollment(prisma, userId);
+
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
+    expect(
+      await prisma.userMfaMethod.count({
+        where: { user_id: userId, type: "recovery" },
+      }),
+    ).toBe(0);
+  });
+
+  it("does not delete confirmed TOTP or saved recovery codes when no pending enrollment", async () => {
+    const userId = "user-cancel-confirmed";
+    await prisma.user.create({
+      data: { id: userId, email: "cancel-confirmed@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+    await regenerateBackupRecoveryCodes(prisma, userId);
+    const recoveryCountBefore = await prisma.userMfaMethod.count({
+      where: { user_id: userId, type: "recovery" },
+    });
+
+    await cancelPendingTotpEnrollment(prisma, userId);
+
+    expect(await userHasConfirmedTotp(prisma, userId)).toBe(true);
+    expect(
+      await prisma.userMfaMethod.count({
+        where: { user_id: userId, type: "recovery" },
+      }),
+    ).toBe(recoveryCountBefore);
   });
 });
 

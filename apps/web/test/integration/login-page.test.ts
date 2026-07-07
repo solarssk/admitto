@@ -339,6 +339,18 @@ describe("GET /operator", () => {
   });
 });
 
+describe("GET /login", () => {
+  it("redirects authenticated users away from the login form", async () => {
+    const { rawToken } = await createSession(prisma, { userId: operatorId });
+    const res = await app.request("/login", {
+      redirect: "manual",
+      headers: { Cookie: `admitto_session=${rawToken}` },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/operator");
+  });
+});
+
 describe("POST /logout", () => {
   it("clears session and redirects", async () => {
     const { rawToken } = await createSession(prisma, { userId: operatorId });

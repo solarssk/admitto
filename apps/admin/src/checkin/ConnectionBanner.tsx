@@ -70,7 +70,7 @@ export function CheckinConnectionPill() {
   );
 }
 
-/** Admin check-in only — operator shell renders its own `ConnectionBanner`. */
+/** Check-in page banner — operator event picker uses global `ConnectionBanner` in `OperatorShell`. */
 export function CheckinConnectionBanner() {
   const { state } = useConnectionState();
   const visual = mapConnectionState(state);

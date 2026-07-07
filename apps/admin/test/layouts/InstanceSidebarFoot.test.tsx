@@ -58,4 +58,16 @@ describe("InstanceSidebarFoot", () => {
     expect(screen.getByRole("link", { name: "Users & roles" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
   });
+
+  it("hides primary nav when omitPrimary is set for operator-only account views", () => {
+    mockAssignments = [{ role: "operator", scope_type: "event", scope_id: "evt-1" }];
+    render(
+      <MemoryRouter>
+        <InstanceSidebarFoot omitPrimary />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole("link", { name: "Check-in" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "All events" })).toBeNull();
+    expect(screen.getByRole("link", { name: "My account" })).toBeTruthy();
+  });
 });
