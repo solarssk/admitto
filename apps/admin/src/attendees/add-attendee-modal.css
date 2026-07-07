@@ -19,8 +19,8 @@
   width: min(100%, 480px);
   max-height: calc(100vh - 32px);
   overflow: auto;
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
+  background: var(--surface-card);
+  border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow-lg);
   padding: 20px;

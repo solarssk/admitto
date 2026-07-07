@@ -194,7 +194,7 @@
 
 .icon-picker__search:focus {
   outline: none;
-  background: var(--surface-raised);
+  background: var(--surface-card);
 }
 
 .icon-picker__grid {
@@ -228,7 +228,7 @@
 }
 
 .icon-picker__item--selected {
-  background: var(--surface-raised);
+  background: var(--surface-card);
   border-color: var(--accent);
   color: var(--text-primary);
 }

@@ -13,7 +13,7 @@
   width: 100%;
   max-width: min(42.5rem, 100%);
   min-width: 0;
-  background: var(--surface-card, var(--surface-raised));
+  background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg, 0.75rem);
   box-shadow: var(--shadow-md, 0 4px 16px rgb(15 23 42 / 8%));
@@ -177,7 +177,7 @@
 .setup-wizard__card {
   width: 100%;
   max-width: 33.75rem;
-  background: var(--surface-raised);
+  background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg, 0.75rem);
   padding: 2rem 2.5rem;
