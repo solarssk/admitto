@@ -19,11 +19,11 @@
   gap: var(--space-3, 0.75rem);
 }
 
-/* Select from @admitto/ui renders <div class="at-field"> — force it to fill the
-   column and align its label-to-control gap with the mail-field-row pattern. */
-.account-profile-editable .at-field {
-  width: 100%;
-  gap: var(--space-2, 0.5rem);
+/* The global .at-select rule (apps/admin/src/staff.css) caps native <select>
+   elements at max-width: 24rem for other pages (e.g. audit log filters). Override
+   it here so Regional format matches Display name's full column width exactly. */
+.account-profile-editable .at-select {
+  max-width: none;
 }
 
 /* Read-only profile info rows (dl/dt/dd) */
@@ -218,7 +218,11 @@
   height: auto;
 }
 
-/* Password + 2FA side-by-side on wide screens */
+/* Password + 2FA live inside ONE card as two internal grid columns (same
+   pattern as .account-profile-grid) so both columns divide the same content
+   width/gap math as Display name — guaranteeing equal field widths. Using two
+   separate <Card>s here instead would make each pay its own card padding
+   twice, making this column narrower than Display name by one card-padding. */
 .account-security-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -231,18 +235,21 @@
   min-width: 0;
 }
 
-/* During 2FA enrollment the wizard needs full width — collapse to 1 column */
-.account-security-grid--enrolling {
-  grid-template-columns: 1fr;
-}
-
 @media (max-width: 900px) {
   .account-security-grid {
     grid-template-columns: 1fr;
   }
 }
 
-/* TOTP code is 6 digits — keep the input compact */
-.mail-field-row--totp .at-field {
+.account-security-col__title {
+  margin: 0 0 var(--space-3, 0.75rem);
+  font-size: var(--fs-body, 0.875rem);
+  font-weight: var(--fw-semibold, 600);
+  color: var(--text-primary);
+}
+
+/* TOTP code is 6 digits — keep the input compact. Input renders <input class="at-input">
+   directly (no .at-field wrapper — that's only used by Select), so target .at-input. */
+.mail-field-row--totp .at-input {
   max-width: 16rem;
 }

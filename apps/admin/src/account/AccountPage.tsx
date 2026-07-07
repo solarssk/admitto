@@ -234,8 +234,10 @@ export function AccountPage() {
         </div>
       </Card>
 
-      <div className={`account-security-grid${enrollData ? " account-security-grid--enrolling" : ""}`}>
-      <Card title="Password">
+      <Card title="Password & two-factor authentication">
+        <div className="account-security-grid">
+          <div className="account-security-col">
+            <h3 className="account-security-col__title">Password</h3>
         {!account.has_local_password ? (
           <p className="account-info-block">Password is managed by your identity provider.</p>
         ) : (
@@ -344,9 +346,9 @@ export function AccountPage() {
             </form>
           </>
         )}
-      </Card>
-
-      <Card title="Two-factor authentication">
+          </div>
+          <div className="account-security-col">
+            <h3 className="account-security-col__title">Two-factor authentication</h3>
         <div className="account-mfa-status-row">
           <Badge variant={totpEnrolled ? "ok" : "neutral"}>{totpEnrolled ? "Enabled" : "Not configured"}</Badge>
           {!totpEnrolled && !enrollData && account.has_local_password && (
@@ -437,8 +439,9 @@ export function AccountPage() {
             Two-factor reset requires a local password. Sign-in-only accounts must contact an administrator.
           </p>
         )}
+          </div>
+        </div>
       </Card>
-      </div>
 
       <Card title="Active sessions" actions={otherSessions.length > 0 ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}>
         {sessionsLoading && (
