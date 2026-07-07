@@ -537,7 +537,7 @@ export function AccountPage() {
         } finally { setRevokeAllBusy(false); }
       }} onCancel={() => { if (!revokeAllBusy) { setRevokeAllOpen(false); setRevokeError(null); } }} />
 
-      <ConfirmDialog open={resetConfirmOpen} title="Reset two-factor authentication" message="This removes your authenticator and ends other active sessions. You will stay signed in here." confirmLabel="Reset 2FA" confirmVariant="danger" loading={resetting} errorMessage={resetError ?? undefined} onConfirm={async () => {
+      <ConfirmDialog open={resetConfirmOpen} title="Reset two-factor authentication" message="This removes your authenticator app and all backup codes, and ends your other active sessions. You will need to sign in again." confirmLabel="Reset 2FA" confirmVariant="danger" loading={resetting} errorMessage={resetError ?? undefined} onConfirm={async () => {
         setResetting(true); setResetError(null);
         try {
           const { sessions_revoked } = await resetMfa({ password: resetPassword });
