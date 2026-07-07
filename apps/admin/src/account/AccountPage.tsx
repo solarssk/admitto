@@ -351,20 +351,22 @@ export function AccountPage() {
         )}
         </Card>
         <Card title="Two-factor authentication">
-            <div className="account-mfa-status-row">
-              <Badge variant={totpEnrolled ? "ok" : "neutral"}>{totpEnrolled ? "Enabled" : "Not configured"}</Badge>
-              {!totpEnrolled && !enrollData && account.has_local_password && (
-                <Button type="button" variant="primary" size="sm" disabled={mfaEnrolling} onClick={async () => {
-                  setMfaEnrolling(true); setBackupSaved(false); setTotpCode("");
-                  try { setEnrollData(await enrollMfaTotp()); }
-                  catch (err) { addToast(operatorApiErrorMessage(err, "Failed to start 2FA setup."), "error"); }
-                  finally { setMfaEnrolling(false); }
-                }}>Set up authenticator</Button>
-              )}
-              {totpEnrolled && account.has_local_password && !resetFormOpen && (
-                <Button type="button" variant="danger" size="sm" onClick={() => setResetFormOpen(true)}>Reset 2FA</Button>
-              )}
-            </div>
+            {!enrollData && (
+              <div className="account-mfa-status-row">
+                <Badge variant={totpEnrolled ? "ok" : "neutral"}>{totpEnrolled ? "Enabled" : "Not configured"}</Badge>
+                {!totpEnrolled && !enrollData && account.has_local_password && (
+                  <Button type="button" variant="primary" size="sm" disabled={mfaEnrolling} onClick={async () => {
+                    setMfaEnrolling(true); setBackupSaved(false); setTotpCode("");
+                    try { setEnrollData(await enrollMfaTotp()); }
+                    catch (err) { addToast(operatorApiErrorMessage(err, "Failed to start 2FA setup."), "error"); }
+                    finally { setMfaEnrolling(false); }
+                  }}>Set up authenticator</Button>
+                )}
+                {totpEnrolled && account.has_local_password && !resetFormOpen && (
+                  <Button type="button" variant="danger" size="sm" onClick={() => setResetFormOpen(true)}>Reset 2FA</Button>
+                )}
+              </div>
+            )}
             {!totpEnrolled && !enrollData && !account.has_local_password && (
               <p className="account-info-block">
                 Two-factor setup requires a local password. Sign-in-only accounts must use their identity provider or contact an administrator.
@@ -372,28 +374,33 @@ export function AccountPage() {
             )}
             {enrollData && (
               <div className="account-2fa-enroll">
-                <div className="account-2fa-enroll__qr">
-                  <p className="mail-field-hint">Scan this QR code:</p>
+                {/* QR + hint in a horizontal row */}
+                <div className="account-2fa-enroll__scan">
                   <TotpQrCode uri={enrollData.otpauthUri} />
-                  <details className="account-uri-details">
-                    <summary className="account-uri-details__toggle">Show raw URI (advanced)</summary>
-                    <code className="account-uri-code">{enrollData.otpauthUri}</code>
-                  </details>
+                  <div className="account-2fa-enroll__scan-text">
+                    <p className="mail-field-hint">Scan this QR code with your authenticator app.</p>
+                    <details className="account-uri-details">
+                      <summary className="account-uri-details__toggle">Show raw URI (advanced)</summary>
+                      <code className="account-uri-code">{enrollData.otpauthUri}</code>
+                    </details>
+                  </div>
                 </div>
-                <div className="account-2fa-enroll__info">
-                  {enrollData.backupCodes.length > 0 ? (
-                    <div className="account-auth-backup">
-                      <strong>Backup codes</strong>
-                      <p className="mail-field-hint">Save these codes somewhere safe. They are shown only once.</p>
-                      <ul>{enrollData.backupCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
-                    </div>
-                  ) : enrollData.backupCodesAlreadyShown ? (
-                    <p className="mail-field-hint">Backup codes were already shown. Use your saved codes if needed.</p>
-                  ) : null}
-                  <label className="account-checkbox-row">
-                    <Checkbox checked={backupSaved} onChange={(e) => setBackupSaved(e.target.checked)} />
-                    <span>I&apos;ve saved my backup codes</span>
-                  </label>
+                {/* Backup codes full width — grid layout uses full card width */}
+                {enrollData.backupCodes.length > 0 ? (
+                  <div className="account-auth-backup">
+                    <strong>Backup codes</strong>
+                    <p className="mail-field-hint">Save these codes somewhere safe. They are shown only once.</p>
+                    <ul>{enrollData.backupCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
+                  </div>
+                ) : enrollData.backupCodesAlreadyShown ? (
+                  <p className="mail-field-hint">Backup codes were already shown. Use your saved codes if needed.</p>
+                ) : null}
+                {/* Checkbox + code input + confirm/cancel on one row */}
+                <label className="account-checkbox-row">
+                  <Checkbox checked={backupSaved} onChange={(e) => setBackupSaved(e.target.checked)} />
+                  <span>I&apos;ve saved my backup codes</span>
+                </label>
+                <div className="account-2fa-enroll__confirm">
                   <div className="mail-field-row mail-field-row--totp">
                     <label className="mail-field-label" htmlFor="account-totp-code">Authenticator code</label>
                     <Input id="account-totp-code" value={totpCode} onChange={(e) => setTotpCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" disabled={!backupSaved && enrollData.backupCodes.length > 0} />

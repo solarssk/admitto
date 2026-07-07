@@ -107,20 +107,21 @@
   margin: var(--space-3, 0.75rem) 0;
 }
 
-/* 10 backup codes as a compact single-column list (a 2-column grid wraps
-   each XXXX-XXXX-XXXX-XXXX code across lines at this narrow width, which
-   balloons height instead of saving it). */
+/* 10 backup codes in a 3-column grid spanning the full card width (~427px).
+   Each column is ~137px — comfortably fits XXXX-XXXX-XXXX-XXXX at 0.75rem
+   without wrapping. 10 codes → 4 rows instead of 10 single-column rows. */
 .account-auth-backup ul {
   margin: var(--space-2, 0.5rem) 0 0;
   padding-left: 0;
   list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px var(--space-3, 0.75rem);
 }
 
 .account-auth-backup code {
-  font-size: 0.8rem;
+  font-size: 0.65rem;
+  white-space: nowrap;
 }
 
 .account-uri-code {
@@ -246,31 +247,53 @@
   }
 }
 
-/* Enrollment: QR on the left, everything else (backup codes, checkbox, code
-   input, confirm/cancel) stacked in one column on the right — a real
-   horizontal split that uses the card's full width instead of leaving it
-   blank next to a small QR image. */
+/* Enrollment: flex column — QR+hint row at top, backup codes full-width
+   in a 3-column grid below, then actions row. */
 .account-2fa-enroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 0.75rem);
+}
+
+/* QR image sits next to the hint/raw-URI text */
+.account-2fa-enroll__scan {
   display: flex;
   gap: var(--space-4, 1rem);
   align-items: flex-start;
 }
 
-.account-2fa-enroll__qr {
-  flex: 0 0 auto;
-}
-
-.account-2fa-enroll__info {
+.account-2fa-enroll__scan-text {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.account-2fa-enroll__info .account-checkbox-row {
-  margin-top: var(--space-2, 0.5rem);
+/* Totp input + Confirm/Cancel share one line */
+.account-2fa-enroll__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3, 0.75rem);
+}
+
+.account-2fa-enroll__confirm .mail-field-row--totp {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+}
+
+.account-2fa-enroll__confirm .mail-field-row--totp .at-input {
+  max-width: 8rem;
+}
+
+.account-2fa-enroll__confirm .account-enroll-actions {
+  margin-top: 0;
+}
+
+.account-2fa-enroll .account-checkbox-row {
+  margin: 0;
 }
 
 @media (max-width: 480px) {
-  .account-2fa-enroll {
+  .account-2fa-enroll__scan {
     flex-direction: column;
   }
 }
