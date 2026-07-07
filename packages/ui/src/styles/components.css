@@ -88,6 +88,8 @@
 .at-check input:checked + .at-check__box { background: var(--primary); border-color: var(--primary); }
 .at-check input:checked + .at-check__box svg { opacity: 1; }
 .at-check input:focus-visible + .at-check__box { box-shadow: var(--ring); }
+.at-check input:disabled + .at-check__box { background: var(--surface-sunken); border-color: var(--border); }
+.at-check:has(input:disabled) { cursor: not-allowed; color: var(--text-disabled); }
 
 .at-switch { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; }
 .at-switch input { position: absolute; opacity: 0; width: 0; height: 0; }

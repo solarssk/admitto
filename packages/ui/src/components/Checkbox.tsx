@@ -9,6 +9,11 @@ export function Checkbox({ label, id, className, ...rest }: CheckboxProps) {
   return (
     <label className="at-check">
       <input id={autoId} type="checkbox" className={["at-check__input", className].filter(Boolean).join(" ")} {...rest} />
+      <span className="at-check__box" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      </span>
       {label && <span className="at-check__label">{label}</span>}
     </label>
   );
