@@ -53,7 +53,7 @@ describe("getStaffSpaSecurityHeaders", () => {
   it("includes defense-in-depth headers aligned with other HTML surfaces", () => {
     const headers = getStaffSpaSecurityHeaders();
     expect(headers["X-Content-Type-Options"]).toBe("nosniff");
-    expect(headers["Referrer-Policy"]).toBe("no-referrer");
+    expect(headers["Referrer-Policy"]).toBe("same-origin");
     expect(headers["Cache-Control"]).toBe("no-store");
     const csp = headers["Content-Security-Policy"]!;
     expect(csp).toContain("frame-ancestors 'none'");

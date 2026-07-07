@@ -16,6 +16,9 @@ function brandHomeTo(assignments: RoleAssignment[]): string {
 export function EventsListShell() {
   const { assignments } = useAuth();
   const brandTo = brandHomeTo(assignments);
+  const canAdmin = canAccessAdminPanel(assignments);
+  const canCheckIn = canAccessCheckInPanel(assignments);
+  const isOperatorOnly = canCheckIn && !canAdmin;
 
   const sidebar = (
     <>
@@ -23,9 +26,9 @@ export function EventsListShell() {
         {BrandMark}
         <span>Admitto</span>
       </NavLink>
-      <div className="sidebar__nav" aria-hidden="true" />
+      <nav className="sidebar__nav" aria-label="Navigation" />
       <div className="sidebar__foot">
-        <InstanceSidebarFoot />
+        <InstanceSidebarFoot omitPrimary={isOperatorOnly} />
       </div>
     </>
   );

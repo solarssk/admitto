@@ -18,6 +18,35 @@ function esc(s: string): string {
 }
 
 /**
+ * Clear browser-remembered form values after page load so password managers like Bitwarden
+ * see empty fields and display the full credential dropdown (not just the small icon).
+ *
+ * Root cause: Chrome/Safari pre-fill login fields from form history on page load. Bitwarden
+ * checks `element.value` on focus; a non-empty value causes it to enter "pre-filled" mode
+ * where it only shows the small icon button, not the credential list. Clearing with a short
+ * delay (after the browser's synchronous autofill but before the user focuses) ensures
+ * Bitwarden sees an empty field and shows the full autofill dropdown.
+ */
+function loginAutofillClearScript(scriptNonce: string): string {
+  return `<script nonce="${scriptNonce}">
+(function () {
+  function clearBrowserPrefill() {
+    var e = document.getElementById("email");
+    var p = document.getElementById("password");
+    if (e) e.value = "";
+    if (p) p.value = "";
+  }
+  // Run after the browser's synchronous form-fill completes
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () { setTimeout(clearBrowserPrefill, 0); });
+  } else {
+    setTimeout(clearBrowserPrefill, 0);
+  }
+})();
+</script>`;
+}
+
+/**
  * Security headers for server-rendered operator login pages (nonce-gated submit script).
  * Referrer-Policy same-origin is the primary CSRF signal for HTML form POSTs (Safari);
  * Sec-Fetch-Site in same-origin-post.ts is a legacy-UA fallback only.
@@ -96,7 +125,7 @@ export function renderLoginForm(
     step: "Sign in",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: authFormSubmitScript(scriptNonce),
+    scripts: `${authFormSubmitScript(scriptNonce)}\n${loginAutofillClearScript(scriptNonce)}`,
   });
 }
 

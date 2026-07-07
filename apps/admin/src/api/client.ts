@@ -1177,6 +1177,11 @@ export async function enrollMfaTotp(): Promise<MfaEnrollResponse> {
   return parseJson<MfaEnrollResponse>(res);
 }
 
+export async function cancelMfaEnroll(): Promise<void> {
+  const res = await fetch("/api/account/mfa/totp/enroll", jsonDeleteInit());
+  await parseJson<unknown>(res);
+}
+
 export async function confirmMfaTotp(body: ConfirmMfaTotpBody): Promise<{ ok: true }> {
   const res = await fetch("/api/account/mfa/totp/confirm", jsonPostInit(body));
   return parseJson<{ ok: true }>(res);

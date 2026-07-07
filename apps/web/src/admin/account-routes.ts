@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import {
+  cancelPendingTotpEnrollment,
   confirmTotpEnrollment,
   getOrStartTotpEnrollment,
   hashPassword,
@@ -307,6 +308,13 @@ export async function handlePostMfaEnroll(c: Context, db: PrismaClient): Promise
     backupCodes: result.backupCodes,
     backupCodesAlreadyShown: result.backupCodesAlreadyShown ?? false,
   });
+}
+
+/** DELETE /api/account/mfa/totp/enroll — cancel (abort) pending TOTP enrollment. */
+export async function handleDeleteMfaEnroll(c: Context, db: PrismaClient): Promise<Response> {
+  const userId = c.get("auth").userId;
+  await cancelPendingTotpEnrollment(db, userId);
+  return c.json({ ok: true });
 }
 
 const confirmSchema = z.object({ code: z.string().min(1) }).strict();

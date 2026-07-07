@@ -52,7 +52,10 @@ export function getStaffSpaSecurityHeaders(): Record<string, string> {
   return {
     "Cache-Control": "no-store",
     "Content-Security-Policy": buildStaffSpaContentSecurityPolicy(),
-    "Referrer-Policy": "no-referrer",
+    // same-origin (not no-referrer) so Safari sends Referer on same-origin form POSTs
+    // (e.g. Sign out). no-referrer blocks Referer and Safari omits Origin for same-origin
+    // form POST, causing the CSRF guard to reject the request.
+    "Referrer-Policy": "same-origin",
     "X-Content-Type-Options": "nosniff",
   };
 }

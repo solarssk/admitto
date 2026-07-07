@@ -1,79 +1,66 @@
 import { useEffect, useState } from "react";
-import { Link, Outlet, useParams } from "react-router-dom";
-import { Avatar } from "@admitto/ui";
-import { useAuth } from "../auth/AuthProvider.js";
+import { NavLink, Outlet, useParams } from "react-router-dom";
 import { ConnectionBanner } from "../connection/ConnectionStateProvider.js";
+import { StaffShell } from "./StaffShell.js";
+import { BrandMark } from "./BrandMark.js";
+import { InstanceSidebarFoot } from "./InstanceSidebarFoot.js";
 import { fetchCheckInEvents } from "../api/client.js";
+import { formatEventCalendarDate } from "../utils/event-dates.js";
+import type { EventDto } from "../api/types.js";
 
-function OperatorContextBar({ deviceLabel }: { deviceLabel: string | null }) {
+function OperatorSidebar() {
   const { eventId } = useParams();
-  const [eventTitle, setEventTitle] = useState<string | null>(null);
+  const [event, setEvent] = useState<EventDto | null>(null);
 
   useEffect(() => {
-    if (!eventId) {
-      setEventTitle(null);
-      return;
-    }
+    if (!eventId) { setEvent(null); return; }
     let cancelled = false;
     void fetchCheckInEvents()
-      .then((events) => {
-        if (cancelled) return;
-        setEventTitle(events.find((e) => e.id === eventId)?.title ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setEventTitle(null);
-      });
-    return () => {
-      cancelled = true;
-    };
+      .then((events) => { if (!cancelled) setEvent(events.find((e) => e.id === eventId) ?? null); })
+      .catch(() => { if (!cancelled) setEvent(null); });
+    return () => { cancelled = true; };
   }, [eventId]);
 
-  if (!deviceLabel && !eventTitle) return null;
-
   return (
-    <div className="operator-shell__context" aria-live="polite">
-      {eventTitle && (
-        <span className="operator-shell__context-event">
-          Event: <strong>{eventTitle}</strong>
-        </span>
+    <>
+      <NavLink to="/operator" className="sidebar__brand" end>
+        {BrandMark}
+        <span>Admitto</span>
+      </NavLink>
+      {event && (
+        <div className="sidebar__event">
+          <div className="overline">Event</div>
+          <div className="sidebar__event-info">
+            <strong className="sidebar__event-title">{event.title}</strong>
+            <div className="sidebar__event-detail">
+              <i className="ti ti-calendar" aria-hidden="true" />
+              <span>{formatEventCalendarDate(event.date)}</span>
+            </div>
+            {event.location && (
+              <div className="sidebar__event-detail">
+                <i className="ti ti-map-pin" aria-hidden="true" />
+                <span>{event.location}</span>
+              </div>
+            )}
+          </div>
+        </div>
       )}
-      {deviceLabel && (
-        <span className="operator-shell__context-device">
-          Device: <strong>{deviceLabel}</strong>
-        </span>
-      )}
-    </div>
+      <nav className="sidebar__nav" aria-label="Navigation" />
+      <div className="sidebar__foot">
+        <InstanceSidebarFoot omitPrimary />
+      </div>
+    </>
   );
 }
 
 export function OperatorShell() {
-  const { user, deviceLabel } = useAuth();
-  const displayName = user.display_name || user.email.split("@")[0] || "Operator";
+  const { eventId } = useParams();
+  const onCheckInRoute = Boolean(eventId);
 
   return (
-    <div className="operator-shell">
-      <ConnectionBanner />
-      <header className="operator-shell__bar">
-        <div className="operator-shell__brand">
-          <span className="sidebar__brand-mark" aria-hidden="true" />
-          <span>Admitto Check-in</span>
-        </div>
-        <OperatorContextBar deviceLabel={deviceLabel} />
-        <div className="operator-shell__user">
-          <Link to="/account" className="operator-shell__user-link">
-            <Avatar name={displayName} size="sm" />
-            <span>{displayName}</span>
-          </Link>
-          <form method="post" action="/logout">
-            <button type="submit" className="topbar__signout">
-              Sign out
-            </button>
-          </form>
-        </div>
-      </header>
-      <main className="operator-shell__content">
-        <Outlet />
-      </main>
-    </div>
+    <StaffShell sidebar={<OperatorSidebar />}>
+      {!onCheckInRoute && <ConnectionBanner />}
+      <Outlet />
+    </StaffShell>
   );
 }

@@ -208,6 +208,7 @@ import {
   handleGetAccountSessions,
   handleDeleteAccountSession,
   handlePostMfaEnroll as handlePostAccountMfaEnroll,
+  handleDeleteMfaEnroll as handleDeleteAccountMfaEnroll,
   handlePostMfaConfirm as handlePostAccountMfaConfirm,
   handlePostMfaReset as handlePostAccountMfaReset,
 } from "./admin/account-routes.js";
@@ -736,6 +737,9 @@ export function createApp(options: CreateAppOptions = {}) {
     requireSession,
     createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
     (c) => handlePostAccountMfaEnroll(c, db),
+  );
+  app.delete("/api/account/mfa/totp/enroll", jsonPostCsrf, requireSession, (c) =>
+    handleDeleteAccountMfaEnroll(c, db),
   );
   app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
     handlePostAccountMfaConfirm(c, db, rateLimitStore),

@@ -51,9 +51,8 @@ describe("EventsListShell", () => {
   it("links the brand to /operator for check-in-only operators", () => {
     mockAssignments = [{ role: "operator", scope_type: "event", scope_id: "evt-1" }];
     renderShell("/account");
-    const brand = screen.getByRole("link", { name: "Admitto" });
-    expect(brand.getAttribute("href")).toBe("/operator");
-    expect(screen.getByRole("link", { name: "Check-in" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Admitto" }).getAttribute("href")).toBe("/operator");
+    expect(screen.queryByRole("link", { name: "Check-in" })).toBeNull();
   });
 
   it("links the brand to /account when user has no admin or check-in access", () => {

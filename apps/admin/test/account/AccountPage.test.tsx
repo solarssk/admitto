@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AccountPage } from "../../src/account/AccountPage.js";
-import type { AccountDto } from "../../src/api/types.js";
+import type { AccountDto, SessionListDto } from "../../src/api/types.js";
 import { PASSWORD_STRENGTH_STRONG } from "@admitto/auth/password-strength-fixtures";
 import { renderWithToast } from "../test-utils.js";
 
@@ -15,6 +15,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     patchAccountProfile: vi.fn(),
     patchAccountPassword: vi.fn(),
     enrollMfaTotp: vi.fn(),
+    cancelMfaEnroll: vi.fn().mockResolvedValue(undefined),
     confirmMfaTotp: vi.fn(),
     resetMfa: vi.fn(),
     deleteAccountSession: vi.fn(),
@@ -31,6 +32,7 @@ import {
   patchAccountProfile,
   patchAccountPassword,
   enrollMfaTotp,
+  cancelMfaEnroll,
   confirmMfaTotp,
   resetMfa,
   deleteAccountSession,
@@ -43,6 +45,7 @@ const mockFetchSessions = vi.mocked(fetchAccountSessions);
 const mockPatchProfile = vi.mocked(patchAccountProfile);
 const mockPatchPassword = vi.mocked(patchAccountPassword);
 const mockEnrollMfaTotp = vi.mocked(enrollMfaTotp);
+const mockCancelMfaEnroll = vi.mocked(cancelMfaEnroll);
 const mockConfirmMfaTotp = vi.mocked(confirmMfaTotp);
 const mockResetMfa = vi.mocked(resetMfa);
 
@@ -75,6 +78,37 @@ function fillPasswordForm() {
   fireEvent.change(screen.getByLabelText("Confirm new password"), {
     target: { value: "new-password-12" },
   });
+}
+
+function makeAccountSession(overrides: Partial<SessionListDto> = {}): SessionListDto {
+  return {
+    id: "sess-1",
+    userId: "usr-1",
+    userEmail: "admin@example.com",
+    userDisplayName: "Admin",
+    role: "superadmin",
+    deviceLabel: "This device",
+    ip: null,
+    userAgent: null,
+    loginAt: "2026-01-01T00:00:00.000Z",
+    lastSeenAt: "2026-01-01T01:00:00.000Z",
+    expiresAt: "2026-01-02T00:00:00.000Z",
+    authMethod: "local",
+    stage: "active",
+    isCurrent: true,
+    ...overrides,
+  };
+}
+
+function makeCurrentAndOtherSessions(otherOverrides: Partial<SessionListDto> = {}) {
+  const currentSession = makeAccountSession();
+  const otherSession = makeAccountSession({
+    id: "sess-2",
+    isCurrent: false,
+    deviceLabel: "Other",
+    ...otherOverrides,
+  });
+  return { currentSession, otherSession };
 }
 
 function mockLoadedAccount(account: AccountDto = baseAccount) {
@@ -113,10 +147,10 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Date format")).toBeTruthy();
+      expect(screen.getByLabelText("Regional format")).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("Date format"), { target: { value: "pl-PL" } });
+    fireEvent.change(screen.getByLabelText("Regional format"), { target: { value: "pl-PL" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -258,14 +292,39 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Set up authenticator" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Set up authenticator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/already enabled/i);
     });
+  });
+
+  it("requires backup-code acknowledgement before confirming fresh enrollment", async () => {
+    mockLoadedAccount();
+    mockEnrollMfaTotp.mockResolvedValueOnce({
+      otpauthUri: "otpauth://totp/Admitto?secret=ABC",
+      backupCodes: ["1111-2222", "3333-4444"],
+      backupCodesAlreadyShown: false,
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("I've saved my backup codes")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Authenticator code"), { target: { value: "123456" } });
+    expect(screen.getByRole("button", { name: "Confirm setup" }).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(screen.getByLabelText("I've saved my backup codes"));
+    expect(screen.getByRole("button", { name: "Confirm setup" }).hasAttribute("disabled")).toBe(false);
   });
 
   it("toasts MFA confirm success", async () => {
@@ -282,10 +341,10 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Set up authenticator" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Set up authenticator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
     await waitFor(() => {
       expect(screen.getByLabelText("Authenticator code")).toBeTruthy();
     });
@@ -312,10 +371,10 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Set up authenticator" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Set up authenticator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
     await waitFor(() => {
       expect(screen.getByLabelText("Authenticator code")).toBeTruthy();
     });
@@ -337,16 +396,17 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Reset 2FA" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     fireEvent.change(screen.getByLabelText("Current password", { selector: "#account-reset-password" }), {
       target: { value: "current-password" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
 
     const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toMatch(/stay signed in on this device/i);
     fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
 
     await waitFor(() => {
@@ -354,6 +414,202 @@ describe("AccountPage toasts", () => {
         /Two-factor authentication reset\. 1 other session ended\./,
       );
     });
+  });
+
+  it("cancels pending MFA enrollment and calls cancel API", async () => {
+    mockLoadedAccount();
+    mockEnrollMfaTotp.mockResolvedValueOnce({
+      otpauthUri: "otpauth://totp/Admitto?secret=ABC",
+      backupCodes: ["1111-2222"],
+      backupCodesAlreadyShown: false,
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+    await waitFor(() => {
+      expect(screen.getByText("Backup codes — save all 10, shown once")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(mockCancelMfaEnroll).toHaveBeenCalled();
+      expect(screen.queryByLabelText("Authenticator code")).toBeNull();
+    });
+  });
+
+  it("closes reset 2FA form on Cancel without calling reset API", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Current password", { selector: "#account-reset-password" })).toBeNull();
+    });
+    expect(mockResetMfa).not.toHaveBeenCalled();
+  });
+
+  it("revokes all other sessions successfully", async () => {
+    const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+    mockLoadedAccount();
+    mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
+    mockDeleteSession.mockResolvedValue(undefined);
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Revoke all other sessions" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all other sessions" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all" }));
+
+    await waitFor(() => {
+      expect(mockDeleteSession).toHaveBeenCalledWith("sess-2");
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  });
+
+  it("shows OIDC-only MFA guidance when local password is unavailable", async () => {
+    mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: false, roles: [] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Two-factor setup requires a local password/i),
+      ).toBeTruthy();
+    });
+    expect(screen.queryByRole("button", { name: "Set up" })).toBeNull();
+  });
+
+  it("copies the otpauth URI during enrollment", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    try {
+      mockLoadedAccount();
+      mockEnrollMfaTotp.mockResolvedValueOnce({
+        otpauthUri: "otpauth://totp/Admitto?secret=ABC",
+        backupCodes: [],
+        backupCodesAlreadyShown: true,
+      });
+
+      renderWithToast(<AccountPage />);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Copy URI" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Copy URI" }));
+
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith("otpauth://totp/Admitto?secret=ABC");
+        expect(screen.getByRole("button", { name: "Copied!" })).toBeTruthy();
+      });
+
+      vi.advanceTimersByTime(2000);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Copy URI" })).toBeTruthy();
+      });
+    } finally {
+      vi.useRealTimers();
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("shows the otpauth URI when clipboard is unavailable", async () => {
+    const originalClipboard = navigator.clipboard;
+    Object.assign(navigator, { clipboard: undefined });
+
+    try {
+      mockLoadedAccount();
+      mockEnrollMfaTotp.mockResolvedValueOnce({
+        otpauthUri: "otpauth://totp/Admitto?secret=NOCLIP",
+        backupCodes: [],
+        backupCodesAlreadyShown: true,
+      });
+
+      renderWithToast(<AccountPage />);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Copy URI" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Copy URI" }));
+
+      await waitFor(() => {
+        expect(screen.getByText("otpauth://totp/Admitto?secret=NOCLIP")).toBeTruthy();
+      });
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("revokes a single other session successfully", async () => {
+    const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+    mockLoadedAccount();
+    mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
+    mockDeleteSession.mockResolvedValue(undefined);
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Revoke" }).length).toBeGreaterThan(0);
+    });
+
+    const revokeButtons = screen.getAllByRole("button", { name: "Revoke" });
+    const otherRevoke = revokeButtons.find((btn) => !btn.hasAttribute("disabled"));
+    expect(otherRevoke).toBeTruthy();
+    fireEvent.click(otherRevoke!);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => {
+      expect(mockDeleteSession).toHaveBeenCalledWith("sess-2");
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  });
+
+  it("closes reset confirmation dialog on cancel", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    fireEvent.change(screen.getByLabelText("Current password", { selector: "#account-reset-password" }), {
+      target: { value: "current-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(mockResetMfa).not.toHaveBeenCalled();
   });
 
   it("shows load account failure", async () => {
@@ -456,9 +712,9 @@ describe("AccountPage toasts", () => {
     mockResetMfa.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Reset 2FA" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     fireEvent.change(screen.getByLabelText("Current password", { selector: "#account-reset-password" }), {
       target: { value: "current-password" },
     });
@@ -467,6 +723,56 @@ describe("AccountPage toasts", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
     await waitFor(() => {
       expect(within(dialog).getByText(/Failed to reset 2FA/)).toBeTruthy();
+    });
+  });
+});
+
+describe("AccountPage profile: sign-in method", () => {
+  it("shows 'Local password' for accounts with only local password", async () => {
+    mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: true, roles: [] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Local password")).toBeTruthy();
+    });
+  });
+
+  it("shows 'Identity provider (SSO)' for accounts without local password", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      has_local_password: false,
+      roles: [{ id: "r1", role: "admin", is_oidc: true }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Identity provider (SSO)")).toBeTruthy();
+    });
+  });
+
+  it("shows 'Local password + Identity provider' when both are present", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      has_local_password: true,
+      roles: [{ id: "r1", role: "admin", is_oidc: true }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Local password + Identity provider")).toBeTruthy();
+    });
+  });
+
+  it("shows 'Regional format' label for locale select", async () => {
+    mockFetchAccount.mockResolvedValue(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Regional format")).toBeTruthy();
     });
   });
 });

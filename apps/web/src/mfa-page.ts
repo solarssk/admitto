@@ -262,6 +262,14 @@ function mfaOtpDigitsScript(scriptNonce: string): string {
     digits.forEach(function (input, idx) {
       input.addEventListener("input", function () {
         var v = input.value.replace(/\\D/g, "");
+        if (v.length > 1) {
+          // Multi-digit value: password manager filled via execCommand (input event, not paste)
+          for (var j = 0; j < digits.length; j++) digits[j].value = v[j] || "";
+          syncHidden();
+          focusDigit(Math.min(v.length - 1, digits.length - 1));
+          maybeAutoSubmit();
+          return;
+        }
         input.value = v.slice(-1);
         if (input.value && idx < digits.length - 1) focusDigit(idx + 1);
         syncHidden();

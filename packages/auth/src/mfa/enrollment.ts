@@ -104,6 +104,26 @@ export async function resumePendingTotpEnrollment(
 }
 
 /**
+ * Cancel a pending (unconfirmed) TOTP enrollment by deleting the pending row and
+ * its enrollment backup codes. Safe when there is no pending row — confirmed TOTP
+ * and saved recovery codes are left untouched.
+ */
+export async function cancelPendingTotpEnrollment(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const { count } = await tx.userMfaMethod.deleteMany({
+      where: { user_id: userId, type: "totp", confirmed_at: null },
+    });
+    if (count === 0) return;
+    await tx.userMfaMethod.deleteMany({
+      where: { user_id: userId, ...BACKUP_RECOVERY_DELETE_FILTER },
+    });
+  });
+}
+
+/**
  * Resume pending enrollment without rotating secret/codes, or start fresh if none pending.
  */
 export async function getOrStartTotpEnrollment(

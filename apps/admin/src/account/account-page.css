@@ -1,3 +1,94 @@
+/* Profile 2-column grid */
+.account-profile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5, 1.5rem);
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .account-profile-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Editable profile fields */
+.account-profile-editable {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 0.75rem);
+}
+
+/* The global .at-select rule (apps/admin/src/staff.css) caps native <select>
+   elements at max-width: 24rem for other pages (e.g. audit log filters). Override
+   it here so Regional format matches Display name's full column width exactly. */
+.account-profile-editable .at-select {
+  max-width: none;
+}
+
+/* Read-only profile info rows (dl/dt/dd) */
+.account-info-rows {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.account-info-row {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  align-items: start;
+  gap: var(--space-3, 0.75rem);
+  padding: var(--space-3, 0.75rem) var(--space-3, 0.75rem);
+  border-bottom: 1px solid var(--border);
+}
+
+.account-info-row:last-child {
+  border-bottom: 0;
+}
+
+.account-info-row dt {
+  font-size: var(--fs-sm, 0.875rem);
+  color: var(--text-muted);
+  font-weight: 500;
+  padding-top: 2px;
+}
+
+.account-info-row dd {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 0.25rem);
+  font-size: var(--fs-sm, 0.875rem);
+  color: var(--text-primary);
+}
+
+.account-info-hint {
+  font-size: var(--fs-xs, 0.75rem);
+  color: var(--text-muted);
+}
+
+/* Compact 2FA status row: badge + action on one line */
+.account-mfa-status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  margin-bottom: var(--space-2, 0.5rem);
+}
+
+/* Sessions scroll */
+.sessions-table-wrap {
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.sessions-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-card, var(--surface));
+  z-index: 1;
+}
+
 .account-warn-block {
   background: var(--status-warning-bg, #fff8e1);
   border: 1px solid var(--status-warning-border, #f59f00);
@@ -16,13 +107,21 @@
   margin: var(--space-3, 0.75rem) 0;
 }
 
+/* 10 backup codes in a 2-column grid inside the right enrollment column.
+   At ~300px right column, each column ≈ 145px — comfortably fits
+   XXXX-XXXX-XXXX-XXXX at 0.65rem without wrapping. */
 .account-auth-backup ul {
-  margin: var(--space-2, 0.5rem) 0;
-  padding-left: 1.25rem;
+  margin: var(--space-2, 0.5rem) 0 0;
+  padding-left: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px var(--space-2, 0.5rem);
 }
 
 .account-auth-backup code {
-  font-size: 0.8rem;
+  font-size: 0.65rem;
+  white-space: nowrap;
 }
 
 .account-uri-code {
@@ -38,14 +137,18 @@
 .account-totp-qr {
   display: flex;
   justify-content: flex-start;
-  margin: 8px 0;
+  margin: 0;
 }
 
 .account-totp-qr canvas {
+  display: block;
+  width: 160px;
+  height: 160px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   padding: 8px;
   background: #fff;
+  box-sizing: content-box;
 }
 
 .account-totp-qr__error {
@@ -69,21 +172,41 @@
   margin-bottom: 6px;
 }
 
+/* Copy URI button under the QR code */
+.account-uri-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-xs, 0.75rem);
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+  font-family: var(--font-sans);
+}
+
+.account-uri-copy-btn:hover {
+  color: var(--text-secondary);
+}
+
+/* Inline row: digit inputs on left, action buttons on right */
+.account-totp-confirm-row__inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: var(--space-3, 0.75rem);
+}
+
 .account-role-list {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2, 0.5rem);
-  margin-top: var(--space-2, 0.5rem);
 }
 
-.account-role-hint,
 .account-info-block {
   font-size: var(--fs-sm, 0.875rem);
   color: var(--text-muted);
-  margin-top: var(--space-2, 0.5rem);
-}
-
-.account-info-block {
   margin-top: 0;
 }
 
@@ -118,4 +241,255 @@
 }
 .account-password-form .mail-field-row:last-of-type {
   margin-bottom: 0;
+}
+
+/* Render the strength bar in normal flow (not position:absolute) so it
+   occupies space between the new-password input and "Confirm new password". */
+.account-password-form .at-password-slot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 0.25rem);
+}
+
+.account-password-form .at-password-strength {
+  position: static;
+  height: auto;
+}
+
+/* Password and 2FA are two independent Cards, side by side — stretch keeps
+   both cards the same height (Password is the taller reference). */
+.account-security-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5, 1.5rem);
+  align-items: stretch;
+}
+
+/* Force each card to fill the row height so both cards are always equal.
+   Flex-column layout so action footers can use margin-top: auto to reach card bottom. */
+.account-security-grid > .at-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.account-security-grid > .at-card .at-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Password form fills the card body */
+.account-security-grid .account-password-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Push action footers to the bottom of their card */
+.account-security-grid .mail-transport-footer {
+  margin-top: auto;
+  padding-top: var(--space-3);
+}
+
+/* Prevent grid items from overflowing their column (e.g. QR code, long text) */
+.account-security-grid > * {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .account-security-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Enrollment: QR column sized to canvas + padding; info column takes the rest. */
+.account-2fa-enroll {
+  --account-totp-qr-size: 160px;
+  display: grid;
+  grid-template-columns: calc(var(--account-totp-qr-size) + 18px) minmax(0, 1fr);
+  gap: var(--space-3, 0.75rem);
+  align-items: start;
+}
+
+/* Left column: fixed width so the 160px canvas never bleeds into backup codes */
+.account-2fa-enroll__qr {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 0.5rem);
+  width: calc(var(--account-totp-qr-size) + 18px);
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+/* Compact scrollable URI in the fixed-width QR column — does not grow the 2FA card */
+.account-2fa-enroll__qr .account-uri-code--enroll {
+  margin: 0;
+  max-height: 4.5rem;
+  overflow-y: auto;
+  font-size: 0.6rem;
+  line-height: 1.35;
+  padding: 6px 8px;
+}
+
+/* Right column: hint, backup codes, digit input — must shrink inside the 2FA card */
+.account-2fa-enroll__info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.account-2fa-enroll__info > .mail-field-hint {
+  font-size: var(--fs-xs, 0.75rem);
+  line-height: 1.35;
+  margin: 0;
+}
+
+.account-2fa-enroll__info .account-auth-backup {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: var(--fs-xs, 0.75rem);
+}
+
+/* Two columns — 5 rows beside the QR, not 10 rows stacked downward */
+.account-2fa-enroll__info .account-auth-backup ul {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px var(--space-2, 0.5rem);
+}
+
+.account-2fa-enroll__info .account-auth-backup code {
+  font-size: 0.62rem;
+  letter-spacing: -0.02em;
+}
+
+.account-2fa-enroll__info .account-checkbox-row {
+  margin: 0;
+}
+
+.account-2fa-enroll__info .account-enroll-actions {
+  margin-top: 0;
+}
+
+.account-2fa-enroll__info .mail-field-row {
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .account-2fa-enroll {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Six individual digit boxes for TOTP code entry */
+.account-otp-digits {
+  display: flex;
+  gap: 6px;
+}
+
+.account-otp-digit {
+  width: 2.25rem;
+  height: 2.5rem;
+  padding: 0;
+  text-align: center;
+  font-size: 1.125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--at-ink);
+  border: 1px solid var(--at-gray-200);
+  border-radius: 6px;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.account-otp-digit:focus {
+  border-color: var(--at-blue);
+  box-shadow: 0 0 0 3px rgba(6, 111, 209, 0.15);
+}
+
+.account-otp-digit:disabled {
+  background: var(--at-gray-50, #f8f9fa);
+  color: var(--text-muted);
+}
+
+/* TOTP code is 6 digits — keep the input compact. Input renders <input class="at-input">
+   directly (no .at-field wrapper — that's only used by Select), so target .at-input. */
+.mail-field-row--totp .at-input {
+  max-width: 16rem;
+}
+
+
+/* ── Security methods list ──────────────────────────────── */
+.account-mfa-methods {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 var(--space-2, 0.5rem);
+}
+
+.account-mfa-method {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  padding: var(--space-3, 0.75rem) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.account-mfa-method:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.account-mfa-method--soon {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.account-mfa-method__icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-subtle, var(--at-gray-100));
+  border-radius: var(--radius, 4px);
+  font-size: 18px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.account-mfa-method__icon--ok {
+  background: var(--status-ok-tint, var(--at-green-050, #e9f7ec));
+  color: var(--status-ok, var(--at-green, #2fb344));
+}
+
+.account-mfa-method__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.account-mfa-method__name {
+  font-size: var(--fs-sm, 0.875rem);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.account-mfa-method__status {
+  font-size: var(--fs-xs, 0.75rem);
+  color: var(--text-muted);
+}
+
+.account-mfa-method__status--ok {
+  color: var(--status-ok, var(--at-green-700, #15803d));
+}
+
+.account-mfa-method__status--soon {
+  font-style: italic;
+}
+
+.account-mfa-method__action {
+  flex-shrink: 0;
 }

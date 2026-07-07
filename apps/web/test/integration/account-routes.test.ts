@@ -223,6 +223,51 @@ describe("POST /api/account/mfa/totp/*", () => {
   });
 });
 
+describe("DELETE /api/account/mfa/totp/enroll", () => {
+  it("cancels pending enrollment and backup codes", async () => {
+    const enrollRes = await app.request("/api/account/mfa/totp/enroll", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(enrollRes.status).toBe(200);
+
+    const deleteRes = await app.request("/api/account/mfa/totp/enroll", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(deleteRes.status).toBe(200);
+    expect(((await deleteRes.json()) as { ok: boolean }).ok).toBe(true);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } })).toBe(0);
+  });
+
+  it("does not remove confirmed TOTP or saved recovery codes when nothing is pending", async () => {
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
+    });
+    await prisma.userMfaMethod.createMany({
+      data: [
+        { user_id: userId, type: "recovery", secret_enc: "hash-1", confirmed_at: new Date() },
+        { user_id: userId, type: "recovery", secret_enc: "hash-2", confirmed_at: new Date() },
+      ],
+    });
+
+    const deleteRes = await app.request("/api/account/mfa/totp/enroll", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(deleteRes.status).toBe(200);
+
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp", confirmed_at: { not: null } } })).toBe(1);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } })).toBe(2);
+  });
+});
+
 describe("PATCH /api/account/profile — preferred_locale", () => {
   it("GET /api/account returns null preferred_locale before user sets one", async () => {
     await prisma.user.update({ where: { id: userId }, data: { preferred_locale: null } });

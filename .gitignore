@@ -29,3 +29,5 @@ emergency-exports/
 !.cursor/rules/
 !.cursor/rules/**
 CLAUDE.local.md
+graphify-out/
+.claude/
