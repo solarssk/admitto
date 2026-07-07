@@ -354,8 +354,8 @@ export function AccountPage() {
         )}
         </Card>
         <Card title="Two-factor authentication">
-            {/* Methods list — always visible */}
-            <div className="account-mfa-methods">
+            {/* Methods list — visible only when no active form */}
+            {!enrollData && !resetFormOpen && <div className="account-mfa-methods">
               {/* ── Authenticator app row ── */}
               <div className="account-mfa-method">
                 <span className="account-mfa-method__icon">
@@ -406,7 +406,7 @@ export function AccountPage() {
                   <span className="account-mfa-method__status account-mfa-method__status--soon">Coming soon</span>
                 </div>
               </div>
-            </div>
+            </div>}
 
             {!totpEnrolled && !enrollData && !account.has_local_password && (
               <p className="account-info-block" style={{ marginTop: "var(--space-3)" }}>
