@@ -32,6 +32,19 @@ function formatDate(iso: string): string {
   return formatUtcDateTime(iso);
 }
 
+/** Same .txt format and filename as the server-rendered MFA enrollment download. */
+function downloadBackupCodes(codes: string[]): void {
+  const blob = new Blob([codes.join("\n") + "\n"], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "admitto-backup-codes.txt";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function isTotpEnrolled(account: AccountDto): boolean {
   return account.mfa_methods.some((m) => m.type === "totp" && m.confirmed);
 }
@@ -468,7 +481,17 @@ export function AccountPage() {
                   <p className="mail-field-hint">Scan the QR code with your authenticator app.</p>
                   {enrollData.backupCodes.length > 0 ? (
                     <div className="account-auth-backup">
-                      <strong>Backup codes — save all 10, shown once</strong>
+                      <div className="account-auth-backup__head">
+                        <strong>Backup codes — save all 10, shown once</strong>
+                        <button
+                          type="button"
+                          className="account-uri-copy-btn"
+                          onClick={() => downloadBackupCodes(enrollData.backupCodes)}
+                        >
+                          <i className="ti ti-download" aria-hidden="true" />
+                          Download
+                        </button>
+                      </div>
                       <ul>{enrollData.backupCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
                       <div className="account-checkbox-row">
                         <Checkbox
