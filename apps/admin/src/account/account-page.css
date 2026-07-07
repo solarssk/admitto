@@ -12,13 +12,11 @@
   }
 }
 
-/* Editable profile fields — capped at 28 rem so inputs don't stretch to the
-   full column width on wide screens. Matches password form width below. */
+/* Editable profile fields */
 .account-profile-editable {
   display: flex;
   flex-direction: column;
   gap: var(--space-3, 0.75rem);
-  max-width: 28rem;
 }
 
 /* Select from @admitto/ui renders <div class="at-field"> — force it to fill the
@@ -233,14 +231,18 @@
   min-width: 0;
 }
 
+/* During 2FA enrollment the wizard needs full width — collapse to 1 column */
+.account-security-grid--enrolling {
+  grid-template-columns: 1fr;
+}
+
 @media (max-width: 900px) {
   .account-security-grid {
     grid-template-columns: 1fr;
   }
 }
 
-/* Cap the password form at the same width as the profile editable column
-   so all text inputs across the page share the same visual width. */
-.account-password-form {
-  max-width: 28rem;
+/* TOTP code is 6 digits — keep the input compact */
+.mail-field-row--totp .at-field {
+  max-width: 16rem;
 }

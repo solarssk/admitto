@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Card, Checkbox, Input, PasswordStrengthMeter, Select, Spinner, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, Input, PasswordStrengthMeter, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
   confirmMfaTotp,
@@ -185,20 +185,24 @@ export function AccountPage() {
               <p className="mail-field-hint">{displayName.length}/120 characters</p>
             </div>
             <div className="mail-field-row">
-              <Select
+              <label className="mail-field-label" htmlFor="account-locale">Regional format</label>
+              <select
                 id="account-locale"
-                label="Regional format"
-                hint={`Affects how dates are displayed. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}. Interface language stays English.`}
+                className="at-select"
                 value={preferredLocale ?? ""}
                 onChange={(e) => setPreferredLocale(e.target.value || null)}
                 disabled={profileSaving}
+                aria-describedby="account-locale-hint"
               >
                 {LOCALE_OPTIONS.map((opt) => (
                   <option key={opt.value ?? "_system"} value={opt.value ?? ""}>
                     {opt.label} — {opt.example}
                   </option>
                 ))}
-              </Select>
+              </select>
+              <p className="mail-field-hint" id="account-locale-hint">
+                {`Affects how dates are displayed. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}. Interface language stays English.`}
+              </p>
             </div>
           </div>
           <dl className="account-info-rows">
@@ -230,7 +234,7 @@ export function AccountPage() {
         </div>
       </Card>
 
-      <div className="account-security-grid">
+      <div className={`account-security-grid${enrollData ? " account-security-grid--enrolling" : ""}`}>
       <Card title="Password">
         {!account.has_local_password ? (
           <p className="account-info-block">Password is managed by your identity provider.</p>
@@ -383,7 +387,7 @@ export function AccountPage() {
               <Checkbox checked={backupSaved} onChange={(e) => setBackupSaved(e.target.checked)} />
               <span>I&apos;ve saved my backup codes</span>
             </label>
-            <div className="mail-field-row">
+            <div className="mail-field-row mail-field-row--totp">
               <label className="mail-field-label" htmlFor="account-totp-code">Authenticator code</label>
               <Input id="account-totp-code" value={totpCode} onChange={(e) => setTotpCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" disabled={!backupSaved && enrollData.backupCodes.length > 0} />
             </div>
