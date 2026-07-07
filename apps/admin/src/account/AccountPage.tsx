@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Button, Card, Input, PasswordStrengthMeter, Select, Spinner, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, Input, PasswordStrengthMeter, Select, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
   cancelMfaEnroll,
@@ -105,6 +105,7 @@ export function AccountPage() {
   const [revokeAllBusy, setRevokeAllBusy] = useState(false);
   const [uriCopied, setUriCopied] = useState(false);
   const [showUriManual, setShowUriManual] = useState(false);
+  const [backupCodesSaved, setBackupCodesSaved] = useState(false);
 
   const loadAccount = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -387,7 +388,7 @@ export function AccountPage() {
                   <div className="account-mfa-method__action">
                     {!totpEnrolled && (
                       <Button type="button" variant="primary" size="sm" disabled={mfaEnrolling} onClick={async () => {
-                        setMfaEnrolling(true); setTotpCode(""); setUriCopied(false); setShowUriManual(false);
+                        setMfaEnrolling(true); setTotpCode(""); setUriCopied(false); setShowUriManual(false); setBackupCodesSaved(false);
                         try {
                           await cancelMfaEnroll().catch(() => { /* ignore — no pending enrollment */ });
                           setEnrollData(await enrollMfaTotp());
@@ -464,6 +465,14 @@ export function AccountPage() {
                     <div className="account-auth-backup">
                       <strong>Backup codes — save all 10, shown once</strong>
                       <ul>{enrollData.backupCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
+                      <div className="account-checkbox-row">
+                        <Checkbox
+                          id="account-backup-codes-saved"
+                          label="I've saved my backup codes"
+                          checked={backupCodesSaved}
+                          onChange={(e) => setBackupCodesSaved(e.target.checked)}
+                        />
+                      </div>
                     </div>
                   ) : enrollData.backupCodesAlreadyShown ? (
                     <p className="mail-field-hint">Backup codes were shown at first setup. Use your saved codes if you need to recover access.</p>
@@ -480,24 +489,22 @@ export function AccountPage() {
                 </div>
               </div>
             )}
-            {totpEnrolled && account.has_local_password && (
+            {totpEnrolled && account.has_local_password && resetFormOpen && (
               <>
                 <p className="account-info-block" style={{ marginTop: "var(--space-3)" }}>Resetting 2FA removes your authenticator and backup codes, and ends your other active sessions. Your current session stays signed in.</p>
-                {resetFormOpen && (
-                  <div className="mail-field-row">
-                    <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
-                    <Input
-                      id="account-reset-password"
-                      name="current-password"
-                      type="password"
-                      autoComplete="current-password"
-                      autoCapitalize="off"
-                      spellCheck={false}
-                      value={resetPassword}
-                      onChange={(e) => setResetPassword(e.target.value)}
-                    />
-                  </div>
-                )}
+                <div className="mail-field-row">
+                  <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
+                  <Input
+                    id="account-reset-password"
+                    name="current-password"
+                    type="password"
+                    autoComplete="current-password"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                  />
+                </div>
               </>
             )}
             {totpEnrolled && !account.has_local_password && (
@@ -514,14 +521,18 @@ export function AccountPage() {
                   onClick={async () => {
                     totpInputKey.current += 1;
                     setMfaEnrolling(true);
-                    setEnrollData(null); setTotpCode(""); setUriCopied(false); setShowUriManual(false);
+                    setEnrollData(null); setTotpCode(""); setUriCopied(false); setShowUriManual(false); setBackupCodesSaved(false);
                     try { await cancelMfaEnroll(); } catch { /* best-effort */ }
                     finally { setMfaEnrolling(false); }
                   }}>Cancel</Button>
                 <Button
                   type="button"
                   variant="primary"
-                  disabled={mfaConfirming || totpCode.length < 6}
+                  disabled={
+                    mfaConfirming
+                    || totpCode.length < 6
+                    || (enrollData.backupCodes.length > 0 && !backupCodesSaved)
+                  }
                   onClick={async () => {
                     setMfaConfirming(true);
                     try {

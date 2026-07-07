@@ -71,7 +71,6 @@ export function TotpDigitInput({ value, onChange, disabled, id }: Props) {
           maxLength={1}
           value={d}
           disabled={disabled}
-          autoFocus={i === 0}
           autoComplete={i === 0 ? "one-time-code" : "off"}
           onChange={(e) => handleChange(i, e.target.value)}
           onKeyDown={(e) => handleKeyDown(i, e)}

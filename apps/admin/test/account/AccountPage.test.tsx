@@ -302,6 +302,31 @@ describe("AccountPage toasts", () => {
     });
   });
 
+  it("requires backup-code acknowledgement before confirming fresh enrollment", async () => {
+    mockLoadedAccount();
+    mockEnrollMfaTotp.mockResolvedValueOnce({
+      otpauthUri: "otpauth://totp/Admitto?secret=ABC",
+      backupCodes: ["1111-2222", "3333-4444"],
+      backupCodesAlreadyShown: false,
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("I've saved my backup codes")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Authenticator code"), { target: { value: "123456" } });
+    expect(screen.getByRole("button", { name: "Confirm setup" }).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(screen.getByLabelText("I've saved my backup codes"));
+    expect(screen.getByRole("button", { name: "Confirm setup" }).hasAttribute("disabled")).toBe(false);
+  });
+
   it("toasts MFA confirm success", async () => {
     mockFetchAccount
       .mockResolvedValueOnce(baseAccount)

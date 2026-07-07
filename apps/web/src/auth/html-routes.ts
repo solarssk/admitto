@@ -54,7 +54,10 @@ export async function handleGetLogin(c: Context, db: PrismaClient): Promise<Resp
       const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
       try {
         const landing = await resolvePostLoginRedirectForUser(db, validated.userId, next ?? undefined);
-        return c.redirect(landing, 302);
+        // Avoid /login → /login redirect loop when user has a session but no staff landing (e.g. roles removed).
+        if (landing !== "/login" && !landing.startsWith("/login?")) {
+          return c.redirect(landing, 302);
+        }
       } catch {
         // fall through to show login form
       }

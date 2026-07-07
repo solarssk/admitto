@@ -349,6 +349,22 @@ describe("GET /login", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/operator");
   });
+
+  it("does not redirect to /login when session has no staff landing (avoids loop)", async () => {
+    const password_hash = await hashPassword("orphan-pass-123");
+    const orphan = await prisma.user.create({
+      data: { email: "orphan-login@example.com", password_hash },
+    });
+    const { rawToken } = await createSession(prisma, { userId: orphan.id });
+    const res = await app.request("/login", {
+      redirect: "manual",
+      headers: { Cookie: `admitto_session=${rawToken}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toMatch(/sign in|login/i);
+    await prisma.user.delete({ where: { id: orphan.id } });
+  });
 });
 
 describe("POST /logout", () => {
