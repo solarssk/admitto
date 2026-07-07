@@ -358,7 +358,7 @@ export function AccountPage() {
             {!enrollData && !resetFormOpen && <div className="account-mfa-methods">
               {/* ── Authenticator app row ── */}
               <div className="account-mfa-method">
-                <span className="account-mfa-method__icon">
+                <span className={`account-mfa-method__icon${totpEnrolled ? " account-mfa-method__icon--ok" : ""}`}>
                   <i className="ti ti-shield-lock" aria-hidden="true" />
                 </span>
                 <div className="account-mfa-method__body">

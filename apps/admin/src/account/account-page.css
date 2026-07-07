@@ -421,6 +421,11 @@
   color: var(--text-secondary);
 }
 
+.account-mfa-method__icon--ok {
+  background: var(--status-ok-tint, var(--at-green-050, #e9f7ec));
+  color: var(--status-ok, var(--at-green, #2fb344));
+}
+
 .account-mfa-method__body {
   flex: 1;
   display: flex;

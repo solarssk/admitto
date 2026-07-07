@@ -7,9 +7,6 @@ import { fetchCheckInEvents } from "../api/client.js";
 import { formatEventCalendarDate } from "../utils/event-dates.js";
 import type { EventDto } from "../api/types.js";
 
-const navClass = ({ isActive }: { isActive: boolean }) =>
-  `nav-item${isActive ? " nav-item--active" : ""}`;
-
 function OperatorSidebar() {
   const { eventId } = useParams();
   const [event, setEvent] = useState<EventDto | null>(null);
@@ -47,14 +44,7 @@ function OperatorSidebar() {
           </div>
         </div>
       )}
-      <nav className="sidebar__nav" aria-label="Navigation">
-        {eventId && (
-          <NavLink to={`/operator/events/${eventId}/checkin`} className={navClass}>
-            <i className="ti ti-qrcode" aria-hidden="true" />
-            <span>Check-in</span>
-          </NavLink>
-        )}
-      </nav>
+      <nav className="sidebar__nav" aria-label="Navigation" />
       <div className="sidebar__foot">
         <InstanceSidebarFoot omitPrimary />
       </div>
