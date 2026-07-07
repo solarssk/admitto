@@ -443,7 +443,7 @@ export function AccountPage() {
             )}
             {totpEnrolled && account.has_local_password && (
               <>
-                <p className="account-info-block">Resetting 2FA will end your other active sessions. You will stay signed in on this device.</p>
+                <p className="account-info-block">Resetting 2FA will end your other active sessions. You will need to sign in again.</p>
                 {resetFormOpen && (
                   <>
                     <div className="mail-field-row">
