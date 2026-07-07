@@ -80,5 +80,7 @@ describe("OperatorShell", () => {
     });
     expect(screen.getByText("Kraków")).toBeTruthy();
     expect(mockFetchCheckInEvents).toHaveBeenCalled();
+    expect(screen.queryByTestId("connection-banner")).toBeNull();
+    expect(connectionBanner).not.toHaveBeenCalled();
   });
 });

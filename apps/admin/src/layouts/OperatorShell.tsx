@@ -54,9 +54,12 @@ function OperatorSidebar() {
 }
 
 export function OperatorShell() {
+  const { eventId } = useParams();
+  const onCheckInRoute = Boolean(eventId);
+
   return (
     <StaffShell sidebar={<OperatorSidebar />}>
-      <ConnectionBanner />
+      {!onCheckInRoute && <ConnectionBanner />}
       <Outlet />
     </StaffShell>
   );

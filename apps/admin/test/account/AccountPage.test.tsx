@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AccountPage } from "../../src/account/AccountPage.js";
-import type { AccountDto } from "../../src/api/types.js";
+import type { AccountDto, SessionListDto } from "../../src/api/types.js";
 import { PASSWORD_STRENGTH_STRONG } from "@admitto/auth/password-strength-fixtures";
 import { renderWithToast } from "../test-utils.js";
 
@@ -78,6 +78,37 @@ function fillPasswordForm() {
   fireEvent.change(screen.getByLabelText("Confirm new password"), {
     target: { value: "new-password-12" },
   });
+}
+
+function makeAccountSession(overrides: Partial<SessionListDto> = {}): SessionListDto {
+  return {
+    id: "sess-1",
+    userId: "usr-1",
+    userEmail: "admin@example.com",
+    userDisplayName: "Admin",
+    role: "superadmin",
+    deviceLabel: "This device",
+    ip: null,
+    userAgent: null,
+    loginAt: "2026-01-01T00:00:00.000Z",
+    lastSeenAt: "2026-01-01T01:00:00.000Z",
+    expiresAt: "2026-01-02T00:00:00.000Z",
+    authMethod: "local",
+    stage: "active",
+    isCurrent: true,
+    ...overrides,
+  };
+}
+
+function makeCurrentAndOtherSessions(otherOverrides: Partial<SessionListDto> = {}) {
+  const currentSession = makeAccountSession();
+  const otherSession = makeAccountSession({
+    id: "sess-2",
+    isCurrent: false,
+    deviceLabel: "Other",
+    ...otherOverrides,
+  });
+  return { currentSession, otherSession };
 }
 
 function mockLoadedAccount(account: AccountDto = baseAccount) {
@@ -405,23 +436,7 @@ describe("AccountPage toasts", () => {
   });
 
   it("revokes all other sessions successfully", async () => {
-    const currentSession = {
-      id: "sess-1",
-      userId: "usr-1",
-      userEmail: "admin@example.com",
-      userDisplayName: "Admin",
-      role: "superadmin" as const,
-      deviceLabel: "This device",
-      ip: null,
-      userAgent: null,
-      loginAt: "2026-01-01T00:00:00.000Z",
-      lastSeenAt: "2026-01-01T01:00:00.000Z",
-      expiresAt: "2026-01-02T00:00:00.000Z",
-      authMethod: "local",
-      stage: "active",
-      isCurrent: true,
-    };
-    const otherSession = { ...currentSession, id: "sess-2", isCurrent: false, deviceLabel: "Other" };
+    const { currentSession, otherSession } = makeCurrentAndOtherSessions();
     mockLoadedAccount();
     mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
     mockDeleteSession.mockResolvedValue(undefined);
@@ -456,57 +471,76 @@ describe("AccountPage toasts", () => {
 
   it("copies the otpauth URI during enrollment", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    const originalClipboard = navigator.clipboard;
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
 
-    mockLoadedAccount();
-    mockEnrollMfaTotp.mockResolvedValueOnce({
-      otpauthUri: "otpauth://totp/Admitto?secret=ABC",
-      backupCodes: [],
-      backupCodesAlreadyShown: true,
-    });
+    try {
+      mockLoadedAccount();
+      mockEnrollMfaTotp.mockResolvedValueOnce({
+        otpauthUri: "otpauth://totp/Admitto?secret=ABC",
+        backupCodes: [],
+        backupCodesAlreadyShown: true,
+      });
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+      renderWithToast(<AccountPage />);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Set up" }));
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Copy URI" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Copy URI" }));
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Copy URI" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Copy URI" }));
 
-    await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith("otpauth://totp/Admitto?secret=ABC");
-      expect(screen.getByRole("button", { name: "Copied!" })).toBeTruthy();
-    });
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith("otpauth://totp/Admitto?secret=ABC");
+        expect(screen.getByRole("button", { name: "Copied!" })).toBeTruthy();
+      });
 
-    vi.advanceTimersByTime(2000);
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Copy URI" })).toBeTruthy();
-    });
-    vi.useRealTimers();
+      vi.advanceTimersByTime(2000);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Copy URI" })).toBeTruthy();
+      });
+    } finally {
+      vi.useRealTimers();
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("shows the otpauth URI when clipboard is unavailable", async () => {
+    const originalClipboard = navigator.clipboard;
+    Object.assign(navigator, { clipboard: undefined });
+
+    try {
+      mockLoadedAccount();
+      mockEnrollMfaTotp.mockResolvedValueOnce({
+        otpauthUri: "otpauth://totp/Admitto?secret=NOCLIP",
+        backupCodes: [],
+        backupCodesAlreadyShown: true,
+      });
+
+      renderWithToast(<AccountPage />);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Copy URI" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Copy URI" }));
+
+      await waitFor(() => {
+        expect(screen.getByText("otpauth://totp/Admitto?secret=NOCLIP")).toBeTruthy();
+      });
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
   });
 
   it("revokes a single other session successfully", async () => {
-    const currentSession = {
-      id: "sess-1",
-      userId: "usr-1",
-      userEmail: "admin@example.com",
-      userDisplayName: "Admin",
-      role: "superadmin" as const,
-      deviceLabel: "This device",
-      ip: null,
-      userAgent: null,
-      loginAt: "2026-01-01T00:00:00.000Z",
-      lastSeenAt: "2026-01-01T01:00:00.000Z",
-      expiresAt: "2026-01-02T00:00:00.000Z",
-      authMethod: "local",
-      stage: "active",
-      isCurrent: true,
-    };
-    const otherSession = { ...currentSession, id: "sess-2", isCurrent: false, deviceLabel: "Other" };
+    const { currentSession, otherSession } = makeCurrentAndOtherSessions();
     mockLoadedAccount();
     mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
     mockDeleteSession.mockResolvedValue(undefined);

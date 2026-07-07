@@ -52,6 +52,27 @@ function redirectToLoginIfUnauthorized(err: unknown): boolean {
   return false;
 }
 
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export function AccountPage() {
   const { addToast } = useToast();
   const [account, setAccount] = useState<AccountDto | null>(null);
@@ -83,6 +104,7 @@ export function AccountPage() {
   const [revokeAllOpen, setRevokeAllOpen] = useState(false);
   const [revokeAllBusy, setRevokeAllBusy] = useState(false);
   const [uriCopied, setUriCopied] = useState(false);
+  const [showUriManual, setShowUriManual] = useState(false);
 
   const loadAccount = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -365,7 +387,7 @@ export function AccountPage() {
                   <div className="account-mfa-method__action">
                     {!totpEnrolled && (
                       <Button type="button" variant="primary" size="sm" disabled={mfaEnrolling} onClick={async () => {
-                        setMfaEnrolling(true); setTotpCode(""); setUriCopied(false);
+                        setMfaEnrolling(true); setTotpCode(""); setUriCopied(false); setShowUriManual(false);
                         try {
                           await cancelMfaEnroll().catch(() => { /* ignore — no pending enrollment */ });
                           setEnrollData(await enrollMfaTotp());
@@ -417,15 +439,23 @@ export function AccountPage() {
                     type="button"
                     className="account-uri-copy-btn"
                     onClick={() => {
-                      navigator.clipboard.writeText(enrollData.otpauthUri).then(() => {
-                        setUriCopied(true);
-                        setTimeout(() => setUriCopied(false), 2000);
-                      }).catch(() => {});
+                      void copyTextToClipboard(enrollData.otpauthUri).then((ok) => {
+                        if (ok) {
+                          setShowUriManual(false);
+                          setUriCopied(true);
+                          setTimeout(() => setUriCopied(false), 2000);
+                        } else {
+                          setShowUriManual(true);
+                        }
+                      });
                     }}
                   >
                     <i className={`ti ti-${uriCopied ? "check" : "copy"}`} aria-hidden="true" />
                     {uriCopied ? "Copied!" : "Copy URI"}
                   </button>
+                  {showUriManual && (
+                    <code className="account-uri-code">{enrollData.otpauthUri}</code>
+                  )}
                 </div>
                 {/* Right column: hint, backup codes, digit input */}
                 <div className="account-2fa-enroll__info">
@@ -484,7 +514,7 @@ export function AccountPage() {
                   onClick={async () => {
                     totpInputKey.current += 1;
                     setMfaEnrolling(true);
-                    setEnrollData(null); setTotpCode(""); setUriCopied(false);
+                    setEnrollData(null); setTotpCode(""); setUriCopied(false); setShowUriManual(false);
                     try { await cancelMfaEnroll(); } catch { /* best-effort */ }
                     finally { setMfaEnrolling(false); }
                   }}>Cancel</Button>
