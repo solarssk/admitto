@@ -7,6 +7,7 @@ import {
   login,
   logout,
   revokeSession,
+  validateSession,
   validatePartialSession,
   revokeTrustedDeviceByToken,
 } from "@admitto/auth";
@@ -44,6 +45,20 @@ function htmlResponse(c: Context, html: string, scriptNonce: string, status: 200
 export async function handleGetLogin(c: Context, db: PrismaClient): Promise<Response> {
   if (await resolveStaffEntryPath(db) === "/setup") {
     return c.redirect("/setup", 302);
+  }
+  // If user already has a valid session, redirect them to their landing page
+  const rawToken = getCookie(c, SESSION_COOKIE_NAME);
+  if (rawToken) {
+    const validated = await validateSession(db, rawToken);
+    if (validated) {
+      const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
+      try {
+        const landing = await resolvePostLoginRedirectForUser(db, validated.userId, next ?? undefined);
+        return c.redirect(landing, 302);
+      } catch {
+        // fall through to show login form
+      }
+    }
   }
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
   const errorParam = c.req.query("error") ?? undefined;
