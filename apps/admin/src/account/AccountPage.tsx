@@ -105,6 +105,7 @@ export function AccountPage() {
   const [revokeAllBusy, setRevokeAllBusy] = useState(false);
   const [uriCopied, setUriCopied] = useState(false);
   const [showUriManual, setShowUriManual] = useState(false);
+  const [qrRenderFailed, setQrRenderFailed] = useState(false);
   const [backupCodesSaved, setBackupCodesSaved] = useState(false);
 
   const loadAccount = useCallback(async (signal?: AbortSignal) => {
@@ -388,7 +389,7 @@ export function AccountPage() {
                   <div className="account-mfa-method__action">
                     {!totpEnrolled && (
                       <Button type="button" variant="primary" size="sm" disabled={mfaEnrolling} onClick={async () => {
-                        setMfaEnrolling(true); setTotpCode(""); setUriCopied(false); setShowUriManual(false); setBackupCodesSaved(false);
+                        setMfaEnrolling(true); setTotpCode(""); setUriCopied(false); setShowUriManual(false); setQrRenderFailed(false); setBackupCodesSaved(false);
                         try {
                           await cancelMfaEnroll().catch(() => { /* ignore — no pending enrollment */ });
                           setEnrollData(await enrollMfaTotp());
@@ -435,14 +436,18 @@ export function AccountPage() {
               <div className="account-2fa-enroll">
                 {/* Left column: QR code + copy URI */}
                 <div className="account-2fa-enroll__qr">
-                  <TotpQrCode uri={enrollData.otpauthUri} />
+                  <TotpQrCode
+                    uri={enrollData.otpauthUri}
+                    onRenderFailed={() => setQrRenderFailed(true)}
+                    onRenderSuccess={() => setQrRenderFailed(false)}
+                  />
                   <button
                     type="button"
                     className="account-uri-copy-btn"
                     onClick={() => {
                       void copyTextToClipboard(enrollData.otpauthUri).then((ok) => {
                         if (ok) {
-                          setShowUriManual(false);
+                          if (!qrRenderFailed) setShowUriManual(false);
                           setUriCopied(true);
                           setTimeout(() => setUriCopied(false), 2000);
                         } else {
@@ -454,8 +459,8 @@ export function AccountPage() {
                     <i className={`ti ti-${uriCopied ? "check" : "copy"}`} aria-hidden="true" />
                     {uriCopied ? "Copied!" : "Copy URI"}
                   </button>
-                  {showUriManual && (
-                    <code className="account-uri-code">{enrollData.otpauthUri}</code>
+                  {(showUriManual || qrRenderFailed) && (
+                    <code className="account-uri-code account-uri-code--enroll">{enrollData.otpauthUri}</code>
                   )}
                 </div>
                 {/* Right column: hint, backup codes, digit input */}
@@ -521,7 +526,7 @@ export function AccountPage() {
                   onClick={async () => {
                     totpInputKey.current += 1;
                     setMfaEnrolling(true);
-                    setEnrollData(null); setTotpCode(""); setUriCopied(false); setShowUriManual(false); setBackupCodesSaved(false);
+                    setEnrollData(null); setTotpCode(""); setUriCopied(false); setShowUriManual(false); setQrRenderFailed(false); setBackupCodesSaved(false);
                     try { await cancelMfaEnroll(); } catch { /* best-effort */ }
                     finally { setMfaEnrolling(false); }
                   }}>Cancel</Button>

@@ -4,12 +4,18 @@ import QRCode from "qrcode";
 export type TotpQrCodeProps = {
   /** `otpauth://` URI returned by the TOTP enrollment API. */
   uri: string;
+  onRenderFailed?: () => void;
+  onRenderSuccess?: () => void;
 };
 
 /** Renders a TOTP enrollment QR code on canvas for authenticator apps. */
-export function TotpQrCode({ uri }: TotpQrCodeProps) {
+export function TotpQrCode({ uri, onRenderFailed, onRenderSuccess }: TotpQrCodeProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [renderFailed, setRenderFailed] = useState(false);
+  const onRenderFailedRef = useRef(onRenderFailed);
+  const onRenderSuccessRef = useRef(onRenderSuccess);
+  onRenderFailedRef.current = onRenderFailed;
+  onRenderSuccessRef.current = onRenderSuccess;
 
   useEffect(() => {
     setRenderFailed(false);
@@ -18,9 +24,14 @@ export function TotpQrCode({ uri }: TotpQrCodeProps) {
       width: 160,
       margin: 2,
       color: { dark: "#0f172a", light: "#ffffff" },
-    }).catch(() => {
-      setRenderFailed(true);
-    });
+    })
+      .then(() => {
+        onRenderSuccessRef.current?.();
+      })
+      .catch(() => {
+        setRenderFailed(true);
+        onRenderFailedRef.current?.();
+      });
   }, [uri]);
 
   return (

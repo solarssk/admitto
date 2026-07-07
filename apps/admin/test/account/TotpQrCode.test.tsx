@@ -26,10 +26,20 @@ describe("TotpQrCode", () => {
   });
 
   it("shows a fallback alert when QR rendering fails", async () => {
+    const onRenderFailed = vi.fn();
     vi.mocked(QRCode.toCanvas).mockRejectedValueOnce(new Error("canvas failed"));
-    const { getByRole } = render(<TotpQrCode uri={TEST_URI} />);
+    const { getByRole } = render(<TotpQrCode uri={TEST_URI} onRenderFailed={onRenderFailed} />);
     await waitFor(() => {
       expect(getByRole("alert").textContent).toMatch(/Could not render QR code/);
+      expect(onRenderFailed).toHaveBeenCalled();
+    });
+  });
+
+  it("notifies on successful render", async () => {
+    const onRenderSuccess = vi.fn();
+    render(<TotpQrCode uri={TEST_URI} onRenderSuccess={onRenderSuccess} />);
+    await waitFor(() => {
+      expect(onRenderSuccess).toHaveBeenCalled();
     });
   });
 });

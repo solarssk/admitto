@@ -319,6 +319,17 @@
   gap: var(--space-2, 0.5rem);
   width: calc(var(--account-totp-qr-size) + 18px);
   flex-shrink: 0;
+  min-width: 0;
+}
+
+/* Compact scrollable URI in the fixed-width QR column — does not grow the 2FA card */
+.account-2fa-enroll__qr .account-uri-code--enroll {
+  margin: 0;
+  max-height: 4.5rem;
+  overflow-y: auto;
+  font-size: 0.6rem;
+  line-height: 1.35;
+  padding: 6px 8px;
 }
 
 /* Right column: hint, backup codes, digit input — must shrink inside the 2FA card */
