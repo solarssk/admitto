@@ -4,6 +4,7 @@ import { Avatar } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 import { ConnectionBanner } from "../connection/ConnectionStateProvider.js";
 import { fetchCheckInEvents } from "../api/client.js";
+import { BrandMark } from "./BrandMark.js";
 
 function OperatorContextBar({ deviceLabel }: { deviceLabel: string | null }) {
   const { eventId } = useParams();
@@ -55,7 +56,7 @@ export function OperatorShell() {
       <ConnectionBanner />
       <header className="operator-shell__bar">
         <div className="operator-shell__brand">
-          <span className="sidebar__brand-mark" aria-hidden="true" />
+          {BrandMark}
           <span>Admitto Check-in</span>
         </div>
         <OperatorContextBar deviceLabel={deviceLabel} />
@@ -65,8 +66,13 @@ export function OperatorShell() {
             <span>{displayName}</span>
           </Link>
           <form method="post" action="/logout">
-            <button type="submit" className="topbar__signout">
-              Sign out
+            <button
+              type="submit"
+              className="topbar__signout"
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <i className="ti ti-logout" aria-hidden="true" />
             </button>
           </form>
         </div>

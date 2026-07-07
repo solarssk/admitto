@@ -83,6 +83,7 @@ export function AccountPage() {
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [revokeAllOpen, setRevokeAllOpen] = useState(false);
   const [revokeAllBusy, setRevokeAllBusy] = useState(false);
+  const [uriCopied, setUriCopied] = useState(false);
 
   const loadAccount = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -359,8 +360,11 @@ export function AccountPage() {
                 <Badge variant={totpEnrolled ? "ok" : "neutral"}>{totpEnrolled ? "Enabled" : "Not configured"}</Badge>
                 {!totpEnrolled && !enrollData && account.has_local_password && (
                   <Button type="button" variant="primary" size="sm" disabled={mfaEnrolling} onClick={async () => {
-                    setMfaEnrolling(true); setBackupSaved(false); setTotpCode("");
-                    try { setEnrollData(await enrollMfaTotp()); }
+                    setMfaEnrolling(true); setBackupSaved(false); setTotpCode(""); setUriCopied(false);
+                    try {
+                      await cancelMfaEnroll().catch(() => { /* ignore — no pending enrollment */ });
+                      setEnrollData(await enrollMfaTotp());
+                    }
                     catch (err) { addToast(operatorApiErrorMessage(err, "Failed to start 2FA setup."), "error"); }
                     finally { setMfaEnrolling(false); }
                   }}>Set up authenticator</Button>
@@ -377,13 +381,22 @@ export function AccountPage() {
             )}
             {enrollData && (
               <div className="account-2fa-enroll">
-                {/* Left column: QR code + raw URI */}
+                {/* Left column: QR code + copy URI */}
                 <div className="account-2fa-enroll__qr">
                   <TotpQrCode uri={enrollData.otpauthUri} />
-                  <details className="account-uri-details">
-                    <summary className="account-uri-details__toggle">Show raw URI</summary>
-                    <code className="account-uri-code">{enrollData.otpauthUri}</code>
-                  </details>
+                  <button
+                    type="button"
+                    className="account-uri-copy-btn"
+                    onClick={() => {
+                      navigator.clipboard.writeText(enrollData.otpauthUri).then(() => {
+                        setUriCopied(true);
+                        setTimeout(() => setUriCopied(false), 2000);
+                      }).catch(() => {});
+                    }}
+                  >
+                    <i className={`ti ti-${uriCopied ? "check" : "copy"}`} aria-hidden="true" />
+                    {uriCopied ? "Copied!" : "Copy URI"}
+                  </button>
                 </div>
                 {/* Right column: all setup info stacked */}
                 <div className="account-2fa-enroll__info">
@@ -402,41 +415,43 @@ export function AccountPage() {
                       <span>I&apos;ve saved my backup codes</span>
                     </label>
                   )}
-                  <div className="mail-field-row">
-                    <label className="mail-field-label" htmlFor="account-totp-code">Authenticator code</label>
-                    <TotpDigitInput
-                      key={totpInputKey.current}
-                      id="account-totp-code"
-                      value={totpCode}
-                      onChange={setTotpCode}
-                      disabled={enrollData.backupCodes.length > 0 && !backupSaved}
-                    />
-                  </div>
-                  <div className="account-enroll-actions">
-                    <Button
-                      type="button"
-                      variant="primary"
-                      disabled={mfaConfirming || totpCode.length < 6 || (enrollData.backupCodes.length > 0 && !backupSaved)}
-                      onClick={async () => {
-                        setMfaConfirming(true);
-                        try {
-                          await confirmMfaTotp({ code: totpCode });
-                          setEnrollData(null); setTotpCode(""); setBackupSaved(false);
-                          addToast("Two-factor authentication is enabled.", "success");
-                          await loadAccount();
-                        } catch (err) { addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error"); }
-                        finally { setMfaConfirming(false); }
-                      }}>Confirm setup</Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={async () => {
-                        totpInputKey.current += 1;
-                        setMfaEnrolling(true);
-                        setEnrollData(null); setTotpCode(""); setBackupSaved(false);
-                        try { await cancelMfaEnroll(); } catch { /* best-effort */ }
-                        finally { setMfaEnrolling(false); }
-                      }}>Cancel</Button>
+                  <div className="account-totp-confirm-row">
+                    <div className="account-totp-confirm-row__inputs">
+                      <label className="mail-field-label" htmlFor="account-totp-code">Authenticator code</label>
+                      <TotpDigitInput
+                        key={totpInputKey.current}
+                        id="account-totp-code"
+                        value={totpCode}
+                        onChange={setTotpCode}
+                        disabled={enrollData.backupCodes.length > 0 && !backupSaved}
+                      />
+                    </div>
+                    <div className="account-enroll-actions">
+                      <Button
+                        type="button"
+                        variant="primary"
+                        disabled={mfaConfirming || totpCode.length < 6 || (enrollData.backupCodes.length > 0 && !backupSaved)}
+                        onClick={async () => {
+                          setMfaConfirming(true);
+                          try {
+                            await confirmMfaTotp({ code: totpCode });
+                            setEnrollData(null); setTotpCode(""); setBackupSaved(false);
+                            addToast("Two-factor authentication is enabled.", "success");
+                            await loadAccount();
+                          } catch (err) { addToast(operatorApiErrorMessage(err, "Invalid authenticator code."), "error"); }
+                          finally { setMfaConfirming(false); }
+                        }}>Confirm setup</Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={async () => {
+                          totpInputKey.current += 1;
+                          setMfaEnrolling(true);
+                          setEnrollData(null); setTotpCode(""); setBackupSaved(false); setUriCopied(false);
+                          try { await cancelMfaEnroll(); } catch { /* best-effort */ }
+                          finally { setMfaEnrolling(false); }
+                        }}>Cancel</Button>
+                    </div>
                   </div>
                 </div>
               </div>

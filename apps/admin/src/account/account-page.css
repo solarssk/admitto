@@ -168,6 +168,43 @@
   margin-bottom: 6px;
 }
 
+/* Copy URI button under the QR code */
+.account-uri-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-xs, 0.75rem);
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
+  font-family: var(--font-sans);
+}
+
+.account-uri-copy-btn:hover {
+  color: var(--text-secondary);
+}
+
+/* Inline row: digit inputs on left, action buttons on right */
+.account-totp-confirm-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3, 0.75rem);
+  flex-wrap: wrap;
+}
+
+.account-totp-confirm-row__inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account-totp-confirm-row .account-enroll-actions {
+  margin-top: 0;
+  flex-wrap: nowrap;
+}
+
 .account-role-list {
   display: flex;
   flex-wrap: wrap;

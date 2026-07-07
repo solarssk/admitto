@@ -11,14 +11,14 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
   `nav-item${isActive ? " nav-item--active" : ""}`;
 
 /** Sidebar footer shared by all instance-level shells (/admin, /admin/users, /admin/settings, /account). */
-export function InstanceSidebarFoot() {
+export function InstanceSidebarFoot({ omitPrimary = false }: { omitPrimary?: boolean }) {
   const { assignments } = useAuth();
   const canAdmin = canAccessAdminPanel(assignments);
   const canCheckIn = canAccessCheckInPanel(assignments);
 
   return (
     <>
-      {canAdmin ? (
+      {!omitPrimary && (canAdmin ? (
         <NavLink to="/admin" className={navClass} end>
           <i className="ti ti-calendar-event" aria-hidden="true" />
           <span>All events</span>
@@ -28,7 +28,7 @@ export function InstanceSidebarFoot() {
           <i className="ti ti-qrcode" aria-hidden="true" />
           <span>Check-in</span>
         </NavLink>
-      ) : null}
+      ) : null)}
       {isAdmin(assignments) && (
         <>
           <div className="sidebar__section-label">Administration</div>
