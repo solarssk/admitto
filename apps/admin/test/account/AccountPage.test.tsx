@@ -342,6 +342,55 @@ describe("AccountPage toasts", () => {
     expect(screen.getByRole("button", { name: "Confirm setup" }).hasAttribute("disabled")).toBe(false);
   });
 
+  it("downloads backup codes as .txt in the enrollment page format", async () => {
+    mockLoadedAccount();
+    mockEnrollMfaTotp.mockResolvedValueOnce({
+      otpauthUri: "otpauth://totp/Admitto?secret=ABC",
+      backupCodes: ["1111-2222", "3333-4444"],
+      backupCodesAlreadyShown: false,
+    });
+
+    const createObjectURL = vi.fn((_blob: Blob | MediaSource) => "blob:mock-codes");
+    const revokeObjectURL = vi.fn();
+    const originalCreate = URL.createObjectURL;
+    const originalRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+    const anchorClicks: string[] = [];
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        anchorClicks.push(this.download);
+      });
+
+    try {
+      renderWithToast(<AccountPage />);
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+
+      fireEvent.click(await screen.findByRole("button", { name: "Download" }));
+
+      expect(createObjectURL).toHaveBeenCalledOnce();
+      const blob = createObjectURL.mock.calls[0]![0] as Blob;
+      const text = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(blob);
+      });
+      expect(text).toBe("1111-2222\n3333-4444\n");
+      expect(blob.type).toContain("text/plain");
+      expect(anchorClicks).toEqual(["admitto-backup-codes.txt"]);
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock-codes");
+    } finally {
+      clickSpy.mockRestore();
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    }
+  });
+
   it("toasts MFA confirm success", async () => {
     mockFetchAccount
       .mockResolvedValueOnce(baseAccount)

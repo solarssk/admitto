@@ -5,7 +5,11 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { PatchSystemSettingsBody, SystemSettingsDto, SettingSource } from "../api/types.js";
 
 const MS_PER_HOUR = 3_600_000;
-const MFA_ROLES = ["superadmin", "admin", "operator"] as const;
+const MFA_ROLES = [
+  { value: "superadmin", label: "Superadmin" },
+  { value: "admin", label: "Admin" },
+  { value: "operator", label: "Operator" },
+] as const;
 
 function fieldLocked(source: SettingSource): boolean {
   return source === "env";
@@ -252,14 +256,17 @@ export function SecurityPanel() {
         </div>
 
         <div className="mail-field-row">
-          <fieldset disabled={fieldLocked(settings.mfa_required_roles.source)}>
+          <fieldset
+            className="mfa-roles-fieldset"
+            disabled={fieldLocked(settings.mfa_required_roles.source)}
+          >
             <legend className="mail-field-label">Require 2FA for roles</legend>
             {MFA_ROLES.map((role) => (
               <Checkbox
-                key={role}
-                label={role}
-                checked={draft.mfaRoles.includes(role)}
-                onChange={() => toggleRole(role)}
+                key={role.value}
+                label={role.label}
+                checked={draft.mfaRoles.includes(role.value)}
+                onChange={() => toggleRole(role.value)}
               />
             ))}
           </fieldset>

@@ -14,6 +14,14 @@ describe("StatusBadge", () => {
     expect(screen.getByText("Sent")).toBeTruthy();
   });
 
+  it("maps accepted to Sent with ok variant (ADR 0007 accepted_only)", () => {
+    expect(resolveStatusMeta("accepted")).toEqual({ variant: "ok", label: "Sent", dot: true });
+  });
+
+  it("keeps queued as warn Pending", () => {
+    expect(resolveStatusMeta("queued")).toEqual({ variant: "warn", label: "Pending", dot: true });
+  });
+
   it("maps VALID check-in outcome", () => {
     render(<StatusBadge status="VALID" />);
     expect(screen.getByText("Valid")).toBeTruthy();

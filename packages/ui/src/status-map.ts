@@ -20,7 +20,8 @@ export const STATUS_MAP: Record<string, StatusMeta> = {
   confirmed: { variant: "confirmed", label: "Confirmed", dot: true },
   cancelled: { variant: "error", label: "Cancelled", dot: true },
   queued: { variant: "warn", label: "Pending", dot: true },
-  accepted: { variant: "warn", label: "Pending", dot: true },
+  // ADR 0007 accepted_only: SMTP/Graph handoff is operator-visible success.
+  accepted: { variant: "ok", label: "Sent", dot: true },
   pending: { variant: "warn", label: "Pending", dot: true },
   sent: { variant: "ok", label: "Sent", dot: true },
   delivered: { variant: "ok", label: "Sent", dot: true },

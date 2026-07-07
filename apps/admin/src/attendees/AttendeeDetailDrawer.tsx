@@ -500,9 +500,7 @@ export function AttendeeDetailDrawer({
                           <StatusBadge status={d.status} />
                           <span>{d.recipient_email ?? "—"}</span>
                           <span>
-                            {(d.sent_at ?? d.queued_at)
-                              ? formatUtcDateTime(d.sent_at ?? d.queued_at!)
-                              : "—"}
+                            {formatUtcDateTime(d.sent_at ?? d.accepted_at ?? d.queued_at)}
                           </span>
                         </div>
                         {d.status === "failed" && d.error_code && (

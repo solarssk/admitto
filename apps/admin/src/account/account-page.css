@@ -107,6 +107,15 @@
   margin: var(--space-3, 0.75rem) 0;
 }
 
+/* Header row: title left, Download button right — inline so the 2FA card
+   height stays in lockstep with the Password card (see PR #324). */
+.account-auth-backup__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2, 0.5rem);
+}
+
 /* 10 backup codes in a 2-column grid inside the right enrollment column.
    At ~300px right column, each column ≈ 145px — comfortably fits
    XXXX-XXXX-XXXX-XXXX at 0.65rem without wrapping. */
