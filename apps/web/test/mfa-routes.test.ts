@@ -772,8 +772,8 @@ describe("IAM-001/IAM-003 forced password change is enforced at the session laye
   });
 });
 
-describe("logout revokes trusted device", () => {
-  it("API logout invalidates remembered device token", async () => {
+describe("logout preserves trusted device", () => {
+  it("API logout does not revoke remembered device token", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
     await resetAdminAuthLabState(admin!.id);
     const secret = generateTotpSecret();
@@ -817,6 +817,8 @@ describe("logout revokes trusted device", () => {
     });
     expect(logoutRes.status).toBe(200);
 
-    expect(await validateTrustedDevice(prisma, admin!.id, trustedValue)).toBe(false);
+    // Trusted device is preserved after logout — the user won't be asked for 2FA
+    // again on the same device within the trust window.
+    expect(await validateTrustedDevice(prisma, admin!.id, trustedValue)).toBe(true);
   });
 });

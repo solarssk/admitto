@@ -19,7 +19,6 @@ import {
   promoteSessionToBackupCodesStep,
   loginNextAfterFullSession,
   getTrustedDeviceDays,
-  revokeTrustedDeviceByToken,
   SESSION_STAGE,
   updateSessionDeviceLabel,
   DEVICE_LABEL_MAX_LEN,
@@ -167,17 +166,13 @@ export async function handleLogin(
   return c.json({ ok: true, next: result.next }, 200);
 }
 
-/** POST /api/auth/logout — revokes current session, trusted device, and clears cookies. */
+/** POST /api/auth/logout — revokes current session and clears session cookie. Trusted device is
+ * preserved so the user won't be prompted for 2FA again on the same device within the trust window. */
 export async function handleLogout(c: Context, db: PrismaClient): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
-  const trustedRaw = getCookie(c, TRUSTED_DEVICE_COOKIE_NAME);
   const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
-  if (validated) {
-    await revokeTrustedDeviceByToken(db, validated.userId, trustedRaw);
-  }
   await logout(db, validated, { ip: resolveClientIp(c) });
   clearSessionCookie(c);
-  clearTrustedDeviceCookie(c);
   return c.json({ ok: true }, 200);
 }
 

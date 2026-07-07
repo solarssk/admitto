@@ -9,11 +9,10 @@ import {
   revokeSession,
   validateSession,
   validatePartialSession,
-  revokeTrustedDeviceByToken,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
-import { setSessionCookie, clearSessionCookie, clearTrustedDeviceCookie } from "./routes.js";
+import { setSessionCookie, clearSessionCookie } from "./routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import {
@@ -145,16 +144,12 @@ export async function handlePostLogin(
   return c.redirect(landing, 302);
 }
 
-/** POST /logout — revokes session, trusted device, and redirects to `/login`. */
+/** POST /logout — revokes session and redirects to `/login`. Trusted device is preserved so
+ * the user won't be asked for 2FA again on the same device within the trust window. */
 export async function handlePostLogout(c: Context, db: PrismaClient): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
-  const trustedRaw = getCookie(c, TRUSTED_DEVICE_COOKIE_NAME);
   const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
-  if (validated) {
-    await revokeTrustedDeviceByToken(db, validated.userId, trustedRaw);
-  }
   await logout(db, validated, { ip: resolveClientIp(c) });
   clearSessionCookie(c);
-  clearTrustedDeviceCookie(c);
   return c.redirect("/login", 302);
 }
