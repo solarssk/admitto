@@ -194,7 +194,6 @@
 
 .icon-picker__search:focus {
   outline: none;
-  background: var(--surface-card);
 }
 
 .icon-picker__grid {
