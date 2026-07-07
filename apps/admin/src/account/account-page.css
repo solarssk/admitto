@@ -248,6 +248,16 @@
   color: var(--text-primary);
 }
 
+/* Cap the 2FA column's dynamic content (QR code, backup codes, confirm form) so
+   the shared card's height never changes when "Set up authenticator" is clicked —
+   it scrolls internally instead of growing the whole card taller. 17.5rem + the
+   ~1.8rem title block above it ≈ the Password column's natural height (314px),
+   measured via getBoundingClientRect against the live build. */
+.account-security-col__scroll {
+  max-height: 17.5rem;
+  overflow-y: auto;
+}
+
 /* TOTP code is 6 digits — keep the input compact. Input renders <input class="at-input">
    directly (no .at-field wrapper — that's only used by Select), so target .at-input. */
 .mail-field-row--totp .at-input {
