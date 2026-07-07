@@ -12,9 +12,6 @@ function brandHomeTo(assignments: RoleAssignment[]): string {
   return "/account";
 }
 
-const navClass = ({ isActive }: { isActive: boolean }) =>
-  `nav-item${isActive ? " nav-item--active" : ""}`;
-
 /** Instance-level admin layout for the events picker (/admin), users (/admin/users), and account (/account). */
 export function EventsListShell() {
   const { assignments } = useAuth();
@@ -29,14 +26,7 @@ export function EventsListShell() {
         {BrandMark}
         <span>Admitto</span>
       </NavLink>
-      <nav className="sidebar__nav" aria-label="Navigation">
-        {isOperatorOnly && (
-          <NavLink to="/operator" className={navClass}>
-            <i className="ti ti-qrcode" aria-hidden="true" />
-            <span>Check-in</span>
-          </NavLink>
-        )}
-      </nav>
+      <nav className="sidebar__nav" aria-label="Navigation" />
       <div className="sidebar__foot">
         <InstanceSidebarFoot omitPrimary={isOperatorOnly} />
       </div>
