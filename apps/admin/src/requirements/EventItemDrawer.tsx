@@ -272,6 +272,14 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                           placeholder="Shirt size"
                         />
                       </div>
+                      <label className="contents-row__required">
+                        <input
+                          type="checkbox"
+                          checked={row.required}
+                          onChange={(e) => updateContentMeta(i, "required", e.target.checked)}
+                        />
+                        Required
+                      </label>
                       <IconButton
                         label="Remove row"
                         type="button"
@@ -325,14 +333,6 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                           </button>
                         ))}
                       </div>
-                      <label className="contents-row__required">
-                        <input
-                          type="checkbox"
-                          checked={row.required}
-                          onChange={(e) => updateContentMeta(i, "required", e.target.checked)}
-                        />
-                        Required
-                      </label>
                     </div>
 
                     {row.type === "select" && (

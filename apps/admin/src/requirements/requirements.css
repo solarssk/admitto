@@ -42,10 +42,10 @@
 .requirements-item-desc {
   font-size: var(--fs-sm);
   color: var(--text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
 }
 
 .requirements-item-id {
