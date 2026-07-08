@@ -296,7 +296,10 @@
 }
 
 /* Generic hover tooltip via data-tooltip attribute — works on any element,
-   including disabled buttons (disabled only suppresses click, not :hover). */
+   including disabled buttons (disabled only suppresses click, not :hover).
+   Anchored to the right edge (growing leftward) since usage so far is on
+   right-aligned controls inside containers with overflow:hidden — a
+   centered tooltip would spill past the right edge and get clipped. */
 .at-tooltip {
   position: relative;
 }
@@ -305,8 +308,7 @@
   content: attr(data-tooltip);
   position: absolute;
   bottom: calc(100% + 5px);
-  left: 50%;
-  transform: translateX(-50%);
+  right: 0;
   background: var(--text-primary);
   color: var(--surface-card);
   font-size: 11px;
@@ -316,7 +318,7 @@
   white-space: normal;
   width: max-content;
   max-width: 220px;
-  text-align: center;
+  text-align: left;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.12s;
