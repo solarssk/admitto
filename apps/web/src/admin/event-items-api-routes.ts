@@ -549,6 +549,19 @@ export async function handlePatchEventOpsConfig(c: Context, db: PrismaClient): P
     return c.json({ error: "validation_failed" }, 400);
   }
 
+  // "badge_at_entry" is a no-op without an active "badge" item — block
+  // turning it on from that mismatched state instead of accepting a setting
+  // that silently can't do anything (mirrors the frontend Switch disable).
+  if (parsed.data.badge_at_entry === true) {
+    const badgeItem = await db.eventItem.findFirst({
+      where: { event_id: eventId, key: "badge" },
+      select: { enabled: true },
+    });
+    if (!badgeItem?.enabled) {
+      return c.json({ error: "badge_item_inactive" }, 409);
+    }
+  }
+
   const current = parseEventOpsConfig(event.ops_config);
   const next = {
     require_confirm_on_scan:
