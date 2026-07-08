@@ -960,25 +960,27 @@ export function CheckInPage({
 
           {showInlineCamera ? (
             <>
-              <CkInlineCamera
-                wedgeActive={buffer.trim().length > 0}
-                scannerPaused={!!scanResult || pending}
-                overlayScanResult={showCompactFeedback ? scanResult : null}
-                onScan={(raw) => void runScan(raw)}
-                onClose={closeInlineCamera}
-                card={card}
-                pending={pending}
-                canAct={canAct && !busy}
-                eventTimezone={eventTimezone}
-                onConfirm={
-                  showCompactFeedback &&
-                  card &&
-                  scanResult?.status === "PREVIEW"
-                    ? () => void admitCurrent(card.id, admitOrigin)
-                    : undefined
-                }
-                onReset={resetScan}
-              />
+              {!showResultCard && (
+                <CkInlineCamera
+                  wedgeActive={buffer.trim().length > 0}
+                  scannerPaused={!!scanResult || pending}
+                  overlayScanResult={showCompactFeedback ? scanResult : null}
+                  onScan={(raw) => void runScan(raw)}
+                  onClose={closeInlineCamera}
+                  card={card}
+                  pending={pending}
+                  canAct={canAct && !busy}
+                  eventTimezone={eventTimezone}
+                  onConfirm={
+                    showCompactFeedback &&
+                    card &&
+                    scanResult?.status === "PREVIEW"
+                      ? () => void admitCurrent(card.id, admitOrigin)
+                      : undefined
+                  }
+                  onReset={resetScan}
+                />
+              )}
               {showResultCard && card && (
                 <AttendeeCard
                   key={card.id}
