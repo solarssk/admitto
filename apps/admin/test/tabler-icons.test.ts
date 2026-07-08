@@ -16,6 +16,7 @@ const ADMIN_TABLER_ICON_CLASSES = [
   "calendar-event",
   "calendar-off",
   "camera",
+  "camera-off",
   "chart-bar",
   "chart-bar-off",
   "check",

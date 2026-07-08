@@ -1,3 +1,4 @@
+import { Badge } from "@admitto/ui";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import type { ConnectionState } from "../connection/types.js";
 
@@ -63,9 +64,10 @@ export function CheckinConnectionPill() {
   if (mapConnectionState(state) !== "connected") return null;
 
   return (
-    <span className="ck-server-status" title="All scans confirmed by server">
-      <span className="ck-server-status__dot" aria-hidden="true" />
-      <span className="ck-server-status__label">Server connected</span>
+    <span title="All scans confirmed by server">
+      <Badge variant="ok" dot>
+        Server connected
+      </Badge>
     </span>
   );
 }

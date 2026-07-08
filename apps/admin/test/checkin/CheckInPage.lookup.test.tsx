@@ -5,6 +5,10 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
 
+vi.mock("../../src/checkin/CameraScanner.js", () => ({
+  CameraScanner: () => <div data-testid="camera-scanner" />,
+}));
+
 const fetchCheckInHistory = vi.fn();
 const fetchCheckInStats = vi.fn();
 const fetchCheckInOpsConfig = vi.fn();
@@ -312,5 +316,57 @@ describe("CheckInPage lookup card states (#379)", () => {
       expect(screen.getByText("Ready to check in")).toBeTruthy();
     });
     expect(screen.getByRole("button", { name: "Confirm check-in" })).toBeTruthy();
+  });
+});
+
+describe("CheckInPage operator desktop camera toggle (#381)", () => {
+  it("flips between Use camera and Disable camera and stays mounted", async () => {
+    mockPageBootstrap();
+    renderPage();
+    await scanInput();
+
+    const useCamera = screen.getByRole("button", { name: "Use camera" });
+    fireEvent.click(useCamera);
+
+    expect(screen.getByTestId("camera-scanner")).toBeTruthy();
+    const disable = screen.getByRole("button", { name: "Disable camera" });
+
+    fireEvent.click(disable);
+    expect(screen.queryByTestId("camera-scanner")).toBeNull();
+    expect(screen.getByRole("button", { name: "Use camera" })).toBeTruthy();
+  });
+
+  it("clears a stale scan result when the camera is toggled off from the header", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
+    fetchAttendeeCard.mockResolvedValue({
+      id: "att-1",
+      name: "Anna Alpha",
+      company: null,
+      department: null,
+      ticket_type: "vip",
+      check_in_status: "not_admitted" as const,
+      admitted_at: null,
+      items: [],
+      notes: [],
+      warnings: [],
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
+
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "anna" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => {
+      expect(screen.getByText("Ready to check in")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Disable camera" }));
+    expect(screen.queryByText("Ready to check in")).toBeNull();
+
+    // Reopening the camera doesn't resurrect the old card.
+    fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
+    expect(screen.queryByText("Ready to check in")).toBeNull();
   });
 });

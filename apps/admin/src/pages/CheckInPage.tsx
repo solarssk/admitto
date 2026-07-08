@@ -351,6 +351,16 @@ export function CheckInPage({
     setOverlayManualError(null);
   }, []);
 
+  // Header "Disable camera" toggles (AdminCheckInRoute, operator desktop) flip
+  // the parent's camera state directly and don't go through closeInlineCamera's
+  // onReset — clear any stale scan/card display here so a stopped-then-restarted
+  // camera doesn't overlay an old result (#381).
+  const prevCameraActiveRef = useRef(cameraActive);
+  useEffect(() => {
+    if (prevCameraActiveRef.current && !cameraActive) clearDisplayedResult();
+    prevCameraActiveRef.current = cameraActive;
+  }, [cameraActive, clearDisplayedResult]);
+
   /** User-initiated reset (Escape, Cancel button) — also clears the input and
    * cancels any pending wedge timer, since the user explicitly wants a clean slate. */
   const resetScan = useCallback(() => {
@@ -863,16 +873,16 @@ export function CheckInPage({
         </p>
       )}
 
-      {isOperatorShell && !cameraActive && (
+      {isOperatorShell && (isDesktop || !cameraActive) && (
         <div className="ck-operator-actions" ref={operatorCameraActionsRef}>
           <Button
             type="button"
             variant="secondary"
             size="sm"
-            icon={<i className="ti ti-camera" aria-hidden="true" />}
-            onClick={() => setCameraActive(true)}
+            icon={<i className={`ti ti-camera${cameraActive ? "-off" : ""}`} aria-hidden="true" />}
+            onClick={() => setCameraActive(!cameraActive)}
           >
-            Use camera
+            {cameraActive ? "Disable camera" : "Use camera"}
           </Button>
         </div>
       )}

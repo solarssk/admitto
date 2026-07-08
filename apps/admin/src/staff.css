@@ -709,27 +709,6 @@
   flex-wrap: wrap;
 }
 
-.ck-server-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.ck-server-status__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--status-ok);
-  flex-shrink: 0;
-}
-
-.ck-server-status__label {
-  font-weight: 500;
-}
-
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1353,10 +1332,14 @@
   margin-bottom: 12px;
 }
 
+/* Mockup kiosk viewfinder (.vf__feed): a QR-sized square, not a full-width
+   4:3 hero — was oversized for framing a QR code (#381). */
 .ck-inline-camera {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  max-width: 460px;
+  aspect-ratio: 1;
+  margin-inline: auto;
   background: #0e1117;
   border-radius: var(--radius);
   overflow: hidden;
