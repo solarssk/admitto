@@ -104,6 +104,7 @@ export function RequirementsPage() {
     try {
       const updated = await updateEventItem(eventId, item.id, { enabled: !item.enabled });
       setItems((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
+      addToast(updated.enabled ? "Item enabled — saved" : "Item disabled — saved", "success");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
         addToast(

@@ -275,6 +275,18 @@ describe("RequirementsPage operator errors", () => {
     });
   });
 
+  it("toasts confirmation when toggling an item's Active state", async () => {
+    vi.mocked(updateEventItem).mockResolvedValueOnce({ ...sampleItem, enabled: false });
+    renderRequirements();
+    await waitFor(() => {
+      expect(screen.getByRole("switch", { name: "Disable Badge" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Disable Badge" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Item disabled — saved/);
+    });
+  });
+
   it("toasts generic update item failure", async () => {
     vi.mocked(updateEventItem).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderRequirements();
