@@ -11,6 +11,7 @@ import {
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventItemDto, OpsConfigDto } from "../api/types.js";
+import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
 import { DEFAULT_EVENT_ITEM_ICON } from "../requirements/IconPicker.js";
@@ -34,11 +35,22 @@ export function RequirementsPage() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [addLabel, setAddLabel] = useState("");
+  const [addNameError, setAddNameError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const addPanelRef = useRef<HTMLDivElement>(null);
 
   const addKeyPreview = uniqueItemKey(addLabel, items.map((i) => i.key));
 
   const [opsSaving, setOpsSaving] = useState(false);
+  const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
+
+  function closeAddModal() {
+    setAddOpen(false);
+    setAddLabel("");
+    setAddNameError(null);
+  }
+
+  useModalFocusTrap(addPanelRef, addOpen, closeAddModal);
 
   useEffect(() => {
     setItems([]);
@@ -100,7 +112,8 @@ export function RequirementsPage() {
     !badgeItem || !badgeItem.enabled || badgeItem.config?.issue_on_checkin === false;
 
   async function handleToggleEnabled(item: EventItemDto) {
-    if (!eventId) return;
+    if (!eventId || togglingIds.has(item.id)) return;
+    setTogglingIds((prev) => new Set(prev).add(item.id));
     try {
       const updated = await updateEventItem(eventId, item.id, { enabled: !item.enabled });
       setItems((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
@@ -119,6 +132,12 @@ export function RequirementsPage() {
       } else {
         addToast(operatorApiErrorMessage(err, "Failed to update item."), "error");
       }
+    } finally {
+      setTogglingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
     }
   }
 
@@ -128,9 +147,10 @@ export function RequirementsPage() {
     const label = addLabel.trim();
     const key = uniqueItemKey(label, items.map((i) => i.key));
     if (!label || !key) {
-      addToast("Enter a name using letters or numbers.", "error");
+      setAddNameError("Enter a name using letters or numbers.");
       return;
     }
+    setAddNameError(null);
     setAdding(true);
     try {
       await createEventItem(eventId, {
@@ -213,7 +233,8 @@ export function RequirementsPage() {
               size="sm"
               icon={<i className="ti ti-plus" />}
               onClick={() => {
-                setAddOpen((o) => !o);
+                if (addOpen) closeAddModal();
+                else setAddOpen(true);
               }}
             >
               Add item
@@ -222,6 +243,13 @@ export function RequirementsPage() {
         >
           <div className="attendees-table-wrap">
             <table className="table">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Description</th>
+                  <th>Active</th>
+                </tr>
+              </thead>
               <tbody>
                 {loading ? (
                   <tr>
@@ -257,6 +285,7 @@ export function RequirementsPage() {
                           <Switch
                             label={item.enabled ? "On" : "Off"}
                             checked={item.enabled}
+                            disabled={togglingIds.has(item.id)}
                             onChange={() => void handleToggleEnabled(item)}
                             aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
                           />
@@ -298,11 +327,18 @@ export function RequirementsPage() {
                       : undefined
                   }
                 >
+                  {badgeInactive && (
+                    <span id="badge-at-entry-reason" className="sr-only">
+                      Can't enable this — the badge item is disabled or has "Issue on check-in"
+                      turned off.
+                    </span>
+                  )}
                   <Switch
                     checked={opsConfig.badge_at_entry}
                     disabled={opsSaving || badgeInactive}
                     onChange={(e) => void handleOpsToggle("badge_at_entry", e.target.checked)}
                     aria-label="Issue badge at entry"
+                    aria-describedby={badgeInactive ? "badge-at-entry-reason" : undefined}
                   />
                 </span>
               </div>
@@ -362,14 +398,8 @@ export function RequirementsPage() {
 
       {addOpen && (
         <div className="event-item-modal" role="dialog" aria-modal="true" aria-label="Add item">
-          <div
-            className="event-item-modal__backdrop"
-            onClick={() => {
-              setAddOpen(false);
-              setAddLabel("");
-            }}
-          />
-          <div className="event-item-modal__panel">
+          <div className="event-item-modal__backdrop" onClick={closeAddModal} />
+          <div ref={addPanelRef} className="event-item-modal__panel">
             <div className="event-item-modal__header">
               <div>
                 <h2 className="event-item-modal__title">Add item</h2>
@@ -412,6 +442,7 @@ export function RequirementsPage() {
                   The name shown to staff during check-in. Keep it short and clear — e.g. "Gift
                   bag", "Name badge", "T-shirt".
                 </span>
+                {addNameError && <p className="text-error">{addNameError}</p>}
               </div>
             </form>
             <div className="event-item-modal__footer">
@@ -423,14 +454,7 @@ export function RequirementsPage() {
               >
                 {adding ? "Creating…" : "Create item"}
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setAddOpen(false);
-                  setAddLabel("");
-                }}
-              >
+              <Button type="button" variant="ghost" onClick={closeAddModal}>
                 Cancel
               </Button>
             </div>

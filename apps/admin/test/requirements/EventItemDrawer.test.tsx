@@ -177,7 +177,7 @@ describe("EventItemDrawer", () => {
     expect(screen.queryByText(/Failed to delete item/)).toBeNull();
   });
 
-  it("blocks save and shows a toast when a contents row has a source field but no label", async () => {
+  it("blocks save and shows an inline error when a contents row has a source field but no label", async () => {
     renderDrawer(giftbagItem);
     fireEvent.click(screen.getByRole("button", { name: "Add field hint" }));
     fireEvent.change(screen.getByLabelText("Import key"), { target: { value: "shirt_size" } });
@@ -185,11 +185,11 @@ describe("EventItemDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith(
-        "Each contents row needs both a label and a source field.",
-        "error",
-      );
+      expect(
+        screen.getByText("Each contents row needs both a label and a source field."),
+      ).toBeTruthy();
     });
+    expect(addToast).not.toHaveBeenCalled();
     expect(updateEventItem).not.toHaveBeenCalled();
   });
 

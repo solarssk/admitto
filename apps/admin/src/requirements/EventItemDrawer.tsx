@@ -96,6 +96,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [contentsError, setContentsError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, !deleteConfirmOpen, onClose);
   // "badge" is auto-recreated by the server (ensureBadgeEventItem) — deleting it
@@ -112,10 +113,11 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
 
     const contentsResult = validateContentsRows(form.contents);
     if (!contentsResult.ok) {
-      addToast(contentsResult.message, "error");
+      setContentsError(contentsResult.message);
       setSaving(false);
       return;
     }
+    setContentsError(null);
 
     try {
       await updateEventItem(eventId, item.id, {
@@ -265,6 +267,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                 Display an attendee data field (e.g. shirt size) next to this item at check-in — useful
                 when the item varies per person.
               </p>
+              {contentsError && <p className="text-error">{contentsError}</p>}
               <div className="requirements-field-stack">
                 {form.contents.map((row, i) => (
                   <div key={i} className="requirements-contents-row">
@@ -436,11 +439,17 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                   : undefined
               }
             >
+              {isDefaultItem && (
+                <span id="delete-item-reason" className="sr-only">
+                  Default item — required for "Issue badge at entry". Turn off Active instead.
+                </span>
+              )}
               <Button
                 type="button"
                 variant="ghost"
                 disabled={deleting || isDefaultItem}
                 onClick={() => setDeleteConfirmOpen(true)}
+                aria-describedby={isDefaultItem ? "delete-item-reason" : undefined}
               >
                 Delete item
               </Button>

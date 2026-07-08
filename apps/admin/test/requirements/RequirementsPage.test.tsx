@@ -120,7 +120,7 @@ describe("RequirementsPage badge/ops-config sync", () => {
 });
 
 describe("RequirementsPage — Add item and Edit item", () => {
-  it("shows a toast and does not create an item when the name has no usable characters", async () => {
+  it("shows an inline error and does not create an item when the name has no usable characters", async () => {
     fetchEventItems.mockResolvedValue([]);
     fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
@@ -130,8 +130,9 @@ describe("RequirementsPage — Add item and Edit item", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create item" }));
 
     await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("Enter a name using letters or numbers.", "error");
+      expect(screen.getByText("Enter a name using letters or numbers.")).toBeTruthy();
     });
+    expect(addToast).not.toHaveBeenCalled();
     expect(createEventItem).not.toHaveBeenCalled();
   });
 
@@ -177,5 +178,54 @@ describe("RequirementsPage — Add item and Edit item", () => {
 
     expect(await screen.findByRole("dialog")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Badge" })).toBeTruthy();
+  });
+
+  it("closes the Add item modal on Escape", async () => {
+    fetchEventItems.mockResolvedValue([]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    expect(screen.getByLabelText("Item name")).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByLabelText("Item name")).toBeNull();
+  });
+
+  it("Event items table has column headers", async () => {
+    fetchEventItems.mockResolvedValue([badgeItem]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+
+    renderPage();
+    await screen.findByText("Event items");
+
+    expect(screen.getByRole("columnheader", { name: "Item" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Description" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Active" })).toBeTruthy();
+  });
+});
+
+describe("RequirementsPage — Active toggle double-submit guard", () => {
+  it("does not double-submit when the Active switch is clicked twice before the request resolves", async () => {
+    let resolveUpdate: ((value: EventItemDto) => void) | undefined;
+    const pending = new Promise<EventItemDto>((resolve) => {
+      resolveUpdate = resolve;
+    });
+    fetchEventItems.mockResolvedValue([badgeItem]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+    updateEventItem.mockReturnValueOnce(pending);
+
+    renderPage();
+    const toggle = await screen.findByRole("switch", { name: "Disable Badge" });
+
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+
+    resolveUpdate!({ ...badgeItem, enabled: false });
+
+    await waitFor(() => {
+      expect(updateEventItem).toHaveBeenCalledTimes(1);
+    });
   });
 });
