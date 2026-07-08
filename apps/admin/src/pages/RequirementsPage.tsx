@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Button, Card, EmptyState, Input, PageHeader, Switch, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, IconButton, Input, PageHeader, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   createEventItem,
@@ -309,10 +309,12 @@ export function RequirementsPage() {
                           {configSummary(item.config)}
                         </span>
                       </td>
-                      <td>
-                        <Button variant="ghost" size="sm" onClick={() => setSelectedItem(item)}>
-                          Edit
-                        </Button>
+                      <td className="requirements-item-actions">
+                        <IconButton
+                          label="Edit item"
+                          icon={<i className="ti ti-pencil" aria-hidden="true" />}
+                          onClick={() => setSelectedItem(item)}
+                        />
                       </td>
                     </tr>
                   ))

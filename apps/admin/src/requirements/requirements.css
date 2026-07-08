@@ -49,6 +49,12 @@
   color: var(--text-muted);
 }
 
+.requirements-item-actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
 .requirements-item-cell {
   display: flex;
   align-items: center;
@@ -121,7 +127,7 @@
 .requirements-behaviour-row {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-4);
   padding: var(--space-4) 0;
   border-bottom: 1px solid var(--border);
