@@ -1,12 +1,13 @@
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import type { AttendeeStatus } from "@admitto/db";
+import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db";
 import { canManageInstance } from "@admitto/auth";
 
 type CapacityDb = PrismaClient | Prisma.TransactionClient;
 
-/** Attendee statuses that do not consume event capacity. */
-export const CAPACITY_EXCLUDED_STATUSES = ["revoked", "cancelled"] as const satisfies readonly AttendeeStatus[];
+// Single source of truth lives in @admitto/db; re-exported so existing
+// apps/web callers keep importing from this module.
+export { CAPACITY_EXCLUDED_STATUSES };
 
 /** Prisma where-clause for attendees that consume event capacity. */
 function activeAttendeeWhere(eventId: string) {

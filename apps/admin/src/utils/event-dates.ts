@@ -194,6 +194,36 @@ export function parseFlexibleCalendarDate(input: string): string | null {
   return null;
 }
 
+/** Calendar day (`YYYY-MM-DD`) of a timestamp in the given timezone. */
+export function calendarDateInZone(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+}
+
+/**
+ * Compact admission timestamp for tables and feeds (#359): time-only when the
+ * admission happened on the event's calendar day, date + time otherwise (test
+ * scans, early/late edge cases). `eventDateIso` is the date-only `Event.date`
+ * stored as UTC noon, so its calendar day is read in UTC; the admission day is
+ * read in the event timezone. Unknown event date falls back to date + time.
+ */
+export function formatAdmissionDisplay(
+  admittedAtIso: string,
+  eventDateIso: string | null | undefined,
+  timezone?: string,
+): string {
+  if (eventDateIso) {
+    const eventDay = calendarDateInZone(eventDateIso, "UTC");
+    const admissionDay = calendarDateInZone(admittedAtIso, timezone ?? "UTC");
+    if (admissionDay === eventDay) return formatEventTime(admittedAtIso, timezone);
+  }
+  return formatEventDateTime(admittedAtIso, timezone);
+}
+
 /** Category 2 — admin/system timestamps always in UTC with explicit label. */
 export function formatUtcDateTime(iso: string): string {
   return new Date(iso).toLocaleString(getPreferredLocale(), {

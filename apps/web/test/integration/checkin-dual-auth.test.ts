@@ -397,4 +397,40 @@ describe("GET /api/checkin/stats", () => {
     expect(body.total_count).toBeGreaterThanOrEqual(body.admitted_count);
     expect(body.admitted_count).toBeGreaterThanOrEqual(1);
   });
+
+  it("excludes revoked and cancelled attendees from both counts (#380)", async () => {
+    const cookie = await sessionCookieFor(USER_OP_A);
+    const fetchStats = async () =>
+      (await (
+        await buildStatsApp().request(`/api/checkin/stats?eventId=${EVENT_A}`, {
+          headers: { Cookie: cookie },
+        })
+      ).json()) as { admitted_count: number; total_count: number };
+
+    const before = await fetchStats();
+
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-dual-stats-revoked",
+          event_id: EVENT_A,
+          email: "revoked-stats@example.com",
+          name: "Revoked After Admit",
+          status: "revoked",
+          admitted_at: new Date("2026-09-01T11:00:00Z"),
+        },
+        {
+          id: "att-dual-stats-cancelled",
+          event_id: EVENT_A,
+          email: "cancelled-stats@example.com",
+          name: "Cancelled",
+          status: "cancelled",
+        },
+      ],
+    });
+
+    const after = await fetchStats();
+    expect(after.total_count).toBe(before.total_count);
+    expect(after.admitted_count).toBe(before.admitted_count);
+  });
 });

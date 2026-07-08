@@ -27,6 +27,13 @@ export type CheckInStatus =
 
 export const ATTENDEE_STATUS = ['registered', 'confirmed', 'cancelled', 'revoked'] as const satisfies AttendeeStatus[];
 
+/**
+ * Statuses that do not consume event capacity and are not expected at the door.
+ * Single source of truth for "active attendee" counting (capacity checks,
+ * overview KPIs, check-in stats).
+ */
+export const CAPACITY_EXCLUDED_STATUSES = ['revoked', 'cancelled'] as const satisfies readonly AttendeeStatus[];
+
 export const EMAIL_DELIVERY_PURPOSE = ['initial', 'resend'] as const satisfies EmailDeliveryPurpose[];
 
 export const EMAIL_DELIVERY_STATUS = [

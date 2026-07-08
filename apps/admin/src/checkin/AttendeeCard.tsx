@@ -242,7 +242,7 @@ export function AttendeeCard({
                       key={`${item.key}-${action}`}
                       type="button"
                       className="checkin-card__item-action"
-                      disabled={!canAct || pending}
+                      disabled={!canAct || pending || displayMode === "alert"}
                       onClick={() => onItemAction?.(item.key, action)}
                     >
                       {itemActionLabel(item.key, action)}

@@ -13,7 +13,12 @@ import {
   deleteEventResource,
 } from "../api/client.js";
 import type { EventDto, EventOverviewDto, EventContactDto, EventResourceDto } from "../api/types.js";
-import { formatEventCalendarDate, formatEventTime, formatUtcDateTime } from "../utils/event-dates.js";
+import {
+  formatAdmissionDisplay,
+  formatEventCalendarDate,
+  formatEventTime,
+  formatUtcDateTime,
+} from "../utils/event-dates.js";
 import { useCountdown } from "../utils/event-countdown.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import {
@@ -230,10 +235,12 @@ function EventReadinessCard({
 function RecentCheckinsCard({
   checkins,
   timezone,
+  eventDate,
   connected,
 }: {
   checkins: StreamCheckinEvent[];
   timezone: string;
+  eventDate: string | null;
   connected: boolean;
 }) {
   return (
@@ -262,7 +269,7 @@ function RecentCheckinsCard({
                 <span>{c.ticketType ?? "—"}</span>
               </div>
               <time className="overview-activity__time">
-                {formatEventTime(c.admittedAt, timezone)}
+                {formatAdmissionDisplay(c.admittedAt, eventDate, timezone)}
               </time>
             </li>
           ))}
@@ -1046,7 +1053,12 @@ export function EventOverviewPage() {
             archived={!!event.archived_at}
             onSave={handleSaveNote}
           />
-          <RecentCheckinsCard checkins={recentCheckins} timezone={eventTimezone} connected={streamConnected} />
+          <RecentCheckinsCard
+            checkins={recentCheckins}
+            timezone={eventTimezone}
+            eventDate={eventDateIso}
+            connected={streamConnected}
+          />
           <KeyContactsCard
             contacts={contacts}
             loading={loading}
