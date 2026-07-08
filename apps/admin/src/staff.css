@@ -1036,6 +1036,10 @@
   background: var(--status-error);
 }
 
+.rec-dot--undo {
+  background: var(--text-secondary);
+}
+
 .rec-dot--revoked {
   background: var(--text-secondary);
 }

@@ -238,7 +238,7 @@ export function AttendeeCard({
               disabled={pending}
               onClick={() => onCancel?.()}
             >
-              Cancel
+              Clear
             </Button>
           </div>
         )}

@@ -8,6 +8,7 @@ const EVENT_OPERATIONAL_ACTIONS = new Set([
   "admitted",
   "check_in_undo",
   "check_in_undone",
+  "check_in_revoked",
   "note_added",
   "item_issued",
   "item_state_changed",
@@ -54,6 +55,7 @@ export function getTimelineIcon(actionType: string): string {
     admitted: "circle-check",
     check_in_undo: "arrow-back-up",
     check_in_undone: "arrow-back-up",
+    check_in_revoked: "ban",
     note_added: "pencil",
     item_issued: "package",
     item_state_changed: "package",
@@ -95,6 +97,8 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
     case "check_in_undo":
     case "check_in_undone":
       return "Check-in undone";
+    case "check_in_revoked":
+      return "Check-in revoked";
     case "note_added":
       return "Note added";
     case "item_issued":

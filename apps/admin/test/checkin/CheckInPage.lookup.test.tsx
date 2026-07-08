@@ -324,9 +324,9 @@ describe("CheckInPage lookup card states (#379)", () => {
       expect(screen.getByText("Ready to check in")).toBeTruthy();
     });
     expect(screen.getByRole("button", { name: "Confirm check-in" })).toBeTruthy();
-    // PREVIEW already has a block-width Cancel button — no duplicate Clear.
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+    // PREVIEW already has a block-width Clear button — no duplicate footer Clear.
+    const clearButtons = screen.getAllByRole("button", { name: "Clear" });
+    expect(clearButtons).toHaveLength(1);
   });
 });
 
