@@ -104,6 +104,11 @@ export function RequirementsPage() {
     try {
       const updated = await updateEventItem(eventId, item.id, { enabled: !item.enabled });
       setItems((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
+      if (updated.key === "badge" && !updated.enabled) {
+        // Server auto-disables badge_at_entry when the badge item is turned
+        // off — refresh so the Event behaviour toggle doesn't show stale ON.
+        setOpsConfig(await fetchOpsConfig(eventId));
+      }
       addToast(updated.enabled ? "Item enabled — saved" : "Item disabled — saved", "success");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
