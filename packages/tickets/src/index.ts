@@ -27,6 +27,7 @@ export {
   isReservedCustomDataSourceField,
   filterCustomDataAttributeFields,
 } from "./custom-data-reserved.js";
+export { ensureBadgeEventItem } from "./event-items.js";
 export { parseEventOpsConfig, loadEventOpsConfig } from "./ops-config.js";
 export { writeActionLog, writeBulkActionLog } from "./ops-audit.js";
 export { writeAdminAuditLog } from "./admin-audit.js";

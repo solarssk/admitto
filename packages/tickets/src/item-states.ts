@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { ensureBadgeEventItem } from "./event-items.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 
 import type { EventItemConfig } from "./types.js";
@@ -17,12 +18,18 @@ export class IllegalItemTransitionError extends Error {
   }
 }
 
-/** Lazy-init pending rows for enabled EventItems — idempotent (Lock #2). */
+/**
+ * Lazy-init pending rows for enabled EventItems — idempotent (Lock #2).
+ * Also ensures the default "badge" item exists first (safety net for events
+ * created outside the admin API, e.g. seed scripts / legacy rows).
+ */
 export async function ensureAttendeeItemStates(
   attendeeId: string,
   eventId: string,
   db: DbClient,
 ): Promise<void> {
+  await ensureBadgeEventItem(eventId, db);
+
   const items = await db.eventItem.findMany({
     where: { event_id: eventId, enabled: true },
     select: { id: true },
