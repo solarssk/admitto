@@ -39,6 +39,7 @@
   font-size: var(--fs-sm);
   color: var(--text-secondary);
   min-width: 0;
+  margin-left: var(--space-4);
 }
 
 .requirements-item-id {
@@ -233,10 +234,12 @@
   padding: 0 var(--space-2);
   height: var(--control-h, 2rem);
   cursor: pointer;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
-  font-size: 0.95rem;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  white-space: nowrap;
   transition: background 0.1s, color 0.1s;
 }
 
@@ -252,19 +255,19 @@
 .contents-row__type-btn--active {
   background: var(--accent);
   color: #fff;
+  font-weight: 600;
 }
 
 .contents-row__required {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
+  font-size: 0.7rem;
+  color: var(--text-muted);
   white-space: nowrap;
   align-self: flex-end;
-  padding-bottom: calc((var(--control-h, 2rem) - 1em) / 2); /* optically align with input */
-}
-  white-space: nowrap;
+  padding-bottom: calc((var(--control-h, 2rem) - 1em) / 2);
+  cursor: pointer;
 }
 
 /* Event item centered modal */

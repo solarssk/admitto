@@ -305,32 +305,28 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                         role="group"
                         aria-label="Field type"
                       >
-                        {(
-                          [
-                            { value: "text", icon: "ti-letter-case", label: "Text" },
-                            { value: "select", icon: "ti-list", label: "Select (options)" },
-                            { value: "boolean", icon: "ti-checkbox", label: "Boolean" },
-                          ] as const
-                        ).map(({ value, icon, label: btnLabel }) => (
+                        {(["text", "select", "boolean"] as const).map((typeVal) => (
                           <button
-                            key={value}
+                            key={typeVal}
                             type="button"
-                            className={`contents-row__type-btn${row.type === value ? " contents-row__type-btn--active" : ""}`}
-                            onClick={() => updateContentMeta(i, "type", value)}
-                            title={btnLabel}
-                            aria-pressed={row.type === value}
+                            className={`contents-row__type-btn${row.type === typeVal ? " contents-row__type-btn--active" : ""}`}
+                            onClick={() => updateContentMeta(i, "type", typeVal)}
+                            aria-pressed={row.type === typeVal}
                           >
-                            <i className={`ti ${icon}`} />
+                            {typeVal === "text" ? "Text" : typeVal === "select" ? "Select" : "Boolean"}
                           </button>
                         ))}
                       </div>
-                      <label className="contents-row__required">
+                      <label
+                        className="contents-row__required"
+                        title="Mark as required — attendees must fill this in"
+                      >
                         <input
                           type="checkbox"
                           checked={row.required}
                           onChange={(e) => updateContentMeta(i, "required", e.target.checked)}
                         />
-                        Required
+                        <i className="ti ti-asterisk" aria-hidden="true" />
                       </label>
                     </div>
 
