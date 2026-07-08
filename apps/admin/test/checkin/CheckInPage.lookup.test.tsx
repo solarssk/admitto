@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@admitto/ui";
@@ -61,12 +61,13 @@ vi.mock("../../src/api/client.js", () => ({
   undoLastCheckIn: vi.fn(),
 }));
 
-function mockPageBootstrap() {
+function mockPageBootstrap(overrides: { allow_manual_lookup?: boolean } = {}) {
   fetchCheckInOpsConfig.mockResolvedValue({
     require_confirm_on_scan: false,
     badge_at_entry: true,
     allow_manual_lookup: true,
     auto_advance_on_valid: true,
+    ...overrides,
   });
   fetchCheckInEvents.mockResolvedValue([{ id: "evt-live", timezone: "UTC" }]);
   fetchCheckInHistory.mockResolvedValue([]);
@@ -85,34 +86,36 @@ function renderPage() {
   );
 }
 
+async function scanInput(): Promise<HTMLInputElement> {
+  await waitFor(() => {
+    expect(screen.getByLabelText("QR scan or search")).toBeTruthy();
+  });
+  return screen.getByLabelText("QR scan or search") as HTMLInputElement;
+}
+
+const annaHit = {
+  id: "att-1",
+  name: "Anna Alpha",
+  ticket_type: "vip",
+  company: "Acme",
+  department: null,
+  check_in_status: "not_admitted" as const,
+};
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
 
-describe("CheckInPage lookup feedback", () => {
-  it("shows a warning toast when manual lookup finds no attendees", async () => {
+describe("CheckInPage scan-bar lookup", () => {
+  it("shows a warning toast when Enter finds no attendees", async () => {
     mockPageBootstrap();
     lookupCheckInAttendees.mockResolvedValue([]);
 
     renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Manual lookup" })).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Manual lookup" }));
-
-    const lookupPanel = screen.getByRole("searchbox", {
-      name: "Search attendees by name, email, or company",
-    }).closest(".checkin-lookup");
-    expect(lookupPanel).toBeTruthy();
-
-    const lookupInput = within(lookupPanel as HTMLElement).getByRole("searchbox", {
-      name: "Search attendees by name, email, or company",
-    });
-    fireEvent.change(lookupInput, { target: { value: "filip" } });
-    fireEvent.click(within(lookupPanel as HTMLElement).getByRole("button", { name: "Search" }));
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "filip" } });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
       expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", "filip");
@@ -128,23 +131,9 @@ describe("CheckInPage lookup feedback", () => {
     );
 
     renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Manual lookup" })).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Manual lookup" }));
-
-    const lookupPanel = screen.getByRole("searchbox", {
-      name: "Search attendees by name, email, or company",
-    }).closest(".checkin-lookup");
-    expect(lookupPanel).toBeTruthy();
-
-    const lookupInput = within(lookupPanel as HTMLElement).getByRole("searchbox", {
-      name: "Search attendees by name, email, or company",
-    });
-    fireEvent.change(lookupInput, { target: { value: "filip" } });
-    fireEvent.click(within(lookupPanel as HTMLElement).getByRole("button", { name: "Search" }));
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "filip" } });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
       expect(screen.getByText(/Manual lookup is disabled for this event/)).toBeTruthy();
@@ -152,48 +141,64 @@ describe("CheckInPage lookup feedback", () => {
     expect(screen.queryByText(/do not have access/i)).toBeNull();
   });
 
-  it("marks scan and lookup inputs with password-manager ignore hints", async () => {
+  it("suppresses lookup entirely when ops config disables it", async () => {
+    mockPageBootstrap({ allow_manual_lookup: false });
+
+    renderPage();
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "filip" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Manual lookup is disabled for this event/)).toBeTruthy();
+    });
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+
+  it("shows debounced suggestions under the scan bar while typing", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([
+      annaHit,
+      { ...annaHit, id: "att-2", name: "Anna Beta", check_in_status: "admitted" as const },
+    ]);
+
+    renderPage();
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "anna" } });
+
+    // Debounce (300ms) then the dropdown renders both hits.
+    await waitFor(() => {
+      expect(screen.getByText("Anna Alpha")).toBeTruthy();
+      expect(screen.getByText("Anna Beta")).toBeTruthy();
+    });
+    expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", "anna");
+    // Already-admitted hit is flagged in the dropdown.
+    expect(screen.getByText(/checked in/)).toBeTruthy();
+  });
+
+  it("does not fetch suggestions for token-length input", async () => {
+    mockPageBootstrap();
+
+    renderPage();
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "tok_1234567890abcdefghij" } });
+
+    await new Promise((r) => setTimeout(r, 400));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+
+  it("marks the scan input with password-manager ignore hints", async () => {
     mockPageBootstrap();
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByLabelText("QR scan or search")).toBeTruthy();
-    });
-
-    const scanInput = screen.getByLabelText("QR scan or search");
-    expect(scanInput.getAttribute("data-bwignore")).not.toBeNull();
-    expect(scanInput.getAttribute("data-lpignore")).toBe("true");
-    expect(scanInput.getAttribute("name")).toBe("checkin-scan");
-
-    fireEvent.click(screen.getByRole("button", { name: "Manual lookup" }));
-
-    const lookupInput = screen.getByRole("searchbox", {
-      name: "Search attendees by name, email, or company",
-    });
-    expect(lookupInput.getAttribute("data-bwignore")).not.toBeNull();
-    expect(lookupInput.getAttribute("name")).toBe("checkin-lookup");
+    const input = await scanInput();
+    expect(input.getAttribute("data-bwignore")).not.toBeNull();
+    expect(input.getAttribute("data-lpignore")).toBe("true");
+    expect(input.getAttribute("name")).toBe("checkin-scan");
   });
 });
 
 describe("CheckInPage lookup card states (#379)", () => {
-  async function searchAndSelect(name: string) {
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Manual lookup" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Manual lookup" }));
-    const lookupInput = screen.getByRole("searchbox", {
-      name: "Search attendees by name, email, or company",
-    });
-    const lookupPanel = lookupInput.closest(".checkin-lookup") as HTMLElement;
-    fireEvent.change(lookupInput, { target: { value: "anna" } });
-    fireEvent.click(within(lookupPanel).getByRole("button", { name: "Search" }));
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: new RegExp(name) })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: new RegExp(name) }));
-  }
-
   const baseCard = {
     id: "att-1",
     name: "Anna Alpha",
@@ -207,39 +212,41 @@ describe("CheckInPage lookup card states (#379)", () => {
     warnings: [] as string[],
   };
 
-  it("admitted attendee opens as Already checked in without a Confirm button", async () => {
+  async function typeAndPickSuggestion(): Promise<HTMLInputElement> {
+    renderPage();
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "anna" } });
+    await waitFor(() => {
+      expect(screen.getByText("Anna Alpha")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText("Anna Alpha"));
+    return input;
+  }
+
+  it("admitted attendee opens as Already checked in without a Confirm button and clears the bar", async () => {
     mockPageBootstrap();
-    lookupCheckInAttendees.mockResolvedValue([
-      { id: "att-1", name: "Anna Alpha", ticket_type: "vip", company: null, department: null, check_in_status: "admitted" },
-    ]);
+    lookupCheckInAttendees.mockResolvedValue([{ ...annaHit, check_in_status: "admitted" as const }]);
     fetchAttendeeCard.mockResolvedValue({
       ...baseCard,
       check_in_status: "admitted",
       admitted_at: "2026-09-01T09:44:00.000Z",
     });
 
-    await searchAndSelect("Anna Alpha");
+    const input = await typeAndPickSuggestion();
 
     await waitFor(() => {
       expect(screen.getByText("Already checked in")).toBeTruthy();
     });
     expect(screen.queryByRole("button", { name: "Confirm check-in" })).toBeNull();
     expect(screen.queryByText("Ready to check in")).toBeNull();
-
-    // #379B: query and results cleared — reopening the panel shows a fresh search.
-    fireEvent.click(screen.getByRole("button", { name: "Manual lookup" }));
-    const reopened = screen.getByRole("searchbox", {
-      name: "Search attendees by name, email, or company",
-    }) as HTMLInputElement;
-    expect(reopened.value).toBe("");
-    expect(screen.queryByRole("button", { name: /Anna Alpha/ })).toBeNull();
+    // #379B: selecting a suggestion clears the scan bar and the dropdown.
+    expect(input.value).toBe("");
+    expect(screen.queryByText(/Acme · vip/)).toBeNull();
   });
 
   it("revoked attendee opens as revoked with item actions disabled", async () => {
     mockPageBootstrap();
-    lookupCheckInAttendees.mockResolvedValue([
-      { id: "att-1", name: "Anna Alpha", ticket_type: "vip", company: null, department: null, check_in_status: "not_admitted" },
-    ]);
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
     fetchAttendeeCard.mockResolvedValue({
       ...baseCard,
       warnings: ["Ticket is not admittable (status: revoked)."],
@@ -248,7 +255,7 @@ describe("CheckInPage lookup card states (#379)", () => {
       ],
     });
 
-    await searchAndSelect("Anna Alpha");
+    await typeAndPickSuggestion();
 
     await waitFor(() => {
       expect(screen.getByText(/Ticket is not admittable/)).toBeTruthy();
@@ -258,14 +265,15 @@ describe("CheckInPage lookup card states (#379)", () => {
     expect(itemAction.disabled).toBe(true);
   });
 
-  it("not-admitted attendee still opens as preview with Confirm available", async () => {
+  it("not-admitted attendee opens as preview with Confirm available (Enter, single match)", async () => {
     mockPageBootstrap();
-    lookupCheckInAttendees.mockResolvedValue([
-      { id: "att-1", name: "Anna Alpha", ticket_type: "vip", company: null, department: null, check_in_status: "not_admitted" },
-    ]);
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
     fetchAttendeeCard.mockResolvedValue(baseCard);
 
-    await searchAndSelect("Anna Alpha");
+    renderPage();
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "anna" } });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
       expect(screen.getByText("Ready to check in")).toBeTruthy();

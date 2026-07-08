@@ -36,13 +36,15 @@ import {
   seedAdmitDedupFromHistory,
 } from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
-import { ManualLookupPanel } from "../checkin/ManualLookupPanel.js";
 import { checkinSearchFieldAttrs } from "../checkin/searchFieldAttrs.js";
 import { ScanHistoryList } from "../checkin/ScanHistoryList.js";
 
 const PENDING_MS = 5000;
 const WEDGE_AUTO_SUBMIT_LEN = 20;
 const WEDGE_DEBOUNCE_MS = 50;
+// Pause after the last typed character before the scan bar fetches attendee
+// suggestions. Long enough not to fire mid-word, short enough to feel live.
+const SUGGEST_DEBOUNCE_MS = 300;
 // A hardware keyboard-wedge scanner injects characters far faster than a human
 // can type — even fast typists rarely sustain sub-30ms gaps across many
 // consecutive keystrokes. Used to tell "typing a long manual query" apart from
@@ -123,6 +125,9 @@ export function CheckInPage({
   const wedgeTimerRef = useRef<number | null>(null);
   const wedgeLastCharAtRef = useRef(0);
   const wedgeIsBurstRef = useRef(true);
+  const suggestTimerRef = useRef<number | null>(null);
+  // Monotonic guard: only the latest in-flight suggestion request may render.
+  const suggestSeqRef = useRef(0);
   // A clipboard paste (or autofill) delivers a long value in a single change
   // event with no prior keystroke to compare timing against — mechanically
   // identical, to handleBufferChange, to "the first character of a real
@@ -206,13 +211,11 @@ export function CheckInPage({
   const [transportError, setTransportError] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<CheckInScanResponse | null>(null);
   const [card, setCard] = useState<AttendeeCardDto | null>(null);
-  const [lookupQ, setLookupQ] = useState("");
-  const [lookupResults, setLookupResults] = useState<Awaited<ReturnType<typeof lookupCheckInAttendees>>>([]);
+  const [suggestions, setSuggestions] = useState<Awaited<ReturnType<typeof lookupCheckInAttendees>>>([]);
   const [history, setHistory] = useState<CheckInHistoryEntry[]>([]);
   historyRef.current = history;
   const [admittedCount, setAdmittedCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
-  const [manualOpen, setManualOpen] = useState(false);
   const [admitOrigin, setAdmitOrigin] = useState<"scan" | "manual">("manual");
   const [overlayManualError, setOverlayManualError] = useState<string | null>(null);
   const [opsConfig, setOpsConfig] = useState<OpsConfigDto>(DEFAULT_OPS_CONFIG);
@@ -354,6 +357,12 @@ export function CheckInPage({
       window.clearTimeout(wedgeTimerRef.current);
       wedgeTimerRef.current = null;
     }
+    if (suggestTimerRef.current != null) {
+      window.clearTimeout(suggestTimerRef.current);
+      suggestTimerRef.current = null;
+    }
+    suggestSeqRef.current += 1;
+    setSuggestions([]);
     clearDisplayedResult();
     setBuffer("");
     focusScan();
@@ -456,6 +465,9 @@ export function CheckInPage({
       }
       lastScanRef.current = { value: scanned, at: now };
       setBuffer("");
+      if (suggestTimerRef.current != null) window.clearTimeout(suggestTimerRef.current);
+      suggestSeqRef.current += 1;
+      setSuggestions([]);
 
       return runExclusive(() => runScanImpl(scanned));
     },
@@ -513,9 +525,8 @@ export function CheckInPage({
       setCard(loaded);
       setScanResult(scanResultFromCard(loaded));
       setAdmitOrigin("manual");
-      setManualOpen(false);
-      setLookupQ("");
-      setLookupResults([]);
+      setBuffer("");
+      setSuggestions([]);
     } catch (err) {
       handleApiFailure(err);
     } finally {
@@ -524,27 +535,21 @@ export function CheckInPage({
     }
   };
 
-  // Queued wrapper for the manual-lookup panel's "select a result" click
-  // (an external entry point, unlike the internal auto-select call below).
+  // Queued wrapper for a suggestion-row click (an external entry point,
+  // unlike the internal auto-select call below).
   const openLookupResult = (attendeeId: string) => runExclusive(() => openLookupResultImpl(attendeeId));
 
-  const runLookup = async () => {
-    if (!eventId || !canAct || !lookupQ.trim()) return;
-    if (!allowManualLookup) {
-      setTransportError(LOOKUP_DISABLED_MSG);
-      return;
-    }
-    setBusy(true);
+  // Typeahead under the scan bar: best-effort and unqueued — a read-only
+  // lookup must not wait behind in-flight scans; the seq guard drops stale
+  // responses so only the latest query renders.
+  const fetchSuggestions = async (query: string) => {
+    if (!eventId) return;
+    const seq = ++suggestSeqRef.current;
     try {
-      const results = await lookupCheckInAttendees(eventId, lookupQ);
-      setLookupResults(results);
-      if (results.length === 0) {
-        addToast(LOOKUP_NO_MATCH_MSG, "warning");
-      }
-    } catch (err) {
-      handleApiFailure(err);
-    } finally {
-      setBusy(false);
+      const results = await lookupCheckInAttendees(eventId, query);
+      if (seq === suggestSeqRef.current) setSuggestions(results);
+    } catch {
+      // Silent: suggestions are an assist, explicit Enter still surfaces errors.
     }
   };
 
@@ -579,10 +584,11 @@ export function CheckInPage({
         if (results.length === 0) {
           if (showMobileOverlay) setOverlayManualError(LOOKUP_NO_MATCH_MSG);
           else addToast(LOOKUP_NO_MATCH_MSG, "warning");
+        } else if (showMobileOverlay) {
+          setOverlayManualError("Multiple matches — narrow your search.");
         } else {
-          const message = "Multiple matches — narrow your search or use manual lookup.";
-          if (showMobileOverlay) setOverlayManualError(message);
-          else setTransportError(message);
+          // Desktop: show the matches as scan-bar suggestions to pick from.
+          setSuggestions(results);
         }
         return false;
       } catch (err) {
@@ -633,6 +639,10 @@ export function CheckInPage({
       }
 
       setBuffer("");
+      // Cancel a pending typeahead request for the same text — the explicit
+      // submit below supersedes it (single match opens the card directly).
+      if (suggestTimerRef.current != null) window.clearTimeout(suggestTimerRef.current);
+      suggestSeqRef.current += 1;
       return runExclusive(() => submitScanOrLookupImpl(trimmed));
     },
     [runExclusive, runScan, submitScanOrLookupImpl],
@@ -766,6 +776,28 @@ export function CheckInPage({
         void runScan(value);
       }, WEDGE_DEBOUNCE_MS);
     }
+
+    // Live attendee suggestions under the scan bar. Only for human input:
+    // a wedge burst never sees them (burst flag), and token-length values
+    // route through the scan path above. Every change reschedules the timer,
+    // so requests fire only after a typing pause.
+    if (suggestTimerRef.current != null) window.clearTimeout(suggestTimerRef.current);
+    const trimmed = value.trim();
+    const canSuggest =
+      allowManualLookup &&
+      canAct &&
+      !showMobileOverlay &&
+      !wedgeIsBurstRef.current &&
+      trimmed.length >= 2 &&
+      trimmed.length < WEDGE_AUTO_SUBMIT_LEN;
+    if (canSuggest) {
+      suggestTimerRef.current = window.setTimeout(() => {
+        void fetchSuggestions(trimmed);
+      }, SUGGEST_DEBOUNCE_MS);
+    } else {
+      suggestSeqRef.current += 1;
+      setSuggestions([]);
+    }
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -846,37 +878,65 @@ export function CheckInPage({
 
       <div className="ck-layout">
         <div className="ck-main">
-          <form className="ck-scan-bar" onSubmit={onSubmit} autoComplete="off">
-            <i className="ti ti-scan ck-scan-bar__icon" aria-hidden="true" />
-            <input
-              ref={inputRef}
-              id="checkin-scan-field"
-              name="checkin-scan"
-              className="ck-scan-bar__input"
-              value={buffer}
-              onChange={(e) => handleBufferChange(e.target.value, e.timeStamp)}
-              onPaste={() => {
-                wedgeJustPastedRef.current = true;
-              }}
-              onKeyDown={onKeyDown}
-              autoFocus
-              inputMode="none"
-              placeholder="Scan QR · type name, email or company…"
-              aria-label="QR scan or search"
-              aria-describedby="ck-scan-hint"
-              disabled={!canAct}
-              aria-busy={busy}
-              {...checkinSearchFieldAttrs}
-            />
-            <button
-              type="submit"
-              className="ck-scan-bar__submit"
-              aria-label="Search"
-              disabled={busy || !buffer.trim() || !canAct}
-            >
-              <i className="ti ti-arrow-right" aria-hidden="true" />
-            </button>
-          </form>
+          <div className="ck-scan-wrap">
+            <form className="ck-scan-bar" onSubmit={onSubmit} autoComplete="off">
+              <i className="ti ti-scan ck-scan-bar__icon" aria-hidden="true" />
+              <input
+                ref={inputRef}
+                id="checkin-scan-field"
+                name="checkin-scan"
+                className="ck-scan-bar__input"
+                value={buffer}
+                onChange={(e) => handleBufferChange(e.target.value, e.timeStamp)}
+                onPaste={() => {
+                  wedgeJustPastedRef.current = true;
+                }}
+                onKeyDown={onKeyDown}
+                autoFocus
+                inputMode="none"
+                placeholder="Scan QR · type name, email or company…"
+                aria-label="QR scan or search"
+                aria-describedby="ck-scan-hint"
+                disabled={!canAct}
+                aria-busy={busy}
+                {...checkinSearchFieldAttrs}
+              />
+              <button
+                type="submit"
+                className="ck-scan-bar__submit"
+                aria-label="Search"
+                disabled={busy || !buffer.trim() || !canAct}
+              >
+                <i className="ti ti-arrow-right" aria-hidden="true" />
+              </button>
+            </form>
+            {suggestions.length > 0 && !showMobileOverlay && (
+              <ul className="ck-suggest" aria-label="Attendee suggestions">
+                {suggestions.map((r) => (
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      className="ck-suggest__hit"
+                      disabled={busy}
+                      onClick={() => void openLookupResult(r.id)}
+                    >
+                      <span className="ck-suggest__info">
+                        <strong className="ck-suggest__name">{r.name}</strong>
+                        <span className="ck-suggest__meta">
+                          {[r.company, r.ticket_type].filter(Boolean).join(" · ") || "—"}
+                        </span>
+                      </span>
+                      {r.check_in_status === "admitted" && (
+                        <span className="ck-suggest__in">
+                          <i className="ti ti-circle-check" aria-hidden="true" /> checked in
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <p id="ck-scan-hint" className="ck-hint">
             Keyboard wedge auto-submits · Enter to confirm · Esc to clear
           </p>
@@ -972,19 +1032,6 @@ export function CheckInPage({
               eventTimezone={eventTimezone}
               eventDate={eventDate}
             />
-            {allowManualLookup ? (
-              <ManualLookupPanel
-                open={manualOpen}
-                query={lookupQ}
-                results={lookupResults}
-                busy={busy}
-                canAct={canAct}
-                onToggle={() => setManualOpen((v) => !v)}
-                onQueryChange={setLookupQ}
-                onSearch={() => void runLookup()}
-                onSelect={(id) => void openLookupResult(id)}
-              />
-            ) : null}
           </Card>
         </aside>
       </div>

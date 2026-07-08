@@ -676,7 +676,7 @@
 
 .ck-layout {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: 1fr 400px;
   gap: 16px;
   align-items: start;
 }
@@ -758,6 +758,80 @@
   background: var(--status-warn-tint);
   border: 1px solid var(--status-warn);
   color: var(--status-warn-fg);
+}
+
+/* Anchor for the typeahead dropdown under the scan bar. */
+.ck-scan-wrap {
+  position: relative;
+}
+
+/* Attendee suggestions dropdown (scan bar typeahead). */
+.ck-suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgb(15 23 42 / 12%));
+}
+
+.ck-suggest__hit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius, 4px);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text-primary);
+}
+
+.ck-suggest__hit:hover,
+.ck-suggest__hit:focus-visible {
+  background: var(--surface-hover, var(--surface-sunken));
+}
+
+.ck-suggest__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ck-suggest__name {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ck-suggest__meta {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-muted, var(--text-secondary));
+}
+
+.ck-suggest__in {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  color: var(--status-ok);
+  white-space: nowrap;
 }
 
 .ck-scan-bar {
@@ -1384,59 +1458,6 @@
   .ck-stats__total {
     font-size: 1.5rem;
   }
-}
-
-/* Separates manual lookup from the recent-scans list (not in the mockup sidebar). */
-.checkin-lookup-section {
-  border-top: 1px solid var(--border);
-  margin-top: 16px;
-  padding-top: 16px;
-}
-
-.checkin-lookup {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.checkin-lookup__row {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-}
-
-.checkin-lookup__row .at-input {
-  flex: 1;
-  min-width: 0;
-}
-
-.checkin-lookup__search {
-  flex-shrink: 0;
-  min-width: auto;
-  padding-inline: 16px;
-}
-
-.checkin-lookup__results {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.checkin-lookup__hit {
-  width: 100%;
-  text-align: left;
-  min-height: 44px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-card);
-  cursor: pointer;
-  margin-bottom: 8px;
-}
-
-.checkin-lookup__hit strong {
-  display: block;
 }
 
 .checkin-history {
