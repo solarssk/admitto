@@ -815,38 +815,44 @@
   color: var(--text-secondary);
 }
 
-.ck-stats__admitted {
-  font-size: 2rem;
-  font-weight: 800;
+/* Mockup ci-stats-row: same-size number columns, labels beneath, pct flush right. */
+.ck-stats__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ck-stats__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ck-stats__admitted,
+.ck-stats__total {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
   color: var(--text-primary);
 }
 
-.ck-stats__sep {
-  font-size: 1.5rem;
+.ck-stats__lbl {
+  font-size: var(--fs-xs);
   color: var(--text-muted, var(--text-secondary));
+}
+
+.ck-stats__sep {
+  font-size: 22px;
+  color: var(--text-disabled, var(--text-secondary));
   margin: 0 4px;
 }
 
-.ck-stats__total {
-  font-size: 2rem;
-  font-weight: 400;
-  color: var(--text-muted, var(--text-secondary));
-}
-
 .ck-stats__pct {
-  font-size: 1.25rem;
+  margin-left: auto;
+  font-size: 22px;
   font-weight: 700;
   color: var(--status-ok);
-  margin-left: 12px;
-}
-
-.ck-stats__labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-  text-transform: lowercase;
-  margin-top: 4px;
 }
 
 .ck-progress {
@@ -872,7 +878,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  padding-bottom: 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border);
 }
 
 .ck-recent__title {
@@ -896,30 +904,60 @@
   list-style: none;
   margin: 0;
   padding: 0;
+  /* Mockup ci-history__list: history scrolls inside the card, not the page. */
+  max-height: min(440px, 48vh);
+  overflow-y: auto;
 }
 
+/* Mockup ci-row: dot | info (flexes, ellipsis) | right (status + time, right-aligned). */
 .ck-recent__row {
   display: flex;
-  gap: 8px;
-  padding: 8px 0;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
   border-bottom: 1px solid var(--border-subtle, var(--border));
 }
 
-.ck-recent__line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px;
+.ck-recent__row:last-child {
+  border-bottom: 0;
+}
+
+.ck-recent__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ck-recent__name {
+  display: block;
   font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ck-recent__right {
+  flex: none;
+  text-align: right;
 }
 
 .ck-recent__status {
+  display: block;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.ck-recent__right time {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .ck-recent__ticket {
   display: block;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
 }
 
@@ -934,7 +972,6 @@
   height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
-  margin-top: 4px;
 }
 
 .rec-dot--admitted {
@@ -1347,6 +1384,13 @@
   .ck-stats__total {
     font-size: 1.5rem;
   }
+}
+
+/* Separates manual lookup from the recent-scans list (not in the mockup sidebar). */
+.checkin-lookup-section {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 16px;
 }
 
 .checkin-lookup {

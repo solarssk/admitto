@@ -8,15 +8,18 @@ export function CkStats({ admitted, total }: CkStatsProps) {
 
   return (
     <div className="ck-stats">
-      <div className="ck-stats__numbers">
-        <span className="ck-stats__admitted">{admitted}</span>
-        <span className="ck-stats__sep"> / </span>
-        <span className="ck-stats__total">{total}</span>
+      {/* Mockup ci-stats-row: number columns with labels beneath, percent flush right. */}
+      <div className="ck-stats__row">
+        <div className="ck-stats__stat">
+          <span className="ck-stats__admitted">{admitted}</span>
+          <span className="ck-stats__lbl">admitted</span>
+        </div>
+        <span className="ck-stats__sep">/</span>
+        <div className="ck-stats__stat">
+          <span className="ck-stats__total">{total}</span>
+          <span className="ck-stats__lbl">expected</span>
+        </div>
         <span className="ck-stats__pct">{pct}%</span>
-      </div>
-      <div className="ck-stats__labels">
-        <span>admitted</span>
-        <span>expected</span>
       </div>
       <div
         className="ck-progress"

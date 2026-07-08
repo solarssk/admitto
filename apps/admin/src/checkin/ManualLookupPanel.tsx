@@ -25,7 +25,7 @@ export function ManualLookupPanel({
   onSelect,
 }: ManualLookupPanelProps) {
   return (
-    <>
+    <div className="checkin-lookup-section">
       <button
         type="button"
         className="checkin-action-btn checkin-action-btn--block"
@@ -81,6 +81,6 @@ export function ManualLookupPanel({
           </ul>
         </div>
       )}
-    </>
+    </div>
   );
 }
