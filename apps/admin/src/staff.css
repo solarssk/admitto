@@ -642,12 +642,35 @@
 }
 
 .checkin-card__notes {
-  padding: 0 16px 10px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--at-gray-100, var(--border));
+}
+
+.checkin-card__notes-title {
+  margin: 0 0 6px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
 }
 
 .checkin-card__notes ul {
   margin: 0;
   padding-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checkin-card__notes li p {
+  margin: 2px 0 0;
+  font-size: var(--fs-sm);
+}
+
+.checkin-card__note-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
 }
 
 .link-btn {
