@@ -16,7 +16,7 @@ export function CkStats({ admitted, total }: CkStatsProps) {
       </div>
       <div className="ck-stats__labels">
         <span>admitted</span>
-        <span>total</span>
+        <span>expected</span>
       </div>
       <div
         className="ck-progress"
@@ -24,7 +24,7 @@ export function CkStats({ admitted, total }: CkStatsProps) {
         aria-valuenow={pct}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label={`${pct}% admitted`}
+        aria-label={`${pct}% of expected guests admitted`}
       >
         <div className="ck-progress__fill" style={{ width: `${pct}%` }} />
       </div>
