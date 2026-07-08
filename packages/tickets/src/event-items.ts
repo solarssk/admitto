@@ -29,6 +29,12 @@ function defaultEventItemId(eventId: string, key: string): string {
  * (including when a caller already created its own "badge" item beforehand).
  */
 export async function ensureBadgeEventItem(eventId: string, db: DbClient): Promise<void> {
+  const existing = await db.eventItem.findFirst({
+    where: { event_id: eventId, key: DEFAULT_BADGE_ITEM.key },
+    select: { id: true },
+  });
+  if (existing) return;
+
   await db.eventItem.createMany({
     data: [
       {

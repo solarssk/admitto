@@ -1033,6 +1033,48 @@ describe("ops-config", () => {
       },
     });
   });
+
+  it("turning off issue_on_checkin while the badge item stays enabled auto-flips badge_at_entry", async () => {
+    const badgeId = await getBadgeItemId(EVENT_EI_A);
+
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${badgeId}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ config: { issue_on_checkin: false, requires_return: false } }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { enabled: boolean };
+    expect(body.enabled).toBe(true);
+
+    const event = await prisma.event.findUnique({ where: { id: EVENT_EI_A } });
+    expect((event?.ops_config as { badge_at_entry?: boolean } | null)?.badge_at_entry).toBe(false);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_EI_A, action_type: "ops_config_updated" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log?.metadata).toMatchObject({
+      fields: ["badge_at_entry"],
+      reason: "badge_item_issue_on_checkin_disabled",
+    });
+
+    // Restore shared fixture state for tests declared later in this file.
+    await prisma.eventItem.update({
+      where: { id: badgeId },
+      data: { config: { issue_on_checkin: true, requires_return: false } },
+    });
+    await prisma.event.update({
+      where: { id: EVENT_EI_A },
+      data: {
+        ops_config: {
+          badge_at_entry: true,
+          require_confirm_on_scan: true,
+          allow_manual_lookup: false,
+          auto_advance_on_valid: false,
+        },
+      },
+    });
+  });
 });
 
 
