@@ -279,6 +279,8 @@ describe("CheckInPage lookup card states (#379)", () => {
     // #379B: selecting a suggestion clears the scan bar and the dropdown.
     expect(input.value).toBe("");
     expect(screen.queryByText(/Acme · vip/)).toBeNull();
+    // No dismiss button existed for this state before — Clear resets the view.
+    expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
   });
 
   it("revoked attendee opens as revoked with item actions disabled", async () => {
@@ -300,6 +302,9 @@ describe("CheckInPage lookup card states (#379)", () => {
     expect(screen.queryByRole("button", { name: "Confirm check-in" })).toBeNull();
     const itemAction = screen.getByRole("button", { name: "Issue badge" }) as HTMLButtonElement;
     expect(itemAction.disabled).toBe(true);
+    // A revoked card has no Confirm/Cancel — Clear is the only way to dismiss it.
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.queryByText(/Ticket is not admittable/)).toBeNull();
   });
 
   it("not-admitted attendee opens as preview with Confirm available (Enter, single match)", async () => {
@@ -316,6 +321,9 @@ describe("CheckInPage lookup card states (#379)", () => {
       expect(screen.getByText("Ready to check in")).toBeTruthy();
     });
     expect(screen.getByRole("button", { name: "Confirm check-in" })).toBeTruthy();
+    // PREVIEW already has a block-width Cancel button — no duplicate Clear.
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
   });
 });
 

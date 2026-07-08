@@ -274,8 +274,12 @@ export function AttendeeCard({
           </div>
         )}
 
-        {/* 4. Secondary actions footer (mockup ci-result__actions). */}
-        {(showUndo || onAddNote) && (
+        {/* 4. Secondary actions footer (mockup ci-result__actions). Clear is
+            omitted when showPrimaryActions is true — PREVIEW already has its
+            own block-width Cancel button, so this only appears for states
+            (VALID / ALREADY_CHECKED_IN / REVOKED) that otherwise have no way
+            to dismiss the card short of Escape or scanning someone else. */}
+        {(showUndo || onAddNote || (onCancel && !showPrimaryActions)) && (
           <div className="checkin-card__footer">
             {showUndo && onUndo && (
               <Button
@@ -301,6 +305,19 @@ export function AttendeeCard({
                 icon={<i className="ti ti-pencil" aria-hidden="true" />}
               >
                 Add note
+              </Button>
+            )}
+            {onCancel && !showPrimaryActions && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="checkin-card__aux-btn"
+                disabled={pending}
+                onClick={() => onCancel()}
+                icon={<i className="ti ti-x" aria-hidden="true" />}
+              >
+                Clear
               </Button>
             )}
           </div>
