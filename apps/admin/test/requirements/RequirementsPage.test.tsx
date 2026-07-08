@@ -101,6 +101,27 @@ describe("RequirementsPage badge/ops-config sync", () => {
     });
   });
 
+  it("still shows the success toast when the item update succeeds but the ops-config refresh fails", async () => {
+    fetchEventItems.mockResolvedValue([badgeItem]);
+    fetchOpsConfig
+      .mockResolvedValueOnce(makeOpsConfig({ badge_at_entry: true }))
+      .mockRejectedValueOnce(new Error("network error"));
+    updateEventItem.mockResolvedValueOnce({ ...badgeItem, enabled: false });
+
+    renderPage();
+    await screen.findByRole("switch", { name: "Issue badge at entry" });
+
+    fireEvent.click(screen.getByRole("switch", { name: "Disable Badge" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Item disabled — saved", "success");
+    });
+    expect(addToast).not.toHaveBeenCalledWith(
+      expect.stringMatching(/Failed to update item/),
+      "error",
+    );
+  });
+
   it("shows the enabled toast when toggling an item back on", async () => {
     const disabledGiftbag: EventItemDto = {
       ...badgeItem,

@@ -20,7 +20,6 @@ import { DEFAULT_EVENT_ITEM_ICON } from "../requirements/IconPicker.js";
 import { slugifyItemKey, uniqueItemKey } from "../requirements/itemKey.js";
 import "../requirements/requirements.css";
 
-/** One-line summary of item config for the Requirements table. */
 /** Admin screen for per-event item configuration and operational behaviour. */
 export function RequirementsPage() {
   const { eventId } = useParams();
@@ -118,12 +117,19 @@ export function RequirementsPage() {
     try {
       const updated = await updateEventItem(eventId, item.id, { enabled: !item.enabled });
       setItems((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
+      addToast(updated.enabled ? "Item enabled — saved" : "Item disabled — saved", "success");
       if (updated.key === "badge" && !updated.enabled) {
         // Server auto-disables badge_at_entry when the badge item is turned
         // off — refresh so the Event behaviour toggle doesn't show stale ON.
-        setOpsConfig(await fetchOpsConfig(eventId));
+        // Best-effort: the item update already succeeded and was already
+        // toasted above, so a failure here shouldn't surface as an error —
+        // opsConfig just stays stale until the next full page load.
+        try {
+          setOpsConfig(await fetchOpsConfig(eventId));
+        } catch {
+          // Ignored — see comment above.
+        }
       }
-      addToast(updated.enabled ? "Item enabled — saved" : "Item disabled — saved", "success");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
         addToast(
@@ -163,7 +169,7 @@ export function RequirementsPage() {
       setReloadToken((n) => n + 1);
       addToast("Item added", "success");
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
+      if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "key_conflict")) {
         addToast("An item with this name already exists.", "warning");
       } else {
         addToast(operatorApiErrorMessage(err, "Failed to create item."), "error");
@@ -283,6 +289,7 @@ export function RequirementsPage() {
                             label={item.enabled ? "On" : "Off"}
                             checked={item.enabled}
                             disabled={togglingIds.has(item.id)}
+                            aria-busy={togglingIds.has(item.id)}
                             onChange={() => void handleToggleEnabled(item)}
                             aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
                           />
