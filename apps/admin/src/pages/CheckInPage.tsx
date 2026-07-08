@@ -20,6 +20,7 @@ import type { AttendeeCardDto, CheckInHistoryEntry, CheckInScanResponse, OpsConf
 import { useAuth } from "../auth/AuthProvider.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { CHECKIN_DUPLICATE_DEBOUNCE_MS, normalizeScannedInput } from "../checkin/normalize.js";
+import { scanResultFromCard } from "../checkin/cardScanResult.js";
 import { canMutateCheckin } from "../checkin/connection.js";
 import { ScanFeedback } from "../checkin/ScanFeedback.js";
 import { AttendeeCard } from "../checkin/AttendeeCard.js";
@@ -80,6 +81,7 @@ const DEFAULT_OPS_CONFIG: OpsConfigDto = {
 export interface CheckInPageProps {
   eventTitle?: string;
   eventTimezone?: string;
+  eventDate?: string | null;
   useCamera?: boolean;
   onUseCameraChange?: (open: boolean) => void;
 }
@@ -87,11 +89,13 @@ export interface CheckInPageProps {
 export function CheckInPage({
   eventTitle = "Event",
   eventTimezone: eventTimezoneProp,
+  eventDate: eventDateProp,
   useCamera = false,
   onUseCameraChange,
 }: CheckInPageProps) {
   const { eventId } = useParams();
   const [eventTimezone, setEventTimezone] = useState(eventTimezoneProp ?? "UTC");
+  const [eventDate, setEventDate] = useState<string | null>(eventDateProp ?? null);
   const { deviceLabel } = useAuth();
   const { state: connectionState, reportApiError } = useConnectionState();
   const { addToast } = useToast();
@@ -220,6 +224,7 @@ export function CheckInPage({
   useEffect(() => {
     if (eventTimezoneProp) {
       setEventTimezone(eventTimezoneProp);
+      setEventDate(eventDateProp ?? null);
       return;
     }
     if (!eventId) return;
@@ -227,15 +232,21 @@ export function CheckInPage({
     fetchCheckInEvents()
       .then((events) => {
         const found = events.find((e) => e.id === eventId);
-        if (!cancelled) setEventTimezone(found?.timezone ?? "UTC");
+        if (!cancelled) {
+          setEventTimezone(found?.timezone ?? "UTC");
+          setEventDate(found?.date ?? null);
+        }
       })
       .catch(() => {
-        if (!cancelled) setEventTimezone("UTC");
+        if (!cancelled) {
+          setEventTimezone("UTC");
+          setEventDate(null);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [eventId, eventTimezoneProp]);
+  }, [eventId, eventTimezoneProp, eventDateProp]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -500,9 +511,11 @@ export function CheckInPage({
     try {
       const loaded = await fetchAttendeeCard(eventId, attendeeId);
       setCard(loaded);
-      setScanResult({ status: "PREVIEW", confirmed: false, card: loaded, attendeeId });
+      setScanResult(scanResultFromCard(loaded));
       setAdmitOrigin("manual");
       setManualOpen(false);
+      setLookupQ("");
+      setLookupResults([]);
     } catch (err) {
       handleApiFailure(err);
     } finally {
@@ -957,6 +970,7 @@ export function CheckInPage({
               totalCount={totalCount}
               history={history}
               eventTimezone={eventTimezone}
+              eventDate={eventDate}
             />
             {allowManualLookup ? (
               <ManualLookupPanel
@@ -980,6 +994,7 @@ export function CheckInPage({
           open
           eventTitle={eventTitle}
           eventTimezone={eventTimezone}
+          eventDate={eventDate}
           admittedCount={admittedCount}
           history={history}
           wedgeActive={buffer.trim().length > 0}

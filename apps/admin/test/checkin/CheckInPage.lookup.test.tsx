@@ -9,6 +9,7 @@ const fetchCheckInHistory = vi.fn();
 const fetchCheckInStats = vi.fn();
 const fetchCheckInOpsConfig = vi.fn();
 const fetchCheckInEvents = vi.fn();
+const fetchAttendeeCard = vi.fn();
 const lookupCheckInAttendees = vi.fn();
 const addToast = vi.fn();
 
@@ -51,7 +52,7 @@ vi.mock("../../src/api/client.js", () => ({
   fetchCheckInStats: (...args: unknown[]) => fetchCheckInStats(...args),
   fetchCheckInOpsConfig: (...args: unknown[]) => fetchCheckInOpsConfig(...args),
   fetchCheckInEvents: (...args: unknown[]) => fetchCheckInEvents(...args),
-  fetchAttendeeCard: vi.fn(),
+  fetchAttendeeCard: (...args: unknown[]) => fetchAttendeeCard(...args),
   lookupCheckInAttendees: (...args: unknown[]) => lookupCheckInAttendees(...args),
   submitAttendeeNote: vi.fn(),
   submitCheckInAdmit: vi.fn(),
@@ -171,5 +172,104 @@ describe("CheckInPage lookup feedback", () => {
     });
     expect(lookupInput.getAttribute("data-bwignore")).not.toBeNull();
     expect(lookupInput.getAttribute("name")).toBe("checkin-lookup");
+  });
+});
+
+describe("CheckInPage lookup card states (#379)", () => {
+  async function searchAndSelect(name: string) {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Manual lookup" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Manual lookup" }));
+    const lookupInput = screen.getByRole("searchbox", {
+      name: "Search attendees by name, email, or company",
+    });
+    const lookupPanel = lookupInput.closest(".checkin-lookup") as HTMLElement;
+    fireEvent.change(lookupInput, { target: { value: "anna" } });
+    fireEvent.click(within(lookupPanel).getByRole("button", { name: "Search" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: new RegExp(name) })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(name) }));
+  }
+
+  const baseCard = {
+    id: "att-1",
+    name: "Anna Alpha",
+    company: null,
+    department: null,
+    ticket_type: "vip",
+    check_in_status: "not_admitted" as const,
+    admitted_at: null,
+    items: [],
+    notes: [],
+    warnings: [] as string[],
+  };
+
+  it("admitted attendee opens as Already checked in without a Confirm button", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([
+      { id: "att-1", name: "Anna Alpha", ticket_type: "vip", company: null, department: null, check_in_status: "admitted" },
+    ]);
+    fetchAttendeeCard.mockResolvedValue({
+      ...baseCard,
+      check_in_status: "admitted",
+      admitted_at: "2026-09-01T09:44:00.000Z",
+    });
+
+    await searchAndSelect("Anna Alpha");
+
+    await waitFor(() => {
+      expect(screen.getByText("Already checked in")).toBeTruthy();
+    });
+    expect(screen.queryByRole("button", { name: "Confirm check-in" })).toBeNull();
+    expect(screen.queryByText("Ready to check in")).toBeNull();
+
+    // #379B: query and results cleared — reopening the panel shows a fresh search.
+    fireEvent.click(screen.getByRole("button", { name: "Manual lookup" }));
+    const reopened = screen.getByRole("searchbox", {
+      name: "Search attendees by name, email, or company",
+    }) as HTMLInputElement;
+    expect(reopened.value).toBe("");
+    expect(screen.queryByRole("button", { name: /Anna Alpha/ })).toBeNull();
+  });
+
+  it("revoked attendee opens as revoked with item actions disabled", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([
+      { id: "att-1", name: "Anna Alpha", ticket_type: "vip", company: null, department: null, check_in_status: "not_admitted" },
+    ]);
+    fetchAttendeeCard.mockResolvedValue({
+      ...baseCard,
+      warnings: ["Ticket is not admittable (status: revoked)."],
+      items: [
+        { key: "badge", label: "Badge", icon: null, detail: null, state: "pending", actions: ["issued"] },
+      ],
+    });
+
+    await searchAndSelect("Anna Alpha");
+
+    await waitFor(() => {
+      expect(screen.getByText(/Ticket is not admittable/)).toBeTruthy();
+    });
+    expect(screen.queryByRole("button", { name: "Confirm check-in" })).toBeNull();
+    const itemAction = screen.getByRole("button", { name: "Issue badge" }) as HTMLButtonElement;
+    expect(itemAction.disabled).toBe(true);
+  });
+
+  it("not-admitted attendee still opens as preview with Confirm available", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([
+      { id: "att-1", name: "Anna Alpha", ticket_type: "vip", company: null, department: null, check_in_status: "not_admitted" },
+    ]);
+    fetchAttendeeCard.mockResolvedValue(baseCard);
+
+    await searchAndSelect("Anna Alpha");
+
+    await waitFor(() => {
+      expect(screen.getByText("Ready to check in")).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "Confirm check-in" })).toBeTruthy();
   });
 });
