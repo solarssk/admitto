@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Button, Card, EmptyState, Input, PageHeader, Switch, useToast } from "@admitto/ui";
 import {
@@ -12,6 +12,7 @@ import {
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventItemDto, OpsConfigDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { flattenCustomDataFieldsFromItems } from "../attendees/customData.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
 import { DEFAULT_EVENT_ITEM_ICON } from "../requirements/IconPicker.js";
 import { slugifyItemKey, uniqueItemKey } from "../requirements/itemKey.js";
@@ -53,6 +54,8 @@ export function RequirementsPage() {
   const addKeyPreview = uniqueItemKey(addLabel, items.map((i) => i.key));
 
   const [opsSaving, setOpsSaving] = useState(false);
+
+  const customFields = useMemo(() => flattenCustomDataFieldsFromItems(items), [items]);
 
   useEffect(() => {
     setItems([]);
@@ -400,6 +403,46 @@ export function RequirementsPage() {
               </div>
             </>
           ) : null}
+        </Card>
+      </section>
+
+      <section className="requirements-section">
+        <h2 className="requirements-section__title">Custom attendee fields</h2>
+        <Card padded={false}>
+          {customFields.length === 0 ? (
+            <p className="requirements-custom-fields-empty">
+              No custom fields collected. Add operator hints to event items to source data from
+              attendee profiles.
+            </p>
+          ) : (
+            <div className="attendees-table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Display label</th>
+                    <th>Source field</th>
+                    <th>Used by item</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customFields.map((field) => {
+                    const usedBy = items.find((item) =>
+                      item.config?.contents?.some((c) => c.source_field === field.source_field),
+                    );
+                    return (
+                      <tr key={field.source_field}>
+                        <td>{field.label}</td>
+                        <td>
+                          <code className="requirements-item-id">{field.source_field}</code>
+                        </td>
+                        <td className="requirements-item-id">{usedBy?.label ?? "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       </section>
         </>
