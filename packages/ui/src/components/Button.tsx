@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "success";
 export type ButtonSize = "sm" | "md" | "lg";
@@ -13,19 +13,22 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   hasMenu?: boolean;
 }
 
-export function Button({
-  variant = "primary",
-  size = "md",
-  block = false,
-  icon = null,
-  iconRight = null,
-  hasMenu = false,
-  disabled = false,
-  type = "button",
-  children,
-  className,
-  ...rest
-}: ButtonProps) {
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  {
+    variant = "primary",
+    size = "md",
+    block = false,
+    icon = null,
+    iconRight = null,
+    hasMenu = false,
+    disabled = false,
+    type = "button",
+    children,
+    className,
+    ...rest
+  },
+  ref,
+) {
   const cls = [
     "at-btn",
     `at-btn--${variant}`,
@@ -39,7 +42,7 @@ export function Button({
   const trailingIcon = hasMenu ? <i className="ti ti-chevron-down" aria-hidden="true" /> : iconRight;
 
   return (
-    <button type={type} className={cls} disabled={disabled} {...rest}>
+    <button ref={ref} type={type} className={cls} disabled={disabled} {...rest}>
       {icon && (
         <span className="at-btn__icon" aria-hidden="true">
           {icon}
@@ -53,4 +56,4 @@ export function Button({
       )}
     </button>
   );
-}
+});

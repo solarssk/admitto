@@ -737,9 +737,11 @@ export function CheckInPage({
 
   // Admin/superadmin only (canRevokeCheckIn) — reverses this attendee's
   // admission regardless of who checked them in or when, unlike onUndo's
-  // device-scoped "last valid on this device" safety net. Deliberately does
-  // not catch: AttendeeCard's ConfirmDialog shows the error inline instead
-  // of a page-level toast, matching the repo's confirm-dialog convention.
+  // device-scoped "last valid on this device" safety net. Reports transport
+  // failures to the connection indicator but re-throws rather than calling
+  // the full handleApiFailure — AttendeeCard's ConfirmDialog shows the error
+  // inline instead of a page-level toast, matching the confirm-dialog
+  // convention; only a duplicate toast is avoided, not the connection state.
   const onRevokeCheckIn = (attendeeId: string) =>
     runExclusive(async () => {
       if (!eventId || !canAct) return;
@@ -749,6 +751,9 @@ export function CheckInPage({
         setCard(updated);
         setScanResult(scanResultFromCard(updated));
         void refreshSidebar();
+      } catch (err) {
+        if (err instanceof ApiError) reportApiError(err.status);
+        throw err;
       } finally {
         setBusy(false);
       }

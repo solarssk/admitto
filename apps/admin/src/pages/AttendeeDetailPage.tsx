@@ -55,14 +55,24 @@ function RevokeActionMenu({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    // Move focus into the menu when it opens, and back to the trigger on close.
+    panelRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
     function onPointerDown(e: PointerEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     }
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     }
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -75,6 +85,7 @@ function RevokeActionMenu({
   return (
     <div className="revoke-menu" ref={rootRef}>
       <Button
+        ref={triggerRef}
         type="button"
         variant="danger"
         icon={<i className="ti ti-ban" aria-hidden="true" />}
@@ -86,7 +97,7 @@ function RevokeActionMenu({
         Revoke
       </Button>
       {open && (
-        <div className="revoke-menu__panel" role="menu">
+        <div className="revoke-menu__panel" role="menu" ref={panelRef}>
           <button
             type="button"
             role="menuitem"

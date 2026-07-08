@@ -3,6 +3,7 @@ import { Badge, Button, Card } from "@admitto/ui";
 import type { BadgeVariant } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInStatus } from "../api/types.js";
 import { formatEventTime } from "../utils/event-dates.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { NoteModal } from "./NoteModal.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
@@ -140,8 +141,8 @@ export function AttendeeCard({
     try {
       await onRevokeCheckIn();
       setRevokeOpen(false);
-    } catch {
-      setRevokeError("Failed to revoke check-in. Try again.");
+    } catch (err) {
+      setRevokeError(operatorApiErrorMessage(err, "Failed to revoke check-in. Try again."));
     } finally {
       setRevokeBusy(false);
     }

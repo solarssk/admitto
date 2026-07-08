@@ -15,11 +15,11 @@ function statusLabel(status: string, source: string | null): string {
   return status.replace(/_/g, " ");
 }
 
-function dotClass(status: string): string {
+function dotClass(status: string, source: string | null): string {
   const normalized = status.toLowerCase();
   if (normalized === "admitted" || normalized === "valid") return "rec-dot--admitted";
   if (normalized === "already_checked_in") return "rec-dot--already_checked_in";
-  if (normalized === "undo") return "rec-dot--undo";
+  if (normalized === "undo") return source === "admin_revoke" ? "rec-dot--revoked" : "rec-dot--undo";
   if (normalized === "revoked") return "rec-dot--revoked";
   return "rec-dot--invalid";
 }
@@ -55,7 +55,7 @@ export function CkRecentScans({
           {rows.map((row) => (
             // Mockup ci-row: dot | info (name + ticket, left) | right (status + time).
             <li key={row.id} className="ck-recent__row">
-              <span className={`rec-dot ${dotClass(row.status)}`} aria-hidden="true" />
+              <span className={`rec-dot ${dotClass(row.status, row.source)}`} aria-hidden="true" />
               <div className="ck-recent__info">
                 <strong className="ck-recent__name">{row.attendee.name}</strong>
                 {row.attendee.ticket_type && (

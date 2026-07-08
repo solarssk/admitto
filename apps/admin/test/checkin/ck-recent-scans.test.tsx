@@ -77,7 +77,10 @@ describe("CkRecentScans", () => {
 
     expect(screen.getByText("Revoked")).toBeTruthy();
     expect(screen.getByText("Undone")).toBeTruthy();
-    expect(container.querySelectorAll(".rec-dot--undo")).toHaveLength(2);
+    // Distinct dot color too — admin revoke reads as "revoked" (same as a
+    // revoked ticket), operator self-undo stays its own neutral color.
+    expect(container.querySelectorAll(".rec-dot--revoked")).toHaveLength(1);
+    expect(container.querySelectorAll(".rec-dot--undo")).toHaveLength(1);
   });
 
   it("formats checked_in_at in event timezone", () => {

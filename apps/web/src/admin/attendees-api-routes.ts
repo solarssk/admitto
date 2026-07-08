@@ -1400,7 +1400,8 @@ export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient):
     if (err instanceof UndoNotAllowedError) {
       return c.json({ error: "not_admitted" }, 409);
     }
-    throw err;
+    console.error("handleRevokeAttendeeCheckIn failed:", err);
+    return c.json({ error: "server error" }, 500);
   }
 }
 
