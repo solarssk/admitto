@@ -30,6 +30,7 @@ import {
   findFilteredAttendeesForExport,
   findFilteredAttendeesForList,
   revokeCheckIn,
+  revokeCheckInTx,
   UndoNotAllowedError,
 } from "@admitto/tickets";
 import {
@@ -1056,6 +1057,16 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
       });
 
       if (isStaleWrite(result)) throw new StaleWriteError();
+
+      // Revoking the pass must not leave a stale admission behind — restoring
+      // the pass later would otherwise resurrect a "checked in" state from
+      // before the revoke without a new scan ever happening (PO review).
+      if (statusChange === "revoked" && existing.admitted_at) {
+        await revokeCheckInTx({ eventId, attendeeId, audit: adminAuditFromContext(c) }, tx);
+        // result.row was read before the clear above — reflect it in the
+        // response DTO without a second round-trip.
+        result.row.admitted_at = null;
+      }
 
       if (rsvpChange) {
         await writeActionLog(tx, {

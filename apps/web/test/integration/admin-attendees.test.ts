@@ -1910,6 +1910,56 @@ describe("Attendees v2 — RSVP and manual create", () => {
     }
   });
 
+  it("PATCH status revoked on an admitted attendee auto-clears the admission (PO review)", async () => {
+    const ATT_PASS_REVOKE = "att-admin-pass-revoke-admitted";
+    const token = generateToken();
+    await prisma.attendee.upsert({
+      where: { id: ATT_PASS_REVOKE },
+      create: {
+        id: ATT_PASS_REVOKE,
+        event_id: EVENT_A,
+        email: "pass-revoke-admitted@example.com",
+        name: "Pass Revoke Admitted",
+        token_hash: hashToken(token),
+        admitted_at: new Date("2026-10-01T10:00:00Z"),
+      },
+      update: { status: "registered", admitted_at: new Date("2026-10-01T10:00:00Z"), admitted_by: null },
+    });
+    try {
+      const getRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_PASS_REVOKE}`, {
+        headers: { Cookie: adminCookie },
+      });
+      const detail = (await getRes.json()) as { updated_at: string };
+
+      const patchRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_PASS_REVOKE}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "revoked", expected_updated_at: detail.updated_at }),
+      });
+      expect(patchRes.status).toBe(200);
+      const patched = (await patchRes.json()) as {
+        status: string;
+        check_in_status: string;
+        admitted_at: string | null;
+      };
+      // Response DTO must reflect the clear immediately, not the pre-revoke row.
+      expect(patched.check_in_status).toBe("not_admitted");
+      expect(patched.admitted_at).toBeNull();
+
+      const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_PASS_REVOKE } });
+      expect(row.admitted_at).toBeNull();
+
+      const checkInRevokedLog = await prisma.attendeeActionLog.findFirst({
+        where: { attendee_id: ATT_PASS_REVOKE, action_type: "check_in_revoked" },
+      });
+      expect(checkInRevokedLog).not.toBeNull();
+    } finally {
+      await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE } });
+      await prisma.checkIn.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE } });
+      await prisma.attendee.delete({ where: { id: ATT_PASS_REVOKE } });
+    }
+  });
+
   it("PATCH restore returns 409 event_full when capacity is full", async () => {
     await resetEventACustomFields();
     const current = await countActiveEventAAttendees();

@@ -13,7 +13,7 @@ export {
   IllegalItemTransitionError,
 } from "./item-states.js";
 export { addAttendeeNote, NoteTooLongError, OperatorRequiredError, MAX_ATTENDEE_NOTE_LENGTH } from "./notes.js";
-export { undoLastCheckIn, revokeCheckIn, UndoNotAllowedError } from "./undo.js";
+export { undoLastCheckIn, revokeCheckIn, revokeCheckInTx, UndoNotAllowedError } from "./undo.js";
 export { parseCustomData, customDataValue } from "./custom-data.js";
 export { buildItemDetail, resolveEventItemContents, collectEventCustomDataFields, mergeEventItemContentFields } from "./event-item-contents.js";
 export {
