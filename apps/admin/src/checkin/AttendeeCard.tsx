@@ -3,6 +3,7 @@ import { Badge, Button, Card } from "@admitto/ui";
 import type { BadgeVariant } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInStatus } from "../api/types.js";
 import { formatEventTime } from "../utils/event-dates.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { NoteModal } from "./NoteModal.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 
@@ -19,6 +20,8 @@ type Props = {
   onUndo?: () => void;
   showUndo?: boolean;
   onCancel?: () => void;
+  /** Admin/superadmin only — reverses this attendee's current admission regardless of who checked them in or when. Rejects on failure so this component can show the error inline. */
+  onRevokeCheckIn?: () => Promise<void>;
 };
 
 function statusForCard(
@@ -120,11 +123,29 @@ export function AttendeeCard({
   onUndo,
   showUndo,
   onCancel,
+  onRevokeCheckIn,
 }: Props) {
   const resolvedStatus = statusForCard(scanStatus, card.check_in_status);
   const cardClass = `checkin-card checkin-card--${resolvedStatus.toLowerCase()}`;
   const isPreview = resolvedStatus === "PREVIEW";
   const [noteOpen, setNoteOpen] = useState(false);
+  const [revokeOpen, setRevokeOpen] = useState(false);
+  const [revokeBusy, setRevokeBusy] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
+
+  async function handleRevokeConfirm() {
+    if (!onRevokeCheckIn) return;
+    setRevokeBusy(true);
+    setRevokeError(null);
+    try {
+      await onRevokeCheckIn();
+      setRevokeOpen(false);
+    } catch {
+      setRevokeError("Failed to revoke check-in. Try again.");
+    } finally {
+      setRevokeBusy(false);
+    }
+  }
 
   const showPrimaryActions = isPreview && onCheckIn && card.check_in_status === "not_admitted";
   const statusVariant = statusBadgeVariant(resolvedStatus);
@@ -279,7 +300,10 @@ export function AttendeeCard({
             own block-width Cancel button, so this only appears for states
             (VALID / ALREADY_CHECKED_IN / REVOKED) that otherwise have no way
             to dismiss the card short of Escape or scanning someone else. */}
-        {(showUndo || onAddNote || (onCancel && !showPrimaryActions)) && (
+        {(showUndo ||
+          onAddNote ||
+          (onCancel && !showPrimaryActions) ||
+          (onRevokeCheckIn && card.check_in_status === "admitted")) && (
           <div className="checkin-card__footer">
             {showUndo && onUndo && (
               <Button
@@ -292,6 +316,19 @@ export function AttendeeCard({
                 icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
               >
                 Undo check-in
+              </Button>
+            )}
+            {onRevokeCheckIn && card.check_in_status === "admitted" && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="checkin-card__aux-btn checkin-card__aux-btn--danger"
+                disabled={pending}
+                onClick={() => setRevokeOpen(true)}
+                icon={<i className="ti ti-ban" aria-hidden="true" />}
+              >
+                Revoke check-in
               </Button>
             )}
             {onAddNote && (
@@ -326,6 +363,24 @@ export function AttendeeCard({
 
       {onAddNote && (
         <NoteModal open={noteOpen} onClose={() => setNoteOpen(false)} onSubmit={onAddNote} />
+      )}
+      {onRevokeCheckIn && (
+        <ConfirmDialog
+          open={revokeOpen}
+          title="Revoke check-in?"
+          message={`This un-admits ${card.name} — they'll show as not checked in and will need to be scanned or admitted again to re-enter. This works regardless of when or how they were originally checked in.`}
+          confirmLabel={revokeBusy ? "Revoking…" : "Revoke check-in"}
+          confirmVariant="danger"
+          loading={revokeBusy}
+          errorMessage={revokeError}
+          onConfirm={() => void handleRevokeConfirm()}
+          onCancel={() => {
+            if (!revokeBusy) {
+              setRevokeOpen(false);
+              setRevokeError(null);
+            }
+          }}
+        />
       )}
     </>
   );

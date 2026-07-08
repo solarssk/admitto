@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Admin/superadmin can now **revoke** any attendee's check-in — regardless of who admitted them or when — from the Check-in page's attendee card or from the attendee's own Detail page, behind a confirmation dialog. Distinct from the operator's existing device-scoped **Undo check-in** (their own accidental-scan safety net, unchanged); the new action clears the admission, rolls back an auto-issued badge, and logs a `check_in_revoked` entry in the attendee's Activity Log. Admin/superadmin only — never shown to operators (#449).
 - My account: **Download backup codes** button next to the codes shown during 2FA enrollment — same one-code-per-line `.txt` and `admitto-backup-codes.txt` filename as the server-rendered MFA enrollment page; rendered inline in the backup-codes header row so the 2FA card height stays unchanged (#421).
 - `eslint-plugin-security` enabled for `apps/*/src` (admin, web, cli) with `detect-object-injection` off as a typed-record false-positive; remaining SAST hits annotated inline.
 - `operatorApiErrorMessage()` / `hasApiErrorCode()` helper (`apps/admin/src/api/operator-api-error.ts`) — central mapping for operator-safe admin API error copy; AGENTS.md documents the convention.

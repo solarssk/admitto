@@ -637,6 +637,10 @@
   height: var(--control-h-lg);
 }
 
+.checkin-card__aux-btn--danger {
+  color: var(--status-error);
+}
+
 .checkin-card__notes {
   padding: 0 16px 10px;
 }

@@ -17,6 +17,7 @@ import {
   ApiError,
   fetchAttendeeDetail,
   resendTicket,
+  revokeAttendeeCheckIn,
   updateAttendee,
   type EventFullMeta,
 } from "../api/client.js";
@@ -78,6 +79,9 @@ export function AttendeeDetailPage() {
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [restoreCapacityBlocked, setRestoreCapacityBlocked] = useState<EventFullMeta | null>(null);
   const [restoreForceCapacity, setRestoreForceCapacity] = useState(false);
+  const [checkinRevokeOpen, setCheckinRevokeOpen] = useState(false);
+  const [checkinRevokeBusy, setCheckinRevokeBusy] = useState(false);
+  const [checkinRevokeError, setCheckinRevokeError] = useState<string | null>(null);
 
   /** Guards async handlers when route params change before a request completes. */
   const selectionRef = useRef({ eventId, attendeeId });
@@ -368,6 +372,26 @@ export function AttendeeDetailPage() {
     }
   }
 
+  /** Un-admits this attendee regardless of who checked them in or when — distinct from the operator-facing device-scoped undo on the Check-in page. */
+  async function handleRevokeCheckIn() {
+    if (!eventId || !attendeeId || !detail) return;
+    const target = { eventId, attendeeId };
+    setCheckinRevokeBusy(true);
+    setCheckinRevokeError(null);
+    try {
+      await revokeAttendeeCheckIn(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
+      await loadDetail();
+      setCheckinRevokeOpen(false);
+      addToast("Check-in revoked", "success");
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setCheckinRevokeError(operatorApiErrorMessage(err, "Could not revoke check-in."));
+    } finally {
+      if (isStillSelected(target)) setCheckinRevokeBusy(false);
+    }
+  }
+
   if (!eventId || !attendeeId) return <p>Missing event or attendee.</p>;
 
   if (loading && !detail) {
@@ -416,6 +440,18 @@ export function AttendeeDetailPage() {
             >
               Resend ticket
             </Button>
+            {detail.check_in_status === "admitted" && (
+              <Button
+                variant="ghost"
+                icon={<i className="ti ti-ban" aria-hidden="true" />}
+                onClick={() => {
+                  setCheckinRevokeError(null);
+                  setCheckinRevokeOpen(true);
+                }}
+              >
+                Revoke check-in
+              </Button>
+            )}
             {isRevoked ? (
               <Button
                 variant="primary"
@@ -652,6 +688,23 @@ export function AttendeeDetailPage() {
           if (!revokeBusy) {
             setRevokeOpen(false);
             setRevokeError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={checkinRevokeOpen}
+        title="Revoke check-in?"
+        message={`This un-admits ${detail.name} — they'll show as not checked in and will need to be scanned or admitted again to re-enter. This works regardless of when or how they were originally checked in.`}
+        confirmLabel="Revoke check-in"
+        confirmVariant="danger"
+        loading={checkinRevokeBusy}
+        errorMessage={checkinRevokeError ?? undefined}
+        onConfirm={() => void handleRevokeCheckIn()}
+        onCancel={() => {
+          if (!checkinRevokeBusy) {
+            setCheckinRevokeOpen(false);
+            setCheckinRevokeError(null);
           }
         }}
       />

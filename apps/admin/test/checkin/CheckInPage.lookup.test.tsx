@@ -22,7 +22,7 @@ vi.mock("../../src/hooks/useEventStream.js", () => ({
 }));
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ deviceLabel: "desk-1" }),
+  useAuth: () => ({ deviceLabel: "desk-1", assignments: [] }),
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
@@ -281,6 +281,9 @@ describe("CheckInPage lookup card states (#379)", () => {
     expect(screen.queryByText(/Acme · vip/)).toBeNull();
     // No dismiss button existed for this state before — Clear resets the view.
     expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
+    // Operators (default mock: no admin assignment) don't get the
+    // admin/superadmin-only revoke action.
+    expect(screen.queryByRole("button", { name: "Revoke check-in" })).toBeNull();
   });
 
   it("revoked attendee opens as revoked with item actions disabled", async () => {

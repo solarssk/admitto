@@ -23,7 +23,7 @@ vi.mock("../../src/hooks/useEventStream.js", () => ({
 }));
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ deviceLabel: "desk-1" }),
+  useAuth: () => ({ deviceLabel: "desk-1", assignments: [] }),
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({

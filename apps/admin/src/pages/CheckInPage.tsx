@@ -14,10 +14,12 @@ import {
   submitCheckInScan,
   submitItemAction,
   undoLastCheckIn,
+  revokeAttendeeCheckIn,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeCardDto, CheckInHistoryEntry, CheckInScanResponse, OpsConfigDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
+import { isAdmin } from "../auth/capabilities.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { CHECKIN_DUPLICATE_DEBOUNCE_MS, normalizeScannedInput } from "../checkin/normalize.js";
 import { scanResultFromCard } from "../checkin/cardScanResult.js";
@@ -98,7 +100,8 @@ export function CheckInPage({
   const { eventId } = useParams();
   const [eventTimezone, setEventTimezone] = useState(eventTimezoneProp ?? "UTC");
   const [eventDate, setEventDate] = useState<string | null>(eventDateProp ?? null);
-  const { deviceLabel } = useAuth();
+  const { deviceLabel, assignments } = useAuth();
+  const canRevokeCheckIn = isAdmin(assignments);
   const { state: connectionState, reportApiError } = useConnectionState();
   const { addToast } = useToast();
   const canAct = canMutateCheckin(connectionState);
@@ -732,6 +735,25 @@ export function CheckInPage({
       }
     });
 
+  // Admin/superadmin only (canRevokeCheckIn) — reverses this attendee's
+  // admission regardless of who checked them in or when, unlike onUndo's
+  // device-scoped "last valid on this device" safety net. Deliberately does
+  // not catch: AttendeeCard's ConfirmDialog shows the error inline instead
+  // of a page-level toast, matching the repo's confirm-dialog convention.
+  const onRevokeCheckIn = (attendeeId: string) =>
+    runExclusive(async () => {
+      if (!eventId || !canAct) return;
+      setBusy(true);
+      try {
+        const { card: updated } = await revokeAttendeeCheckIn(eventId, attendeeId);
+        setCard(updated);
+        setScanResult(scanResultFromCard(updated));
+        void refreshSidebar();
+      } finally {
+        setBusy(false);
+      }
+    });
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     void submitScanOrLookup(buffer);
@@ -1000,6 +1022,9 @@ export function CheckInPage({
                   onUndo={() => void onUndo()}
                   showUndo={showUndo}
                   onCancel={resetScan}
+                  onRevokeCheckIn={
+                    canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined
+                  }
                 />
               )}
             </>
@@ -1028,6 +1053,9 @@ export function CheckInPage({
                   onUndo={() => void onUndo()}
                   showUndo={showUndo}
                   onCancel={resetScan}
+                  onRevokeCheckIn={
+                    canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined
+                  }
                 />
               ) : (
                 !scanResult && <CkEmptyState />
