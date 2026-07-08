@@ -211,13 +211,13 @@ export function RequirementsPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={2} className="attendees-empty">
+                    <td colSpan={3} className="attendees-empty">
                       Loading…
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
-                    <td colSpan={2} className="attendees-empty">
+                    <td colSpan={3} className="attendees-empty">
                       No items yet. Add one to configure what operators issue at check-in.
                     </td>
                   </tr>
@@ -231,10 +231,12 @@ export function RequirementsPage() {
                             <div className="requirements-item-name">{item.label}</div>
                             <div className="requirements-item-id">{item.key}</div>
                           </div>
-                          {item.description && (
-                            <div className="requirements-item-desc">{item.description}</div>
-                          )}
                         </div>
+                      </td>
+                      <td className="requirements-item-desc-col">
+                        {item.description && (
+                          <span className="requirements-item-desc">{item.description}</span>
+                        )}
                       </td>
                       <td className="requirements-item-actions">
                         <div className="requirements-item-actions__wrap">
