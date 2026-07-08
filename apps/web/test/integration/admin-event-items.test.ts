@@ -398,6 +398,26 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
     expect(row?.config).toMatchObject({ issue_on_checkin: false, requires_return: false });
   });
 
+  it("clears description when patched with an empty string", async () => {
+    const setRes = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ description: "Ankle socks, one size." }),
+    });
+    expect(setRes.status).toBe(200);
+    expect(((await setRes.json()) as { description: string | null }).description).toBe(
+      "Ankle socks, one size.",
+    );
+
+    const clearRes = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ description: "" }),
+    });
+    expect(clearRes.status).toBe(200);
+    expect(((await clearRes.json()) as { description: string | null }).description).toBeNull();
+  });
+
   it("returns 409 when disabling item with issued states", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_GIFTBAG}`, {
       method: "PATCH",
@@ -464,6 +484,40 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
       where: { event_id: EVENT_EI_A, action_type: "ops_config_updated" },
     });
     expect(after).toBe(before);
+
+    // Restore shared fixture state for tests declared later in this file.
+    await prisma.eventItem.update({ where: { id: badgeId }, data: { enabled: true } });
+    await prisma.event.update({
+      where: { id: EVENT_EI_A },
+      data: { ops_config: { badge_at_entry: true, require_confirm_on_scan: false } },
+    });
+  });
+
+  it("disabling the badge item when Issue badge at entry is already off skips the ops_config write", async () => {
+    const badgeId = await getBadgeItemId(EVENT_EI_A);
+    await prisma.event.update({
+      where: { id: EVENT_EI_A },
+      data: { ops_config: { badge_at_entry: false, require_confirm_on_scan: false } },
+    });
+
+    const before = await prisma.attendeeActionLog.count({
+      where: { event_id: EVENT_EI_A, action_type: "ops_config_updated" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${badgeId}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(res.status).toBe(200);
+
+    const after = await prisma.attendeeActionLog.count({
+      where: { event_id: EVENT_EI_A, action_type: "ops_config_updated" },
+    });
+    expect(after).toBe(before);
+
+    const event = await prisma.event.findUnique({ where: { id: EVENT_EI_A } });
+    expect((event?.ops_config as { badge_at_entry?: boolean } | null)?.badge_at_entry).toBe(false);
 
     // Restore shared fixture state for tests declared later in this file.
     await prisma.eventItem.update({ where: { id: badgeId }, data: { enabled: true } });
