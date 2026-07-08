@@ -92,14 +92,12 @@ export function RequirementsPage() {
   }, [load, reloadToken]);
 
   const badgeItem = items.find((i) => i.key === "badge");
-  const badgeWarning =
-    opsConfig?.badge_at_entry &&
-    (!badgeItem ||
-      !badgeItem.enabled ||
-      badgeItem.config?.issue_on_checkin === false);
-  // "Issue badge at entry" is a no-op without an active badge item — disable
-  // the toggle instead of letting operators turn on a setting that can't work.
-  const badgeInactive = !badgeItem || !badgeItem.enabled;
+  // "Issue badge at entry" is a no-op unless the badge item exists, is
+  // active, and has "Issue on check-in" enabled — disable the toggle in any
+  // of those cases instead of letting operators turn on a setting that
+  // can't work (single source of truth; no separate warning banner needed).
+  const badgeInactive =
+    !badgeItem || !badgeItem.enabled || badgeItem.config?.issue_on_checkin === false;
 
   async function handleToggleEnabled(item: EventItemDto) {
     if (!eventId) return;
@@ -167,7 +165,10 @@ export function RequirementsPage() {
     } catch (err) {
       setOpsConfig(prev);
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "badge_item_inactive")) {
-        addToast("Can't enable this — the badge item is disabled. Turn it back on first.", "warning");
+        addToast(
+          "Can't enable this — the badge item is disabled or has \"Issue on check-in\" turned off.",
+          "warning",
+        );
       } else {
         addToast(operatorApiErrorMessage(err, "Failed to save event behaviour."), "error");
       }
@@ -287,7 +288,7 @@ export function RequirementsPage() {
                   className={badgeInactive ? "at-tooltip" : undefined}
                   data-tooltip={
                     badgeInactive
-                      ? "Can't enable this — the badge item is disabled. Turn it back on first."
+                      ? "Can't enable this — the badge item is disabled or has \"Issue on check-in\" turned off."
                       : undefined
                   }
                 >
@@ -299,12 +300,6 @@ export function RequirementsPage() {
                   />
                 </span>
               </div>
-              {badgeWarning && (
-                <p className="requirements-warning">
-                  Badge at entry is on, but check-in will not auto-issue a badge — enable the
-                  badge item and turn on “Issue on check-in”.
-                </p>
-              )}
               <div className="requirements-behaviour-row">
                 <div className="requirements-behaviour-row__text">
                   <strong>Require confirmation on scan</strong>

@@ -549,15 +549,17 @@ export async function handlePatchEventOpsConfig(c: Context, db: PrismaClient): P
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  // "badge_at_entry" is a no-op without an active "badge" item — block
-  // turning it on from that mismatched state instead of accepting a setting
-  // that silently can't do anything (mirrors the frontend Switch disable).
+  // "badge_at_entry" is a no-op unless the "badge" item exists, is active,
+  // and has "Issue on check-in" enabled — block turning it on from any of
+  // those mismatched states instead of accepting a setting that silently
+  // can't do anything (mirrors the frontend Switch disable).
   if (parsed.data.badge_at_entry === true) {
     const badgeItem = await db.eventItem.findFirst({
       where: { event_id: eventId, key: "badge" },
-      select: { enabled: true },
+      select: { enabled: true, config: true },
     });
-    if (!badgeItem?.enabled) {
+    const badgeConfig = badgeItem?.config as { issue_on_checkin?: boolean } | null;
+    if (!badgeItem?.enabled || badgeConfig?.issue_on_checkin === false) {
       return c.json({ error: "badge_item_inactive" }, 409);
     }
   }

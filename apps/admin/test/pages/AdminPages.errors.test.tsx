@@ -380,6 +380,23 @@ describe("RequirementsPage operator errors", () => {
     );
   });
 
+  it("disables Issue badge at entry when the badge item has Issue on check-in off", async () => {
+    vi.mocked(fetchEventItems).mockResolvedValue([
+      { ...sampleItem, config: { issue_on_checkin: false } },
+    ]);
+    renderRequirements();
+    await waitFor(() => {
+      expect(screen.getByRole("switch", { name: "Issue badge at entry" })).toBeTruthy();
+    });
+    const toggle = screen.getByRole("switch", {
+      name: "Issue badge at entry",
+    }) as HTMLInputElement;
+    expect(toggle.disabled).toBe(true);
+    expect(toggle.closest(".at-tooltip")?.getAttribute("data-tooltip")).toMatch(
+      /Issue on check-in/,
+    );
+  });
+
   it("keeps Issue badge at entry enabled when the badge item is active", async () => {
     renderRequirements();
     await waitFor(() => {

@@ -157,12 +157,6 @@
   color: var(--text-muted);
 }
 
-.requirements-warning {
-  margin-top: var(--space-2);
-  font-size: var(--fs-sm);
-  color: var(--status-warn, #b45309);
-}
-
 .table .at-switch {
   white-space: nowrap;
 }

@@ -942,7 +942,45 @@ describe("ops-config", () => {
       },
     });
   });
+
+  it("PATCH rejects badge_at_entry:true while the badge item has issue_on_checkin off", async () => {
+    const badgeId = await getBadgeItemId(EVENT_EI_A);
+
+    const configRes = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${badgeId}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ config: { issue_on_checkin: false, requires_return: false } }),
+    });
+    expect(configRes.status).toBe(200);
+
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/ops-config`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ badge_at_entry: true }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("badge_item_inactive");
+
+    // Restore shared fixture state for tests declared later in this file.
+    await prisma.eventItem.update({
+      where: { id: badgeId },
+      data: { config: { issue_on_checkin: true, requires_return: false } },
+    });
+    await prisma.event.update({
+      where: { id: EVENT_EI_A },
+      data: {
+        ops_config: {
+          badge_at_entry: true,
+          require_confirm_on_scan: true,
+          allow_manual_lookup: false,
+          auto_advance_on_valid: false,
+        },
+      },
+    });
+  });
 });
+
 
 type OpsConfigBody = {
   badge_at_entry: boolean;
