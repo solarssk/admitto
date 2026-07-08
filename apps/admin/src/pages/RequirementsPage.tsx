@@ -208,12 +208,6 @@ export function RequirementsPage() {
         >
           <div className="attendees-table-wrap">
             <table className="table">
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th />
-                </tr>
-              </thead>
               <tbody>
                 {loading ? (
                   <tr>
@@ -233,27 +227,31 @@ export function RequirementsPage() {
                       <td>
                         <div className="requirements-item-cell">
                           <i className={`ti ti-${item.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
-                          <div>
-                            <div className="requirements-item-name">{item.label}</div>
-                            {item.description && (
-                              <div className="requirements-item-desc">{item.description}</div>
-                            )}
+                          <div className="requirements-item-info">
+                            <div className="requirements-item-name-row">
+                              <span className="requirements-item-name">{item.label}</span>
+                              {item.description && (
+                                <span className="requirements-item-desc">{item.description}</span>
+                              )}
+                            </div>
                             <div className="requirements-item-id">{item.key}</div>
                           </div>
                         </div>
                       </td>
                       <td className="requirements-item-actions">
-                        <Switch
-                          label={item.enabled ? "On" : "Off"}
-                          checked={item.enabled}
-                          onChange={() => void handleToggleEnabled(item)}
-                          aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
-                        />
-                        <IconButton
-                          label="Edit item"
-                          icon={<i className="ti ti-pencil" aria-hidden="true" />}
-                          onClick={() => setSelectedItem(item)}
-                        />
+                        <div className="requirements-item-actions__wrap">
+                          <Switch
+                            label={item.enabled ? "On" : "Off"}
+                            checked={item.enabled}
+                            onChange={() => void handleToggleEnabled(item)}
+                            aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
+                          />
+                          <IconButton
+                            label="Edit item"
+                            icon={<i className="ti ti-pencil" aria-hidden="true" />}
+                            onClick={() => setSelectedItem(item)}
+                          />
+                        </div>
                       </td>
                     </tr>
                   ))

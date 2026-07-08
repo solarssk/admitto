@@ -28,10 +28,21 @@
 .requirements-item-name {
   font-weight: 600;
   color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.requirements-item-info {
+  min-width: 0;
+}
+
+.requirements-item-name-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
 }
 
 .requirements-item-desc {
-  margin-top: 1px;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
@@ -46,8 +57,10 @@
 .requirements-item-actions {
   width: 1%;
   white-space: nowrap;
-  text-align: right;
   vertical-align: middle;
+}
+
+.requirements-item-actions__wrap {
   display: flex;
   align-items: center;
   gap: var(--space-1);
