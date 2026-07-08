@@ -193,6 +193,24 @@ describe("EventItemDrawer", () => {
     expect(updateEventItem).not.toHaveBeenCalled();
   });
 
+  it("clears the contents validation error once the user fills in the missing label", async () => {
+    renderDrawer(giftbagItem);
+    fireEvent.click(screen.getByRole("button", { name: "Add field hint" }));
+    fireEvent.change(screen.getByLabelText("Import key"), { target: { value: "shirt_size" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => {
+      expect(
+        screen.getByText("Each contents row needs both a label and a source field."),
+      ).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Shirt size" } });
+
+    expect(
+      screen.queryByText("Each contents row needs both a label and a source field."),
+    ).toBeNull();
+  });
+
   it("edits details, icon, and a full contents row, then saves the assembled payload", async () => {
     vi.mocked(updateEventItem).mockResolvedValueOnce(giftbagItem);
     renderDrawer(giftbagItem);

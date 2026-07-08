@@ -170,6 +170,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
   }
 
   function updateContent(index: number, field: "label" | "source_field", value: string) {
+    setContentsError(null);
     setForm((f) => {
       const contents = [...f.contents];
       const row = { ...contents[index], [field]: value };
@@ -190,6 +191,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
     field: "type" | "required" | "options",
     value: string | boolean,
   ) {
+    setContentsError(null);
     setForm((f) => {
       const contents = [...f.contents];
       const row = { ...contents[index], [field]: value };
@@ -267,7 +269,11 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                 Display an attendee data field (e.g. shirt size) next to this item at check-in — useful
                 when the item varies per person.
               </p>
-              {contentsError && <p className="text-error">{contentsError}</p>}
+              {contentsError && (
+                <p id="contents-error" className="text-error" role="alert">
+                  {contentsError}
+                </p>
+              )}
               <div className="requirements-field-stack">
                 {form.contents.map((row, i) => (
                   <div key={i} className="requirements-contents-row">
@@ -289,12 +295,13 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                             label="Remove row"
                             type="button"
                             size="sm"
-                            onClick={() =>
+                            onClick={() => {
+                              setContentsError(null);
                               setForm((f) => ({
                                 ...f,
                                 contents: f.contents.filter((_, j) => j !== i),
-                              }))
-                            }
+                              }));
+                            }}
                             icon={<i className="ti ti-trash" />}
                           />
                         </div>
@@ -375,12 +382,13 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                   variant="secondary"
                   size="sm"
                   icon={<i className="ti ti-plus" />}
-                  onClick={() =>
+                  onClick={() => {
+                    setContentsError(null);
                     setForm((f) => ({
                       ...f,
                       contents: [...f.contents, emptyContentRow()],
-                    }))
-                  }
+                    }));
+                  }}
                 >
                   Add field hint
                 </Button>

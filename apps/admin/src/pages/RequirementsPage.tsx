@@ -9,10 +9,12 @@ import {
   updateEventItem,
   updateOpsConfig,
 } from "../api/client.js";
+import { isBadgeItemUsable } from "@admitto/tickets";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventItemDto, OpsConfigDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { useInFlightIds } from "../hooks/useInFlightIds.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
 import { DEFAULT_EVENT_ITEM_ICON } from "../requirements/IconPicker.js";
 import { slugifyItemKey, uniqueItemKey } from "../requirements/itemKey.js";
@@ -42,7 +44,7 @@ export function RequirementsPage() {
   const addKeyPreview = uniqueItemKey(addLabel, items.map((i) => i.key));
 
   const [opsSaving, setOpsSaving] = useState(false);
-  const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
+  const { ids: togglingIds, start: startToggling, finish: finishToggling } = useInFlightIds();
 
   function closeAddModal() {
     setAddOpen(false);
@@ -108,12 +110,11 @@ export function RequirementsPage() {
   // active, and has "Issue on check-in" enabled — disable the toggle in any
   // of those cases instead of letting operators turn on a setting that
   // can't work (single source of truth; no separate warning banner needed).
-  const badgeInactive =
-    !badgeItem || !badgeItem.enabled || badgeItem.config?.issue_on_checkin === false;
+  const badgeInactive = !badgeItem || !isBadgeItemUsable(badgeItem.enabled, badgeItem.config);
 
   async function handleToggleEnabled(item: EventItemDto) {
     if (!eventId || togglingIds.has(item.id)) return;
-    setTogglingIds((prev) => new Set(prev).add(item.id));
+    startToggling(item.id);
     try {
       const updated = await updateEventItem(eventId, item.id, { enabled: !item.enabled });
       setItems((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
@@ -133,11 +134,7 @@ export function RequirementsPage() {
         addToast(operatorApiErrorMessage(err, "Failed to update item."), "error");
       }
     } finally {
-      setTogglingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(item.id);
-        return next;
-      });
+      finishToggling(item.id);
     }
   }
 
@@ -433,16 +430,25 @@ export function RequirementsPage() {
                   className="at-input"
                   type="text"
                   value={addLabel}
-                  onChange={(e) => setAddLabel(e.target.value)}
+                  onChange={(e) => {
+                    setAddLabel(e.target.value);
+                    setAddNameError(null);
+                  }}
                   placeholder="Gift bag"
                   required
                   autoFocus
+                  aria-invalid={addNameError ? true : undefined}
+                  aria-describedby={addNameError ? "add-item-name-error" : undefined}
                 />
                 <span className="at-hint">
                   The name shown to staff during check-in. Keep it short and clear — e.g. "Gift
                   bag", "Name badge", "T-shirt".
                 </span>
-                {addNameError && <p className="text-error">{addNameError}</p>}
+                {addNameError && (
+                  <p id="add-item-name-error" className="text-error" role="alert">
+                    {addNameError}
+                  </p>
+                )}
               </div>
             </form>
             <div className="event-item-modal__footer">

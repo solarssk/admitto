@@ -9,6 +9,7 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto, IdentityProviderListItem } from "../api/types.js";
+import { useInFlightIds } from "../hooks/useInFlightIds.js";
 import { IDENTITY_CLOUDFLARE_ROUTE } from "./routes.js";
 
 type LoadState = "loading" | "ready" | "error";
@@ -82,11 +83,10 @@ export function IdentityProvidersPanel() {
   const [cf, setCf] = useState<CfAccessSummaryDto | null>(null);
   const [providersState, setProvidersState] = useState<LoadState>("loading");
   const [cfState, setCfState] = useState<LoadState>("loading");
-  // Set of provider ids with an in-flight toggle. A Set (not a single scalar) so
-  // toggling two different providers back-to-back doesn't re-enable the first
-  // row's Switch while its request is still pending, and the finally only clears
-  // the matching id.
-  const [togglingIds, setTogglingIds] = useState<ReadonlySet<string>>(new Set());
+  // Ids with an in-flight toggle, so toggling two different providers
+  // back-to-back doesn't re-enable the first row's Switch while its request
+  // is still pending.
+  const { ids: togglingIds, start: startToggling, finish: finishToggling } = useInFlightIds();
   // Retry ticks drive the load effects (mount + Retry button). Each effect owns its
   // AbortController and aborts on cleanup, so a React StrictMode remount and a Retry
   // both re-fetch cleanly without leaking in-flight requests or getting stuck on a
@@ -147,7 +147,7 @@ export function IdentityProvidersPanel() {
       setProviders((prev) =>
         prev.map((row) => (row.id === provider.id ? { ...row, enabled: next } : row)),
       );
-      setTogglingIds((prev) => new Set(prev).add(provider.id));
+      startToggling(provider.id);
       try {
         const result = await toggleIdentityProvider(provider.id);
         setProviders((prev) =>
@@ -165,14 +165,10 @@ export function IdentityProvidersPanel() {
         const message = operatorApiErrorMessage(err, "Failed to toggle provider");
         addToast(message, "error");
       } finally {
-        setTogglingIds((prev) => {
-          const nextSet = new Set(prev);
-          nextSet.delete(provider.id);
-          return nextSet;
-        });
+        finishToggling(provider.id);
       }
     },
-    [addToast, retryProviders],
+    [addToast, retryProviders, startToggling, finishToggling],
   );
 
   return (

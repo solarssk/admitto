@@ -136,6 +136,24 @@ describe("RequirementsPage — Add item and Edit item", () => {
     expect(createEventItem).not.toHaveBeenCalled();
   });
 
+  it("clears the Add item name error once the user edits the input", async () => {
+    fetchEventItems.mockResolvedValue([]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    const input = screen.getByLabelText("Item name");
+    fireEvent.change(input, { target: { value: "!!!" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    await waitFor(() => {
+      expect(screen.getByText("Enter a name using letters or numbers.")).toBeTruthy();
+    });
+
+    fireEvent.change(input, { target: { value: "Gift bag" } });
+
+    expect(screen.queryByText("Enter a name using letters or numbers.")).toBeNull();
+  });
+
   it("shows a warning toast when creating an item whose name already exists", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventItems.mockResolvedValue([]);
