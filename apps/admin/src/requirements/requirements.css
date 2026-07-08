@@ -37,9 +37,11 @@
 .requirements-item-desc-col {
   width: 35%;
   max-width: 320px;
+  overflow: hidden;
 }
 
 .requirements-item-desc {
+  display: block;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -212,10 +214,18 @@
   font-size: 1.1rem;
 }
 
-.contents-row__header {
+.contents-row__label-line {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
+}
+
+.contents-row__label-line-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
 }
 
 .contents-row__key-row {
@@ -292,8 +302,6 @@
   font-size: var(--fs-sm);
   color: var(--text-secondary);
   white-space: nowrap;
-  align-self: flex-end;
-  padding-bottom: calc((var(--control-h, 2rem) - 1em) / 2);
   cursor: pointer;
 }
 

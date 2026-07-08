@@ -259,39 +259,39 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
               <div className="requirements-field-stack">
                 {form.contents.map((row, i) => (
                   <div key={i} className="requirements-contents-row">
-                    <div className="contents-row__header">
-                      <div className="at-field" style={{ flex: 1 }}>
-                        <label className="at-label" htmlFor={`hint-label-${i}`}>
-                          Display label
+                    <div className="contents-row__label-line">
+                      <label className="at-label" htmlFor={`hint-label-${i}`}>
+                        Display label
+                      </label>
+                      <div className="contents-row__label-line-actions">
+                        <label className="contents-row__required">
+                          <input
+                            type="checkbox"
+                            checked={row.required}
+                            onChange={(e) => updateContentMeta(i, "required", e.target.checked)}
+                          />
+                          Required
                         </label>
-                        <input
-                          id={`hint-label-${i}`}
-                          className="at-input"
-                          value={row.label}
-                          onChange={(e) => updateContent(i, "label", e.target.value)}
-                          placeholder="Shirt size"
+                        <IconButton
+                          label="Remove row"
+                          type="button"
+                          onClick={() =>
+                            setForm((f) => ({
+                              ...f,
+                              contents: f.contents.filter((_, j) => j !== i),
+                            }))
+                          }
+                          icon={<i className="ti ti-trash" />}
                         />
                       </div>
-                      <label className="contents-row__required">
-                        <input
-                          type="checkbox"
-                          checked={row.required}
-                          onChange={(e) => updateContentMeta(i, "required", e.target.checked)}
-                        />
-                        Required
-                      </label>
-                      <IconButton
-                        label="Remove row"
-                        type="button"
-                        onClick={() =>
-                          setForm((f) => ({
-                            ...f,
-                            contents: f.contents.filter((_, j) => j !== i),
-                          }))
-                        }
-                        icon={<i className="ti ti-trash" />}
-                      />
                     </div>
+                    <input
+                      id={`hint-label-${i}`}
+                      className="at-input"
+                      value={row.label}
+                      onChange={(e) => updateContent(i, "label", e.target.value)}
+                      placeholder="Shirt size"
+                    />
 
                     <div className="contents-row__key-row">
                       <div className="at-field" style={{ flex: 1 }}>
