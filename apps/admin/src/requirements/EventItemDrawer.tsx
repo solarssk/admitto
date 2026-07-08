@@ -334,21 +334,9 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                           id={`hint-opts-${i}`}
                           className="at-textarea"
                           rows={3}
-                          value={row.options
-                            .split(",")
-                            .map((s) => s.trim())
-                            .filter(Boolean)
-                            .join("\n")}
+                          value={row.options}
                           onChange={(e) =>
-                            updateContentMeta(
-                              i,
-                              "options",
-                              e.target.value
-                                .split("\n")
-                                .map((s) => s.trim())
-                                .filter(Boolean)
-                                .join(","),
-                            )
+                            updateContentMeta(i, "options", e.target.value)
                           }
                           placeholder={"XL\nL\nM\nS"}
                           aria-label="Select options"
