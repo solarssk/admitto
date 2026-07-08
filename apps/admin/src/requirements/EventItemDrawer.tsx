@@ -28,6 +28,7 @@ export interface EventItemDrawerProps {
 
 type FormState = {
   label: string;
+  description: string;
   enabled: boolean;
   requires_return: boolean;
   issue_on_checkin: boolean;
@@ -60,6 +61,7 @@ function toForm(item: EventItemDto): FormState {
   const cfg = item.config ?? null;
   return {
     label: item.label,
+    description: item.description ?? "",
     enabled: item.enabled,
     requires_return: cfg?.requires_return ?? false,
     // Match check-in runtime: only explicit false disables auto-issue.
@@ -115,6 +117,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
     try {
       await updateEventItem(eventId, item.id, {
         label: form.label.trim(),
+        description: form.description.trim() || null,
         enabled: form.enabled,
         icon: form.icon,
         config: toConfig(form, item.key, contentsResult.contents),
@@ -215,6 +218,12 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                   value={form.label}
                   onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
                   required
+                />
+                <Input
+                  label="Description (shown to operators)"
+                  value={form.description}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  placeholder="Physical package distributed at the door."
                 />
                 <div className="requirements-toggle-row">
                   <div className="requirements-toggle-row__text">

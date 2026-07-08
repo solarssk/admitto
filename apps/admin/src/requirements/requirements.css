@@ -30,6 +30,17 @@
   color: var(--text-primary);
 }
 
+.requirements-item-desc {
+  margin-top: 1px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.requirements-item-desc--empty {
+  color: var(--text-disabled);
+  font-style: italic;
+}
+
 .requirements-item-id {
   margin-top: 2px;
   font-family: var(--font-mono, ui-monospace, monospace);

@@ -250,6 +250,11 @@ export function RequirementsPage() {
                           <i className={`ti ti-${item.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
                           <div>
                             <div className="requirements-item-name">{item.label}</div>
+                            {item.description ? (
+                              <div className="requirements-item-desc">{item.description}</div>
+                            ) : (
+                              <div className="requirements-item-desc requirements-item-desc--empty">No description</div>
+                            )}
                             <div className="requirements-item-id">{item.key}</div>
                           </div>
                         </div>

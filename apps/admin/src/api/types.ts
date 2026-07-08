@@ -311,6 +311,7 @@ export interface EventItemDto {
   id: string;
   key: string;
   label: string;
+  description: string | null;
   type: string;
   enabled: boolean;
   icon: string | null;
@@ -324,12 +325,14 @@ export interface EventItemsListResponse {
 export interface CreateEventItemBody {
   key: string;
   label: string;
+  description?: string;
   icon?: string;
   config?: EventItemConfigDto;
 }
 
 export interface UpdateEventItemPatch {
   label?: string;
+  description?: string | null;
   enabled?: boolean;
   icon?: string | null;
   config?: EventItemConfigDto;

@@ -220,6 +220,7 @@ model EventItem {
   event      Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
   key        String
   label      String
+  description String?
   type       String   @default("item")
   enabled    Boolean  @default(true)
   icon       String?  @db.VarChar(64)

@@ -73,6 +73,7 @@ const createEventItemSchema = z
   .object({
     key: slugField.min(1).max(60),
     label: z.string().trim().min(1).max(100),
+    description: z.string().trim().max(500).optional().transform((v) => v || null),
     icon: iconNameSchema.optional().transform((icon) => normalizeEventItemIconForStorage(icon)),
     config: eventItemConfigSchema.optional(),
   })
@@ -81,6 +82,10 @@ const createEventItemSchema = z
 const patchEventItemSchema = z
   .object({
     label: z.string().trim().min(1).max(100).optional(),
+    description: z
+      .union([z.string().trim().max(500), z.null()])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v || null)),
     enabled: z.boolean().optional(),
     icon: z
       .union([iconNameSchema, z.literal(""), z.null()])
@@ -108,6 +113,7 @@ export type EventItemDto = {
   id: string;
   key: string;
   label: string;
+  description: string | null;
   type: string;
   enabled: boolean;
   icon: string | null;
@@ -168,6 +174,7 @@ function serializeEventItem(row: {
   id: string;
   key: string;
   label: string;
+  description: string | null;
   type: string;
   enabled: boolean;
   icon: string | null;
@@ -177,6 +184,7 @@ function serializeEventItem(row: {
     id: row.id,
     key: row.key,
     label: row.label,
+    description: row.description ?? null,
     type: row.type,
     enabled: row.enabled,
     icon: row.icon ?? null,
@@ -200,6 +208,7 @@ async function loadEventItemInEvent(db: PrismaClient, eventId: string, itemId: s
       event_id: true,
       key: true,
       label: true,
+      description: true,
       type: true,
       enabled: true,
       icon: true,
@@ -239,6 +248,7 @@ export async function handleListEventItems(c: Context, db: PrismaClient): Promis
       id: true,
       key: true,
       label: true,
+      description: true,
       type: true,
       enabled: true,
       icon: true,
@@ -277,6 +287,7 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
           event_id: eventId,
           key: parsed.data.key,
           label: parsed.data.label,
+          description: parsed.data.description ?? null,
           type: "item",
           enabled: true,
           icon: normalizeEventItemIconForStorage(parsed.data.icon) ?? null,
@@ -286,6 +297,7 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
           id: true,
           key: true,
           label: true,
+          description: true,
           type: true,
           enabled: true,
           icon: true,
@@ -347,6 +359,13 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
     data.label = parsed.data.label;
     fields.push("label");
   }
+  if (
+    parsed.data.description !== undefined &&
+    parsed.data.description !== existing.description
+  ) {
+    data.description = parsed.data.description;
+    fields.push("description");
+  }
   if (parsed.data.enabled !== undefined && parsed.data.enabled !== existing.enabled) {
     data.enabled = parsed.data.enabled;
     fields.push("enabled");
@@ -380,6 +399,7 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
           id: true,
           key: true,
           label: true,
+          description: true,
           type: true,
           enabled: true,
           icon: true,
