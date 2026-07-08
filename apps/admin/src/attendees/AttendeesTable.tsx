@@ -3,11 +3,15 @@ import type { AttendeeRowDto, RsvpStatus } from "../api/types.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { RsvpStatusBadge } from "./rsvpStatusBadge.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
-import { formatEventTime } from "../utils/event-dates.js";
+import { formatAdmissionDisplay } from "../utils/event-dates.js";
 
-function formatCheckInTime(admittedAt: string | null, eventTimezone: string): string {
+function formatCheckInTime(
+  admittedAt: string | null,
+  eventDate: string | null,
+  eventTimezone: string,
+): string {
   if (!admittedAt) return "—";
-  return formatEventTime(admittedAt, eventTimezone);
+  return formatAdmissionDisplay(admittedAt, eventDate, eventTimezone);
 }
 
 export interface AttendeesTableProps {
@@ -32,6 +36,7 @@ export interface AttendeesTableProps {
   passActionBusyIds?: ReadonlySet<string>;
   onPageChange: (page: number) => void;
   eventTimezone: string;
+  eventDate: string | null;
 }
 
 export function AttendeesTable({
@@ -56,6 +61,7 @@ export function AttendeesTable({
   passActionBusyIds = new Set(),
   onPageChange,
   eventTimezone,
+  eventDate,
 }: AttendeesTableProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -176,7 +182,7 @@ export function AttendeesTable({
                   </td>
                   <td>
                     {row.admitted_at ? (
-                      <span className="attendees-table-v2__checkin">✓ {formatCheckInTime(row.admitted_at, eventTimezone)}</span>
+                      <span className="attendees-table-v2__checkin">✓ {formatCheckInTime(row.admitted_at, eventDate, eventTimezone)}</span>
                     ) : (
                       <span className="attendee-readonly">—</span>
                     )}

@@ -10,19 +10,15 @@ import {
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventReportsResponse } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { formatEventCalendarDate, formatEventDateTime, formatEventTime } from "../utils/event-dates.js";
+import {
+  calendarDateInZone,
+  formatEventCalendarDate,
+  formatEventDateTime,
+  formatEventTime,
+} from "../utils/event-dates.js";
 import "./reports-page.css";
 
 const LOG_PAGE_SIZE = 50;
-
-function calendarDateInZone(iso: string, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(iso));
-}
 
 function admissionLogSpansMultipleDates(
   log: EventReportsResponse["admission_log"],

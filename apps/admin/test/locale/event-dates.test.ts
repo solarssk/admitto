@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  calendarDateInZone,
+  formatAdmissionDisplay,
   formatEventDate,
   formatEventDateTime,
   formatEventTime,
@@ -177,5 +179,47 @@ describe("calendarDateValidationHint", () => {
   it("keeps ISO hint for day-first and month-first patterns", () => {
     expect(calendarDateValidationHint("dd.mm.yyyy")).toBe("dd.mm.yyyy or yyyy-mm-dd");
     expect(calendarDateValidationHint("mm/dd/yyyy")).toBe("mm/dd/yyyy or yyyy-mm-dd");
+  });
+});
+
+describe("calendarDateInZone", () => {
+  it("returns the calendar day in the given timezone", () => {
+    // 23:30 UTC on 31 Jul is already 1 Aug in Warsaw (UTC+2 in summer).
+    expect(calendarDateInZone("2026-07-31T23:30:00.000Z", "Europe/Warsaw")).toBe("2026-08-01");
+    expect(calendarDateInZone("2026-07-31T23:30:00.000Z", "UTC")).toBe("2026-07-31");
+  });
+});
+
+describe("formatAdmissionDisplay (#359)", () => {
+  afterEach(() => setPreferredLocale(null));
+
+  // Event.date is date-only stored as UTC noon.
+  const EVENT_DATE = "2026-07-31T12:00:00.000Z";
+
+  it("shows time only when admission is on the event calendar day", () => {
+    setPreferredLocale("en-GB");
+    const out = formatAdmissionDisplay("2026-07-31T07:44:00.000Z", EVENT_DATE, "Europe/Warsaw");
+    expect(out).toMatch(/09:44/);
+    expect(out).not.toMatch(/Jul|31/);
+  });
+
+  it("shows date and time for a test scan weeks before the event", () => {
+    setPreferredLocale("en-GB");
+    const out = formatAdmissionDisplay("2026-07-07T07:44:00.000Z", EVENT_DATE, "Europe/Warsaw");
+    expect(out).toMatch(/07 Jul 2026/);
+    expect(out).toMatch(/09:44/);
+  });
+
+  it("compares in the event timezone across midnight", () => {
+    setPreferredLocale("en-GB");
+    // 22:30 UTC on 30 Jul is 00:30 on 31 Jul in Warsaw — the event day.
+    const out = formatAdmissionDisplay("2026-07-30T22:30:00.000Z", EVENT_DATE, "Europe/Warsaw");
+    expect(out).not.toMatch(/Jul/);
+  });
+
+  it("falls back to date and time when the event date is unknown", () => {
+    setPreferredLocale("en-GB");
+    const out = formatAdmissionDisplay("2026-07-31T07:44:00.000Z", null, "Europe/Warsaw");
+    expect(out).toMatch(/31 Jul 2026/);
   });
 });

@@ -494,6 +494,7 @@ export function AttendeesPage() {
         passActionBusyIds={passActionBusyIds}
         onPageChange={setPage}
         eventTimezone={event.timezone}
+        eventDate={event.date}
       />
       )}
 
