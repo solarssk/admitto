@@ -175,7 +175,9 @@ describe("GET /api/admin/events/:eventId/items", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: { key: string; icon: string | null; config: unknown }[] };
-    expect(body.items.map((i) => i.key).sort()).toEqual(["giftbag", "socks"]);
+    // "badge" is auto-backfilled for legacy events missing it (see event-items.ts),
+    // alongside the fixture-seeded "giftbag" and "socks".
+    expect(body.items.map((i) => i.key).sort()).toEqual(["badge", "giftbag", "socks"]);
     const giftbag = body.items.find((i) => i.key === "giftbag");
     expect(giftbag?.icon).toBeNull();
     expect(giftbag?.config).toEqual({

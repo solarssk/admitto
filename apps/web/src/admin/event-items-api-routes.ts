@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import {
+  ensureBadgeEventItem,
   parseEventOpsConfig,
   resolveEventItemContents,
   writeBulkActionLog,
@@ -240,6 +241,10 @@ export async function handleListEventItems(c: Context, db: PrismaClient): Promis
 
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
+
+  // Self-heal legacy events missing the "badge" item (see event-items.ts) so
+  // Requirements shows it immediately, not only after the event's first check-in.
+  await ensureBadgeEventItem(eventId, db);
 
   const rows = await db.eventItem.findMany({
     where: { event_id: eventId },
