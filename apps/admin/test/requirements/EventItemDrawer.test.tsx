@@ -90,14 +90,16 @@ describe("EventItemDrawer", () => {
     renderDrawer(badgeWithNullConfig);
     const deleteButton = screen.getByRole("button", { name: "Delete item" }) as HTMLButtonElement;
     expect(deleteButton.disabled).toBe(true);
-    expect(deleteButton.getAttribute("data-tooltip")).toMatch(/Default item/);
+    expect(deleteButton.closest(".at-tooltip")?.getAttribute("data-tooltip")).toMatch(
+      /Default item/,
+    );
   });
 
   it("keeps delete enabled for non-default items", () => {
     renderDrawer(giftbagItem);
     const deleteButton = screen.getByRole("button", { name: "Delete item" }) as HTMLButtonElement;
     expect(deleteButton.disabled).toBe(false);
-    expect(deleteButton.getAttribute("data-tooltip")).toBeNull();
+    expect(deleteButton.closest(".at-tooltip")).toBeNull();
   });
 
   it("fires toast when delete returns default_item", async () => {

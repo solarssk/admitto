@@ -424,20 +424,27 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
             <Button type="submit" form="item-edit-form" variant="primary" disabled={saving}>
               {saving ? "Saving…" : "Save changes"}
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={deleting || isDefaultItem}
+            {/* Tooltip wraps the button rather than living on it directly: a
+                disabled button gets opacity:0.5 from .at-btn:disabled, which
+                would otherwise wash out the tooltip's own dark background
+                since it's rendered as that button's ::after pseudo-element. */}
+            <span
               className={isDefaultItem ? "at-tooltip" : undefined}
               data-tooltip={
                 isDefaultItem
                   ? "Default item — required for \u201cIssue badge at entry\u201d. Turn off Active instead."
                   : undefined
               }
-              onClick={() => setDeleteConfirmOpen(true)}
             >
-              Delete item
-            </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={deleting || isDefaultItem}
+                onClick={() => setDeleteConfirmOpen(true)}
+              >
+                Delete item
+              </Button>
+            </span>
           </div>
         </div>
       </div>
