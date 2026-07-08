@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db";
 import { parseCustomData } from "./custom-data.js";
 import { buildItemDetail } from "./event-item-contents.js";
 import { ensureAttendeeItemStates, operatorItemActions } from "./item-states.js";
@@ -38,6 +39,7 @@ export async function lookupAttendees(
     company: true,
     department: true,
     admitted_at: true,
+    status: true,
   } as const;
 
   const [columnRows, jsonMatches] = await Promise.all([
@@ -89,7 +91,14 @@ export async function lookupAttendees(
       ticket_type: row.ticket_type,
       company,
       department,
-      check_in_status: row.admitted_at ? ("admitted" as const) : ("not_admitted" as const),
+      // Revoked/cancelled passes never read as "admitted" here even with a
+      // stale admitted_at — a stale-green "checked in" hint in the typeahead
+      // would contradict the red Revoked card the operator sees on select
+      // (scanResultFromCard gives warnings precedence over admitted_at).
+      check_in_status:
+        row.admitted_at && !(CAPACITY_EXCLUDED_STATUSES as readonly string[]).includes(row.status)
+          ? ("admitted" as const)
+          : ("not_admitted" as const),
     };
   });
 }
@@ -178,13 +187,19 @@ export async function getAttendeeCard(
   };
 }
 
+/**
+ * Door stats over ACTIVE attendees only (#380): revoked/cancelled don't consume
+ * capacity and aren't expected at the door, so they're excluded from both
+ * counts — same denominator as the Overview KPI (countActiveAttendees).
+ */
 export async function getCheckInStats(
   eventId: string,
   prisma: PrismaClient,
 ): Promise<{ admitted_count: number; total_count: number }> {
+  const activeWhere = { event_id: eventId, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } };
   const [admitted_count, total_count] = await Promise.all([
-    prisma.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
-    prisma.attendee.count({ where: { event_id: eventId } }),
+    prisma.attendee.count({ where: { ...activeWhere, admitted_at: { not: null } } }),
+    prisma.attendee.count({ where: activeWhere }),
   ]);
   return { admitted_count, total_count };
 }

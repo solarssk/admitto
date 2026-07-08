@@ -8,7 +8,7 @@ import { undoLastCheckIn as undoFn } from "../src/undo.js";
 import { transitionItemState, ensureAttendeeItemStates, operatorItemActions } from "../src/item-states.js";
 import { addAttendeeNote, NoteTooLongError, OperatorRequiredError } from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
-import { getAttendeeCard, lookupAttendees } from "../src/attendee-card.js";
+import { getAttendeeCard, getCheckInStats, lookupAttendees } from "../src/attendee-card.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -305,5 +305,82 @@ describe("transitionItemState", () => {
         prisma,
       ),
     ).rejects.toThrow(/Return is not enabled/);
+  });
+});
+
+describe("getCheckInStats — active attendees only (#380)", () => {
+  const STATS_EVENT = "test-event-stats-380";
+
+  beforeAll(async () => {
+    await prisma.event.create({
+      data: {
+        id: STATS_EVENT,
+        title: "Stats Event",
+        slug: "stats-event",
+        date: new Date("2026-09-02T09:00:00Z"),
+        organization_id: "org_ops",
+      },
+    });
+    const admitted = new Date("2026-09-02T10:00:00Z");
+    await prisma.attendee.createMany({
+      data: [
+        { event_id: STATS_EVENT, email: "s1@example.com", name: "Reg", token_hash: hashToken(generateToken()) },
+        { event_id: STATS_EVENT, email: "s2@example.com", name: "Reg admitted", token_hash: hashToken(generateToken()), admitted_at: admitted },
+        { event_id: STATS_EVENT, email: "s3@example.com", name: "Confirmed", status: "confirmed", token_hash: hashToken(generateToken()) },
+        { event_id: STATS_EVENT, email: "s4@example.com", name: "Revoked", status: "revoked", token_hash: hashToken(generateToken()) },
+        { event_id: STATS_EVENT, email: "s5@example.com", name: "Revoked after admit", status: "revoked", token_hash: hashToken(generateToken()), admitted_at: admitted },
+        { event_id: STATS_EVENT, email: "s6@example.com", name: "Cancelled", status: "cancelled", token_hash: hashToken(generateToken()) },
+      ],
+    });
+  });
+
+  it("excludes revoked and cancelled from both counts", async () => {
+    const stats = await getCheckInStats(STATS_EVENT, prisma);
+    // Active: Reg, Reg admitted, Confirmed. Admitted among active: Reg admitted.
+    expect(stats.total_count).toBe(3);
+    expect(stats.admitted_count).toBe(1);
+  });
+});
+
+describe("lookupAttendees — revoked pass with stale admitted_at (Bugbot #448)", () => {
+  const LOOKUP_STATUS_EVENT = "test-event-lookup-status-448";
+
+  beforeAll(async () => {
+    await prisma.event.create({
+      data: {
+        id: LOOKUP_STATUS_EVENT,
+        title: "Lookup Status Event",
+        slug: "lookup-status-event",
+        date: new Date("2026-09-03T09:00:00Z"),
+        organization_id: "org_ops",
+      },
+    });
+    await prisma.attendee.createMany({
+      data: [
+        {
+          event_id: LOOKUP_STATUS_EVENT,
+          email: "revoked-lookup@example.com",
+          name: "Revoked Lookup Guest",
+          status: "revoked",
+          admitted_at: new Date("2026-09-03T10:00:00Z"),
+          token_hash: hashToken(generateToken()),
+        },
+        {
+          event_id: LOOKUP_STATUS_EVENT,
+          email: "active-lookup@example.com",
+          name: "Active Lookup Guest",
+          admitted_at: new Date("2026-09-03T10:00:00Z"),
+          token_hash: hashToken(generateToken()),
+        },
+      ],
+    });
+  });
+
+  it("does not report a revoked attendee as admitted despite a set admitted_at", async () => {
+    const results = await lookupAttendees(LOOKUP_STATUS_EVENT, "Lookup Guest", prisma);
+    const revoked = results.find((r) => r.name === "Revoked Lookup Guest");
+    const active = results.find((r) => r.name === "Active Lookup Guest");
+    expect(revoked?.check_in_status).toBe("not_admitted");
+    expect(active?.check_in_status).toBe("admitted");
   });
 });

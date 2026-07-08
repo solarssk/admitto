@@ -1,5 +1,5 @@
 import type { CheckInHistoryEntry } from "../api/types.js";
-import { formatEventTime } from "../utils/event-dates.js";
+import { formatAdmissionDisplay } from "../utils/event-dates.js";
 
 function statusLabel(status: string): string {
   const normalized = status.toLowerCase();
@@ -21,11 +21,18 @@ function dotClass(status: string): string {
 type CkRecentScansProps = {
   history: CheckInHistoryEntry[];
   eventTimezone: string;
+  eventDate?: string | null;
   compact?: boolean;
   limit?: number;
 };
 
-export function CkRecentScans({ history, eventTimezone, compact = false, limit }: CkRecentScansProps) {
+export function CkRecentScans({
+  history,
+  eventTimezone,
+  eventDate = null,
+  compact = false,
+  limit,
+}: CkRecentScansProps) {
   const rows = limit != null ? history.slice(0, limit) : history;
   const count = history.length;
 
@@ -40,17 +47,18 @@ export function CkRecentScans({ history, eventTimezone, compact = false, limit }
       ) : (
         <ul className="ck-recent__list">
           {rows.map((row) => (
+            // Mockup ci-row: dot | info (name + ticket, left) | right (status + time).
             <li key={row.id} className="ck-recent__row">
               <span className={`rec-dot ${dotClass(row.status)}`} aria-hidden="true" />
-              <div className="ck-recent__body">
-                <div className="ck-recent__line">
-                  <strong>{row.attendee.name}</strong>
-                  <span className="ck-recent__status">{statusLabel(row.status)}</span>
-                  <time>{formatEventTime(row.checked_in_at, eventTimezone)}</time>
-                </div>
+              <div className="ck-recent__info">
+                <strong className="ck-recent__name">{row.attendee.name}</strong>
                 {row.attendee.ticket_type && (
                   <span className="ck-recent__ticket">{row.attendee.ticket_type}</span>
                 )}
+              </div>
+              <div className="ck-recent__right">
+                <span className="ck-recent__status">{statusLabel(row.status)}</span>
+                <time>{formatAdmissionDisplay(row.checked_in_at, eventDate, eventTimezone)}</time>
               </div>
             </li>
           ))}

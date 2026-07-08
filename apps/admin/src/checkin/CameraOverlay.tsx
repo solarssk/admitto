@@ -14,6 +14,7 @@ type CameraOverlayProps = {
   open: boolean;
   eventTitle: string;
   eventTimezone: string;
+  eventDate?: string | null;
   admittedCount: number;
   history: CheckInHistoryEntry[];
   wedgeActive: boolean;
@@ -34,6 +35,7 @@ export function CameraOverlay({
   open,
   eventTitle,
   eventTimezone,
+  eventDate = null,
   admittedCount,
   history,
   wedgeActive,
@@ -139,7 +141,13 @@ export function CameraOverlay({
         </div>
 
         <aside className="ck-overlay__aside">
-          <CkRecentScans history={history} eventTimezone={eventTimezone} compact limit={6} />
+          <CkRecentScans
+            history={history}
+            eventTimezone={eventTimezone}
+            eventDate={eventDate}
+            compact
+            limit={6}
+          />
         </aside>
       </div>
 
