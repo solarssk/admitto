@@ -16,6 +16,7 @@ import {
   todayIsoDate,
 } from "../utils/event-dates.js";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
+import { useClickOutside } from "./useClickOutside.js";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -139,16 +140,7 @@ export function DatePicker({
     cell?.focus();
   }, [highlightDay, open, viewMonth, viewYear]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        closePanel();
-      }
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [open]);
+  useClickOutside(containerRef, open, closePanel);
 
   useEffect(() => {
     if (!open || !containerRef.current || !panelRef.current) return;

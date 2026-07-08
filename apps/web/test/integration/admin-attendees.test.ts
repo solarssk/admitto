@@ -1144,6 +1144,10 @@ describe("POST /api/admin/events/:eventId/attendees/:id/revoke-checkin", () => {
       },
     );
     expect(res.status).toBe(409);
+    // The actual reason, not a fixed "not_admitted" code — distinguishes
+    // this from losing a concurrent-revoke race (review finding).
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("Attendee is not currently admitted");
   });
 
   it("returns 403 for an unknown attendee id (no existence oracle, matches sibling attendee routes)", async () => {

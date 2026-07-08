@@ -123,15 +123,17 @@ export async function revokeCheckIn(
 }
 
 /**
- * Same as revokeCheckIn but takes an already-open transaction — reused by
- * the pass-revoke endpoint so revoking a pass also clears any current
- * admission in the same transaction (PO review: restoring a revoked pass
- * was resurrecting a stale "checked in" state from before the revoke).
+ * The mutation itself, with no AttendeeCardDto build at the end — for
+ * callers that only need the side effects (e.g. the pass-revoke endpoint,
+ * which builds its own response DTO separately and would otherwise pay for
+ * getAttendeeCard's several extra queries — event items, item states,
+ * notes, note authors — just to discard the result). Returns the id of the
+ * check-in that was undone, if one was found (for callers that want it).
  */
-export async function revokeCheckInTx(
+export async function revokeCheckInMutation(
   params: { eventId: string; attendeeId: string; audit: OpsAuditContext },
   tx: Prisma.TransactionClient,
-): Promise<UndoCheckInResult> {
+): Promise<{ undoneCheckInId: string | null }> {
   const lastValid = await tx.checkIn.findFirst({
     where: {
       event_id: params.eventId,
@@ -192,6 +194,24 @@ export async function revokeCheckInTx(
     audit: params.audit,
     metadata: lastValid ? { undone_check_in_id: lastValid.id } : {},
   });
+
+  return { undoneCheckInId: lastValid?.id ?? null };
+}
+
+/**
+ * Same as revokeCheckIn but takes an already-open transaction — reused by
+ * the pass-revoke endpoint so revoking a pass also clears any current
+ * admission in the same transaction (PO review: restoring a revoked pass
+ * was resurrecting a stale "checked in" state from before the revoke). Runs
+ * the mutation, then builds the AttendeeCardDto for the standalone action's
+ * response — callers that don't need the card should call
+ * revokeCheckInMutation directly instead.
+ */
+export async function revokeCheckInTx(
+  params: { eventId: string; attendeeId: string; audit: OpsAuditContext },
+  tx: Prisma.TransactionClient,
+): Promise<UndoCheckInResult> {
+  await revokeCheckInMutation(params, tx);
 
   const card = await getAttendeeCard(params.eventId, params.attendeeId, tx);
   if (!card) throw new Error("Attendee missing after revoke");

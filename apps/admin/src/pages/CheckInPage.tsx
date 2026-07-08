@@ -757,6 +757,13 @@ export function CheckInPage({
         setCard(updated);
         setScanResult(scanResultFromCard(updated));
         void refreshSidebar();
+        // Success only — AttendeeCard's dialog is still technically "open"
+        // here (its own setRevokeOpen(false) runs after this promise
+        // resolves), but useModalFocusTrap doesn't fight an external
+        // .focus() call, so this lands cleanly right as the dialog closes.
+        // On error the dialog stays open with an inline message; stealing
+        // focus there would be wrong, so this must not run in `finally`.
+        focusScan();
       } catch (err) {
         if (err instanceof ApiError) reportApiError(err.status);
         throw err;

@@ -5,6 +5,7 @@ import type { AttendeeCardDto, CheckInStatus } from "../api/types.js";
 import { formatEventTime } from "../utils/event-dates.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { canRevokeCheckIn } from "./revokeEligibility.js";
 import { NoteModal } from "./NoteModal.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 
@@ -151,6 +152,9 @@ export function AttendeeCard({
   const showPrimaryActions = isPreview && onCheckIn && card.check_in_status === "not_admitted";
   const statusVariant = statusBadgeVariant(resolvedStatus);
   const displayMode = statusDisplayMode(resolvedStatus);
+  const showRevokeCheckIn =
+    !!onRevokeCheckIn &&
+    canRevokeCheckIn({ checkInStatus: card.check_in_status, blocked: displayMode === "alert" });
   const remainingWarnings = displayMode === "alert" ? card.warnings.slice(1) : card.warnings;
   const hasTransientNote =
     pending ||
@@ -301,10 +305,7 @@ export function AttendeeCard({
             own block-width Cancel button, so this only appears for states
             (VALID / ALREADY_CHECKED_IN / REVOKED) that otherwise have no way
             to dismiss the card short of Escape or scanning someone else. */}
-        {(showUndo ||
-          onAddNote ||
-          (onCancel && !showPrimaryActions) ||
-          (onRevokeCheckIn && card.check_in_status === "admitted" && displayMode !== "alert")) && (
+        {(showUndo || onAddNote || (onCancel && !showPrimaryActions) || showRevokeCheckIn) && (
           <div className="checkin-card__footer">
             {showUndo && onUndo && (
               <Button
@@ -319,7 +320,7 @@ export function AttendeeCard({
                 Undo check-in
               </Button>
             )}
-            {onRevokeCheckIn && card.check_in_status === "admitted" && displayMode !== "alert" && (
+            {showRevokeCheckIn && (
               <Button
                 type="button"
                 variant="ghost"

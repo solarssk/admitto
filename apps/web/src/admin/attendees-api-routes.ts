@@ -31,7 +31,7 @@ import {
   findFilteredAttendeesForList,
   isAdmittable,
   revokeCheckIn,
-  revokeCheckInTx,
+  revokeCheckInMutation,
   UndoNotAllowedError,
 } from "@admitto/tickets";
 import {
@@ -1068,13 +1068,16 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
       // AttendeeStatus, just not settable here yet).
       // existing.admitted_at was read before this transaction started, so a
       // concurrent request (operator undo, another admin's revoke-check-in)
-      // may have already cleared it — revokeCheckInTx throws in that case;
-      // that's fine, there's nothing left to revoke, but it must not abort
-      // the status change itself (bugbot).
+      // may have already cleared it — revokeCheckInMutation throws in that
+      // case; that's fine, there's nothing left to revoke, but it must not
+      // abort the status change itself (bugbot). Uses the mutation-only
+      // helper (not revokeCheckInTx) since this side-effect path builds its
+      // own response DTO below and would otherwise pay for an unused
+      // AttendeeCardDto build (event items, item states, notes, authors).
       if (statusChange !== undefined && !isAdmittable(statusChange) && existing.admitted_at) {
         try {
-          await revokeCheckInTx({ eventId, attendeeId, audit: adminAuditFromContext(c) }, tx);
-          // result.row was read before the clear above, and revokeCheckInTx's
+          await revokeCheckInMutation({ eventId, attendeeId, audit: adminAuditFromContext(c) }, tx);
+          // result.row was read before the clear above, and the mutation's
           // own attendee update bumps updated_at again (Attendee.updated_at
           // is @updatedAt) — re-read both so the response DTO's
           // expected_updated_at stays valid for the client's next edit.
@@ -1419,7 +1422,10 @@ export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient):
     return c.json(result);
   } catch (err) {
     if (err instanceof UndoNotAllowedError) {
-      return c.json({ error: "not_admitted" }, 409);
+      // Distinct messages for "genuinely not admitted" vs "lost a
+      // concurrent-revoke race" (review finding) — matches the sibling
+      // handleCheckinUndo's err.message passthrough for the same error type.
+      return c.json({ error: err.message }, 409);
     }
     console.error("handleRevokeAttendeeCheckIn failed:", err);
     return c.json({ error: "server error" }, 500);

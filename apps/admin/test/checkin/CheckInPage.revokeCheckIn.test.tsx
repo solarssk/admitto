@@ -161,6 +161,11 @@ describe("CheckInPage — admin Revoke check-in (#379/#380/#381 follow-up)", () 
     await waitFor(() => {
       expect(screen.queryByText("Already checked in")).toBeNull();
     });
+    // Success returns focus to the scan input so the next physical scan
+    // lands where it should (bugbot / wide review follow-up).
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByLabelText("QR scan or search"));
+    });
   });
 
   it("shows an inline error and keeps the dialog open on failure", async () => {
