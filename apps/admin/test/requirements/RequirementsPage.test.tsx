@@ -9,6 +9,7 @@ import type { EventItemDto, OpsConfigDto } from "../../src/api/types.js";
 const fetchEventItems = vi.fn();
 const fetchOpsConfig = vi.fn();
 const updateEventItem = vi.fn();
+const createEventItem = vi.fn();
 
 vi.mock("../../src/api/client.js", () => ({
   ApiError: class ApiError extends Error {
@@ -23,7 +24,8 @@ vi.mock("../../src/api/client.js", () => ({
   fetchEventItems: (...args: unknown[]) => fetchEventItems(...args),
   fetchOpsConfig: (...args: unknown[]) => fetchOpsConfig(...args),
   updateEventItem: (...args: unknown[]) => updateEventItem(...args),
-  createEventItem: vi.fn(),
+  createEventItem: (...args: unknown[]) => createEventItem(...args),
+  deleteEventItem: vi.fn(),
   updateOpsConfig: vi.fn(),
 }));
 
@@ -114,5 +116,66 @@ describe("RequirementsPage badge/ops-config sync", () => {
       expect(updateEventItem).toHaveBeenCalled();
     });
     expect(fetchOpsConfig).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("RequirementsPage — Add item and Edit item", () => {
+  it("shows a toast and does not create an item when the name has no usable characters", async () => {
+    fetchEventItems.mockResolvedValue([]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "!!!" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Enter a name using letters or numbers.", "error");
+    });
+    expect(createEventItem).not.toHaveBeenCalled();
+  });
+
+  it("shows a warning toast when creating an item whose name already exists", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventItems.mockResolvedValue([]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+    createEventItem.mockRejectedValueOnce(new ApiError(409, "key_conflict", "key_conflict"));
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Gift bag" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("An item with this name already exists.", "warning");
+    });
+  });
+
+  it("closes the Add item modal via the backdrop and via Cancel, without creating", async () => {
+    fetchEventItems.mockResolvedValue([]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+
+    const { container } = renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Lanyard" } });
+    fireEvent.click(container.querySelector(".event-item-modal__backdrop")!);
+    expect(screen.queryByLabelText("Item name")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    expect(screen.getByLabelText("Item name")).toHaveProperty("value", "");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByLabelText("Item name")).toBeNull();
+    expect(createEventItem).not.toHaveBeenCalled();
+  });
+
+  it("opens the edit drawer for an item when clicking Edit item", async () => {
+    fetchEventItems.mockResolvedValue([badgeItem]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Edit item" }));
+
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Badge" })).toBeTruthy();
   });
 });

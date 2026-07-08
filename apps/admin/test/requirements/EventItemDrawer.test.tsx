@@ -176,4 +176,111 @@ describe("EventItemDrawer", () => {
     });
     expect(screen.queryByText(/Failed to delete item/)).toBeNull();
   });
+
+  it("blocks save and shows a toast when a contents row has a source field but no label", async () => {
+    renderDrawer(giftbagItem);
+    fireEvent.click(screen.getByRole("button", { name: "Add field hint" }));
+    fireEvent.change(screen.getByLabelText("Import key"), { target: { value: "shirt_size" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "Each contents row needs both a label and a source field.",
+        "error",
+      );
+    });
+    expect(updateEventItem).not.toHaveBeenCalled();
+  });
+
+  it("edits details, icon, and a full contents row, then saves the assembled payload", async () => {
+    vi.mocked(updateEventItem).mockResolvedValueOnce(giftbagItem);
+    renderDrawer(giftbagItem);
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Gift bag (large)" } });
+    fireEvent.change(screen.getByLabelText("Description (shown to operators)"), {
+      target: { value: "Large tote bag." },
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Item active" }));
+    fireEvent.click(screen.getByRole("button", { name: "Gift" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Requires return" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add field hint" }));
+    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Shirt size" } });
+    fireEvent.change(screen.getByLabelText("Import key"), { target: { value: "shirt_size" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Required" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select" }));
+    fireEvent.change(screen.getByLabelText("Select options"), { target: { value: "S\nM\nL" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(updateEventItem).toHaveBeenCalledWith("evt-1", "item-gift", {
+        label: "Gift bag (large)",
+        description: "Large tote bag.",
+        enabled: false,
+        icon: "gift",
+        config: {
+          requires_return: true,
+          contents: [
+            {
+              label: "Shirt size",
+              source_field: "shirt_size",
+              type: "select",
+              required: true,
+              options: ["S", "M", "L"],
+            },
+          ],
+        },
+      });
+    });
+  });
+
+  it("removes a contents row so it's no longer saved", async () => {
+    const itemWithRow: EventItemDto = {
+      ...giftbagItem,
+      config: {
+        requires_return: false,
+        contents: [{ label: "Shirt size", source_field: "shirt_size" }],
+      },
+    };
+    vi.mocked(updateEventItem).mockResolvedValueOnce(itemWithRow);
+    renderDrawer(itemWithRow);
+
+    expect(screen.getByLabelText("Display label")).toHaveProperty("value", "Shirt size");
+    fireEvent.click(screen.getByRole("button", { name: "Remove row" }));
+    expect(screen.queryByLabelText("Display label")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(updateEventItem).toHaveBeenCalledWith(
+        "evt-1",
+        "item-gift",
+        expect.objectContaining({ config: { requires_return: false } }),
+      );
+    });
+  });
+
+  it("toggles Issue on check-in for the badge item and saves it", async () => {
+    const badgeIssueOnCheckin: EventItemDto = {
+      ...badgeWithNullConfig,
+      config: { issue_on_checkin: true, requires_return: false },
+    };
+    vi.mocked(updateEventItem).mockResolvedValueOnce(badgeIssueOnCheckin);
+    renderDrawer(badgeIssueOnCheckin);
+
+    fireEvent.click(screen.getByRole("switch", { name: "Issue on check-in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(updateEventItem).toHaveBeenCalledWith(
+        "evt-1",
+        "item-badge",
+        expect.objectContaining({
+          config: expect.objectContaining({ issue_on_checkin: false }),
+        }),
+      );
+    });
+  });
 });
