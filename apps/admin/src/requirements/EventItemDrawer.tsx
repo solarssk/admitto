@@ -13,7 +13,7 @@ import {
   isValidSourceFieldSlug,
   validateContentsRows,
 } from "./eventItemContentsForm.js";
-import { DEFAULT_EVENT_ITEM_ICON, IconPicker, normalizeEventItemIconForForm } from "./IconPicker.js";
+import { IconPicker, normalizeEventItemIconForForm } from "./IconPicker.js";
 import { slugifyItemKey } from "./itemKey.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
@@ -240,13 +240,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
 
             <div>
               <h3 className="event-item-modal__section-title">Icon</h3>
-              <p className="requirements-section-hint">
-                Shown on check-in item rows for operators (Tabler outline icon).
-              </p>
-              <div className="item-icon-preview">
-                <i className={`ti ti-${form.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
-                <span>{form.icon ? form.icon : "Default"}</span>
-              </div>
+              <p className="requirements-section-hint">Shown on the check-in card for operators.</p>
               <IconPicker
                 key={item.id}
                 value={form.icon}
@@ -255,28 +249,55 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
             </div>
 
             <div>
-              <h3 className="event-item-modal__section-title">Operator hints</h3>
+              <h3 className="event-item-modal__section-title">Attendee data field</h3>
               <p className="requirements-section-hint">
-                Shown on the attendee profile and check-in card. Type, required, and select options are
-                enforced when admins create or edit attendees.
+                Display an attendee data field (e.g. shirt size) next to this item at check-in — useful
+                when the item varies per person.
               </p>
               <div className="requirements-field-stack">
                 {form.contents.map((row, i) => (
                   <div key={i} className="requirements-contents-row">
-                    <Input
-                      label="Field label"
-                      value={row.label}
-                      onChange={(e) => updateContent(i, "label", e.target.value)}
-                      placeholder="Shirt size"
-                    />
-                    <Input
-                      label="Import column"
-                      value={row.source_field}
-                      onChange={(e) => updateContent(i, "source_field", e.target.value)}
-                      placeholder="shirt_size"
-                      pattern="[a-z0-9_]+"
-                      title="Lowercase letters, numbers, and underscores only"
-                    />
+                    <div className="contents-row__header">
+                      <div className="at-field" style={{ flex: 1 }}>
+                        <label className="at-label" htmlFor={`hint-label-${i}`}>
+                          Display label
+                        </label>
+                        <input
+                          id={`hint-label-${i}`}
+                          className="at-input"
+                          value={row.label}
+                          onChange={(e) => updateContent(i, "label", e.target.value)}
+                          placeholder="Shirt size"
+                        />
+                      </div>
+                      <IconButton
+                        label="Remove row"
+                        type="button"
+                        onClick={() =>
+                          setForm((f) => ({
+                            ...f,
+                            contents: f.contents.filter((_, j) => j !== i),
+                          }))
+                        }
+                        icon={<i className="ti ti-trash" />}
+                      />
+                    </div>
+
+                    <div className="at-field">
+                      <label className="at-label" htmlFor={`hint-key-${i}`}>
+                        Import key
+                      </label>
+                      <input
+                        id={`hint-key-${i}`}
+                        className="at-input"
+                        value={row.source_field}
+                        onChange={(e) => updateContent(i, "source_field", e.target.value)}
+                        placeholder="shirt_size"
+                        pattern="[a-z0-9_]+"
+                        title="Lowercase letters, numbers, and underscores only"
+                      />
+                    </div>
+
                     <div className="contents-row__meta">
                       <select
                         value={row.type}
@@ -294,16 +315,6 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                         <option value="select">Select</option>
                         <option value="boolean">Boolean</option>
                       </select>
-                      {row.type === "select" && (
-                        <input
-                          type="text"
-                          placeholder="Options (comma-separated)"
-                          value={row.options}
-                          onChange={(e) => updateContentMeta(i, "options", e.target.value)}
-                          className="contents-row__options"
-                          aria-label="Select options"
-                        />
-                      )}
                       <label className="contents-row__required">
                         <input
                           type="checkbox"
@@ -313,17 +324,37 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                         Required
                       </label>
                     </div>
-                    <IconButton
-                      label="Remove row"
-                      type="button"
-                      onClick={() =>
-                        setForm((f) => ({
-                          ...f,
-                          contents: f.contents.filter((_, j) => j !== i),
-                        }))
-                      }
-                      icon={<i className="ti ti-trash" />}
-                    />
+
+                    {row.type === "select" && (
+                      <div className="at-field">
+                        <label className="at-label" htmlFor={`hint-opts-${i}`}>
+                          Options (one per line)
+                        </label>
+                        <textarea
+                          id={`hint-opts-${i}`}
+                          className="at-textarea"
+                          rows={3}
+                          value={row.options
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter(Boolean)
+                            .join("\n")}
+                          onChange={(e) =>
+                            updateContentMeta(
+                              i,
+                              "options",
+                              e.target.value
+                                .split("\n")
+                                .map((s) => s.trim())
+                                .filter(Boolean)
+                                .join(","),
+                            )
+                          }
+                          placeholder={"XL\nL\nM\nS"}
+                          aria-label="Select options"
+                        />
+                      </div>
+                    )}
                   </div>
                 ))}
                 <Button

@@ -96,7 +96,7 @@ export function validateContentsRows(rows: ContentRow[]): ContentsValidationResu
     if (type === "select" && (!options || options.length === 0)) {
       return {
         ok: false,
-        message: `Select field "${label}" needs at least one option (comma-separated).`,
+        message: `Select field "${label}" needs at least one option.`,
       };
     }
 
