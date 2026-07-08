@@ -148,6 +148,18 @@ async function sessionCookieFor(userId: string): Promise<string> {
   return `admitto_session=${rawToken}`;
 }
 
+/** The "badge" item is backfilled lazily (see event-items.ts), so fetch its
+ * id via the list endpoint instead of assuming a fixed seeded id. */
+async function getBadgeItemId(eventId: string): Promise<string> {
+  const res = await app.request(`/api/admin/events/${eventId}/items`, {
+    headers: { Cookie: adminCookie, ...sameOrigin },
+  });
+  const body = (await res.json()) as { items: Array<{ id: string; key: string }> };
+  const badge = body.items.find((i) => i.key === "badge");
+  if (!badge) throw new Error("expected badge item to be backfilled");
+  return badge.id;
+}
+
 beforeAll(async () => {
   prisma = new PrismaClient();
   await seed(prisma);
@@ -395,6 +407,70 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("item_in_use");
+  });
+
+  it("disabling the badge item auto-turns-off Issue badge at entry", async () => {
+    const badgeId = await getBadgeItemId(EVENT_EI_A);
+
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${badgeId}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { enabled: boolean };
+    expect(body.enabled).toBe(false);
+
+    const event = await prisma.event.findUnique({ where: { id: EVENT_EI_A } });
+    expect((event?.ops_config as { badge_at_entry?: boolean } | null)?.badge_at_entry).toBe(false);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_EI_A, action_type: "ops_config_updated" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log?.metadata).toMatchObject({
+      fields: ["badge_at_entry"],
+      reason: "badge_item_disabled",
+    });
+
+    // Restore shared fixture state for tests declared later in this file.
+    await prisma.eventItem.update({ where: { id: badgeId }, data: { enabled: true } });
+    await prisma.event.update({
+      where: { id: EVENT_EI_A },
+      data: { ops_config: { badge_at_entry: true, require_confirm_on_scan: false } },
+    });
+  });
+
+  it("re-disabling an already-off badge item does not touch ops_config again", async () => {
+    const badgeId = await getBadgeItemId(EVENT_EI_A);
+    await prisma.eventItem.update({ where: { id: badgeId }, data: { enabled: false } });
+    await prisma.event.update({
+      where: { id: EVENT_EI_A },
+      data: { ops_config: { badge_at_entry: false, require_confirm_on_scan: false } },
+    });
+
+    const before = await prisma.attendeeActionLog.count({
+      where: { event_id: EVENT_EI_A, action_type: "ops_config_updated" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${badgeId}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ enabled: false, description: "still off, patched again" }),
+    });
+    expect(res.status).toBe(200);
+
+    const after = await prisma.attendeeActionLog.count({
+      where: { event_id: EVENT_EI_A, action_type: "ops_config_updated" },
+    });
+    expect(after).toBe(before);
+
+    // Restore shared fixture state for tests declared later in this file.
+    await prisma.eventItem.update({ where: { id: badgeId }, data: { enabled: true } });
+    await prisma.event.update({
+      where: { id: EVENT_EI_A },
+      data: { ops_config: { badge_at_entry: true, require_confirm_on_scan: false } },
+    });
   });
 
   it("returns 403 for cross-event item patch", async () => {
@@ -683,6 +759,21 @@ describe("DELETE /api/admin/events/:eventId/items/:itemId", () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("item_in_use");
+  });
+
+  it("returns 409 default_item when deleting the badge item", async () => {
+    const badgeId = await getBadgeItemId(EVENT_EI_A);
+
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${badgeId}`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("default_item");
+
+    const stillThere = await prisma.eventItem.findUnique({ where: { id: badgeId } });
+    expect(stillThere).not.toBeNull();
   });
 
   it("returns 403 for cross-event item delete", async () => {

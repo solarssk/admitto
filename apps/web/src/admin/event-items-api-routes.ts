@@ -412,6 +412,33 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
         },
       });
 
+      // Disabling the "badge" item makes "Issue badge at entry" a no-op —
+      // keep the ops-config toggle in sync instead of leaving it silently on.
+      if (disabling && existing.key === "badge") {
+        const event = await tx.event.findUnique({
+          where: { id: eventId },
+          select: { ops_config: true },
+        });
+        const currentOps = parseEventOpsConfig(event?.ops_config);
+        if (currentOps.badge_at_entry) {
+          await tx.event.update({
+            where: { id: eventId },
+            data: {
+              ops_config: {
+                ...currentOps,
+                badge_at_entry: false,
+              } as Prisma.InputJsonValue,
+            },
+          });
+          await writeBulkActionLog(tx, {
+            event_id: eventId,
+            action_type: "ops_config_updated",
+            audit: adminAuditFromContext(c),
+            metadata: { fields: ["badge_at_entry"], reason: "badge_item_disabled" },
+          });
+        }
+      }
+
       await writeBulkActionLog(tx, {
         event_id: eventId,
         action_type: "event_item_updated",
@@ -447,6 +474,14 @@ export async function handleDeleteEventItem(c: Context, db: PrismaClient): Promi
 
   const existing = await loadEventItemInEvent(db, eventId, itemId);
   if (!existing) return c.json({ error: "forbidden" }, 403);
+
+  // "badge" is a structural default (see event-items.ts) — it is always
+  // re-created by ensureBadgeEventItem, so deleting it would just silently
+  // reappear (losing any customization) with no visible error. Disable it
+  // instead; disabling auto-turns-off the "Issue badge at entry" toggle below.
+  if (existing.key === "badge") {
+    return c.json({ error: "default_item" }, 409);
+  }
 
   const deleted = await db.$transaction(async (tx) => {
     const inUse = await countActivelyIssuedStates(tx, itemId);
