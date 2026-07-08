@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { EventItemDto } from "../../src/api/types.js";
 import { EventItemDrawer } from "../../src/requirements/EventItemDrawer.js";
+import { renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -15,6 +16,12 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 });
 
 import { deleteEventItem, updateEventItem } from "../../src/api/client.js";
+
+const addToast = vi.fn();
+vi.mock("@admitto/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/ui")>();
+  return { ...actual, useToast: () => ({ addToast }) };
+});
 
 const badgeWithNullConfig: EventItemDto = {
   id: "item-badge",
@@ -42,7 +49,7 @@ afterEach(() => {
 });
 
 function renderDrawer(item: EventItemDto) {
-  render(
+  renderWithToast(
     <EventItemDrawer
       eventId="evt-1"
       item={item}
@@ -79,7 +86,7 @@ describe("EventItemDrawer", () => {
     });
   });
 
-  it("shows in-use banner when delete returns item_in_use", async () => {
+  it("fires toast when delete returns item_in_use", async () => {
     vi.mocked(deleteEventItem).mockRejectedValueOnce(
       new ApiError(409, "item_in_use", "item_in_use"),
     );
@@ -87,8 +94,12 @@ describe("EventItemDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete item" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => {
-      expect(screen.getByText(/issued to attendees — disable it instead of deleting/)).toBeTruthy();
+      expect(addToast).toHaveBeenCalledWith(
+        expect.stringMatching(/issued to attendees — disable it instead of deleting/),
+        "warning",
+      );
     });
+    expect(screen.queryByText(/issued to attendees — disable it instead of deleting/)).toBeNull();
   });
 
   it("shows generic delete failure for other 409 responses", async () => {
@@ -99,6 +110,6 @@ describe("EventItemDrawer", () => {
     await waitFor(() => {
       expect(screen.getByText(/Failed to delete item/)).toBeTruthy();
     });
-    expect(screen.queryByText(/issued to attendees — disable it instead of deleting/)).toBeNull();
+    expect(addToast).not.toHaveBeenCalled();
   });
 });

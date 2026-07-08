@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Button, IconButton, Input, Switch } from "@admitto/ui";
+import { useRef, useEffect, useState } from "react";
+import { Button, IconButton, Input, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   deleteEventItem,
@@ -16,7 +16,7 @@ import {
 import { DEFAULT_EVENT_ITEM_ICON, IconPicker, normalizeEventItemIconForForm } from "./IconPicker.js";
 import { slugifyItemKey } from "./itemKey.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import "../attendees/attendees.css";
+import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import "./requirements.css";
 
 export interface EventItemDrawerProps {
@@ -87,28 +87,21 @@ function toConfig(
   return config;
 }
 
-/** Side drawer to edit or delete a single event item. */
+/** Centered modal to edit or delete a single event item. */
 export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItemDrawerProps) {
+  const { addToast } = useToast();
   const [form, setForm] = useState<FormState>(() => toForm(item));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [deleteBlockReason, setDeleteBlockReason] = useState<"in_use" | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(panelRef, !deleteConfirmOpen, onClose);
 
   useEffect(() => {
     setForm(toForm(item));
     setError(null);
-    setDeleteBlockReason(null);
   }, [item]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !deleteConfirmOpen) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, deleteConfirmOpen]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -147,14 +140,16 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
   async function handleDelete() {
     setDeleting(true);
     setError(null);
-    setDeleteBlockReason(null);
     try {
       await deleteEventItem(eventId, item.id);
       onUpdated();
       onClose();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
-        setDeleteBlockReason("in_use");
+        addToast(
+          "This item has been issued to attendees — disable it instead of deleting.",
+          "warning",
+        );
       } else {
         setError(operatorApiErrorMessage(err, "Failed to delete item."));
       }
@@ -198,205 +193,207 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
 
   return (
     <>
-      <div className="attendee-drawer-backdrop" onClick={onClose} aria-hidden />
-      <aside className="attendee-drawer" role="dialog" aria-labelledby="item-drawer-title">
-        <div className="attendee-drawer__header">
-          <div>
-            <h2 id="item-drawer-title" className="attendee-drawer__title">
-              {item.label}
-            </h2>
-            <p className="requirements-item-id">Internal ID: {item.key}</p>
+      <div
+        className="event-item-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="item-modal-title"
+      >
+        <div className="event-item-modal__backdrop" role="presentation" onClick={onClose} />
+        <div ref={panelRef} className="event-item-modal__panel">
+          <div className="event-item-modal__header">
+            <div>
+              <h2 id="item-modal-title" className="event-item-modal__title">
+                {item.label}
+              </h2>
+              <p className="requirements-item-id">Internal ID: {item.key}</p>
+            </div>
+            <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
           </div>
-          <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
-        </div>
-        <form className="attendee-drawer__body" onSubmit={(e) => void handleSave(e)}>
-          {error && <p className="text-error">{error}</p>}
-          {deleteBlockReason === "in_use" && (
-            <p className="text-error">
-              This item has been issued to attendees — disable it instead of deleting.
-            </p>
-          )}
+          <form className="event-item-modal__body" onSubmit={(e) => void handleSave(e)}>
+            {error && <p className="text-error">{error}</p>}
 
-          <div>
-            <h3 className="attendee-drawer__section-title">Details</h3>
-            <div className="requirements-field-stack">
-              <Input
-                label="Display name"
-                value={form.label}
-                onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
-                required
-              />
-              <div className="requirements-toggle-row">
-                <div className="requirements-toggle-row__text">
-                  <strong>Active</strong>
-                  <p>Inactive items are hidden from check-in operators.</p>
-                </div>
-                <Switch
-                  label={form.enabled ? "On" : "Off"}
-                  checked={form.enabled}
-                  onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
-                  aria-label="Item active"
+            <div>
+              <h3 className="event-item-modal__section-title">Details</h3>
+              <div className="requirements-field-stack">
+                <Input
+                  label="Display name"
+                  value={form.label}
+                  onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+                  required
                 />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="attendee-drawer__section-title">Icon</h3>
-            <p className="requirements-section-hint">
-              Shown on check-in item rows for operators (Tabler outline icon).
-            </p>
-            <div className="item-icon-preview">
-              <i className={`ti ti-${form.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
-              <span>{form.icon ? form.icon : "Default"}</span>
-            </div>
-            <IconPicker
-              key={item.id}
-              value={form.icon}
-              onChange={(icon) => setForm((f) => ({ ...f, icon }))}
-            />
-          </div>
-
-          <div>
-            <h3 className="attendee-drawer__section-title">Operator hints</h3>
-            <p className="requirements-section-hint">
-              Shown on the attendee profile and check-in card. Type, required, and select options are
-              enforced when admins create or edit attendees.
-            </p>
-            <div className="requirements-field-stack">
-              {form.contents.map((row, i) => (
-                <div key={i} className="requirements-contents-row">
-                  <Input
-                    label="Field label"
-                    value={row.label}
-                    onChange={(e) => updateContent(i, "label", e.target.value)}
-                    placeholder="Shirt size"
-                  />
-                  <Input
-                    label="Import column"
-                    value={row.source_field}
-                    onChange={(e) => updateContent(i, "source_field", e.target.value)}
-                    placeholder="shirt_size"
-                    pattern="[a-z0-9_]+"
-                    title="Lowercase letters, numbers, and underscores only"
-                  />
-                  <div className="contents-row__meta">
-                    <select
-                      value={row.type}
-                      onChange={(e) =>
-                        updateContentMeta(
-                          i,
-                          "type",
-                          e.target.value as ContentRow["type"],
-                        )
-                      }
-                      className="contents-row__type"
-                      aria-label="Field type"
-                    >
-                      <option value="text">Text</option>
-                      <option value="select">Select</option>
-                      <option value="boolean">Boolean</option>
-                    </select>
-                    {row.type === "select" && (
-                      <input
-                        type="text"
-                        placeholder="Options (comma-separated)"
-                        value={row.options}
-                        onChange={(e) => updateContentMeta(i, "options", e.target.value)}
-                        className="contents-row__options"
-                        aria-label="Select options"
-                      />
-                    )}
-                    <label className="contents-row__required">
-                      <input
-                        type="checkbox"
-                        checked={row.required}
-                        onChange={(e) => updateContentMeta(i, "required", e.target.checked)}
-                      />
-                      Required
-                    </label>
-                  </div>
-                  <IconButton
-                    label="Remove row"
-                    type="button"
-                    onClick={() =>
-                      setForm((f) => ({
-                        ...f,
-                        contents: f.contents.filter((_, j) => j !== i),
-                      }))
-                    }
-                    icon={<i className="ti ti-trash" />}
-                  />
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                icon={<i className="ti ti-plus" />}
-                onClick={() =>
-                  setForm((f) => ({
-                    ...f,
-                    contents: [...f.contents, emptyContentRow()],
-                  }))
-                }
-              >
-                Add field hint
-              </Button>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="attendee-drawer__section-title">Item behaviour</h3>
-            <div className="requirements-field-stack">
-              <div className="requirements-toggle-row">
-                <div className="requirements-toggle-row__text">
-                  <strong>Requires return</strong>
-                  <p>Track when this item must be returned (e.g. headset).</p>
-                </div>
-                <Switch
-                  label={form.requires_return ? "On" : "Off"}
-                  checked={form.requires_return}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, requires_return: e.target.checked }))
-                  }
-                  aria-label="Requires return"
-                />
-              </div>
-              {item.key === "badge" && (
                 <div className="requirements-toggle-row">
                   <div className="requirements-toggle-row__text">
-                    <strong>Issue on check-in</strong>
-                    <p>Automatically mark badge as issued when attendee is admitted.</p>
+                    <strong>Active</strong>
+                    <p>Inactive items are hidden from check-in operators.</p>
                   </div>
                   <Switch
-                    label={form.issue_on_checkin ? "On" : "Off"}
-                    checked={form.issue_on_checkin}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, issue_on_checkin: e.target.checked }))
-                    }
-                    aria-label="Issue on check-in"
+                    label={form.enabled ? "On" : "Off"}
+                    checked={form.enabled}
+                    onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+                    aria-label="Item active"
                   />
                 </div>
-              )}
+              </div>
             </div>
-          </div>
 
-          <div className="attendee-form__actions">
-            <Button type="submit" variant="primary" disabled={saving}>
-              {saving ? "Saving…" : "Save changes"}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={deleting}
-              onClick={() => setDeleteConfirmOpen(true)}
-            >
-              Delete item
-            </Button>
-          </div>
-        </form>
-      </aside>
+            <div>
+              <h3 className="event-item-modal__section-title">Icon</h3>
+              <p className="requirements-section-hint">
+                Shown on check-in item rows for operators (Tabler outline icon).
+              </p>
+              <div className="item-icon-preview">
+                <i className={`ti ti-${form.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
+                <span>{form.icon ? form.icon : "Default"}</span>
+              </div>
+              <IconPicker
+                key={item.id}
+                value={form.icon}
+                onChange={(icon) => setForm((f) => ({ ...f, icon }))}
+              />
+            </div>
+
+            <div>
+              <h3 className="event-item-modal__section-title">Operator hints</h3>
+              <p className="requirements-section-hint">
+                Shown on the attendee profile and check-in card. Type, required, and select options are
+                enforced when admins create or edit attendees.
+              </p>
+              <div className="requirements-field-stack">
+                {form.contents.map((row, i) => (
+                  <div key={i} className="requirements-contents-row">
+                    <Input
+                      label="Field label"
+                      value={row.label}
+                      onChange={(e) => updateContent(i, "label", e.target.value)}
+                      placeholder="Shirt size"
+                    />
+                    <Input
+                      label="Import column"
+                      value={row.source_field}
+                      onChange={(e) => updateContent(i, "source_field", e.target.value)}
+                      placeholder="shirt_size"
+                      pattern="[a-z0-9_]+"
+                      title="Lowercase letters, numbers, and underscores only"
+                    />
+                    <div className="contents-row__meta">
+                      <select
+                        value={row.type}
+                        onChange={(e) =>
+                          updateContentMeta(
+                            i,
+                            "type",
+                            e.target.value as ContentRow["type"],
+                          )
+                        }
+                        className="contents-row__type"
+                        aria-label="Field type"
+                      >
+                        <option value="text">Text</option>
+                        <option value="select">Select</option>
+                        <option value="boolean">Boolean</option>
+                      </select>
+                      {row.type === "select" && (
+                        <input
+                          type="text"
+                          placeholder="Options (comma-separated)"
+                          value={row.options}
+                          onChange={(e) => updateContentMeta(i, "options", e.target.value)}
+                          className="contents-row__options"
+                          aria-label="Select options"
+                        />
+                      )}
+                      <label className="contents-row__required">
+                        <input
+                          type="checkbox"
+                          checked={row.required}
+                          onChange={(e) => updateContentMeta(i, "required", e.target.checked)}
+                        />
+                        Required
+                      </label>
+                    </div>
+                    <IconButton
+                      label="Remove row"
+                      type="button"
+                      onClick={() =>
+                        setForm((f) => ({
+                          ...f,
+                          contents: f.contents.filter((_, j) => j !== i),
+                        }))
+                      }
+                      icon={<i className="ti ti-trash" />}
+                    />
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  icon={<i className="ti ti-plus" />}
+                  onClick={() =>
+                    setForm((f) => ({
+                      ...f,
+                      contents: [...f.contents, emptyContentRow()],
+                    }))
+                  }
+                >
+                  Add field hint
+                </Button>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="event-item-modal__section-title">Item behaviour</h3>
+              <div className="requirements-field-stack">
+                <div className="requirements-toggle-row">
+                  <div className="requirements-toggle-row__text">
+                    <strong>Requires return</strong>
+                    <p>Track when this item must be returned (e.g. headset).</p>
+                  </div>
+                  <Switch
+                    label={form.requires_return ? "On" : "Off"}
+                    checked={form.requires_return}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, requires_return: e.target.checked }))
+                    }
+                    aria-label="Requires return"
+                  />
+                </div>
+                {item.key === "badge" && (
+                  <div className="requirements-toggle-row">
+                    <div className="requirements-toggle-row__text">
+                      <strong>Issue on check-in</strong>
+                      <p>Automatically mark badge as issued when attendee is admitted.</p>
+                    </div>
+                    <Switch
+                      label={form.issue_on_checkin ? "On" : "Off"}
+                      checked={form.issue_on_checkin}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, issue_on_checkin: e.target.checked }))
+                      }
+                      aria-label="Issue on check-in"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="event-item-modal__footer">
+              <Button type="submit" variant="primary" disabled={saving}>
+                {saving ? "Saving…" : "Save changes"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={deleting}
+                onClick={() => setDeleteConfirmOpen(true)}
+              >
+                Delete item
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
       <ConfirmDialog
         open={deleteConfirmOpen}
         title="Delete item"
