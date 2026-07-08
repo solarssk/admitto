@@ -28,23 +28,17 @@
 .requirements-item-name {
   font-weight: 600;
   color: var(--text-primary);
-  flex-shrink: 0;
 }
 
 .requirements-item-info {
-  min-width: 0;
-}
-
-.requirements-item-name-row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .requirements-item-desc {
+  flex: 1;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
+  min-width: 0;
 }
 
 .requirements-item-id {
@@ -217,20 +211,47 @@
   gap: var(--space-2);
 }
 
-.contents-row__meta {
+.contents-row__key-row {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: var(--space-2);
-  flex-shrink: 0;
 }
 
-.contents-row__type {
-  font-size: var(--fs-sm);
-  padding: var(--space-1) var(--space-2);
+.contents-row__type-picker {
+  display: flex;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+
+.contents-row__type-btn {
   background: var(--surface-card);
+  border: none;
+  border-right: 1px solid var(--border);
+  padding: 0 var(--space-2);
+  height: var(--control-h, 2rem);
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  font-size: 0.95rem;
+  transition: background 0.1s, color 0.1s;
+}
+
+.contents-row__type-btn:last-child {
+  border-right: none;
+}
+
+.contents-row__type-btn:hover:not(.contents-row__type-btn--active) {
+  background: var(--surface-hover, var(--surface-sunken));
   color: var(--text-primary);
+}
+
+.contents-row__type-btn--active {
+  background: var(--accent);
+  color: #fff;
 }
 
 .contents-row__required {
@@ -239,6 +260,10 @@
   gap: var(--space-1);
   font-size: var(--fs-sm);
   color: var(--text-secondary);
+  white-space: nowrap;
+  align-self: flex-end;
+  padding-bottom: calc((var(--control-h, 2rem) - 1em) / 2); /* optically align with input */
+}
   white-space: nowrap;
 }
 
@@ -261,7 +286,7 @@
 
 .event-item-modal__panel {
   position: relative;
-  width: min(100%, 560px);
+  width: min(100%, 600px);
   max-height: calc(100vh - 32px);
   overflow: hidden;
   background: var(--surface-card);

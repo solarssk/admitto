@@ -272,33 +272,6 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                           placeholder="Shirt size"
                         />
                       </div>
-                      <div className="contents-row__meta">
-                        <select
-                          id={`hint-type-${i}`}
-                          value={row.type}
-                          onChange={(e) =>
-                            updateContentMeta(
-                              i,
-                              "type",
-                              e.target.value as ContentRow["type"],
-                            )
-                          }
-                          className="contents-row__type"
-                          aria-label="Field type"
-                        >
-                          <option value="text">Text</option>
-                          <option value="select">Select</option>
-                          <option value="boolean">Boolean</option>
-                        </select>
-                        <label className="contents-row__required">
-                          <input
-                            type="checkbox"
-                            checked={row.required}
-                            onChange={(e) => updateContentMeta(i, "required", e.target.checked)}
-                          />
-                          Required
-                        </label>
-                      </div>
                       <IconButton
                         label="Remove row"
                         type="button"
@@ -312,19 +285,53 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                       />
                     </div>
 
-                    <div className="at-field">
-                      <label className="at-label" htmlFor={`hint-key-${i}`}>
-                        Import key
+                    <div className="contents-row__key-row">
+                      <div className="at-field" style={{ flex: 1 }}>
+                        <label className="at-label" htmlFor={`hint-key-${i}`}>
+                          Import key
+                        </label>
+                        <input
+                          id={`hint-key-${i}`}
+                          className="at-input"
+                          value={row.source_field}
+                          onChange={(e) => updateContent(i, "source_field", e.target.value)}
+                          placeholder="shirt_size"
+                          pattern="[a-z0-9_]+"
+                          title="Lowercase letters, numbers, and underscores only"
+                        />
+                      </div>
+                      <div
+                        className="contents-row__type-picker"
+                        role="group"
+                        aria-label="Field type"
+                      >
+                        {(
+                          [
+                            { value: "text", icon: "ti-letter-case", label: "Text" },
+                            { value: "select", icon: "ti-list", label: "Select (options)" },
+                            { value: "boolean", icon: "ti-checkbox", label: "Boolean" },
+                          ] as const
+                        ).map(({ value, icon, label: btnLabel }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className={`contents-row__type-btn${row.type === value ? " contents-row__type-btn--active" : ""}`}
+                            onClick={() => updateContentMeta(i, "type", value)}
+                            title={btnLabel}
+                            aria-pressed={row.type === value}
+                          >
+                            <i className={`ti ${icon}`} />
+                          </button>
+                        ))}
+                      </div>
+                      <label className="contents-row__required">
+                        <input
+                          type="checkbox"
+                          checked={row.required}
+                          onChange={(e) => updateContentMeta(i, "required", e.target.checked)}
+                        />
+                        Required
                       </label>
-                      <input
-                        id={`hint-key-${i}`}
-                        className="at-input"
-                        value={row.source_field}
-                        onChange={(e) => updateContent(i, "source_field", e.target.value)}
-                        placeholder="shirt_size"
-                        pattern="[a-z0-9_]+"
-                        title="Lowercase letters, numbers, and underscores only"
-                      />
                     </div>
 
                     {row.type === "select" && (
