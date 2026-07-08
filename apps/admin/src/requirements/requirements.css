@@ -2,6 +2,12 @@
   margin-bottom: var(--space-5);
 }
 
+/* Normalise card header height across all Requirements sections so cards with
+   and without action buttons appear the same height. */
+.requirements-section .at-card__header {
+  min-height: calc(var(--control-h-sm) + 2 * var(--space-4));
+}
+
 .requirements-section-hint {
   margin: 0 0 var(--space-3);
   font-size: var(--fs-sm);
@@ -133,42 +139,6 @@
   margin-top: var(--space-2);
   font-size: var(--fs-sm);
   color: var(--status-warn, #b45309);
-}
-
-.requirements-add-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-sunken);
-}
-
-.requirements-add-form__main {
-  flex: 1;
-  min-width: 0;
-}
-
-.requirements-add-form__hint {
-  margin: var(--space-2) 0 0;
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-
-.requirements-add-form__hint code {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--fs-xs);
-  color: var(--text-secondary);
-}
-
-.requirements-add-form__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.requirements-add-form__error {
-  margin: 0;
 }
 
 .table .at-switch {

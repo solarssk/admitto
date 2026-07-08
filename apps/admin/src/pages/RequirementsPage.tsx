@@ -222,47 +222,6 @@ export function RequirementsPage() {
             </Button>
           }
         >
-          {addOpen && (
-            <form className="requirements-add-form" onSubmit={(e) => void handleAddItem(e)}>
-              <div className="requirements-add-form__main">
-                <Input
-                  label="Item name"
-                  value={addLabel}
-                  onChange={(e) => setAddLabel(e.target.value)}
-                  placeholder="Gift bag"
-                  required
-                  autoFocus
-                />
-                {addLabel.trim() && (
-                  <p className="requirements-add-form__hint">
-                    Internal ID:{" "}
-                    <code>{addKeyPreview || slugifyItemKey(addLabel) || "—"}</code>
-                    {addKeyPreview && addKeyPreview !== slugifyItemKey(addLabel) && (
-                      <> (name already taken — using unique suffix)</>
-                    )}
-                  </p>
-                )}
-              </div>
-              <div className="requirements-add-form__actions">
-                <Button type="submit" variant="primary" disabled={adding || !addLabel.trim()}>
-                  {adding ? "Creating…" : "Create item"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setAddOpen(false);
-                    setAddLabel("");
-                    setAddError(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-              {addError && <p className="text-error requirements-add-form__error">{addError}</p>}
-            </form>
-          )}
-
           <div className="attendees-table-wrap">
             <table className="table">
               <thead>
@@ -406,6 +365,69 @@ export function RequirementsPage() {
         </Card>
       </section>
         </>
+      )}
+
+      {addOpen && (
+        <div className="event-item-modal" role="dialog" aria-modal="true" aria-label="Add item">
+          <div
+            className="event-item-modal__backdrop"
+            onClick={() => {
+              setAddOpen(false);
+              setAddLabel("");
+              setAddError(null);
+            }}
+          />
+          <div className="event-item-modal__panel">
+            <div className="event-item-modal__header">
+              <h2 className="event-item-modal__title">Add item</h2>
+            </div>
+            <form
+              id="add-item-form"
+              className="event-item-modal__body"
+              onSubmit={(e) => void handleAddItem(e)}
+            >
+              <Input
+                label="Item name"
+                value={addLabel}
+                onChange={(e) => setAddLabel(e.target.value)}
+                placeholder="Gift bag"
+                required
+                autoFocus
+              />
+              {addLabel.trim() && (
+                <p className="requirements-section-hint">
+                  Internal ID:{" "}
+                  <code>{addKeyPreview || slugifyItemKey(addLabel) || "—"}</code>
+                  {addKeyPreview && addKeyPreview !== slugifyItemKey(addLabel) && (
+                    <> (name already taken — using unique suffix)</>
+                  )}
+                </p>
+              )}
+              {addError && <p className="text-error">{addError}</p>}
+            </form>
+            <div className="event-item-modal__footer">
+              <Button
+                type="submit"
+                form="add-item-form"
+                variant="primary"
+                disabled={adding || !addLabel.trim()}
+              >
+                {adding ? "Creating…" : "Create item"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setAddOpen(false);
+                  setAddLabel("");
+                  setAddError(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {selectedItem && (
