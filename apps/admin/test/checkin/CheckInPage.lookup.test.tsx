@@ -313,4 +313,40 @@ describe("CheckInPage lookup card states (#379)", () => {
     });
     expect(screen.getByRole("button", { name: "Confirm check-in" })).toBeTruthy();
   });
+
+  it("does not resurrect a stale debounced fetch after a suggestion opens a card", async () => {
+    mockPageBootstrap();
+    fetchAttendeeCard.mockResolvedValue(baseCard);
+
+    let resolveStale: ((rows: (typeof annaHit)[]) => void) | undefined;
+    const staleFetch = new Promise<(typeof annaHit)[]>((resolve) => {
+      resolveStale = resolve;
+    });
+    lookupCheckInAttendees.mockResolvedValueOnce([annaHit]).mockReturnValueOnce(staleFetch);
+
+    renderPage();
+    const input = await scanInput();
+
+    fireEvent.change(input, { target: { value: "ann" } });
+    await waitFor(() => {
+      expect(screen.getByText("Anna Alpha")).toBeTruthy();
+    });
+
+    // Retype before clicking: schedules a second debounced fetch that stays
+    // in flight (unresolved) while the first suggestion is still on screen.
+    fireEvent.change(input, { target: { value: "anna" } });
+    await new Promise((r) => setTimeout(r, 350));
+
+    fireEvent.click(screen.getByText("Anna Alpha"));
+    await waitFor(() => {
+      expect(fetchAttendeeCard).toHaveBeenCalled();
+    });
+
+    // The stale fetch resolves after the card is already open — it must not
+    // repopulate the scan-bar dropdown (suggestSeqRef guard).
+    resolveStale!([{ ...annaHit, id: "att-2", name: "Anna Beta" }]);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.queryByText("Anna Beta")).toBeNull();
+  });
 });

@@ -527,6 +527,7 @@ export function CheckInPage({
       setScanResult(scanResultFromCard(loaded));
       setAdmitOrigin("manual");
       setBuffer("");
+      suggestSeqRef.current += 1;
       setSuggestions([]);
     } catch (err) {
       handleApiFailure(err);
