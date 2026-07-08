@@ -12,7 +12,6 @@ const CODE_MESSAGES: Record<string, string> = {
   cannot_revoke_current: "You cannot revoke your current session.",
   cannot_revoke_own_session: "You cannot revoke your current session.",
   conflicting_custom_data_field_options: "Conflicting custom field options.",
-  default_item_not_deletable: "This default item cannot be deleted.",
   delivery_not_created: "Could not create the delivery.",
   delivery_not_found: "Delivery not found.",
   duplicate_issuer: "An identity provider with this issuer already exists.",

@@ -92,7 +92,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [deleteBlockReason, setDeleteBlockReason] = useState<"in_use" | "default" | null>(null);
+  const [deleteBlockReason, setDeleteBlockReason] = useState<"in_use" | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   useEffect(() => {
@@ -153,9 +153,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
       onClose();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setDeleteBlockReason(
-          hasApiErrorCode(err, "default_item_not_deletable") ? "default" : "in_use",
-        );
+        setDeleteBlockReason("in_use");
       } else {
         setError(operatorApiErrorMessage(err, "Failed to delete item."));
       }
@@ -215,11 +213,6 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
           {deleteBlockReason === "in_use" && (
             <p className="text-error">
               This item has been issued to attendees — disable it instead of deleting.
-            </p>
-          )}
-          {deleteBlockReason === "default" && (
-            <p className="text-error">
-              Default items (giftbag, badge, headset) cannot be deleted — disable them instead.
             </p>
           )}
 

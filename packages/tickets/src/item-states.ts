@@ -1,5 +1,4 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { ensureDefaultEventItems } from "./event-items.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 
 import type { EventItemConfig } from "./types.js";
@@ -24,8 +23,6 @@ export async function ensureAttendeeItemStates(
   eventId: string,
   db: DbClient,
 ): Promise<void> {
-  await ensureDefaultEventItems(eventId, db);
-
   const items = await db.eventItem.findMany({
     where: { event_id: eventId, enabled: true },
     select: { id: true },
