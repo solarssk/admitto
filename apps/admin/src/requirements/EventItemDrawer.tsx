@@ -98,6 +98,9 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, !deleteConfirmOpen, onClose);
+  // "badge" is auto-recreated by the server (ensureBadgeEventItem) — deleting it
+  // would silently reappear, so deletion is blocked; disable it instead.
+  const isDefaultItem = item.key === "badge";
 
   useEffect(() => {
     setForm(toForm(item));
@@ -150,13 +153,19 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
           "This item has been issued to attendees — disable it instead of deleting.",
           "warning",
         );
+      } else if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "default_item")) {
+        addToast(
+          "\u201cBadge\u201d is a default item and can't be deleted — turn off Active instead.",
+          "warning",
+        );
       } else {
         addToast(operatorApiErrorMessage(err, "Failed to delete item."), "error");
       }
     } finally {
       setDeleting(false);
       setDeleteConfirmOpen(false);
-    }  }
+    }
+  }
 
   function updateContent(index: number, field: "label" | "source_field", value: string) {
     setForm((f) => {
@@ -418,7 +427,13 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
             <Button
               type="button"
               variant="ghost"
-              disabled={deleting}
+              disabled={deleting || isDefaultItem}
+              className={isDefaultItem ? "at-tooltip" : undefined}
+              data-tooltip={
+                isDefaultItem
+                  ? "Default item — required for \u201cIssue badge at entry\u201d. Turn off Active instead."
+                  : undefined
+              }
               onClick={() => setDeleteConfirmOpen(true)}
             >
               Delete item

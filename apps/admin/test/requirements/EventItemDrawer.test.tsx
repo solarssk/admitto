@@ -86,6 +86,37 @@ describe("EventItemDrawer", () => {
     });
   });
 
+  it("disables delete for the default badge item with an explanatory tooltip", () => {
+    renderDrawer(badgeWithNullConfig);
+    const deleteButton = screen.getByRole("button", { name: "Delete item" }) as HTMLButtonElement;
+    expect(deleteButton.disabled).toBe(true);
+    expect(deleteButton.getAttribute("data-tooltip")).toMatch(/Default item/);
+  });
+
+  it("keeps delete enabled for non-default items", () => {
+    renderDrawer(giftbagItem);
+    const deleteButton = screen.getByRole("button", { name: "Delete item" }) as HTMLButtonElement;
+    expect(deleteButton.disabled).toBe(false);
+    expect(deleteButton.getAttribute("data-tooltip")).toBeNull();
+  });
+
+  it("fires toast when delete returns default_item", async () => {
+    // Defensive fallback: the Delete button is disabled for the badge item,
+    // so this path only guards against races/future misuse of the handler.
+    vi.mocked(deleteEventItem).mockRejectedValueOnce(
+      new ApiError(409, "default_item", "default_item"),
+    );
+    renderDrawer(giftbagItem);
+    fireEvent.click(screen.getByRole("button", { name: "Delete item" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        expect.stringMatching(/can't be deleted — turn off Active instead/),
+        "warning",
+      );
+    });
+  });
+
   it("fires toast when delete returns item_in_use", async () => {
     vi.mocked(deleteEventItem).mockRejectedValueOnce(
       new ApiError(409, "item_in_use", "item_in_use"),
