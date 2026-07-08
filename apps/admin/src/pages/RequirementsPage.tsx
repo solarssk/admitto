@@ -97,6 +97,9 @@ export function RequirementsPage() {
     (!badgeItem ||
       !badgeItem.enabled ||
       badgeItem.config?.issue_on_checkin === false);
+  // "Issue badge at entry" is a no-op without an active badge item — disable
+  // the toggle instead of letting operators turn on a setting that can't work.
+  const badgeInactive = !badgeItem || !badgeItem.enabled;
 
   async function handleToggleEnabled(item: EventItemDto) {
     if (!eventId) return;
@@ -163,7 +166,11 @@ export function RequirementsPage() {
       addToast("Setting updated", "success");
     } catch (err) {
       setOpsConfig(prev);
-      addToast(operatorApiErrorMessage(err, "Failed to save event behaviour."), "error");
+      if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "badge_item_inactive")) {
+        addToast("Can't enable this — the badge item is disabled. Turn it back on first.", "warning");
+      } else {
+        addToast(operatorApiErrorMessage(err, "Failed to save event behaviour."), "error");
+      }
     } finally {
       setOpsSaving(false);
     }
@@ -276,12 +283,21 @@ export function RequirementsPage() {
                     item to exist, be active, and have "Issue on check-in" enabled.
                   </p>
                 </div>
-                <Switch
-                  checked={opsConfig.badge_at_entry}
-                  disabled={opsSaving}
-                  onChange={(e) => void handleOpsToggle("badge_at_entry", e.target.checked)}
-                  aria-label="Issue badge at entry"
-                />
+                <span
+                  className={badgeInactive ? "at-tooltip" : undefined}
+                  data-tooltip={
+                    badgeInactive
+                      ? "Can't enable this — the badge item is disabled. Turn it back on first."
+                      : undefined
+                  }
+                >
+                  <Switch
+                    checked={opsConfig.badge_at_entry}
+                    disabled={opsSaving || badgeInactive}
+                    onChange={(e) => void handleOpsToggle("badge_at_entry", e.target.checked)}
+                    aria-label="Issue badge at entry"
+                  />
+                </span>
               </div>
               {badgeWarning && (
                 <p className="requirements-warning">

@@ -361,6 +361,52 @@ describe("RequirementsPage operator errors", () => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save event behaviour/);
     });
   });
+
+  it("disables Issue badge at entry when the badge item is inactive", async () => {
+    // mockResolvedValue (not Once): the effect can re-run more than once in
+    // this test harness (unstable useConnectionState mock identity), so every
+    // fetchEventItems call must consistently report the badge as disabled.
+    vi.mocked(fetchEventItems).mockResolvedValue([{ ...sampleItem, enabled: false }]);
+    renderRequirements();
+    await waitFor(() => {
+      expect(screen.getByRole("switch", { name: "Issue badge at entry" })).toBeTruthy();
+    });
+    const toggle = screen.getByRole("switch", {
+      name: "Issue badge at entry",
+    }) as HTMLInputElement;
+    expect(toggle.disabled).toBe(true);
+    expect(toggle.closest(".at-tooltip")?.getAttribute("data-tooltip")).toMatch(
+      /badge item is disabled/,
+    );
+  });
+
+  it("keeps Issue badge at entry enabled when the badge item is active", async () => {
+    renderRequirements();
+    await waitFor(() => {
+      expect(screen.getByRole("switch", { name: "Issue badge at entry" })).toBeTruthy();
+    });
+    const toggle = screen.getByRole("switch", {
+      name: "Issue badge at entry",
+    }) as HTMLInputElement;
+    expect(toggle.disabled).toBe(false);
+    expect(toggle.closest(".at-tooltip")).toBeNull();
+  });
+
+  it("toasts when enabling badge_at_entry is rejected as badge_item_inactive", async () => {
+    // Defensive fallback: the Switch is disabled once the badge item is
+    // inactive, so this only guards a race between page load and toggle.
+    vi.mocked(updateOpsConfig).mockRejectedValueOnce(
+      new ApiError(409, "badge_item_inactive", "badge_item_inactive"),
+    );
+    renderRequirements();
+    await waitFor(() => {
+      expect(screen.getByRole("switch", { name: "Issue badge at entry" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Issue badge at entry" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/badge item is disabled/);
+    });
+  });
 });
 
 describe("ReportsPage operator errors", () => {
