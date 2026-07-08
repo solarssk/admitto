@@ -211,6 +211,7 @@ export function RequirementsPage() {
           actions={
             <Button
               variant="secondary"
+              size="sm"
               icon={<i className="ti ti-plus" />}
               onClick={() => {
                 setAddOpen((o) => !o);
