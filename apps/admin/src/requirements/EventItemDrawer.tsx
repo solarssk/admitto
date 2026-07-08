@@ -272,6 +272,33 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                           placeholder="Shirt size"
                         />
                       </div>
+                      <div className="contents-row__meta">
+                        <select
+                          id={`hint-type-${i}`}
+                          value={row.type}
+                          onChange={(e) =>
+                            updateContentMeta(
+                              i,
+                              "type",
+                              e.target.value as ContentRow["type"],
+                            )
+                          }
+                          className="contents-row__type"
+                          aria-label="Field type"
+                        >
+                          <option value="text">Text</option>
+                          <option value="select">Select</option>
+                          <option value="boolean">Boolean</option>
+                        </select>
+                        <label className="contents-row__required">
+                          <input
+                            type="checkbox"
+                            checked={row.required}
+                            onChange={(e) => updateContentMeta(i, "required", e.target.checked)}
+                          />
+                          Required
+                        </label>
+                      </div>
                       <IconButton
                         label="Remove row"
                         type="button"
@@ -298,33 +325,6 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                         pattern="[a-z0-9_]+"
                         title="Lowercase letters, numbers, and underscores only"
                       />
-                    </div>
-
-                    <div className="contents-row__meta">
-                      <select
-                        value={row.type}
-                        onChange={(e) =>
-                          updateContentMeta(
-                            i,
-                            "type",
-                            e.target.value as ContentRow["type"],
-                          )
-                        }
-                        className="contents-row__type"
-                        aria-label="Field type"
-                      >
-                        <option value="text">Text</option>
-                        <option value="select">Select</option>
-                        <option value="boolean">Boolean</option>
-                      </select>
-                      <label className="contents-row__required">
-                        <input
-                          type="checkbox"
-                          checked={row.required}
-                          onChange={(e) => updateContentMeta(i, "required", e.target.checked)}
-                        />
-                        Required
-                      </label>
                     </div>
 
                     {row.type === "select" && (

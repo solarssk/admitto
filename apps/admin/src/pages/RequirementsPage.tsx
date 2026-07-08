@@ -18,19 +18,6 @@ import { slugifyItemKey, uniqueItemKey } from "../requirements/itemKey.js";
 import "../requirements/requirements.css";
 
 /** One-line summary of item config for the Requirements table. */
-function configSummary(config: EventItemDto["config"]): string {
-  if (!config) return "—";
-  const parts: string[] = [];
-  if (config.contents?.length) {
-    parts.push(
-      config.contents.map((c) => `${c.label} ← ${c.source_field}`).join(", "),
-    );
-  }
-  if (config.requires_return) parts.push("requires return");
-  if (config.issue_on_checkin) parts.push("issue on check-in");
-  return parts.length > 0 ? parts.join(" · ") : "—";
-}
-
 /** Admin screen for per-event item configuration and operational behaviour. */
 export function RequirementsPage() {
   const { eventId } = useParams();
@@ -224,21 +211,19 @@ export function RequirementsPage() {
               <thead>
                 <tr>
                   <th>Item</th>
-                  <th>Active</th>
-                  <th>Rules</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={4} className="attendees-empty">
+                    <td colSpan={2} className="attendees-empty">
                       Loading…
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="attendees-empty">
+                    <td colSpan={2} className="attendees-empty">
                       No items yet. Add one to configure what operators issue at check-in.
                     </td>
                   </tr>
@@ -250,29 +235,20 @@ export function RequirementsPage() {
                           <i className={`ti ti-${item.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
                           <div>
                             <div className="requirements-item-name">{item.label}</div>
-                            {item.description ? (
+                            {item.description && (
                               <div className="requirements-item-desc">{item.description}</div>
-                            ) : (
-                              <div className="requirements-item-desc requirements-item-desc--empty">No description</div>
                             )}
                             <div className="requirements-item-id">{item.key}</div>
                           </div>
                         </div>
                       </td>
-                      <td>
+                      <td className="requirements-item-actions">
                         <Switch
                           label={item.enabled ? "On" : "Off"}
                           checked={item.enabled}
                           onChange={() => void handleToggleEnabled(item)}
                           aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
                         />
-                      </td>
-                      <td>
-                        <span className="requirements-config-summary" title={configSummary(item.config)}>
-                          {configSummary(item.config)}
-                        </span>
-                      </td>
-                      <td className="requirements-item-actions">
                         <IconButton
                           label="Edit item"
                           icon={<i className="ti ti-pencil" aria-hidden="true" />}
