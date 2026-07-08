@@ -198,7 +198,7 @@ describe("POST /api/admin/events", () => {
 
     const items = await prisma.eventItem.findMany({ where: { event_id: body.event.id } });
     expect(items).toHaveLength(1);
-    expect(items[0].key).toBe("badge");
+    expect(items[0]?.key).toBe("badge");
   });
 
   it("creates event as org admin in own organization", async () => {
