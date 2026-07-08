@@ -1,19 +1,25 @@
 import type { CheckInHistoryEntry } from "../api/types.js";
 import { formatAdmissionDisplay } from "../utils/event-dates.js";
 
-function statusLabel(status: string): string {
+// A CheckIn row with status UNDO is a reversal, not an admission — source
+// tells us whether the operator undid their own scan or an admin revoked the
+// attendee's check-in later (#449 review); both need their own label/dot so
+// the sidebar doesn't keep showing a reversed admission as still "Checked in".
+function statusLabel(status: string, source: string | null): string {
   const normalized = status.toLowerCase();
   if (normalized === "admitted" || normalized === "valid") return "Checked in";
   if (normalized === "already_checked_in") return "Already c-in";
+  if (normalized === "undo") return source === "admin_revoke" ? "Revoked" : "Undone";
   if (normalized === "revoked") return "Ticket rev.";
   if (normalized === "invalid") return "Invalid";
   return status.replace(/_/g, " ");
 }
 
-function dotClass(status: string): string {
+function dotClass(status: string, source: string | null): string {
   const normalized = status.toLowerCase();
   if (normalized === "admitted" || normalized === "valid") return "rec-dot--admitted";
   if (normalized === "already_checked_in") return "rec-dot--already_checked_in";
+  if (normalized === "undo") return source === "admin_revoke" ? "rec-dot--revoked" : "rec-dot--undo";
   if (normalized === "revoked") return "rec-dot--revoked";
   return "rec-dot--invalid";
 }
@@ -49,7 +55,7 @@ export function CkRecentScans({
           {rows.map((row) => (
             // Mockup ci-row: dot | info (name + ticket, left) | right (status + time).
             <li key={row.id} className="ck-recent__row">
-              <span className={`rec-dot ${dotClass(row.status)}`} aria-hidden="true" />
+              <span className={`rec-dot ${dotClass(row.status, row.source)}`} aria-hidden="true" />
               <div className="ck-recent__info">
                 <strong className="ck-recent__name">{row.attendee.name}</strong>
                 {row.attendee.ticket_type && (
@@ -57,7 +63,7 @@ export function CkRecentScans({
                 )}
               </div>
               <div className="ck-recent__right">
-                <span className="ck-recent__status">{statusLabel(row.status)}</span>
+                <span className="ck-recent__status">{statusLabel(row.status, row.source)}</span>
                 <time>{formatAdmissionDisplay(row.checked_in_at, eventDate, eventTimezone)}</time>
               </div>
             </li>

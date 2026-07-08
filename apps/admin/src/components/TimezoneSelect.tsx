@@ -13,6 +13,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
+import { useClickOutside } from "./useClickOutside.js";
 
 interface TzEntry {
   iana: string;
@@ -347,16 +348,7 @@ export function TimezoneSelect({
     return () => window.clearTimeout(t);
   }, [open, value, options]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        closePanel();
-      }
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [open]);
+  useClickOutside(containerRef, open, closePanel);
 
   useEffect(() => {
     if (!open) return;

@@ -29,6 +29,10 @@ import {
   countFilteredAttendees,
   findFilteredAttendeesForExport,
   findFilteredAttendeesForList,
+  isAdmittable,
+  revokeCheckIn,
+  revokeCheckInMutation,
+  UndoNotAllowedError,
 } from "@admitto/tickets";
 import {
   EXPORT_BASE_COLUMNS,
@@ -1055,6 +1059,39 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
 
       if (isStaleWrite(result)) throw new StaleWriteError();
 
+      // Any transition to a non-admittable status must not leave a stale
+      // admission behind — restoring the pass later would otherwise
+      // resurrect a "checked in" state from before the revoke without a new
+      // scan ever happening (PO review). isAdmittable() rather than a literal
+      // "revoked" check so this still holds if the status enum this route
+      // accepts ever widens to include "cancelled" (already a first-class
+      // AttendeeStatus, just not settable here yet).
+      // existing.admitted_at was read before this transaction started, so a
+      // concurrent request (operator undo, another admin's revoke-check-in)
+      // may have already cleared it — revokeCheckInMutation throws in that
+      // case; that's fine, there's nothing left to revoke, but it must not
+      // abort the status change itself (bugbot). Uses the mutation-only
+      // helper (not revokeCheckInTx) since this side-effect path builds its
+      // own response DTO below and would otherwise pay for an unused
+      // AttendeeCardDto build (event items, item states, notes, authors).
+      if (statusChange !== undefined && !isAdmittable(statusChange) && existing.admitted_at) {
+        try {
+          await revokeCheckInMutation({ eventId, attendeeId, audit: adminAuditFromContext(c) }, tx);
+          // result.row was read before the clear above, and the mutation's
+          // own attendee update bumps updated_at again (Attendee.updated_at
+          // is @updatedAt) — re-read both so the response DTO's
+          // expected_updated_at stays valid for the client's next edit.
+          const fresh = await tx.attendee.findUniqueOrThrow({
+            where: { id: attendeeId },
+            select: { admitted_at: true, updated_at: true },
+          });
+          result.row.admitted_at = fresh.admitted_at;
+          result.row.updated_at = fresh.updated_at;
+        } catch (err) {
+          if (!(err instanceof UndoNotAllowedError)) throw err;
+        }
+      }
+
       if (rsvpChange) {
         await writeActionLog(tx, {
           event_id: eventId,
@@ -1355,6 +1392,44 @@ export async function handleResendEventAttendeeTicket(
   });
 
   return c.json(toDeliveryDto(latest));
+}
+
+/**
+ * POST /api/admin/events/:eventId/attendees/:id/revoke-checkin
+ * Admin/superadmin only (assertEventManageAccess) — reverses this attendee's
+ * current admission regardless of who checked them in or when, distinct from
+ * the operator-facing device-scoped "undo my last scan" on the check-in page.
+ */
+export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const attendeeIdOrRes = requireAttendeeId(c);
+  if (attendeeIdOrRes instanceof Response) return attendeeIdOrRes;
+  const attendeeId = attendeeIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
+  if (!existing) return c.json({ error: "forbidden" }, 403);
+
+  try {
+    const result = await revokeCheckIn(
+      { eventId, attendeeId, audit: adminAuditFromContext(c) },
+      db,
+    );
+    return c.json(result);
+  } catch (err) {
+    if (err instanceof UndoNotAllowedError) {
+      // Distinct messages for "genuinely not admitted" vs "lost a
+      // concurrent-revoke race" (review finding) — matches the sibling
+      // handleCheckinUndo's err.message passthrough for the same error type.
+      return c.json({ error: err.message }, 409);
+    }
+    console.error("handleRevokeAttendeeCheckIn failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
 }
 
 /** Best-effort bulk send audit — must not fail the HTTP response after mail is queued. */

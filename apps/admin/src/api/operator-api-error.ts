@@ -38,6 +38,7 @@ const CODE_MESSAGES: Record<string, string> = {
   manual_lookup_disabled: "Manual lookup is disabled for this event — use QR scan only.",
   mappings_required: "Role mappings are required before enabling this provider.",
   no_local_password: "Password is managed by your identity provider.",
+  not_admitted: "This attendee isn't currently checked in.",
   not_found: "The requested item was not found.",
   password_change_required:
     "You must change your password before continuing. Update it in Account or go to /change-password.",

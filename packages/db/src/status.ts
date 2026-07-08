@@ -80,6 +80,7 @@ export const ATTENDEE_ITEM_STATE = [
 export type AttendeeActionType =
   | 'check_in'
   | 'check_in_undo'
+  | 'check_in_revoked'
   | 'scan_preview'
   | 'item_issued'
   | 'item_returned'
@@ -99,6 +100,7 @@ export type AttendeeActionType =
 export const ATTENDEE_ACTION_TYPE = [
   'check_in',
   'check_in_undo',
+  'check_in_revoked',
   'scan_preview',
   'item_issued',
   'item_returned',

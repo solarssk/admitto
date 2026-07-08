@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "success";
 export type ButtonSize = "sm" | "md" | "lg";
@@ -9,20 +9,26 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   block?: boolean;
   icon?: ReactNode;
   iconRight?: ReactNode;
+  /** Adds a trailing chevron-down — use on any button that opens a menu/submenu, so it always reads as "has more options" the same way. Takes precedence over iconRight. */
+  hasMenu?: boolean;
 }
 
-export function Button({
-  variant = "primary",
-  size = "md",
-  block = false,
-  icon = null,
-  iconRight = null,
-  disabled = false,
-  type = "button",
-  children,
-  className,
-  ...rest
-}: ButtonProps) {
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  {
+    variant = "primary",
+    size = "md",
+    block = false,
+    icon = null,
+    iconRight = null,
+    hasMenu = false,
+    disabled = false,
+    type = "button",
+    children,
+    className,
+    ...rest
+  },
+  ref,
+) {
   const cls = [
     "at-btn",
     `at-btn--${variant}`,
@@ -33,19 +39,21 @@ export function Button({
     .filter(Boolean)
     .join(" ");
 
+  const trailingIcon = hasMenu ? <i className="ti ti-chevron-down" aria-hidden="true" /> : iconRight;
+
   return (
-    <button type={type} className={cls} disabled={disabled} {...rest}>
+    <button ref={ref} type={type} className={cls} disabled={disabled} {...rest}>
       {icon && (
         <span className="at-btn__icon" aria-hidden="true">
           {icon}
         </span>
       )}
       {children && <span>{children}</span>}
-      {iconRight && (
+      {trailingIcon && (
         <span className="at-btn__icon" aria-hidden="true">
-          {iconRight}
+          {trailingIcon}
         </span>
       )}
     </button>
   );
-}
+});

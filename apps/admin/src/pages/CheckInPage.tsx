@@ -14,10 +14,12 @@ import {
   submitCheckInScan,
   submitItemAction,
   undoLastCheckIn,
+  revokeAttendeeCheckIn,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeCardDto, CheckInHistoryEntry, CheckInScanResponse, OpsConfigDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
+import { isAdmin } from "../auth/capabilities.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { CHECKIN_DUPLICATE_DEBOUNCE_MS, normalizeScannedInput } from "../checkin/normalize.js";
 import { scanResultFromCard } from "../checkin/cardScanResult.js";
@@ -98,7 +100,8 @@ export function CheckInPage({
   const { eventId } = useParams();
   const [eventTimezone, setEventTimezone] = useState(eventTimezoneProp ?? "UTC");
   const [eventDate, setEventDate] = useState<string | null>(eventDateProp ?? null);
-  const { deviceLabel } = useAuth();
+  const { deviceLabel, assignments } = useAuth();
+  const canRevokeCheckIn = isAdmin(assignments);
   const { state: connectionState, reportApiError } = useConnectionState();
   const { addToast } = useToast();
   const canAct = canMutateCheckin(connectionState);
@@ -350,6 +353,16 @@ export function CheckInPage({
     setTransportError(null);
     setOverlayManualError(null);
   }, []);
+
+  // Header "Disable camera" toggles (AdminCheckInRoute, operator desktop) flip
+  // the parent's camera state directly and don't go through closeInlineCamera's
+  // onReset — clear any stale scan/card display here so a stopped-then-restarted
+  // camera doesn't overlay an old result (#381).
+  const prevCameraActiveRef = useRef(cameraActive);
+  useEffect(() => {
+    if (prevCameraActiveRef.current && !cameraActive) clearDisplayedResult();
+    prevCameraActiveRef.current = cameraActive;
+  }, [cameraActive, clearDisplayedResult]);
 
   /** User-initiated reset (Escape, Cancel button) — also clears the input and
    * cancels any pending wedge timer, since the user explicitly wants a clean slate. */
@@ -722,6 +735,43 @@ export function CheckInPage({
       }
     });
 
+  // Admin/superadmin only (canRevokeCheckIn) — reverses this attendee's
+  // admission regardless of who checked them in or when, unlike onUndo's
+  // device-scoped "last valid on this device" safety net. Reports transport
+  // failures to the connection indicator but re-throws rather than calling
+  // the full handleApiFailure — AttendeeCard's ConfirmDialog shows the error
+  // inline instead of a page-level toast, matching the confirm-dialog
+  // convention; only a duplicate toast is avoided, not the connection state.
+  const onRevokeCheckIn = (attendeeId: string) =>
+    runExclusive(async () => {
+      if (!eventId) return;
+      // Confirmation happens inside AttendeeCard's dialog, not on this
+      // handler's own trigger button — canAct can flip false between
+      // opening the dialog and clicking its Confirm, so this must throw
+      // rather than silently resolve, or the dialog closes as if the
+      // revoke succeeded when nothing was actually sent (bugbot).
+      if (!canAct) throw new Error("Offline — check your connection and try again.");
+      setBusy(true);
+      try {
+        const { card: updated } = await revokeAttendeeCheckIn(eventId, attendeeId);
+        setCard(updated);
+        setScanResult(scanResultFromCard(updated));
+        void refreshSidebar();
+        // Success only — AttendeeCard's dialog is still technically "open"
+        // here (its own setRevokeOpen(false) runs after this promise
+        // resolves), but useModalFocusTrap doesn't fight an external
+        // .focus() call, so this lands cleanly right as the dialog closes.
+        // On error the dialog stays open with an inline message; stealing
+        // focus there would be wrong, so this must not run in `finally`.
+        focusScan();
+      } catch (err) {
+        if (err instanceof ApiError) reportApiError(err.status);
+        throw err;
+      } finally {
+        setBusy(false);
+      }
+    });
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     void submitScanOrLookup(buffer);
@@ -863,16 +913,16 @@ export function CheckInPage({
         </p>
       )}
 
-      {isOperatorShell && !cameraActive && (
+      {isOperatorShell && (isDesktop || !cameraActive) && (
         <div className="ck-operator-actions" ref={operatorCameraActionsRef}>
           <Button
             type="button"
             variant="secondary"
             size="sm"
-            icon={<i className="ti ti-camera" aria-hidden="true" />}
-            onClick={() => setCameraActive(true)}
+            icon={<i className={`ti ti-camera${cameraActive ? "-off" : ""}`} aria-hidden="true" />}
+            onClick={() => setCameraActive(!cameraActive)}
           >
-            Use camera
+            {cameraActive ? "Disable camera" : "Use camera"}
           </Button>
         </div>
       )}
@@ -950,25 +1000,27 @@ export function CheckInPage({
 
           {showInlineCamera ? (
             <>
-              <CkInlineCamera
-                wedgeActive={buffer.trim().length > 0}
-                scannerPaused={!!scanResult || pending}
-                overlayScanResult={showCompactFeedback ? scanResult : null}
-                onScan={(raw) => void runScan(raw)}
-                onClose={closeInlineCamera}
-                card={card}
-                pending={pending}
-                canAct={canAct && !busy}
-                eventTimezone={eventTimezone}
-                onConfirm={
-                  showCompactFeedback &&
-                  card &&
-                  scanResult?.status === "PREVIEW"
-                    ? () => void admitCurrent(card.id, admitOrigin)
-                    : undefined
-                }
-                onReset={resetScan}
-              />
+              {!showResultCard && (
+                <CkInlineCamera
+                  wedgeActive={buffer.trim().length > 0}
+                  scannerPaused={!!scanResult || pending}
+                  overlayScanResult={showCompactFeedback ? scanResult : null}
+                  onScan={(raw) => void runScan(raw)}
+                  onClose={closeInlineCamera}
+                  card={card}
+                  pending={pending}
+                  canAct={canAct && !busy}
+                  eventTimezone={eventTimezone}
+                  onConfirm={
+                    showCompactFeedback &&
+                    card &&
+                    scanResult?.status === "PREVIEW"
+                      ? () => void admitCurrent(card.id, admitOrigin)
+                      : undefined
+                  }
+                  onReset={resetScan}
+                />
+              )}
               {showResultCard && card && (
                 <AttendeeCard
                   key={card.id}
@@ -988,6 +1040,9 @@ export function CheckInPage({
                   onUndo={() => void onUndo()}
                   showUndo={showUndo}
                   onCancel={resetScan}
+                  onRevokeCheckIn={
+                    canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined
+                  }
                 />
               )}
             </>
@@ -1016,6 +1071,9 @@ export function CheckInPage({
                   onUndo={() => void onUndo()}
                   showUndo={showUndo}
                   onCancel={resetScan}
+                  onRevokeCheckIn={
+                    canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined
+                  }
                 />
               ) : (
                 !scanResult && <CkEmptyState />

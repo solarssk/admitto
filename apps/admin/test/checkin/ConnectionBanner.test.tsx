@@ -5,7 +5,7 @@ import type { ConnectionState } from "../../src/connection/types.js";
 import {
   CheckinConnectionBanner,
   CheckinConnectionLiveRegion,
-  CheckinConnectionPill,
+  ServerConnectionBadge,
 } from "../../src/checkin/ConnectionBanner.js";
 
 const useConnectionState = vi.fn();
@@ -39,16 +39,16 @@ describe("CheckinConnectionBanner", () => {
   });
 });
 
-describe("CheckinConnectionPill", () => {
+describe("ServerConnectionBadge", () => {
   it("shows a compact label when connected", () => {
     mockState("connected");
-    render(<CheckinConnectionPill />);
+    render(<ServerConnectionBadge />);
     expect(screen.getByText("Server connected")).toBeTruthy();
   });
 
   it("hides when not connected", () => {
     mockState("offline");
-    const { container } = render(<CheckinConnectionPill />);
+    const { container } = render(<ServerConnectionBadge />);
     expect(container.firstChild).toBeNull();
   });
 });

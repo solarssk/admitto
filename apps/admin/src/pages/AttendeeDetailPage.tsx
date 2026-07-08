@@ -17,6 +17,7 @@ import {
   ApiError,
   fetchAttendeeDetail,
   resendTicket,
+  revokeAttendeeCheckIn,
   updateAttendee,
   type EventFullMeta,
 } from "../api/client.js";
@@ -36,11 +37,93 @@ import { readCustomDataField, validateCustomFieldsForm } from "../attendees/cust
 import type { CustomDataFieldDef } from "../attendees/customData.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useClickOutside } from "../components/useClickOutside.js";
+import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import "../attendees/attendees.css";
 
 type TabId = "overview" | "activity";
+
+/** Single red "Revoke" entry point — opens a small menu for pass vs. check-in, each still confirmed via its own dialog. */
+function RevokeActionMenu({
+  canRevokeCheckIn,
+  onRevokePass,
+  onRevokeCheckIn,
+}: {
+  canRevokeCheckIn: boolean;
+  onRevokePass: () => void;
+  onRevokeCheckIn: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const close = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  useClickOutside(rootRef, open, close);
+
+  useEffect(() => {
+    if (!open) return;
+    // Move focus into the menu when it opens.
+    panelRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") close();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- close is a plain component function (not useCallback); it only touches stable refs/setState, so a stale closure here is harmless.
+  }, [open]);
+
+  return (
+    <div className="revoke-menu" ref={rootRef}>
+      <Button
+        ref={triggerRef}
+        type="button"
+        variant="danger"
+        icon={<i className="ti ti-ban" aria-hidden="true" />}
+        hasMenu
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        Revoke
+      </Button>
+      {open && (
+        <div className="revoke-menu__panel" role="menu" ref={panelRef}>
+          <button
+            type="button"
+            role="menuitem"
+            className="revoke-menu__item"
+            onClick={() => {
+              setOpen(false);
+              onRevokePass();
+            }}
+          >
+            Revoke pass
+          </button>
+          {canRevokeCheckIn && (
+            <button
+              type="button"
+              role="menuitem"
+              className="revoke-menu__item"
+              onClick={() => {
+                setOpen(false);
+                onRevokeCheckIn();
+              }}
+            >
+              Revoke check-in
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Event attendee detail: profile edit, pass revoke/restore, resend, and activity log. */
 export function AttendeeDetailPage() {
@@ -73,7 +156,10 @@ export function AttendeeDetailPage() {
   const [resending, setResending] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
-  const [revokeOpen, setRevokeOpen] = useState(false);
+  // Which of the two "revoke" confirm flows is active — mutually exclusive
+  // by construction, replacing six independent booleans that could
+  // technically both be true at once (review finding).
+  const [activeRevoke, setActiveRevoke] = useState<"pass" | "checkin" | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [restoreCapacityBlocked, setRestoreCapacityBlocked] = useState<EventFullMeta | null>(null);
@@ -341,7 +427,7 @@ export function AttendeeDetailPage() {
         if (!currentForm) return toAttendeeForm(updated, attributeFields);
         return mergeFormAfterReload(currentForm, previousDetail, updated, attributeFields);
       });
-      setRevokeOpen(false);
+      setActiveRevoke(null);
       setRestoreCapacityBlocked(null);
       setRestoreForceCapacity(false);
       addToast(nextStatus === "revoked" ? "Pass revoked" : "Pass restored", "success");
@@ -363,6 +449,25 @@ export function AttendeeDetailPage() {
       } else {
         setRevokeError(operatorApiErrorMessage(err, "Could not update pass status."));
       }
+    } finally {
+      if (isStillSelected(target)) setRevokeBusy(false);
+    }
+  }
+
+  /** Un-admits this attendee regardless of who checked them in or when — distinct from the operator-facing device-scoped undo on the Check-in page. */
+  async function handleRevokeCheckIn() {
+    if (!eventId || !attendeeId || !detail) return;
+    const target = { eventId, attendeeId };
+    setRevokeBusy(true);
+    setRevokeError(null);
+    try {
+      await revokeAttendeeCheckIn(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
+      await loadDetail();
+      setActiveRevoke(null);
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setRevokeError(operatorApiErrorMessage(err, "Could not revoke check-in."));
     } finally {
       if (isStillSelected(target)) setRevokeBusy(false);
     }
@@ -429,9 +534,20 @@ export function AttendeeDetailPage() {
                 {revokeBusy ? "Restoring…" : "Restore pass"}
               </Button>
             ) : (
-              <Button variant="danger" onClick={() => { setRevokeError(null); setRevokeOpen(true); }}>
-                Revoke pass
-              </Button>
+              <RevokeActionMenu
+                canRevokeCheckIn={canRevokeCheckIn({
+                  checkInStatus: detail.check_in_status,
+                  blocked: isRevoked,
+                })}
+                onRevokePass={() => {
+                  setRevokeError(null);
+                  setActiveRevoke("pass");
+                }}
+                onRevokeCheckIn={() => {
+                  setRevokeError(null);
+                  setActiveRevoke("checkin");
+                }}
+              />
             )}
             <Button variant="secondary" onClick={handleBack}>
               Back
@@ -441,7 +557,7 @@ export function AttendeeDetailPage() {
       />
 
       {error && <p className="text-error">{error}</p>}
-      {revokeError && !revokeOpen && (
+      {revokeError && activeRevoke === null && (
         <div className="attendee-form__warn">
           <p className="text-error">{revokeError}</p>
           {isRevoked && restoreCapacityBlocked && superadmin && (
@@ -640,7 +756,7 @@ export function AttendeeDetailPage() {
       />
 
       <ConfirmDialog
-        open={revokeOpen}
+        open={activeRevoke === "pass"}
         title="Revoke pass?"
         message="This attendee will no longer be able to check in. You can restore the pass later if capacity allows."
         confirmLabel="Revoke pass"
@@ -650,7 +766,24 @@ export function AttendeeDetailPage() {
         onConfirm={() => void handlePassStatusChange("revoked")}
         onCancel={() => {
           if (!revokeBusy) {
-            setRevokeOpen(false);
+            setActiveRevoke(null);
+            setRevokeError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={activeRevoke === "checkin"}
+        title="Revoke check-in?"
+        message={`This un-admits ${detail.name} — they'll show as not checked in and will need to be scanned or admitted again to re-enter. This works regardless of when or how they were originally checked in.`}
+        confirmLabel="Revoke check-in"
+        confirmVariant="danger"
+        loading={revokeBusy}
+        errorMessage={revokeError ?? undefined}
+        onConfirm={() => void handleRevokeCheckIn()}
+        onCancel={() => {
+          if (!revokeBusy) {
+            setActiveRevoke(null);
             setRevokeError(null);
           }
         }}

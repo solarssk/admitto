@@ -14,7 +14,12 @@ afterEach(() => {
   setPreferredLocale(null);
 });
 
-function makeEntry(id: string, name: string, status = "admitted"): CheckInHistoryEntry {
+function makeEntry(
+  id: string,
+  name: string,
+  status = "admitted",
+  source: string | null = null,
+): CheckInHistoryEntry {
   return {
     id,
     event_id: "evt-1",
@@ -23,7 +28,7 @@ function makeEntry(id: string, name: string, status = "admitted"): CheckInHistor
     checked_in_at: "2026-06-24T12:00:00.000Z",
     checked_in_by: null,
     device_id: null,
-    source: null,
+    source,
     attendee: { name, ticket_type: null },
   };
 }
@@ -56,6 +61,26 @@ describe("CkRecentScans", () => {
     expect(screen.getByText("Ticket rev.")).toBeTruthy();
     expect(container.querySelector(".rec-dot--revoked")).toBeTruthy();
     expect(container.querySelector(".rec-dot--invalid")).toBeNull();
+  });
+
+  it("labels an admin revoke distinctly from an operator self-undo (#449 review)", () => {
+    const { container } = render(
+      <CkRecentScans
+        history={[
+          makeEntry("1", "Revoked by admin", "UNDO", "admin_revoke"),
+          makeEntry("2", "Undone by operator", "UNDO", "undo"),
+        ]}
+        eventTimezone="UTC"
+        limit={8}
+      />,
+    );
+
+    expect(screen.getByText("Revoked")).toBeTruthy();
+    expect(screen.getByText("Undone")).toBeTruthy();
+    // Distinct dot color too — admin revoke reads as "revoked" (same as a
+    // revoked ticket), operator self-undo stays its own neutral color.
+    expect(container.querySelectorAll(".rec-dot--revoked")).toHaveLength(1);
+    expect(container.querySelectorAll(".rec-dot--undo")).toHaveLength(1);
   });
 
   it("formats checked_in_at in event timezone", () => {

@@ -16,7 +16,6 @@ export function MailerStatusBadge({ status }: { status: MailerStatus | null | un
   return (
     <Badge
       variant={status.configured ? "ok" : "neutral"}
-      dot
       title={status.configured ? "Mailer configured" : "Mailer not configured"}
     >
       <span className="topbar__mailer-label">Mailer: {name}</span>

@@ -110,6 +110,7 @@ import {
   handleBulkResendTickets,
   handleListTicketTypes,
   handleExportAttendees,
+  handleRevokeAttendeeCheckIn,
 } from "./admin/attendees-api-routes.js";
 import { handleImportPreview, handleImportCommit, handleGetImportTemplate, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
 import {
@@ -530,6 +531,12 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminResendRateLimit,
     guardArchivedEvent((c) => handleResendEventAttendeeTicket(c, db, mailDeliveryDeps, mailInjectedBaseUrl)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/revoke-checkin",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleRevokeAttendeeCheckIn(c, db)),
   );
   app.get("/api/admin/events/:eventId/template", staffAdminGate, (c) =>
     handleGetEventTemplate(c, db),
