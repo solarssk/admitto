@@ -744,7 +744,13 @@ export function CheckInPage({
   // convention; only a duplicate toast is avoided, not the connection state.
   const onRevokeCheckIn = (attendeeId: string) =>
     runExclusive(async () => {
-      if (!eventId || !canAct) return;
+      if (!eventId) return;
+      // Confirmation happens inside AttendeeCard's dialog, not on this
+      // handler's own trigger button — canAct can flip false between
+      // opening the dialog and clicking its Confirm, so this must throw
+      // rather than silently resolve, or the dialog closes as if the
+      // revoke succeeded when nothing was actually sent (bugbot).
+      if (!canAct) throw new Error("Offline — check your connection and try again.");
       setBusy(true);
       try {
         const { card: updated } = await revokeAttendeeCheckIn(eventId, attendeeId);

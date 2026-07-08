@@ -325,7 +325,7 @@ export function AttendeeCard({
                 variant="ghost"
                 size="sm"
                 className="checkin-card__aux-btn checkin-card__aux-btn--danger"
-                disabled={pending}
+                disabled={!canAct || pending}
                 onClick={() => setRevokeOpen(true)}
                 icon={<i className="ti ti-ban" aria-hidden="true" />}
               >

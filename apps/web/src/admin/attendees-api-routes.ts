@@ -1061,11 +1061,20 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
       // Revoking the pass must not leave a stale admission behind — restoring
       // the pass later would otherwise resurrect a "checked in" state from
       // before the revoke without a new scan ever happening (PO review).
+      // existing.admitted_at was read before this transaction started, so a
+      // concurrent request (operator undo, another admin's revoke-check-in)
+      // may have already cleared it — revokeCheckInTx throws in that case;
+      // that's fine, there's nothing left to revoke, but it must not abort
+      // the pass revoke itself (bugbot).
       if (statusChange === "revoked" && existing.admitted_at) {
-        await revokeCheckInTx({ eventId, attendeeId, audit: adminAuditFromContext(c) }, tx);
-        // result.row was read before the clear above — reflect it in the
-        // response DTO without a second round-trip.
-        result.row.admitted_at = null;
+        try {
+          await revokeCheckInTx({ eventId, attendeeId, audit: adminAuditFromContext(c) }, tx);
+          // result.row was read before the clear above — reflect it in the
+          // response DTO without a second round-trip.
+          result.row.admitted_at = null;
+        } catch (err) {
+          if (!(err instanceof UndoNotAllowedError)) throw err;
+        }
       }
 
       if (rsvpChange) {
