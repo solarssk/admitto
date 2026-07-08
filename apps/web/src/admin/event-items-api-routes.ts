@@ -222,7 +222,7 @@ async function loadEventItemInEvent(db: PrismaClient, eventId: string, itemId: s
 }
 
 /** Postgres Serializable transaction conflict (concurrent badge/ops-config writes). */
-function isSerializationFailure(err: unknown): boolean {
+export function isSerializationFailure(err: unknown): boolean {
   return (
     typeof err === "object" &&
     err !== null &&
@@ -239,7 +239,7 @@ const SERIALIZATION_RETRY_ATTEMPTS = 3;
  * Serializable; a real conflict there is expected to be transient, not a
  * bug, so surfacing it as a 500 on the first hit would be wrong.
  */
-async function runSerializableTransaction<T>(
+export async function runSerializableTransaction<T>(
   db: PrismaClient,
   fn: (tx: Prisma.TransactionClient) => Promise<T>,
   options?: { isolationLevel?: Prisma.TransactionIsolationLevel },

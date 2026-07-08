@@ -101,6 +101,26 @@ describe("RequirementsPage badge/ops-config sync", () => {
     });
   });
 
+  it("shows the enabled toast when toggling an item back on", async () => {
+    const disabledGiftbag: EventItemDto = {
+      ...badgeItem,
+      id: "item-gift",
+      key: "giftbag",
+      label: "Gift bag",
+      enabled: false,
+    };
+    fetchEventItems.mockResolvedValue([disabledGiftbag]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+    updateEventItem.mockResolvedValueOnce({ ...disabledGiftbag, enabled: true });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("switch", { name: "Enable Gift bag" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Item enabled — saved", "success");
+    });
+  });
+
   it("does not refetch ops config when toggling a non-badge item", async () => {
     const giftbag: EventItemDto = { ...badgeItem, id: "item-gift", key: "giftbag", label: "Gift bag" };
     fetchEventItems.mockResolvedValue([giftbag]);
@@ -221,6 +241,40 @@ describe("RequirementsPage — Add item and Edit item", () => {
     expect(screen.getByRole("columnheader", { name: "Item" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Description" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Active" })).toBeTruthy();
+  });
+
+  it("shows an item's description in the table", async () => {
+    fetchEventItems.mockResolvedValue([{ ...badgeItem, description: "Physical badge at the door." }]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+
+    renderPage();
+
+    expect(await screen.findByText("Physical badge at the door.")).toBeTruthy();
+  });
+
+  it("clicking Add item again while the modal is already open closes it", async () => {
+    fetchEventItems.mockResolvedValue([]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+
+    renderPage();
+    const addItemButton = await screen.findByRole("button", { name: "Add item" });
+    fireEvent.click(addItemButton);
+    expect(screen.getByLabelText("Item name")).toBeTruthy();
+
+    fireEvent.click(addItemButton);
+
+    expect(screen.queryByLabelText("Item name")).toBeNull();
+  });
+
+  it("flags a colliding name with the unique-suffix hint", async () => {
+    fetchEventItems.mockResolvedValue([{ ...badgeItem, key: "gift_bag", label: "Gift bag" }]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Add item" }));
+    fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Gift bag" } });
+
+    expect(await screen.findByText(/unique suffix added/)).toBeTruthy();
   });
 });
 
