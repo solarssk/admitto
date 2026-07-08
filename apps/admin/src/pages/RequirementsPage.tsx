@@ -13,6 +13,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { EventItemDto, OpsConfigDto } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
+import { DEFAULT_EVENT_ITEM_ICON } from "../requirements/IconPicker.js";
 import { slugifyItemKey, uniqueItemKey } from "../requirements/itemKey.js";
 import "../requirements/requirements.css";
 
@@ -287,8 +288,13 @@ export function RequirementsPage() {
                   items.map((item) => (
                     <tr key={item.id}>
                       <td>
-                        <div className="requirements-item-name">{item.label}</div>
-                        <div className="requirements-item-id">{item.key}</div>
+                        <div className="requirements-item-cell">
+                          <i className={`ti ti-${item.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
+                          <div>
+                            <div className="requirements-item-name">{item.label}</div>
+                            <div className="requirements-item-id">{item.key}</div>
+                          </div>
+                        </div>
                       </td>
                       <td>
                         <Switch
@@ -327,7 +333,10 @@ export function RequirementsPage() {
               <div className="requirements-behaviour-row">
                 <div className="requirements-behaviour-row__text">
                   <strong>Issue badge at entry</strong>
-                  <p>Automatically issue the badge item when an attendee is admitted.</p>
+                  <p>
+                    Auto-issues the badge item when an attendee is admitted. Requires the badge
+                    item to exist, be active, and have "Issue on check-in" enabled.
+                  </p>
                 </div>
                 <Switch
                   checked={opsConfig.badge_at_entry}
@@ -345,7 +354,7 @@ export function RequirementsPage() {
               <div className="requirements-behaviour-row">
                 <div className="requirements-behaviour-row__text">
                   <strong>Require confirmation on scan</strong>
-                  <p>Scan shows a preview; operator must confirm before check-in.</p>
+                  <p>Scan shows a preview; operator must confirm before check-in is recorded.</p>
                 </div>
                 <Switch
                   checked={opsConfig.require_confirm_on_scan}
@@ -360,8 +369,9 @@ export function RequirementsPage() {
                 <div className="requirements-behaviour-row__text">
                   <strong>Allow manual lookup</strong>
                   <p>
-                    When disabled, operators can only check in via QR scan — name search and
-                    short-query lookup are blocked in check-in.
+                    When off, operators can only check in via QR scan — name and short-query
+                    search are blocked in the check-in screen. Does not affect the admin Attendees
+                    page.
                   </p>
                 </div>
                 <Switch
@@ -373,10 +383,10 @@ export function RequirementsPage() {
               </div>
               <div className="requirements-behaviour-row">
                 <div className="requirements-behaviour-row__text">
-                  <strong>Auto-advance on valid scan</strong>
+                  <strong>Auto-advance after valid check-in</strong>
                   <p>
-                    After a successful scan (VALID), the check-in screen clears automatically so
-                    the next attendee can be scanned without tapping Next.
+                    After a valid scan, the check-in screen clears automatically for the next
+                    attendee — without tapping Next.
                   </p>
                 </div>
                 <Switch
