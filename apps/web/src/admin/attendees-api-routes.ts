@@ -29,6 +29,8 @@ import {
   countFilteredAttendees,
   findFilteredAttendeesForExport,
   findFilteredAttendeesForList,
+  revokeCheckIn,
+  UndoNotAllowedError,
 } from "@admitto/tickets";
 import {
   EXPORT_BASE_COLUMNS,
@@ -1355,6 +1357,40 @@ export async function handleResendEventAttendeeTicket(
   });
 
   return c.json(toDeliveryDto(latest));
+}
+
+/**
+ * POST /api/admin/events/:eventId/attendees/:id/revoke-checkin
+ * Admin/superadmin only (assertEventManageAccess) — reverses this attendee's
+ * current admission regardless of who checked them in or when, distinct from
+ * the operator-facing device-scoped "undo my last scan" on the check-in page.
+ */
+export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const attendeeIdOrRes = requireAttendeeId(c);
+  if (attendeeIdOrRes instanceof Response) return attendeeIdOrRes;
+  const attendeeId = attendeeIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
+  if (!existing) return c.json({ error: "not found" }, 404);
+
+  try {
+    const result = await revokeCheckIn(
+      { eventId, attendeeId, audit: adminAuditFromContext(c) },
+      db,
+    );
+    return c.json(result);
+  } catch (err) {
+    if (err instanceof UndoNotAllowedError) {
+      return c.json({ error: "not_admitted" }, 409);
+    }
+    throw err;
+  }
 }
 
 /** Best-effort bulk send audit — must not fail the HTTP response after mail is queued. */

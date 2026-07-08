@@ -1074,6 +1074,90 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
   });
 });
 
+describe("POST /api/admin/events/:eventId/attendees/:id/revoke-checkin", () => {
+  const ATT_REVOKE = "att-admin-revoke-target";
+
+  beforeAll(async () => {
+    const token = generateToken();
+    await prisma.attendee.upsert({
+      where: { id: ATT_REVOKE },
+      create: {
+        id: ATT_REVOKE,
+        event_id: EVENT_A,
+        email: "revoke-target@example.com",
+        name: "Revoke Target",
+        token_hash: hashToken(token),
+        admitted_at: new Date("2026-10-01T10:00:00Z"),
+      },
+      update: { admitted_at: new Date("2026-10-01T10:00:00Z"), admitted_by: null },
+    });
+  });
+
+  // bulk-resend below counts EVENT_A's attendees — don't leak this fixture into it.
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_REVOKE } });
+    await prisma.checkIn.deleteMany({ where: { attendee_id: ATT_REVOKE } });
+    await prisma.attendee.delete({ where: { id: ATT_REVOKE } });
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_REVOKE}/revoke-checkin`,
+      {
+        method: "POST",
+        headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(403);
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_REVOKE } });
+    expect(after.admitted_at).not.toBeNull();
+  });
+
+  it("admin un-admits the attendee and logs check_in_revoked", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_REVOKE}/revoke-checkin`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { card: { check_in_status: string } };
+    expect(body.card.check_in_status).toBe("not_admitted");
+
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_REVOKE } });
+    expect(after.admitted_at).toBeNull();
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_REVOKE, action_type: "check_in_revoked" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+  });
+
+  it("returns 409 when the attendee is not currently admitted", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_REVOKE}/revoke-checkin`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(409);
+  });
+
+  it("returns 404 for an unknown attendee id", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/does-not-exist/revoke-checkin`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
   const bulkUrl = `/api/admin/events/${EVENT_A}/attendees/bulk-resend`;
 
