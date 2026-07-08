@@ -311,6 +311,7 @@ export function CheckInPage({
     return () => {
       if (wedgeTimerRef.current != null) window.clearTimeout(wedgeTimerRef.current);
       if (pendingTimerRef.current != null) window.clearTimeout(pendingTimerRef.current);
+      if (suggestTimerRef.current != null) window.clearTimeout(suggestTimerRef.current);
     };
   }, []);
 

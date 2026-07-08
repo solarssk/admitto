@@ -108,6 +108,39 @@ afterEach(() => {
 });
 
 describe("CheckInPage scan-bar lookup", () => {
+  it("Enter with multiple matches shows them as scan-bar suggestions", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([
+      annaHit,
+      { ...annaHit, id: "att-2", name: "Anna Beta" },
+    ]);
+
+    renderPage();
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "an" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(screen.getByText("Anna Alpha")).toBeTruthy();
+      expect(screen.getByText("Anna Beta")).toBeTruthy();
+    });
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("cancels a pending suggestion request on unmount", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
+
+    const { unmount } = renderPage();
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "anna" } });
+    unmount();
+
+    // Past the 300ms debounce — if the timer weren't cleared, this would fire.
+    await new Promise((r) => setTimeout(r, 400));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+
   it("shows a warning toast when Enter finds no attendees", async () => {
     mockPageBootstrap();
     lookupCheckInAttendees.mockResolvedValue([]);

@@ -37,6 +37,7 @@ const tableProps = {
   onViewAttendee: vi.fn(),
   onPageChange: vi.fn(),
   eventTimezone: "UTC",
+  eventDate: "2026-06-01T12:00:00.000Z" as string | null,
 };
 
 afterEach(cleanup);
@@ -89,5 +90,33 @@ describe("AttendeesTable pass status actions", () => {
     expect(within(screen.getByRole("table")).getByText("Cancelled")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Revoke pass" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Restore pass" })).toBeNull();
+  });
+});
+
+describe("AttendeesTable check-in column (#359)", () => {
+  it("shows time-only when the admission falls on the event's calendar day", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[{ ...baseRow, admitted_at: "2026-06-01T09:44:00.000Z" }]}
+      />,
+    );
+
+    const cell = screen.getByText(/^✓/);
+    expect(cell.textContent).toMatch(/09:44/);
+    expect(cell.textContent).not.toMatch(/Jun/);
+  });
+
+  it("shows date and time when the admission is outside the event's calendar day", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[{ ...baseRow, admitted_at: "2026-05-15T09:44:00.000Z" }]}
+      />,
+    );
+
+    const cell = screen.getByText(/^✓/);
+    expect(cell.textContent).toMatch(/May 15, 2026/);
+    expect(cell.textContent).toMatch(/09:44/);
   });
 });

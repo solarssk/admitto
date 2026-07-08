@@ -222,4 +222,12 @@ describe("formatAdmissionDisplay (#359)", () => {
     const out = formatAdmissionDisplay("2026-07-31T07:44:00.000Z", null, "Europe/Warsaw");
     expect(out).toMatch(/31 Jul 2026/);
   });
+
+  it("defaults to UTC when no timezone is given", () => {
+    setPreferredLocale("en-GB");
+    // 07:44 UTC on the event day, no timezone passed — compares against UTC.
+    const out = formatAdmissionDisplay("2026-07-31T07:44:00.000Z", EVENT_DATE);
+    expect(out).toMatch(/07:44/);
+    expect(out).toMatch(/UTC/);
+  });
 });
