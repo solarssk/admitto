@@ -648,6 +648,31 @@ describe("DELETE /api/admin/events/:eventId/items/:itemId", () => {
     expect(deleted).toBeNull();
   });
 
+  it("allows delete when attendee states are only returned", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ key: "temp_returned", label: "Temp returned" }),
+    });
+    const created = (await createRes.json()) as { id: string };
+    await prisma.attendeeItemState.create({
+      data: {
+        attendee_id: ATT_EI,
+        event_item_id: created.id,
+        state: "returned",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${created.id}`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+
+    const deleted = await prisma.eventItem.findUnique({ where: { id: created.id } });
+    expect(deleted).toBeNull();
+  });
+
   it("returns 409 item_in_use for giftbag already issued to attendees", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_GIFTBAG}`, {
       method: "DELETE",
