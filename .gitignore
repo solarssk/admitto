@@ -20,6 +20,7 @@ docs/*
 *.log
 coverage/
 coverage-integration/
+junit.xml
 .DS_Store
 uploads/
 emergency-exports/

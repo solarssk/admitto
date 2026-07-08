@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `eslint-plugin-security` enabled for `apps/*/src` (admin, web, cli) with `detect-object-injection` off as a typed-record false-positive; remaining SAST hits annotated inline.
 - `operatorApiErrorMessage()` / `hasApiErrorCode()` helper (`apps/admin/src/api/operator-api-error.ts`) — central mapping for operator-safe admin API error copy; AGENTS.md documents the convention.
 - `CheckInPage.scan-queue.test.tsx`: extracted `typeWedge(input, token, { gapMs?, baseTime?, prefix? })` helper — replaces 17 identical character-by-character typing loops; future timing tweaks are a one-line change.
+- Codecov Test Analytics: CI coverage run now also emits a JUnit XML per workspace (`--reporter=junit`), uploaded via `codecov/test-results-action` — flaky test and failure-rate reporting, no gate.
 
 ### Security
 - Admin SPA: audit `ApiError.message` exposure — toasts and inline errors now go through `operatorApiErrorMessage()` so unknown server detail is suppressed with a generic fallback (dev console warning only).
