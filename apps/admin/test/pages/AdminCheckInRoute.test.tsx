@@ -63,19 +63,9 @@ describe("AdminCheckInRoute header (#378)", () => {
     expect(screen.queryByText(/Warsaw/)).toBeNull();
   });
 
-  it("shows a connected badge when the server link is healthy", () => {
-    useConnectionState.mockReturnValue({ state: "connected", reportApiError: vi.fn() });
-    renderRoute();
-
-    expect(screen.getByText("Server connected")).toBeTruthy();
-  });
-
-  it("hides the connected badge when offline", () => {
-    useConnectionState.mockReturnValue({ state: "offline", reportApiError: vi.fn() });
-    renderRoute();
-
-    expect(screen.queryByText("Server connected")).toBeNull();
-  });
+  // The connection badge itself moved to the global StaffShell topbar
+  // (rendered once for the whole app, next to MailerStatusBadge) — see
+  // ServerConnectionBadge tests in ConnectionBanner.test.tsx.
 });
 
 describe("AdminCheckInRoute camera toggle (#381)", () => {

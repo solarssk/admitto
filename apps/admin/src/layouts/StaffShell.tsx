@@ -2,6 +2,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import { useAuth } from "../auth/AuthProvider.js";
 import { MailerStatusBadge } from "../components/MailerStatusBadge.js";
 import { RoleBadge } from "../components/RoleBadge.js";
+import { ServerConnectionBadge } from "../checkin/ConnectionBanner.js";
 
 export interface StaffShellProps {
   sidebar: ReactNode;
@@ -93,6 +94,7 @@ export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
             <i className="ti ti-menu-2" aria-hidden="true" />
           </button>
           <div className="topbar__right">
+            <ServerConnectionBadge />
             <MailerStatusBadge status={user.mailer_status} />
             <div className="topbar__user">
               <div className="topbar__user-link">

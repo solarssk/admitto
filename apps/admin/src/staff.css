@@ -702,13 +702,6 @@
   margin-bottom: 12px;
 }
 
-.ck-pageheader-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
 .sr-only {
   position: absolute;
   width: 1px;
