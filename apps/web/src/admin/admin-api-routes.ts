@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { canManageInstance, listAdminEvents } from "@admitto/auth";
-import { writeAdminAuditLog } from "@admitto/tickets";
+import { ensureBadgeEventItem, writeAdminAuditLog } from "@admitto/tickets";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { timezoneField } from "./timezone.js";
@@ -165,6 +165,12 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
           organization_id: orgId,
         },
       });
+
+      // Seed the "badge" item eagerly so Requirements lists it right after
+      // create — the badge_at_entry ops-config toggle defaults to on and is
+      // otherwise a no-op with no matching item (#367, #368 keep all other
+      // items empty by default; badge is the one exception, see event-items.ts).
+      await ensureBadgeEventItem(created.id, tx);
 
       await writeAdminAuditLog(tx, {
         organizationId: orgId,

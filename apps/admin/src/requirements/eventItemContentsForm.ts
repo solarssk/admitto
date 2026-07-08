@@ -15,10 +15,10 @@ export function isValidSourceFieldSlug(value: string): boolean {
   return SOURCE_FIELD_SLUG_PATTERN.test(value);
 }
 
-/** Split comma-separated option labels into a trimmed non-empty array. */
+/** Split newline- or comma-separated option labels into a trimmed non-empty array. */
 export function parseOptionsText(text: string): string[] {
   return text
-    .split(",")
+    .split(/[,\n]/)
     .map((s) => s.trim())
     .filter(Boolean);
 }
@@ -30,7 +30,7 @@ export function contentRowFromDto(c: EventItemContentDto): ContentRow {
     source_field: c.source_field,
     type: c.type ?? "text",
     required: c.required ?? false,
-    options: c.options?.join(", ") ?? "",
+    options: c.options?.join("\n") ?? "",
   };
 }
 
@@ -96,7 +96,7 @@ export function validateContentsRows(rows: ContentRow[]): ContentsValidationResu
     if (type === "select" && (!options || options.length === 0)) {
       return {
         ok: false,
-        message: `Select field "${label}" needs at least one option (comma-separated).`,
+        message: `Select field "${label}" needs at least one option.`,
       };
     }
 

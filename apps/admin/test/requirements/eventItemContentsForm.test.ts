@@ -168,7 +168,7 @@ describe("contentRowFromDto round-trip", () => {
       options: ["S", "M", "L"],
     };
     const row = contentRowFromDto(dto);
-    expect(row.options).toBe("S, M, L");
+    expect(row.options).toBe("S\nM\nL");
     expect(validateContentsRows([row])).toEqual({
       ok: true,
       contents: [dto],

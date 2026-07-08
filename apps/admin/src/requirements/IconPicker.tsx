@@ -1,5 +1,3 @@
-import { useState } from "react";
-
 /** Tabler icon names used for event items — ordered by frequency of use. */
 export const ITEM_ICONS: ReadonlyArray<{ name: string; label: string }> = [
   { name: "gift", label: "Gift" },
@@ -56,23 +54,10 @@ export interface IconPickerProps {
   onChange: (icon: string | null) => void;
 }
 
-/** Grid picker for Tabler item icons with search. */
+/** Grid picker for Tabler item icons. */
 export function IconPicker({ value, onChange }: IconPickerProps) {
-  const [search, setSearch] = useState("");
-  const filtered = ITEM_ICONS.filter(
-    (ic) => !search || ic.label.toLowerCase().includes(search.toLowerCase()),
-  );
-
   return (
     <div className="icon-picker">
-      <input
-        type="search"
-        className="icon-picker__search"
-        placeholder="Search icons…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        aria-label="Search icons"
-      />
       <div className="icon-picker__grid" aria-label="Choose icon">
         <button
           type="button"
@@ -83,9 +68,8 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
           title="Default (package)"
         >
           <i className={`ti ti-${DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
-          <span>Default</span>
         </button>
-        {filtered.map((ic) => (
+        {ITEM_ICONS.map((ic) => (
           <button
             key={ic.name}
             type="button"
@@ -96,12 +80,8 @@ export function IconPicker({ value, onChange }: IconPickerProps) {
             title={ic.label}
           >
             <i className={`ti ti-${ic.name}`} aria-hidden="true" />
-            <span>{ic.label}</span>
           </button>
         ))}
-        {filtered.length === 0 && (
-          <p className="icon-picker__empty">No icons match &quot;{search}&quot;</p>
-        )}
       </div>
     </div>
   );

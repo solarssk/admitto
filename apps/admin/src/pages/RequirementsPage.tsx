@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Button, Card, EmptyState, Input, PageHeader, Switch, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, IconButton, PageHeader, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   createEventItem,
@@ -9,26 +9,16 @@ import {
   updateEventItem,
   updateOpsConfig,
 } from "../api/client.js";
+import { isBadgeItemUsable } from "@admitto/tickets";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventItemDto, OpsConfigDto } from "../api/types.js";
+import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { useInFlightIds } from "../hooks/useInFlightIds.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
+import { DEFAULT_EVENT_ITEM_ICON } from "../requirements/IconPicker.js";
 import { slugifyItemKey, uniqueItemKey } from "../requirements/itemKey.js";
 import "../requirements/requirements.css";
-
-/** One-line summary of item config for the Requirements table. */
-function configSummary(config: EventItemDto["config"]): string {
-  if (!config) return "—";
-  const parts: string[] = [];
-  if (config.contents?.length) {
-    parts.push(
-      config.contents.map((c) => `${c.label} ← ${c.source_field}`).join(", "),
-    );
-  }
-  if (config.requires_return) parts.push("requires return");
-  if (config.issue_on_checkin) parts.push("issue on check-in");
-  return parts.length > 0 ? parts.join(" · ") : "—";
-}
 
 /** Admin screen for per-event item configuration and operational behaviour. */
 export function RequirementsPage() {
@@ -46,12 +36,22 @@ export function RequirementsPage() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [addLabel, setAddLabel] = useState("");
-  const [addError, setAddError] = useState<string | null>(null);
+  const [addNameError, setAddNameError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const addPanelRef = useRef<HTMLDivElement>(null);
 
   const addKeyPreview = uniqueItemKey(addLabel, items.map((i) => i.key));
 
   const [opsSaving, setOpsSaving] = useState(false);
+  const { ids: togglingIds, start: startToggling, finish: finishToggling } = useInFlightIds();
+
+  function closeAddModal() {
+    setAddOpen(false);
+    setAddLabel("");
+    setAddNameError(null);
+  }
+
+  useModalFocusTrap(addPanelRef, addOpen, closeAddModal);
 
   useEffect(() => {
     setItems([]);
@@ -105,17 +105,31 @@ export function RequirementsPage() {
   }, [load, reloadToken]);
 
   const badgeItem = items.find((i) => i.key === "badge");
-  const badgeWarning =
-    opsConfig?.badge_at_entry &&
-    (!badgeItem ||
-      !badgeItem.enabled ||
-      badgeItem.config?.issue_on_checkin === false);
+  // "Issue badge at entry" is a no-op unless the badge item exists, is
+  // active, and has "Issue on check-in" enabled — disable the toggle in any
+  // of those cases instead of letting operators turn on a setting that
+  // can't work (single source of truth; no separate warning banner needed).
+  const badgeInactive = !badgeItem || !isBadgeItemUsable(badgeItem.enabled, badgeItem.config);
 
   async function handleToggleEnabled(item: EventItemDto) {
-    if (!eventId) return;
+    if (!eventId || togglingIds.has(item.id)) return;
+    startToggling(item.id);
     try {
       const updated = await updateEventItem(eventId, item.id, { enabled: !item.enabled });
       setItems((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
+      addToast(updated.enabled ? "Item enabled — saved" : "Item disabled — saved", "success");
+      if (updated.key === "badge" && !updated.enabled) {
+        // Server auto-disables badge_at_entry when the badge item is turned
+        // off — refresh so the Event behaviour toggle doesn't show stale ON.
+        // Best-effort: the item update already succeeded and was already
+        // toasted above, so a failure here shouldn't surface as an error —
+        // opsConfig just stays stale until the next full page load.
+        try {
+          setOpsConfig(await fetchOpsConfig(eventId));
+        } catch {
+          // Ignored — see comment above.
+        }
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
         addToast(
@@ -125,6 +139,8 @@ export function RequirementsPage() {
       } else {
         addToast(operatorApiErrorMessage(err, "Failed to update item."), "error");
       }
+    } finally {
+      finishToggling(item.id);
     }
   }
 
@@ -134,11 +150,11 @@ export function RequirementsPage() {
     const label = addLabel.trim();
     const key = uniqueItemKey(label, items.map((i) => i.key));
     if (!label || !key) {
-      setAddError("Enter a name using letters or numbers.");
+      setAddNameError("Enter a name using letters or numbers.");
       return;
     }
+    setAddNameError(null);
     setAdding(true);
-    setAddError(null);
     try {
       await createEventItem(eventId, {
         key,
@@ -153,10 +169,10 @@ export function RequirementsPage() {
       setReloadToken((n) => n + 1);
       addToast("Item added", "success");
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        setAddError("An item with this name already exists.");
+      if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "key_conflict")) {
+        addToast("An item with this name already exists.", "warning");
       } else {
-        setAddError(operatorApiErrorMessage(err, "Failed to create item."));
+        addToast(operatorApiErrorMessage(err, "Failed to create item."), "error");
       }
     } finally {
       setAdding(false);
@@ -177,7 +193,14 @@ export function RequirementsPage() {
       addToast("Setting updated", "success");
     } catch (err) {
       setOpsConfig(prev);
-      addToast(operatorApiErrorMessage(err, "Failed to save event behaviour."), "error");
+      if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "badge_item_inactive")) {
+        addToast(
+          "Can't enable this — the badge item is disabled or has \"Issue on check-in\" turned off.",
+          "warning",
+        );
+      } else {
+        addToast(operatorApiErrorMessage(err, "Failed to save event behaviour."), "error");
+      }
     } finally {
       setOpsSaving(false);
     }
@@ -204,82 +227,42 @@ export function RequirementsPage() {
       ) : (
         <>
       <section className="requirements-section">
-        <div className="requirements-section__header">
-          <h2 className="requirements-section__title">Event items</h2>
-          <Button
-            variant="secondary"
-            icon={<i className="ti ti-plus" />}
-            onClick={() => {
-              setAddOpen((o) => !o);
-              setAddError(null);
-            }}
-          >
-            Add item
-          </Button>
-        </div>
-
-        <Card padded={false}>
-          {addOpen && (
-            <form className="requirements-add-form" onSubmit={(e) => void handleAddItem(e)}>
-              <div className="requirements-add-form__main">
-                <Input
-                  label="Item name"
-                  value={addLabel}
-                  onChange={(e) => setAddLabel(e.target.value)}
-                  placeholder="Gift bag"
-                  required
-                  autoFocus
-                />
-                {addLabel.trim() && (
-                  <p className="requirements-add-form__hint">
-                    Internal ID:{" "}
-                    <code>{addKeyPreview || slugifyItemKey(addLabel) || "—"}</code>
-                    {addKeyPreview && addKeyPreview !== slugifyItemKey(addLabel) && (
-                      <> (name already taken — using unique suffix)</>
-                    )}
-                  </p>
-                )}
-              </div>
-              <div className="requirements-add-form__actions">
-                <Button type="submit" variant="primary" disabled={adding || !addLabel.trim()}>
-                  {adding ? "Creating…" : "Create item"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setAddOpen(false);
-                    setAddLabel("");
-                    setAddError(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-              {addError && <p className="text-error requirements-add-form__error">{addError}</p>}
-            </form>
-          )}
-
+        <Card
+          padded={false}
+          title="Event items"
+          actions={
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<i className="ti ti-plus" />}
+              onClick={() => {
+                if (addOpen) closeAddModal();
+                else setAddOpen(true);
+              }}
+            >
+              Add item
+            </Button>
+          }
+        >
           <div className="attendees-table-wrap">
             <table className="table">
               <thead>
                 <tr>
                   <th>Item</th>
+                  <th>Description</th>
                   <th>Active</th>
-                  <th>Rules</th>
-                  <th />
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={4} className="attendees-empty">
+                    <td colSpan={3} className="attendees-empty">
                       Loading…
                     </td>
                   </tr>
                 ) : items.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="attendees-empty">
+                    <td colSpan={3} className="attendees-empty">
                       No items yet. Add one to configure what operators issue at check-in.
                     </td>
                   </tr>
@@ -287,26 +270,35 @@ export function RequirementsPage() {
                   items.map((item) => (
                     <tr key={item.id}>
                       <td>
-                        <div className="requirements-item-name">{item.label}</div>
-                        <div className="requirements-item-id">{item.key}</div>
+                        <div className="requirements-item-cell">
+                          <i className={`ti ti-${item.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
+                          <div className="requirements-item-info">
+                            <div className="requirements-item-name">{item.label}</div>
+                            <div className="requirements-item-id">{item.key}</div>
+                          </div>
+                        </div>
                       </td>
-                      <td>
-                        <Switch
-                          label={item.enabled ? "On" : "Off"}
-                          checked={item.enabled}
-                          onChange={() => void handleToggleEnabled(item)}
-                          aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
-                        />
+                      <td className="requirements-item-desc-col">
+                        {item.description && (
+                          <span className="requirements-item-desc">{item.description}</span>
+                        )}
                       </td>
-                      <td>
-                        <span className="requirements-config-summary" title={configSummary(item.config)}>
-                          {configSummary(item.config)}
-                        </span>
-                      </td>
-                      <td>
-                        <Button variant="ghost" size="sm" onClick={() => setSelectedItem(item)}>
-                          Edit
-                        </Button>
+                      <td className="requirements-item-actions">
+                        <div className="requirements-item-actions__wrap">
+                          <Switch
+                            label={item.enabled ? "On" : "Off"}
+                            checked={item.enabled}
+                            disabled={togglingIds.has(item.id)}
+                            aria-busy={togglingIds.has(item.id)}
+                            onChange={() => void handleToggleEnabled(item)}
+                            aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
+                          />
+                          <IconButton
+                            label="Edit item"
+                            icon={<i className="ti ti-pencil" aria-hidden="true" />}
+                            onClick={() => setSelectedItem(item)}
+                          />
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -318,8 +310,7 @@ export function RequirementsPage() {
       </section>
 
       <section className="requirements-section">
-        <h2 className="requirements-section__title">Event behaviour</h2>
-        <Card>
+        <Card title="Event behaviour" padded={false}>
           {opsConfig == null && loading ? (
             <p>Loading…</p>
           ) : opsConfig ? (
@@ -327,25 +318,38 @@ export function RequirementsPage() {
               <div className="requirements-behaviour-row">
                 <div className="requirements-behaviour-row__text">
                   <strong>Issue badge at entry</strong>
-                  <p>Automatically issue the badge item when an attendee is admitted.</p>
+                  <p>
+                    Auto-issues the badge item when an attendee is admitted. Requires the badge
+                    item to exist, be active, and have "Issue on check-in" enabled.
+                  </p>
                 </div>
-                <Switch
-                  checked={opsConfig.badge_at_entry}
-                  disabled={opsSaving}
-                  onChange={(e) => void handleOpsToggle("badge_at_entry", e.target.checked)}
-                  aria-label="Issue badge at entry"
-                />
+                <span
+                  className={badgeInactive ? "at-tooltip" : undefined}
+                  data-tooltip={
+                    badgeInactive
+                      ? "Can't enable this — the badge item is disabled or has \"Issue on check-in\" turned off."
+                      : undefined
+                  }
+                >
+                  {badgeInactive && (
+                    <span id="badge-at-entry-reason" className="sr-only">
+                      Can't enable this — the badge item is disabled or has "Issue on check-in"
+                      turned off.
+                    </span>
+                  )}
+                  <Switch
+                    checked={opsConfig.badge_at_entry}
+                    disabled={opsSaving || badgeInactive}
+                    onChange={(e) => void handleOpsToggle("badge_at_entry", e.target.checked)}
+                    aria-label="Issue badge at entry"
+                    aria-describedby={badgeInactive ? "badge-at-entry-reason" : undefined}
+                  />
+                </span>
               </div>
-              {badgeWarning && (
-                <p className="requirements-warning">
-                  Badge at entry is on, but check-in will not auto-issue a badge — enable the
-                  badge item and turn on “Issue on check-in”.
-                </p>
-              )}
               <div className="requirements-behaviour-row">
                 <div className="requirements-behaviour-row__text">
                   <strong>Require confirmation on scan</strong>
-                  <p>Scan shows a preview; operator must confirm before check-in.</p>
+                  <p>Scan shows a preview; operator must confirm before check-in is recorded.</p>
                 </div>
                 <Switch
                   checked={opsConfig.require_confirm_on_scan}
@@ -360,8 +364,9 @@ export function RequirementsPage() {
                 <div className="requirements-behaviour-row__text">
                   <strong>Allow manual lookup</strong>
                   <p>
-                    When disabled, operators can only check in via QR scan — name search and
-                    short-query lookup are blocked in check-in.
+                    When off, operators can only check in via QR scan — name and short-query
+                    search are blocked in the check-in screen. Does not affect the admin Attendees
+                    page.
                   </p>
                 </div>
                 <Switch
@@ -373,10 +378,10 @@ export function RequirementsPage() {
               </div>
               <div className="requirements-behaviour-row">
                 <div className="requirements-behaviour-row__text">
-                  <strong>Auto-advance on valid scan</strong>
+                  <strong>Auto-advance after valid check-in</strong>
                   <p>
-                    After a successful scan (VALID), the check-in screen clears automatically so
-                    the next attendee can be scanned without tapping Next.
+                    After a valid scan, the check-in screen clears automatically for the next
+                    attendee — without tapping Next.
                   </p>
                 </div>
                 <Switch
@@ -393,6 +398,81 @@ export function RequirementsPage() {
         </Card>
       </section>
         </>
+      )}
+
+      {addOpen && (
+        <div className="event-item-modal" role="dialog" aria-modal="true" aria-label="Add item">
+          <div className="event-item-modal__backdrop" onClick={closeAddModal} />
+          <div ref={addPanelRef} className="event-item-modal__panel">
+            <div className="event-item-modal__header">
+              <div>
+                <h2 className="event-item-modal__title">Add item</h2>
+                <p className="event-item-modal__subtitle">
+                  A physical item or resource issued or tracked at check-in — for example a gift
+                  bag, badge, or headset. You can configure rules after creating it.
+                </p>
+              </div>
+            </div>
+            <form
+              id="add-item-form"
+              className="event-item-modal__body"
+              onSubmit={(e) => void handleAddItem(e)}
+            >
+              <div className="at-field">
+                <div className="add-item-label-row">
+                  <label className="at-label" htmlFor="add-item-input">
+                    Item name
+                  </label>
+                  {addLabel.trim() && (
+                    <span className="at-hint">
+                      ID: <code>{addKeyPreview || slugifyItemKey(addLabel) || "—"}</code>
+                      {addKeyPreview && addKeyPreview !== slugifyItemKey(addLabel) && (
+                        <> (unique suffix added)</>
+                      )}
+                    </span>
+                  )}
+                </div>
+                <input
+                  id="add-item-input"
+                  className="at-input"
+                  type="text"
+                  value={addLabel}
+                  onChange={(e) => {
+                    setAddLabel(e.target.value);
+                    setAddNameError(null);
+                  }}
+                  placeholder="Gift bag"
+                  required
+                  autoFocus
+                  aria-invalid={addNameError ? true : undefined}
+                  aria-describedby={addNameError ? "add-item-name-error" : undefined}
+                />
+                <span className="at-hint">
+                  The name shown to staff during check-in. Keep it short and clear — e.g. "Gift
+                  bag", "Name badge", "T-shirt".
+                </span>
+                {addNameError && (
+                  <p id="add-item-name-error" className="text-error" role="alert">
+                    {addNameError}
+                  </p>
+                )}
+              </div>
+            </form>
+            <div className="event-item-modal__footer">
+              <Button
+                type="submit"
+                form="add-item-form"
+                variant="primary"
+                disabled={adding || !addLabel.trim()}
+              >
+                {adding ? "Creating…" : "Create item"}
+              </Button>
+              <Button type="button" variant="ghost" onClick={closeAddModal}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {selectedItem && (

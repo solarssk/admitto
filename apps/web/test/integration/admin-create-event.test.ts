@@ -186,7 +186,7 @@ describe("POST /api/admin/events", () => {
     expect(afterAudit).toBe(beforeAudit + 1);
   });
 
-  it("creates event with zero event items", async () => {
+  it("creates event with only the default badge item", async () => {
     const res = await postCreateEvent(superCookie, {
       title: "Items Empty",
       slug: "items-empty-event",
@@ -197,7 +197,8 @@ describe("POST /api/admin/events", () => {
     const body = (await res.json()) as { event: { id: string } };
 
     const items = await prisma.eventItem.findMany({ where: { event_id: body.event.id } });
-    expect(items).toHaveLength(0);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.key).toBe("badge");
   });
 
   it("creates event as org admin in own organization", async () => {
