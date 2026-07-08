@@ -2,24 +2,6 @@
   margin-bottom: var(--space-5);
 }
 
-.requirements-section__header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
-}
-
-.requirements-section__title {
-  margin: 0;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-
 .requirements-section-hint {
   margin: 0 0 var(--space-3);
   font-size: var(--fs-sm);

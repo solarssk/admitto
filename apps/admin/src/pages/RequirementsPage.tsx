@@ -205,21 +205,22 @@ export function RequirementsPage() {
       ) : (
         <>
       <section className="requirements-section">
-        <div className="requirements-section__header">
-          <h2 className="requirements-section__title">Event items</h2>
-          <Button
-            variant="secondary"
-            icon={<i className="ti ti-plus" />}
-            onClick={() => {
-              setAddOpen((o) => !o);
-              setAddError(null);
-            }}
-          >
-            Add item
-          </Button>
-        </div>
-
-        <Card padded={false}>
+        <Card
+          padded={false}
+          title="Event items"
+          actions={
+            <Button
+              variant="secondary"
+              icon={<i className="ti ti-plus" />}
+              onClick={() => {
+                setAddOpen((o) => !o);
+                setAddError(null);
+              }}
+            >
+              Add item
+            </Button>
+          }
+        >
           {addOpen && (
             <form className="requirements-add-form" onSubmit={(e) => void handleAddItem(e)}>
               <div className="requirements-add-form__main">
@@ -326,10 +327,7 @@ export function RequirementsPage() {
       </section>
 
       <section className="requirements-section">
-        <div className="requirements-section__header">
-          <h2 className="requirements-section__title">Event behaviour</h2>
-        </div>
-        <Card padded={false}>
+        <Card title="Event behaviour" padded={false}>
           {opsConfig == null && loading ? (
             <p>Loading…</p>
           ) : opsConfig ? (
