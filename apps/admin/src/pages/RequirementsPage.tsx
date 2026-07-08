@@ -140,7 +140,11 @@ export function RequirementsPage() {
     setAdding(true);
     setAddError(null);
     try {
-      await createEventItem(eventId, { key, label });
+      await createEventItem(eventId, {
+        key,
+        label,
+        ...(key === "badge" ? { config: { issue_on_checkin: true } } : {}),
+      });
       setAddLabel("");
       setAddOpen(false);
       setReloadToken((n) => n + 1);

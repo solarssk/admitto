@@ -62,7 +62,8 @@ function toForm(item: EventItemDto): FormState {
     label: item.label,
     enabled: item.enabled,
     requires_return: cfg?.requires_return ?? false,
-    issue_on_checkin: cfg?.issue_on_checkin ?? false,
+    // Match check-in runtime: only explicit false disables auto-issue.
+    issue_on_checkin: cfg?.issue_on_checkin !== false,
     icon: normalizeEventItemIconForForm(item.icon),
     contents: contentsFromConfig(cfg),
   };
@@ -152,7 +153,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
       onUpdated();
       onClose();
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
+      if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
         setDeleteBlockReason("in_use");
       } else {
         setError(operatorApiErrorMessage(err, "Failed to delete item."));
