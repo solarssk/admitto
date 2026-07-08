@@ -43,6 +43,79 @@ import "../attendees/attendees.css";
 
 type TabId = "overview" | "activity";
 
+/** Single red "Revoke" entry point — opens a small menu for pass vs. check-in, each still confirmed via its own dialog. */
+function RevokeActionMenu({
+  canRevokeCheckIn,
+  onRevokePass,
+  onRevokeCheckIn,
+}: {
+  canRevokeCheckIn: boolean;
+  onRevokePass: () => void;
+  onRevokeCheckIn: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="revoke-menu" ref={rootRef}>
+      <Button
+        type="button"
+        variant="danger"
+        icon={<i className="ti ti-ban" aria-hidden="true" />}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        Revoke
+      </Button>
+      {open && (
+        <div className="revoke-menu__panel" role="menu">
+          <button
+            type="button"
+            role="menuitem"
+            className="revoke-menu__item"
+            onClick={() => {
+              setOpen(false);
+              onRevokePass();
+            }}
+          >
+            Revoke pass
+          </button>
+          {canRevokeCheckIn && (
+            <button
+              type="button"
+              role="menuitem"
+              className="revoke-menu__item"
+              onClick={() => {
+                setOpen(false);
+                onRevokeCheckIn();
+              }}
+            >
+              Revoke check-in
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Event attendee detail: profile edit, pass revoke/restore, resend, and activity log. */
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
@@ -440,18 +513,6 @@ export function AttendeeDetailPage() {
             >
               Resend ticket
             </Button>
-            {detail.check_in_status === "admitted" && !isRevoked && (
-              <Button
-                variant="secondary"
-                icon={<i className="ti ti-ban" aria-hidden="true" />}
-                onClick={() => {
-                  setCheckinRevokeError(null);
-                  setCheckinRevokeOpen(true);
-                }}
-              >
-                Revoke check-in
-              </Button>
-            )}
             {isRevoked ? (
               <Button
                 variant="primary"
@@ -465,9 +526,17 @@ export function AttendeeDetailPage() {
                 {revokeBusy ? "Restoring…" : "Restore pass"}
               </Button>
             ) : (
-              <Button variant="danger" onClick={() => { setRevokeError(null); setRevokeOpen(true); }}>
-                Revoke pass
-              </Button>
+              <RevokeActionMenu
+                canRevokeCheckIn={detail.check_in_status === "admitted"}
+                onRevokePass={() => {
+                  setRevokeError(null);
+                  setRevokeOpen(true);
+                }}
+                onRevokeCheckIn={() => {
+                  setCheckinRevokeError(null);
+                  setCheckinRevokeOpen(true);
+                }}
+              />
             )}
             <Button variant="secondary" onClick={handleBack}>
               Back
