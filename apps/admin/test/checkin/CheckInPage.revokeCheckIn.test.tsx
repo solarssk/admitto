@@ -188,4 +188,28 @@ describe("CheckInPage — admin Revoke check-in (#379/#380/#381 follow-up)", () 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(revokeAttendeeCheckIn).not.toHaveBeenCalled();
   });
+
+  it("hides Revoke check-in once the pass itself is revoked, even with a stale admitted_at (PO review)", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
+    fetchAttendeeCard.mockResolvedValue({
+      ...admittedCard,
+      warnings: ["Ticket is not admittable (cancelled or revoked)."],
+    });
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("QR scan or search")).toBeTruthy();
+    });
+    const input = screen.getByLabelText("QR scan or search") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "anna" } });
+    await waitFor(() => {
+      expect(screen.getByText("Anna Alpha")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText("Anna Alpha"));
+    await waitFor(() => {
+      expect(screen.getByText("Revoked")).toBeTruthy();
+    });
+    expect(screen.queryByRole("button", { name: "Revoke check-in" })).toBeNull();
+  });
 });

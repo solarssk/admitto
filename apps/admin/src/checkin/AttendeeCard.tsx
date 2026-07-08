@@ -303,7 +303,7 @@ export function AttendeeCard({
         {(showUndo ||
           onAddNote ||
           (onCancel && !showPrimaryActions) ||
-          (onRevokeCheckIn && card.check_in_status === "admitted")) && (
+          (onRevokeCheckIn && card.check_in_status === "admitted" && displayMode !== "alert")) && (
           <div className="checkin-card__footer">
             {showUndo && onUndo && (
               <Button
@@ -318,7 +318,7 @@ export function AttendeeCard({
                 Undo check-in
               </Button>
             )}
-            {onRevokeCheckIn && card.check_in_status === "admitted" && (
+            {onRevokeCheckIn && card.check_in_status === "admitted" && displayMode !== "alert" && (
               <Button
                 type="button"
                 variant="ghost"

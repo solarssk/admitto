@@ -101,6 +101,13 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     expect(screen.queryByRole("button", { name: "Revoke check-in" })).toBeNull();
   });
 
+  it("hides the button once the pass itself has been revoked, even with a stale admitted_at (PO review)", async () => {
+    mockLoad(baseDetail({ status: "revoked" }));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "Revoke check-in" })).toBeNull();
+  });
+
   it("confirms, revokes, and reloads the detail", async () => {
     mockLoad(baseDetail());
     renderPage();

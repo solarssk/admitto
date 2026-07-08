@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Attendee card: the PREVIEW state's dismiss button read "Cancel" while every other state's read "Clear" for the identical action — unified on **Clear** everywhere on this card (#449 review).
 - Activity Log: a `check_in_revoked` entry (from the new admin revoke action, #449) was missing from the timeline's icon/label/timezone maps, so it rendered with the raw lowercase action-type string ("check in revoked") and in UTC instead of the event's local timezone like other on-site check-in activity.
 - Recent scans sidebar: reversed admissions (operator self-undo or admin revoke) were excluded from `getRecentCheckIns`' query entirely, so a revoked/undone attendee kept showing as a permanently green "Checked in" row with no indication it had been reversed. The sidebar now shows a distinct "Undone" or "Revoked" row (grey dot) for these events.
+- "Revoke check-in" (Check-in page card and Attendee Detail page, #449) stayed visible and clickable after the attendee's **pass** had already been revoked, because its visibility only checked `admitted_at` and ignored `status`. Now hidden once the pass itself is revoked — a stale admitted timestamp on an already-revoked pass no longer offers a redundant/confusing action.
 
 ## [0.4.12] - 2026-07-06
 

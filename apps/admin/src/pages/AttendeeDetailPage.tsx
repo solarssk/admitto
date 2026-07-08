@@ -440,7 +440,7 @@ export function AttendeeDetailPage() {
             >
               Resend ticket
             </Button>
-            {detail.check_in_status === "admitted" && (
+            {detail.check_in_status === "admitted" && !isRevoked && (
               <Button
                 variant="secondary"
                 icon={<i className="ti ti-ban" aria-hidden="true" />}
