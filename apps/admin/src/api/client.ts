@@ -452,6 +452,18 @@ export async function undoLastCheckIn(
   return parseJson<{ card: AttendeeCardDto }>(res);
 }
 
+/** Admin/superadmin-only: reverse this attendee's current admission regardless of who checked them in or when. */
+export async function revokeAttendeeCheckIn(
+  eventId: string,
+  attendeeId: string,
+): Promise<{ card: AttendeeCardDto }> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/revoke-checkin`,
+    jsonPostInit({}),
+  );
+  return parseJson<{ card: AttendeeCardDto }>(res);
+}
+
 export async function fetchCheckInHistory(
   eventId: string,
   limit = 8,

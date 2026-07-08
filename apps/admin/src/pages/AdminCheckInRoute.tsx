@@ -3,14 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import { Button, Card, PageHeader } from "@admitto/ui";
 import type { EventDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
-import { CheckinConnectionPill } from "../checkin/ConnectionBanner.js";
-import { formatEventCalendarDate } from "../utils/event-dates.js";
 import { CheckInPage } from "./CheckInPage.js";
-
-function formatEventSubtitle(event: EventDto): string {
-  const date = formatEventCalendarDate(event.date);
-  return event.location ? `${event.title} · ${date} · ${event.location}` : `${event.title} · ${date}`;
-}
 
 /** Admin check-in: live scanner only when an Admitto session exists (CF-only cannot call scan API). */
 export function AdminCheckInRoute() {
@@ -38,20 +31,17 @@ export function AdminCheckInRoute() {
     <>
       <PageHeader
         title="Check-in"
-        subtitle={formatEventSubtitle(event)}
+        subtitle="Scan QR codes and admit guests on event day"
         actions={
-          <div className="ck-pageheader-actions">
-            <CheckinConnectionPill />
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              icon={<i className="ti ti-camera" />}
-              onClick={() => setUseCamera(true)}
-            >
-              Use camera
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            icon={<i className={`ti ti-camera${useCamera ? "-off" : ""}`} />}
+            onClick={() => setUseCamera((v) => !v)}
+          >
+            {useCamera ? "Disable camera" : "Use camera"}
+          </Button>
         }
       />
       <CheckInPage

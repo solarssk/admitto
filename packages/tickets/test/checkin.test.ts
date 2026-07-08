@@ -347,4 +347,22 @@ describe("getRecentCheckIns", () => {
       expect("email" in history[0].attendee).toBe(false);
     }
   });
+
+  it("includes undo/admin_revoke reversals, not just scan/manual admissions (#449 review)", async () => {
+    const reversal = await prisma.checkIn.create({
+      data: {
+        attendee_id: attendeeAId,
+        event_id: EVENT_ID,
+        status: "UNDO",
+        source: "admin_revoke",
+      },
+    });
+    try {
+      const history = await getRecentCheckIns(EVENT_ID, prisma, 1);
+      expect(history[0]?.id).toBe(reversal.id);
+      expect(history[0]?.source).toBe("admin_revoke");
+    } finally {
+      await prisma.checkIn.delete({ where: { id: reversal.id } });
+    }
+  });
 });

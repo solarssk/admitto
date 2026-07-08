@@ -188,6 +188,44 @@
   color: var(--status-error);
 }
 
+.revoke-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.revoke-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  min-width: 180px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.revoke-menu__item {
+  text-align: left;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--status-error, #b42318);
+  cursor: pointer;
+}
+
+.revoke-menu__item:hover {
+  background: var(--status-error-tint);
+}
+
 .attendee-resend-modal {
   position: fixed;
   inset: 0;

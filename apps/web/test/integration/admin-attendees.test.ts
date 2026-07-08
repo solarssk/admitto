@@ -1074,6 +1074,94 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
   });
 });
 
+describe("POST /api/admin/events/:eventId/attendees/:id/revoke-checkin", () => {
+  const ATT_REVOKE = "att-admin-revoke-target";
+
+  beforeAll(async () => {
+    const token = generateToken();
+    await prisma.attendee.upsert({
+      where: { id: ATT_REVOKE },
+      create: {
+        id: ATT_REVOKE,
+        event_id: EVENT_A,
+        email: "revoke-target@example.com",
+        name: "Revoke Target",
+        token_hash: hashToken(token),
+        admitted_at: new Date("2026-10-01T10:00:00Z"),
+      },
+      update: { admitted_at: new Date("2026-10-01T10:00:00Z"), admitted_by: null },
+    });
+  });
+
+  // bulk-resend below counts EVENT_A's attendees — don't leak this fixture into it.
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_REVOKE } });
+    await prisma.checkIn.deleteMany({ where: { attendee_id: ATT_REVOKE } });
+    await prisma.attendee.delete({ where: { id: ATT_REVOKE } });
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_REVOKE}/revoke-checkin`,
+      {
+        method: "POST",
+        headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(403);
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_REVOKE } });
+    expect(after.admitted_at).not.toBeNull();
+  });
+
+  it("admin un-admits the attendee and logs check_in_revoked", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_REVOKE}/revoke-checkin`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { card: { check_in_status: string } };
+    expect(body.card.check_in_status).toBe("not_admitted");
+
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_REVOKE } });
+    expect(after.admitted_at).toBeNull();
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_REVOKE, action_type: "check_in_revoked" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+  });
+
+  it("returns 409 when the attendee is not currently admitted", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_REVOKE}/revoke-checkin`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(409);
+    // The actual reason, not a fixed "not_admitted" code — distinguishes
+    // this from losing a concurrent-revoke race (review finding).
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("Attendee is not currently admitted");
+  });
+
+  it("returns 403 for an unknown attendee id (no existence oracle, matches sibling attendee routes)", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/does-not-exist/revoke-checkin`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
   const bulkUrl = `/api/admin/events/${EVENT_A}/attendees/bulk-resend`;
 
@@ -1823,6 +1911,72 @@ describe("Attendees v2 — RSVP and manual create", () => {
       expect(restoredLog).not.toBeNull();
     } finally {
       await prisma.attendee.update({ where: { id: ATT_A2 }, data: { status: priorStatus } });
+    }
+  });
+
+  it("PATCH status revoked on an admitted attendee auto-clears the admission (PO review)", async () => {
+    const ATT_PASS_REVOKE = "att-admin-pass-revoke-admitted";
+    const token = generateToken();
+    await prisma.attendee.upsert({
+      where: { id: ATT_PASS_REVOKE },
+      create: {
+        id: ATT_PASS_REVOKE,
+        event_id: EVENT_A,
+        email: "pass-revoke-admitted@example.com",
+        name: "Pass Revoke Admitted",
+        token_hash: hashToken(token),
+        admitted_at: new Date("2026-10-01T10:00:00Z"),
+      },
+      update: { status: "registered", admitted_at: new Date("2026-10-01T10:00:00Z"), admitted_by: null },
+    });
+    try {
+      const getRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_PASS_REVOKE}`, {
+        headers: { Cookie: adminCookie },
+      });
+      const detail = (await getRes.json()) as { updated_at: string };
+
+      const patchRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_PASS_REVOKE}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "revoked", expected_updated_at: detail.updated_at }),
+      });
+      expect(patchRes.status).toBe(200);
+      const patched = (await patchRes.json()) as {
+        status: string;
+        check_in_status: string;
+        admitted_at: string | null;
+        updated_at: string;
+      };
+      // Response DTO must reflect the clear immediately, not the pre-revoke row.
+      expect(patched.check_in_status).toBe("not_admitted");
+      expect(patched.admitted_at).toBeNull();
+
+      const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_PASS_REVOKE } });
+      expect(row.admitted_at).toBeNull();
+      // revokeCheckInTx's own write bumps updated_at a second time — the
+      // response must reflect the real, final value, not the one captured
+      // right after the status-change write (review finding: a stale
+      // updated_at here would make the client's very next edit fail with a
+      // false 409 stale_write, since expected_updated_at wouldn't match).
+      expect(patched.updated_at).toBe(row.updated_at.toISOString());
+
+      const checkInRevokedLog = await prisma.attendeeActionLog.findFirst({
+        where: { attendee_id: ATT_PASS_REVOKE, action_type: "check_in_revoked" },
+      });
+      expect(checkInRevokedLog).not.toBeNull();
+
+      // A follow-up edit using the response's own updated_at must succeed —
+      // proves the CAS won't spuriously reject it as a stale write.
+      const followUpRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_PASS_REVOKE}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Pass Revoke Admitted (edited)", expected_updated_at: patched.updated_at }),
+      });
+      expect(followUpRes.status).toBe(200);
+    } finally {
+      await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE } });
+      await prisma.checkIn.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE } });
+      await prisma.attendee.delete({ where: { id: ATT_PASS_REVOKE } });
     }
   });
 

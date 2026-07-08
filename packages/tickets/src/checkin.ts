@@ -92,7 +92,10 @@ export async function getRecentCheckIns(
   return prisma.checkIn.findMany({
     where: {
       event_id: eventId,
-      source: { in: ["scan", "manual"] },
+      // scan/manual = admissions; undo/admin_revoke = reversals (#449 review) —
+      // without these the sidebar kept showing a reversed admission as a
+      // permanently-green "Checked in" row with no indication it was undone.
+      source: { in: ["scan", "manual", "undo", "admin_revoke"] },
     },
     orderBy: [{ checked_in_at: "desc" }, { id: "desc" }],
     take: safeLimit,

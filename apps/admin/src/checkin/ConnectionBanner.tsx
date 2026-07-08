@@ -1,3 +1,4 @@
+import { Badge } from "@admitto/ui";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import type { ConnectionState } from "../connection/types.js";
 
@@ -57,15 +58,19 @@ export function CheckinConnectionLiveRegion() {
   );
 }
 
-/** Compact header indicator when the server link is healthy (admin check-in page header). */
-export function CheckinConnectionPill() {
+/**
+ * Compact indicator when the app-wide connection heartbeat is healthy.
+ * Rendered globally in StaffShell's topbar (next to MailerStatusBadge), not
+ * scoped to the check-in page — the underlying ConnectionStateProvider is
+ * app-wide, not check-in-specific.
+ */
+export function ServerConnectionBadge() {
   const { state } = useConnectionState();
   if (mapConnectionState(state) !== "connected") return null;
 
   return (
-    <span className="ck-server-status" title="All scans confirmed by server">
-      <span className="ck-server-status__dot" aria-hidden="true" />
-      <span className="ck-server-status__label">Server connected</span>
+    <span title="All scans confirmed by server">
+      <Badge variant="ok">Server connected</Badge>
     </span>
   );
 }

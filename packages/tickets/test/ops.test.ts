@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { admitAttendee } from "../src/admit.js";
-import { undoLastCheckIn as undoFn } from "../src/undo.js";
+import { undoLastCheckIn as undoFn, revokeCheckIn, UndoNotAllowedError } from "../src/undo.js";
 import { transitionItemState, ensureAttendeeItemStates, operatorItemActions } from "../src/item-states.js";
 import { addAttendeeNote, NoteTooLongError, OperatorRequiredError } from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
@@ -382,5 +382,81 @@ describe("lookupAttendees — revoked pass with stale admitted_at (Bugbot #448)"
     const active = results.find((r) => r.name === "Active Lookup Guest");
     expect(revoked?.check_in_status).toBe("not_admitted");
     expect(active?.check_in_status).toBe("admitted");
+  });
+});
+
+describe("revokeCheckIn — admin/superadmin un-admit (any device, any time)", () => {
+  it("un-admits, rolls back the badge, and logs check_in_revoked", async () => {
+    const token = generateToken();
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "revoke-target@example.com",
+        name: "Revoke Target",
+        token_hash: hashToken(token),
+      },
+    });
+
+    // Admitted by an operator on a kiosk device — the admin revoking below
+    // never touched that device, proving this is attendee-scoped, not
+    // device-scoped like undoLastCheckIn.
+    const admit = await admitAttendee(
+      {
+        attendeeId: att.id,
+        eventId: EVENT_ID,
+        method: "scan",
+        audit: { operator: "operator-1", deviceId: "kiosk-7", sessionId: "sess-kiosk", ip: "127.0.0.1" },
+      },
+      prisma,
+    );
+    expect(admit.status).toBe("VALID");
+    const badgeState = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item: { key: "badge" } },
+    });
+    expect(badgeState?.state).toBe("issued");
+
+    const adminAudit = { operator: "admin-9", sessionId: "sess-admin", ip: "10.0.0.1" };
+    const result = await revokeCheckIn({ eventId: EVENT_ID, attendeeId: att.id, audit: adminAudit }, prisma);
+    expect(result.card.check_in_status).toBe("not_admitted");
+
+    const attendeeAfter = await prisma.attendee.findUnique({ where: { id: att.id } });
+    expect(attendeeAfter?.admitted_at).toBeNull();
+
+    const undoRow = await prisma.checkIn.findFirst({
+      where: { attendee_id: att.id, source: "admin_revoke" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(undoRow?.status).toBe("UNDO");
+    expect(undoRow?.checked_in_by).toBe("admin-9");
+
+    const badgeAfter = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item: { key: "badge" } },
+    });
+    expect(badgeAfter?.state).toBe("pending");
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: att.id, action_type: "check_in_revoked" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log?.actor_user_id).toBe("admin-9");
+  });
+
+  it("rejects revoking an attendee who is not currently admitted", async () => {
+    const token = generateToken();
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "not-admitted@example.com",
+        name: "Not Admitted",
+        token_hash: hashToken(token),
+      },
+    });
+
+    await expect(
+      revokeCheckIn(
+        { eventId: EVENT_ID, attendeeId: att.id, audit: { operator: "admin-9" } },
+        prisma,
+      ),
+    ).rejects.toThrow(UndoNotAllowedError);
   });
 });
