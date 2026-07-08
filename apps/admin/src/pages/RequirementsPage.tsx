@@ -47,7 +47,6 @@ export function RequirementsPage() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [addLabel, setAddLabel] = useState("");
-  const [addError, setAddError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
   const addKeyPreview = uniqueItemKey(addLabel, items.map((i) => i.key));
@@ -135,11 +134,10 @@ export function RequirementsPage() {
     const label = addLabel.trim();
     const key = uniqueItemKey(label, items.map((i) => i.key));
     if (!label || !key) {
-      setAddError("Enter a name using letters or numbers.");
+      addToast("Enter a name using letters or numbers.", "error");
       return;
     }
     setAdding(true);
-    setAddError(null);
     try {
       await createEventItem(eventId, {
         key,
@@ -155,9 +153,9 @@ export function RequirementsPage() {
       addToast("Item added", "success");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setAddError("An item with this name already exists.");
+        addToast("An item with this name already exists.", "warning");
       } else {
-        setAddError(operatorApiErrorMessage(err, "Failed to create item."));
+        addToast(operatorApiErrorMessage(err, "Failed to create item."), "error");
       }
     } finally {
       setAdding(false);
@@ -215,7 +213,6 @@ export function RequirementsPage() {
               icon={<i className="ti ti-plus" />}
               onClick={() => {
                 setAddOpen((o) => !o);
-                setAddError(null);
               }}
             >
               Add item
@@ -374,7 +371,6 @@ export function RequirementsPage() {
             onClick={() => {
               setAddOpen(false);
               setAddLabel("");
-              setAddError(null);
             }}
           />
           <div className="event-item-modal__panel">
@@ -421,7 +417,6 @@ export function RequirementsPage() {
                   bag", "Name badge", "T-shirt".
                 </span>
               </div>
-              {addError && <p className="text-error">{addError}</p>}
             </form>
             <div className="event-item-modal__footer">
               <Button
@@ -438,7 +433,6 @@ export function RequirementsPage() {
                 onClick={() => {
                   setAddOpen(false);
                   setAddLabel("");
-                  setAddError(null);
                 }}
               >
                 Cancel

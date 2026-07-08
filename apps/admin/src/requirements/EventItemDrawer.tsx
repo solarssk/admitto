@@ -93,24 +93,21 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
   const [form, setForm] = useState<FormState>(() => toForm(item));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, !deleteConfirmOpen, onClose);
 
   useEffect(() => {
     setForm(toForm(item));
-    setError(null);
   }, [item]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    setError(null);
 
     const contentsResult = validateContentsRows(form.contents);
     if (!contentsResult.ok) {
-      setError(contentsResult.message);
+      addToast(contentsResult.message, "error");
       setSaving(false);
       return;
     }
@@ -140,7 +137,6 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
 
   async function handleDelete() {
     setDeleting(true);
-    setError(null);
     try {
       await deleteEventItem(eventId, item.id);
       onUpdated();
@@ -157,8 +153,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
     } finally {
       setDeleting(false);
       setDeleteConfirmOpen(false);
-    }
-  }
+    }  }
 
   function updateContent(index: number, field: "label" | "source_field", value: string) {
     setForm((f) => {
@@ -212,8 +207,6 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
             <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
           </div>
           <form id="item-edit-form" className="event-item-modal__body" onSubmit={(e) => void handleSave(e)}>
-            {error && <p className="text-error">{error}</p>}
-
             <div>
               <h3 className="event-item-modal__section-title">Details</h3>
               <div className="requirements-field-stack">
