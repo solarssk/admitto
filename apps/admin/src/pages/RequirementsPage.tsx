@@ -143,7 +143,10 @@ export function RequirementsPage() {
       await createEventItem(eventId, {
         key,
         label,
-        ...(key === "badge" ? { config: { issue_on_checkin: true } } : {}),
+        config: {
+          requires_return: false,
+          ...(key === "badge" ? { issue_on_checkin: true } : {}),
+        },
       });
       setAddLabel("");
       setAddOpen(false);

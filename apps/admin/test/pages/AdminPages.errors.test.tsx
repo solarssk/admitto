@@ -302,6 +302,53 @@ describe("RequirementsPage operator errors", () => {
     });
   });
 
+  it("creates items with requires_return false by default", async () => {
+    vi.mocked(fetchEventItems).mockResolvedValue([]);
+    vi.mocked(createEventItem).mockResolvedValueOnce({
+      ...sampleItem,
+      id: "item-2",
+      key: "headset",
+      label: "Headset",
+      config: { requires_return: false },
+    });
+    renderRequirements();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Add item" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Headset" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    await waitFor(() => {
+      expect(createEventItem).toHaveBeenCalledWith("evt-1", {
+        key: "headset",
+        label: "Headset",
+        config: { requires_return: false },
+      });
+    });
+  });
+
+  it("creates badge with issue_on_checkin and requires_return false", async () => {
+    vi.mocked(fetchEventItems).mockResolvedValue([]);
+    vi.mocked(createEventItem).mockResolvedValueOnce({
+      ...sampleItem,
+      config: { requires_return: false, issue_on_checkin: true },
+    });
+    renderRequirements();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Add item" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+    fireEvent.change(screen.getByLabelText("Item name"), { target: { value: "Badge" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create item" }));
+    await waitFor(() => {
+      expect(createEventItem).toHaveBeenCalledWith("evt-1", {
+        key: "badge",
+        label: "Badge",
+        config: { requires_return: false, issue_on_checkin: true },
+      });
+    });
+  });
+
   it("toasts behaviour save failure", async () => {
     vi.mocked(fetchEventItems).mockResolvedValueOnce([]);
     vi.mocked(updateOpsConfig).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
