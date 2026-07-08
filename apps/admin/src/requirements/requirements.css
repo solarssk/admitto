@@ -307,12 +307,28 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-4);
 }
 
 .event-item-modal__title {
   margin: 0;
   font-size: var(--fs-h3);
   font-weight: 600;
+}
+
+.event-item-modal__subtitle {
+  margin: var(--space-1) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: var(--lh-normal);
+}
+
+.add-item-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
 }
 
 .event-item-modal__body {

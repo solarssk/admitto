@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Button, Card, EmptyState, IconButton, Input, PageHeader, Switch, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, IconButton, PageHeader, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   createEventItem,
@@ -379,30 +379,48 @@ export function RequirementsPage() {
           />
           <div className="event-item-modal__panel">
             <div className="event-item-modal__header">
-              <h2 className="event-item-modal__title">Add item</h2>
+              <div>
+                <h2 className="event-item-modal__title">Add item</h2>
+                <p className="event-item-modal__subtitle">
+                  A physical item or resource issued or tracked at check-in — for example a gift
+                  bag, badge, or headset. You can configure rules after creating it.
+                </p>
+              </div>
             </div>
             <form
               id="add-item-form"
               className="event-item-modal__body"
               onSubmit={(e) => void handleAddItem(e)}
             >
-              <Input
-                label="Item name"
-                value={addLabel}
-                onChange={(e) => setAddLabel(e.target.value)}
-                placeholder="Gift bag"
-                required
-                autoFocus
-              />
-              {addLabel.trim() && (
-                <p className="requirements-section-hint">
-                  Internal ID:{" "}
-                  <code>{addKeyPreview || slugifyItemKey(addLabel) || "—"}</code>
-                  {addKeyPreview && addKeyPreview !== slugifyItemKey(addLabel) && (
-                    <> (name already taken — using unique suffix)</>
+              <div className="at-field">
+                <div className="add-item-label-row">
+                  <label className="at-label" htmlFor="add-item-input">
+                    Item name
+                  </label>
+                  {addLabel.trim() && (
+                    <span className="at-hint">
+                      ID: <code>{addKeyPreview || slugifyItemKey(addLabel) || "—"}</code>
+                      {addKeyPreview && addKeyPreview !== slugifyItemKey(addLabel) && (
+                        <> (unique suffix added)</>
+                      )}
+                    </span>
                   )}
-                </p>
-              )}
+                </div>
+                <input
+                  id="add-item-input"
+                  className="at-input"
+                  type="text"
+                  value={addLabel}
+                  onChange={(e) => setAddLabel(e.target.value)}
+                  placeholder="Gift bag"
+                  required
+                  autoFocus
+                />
+                <span className="at-hint">
+                  The name shown to staff during check-in. Keep it short and clear — e.g. "Gift
+                  bag", "Name badge", "T-shirt".
+                </span>
+              </div>
               {addError && <p className="text-error">{addError}</p>}
             </form>
             <div className="event-item-modal__footer">
