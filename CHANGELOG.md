@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Requirements — Event items: select-type options textarea accepts Enter for new lines:** The options textarea for select-type attendee data fields now correctly preserves newlines when typing — pressing Enter adds a new option line. Options are stored one-per-line and displayed one-per-line in the editor; existing comma-separated options in the database are still loaded correctly.
 - **Requirements — Event items are empty by default:** New events start with zero `EventItem` rows. Operators/admins add items manually via **+ Add item** in Requirements. The previous auto-seed of giftbag / badge / headset on event create and on first check-in interaction has been removed (#367, #368). Legacy events keep their existing rows unchanged; the delete guard for default items has been lifted (all items are deletable when no issued/returned states exist).
 - **Requirements — Event items list shows item icons:** The item name column in the Event items table now displays the item's tabler icon alongside its label and key (#370).
 - **Requirements — Event behaviour copy and spacing:** Each behaviour toggle row has more vertical padding (space-4) and clearer subtitle copy: "Issue badge at entry", "Require confirmation on scan", "Allow manual lookup", "Auto-advance after valid check-in" (#369).
