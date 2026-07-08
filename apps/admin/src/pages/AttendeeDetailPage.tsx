@@ -442,7 +442,7 @@ export function AttendeeDetailPage() {
             </Button>
             {detail.check_in_status === "admitted" && (
               <Button
-                variant="ghost"
+                variant="secondary"
                 icon={<i className="ti ti-ban" aria-hidden="true" />}
                 onClick={() => {
                   setCheckinRevokeError(null);
