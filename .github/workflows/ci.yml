@@ -69,8 +69,10 @@ jobs:
         working-directory: packages/db
         run: npx prisma migrate deploy
       - run: npm run typecheck --workspaces --if-present
-      - run: npm run coverage --workspaces --if-present
+      - name: Run coverage (also emits JUnit XML per workspace for Test Analytics)
+        run: npm run coverage --workspaces --if-present -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
       - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -79,6 +81,12 @@ jobs:
             packages/**/coverage-integration/lcov.info
             apps/**/coverage/lcov.info
             apps/**/coverage-integration/lcov.info
+          fail_ci_if_error: false
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1.2.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
   secret-scan:
