@@ -210,7 +210,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
             </div>
             <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
           </div>
-          <form className="event-item-modal__body" onSubmit={(e) => void handleSave(e)}>
+          <form id="item-edit-form" className="event-item-modal__body" onSubmit={(e) => void handleSave(e)}>
             {error && <p className="text-error">{error}</p>}
 
             <div>
@@ -377,21 +377,20 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
                 )}
               </div>
             </div>
-
-            <div className="event-item-modal__footer">
-              <Button type="submit" variant="primary" disabled={saving}>
-                {saving ? "Saving…" : "Save changes"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={deleting}
-                onClick={() => setDeleteConfirmOpen(true)}
-              >
-                Delete item
-              </Button>
-            </div>
           </form>
+          <div className="event-item-modal__footer">
+            <Button type="submit" form="item-edit-form" variant="primary" disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={deleting}
+              onClick={() => setDeleteConfirmOpen(true)}
+            >
+              Delete item
+            </Button>
+          </div>
         </div>
       </div>
       <ConfirmDialog
