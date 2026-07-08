@@ -102,14 +102,45 @@ describe("EventItemDrawer", () => {
     expect(screen.queryByText(/issued to attendees — disable it instead of deleting/)).toBeNull();
   });
 
-  it("shows generic delete failure for other 409 responses", async () => {
+  it("fires warning toast when save returns item_in_use", async () => {
+    vi.mocked(updateEventItem).mockRejectedValueOnce(
+      new ApiError(409, "item_in_use", "item_in_use"),
+    );
+    renderDrawer(giftbagItem);
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        expect.stringMatching(/issued to attendees — record returns before disabling/),
+        "warning",
+      );
+    });
+    expect(screen.queryByText(/issued to attendees/)).toBeNull();
+  });
+
+  it("fires error toast for generic save failure", async () => {
+    vi.mocked(updateEventItem).mockRejectedValueOnce(new Error("network error"));
+    renderDrawer(giftbagItem);
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        expect.stringMatching(/Failed to save item/),
+        "error",
+      );
+    });
+    expect(screen.queryByText(/Failed to save item/)).toBeNull();
+  });
+
+  it("fires toast for generic delete failure", async () => {
     vi.mocked(deleteEventItem).mockRejectedValueOnce(new ApiError(409, "key_conflict", "key_conflict"));
     renderDrawer(giftbagItem);
     fireEvent.click(screen.getByRole("button", { name: "Delete item" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => {
-      expect(screen.getByText(/Failed to delete item/)).toBeTruthy();
+      expect(addToast).toHaveBeenCalledWith(
+        expect.stringMatching(/Failed to delete item/),
+        "error",
+      );
     });
-    expect(addToast).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Failed to delete item/)).toBeNull();
   });
 });

@@ -126,11 +126,12 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
       onClose();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
-        setError(
+        addToast(
           "This item has been issued to attendees — record returns before disabling it.",
+          "warning",
         );
       } else {
-        setError(operatorApiErrorMessage(err, "Failed to save item."));
+        addToast(operatorApiErrorMessage(err, "Failed to save item."), "error");
       }
     } finally {
       setSaving(false);
@@ -151,7 +152,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
           "warning",
         );
       } else {
-        setError(operatorApiErrorMessage(err, "Failed to delete item."));
+        addToast(operatorApiErrorMessage(err, "Failed to delete item."), "error");
       }
     } finally {
       setDeleting(false);
