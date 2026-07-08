@@ -648,14 +648,14 @@ describe("DELETE /api/admin/events/:eventId/items/:itemId", () => {
     expect(deleted).toBeNull();
   });
 
-  it("returns 409 for default items", async () => {
+  it("returns 409 item_in_use for giftbag already issued to attendees", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_GIFTBAG}`, {
       method: "DELETE",
       headers: { Cookie: adminCookie, ...sameOrigin },
     });
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("default_item_not_deletable");
+    expect(body.error).toBe("item_in_use");
   });
 
   it("returns 403 for cross-event item delete", async () => {

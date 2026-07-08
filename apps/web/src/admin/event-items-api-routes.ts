@@ -3,7 +3,6 @@ import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import {
-  DEFAULT_EVENT_ITEM_KEYS,
   parseEventOpsConfig,
   resolveEventItemContents,
   writeBulkActionLog,
@@ -423,10 +422,6 @@ export async function handleDeleteEventItem(c: Context, db: PrismaClient): Promi
 
   const existing = await loadEventItemInEvent(db, eventId, itemId);
   if (!existing) return c.json({ error: "forbidden" }, 403);
-
-  if (DEFAULT_EVENT_ITEM_KEYS.has(existing.key)) {
-    return c.json({ error: "default_item_not_deletable" }, 409);
-  }
 
   const deleted = await db.$transaction(async (tx) => {
     const inUse = await countIssuedOrReturnedStates(tx, itemId);

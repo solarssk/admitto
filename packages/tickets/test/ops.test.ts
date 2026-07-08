@@ -6,7 +6,6 @@ import { PrismaClient } from "@prisma/client";
 import { admitAttendee } from "../src/admit.js";
 import { undoLastCheckIn as undoFn } from "../src/undo.js";
 import { transitionItemState, ensureAttendeeItemStates, operatorItemActions } from "../src/item-states.js";
-import { ensureDefaultEventItems } from "../src/event-items.js";
 import { addAttendeeNote, NoteTooLongError, OperatorRequiredError } from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
 import { getAttendeeCard, lookupAttendees } from "../src/attendee-card.js";
@@ -42,9 +41,14 @@ beforeAll(async () => {
       ops_config: { badge_at_entry: true, require_confirm_on_scan: false },
     },
   });
-  // Omit giftbag on purpose — ensureDefaultEventItems should lazy-create it in tests below.
   await prisma.eventItem.createMany({
     data: [
+      {
+        event_id: EVENT_ID,
+        key: "giftbag",
+        label: "Gift bag",
+        config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }], requires_return: false },
+      },
       { event_id: EVENT_ID, key: "badge", label: "Badge", config: { issue_on_checkin: true } },
       { event_id: EVENT_ID, key: "headset", label: "Headset", config: { requires_return: true } },
     ],
@@ -175,38 +179,6 @@ describe("getAttendeeCard — item detail from contents", () => {
     const card = await getAttendeeCard(EVENT_ID, attendeeId, prisma);
     const badge = card!.items.find((i) => i.key === "badge");
     expect(badge?.icon).toBe("badge");
-  });
-});
-
-describe("ensureDefaultEventItems (Lock #7 lazy seed)", () => {
-  it("creates default items for events created after migration", async () => {
-    const eventId = "test-event-no-items";
-    await prisma.event.create({
-      data: {
-        id: eventId,
-        title: "No Items Yet",
-        slug: "no-items-yet",
-        date: new Date("2026-10-01"),
-        organization_id: "org_ops",
-      },
-    });
-
-    await ensureDefaultEventItems(eventId, prisma);
-    await ensureDefaultEventItems(eventId, prisma);
-
-    const items = await prisma.eventItem.findMany({
-      where: { event_id: eventId },
-      orderBy: { key: "asc" },
-    });
-    expect(items.map((i) => i.key)).toEqual(["badge", "giftbag", "headset"]);
-    expect(items.find((i) => i.key === "badge")?.config).toEqual({
-      issue_on_checkin: true,
-      requires_return: false,
-    });
-    expect(items.find((i) => i.key === "giftbag")?.config).toEqual({
-      contents: [{ label: "Shirt size", source_field: "shirt_size" }],
-      requires_return: false,
-    });
   });
 });
 
