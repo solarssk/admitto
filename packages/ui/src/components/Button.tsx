@@ -9,6 +9,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   block?: boolean;
   icon?: ReactNode;
   iconRight?: ReactNode;
+  /** Adds a trailing chevron-down — use on any button that opens a menu/submenu, so it always reads as "has more options" the same way. Takes precedence over iconRight. */
+  hasMenu?: boolean;
 }
 
 export function Button({
@@ -17,6 +19,7 @@ export function Button({
   block = false,
   icon = null,
   iconRight = null,
+  hasMenu = false,
   disabled = false,
   type = "button",
   children,
@@ -33,6 +36,8 @@ export function Button({
     .filter(Boolean)
     .join(" ");
 
+  const trailingIcon = hasMenu ? <i className="ti ti-chevron-down" aria-hidden="true" /> : iconRight;
+
   return (
     <button type={type} className={cls} disabled={disabled} {...rest}>
       {icon && (
@@ -41,9 +46,9 @@ export function Button({
         </span>
       )}
       {children && <span>{children}</span>}
-      {iconRight && (
+      {trailingIcon && (
         <span className="at-btn__icon" aria-hidden="true">
-          {iconRight}
+          {trailingIcon}
         </span>
       )}
     </button>

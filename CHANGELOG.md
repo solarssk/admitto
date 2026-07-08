@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/ARCHITECTURE-FOR-AUDITORS.md`: sync Semgrep trigger note with the recorded decision.
 - Staff admin content now fills the full width beside the sidebar on wide monitors: removed `max-width: 1100px; margin: 0 auto` from `.screen` and the per-page `max-width: 720px` from `.event-settings-page` (Event Overview, Communication, and Event Settings pages are all affected); dropped the now-redundant `.events-picker-screen` rule. Intentionally narrow surfaces (operator check-in `720px`, auth forms, danger-zone description text) are unchanged.
 - Attendee Detail page (#449 review): the separate "Revoke pass" and "Revoke check-in" header buttons are now one red **Revoke** button with a small menu (pass always offered while not already revoked; check-in only when currently admitted) — same two confirmation dialogs as before, just one entry point since it's the same underlying action on the attendee. "Restore pass" stays its own button once the pass is revoked.
+- `Button` (`@admitto/ui`) gained a `hasMenu` prop — a trailing chevron-down so any button that opens a menu/submenu reads the same way everywhere, instead of each caller picking its own icon. Applied to the new Revoke button above.
 
 ### Security
 - Admin SPA: audit `ApiError.message` exposure — toasts and inline errors now go through `operatorApiErrorMessage()` so unknown server detail is suppressed with a generic fallback (dev console warning only).

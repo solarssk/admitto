@@ -78,6 +78,7 @@ function RevokeActionMenu({
         type="button"
         variant="danger"
         icon={<i className="ti ti-ban" aria-hidden="true" />}
+        hasMenu
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
