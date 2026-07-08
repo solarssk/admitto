@@ -1146,7 +1146,7 @@ describe("POST /api/admin/events/:eventId/attendees/:id/revoke-checkin", () => {
     expect(res.status).toBe(409);
   });
 
-  it("returns 404 for an unknown attendee id", async () => {
+  it("returns 403 for an unknown attendee id (no existence oracle, matches sibling attendee routes)", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_A}/attendees/does-not-exist/revoke-checkin`,
       {
@@ -1154,7 +1154,7 @@ describe("POST /api/admin/events/:eventId/attendees/:id/revoke-checkin", () => {
         headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       },
     );
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 });
 
@@ -1941,6 +1941,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
         status: string;
         check_in_status: string;
         admitted_at: string | null;
+        updated_at: string;
       };
       // Response DTO must reflect the clear immediately, not the pre-revoke row.
       expect(patched.check_in_status).toBe("not_admitted");
@@ -1948,11 +1949,26 @@ describe("Attendees v2 — RSVP and manual create", () => {
 
       const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_PASS_REVOKE } });
       expect(row.admitted_at).toBeNull();
+      // revokeCheckInTx's own write bumps updated_at a second time — the
+      // response must reflect the real, final value, not the one captured
+      // right after the status-change write (review finding: a stale
+      // updated_at here would make the client's very next edit fail with a
+      // false 409 stale_write, since expected_updated_at wouldn't match).
+      expect(patched.updated_at).toBe(row.updated_at.toISOString());
 
       const checkInRevokedLog = await prisma.attendeeActionLog.findFirst({
         where: { attendee_id: ATT_PASS_REVOKE, action_type: "check_in_revoked" },
       });
       expect(checkInRevokedLog).not.toBeNull();
+
+      // A follow-up edit using the response's own updated_at must succeed —
+      // proves the CAS won't spuriously reject it as a stale write.
+      const followUpRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_PASS_REVOKE}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Pass Revoke Admitted (edited)", expected_updated_at: patched.updated_at }),
+      });
+      expect(followUpRes.status).toBe(200);
     } finally {
       await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE } });
       await prisma.checkIn.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE } });

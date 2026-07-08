@@ -29,6 +29,7 @@ import {
   countFilteredAttendees,
   findFilteredAttendeesForExport,
   findFilteredAttendeesForList,
+  isAdmittable,
   revokeCheckIn,
   revokeCheckInTx,
   UndoNotAllowedError,
@@ -1058,20 +1059,31 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
 
       if (isStaleWrite(result)) throw new StaleWriteError();
 
-      // Revoking the pass must not leave a stale admission behind — restoring
-      // the pass later would otherwise resurrect a "checked in" state from
-      // before the revoke without a new scan ever happening (PO review).
+      // Any transition to a non-admittable status must not leave a stale
+      // admission behind — restoring the pass later would otherwise
+      // resurrect a "checked in" state from before the revoke without a new
+      // scan ever happening (PO review). isAdmittable() rather than a literal
+      // "revoked" check so this still holds if the status enum this route
+      // accepts ever widens to include "cancelled" (already a first-class
+      // AttendeeStatus, just not settable here yet).
       // existing.admitted_at was read before this transaction started, so a
       // concurrent request (operator undo, another admin's revoke-check-in)
       // may have already cleared it — revokeCheckInTx throws in that case;
       // that's fine, there's nothing left to revoke, but it must not abort
-      // the pass revoke itself (bugbot).
-      if (statusChange === "revoked" && existing.admitted_at) {
+      // the status change itself (bugbot).
+      if (statusChange !== undefined && !isAdmittable(statusChange) && existing.admitted_at) {
         try {
           await revokeCheckInTx({ eventId, attendeeId, audit: adminAuditFromContext(c) }, tx);
-          // result.row was read before the clear above — reflect it in the
-          // response DTO without a second round-trip.
-          result.row.admitted_at = null;
+          // result.row was read before the clear above, and revokeCheckInTx's
+          // own attendee update bumps updated_at again (Attendee.updated_at
+          // is @updatedAt) — re-read both so the response DTO's
+          // expected_updated_at stays valid for the client's next edit.
+          const fresh = await tx.attendee.findUniqueOrThrow({
+            where: { id: attendeeId },
+            select: { admitted_at: true, updated_at: true },
+          });
+          result.row.admitted_at = fresh.admitted_at;
+          result.row.updated_at = fresh.updated_at;
         } catch (err) {
           if (!(err instanceof UndoNotAllowedError)) throw err;
         }
@@ -1397,7 +1409,7 @@ export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient):
   if (forbidden) return forbidden;
 
   const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
-  if (!existing) return c.json({ error: "not found" }, 404);
+  if (!existing) return c.json({ error: "forbidden" }, 403);
 
   try {
     const result = await revokeCheckIn(

@@ -468,7 +468,6 @@ export function AttendeeDetailPage() {
       if (!isStillSelected(target)) return;
       await loadDetail();
       setCheckinRevokeOpen(false);
-      addToast("Check-in revoked", "success");
     } catch (err) {
       if (!isStillSelected(target)) return;
       setCheckinRevokeError(operatorApiErrorMessage(err, "Could not revoke check-in."));
