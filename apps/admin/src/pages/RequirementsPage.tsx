@@ -326,8 +326,10 @@ export function RequirementsPage() {
       </section>
 
       <section className="requirements-section">
-        <h2 className="requirements-section__title">Event behaviour</h2>
-        <Card>
+        <div className="requirements-section__header">
+          <h2 className="requirements-section__title">Event behaviour</h2>
+        </div>
+        <Card padded={false}>
           {opsConfig == null && loading ? (
             <p>Loading…</p>
           ) : opsConfig ? (
