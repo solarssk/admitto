@@ -4,6 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import {
   ensureBadgeEventItem,
+  isBadgeItemUsable,
   parseEventOpsConfig,
   resolveEventItemContents,
   writeBulkActionLog,
@@ -220,6 +221,44 @@ async function loadEventItemInEvent(db: PrismaClient, eventId: string, itemId: s
   return row;
 }
 
+/** Postgres Serializable transaction conflict (concurrent badge/ops-config writes). */
+function isSerializationFailure(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: string }).code === "P2034"
+  );
+}
+
+const SERIALIZATION_RETRY_ATTEMPTS = 3;
+
+/**
+ * `db.$transaction` with automatic retry on Postgres serialization failures
+ * (P2034) — only meaningful (and only retried) when `isolationLevel` is
+ * Serializable; a real conflict there is expected to be transient, not a
+ * bug, so surfacing it as a 500 on the first hit would be wrong.
+ */
+async function runSerializableTransaction<T>(
+  db: PrismaClient,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
+): Promise<T> {
+  const attempts =
+    options?.isolationLevel === Prisma.TransactionIsolationLevel.Serializable
+      ? SERIALIZATION_RETRY_ATTEMPTS
+      : 1;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return await db.$transaction(fn, options);
+    } catch (err) {
+      if (isSerializationFailure(err) && attempt < attempts - 1) continue;
+      throw err;
+    }
+  }
+  throw new Error("unreachable: serialization retries exhausted");
+}
+
 /** Count attendee rows where the item is currently held (state = "issued"). */
 async function countActivelyIssuedStates(
   db: PrismaClient | Prisma.TransactionClient,
@@ -392,20 +431,23 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
 
   // "badge" backs the "Issue badge at entry" ops-config toggle — it can stop
   // being usable either by being disabled, or by "Issue on check-in" being
-  // turned off while it stays active. Compare before/after so a config-only
-  // PATCH (enabled left untouched) still triggers the ops-config sync below.
-  const existingBadgeConfig = existing.config as { issue_on_checkin?: boolean } | null;
-  const nextBadgeConfig = (parsed.data.config ?? existing.config) as {
-    issue_on_checkin?: boolean;
-  } | null;
-  const badgeUsableBefore = existing.enabled && existingBadgeConfig?.issue_on_checkin !== false;
-  const badgeUsableAfter =
-    (parsed.data.enabled ?? existing.enabled) && nextBadgeConfig?.issue_on_checkin !== false;
-  const badgeBecameUnusable =
-    existing.key === "badge" && badgeUsableBefore && !badgeUsableAfter;
-  const needsSerializable = disabling || badgeBecameUnusable;
+  // turned off while it stays active. `disabling` alone (regardless of
+  // before-state) always re-syncs too, as a backstop for events whose
+  // ops_config already drifted before this check existed.
+  const badgeUsableBefore = isBadgeItemUsable(
+    existing.enabled,
+    existing.config as EventItemConfig | null,
+  );
+  const badgeUsableAfter = isBadgeItemUsable(
+    parsed.data.enabled ?? existing.enabled,
+    (parsed.data.config ?? existing.config) as EventItemConfig | null,
+  );
+  const needsBadgeSync =
+    existing.key === "badge" && (disabling || (badgeUsableBefore && !badgeUsableAfter));
+  const needsSerializable = disabling || needsBadgeSync;
 
-  const result = await db.$transaction(
+  const result = await runSerializableTransaction(
+    db,
     async (tx) => {
       if (disabling) {
         const inUse = await countActivelyIssuedStates(tx, itemId);
@@ -430,7 +472,7 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
       // The badge item just became unusable (disabled, or "Issue on
       // check-in" turned off) — keep the ops-config toggle in sync instead
       // of leaving it silently on.
-      if (badgeBecameUnusable) {
+      if (needsBadgeSync) {
         const event = await tx.event.findUnique({
           where: { id: eventId },
           select: { ops_config: true },
@@ -588,15 +630,15 @@ export async function handlePatchEventOpsConfig(c: Context, db: PrismaClient): P
   // of silently leaving badge_at_entry:true with an unusable badge item).
   const enablingBadgeAtEntry = parsed.data.badge_at_entry === true;
 
-  const result = await db.$transaction(
+  const result = await runSerializableTransaction(
+    db,
     async (tx) => {
       if (enablingBadgeAtEntry) {
         const badgeItem = await tx.eventItem.findFirst({
           where: { event_id: eventId, key: "badge" },
           select: { enabled: true, config: true },
         });
-        const badgeConfig = badgeItem?.config as { issue_on_checkin?: boolean } | null;
-        if (!badgeItem?.enabled || badgeConfig?.issue_on_checkin === false) {
+        if (!badgeItem || !isBadgeItemUsable(badgeItem.enabled, badgeItem.config as EventItemConfig | null)) {
           return { ok: false as const };
         }
       }

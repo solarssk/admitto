@@ -1075,6 +1075,54 @@ describe("ops-config", () => {
       },
     });
   });
+
+  it("disabling a badge item that was already drifted (issue_on_checkin off, badge_at_entry stuck true) still corrects ops_config", async () => {
+    const badgeId = await getBadgeItemId(EVENT_EI_A);
+    // Simulate an event that drifted before this sync existed: badge item
+    // already unusable via issue_on_checkin, but ops_config never caught up.
+    await prisma.eventItem.update({
+      where: { id: badgeId },
+      data: { config: { issue_on_checkin: false, requires_return: false } },
+    });
+    await prisma.event.update({
+      where: { id: EVENT_EI_A },
+      data: {
+        ops_config: {
+          badge_at_entry: true,
+          require_confirm_on_scan: true,
+          allow_manual_lookup: false,
+          auto_advance_on_valid: false,
+        },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${badgeId}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(res.status).toBe(200);
+
+    const event = await prisma.event.findUnique({ where: { id: EVENT_EI_A } });
+    expect((event?.ops_config as { badge_at_entry?: boolean } | null)?.badge_at_entry).toBe(false);
+
+    // Restore shared fixture state for tests declared later in this file.
+    await prisma.eventItem.update({
+      where: { id: badgeId },
+      data: { enabled: true, config: { issue_on_checkin: true, requires_return: false } },
+    });
+    await prisma.event.update({
+      where: { id: EVENT_EI_A },
+      data: {
+        ops_config: {
+          badge_at_entry: true,
+          require_confirm_on_scan: true,
+          allow_manual_lookup: false,
+          auto_advance_on_valid: false,
+        },
+      },
+    });
+  });
 });
 
 
