@@ -39,6 +39,7 @@ export async function lookupAttendees(
     company: true,
     department: true,
     admitted_at: true,
+    status: true,
   } as const;
 
   const [columnRows, jsonMatches] = await Promise.all([
@@ -90,7 +91,14 @@ export async function lookupAttendees(
       ticket_type: row.ticket_type,
       company,
       department,
-      check_in_status: row.admitted_at ? ("admitted" as const) : ("not_admitted" as const),
+      // Revoked/cancelled passes never read as "admitted" here even with a
+      // stale admitted_at — a stale-green "checked in" hint in the typeahead
+      // would contradict the red Revoked card the operator sees on select
+      // (scanResultFromCard gives warnings precedence over admitted_at).
+      check_in_status:
+        row.admitted_at && !(CAPACITY_EXCLUDED_STATUSES as readonly string[]).includes(row.status)
+          ? ("admitted" as const)
+          : ("not_admitted" as const),
     };
   });
 }
