@@ -149,6 +149,24 @@ export function AttendeeCard({
   const submittingKeysRef = useRef<Set<string>>(new Set());
   const undoingRef = useRef(false);
 
+  // Extracted out of the item row's onClick (Sonar S2004: >4 levels of
+  // nested functions once this lived inline inside items.map > actions.map
+  // > onClick > .finally > the setSubmittingKeys updater).
+  function handleItemAction(itemKey: string, action: string) {
+    if (submittingKeysRef.current.has(itemKey)) return;
+    submittingKeysRef.current.add(itemKey);
+    setSubmittingKeys((prev) => new Set(prev).add(itemKey));
+    Promise.resolve(onItemAction?.(itemKey, action)).finally(() => {
+      submittingKeysRef.current.delete(itemKey);
+      setSubmittingKeys((prev) => {
+        if (!prev.has(itemKey)) return prev;
+        const next = new Set(prev);
+        next.delete(itemKey);
+        return next;
+      });
+    });
+  }
+
   async function handleRevokeConfirm() {
     if (!onRevokeCheckIn) return;
     setRevokeBusy(true);
@@ -285,20 +303,7 @@ export function AttendeeCard({
                       disabled={
                         !canAct || pending || displayMode === "alert" || submittingKeys.has(item.key)
                       }
-                      onClick={() => {
-                        if (submittingKeysRef.current.has(item.key)) return;
-                        submittingKeysRef.current.add(item.key);
-                        setSubmittingKeys((prev) => new Set(prev).add(item.key));
-                        Promise.resolve(onItemAction?.(item.key, action)).finally(() => {
-                          submittingKeysRef.current.delete(item.key);
-                          setSubmittingKeys((prev) => {
-                            if (!prev.has(item.key)) return prev;
-                            const next = new Set(prev);
-                            next.delete(item.key);
-                            return next;
-                          });
-                        });
-                      }}
+                      onClick={() => handleItemAction(item.key, action)}
                     >
                       {itemActionLabel(item.key, action)}
                     </button>
