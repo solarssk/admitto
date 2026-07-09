@@ -40,10 +40,12 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     unarchiveEvent: vi.fn(),
     exportEventPii: vi.fn(),
     uploadEventBrandingFile: vi.fn(),
+    deleteEvent: vi.fn(),
   };
 });
 
 import {
+  deleteEvent,
   fetchEventSettings,
   patchEvent,
   unarchiveEvent,
@@ -62,6 +64,7 @@ const activeEvent = {
   status: "active" as const,
   archived_at: null as string | null,
   created_at: "2026-01-15T00:00:00.000Z",
+  is_deletable: false,
   organization_name: "Org",
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
   logo_url: null,
@@ -88,6 +91,7 @@ function renderSettings(entry = "/admin/events/evt-1/settings") {
   renderWithToast(
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
+        <Route path="/admin" element={<div>events picker</div>} />
         <Route path="/admin/events/:eventId/settings" element={<EventSettingsPage />} />
       </Routes>
     </MemoryRouter>,
@@ -401,5 +405,143 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     expect(
       screen.queryByText("Ingest and RSVP API tokens are on the roadmap"),
     ).toBeNull();
+  });
+});
+
+describe("EventSettingsPage — delete event (#395)", () => {
+  async function openDangerZone() {
+    await waitFor(() => screen.getByRole("tab", { name: "Danger zone" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
+  }
+
+  it("does not render the Delete event row for an active (non-archived) event", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Archive event/ })).toBeTruthy();
+    });
+    expect(screen.queryByText("Delete event")).toBeNull();
+  });
+
+  it("renders Delete event disabled for an archived event that still has activity", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...archivedEvent,
+      is_deletable: false,
+    });
+    renderSettings("/admin/events/evt-2/settings");
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
+    });
+    const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("This event has data and cannot be deleted");
+    expect(
+      screen.getByText(
+        /Only archived events with no attendees, custom items, contacts, resources, pinned note, or event-specific mail template can be permanently deleted/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("renders Delete event enabled for a superadmin on an archived, empty event", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...archivedEvent,
+      is_deletable: true,
+    });
+    renderSettings("/admin/events/evt-2/settings");
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
+    });
+    const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(
+      screen.getByText(
+        /Permanently deletes this event and everything in it\. This can't be undone\./,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("disables Delete event for a non-superadmin org admin, even on a deletable archived event", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...archivedEvent,
+      is_deletable: true,
+    });
+    renderSettings("/admin/events/evt-2/settings");
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
+    });
+    const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("Superadmin only");
+  });
+
+  it("gates the confirm button on typing the exact event title, then deletes and navigates to /admin", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...archivedEvent,
+      title: "Summit 2026",
+      is_deletable: true,
+    });
+    vi.mocked(deleteEvent).mockResolvedValueOnce(undefined);
+    renderSettings("/admin/events/evt-2/settings");
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Delete event/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/Permanently delete this event/)).toBeTruthy();
+
+    const confirmButton = within(dialog).getByRole("button", {
+      name: "Delete event",
+    }) as HTMLButtonElement;
+    const input = within(dialog).getByLabelText('Type the event title to confirm: "Summit 2026"');
+    expect(confirmButton.disabled).toBe(true);
+
+    fireEvent.change(input, { target: { value: "Summit" } });
+    expect(confirmButton.disabled).toBe(true);
+
+    fireEvent.change(input, { target: { value: "Summit 2026" } });
+    expect(confirmButton.disabled).toBe(false);
+
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      expect(deleteEvent).toHaveBeenCalledWith("evt-2");
+    });
+    await waitFor(() => {
+      expect(screen.getByText("events picker")).toBeTruthy();
+    });
+  });
+
+  it("keeps the dialog open and shows a toast when delete fails", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...archivedEvent,
+      title: "Summit 2026",
+      is_deletable: true,
+    });
+    const { ApiError } = await import("../../src/api/client.js");
+    vi.mocked(deleteEvent).mockRejectedValueOnce(new ApiError(409, "event_not_deletable"));
+    renderSettings("/admin/events/evt-2/settings");
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Delete event/ }));
+    const dialog = await screen.findByRole("dialog");
+    const input = within(dialog).getByLabelText('Type the event title to confirm: "Summit 2026"');
+    fireEvent.change(input, { target: { value: "Summit 2026" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete event" }));
+
+    await waitFor(() => {
+      expect(deleteEvent).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.queryByText("events picker")).toBeNull();
   });
 });
