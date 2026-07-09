@@ -281,37 +281,47 @@ export function AttendeeCard({
         )}
 
         {/* 3. Requirements (mockup ci-result__items): compact rows — icon,
-            label (flex), then state chip or inline action at the right edge. */}
+            label (flex), then state chip or inline action at the right edge.
+            The section heading and each item's admin-configured description
+            (Requirements page) were missing here — without them this list
+            read as inert status text rather than "hand these out" (PO/Jadzia
+            review). */}
         {card.items.length > 0 && (
           <div className="checkin-card__items">
+            <h3 className="checkin-card__items-title">Items to hand out</h3>
             {card.items.map((item) => (
-              <div key={item.key} className="checkin-card__item-row">
-                <i
-                  className={`ti ti-${item.icon ?? "package"} checkin-card__item-icon`}
-                  aria-hidden="true"
-                />
-                <span className="checkin-card__item-label">
-                  {item.label}
-                  {item.detail && <span className="checkin-card__item-detail">{item.detail}</span>}
-                </span>
-                {item.actions.length > 0 ? (
-                  item.actions.map((action) => (
-                    <button
-                      key={`${item.key}-${action}`}
-                      type="button"
-                      className="checkin-card__item-action"
-                      disabled={
-                        !canAct || pending || displayMode === "alert" || submittingKeys.has(item.key)
-                      }
-                      onClick={() => handleItemAction(item.key, action)}
-                    >
-                      {itemActionLabel(item.key, action)}
-                    </button>
-                  ))
-                ) : (
-                  <Badge variant={itemBadgeVariant(item.state)} className="checkin-card__item-badge">
-                    {item.state}
-                  </Badge>
+              <div key={item.key} className="checkin-card__item">
+                <div className="checkin-card__item-row">
+                  <i
+                    className={`ti ti-${item.icon ?? "package"} checkin-card__item-icon`}
+                    aria-hidden="true"
+                  />
+                  <span className="checkin-card__item-label">
+                    {item.label}
+                    {item.detail && <span className="checkin-card__item-detail">{item.detail}</span>}
+                  </span>
+                  {item.actions.length > 0 ? (
+                    item.actions.map((action) => (
+                      <button
+                        key={`${item.key}-${action}`}
+                        type="button"
+                        className="checkin-card__item-action"
+                        disabled={
+                          !canAct || pending || displayMode === "alert" || submittingKeys.has(item.key)
+                        }
+                        onClick={() => handleItemAction(item.key, action)}
+                      >
+                        {itemActionLabel(item.key, action)}
+                      </button>
+                    ))
+                  ) : (
+                    <Badge variant={itemBadgeVariant(item.state)} className="checkin-card__item-badge">
+                      {item.state}
+                    </Badge>
+                  )}
+                </div>
+                {item.description && (
+                  <p className="checkin-card__item-description">{item.description}</p>
                 )}
               </div>
             ))}

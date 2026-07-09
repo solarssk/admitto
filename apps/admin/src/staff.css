@@ -557,6 +557,25 @@
   flex-direction: column;
   gap: 16px;
   padding: 10px 16px;
+  border-top: 1px solid var(--at-gray-100, var(--border));
+}
+
+/* Matches .checkin-card__notes-title's small-caps label style — without a
+   heading this list read as inert status text, not "hand these out"
+   (Jadzia review). */
+.checkin-card__items-title {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.checkin-card__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .checkin-card__item-row {
@@ -566,6 +585,14 @@
   min-height: 28px;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
+}
+
+/* Admin-configured item description (Requirements page) — indented to align
+   under the label, past the icon's own width + row gap (18px + 8px). */
+.checkin-card__item-description {
+  margin: 0 0 0 26px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
 }
 
 .checkin-card__item-icon {

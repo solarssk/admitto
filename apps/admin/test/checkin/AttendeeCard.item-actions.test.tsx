@@ -93,3 +93,58 @@ describe("AttendeeCard — item action button (review finding)", () => {
     expect(onUndo).toHaveBeenCalledTimes(1);
   });
 });
+
+// Jadzia/PO review: the item list previously had no heading and never showed
+// the item's admin-configured description, so it read as inert status text
+// rather than something the operator needs to act on.
+describe("AttendeeCard — items section heading and description (review)", () => {
+  const cardWithDescribedItems: AttendeeCardDto = {
+    id: "att-2",
+    name: "Beata Beta",
+    company: null,
+    department: null,
+    ticket_type: "standard",
+    check_in_status: "admitted",
+    admitted_at: "2026-09-01T09:44:00.000Z",
+    items: [
+      {
+        key: "badge",
+        label: "Badge",
+        icon: null,
+        state: "pending",
+        actions: ["issued"],
+        description: "Hand out at the badge desk by the entrance",
+      },
+      { key: "gift_bag", label: "Gift bag", icon: null, state: "pending", actions: ["issued"] },
+    ],
+    notes: [],
+    warnings: [],
+  };
+
+  it('shows an "Items to hand out" heading above the item list', () => {
+    render(<AttendeeCard card={cardWithDescribedItems} eventTimezone="UTC" canAct={true} />);
+    expect(screen.getByRole("heading", { name: "Items to hand out" })).toBeTruthy();
+  });
+
+  it("shows an item's admin-configured description when set", () => {
+    render(<AttendeeCard card={cardWithDescribedItems} eventTimezone="UTC" canAct={true} />);
+    expect(screen.getByText("Hand out at the badge desk by the entrance")).toBeTruthy();
+  });
+
+  it("renders no description paragraph for an item without one", () => {
+    render(<AttendeeCard card={cardWithDescribedItems} eventTimezone="UTC" canAct={true} />);
+    const giftBagRow = screen.getByText("Gift bag").closest(".checkin-card__item") as HTMLElement;
+    expect(giftBagRow.querySelector(".checkin-card__item-description")).toBeNull();
+  });
+
+  it("omits the heading entirely when the card has no items", () => {
+    render(
+      <AttendeeCard
+        card={{ ...cardWithDescribedItems, items: [] }}
+        eventTimezone="UTC"
+        canAct={true}
+      />,
+    );
+    expect(screen.queryByRole("heading", { name: "Items to hand out" })).toBeNull();
+  });
+});
