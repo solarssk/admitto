@@ -518,6 +518,31 @@ describe("EventsPickerPage operator errors", () => {
   });
 });
 
+describe("EventsPickerPage archived event navigation", () => {
+  it("lets a superadmin click into an archived event from the Archived events tab", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValue([archivedEvent]);
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin" element={<EventsPickerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /Archived events/ })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("tab", { name: /Archived events/ }));
+    await waitFor(() => {
+      expect(screen.getByText("Archived Summit")).toBeTruthy();
+    });
+
+    const link = screen.getByRole("link", { name: /Archived Summit/ });
+    expect(link.getAttribute("href")).toBe("/admin/events/evt-arch/overview");
+    // Unarchive stays available as an independent action alongside the new link.
+    expect(screen.getByRole("button", { name: "Unarchive" })).toBeTruthy();
+  });
+});
+
 describe("ImportPage operator errors", () => {
   it("toasts preview failure without leaking internals", async () => {
     vi.mocked(fetchEventItems).mockResolvedValue([]);

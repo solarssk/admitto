@@ -285,6 +285,22 @@ describe("authorization", () => {
     expect(opEvents.some((e) => e.id === EVENT_B)).toBe(false);
   });
 
+  it("listCheckInEvents — excludes archived events", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_A },
+      data: { archived_at: new Date() },
+    });
+    try {
+      expect((await listCheckInEvents(prisma, USER_OP_A)).some((e) => e.id === EVENT_A)).toBe(false);
+      expect((await listCheckInEvents(prisma, USER_SUPER)).some((e) => e.id === EVENT_A)).toBe(false);
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_A },
+        data: { archived_at: null },
+      });
+    }
+  });
+
   it("listAdminEvents — scoped by org", async () => {
     const adminEvents = await listAdminEvents(prisma, USER_ADMIN_A);
     expect(adminEvents.length).toBeGreaterThan(0);

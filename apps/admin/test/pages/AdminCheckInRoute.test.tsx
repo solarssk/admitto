@@ -20,21 +20,23 @@ vi.mock("../../src/pages/CheckInPage.js", () => ({
   ),
 }));
 
+const outletContext = vi.fn();
+
+const DEMO_EVENT = {
+  id: "evt-1",
+  title: "Demo Event",
+  timezone: "UTC",
+  date: "2026-07-31",
+  location: "Warsaw",
+  attendee_count: 0,
+  archived_at: null as string | null,
+};
+
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
   return {
     ...actual,
-    useOutletContext: () => ({
-      event: {
-        id: "evt-1",
-        title: "Demo Event",
-        timezone: "UTC",
-        date: "2026-07-31",
-        location: "Warsaw",
-        attendee_count: 0,
-        archived_at: null,
-      },
-    }),
+    useOutletContext: () => outletContext(),
   };
 });
 
@@ -56,6 +58,7 @@ afterEach(() => {
 describe("AdminCheckInRoute header (#378)", () => {
   it("shows purpose copy, not the event context already in the sidebar", () => {
     useConnectionState.mockReturnValue({ state: "connected", reportApiError: vi.fn() });
+    outletContext.mockReturnValue({ event: DEMO_EVENT });
     renderRoute();
 
     expect(screen.getByText("Scan QR codes and admit guests on event day")).toBeTruthy();
@@ -71,6 +74,7 @@ describe("AdminCheckInRoute header (#378)", () => {
 describe("AdminCheckInRoute camera toggle (#381)", () => {
   it("flips between Use camera and Disable camera", () => {
     useConnectionState.mockReturnValue({ state: "connected", reportApiError: vi.fn() });
+    outletContext.mockReturnValue({ event: DEMO_EVENT });
     renderRoute();
 
     const toggle = screen.getByRole("button", { name: "Use camera" });
@@ -83,5 +87,20 @@ describe("AdminCheckInRoute camera toggle (#381)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Disable camera" }));
     expect(screen.getByRole("button", { name: "Use camera" })).toBeTruthy();
     expect(screen.getByTestId("checkin-page").getAttribute("data-camera")).toBe("false");
+  });
+});
+
+describe("AdminCheckInRoute archived event lockdown", () => {
+  it("shows a locked message instead of the scanner when the event is archived", () => {
+    useConnectionState.mockReturnValue({ state: "connected", reportApiError: vi.fn() });
+    outletContext.mockReturnValue({
+      event: { ...DEMO_EVENT, archived_at: "2026-08-01T00:00:00.000Z" },
+    });
+    renderRoute();
+
+    expect(screen.getByText("This event is archived — check-in is disabled.")).toBeTruthy();
+    expect(screen.queryByTestId("checkin-page")).toBeNull();
+    const link = screen.getByRole("link", { name: "Event settings" });
+    expect(link.getAttribute("href")).toBe("/admin/events/evt-1/settings");
   });
 });

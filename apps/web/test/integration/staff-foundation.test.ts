@@ -233,23 +233,25 @@ describe("GET /api/checkin/events", () => {
     expect(body.events[0]!.timezone).toBeTruthy();
   });
 
-  it("still lists archived event for operator (late check-in after admin archive)", async () => {
+  it("excludes archived event for operator (archiving ends check-in for it)", async () => {
     await prisma.event.update({
       where: { id: EVENT_A },
       data: { archived_at: new Date() },
     });
 
-    const res = await app.request("/api/checkin/events", {
-      headers: { Cookie: await sessionCookieFor(opId) },
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { events: Array<{ id: string }> };
-    expect(body.events.map((e) => e.id)).toContain(EVENT_A);
-
-    await prisma.event.update({
-      where: { id: EVENT_A },
-      data: { archived_at: null },
-    });
+    try {
+      const res = await app.request("/api/checkin/events", {
+        headers: { Cookie: await sessionCookieFor(opId) },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { events: Array<{ id: string }> };
+      expect(body.events.map((e) => e.id)).not.toContain(EVENT_A);
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_A },
+        data: { archived_at: null },
+      });
+    }
   });
 
   it("lists org events for org admin", async () => {
