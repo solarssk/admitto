@@ -3,6 +3,7 @@ import type { Context, Next } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { getCookie } from "hono/cookie";
 import { SESSION_COOKIE_NAME, canPerformCheckIn, validateSession } from "@admitto/auth";
+import { assertEventNotArchived } from "./admin/event-archiving.js";
 import { rejectCrossSitePost } from "./auth/same-origin-post.js";
 
 /** Returns true when Authorization Bearer matches operatorToken (constant-time). */
@@ -74,17 +75,24 @@ export function createCheckinSessionCsrfGuard() {
 
 /**
  * Event-scoped RBAC after preAuth. Bearer path skips RBAC; session requires eventId + canPerformCheckIn.
+ * Both auth paths are blocked once the event is archived — archiving is a terminal, read-only
+ * state that also ends check-in (see event-archiving.ts).
  */
 export function createCheckinEventScope(
   deps: CheckinSessionAuthDeps,
   getEventId: (c: Context) => string | undefined,
 ) {
   return async (c: Context, next: Next): Promise<Response | void> => {
+    const eventId = getEventId(c);
+
     if (c.get("checkinAuth") === "bearer") {
+      if (eventId) {
+        const archived = await assertEventNotArchived(c, deps.prisma, eventId);
+        if (archived) return archived;
+      }
       return next();
     }
 
-    const eventId = getEventId(c);
     if (!eventId) {
       return c.json({ error: "eventId required" }, 400);
     }
@@ -98,6 +106,9 @@ export function createCheckinEventScope(
     if (!allowed) {
       return c.json({ error: "forbidden" }, 403);
     }
+
+    const archived = await assertEventNotArchived(c, deps.prisma, eventId);
+    if (archived) return archived;
 
     await next();
   };

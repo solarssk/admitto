@@ -213,7 +213,13 @@ export function EventsPickerPage() {
           if (showUnarchive) {
             return (
               <Card key={event.id} className="event-card event-card--static">
-                {cardBody}
+                <Link
+                  to={`/admin/events/${event.id}/overview`}
+                  state={{ event }}
+                  className="event-card-link"
+                >
+                  {cardBody}
+                </Link>
                 <p className="event-card__actions">
                   <Button
                     type="button"

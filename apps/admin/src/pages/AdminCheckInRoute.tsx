@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { Link, useOutletContext } from "react-router-dom";
 import { Button, Card, PageHeader } from "@admitto/ui";
 import type { EventDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
@@ -29,6 +29,18 @@ export function AdminCheckInRoute() {
         <p>
           <a href={`/login?next=${next}`}>Sign in to Admitto</a> to scan guests from the admin panel,
           or use the <a href="/operator">operator check-in</a> surface on event day.
+        </p>
+      </Card>
+    );
+  }
+
+  if (event.archived_at) {
+    return (
+      <Card>
+        <PageHeader title="Check-in" subtitle="This event is archived — check-in is disabled." />
+        <p>
+          Unarchive it from{" "}
+          <Link to={`/admin/events/${event.id}/settings`}>Event settings</Link> to resume check-in.
         </p>
       </Card>
     );
