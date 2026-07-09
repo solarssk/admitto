@@ -224,6 +224,42 @@ export function formatAdmissionDisplay(
   return formatEventDateTime(admittedAtIso, timezone);
 }
 
+/**
+ * Calendar day immediately before `isoDate` (`YYYY-MM-DD`). Pure date-part
+ * arithmetic anchored to UTC noon (never a real elapsed-time subtraction) —
+ * a fixed 24h/86_400_000ms subtraction lands on the wrong calendar day
+ * whenever the zone's local day being subtracted from is a 23-hour
+ * spring-forward day (review finding).
+ */
+function previousIsoDate(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const prev = new Date(Date.UTC(y!, m! - 1, d!));
+  prev.setUTCDate(prev.getUTCDate() - 1);
+  return prev.toISOString().slice(0, 10);
+}
+
+/**
+ * Live-feed variant of formatAdmissionDisplay (Recent scans, Overview
+ * "recent check-ins"): "Today HH:MM" / "Yesterday HH:MM" when the admission
+ * happened today or yesterday relative to now — more useful for an operator
+ * watching a feed in real time than a bare date, especially when the
+ * event's own calendar day (formatAdmissionDisplay's rule) is far in the
+ * future or past relative to when staff are actually scanning (setup day,
+ * test scans). Anything older falls back to formatAdmissionDisplay.
+ */
+export function formatRelativeAdmissionDisplay(
+  admittedAtIso: string,
+  eventDateIso: string | null | undefined,
+  timezone?: string,
+): string {
+  const admissionDay = calendarDateInZone(admittedAtIso, timezone ?? "UTC");
+  const today = calendarDateInZone(new Date().toISOString(), timezone ?? "UTC");
+  const yesterday = previousIsoDate(today);
+  if (admissionDay === today) return `Today ${formatEventTime(admittedAtIso, timezone)}`;
+  if (admissionDay === yesterday) return `Yesterday ${formatEventTime(admittedAtIso, timezone)}`;
+  return formatAdmissionDisplay(admittedAtIso, eventDateIso, timezone);
+}
+
 /** Category 2 — admin/system timestamps always in UTC with explicit label. */
 export function formatUtcDateTime(iso: string): string {
   return new Date(iso).toLocaleString(getPreferredLocale(), {

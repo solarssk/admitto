@@ -172,6 +172,7 @@ export async function getAttendeeCard(
       return {
         key: item.key,
         label: item.label,
+        description: item.description ?? null,
         icon: item.icon ?? null,
         state,
         actions: operatorItemActions(state, item.config as EventItemConfig | null),

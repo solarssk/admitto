@@ -1,5 +1,5 @@
 import type { CheckInHistoryEntry } from "../api/types.js";
-import { formatAdmissionDisplay } from "../utils/event-dates.js";
+import { formatRelativeAdmissionDisplay } from "../utils/event-dates.js";
 
 // A CheckIn row with status UNDO is a reversal, not an admission — source
 // tells us whether the operator undid their own scan or an admin revoked the
@@ -40,7 +40,11 @@ export function CkRecentScans({
   limit,
 }: CkRecentScansProps) {
   const rows = limit != null ? history.slice(0, limit) : history;
-  const count = history.length;
+  // Matches what's actually rendered below (`rows`), not the raw fetched
+  // total — with the overlay's limit=6 slicing an 8-entry fetch, the count
+  // badge previously said "8" while only 6 rows were visible, which read as
+  // a bug rather than the fetch cap it actually was (PO review).
+  const count = rows.length;
 
   return (
     <div className={`ck-recent${compact ? " ck-recent--compact" : ""}`}>
@@ -58,13 +62,22 @@ export function CkRecentScans({
               <span className={`rec-dot ${dotClass(row.status, row.source)}`} aria-hidden="true" />
               <div className="ck-recent__info">
                 <strong className="ck-recent__name">{row.attendee.name}</strong>
-                {row.attendee.ticket_type && (
-                  <span className="ck-recent__ticket">{row.attendee.ticket_type}</span>
+                {/* device_id is actually the operator's session device_label
+                    (e.g. "Entrance A", or a detected device name) — the only
+                    "who/which station scanned this" signal recorded today,
+                    useful once more than one operator is working the door at
+                    once (PO review). Shares the ticket line instead of
+                    adding a third row, since it's often absent (device
+                    labeling is optional at login). */}
+                {(row.attendee.ticket_type || row.device_id) && (
+                  <span className="ck-recent__ticket">
+                    {[row.attendee.ticket_type, row.device_id].filter(Boolean).join(" · ")}
+                  </span>
                 )}
               </div>
               <div className="ck-recent__right">
                 <span className="ck-recent__status">{statusLabel(row.status, row.source)}</span>
-                <time>{formatAdmissionDisplay(row.checked_in_at, eventDate, eventTimezone)}</time>
+                <time>{formatRelativeAdmissionDisplay(row.checked_in_at, eventDate, eventTimezone)}</time>
               </div>
             </li>
           ))}

@@ -76,6 +76,8 @@ export type CheckInStatus =
 export interface AttendeeCardItemDto {
   key: string;
   label: string;
+  /** Admin-configured item description (Requirements page), capped at 500 chars server-side. */
+  description?: string | null;
   icon: string | null;
   state: string;
   actions: string[];
