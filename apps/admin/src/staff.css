@@ -488,46 +488,21 @@
   color: var(--text-muted);
 }
 
-/* Status strip: thin hairline row naming the scan outcome. */
-.checkin-card__status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-top: 1px solid var(--at-gray-100, var(--border));
-  border-bottom: 1px solid var(--at-gray-100, var(--border));
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-}
-
 .checkin-card__status-note {
   color: var(--text-muted);
   font-size: var(--fs-xs);
 }
 
-/* strip variant: warm tint for warning/duplicate states (ALREADY_CHECKED_IN) */
-.checkin-card__status--strip {
-  background: var(--status-warn-tint);
-  border-color: transparent;
-}
-
-/* alert variant: tinted background for blocking error states (REVOKED, INVALID) */
-.checkin-card__status--alert {
-  background: var(--status-error-tint);
-  border-color: transparent;
-}
-
-/* Unified alert message: title + optional reason in one typographic block. */
-.checkin-card__alert-message {
-  margin: 0;
-  font-size: var(--fs-sm);
-  font-weight: 700;
-  color: var(--status-error-fg, #b42318);
-  line-height: 1.4;
-}
-
-.checkin-card__alert-reason {
-  font-weight: 400;
+/* Right-aligned status badge, vertically centered against the name+meta
+   pair as a unit — .checkin-card__head keeps align-items: flex-start for
+   the icon, so this overrides it per-child, same centering trick as the
+   item icon/action button below (PO/Jadzia review, round 4). Replaces the
+   old dotted inline-only badge plus a separate full-width colored bar that
+   duplicated it for every other status. */
+.checkin-card__status-badge {
+  align-self: center;
+  flex: none;
+  white-space: nowrap;
 }
 
 .checkin-card__warnings {

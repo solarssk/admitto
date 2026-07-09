@@ -119,18 +119,11 @@ function statusBadgeVariant(status: CheckInStatus): BadgeVariant {
   }
 }
 
-function statusDisplayMode(status: CheckInStatus): "inline" | "strip" | "alert" {
-  switch (status) {
-    case "VALID":
-    case "PREVIEW":
-      return "inline";
-    case "ALREADY_CHECKED_IN":
-      return "strip";
-    case "REVOKED":
-    case "INVALID":
-    default:
-      return "alert";
-  }
+// REVOKED/INVALID block item actions and admin-revoke — the only remaining
+// use of the old inline/strip/alert 3-way split, now that the status badge
+// and its bar render the same way for every status (PO review, round 4).
+function isBlockedStatus(status: CheckInStatus): boolean {
+  return status === "REVOKED" || status === "INVALID";
 }
 
 export function AttendeeCard({
@@ -202,23 +195,20 @@ export function AttendeeCard({
 
   const showPrimaryActions = isPreview && onCheckIn && card.check_in_status === "not_admitted";
   const statusVariant = statusBadgeVariant(resolvedStatus);
-  const displayMode = statusDisplayMode(resolvedStatus);
+  const isBlocked = isBlockedStatus(resolvedStatus);
   const showRevokeCheckIn =
-    !!onRevokeCheckIn &&
-    canRevokeCheckIn({ checkInStatus: card.check_in_status, blocked: displayMode === "alert" });
-  const remainingWarnings = displayMode === "alert" ? card.warnings.slice(1) : card.warnings;
-  const hasTransientNote =
-    pending ||
-    (confirmed === false &&
-      !isPreview &&
-      resolvedStatus !== "INVALID" &&
-      resolvedStatus !== "REVOKED");
+    !!onRevokeCheckIn && canRevokeCheckIn({ checkInStatus: card.check_in_status, blocked: isBlocked });
 
   return (
     <>
       <Card className={cardClass} padded={false} aria-live="polite">
         {/* 1. Head (mockup ci-result__head): round tinted status icon +
-            identity block — name first, ticket/company meta beneath it. */}
+            identity block (name over meta) + status badge. The badge used
+            to be dotted and inline for positive statuses only, with a
+            separate full-width colored bar duplicating it for
+            already-checked-in/revoked/invalid — one badge, right-aligned
+            and centered against the name+meta pair, now covers every
+            status the same way; the bar is gone (PO review, round 4). */}
         <div className="checkin-card__head">
           <div className={`checkin-card__status-icon checkin-card__status-icon--${statusVariant}`}>
             <i className={`ti ${statusIcon(resolvedStatus)}`} aria-hidden="true" />
@@ -227,45 +217,23 @@ export function AttendeeCard({
             <h2 className="checkin-card__name">{card.name}</h2>
             <div className="checkin-card__meta">
               {card.ticket_type && <TicketTypeBadge ticketType={card.ticket_type} />}
-              {displayMode === "inline" && (
-                <Badge variant={statusVariant} dot>
-                  {statusTitle(resolvedStatus)}
-                </Badge>
-              )}
               {(card.company || card.department) && (
                 <span>{[card.company, card.department].filter(Boolean).join(" · ")}</span>
               )}
+              {pending && <span className="checkin-card__status-note">Pending — not confirmed</span>}
+              {confirmed === false && !pending && !isPreview && resolvedStatus !== "INVALID" && resolvedStatus !== "REVOKED" && (
+                <span className="checkin-card__status-note">Awaiting server confirmation</span>
+              )}
             </div>
           </div>
+          <Badge variant={statusVariant} className="checkin-card__status-badge">
+            {statusTitle(resolvedStatus)}
+          </Badge>
         </div>
 
-        {/* Status strip: skipped for positive states unless there's a transient note.
-            Warning states get a subtle hairline strip; error states get a tinted alert row
-            that also absorbs the warnings list so badge + reason stay in one block. */}
-        {(displayMode !== "inline" || hasTransientNote) && (
-          <div className={`checkin-card__status checkin-card__status--${displayMode}`}>
-            {displayMode === "alert" ? (
-              <p className="checkin-card__alert-message">
-                {statusTitle(resolvedStatus)}
-                {card.warnings[0] && (
-                  <span className="checkin-card__alert-reason"> — {card.warnings[0]}</span>
-                )}
-              </p>
-            ) : displayMode !== "inline" ? (
-              <Badge variant={statusVariant} dot>
-                {statusTitle(resolvedStatus)}
-              </Badge>
-            ) : null}
-            {pending && <span className="checkin-card__status-note">Pending — not confirmed</span>}
-            {confirmed === false && !pending && !isPreview && resolvedStatus !== "INVALID" && resolvedStatus !== "REVOKED" && (
-              <span className="checkin-card__status-note">Awaiting server confirmation</span>
-            )}
-          </div>
-        )}
-
-        {remainingWarnings.length > 0 && (
+        {card.warnings.length > 0 && (
           <div className="checkin-card__warnings">
-            {remainingWarnings.map((w, i) => (
+            {card.warnings.map((w, i) => (
               <p key={`warning-${i}`} className="checkin-card__warning" role="alert">
                 {w}
               </p>
@@ -326,9 +294,7 @@ export function AttendeeCard({
                       type="button"
                       variant="success"
                       size="sm"
-                      disabled={
-                        !canAct || pending || displayMode === "alert" || submittingKeys.has(item.key)
-                      }
+                      disabled={!canAct || pending || isBlocked || submittingKeys.has(item.key)}
                       aria-label={itemActionAriaLabel(item.key, action)}
                       onClick={() => handleItemAction(item.key, action)}
                     >
