@@ -2116,6 +2116,19 @@
     overflow-y: auto;
   }
 
+  /* .ck-overlay__bar (holding the only "Exit camera mode" button) is a
+     normal, non-sticky flex child by default — scrolling the overflow above
+     would carry it off-screen with no way back short of scrolling up again
+     (review finding). Sticking it to the scroll container's own top keeps
+     it reachable at every scroll position; the solid background stops
+     scrolled-under content from showing through. */
+  .ck-overlay__bar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #0e1117;
+  }
+
   .ck-overlay__frame {
     width: 100%;
     max-width: 460px;

@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   calendarDateInZone,
   formatAdmissionDisplay,
   formatEventDate,
   formatEventDateTime,
   formatEventTime,
+  formatRelativeAdmissionDisplay,
   formatUtcDateTime,
   calendarDateValidationHint,
   localeDateInputPattern,
@@ -229,5 +230,56 @@ describe("formatAdmissionDisplay (#359)", () => {
     const out = formatAdmissionDisplay("2026-07-31T07:44:00.000Z", EVENT_DATE);
     expect(out).toMatch(/07:44/);
     expect(out).toMatch(/UTC/);
+  });
+});
+
+describe("formatRelativeAdmissionDisplay (#434 review)", () => {
+  afterEach(() => {
+    setPreferredLocale(null);
+    vi.useRealTimers();
+  });
+
+  const EVENT_DATE = "2026-07-31T12:00:00.000Z";
+
+  it('shows "Today HH:MM" for an admission on the current calendar day', () => {
+    setPreferredLocale("en-GB");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-31T20:00:00.000Z"));
+    const out = formatRelativeAdmissionDisplay("2026-07-31T07:44:00.000Z", EVENT_DATE, "Europe/Warsaw");
+    expect(out).toMatch(/^Today 09:44/);
+  });
+
+  it('shows "Yesterday HH:MM" for an admission on the previous calendar day', () => {
+    setPreferredLocale("en-GB");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-31T20:00:00.000Z"));
+    const out = formatRelativeAdmissionDisplay("2026-07-30T07:44:00.000Z", EVENT_DATE, "Europe/Warsaw");
+    expect(out).toMatch(/^Yesterday 09:44/);
+  });
+
+  it("falls back to formatAdmissionDisplay for anything older than yesterday", () => {
+    setPreferredLocale("en-GB");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-31T20:00:00.000Z"));
+    const out = formatRelativeAdmissionDisplay("2026-07-07T07:44:00.000Z", EVENT_DATE, "Europe/Warsaw");
+    expect(out).toMatch(/07 Jul 2026/);
+  });
+
+  it('still resolves "Yesterday" correctly right after a spring-forward DST transition (review finding)', () => {
+    // America/New_York spring-forward 2026: clocks jump 02:00 -> 03:00 local
+    // on 8 Mar (a 23-hour day). "now" is 00:30 local on 9 Mar (04:30Z, already
+    // EDT); a fixed 24h/86_400_000ms subtraction from "now" lands at 04:30Z on
+    // 8 Mar, which is still EST (before the 07:00Z transition instant) — that
+    // resolves to 23:30 local on 7 Mar, i.e. two days back, not yesterday.
+    setPreferredLocale("en-GB");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-09T04:30:00.000Z"));
+    // Admission at 11:00 EDT on the transition day itself (8 Mar).
+    const out = formatRelativeAdmissionDisplay(
+      "2026-03-08T15:00:00.000Z",
+      null,
+      "America/New_York",
+    );
+    expect(out).toMatch(/^Yesterday 11:00/);
   });
 });
