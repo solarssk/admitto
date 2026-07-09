@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Link, useBlocker, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  useBlocker,
+  useNavigate,
+  useOutletContext,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { Badge, Button, Card, EmptyState, Input, PageHeader, Tabs, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -119,6 +126,12 @@ export function EventSettingsPage() {
   const { addToast } = useToast();
   const { assignments } = useAuth();
   const isSa = isSuperadmin(assignments);
+  // Optional: this page renders under the same event layout as Attendees/
+  // Requirements/Communication/Import/Check-in and, like them, could in
+  // principle be reached without that layout (e.g. in isolation in tests) —
+  // fall back to a no-op so a missing Outlet context never crashes the page.
+  const outletContext = useOutletContext<{ refreshEvent?: () => Promise<void> } | undefined>();
+  const refreshLayoutEvent = outletContext?.refreshEvent;
 
   const [event, setEvent] = useState<EventSettingsDto | null>(null);
   const [form, setForm] = useState<SettingsForm | null>(null);
@@ -221,6 +234,7 @@ export function EventSettingsPage() {
       setForm(f);
       setOriginal(f);
       addToast("Event settings saved", "success");
+      await refreshLayoutEvent?.();
     } catch (err) {
       if (err instanceof Error && err.message === "invalid_capacity") {
         addToast("Capacity must be a positive whole number", "error");
@@ -247,6 +261,7 @@ export function EventSettingsPage() {
       }
       setArchiveOpen(false);
       await load();
+      await refreshLayoutEvent?.();
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Action failed"), "error");
     } finally {

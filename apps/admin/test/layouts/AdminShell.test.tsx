@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useOutletContext } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EventDto } from "../../src/api/types.js";
 import { AdminShell } from "../../src/layouts/AdminShell.js";
@@ -30,11 +30,24 @@ const sampleEvent: EventDto = {
   archived_at: null,
 };
 
-function renderShell(event: EventDto = sampleEvent) {
+/** Minimal nested-route probe used only to assert the Outlet context shape. */
+function ConsumerProbe() {
+  const { refreshEvent } = useOutletContext<{ refreshEvent: () => Promise<void> }>();
+  return (
+    <button type="button" onClick={() => void refreshEvent()}>
+      trigger refresh
+    </button>
+  );
+}
+
+function renderShell(event: EventDto = sampleEvent, refreshEvent: () => Promise<void> = vi.fn()) {
   return render(
     <MemoryRouter initialEntries={["/admin/events/evt-1/overview"]}>
       <Routes>
-        <Route path="/admin/events/:eventId/*" element={<AdminShell event={event} />}>
+        <Route
+          path="/admin/events/:eventId/*"
+          element={<AdminShell event={event} refreshEvent={refreshEvent} />}
+        >
           <Route path="overview" element={<div>overview page</div>} />
         </Route>
       </Routes>
@@ -76,5 +89,26 @@ describe("AdminShell", () => {
     renderShell();
     expect(screen.getByRole("link", { name: "Overview" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Passes" })).toHaveProperty("disabled", true);
+  });
+
+  it("threads refreshEvent through to the nested route via Outlet context", () => {
+    const refreshEvent = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/overview"]}>
+        <Routes>
+          <Route
+            path="/admin/events/:eventId/*"
+            element={<AdminShell event={sampleEvent} refreshEvent={refreshEvent} />}
+          >
+            <Route
+              path="overview"
+              element={<ConsumerProbe />}
+            />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "trigger refresh" }));
+    expect(refreshEvent).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Spinner } from "@admitto/ui";
 import { ToastProvider } from "@admitto/ui";
@@ -76,6 +76,29 @@ export function EventLayout() {
   const [event, setEvent] = useState<EventDto | null>(navStateEvent);
   const [error, setError] = useState(false);
 
+  // On-demand re-fetch: pages nested under this layout (Settings, Attendees,
+  // Requirements, Communication, Import, Check-in) all read `event` from the
+  // Outlet context below, but the effect that populates it only re-runs when
+  // `eventId` changes — an in-place mutation like archive/unarchive/save on
+  // the Settings page otherwise leaves every *other* already-mounted sibling
+  // page (and the sidebar) showing the pre-mutation snapshot until a full
+  // reload. Settings calls this after such a mutation succeeds so the whole
+  // layout reflects the change immediately, without re-fetching on every
+  // unrelated in-event navigation.
+  const refreshEvent = useCallback(async () => {
+    if (!eventId) return;
+    try {
+      const events = await fetchAdminEvents({ includeArchived: true });
+      const found = events.find((e) => e.id === eventId);
+      if (found) setEvent(found);
+    } catch {
+      // Best-effort: the mutation that triggered this already reported its
+      // own success/error toast, so a failed background refresh here just
+      // keeps showing the last-known-good snapshot instead of surfacing a
+      // second, confusing error for a non-critical sync.
+    }
+  }, [eventId]);
+
   useEffect(() => {
     const fromState = navStateEventRef.current;
     setEvent(fromState);
@@ -128,7 +151,7 @@ export function EventLayout() {
     );
   }
 
-  return <AdminShell event={event} />;
+  return <AdminShell event={event} refreshEvent={refreshEvent} />;
 }
 
 function StaffRoutes() {
