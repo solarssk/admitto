@@ -429,7 +429,7 @@ export function AttendeesPage() {
               {exportingFormat === "pdf" ? "Exporting…" : "Export PDF"}
             </Button>
             {isEventArchived(event) ? (
-              <ArchivedGuard event={event} reasonId="import-attendees-reason">
+              <ArchivedGuard event={event} reasonId="import-attendees-reason" placement="below">
                 {(guard) => (
                   <Button variant="secondary" {...guard}>
                     Import
@@ -441,14 +441,19 @@ export function AttendeesPage() {
                 <Button variant="secondary">Import</Button>
               </Link>
             )}
-            <ArchivedGuard event={event} reasonId="add-attendee-reason">
+            <ArchivedGuard event={event} reasonId="add-attendee-reason" placement="below">
               {(guard) => (
                 <Button variant="primary" {...guard} onClick={() => setAddOpen(true)}>
                   + Add attendee
                 </Button>
               )}
             </ArchivedGuard>
-            <ArchivedGuard event={event} reasonId="send-tickets-reason" disabled={sendBusy}>
+            <ArchivedGuard
+              event={event}
+              reasonId="send-tickets-reason"
+              disabled={sendBusy}
+              placement="below"
+            >
               {(guard) => (
                 <Button
                   variant="secondary"

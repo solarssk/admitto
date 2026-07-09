@@ -117,6 +117,17 @@ describe("AttendeesPage archived lockdown", () => {
       expect(control.closest(".at-tooltip")).toBeTruthy();
     }
 
+    // The page-header toolbar buttons sit at the very top of the page — their
+    // tooltip grows downward so the scroll container's overflow boundary can't
+    // clip it (real bug found in testing). Per-row controls further down the
+    // table keep the default upward placement.
+    for (const control of [importButton, addButton, sendTicketsButton]) {
+      expect(control.closest(".at-tooltip")?.classList.contains("at-tooltip--below")).toBe(true);
+    }
+    for (const control of [revokeButton, restoreButton]) {
+      expect(control.closest(".at-tooltip")?.classList.contains("at-tooltip--below")).toBe(false);
+    }
+
     // Read-only controls stay usable on archived events.
     expect(screen.getByRole("button", { name: "Export XLSX" }).disabled).toBe(false);
     expect(screen.getByRole("button", { name: "Export CSV" }).disabled).toBe(false);

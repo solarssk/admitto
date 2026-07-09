@@ -278,7 +278,10 @@ export function ImportPage() {
             </a>
 
             <fieldset
-              className={["import-upload-fieldset", isEventArchived(event) && "at-tooltip"]
+              className={[
+                "import-upload-fieldset",
+                isEventArchived(event) && "at-tooltip at-tooltip--below",
+              ]
                 .filter(Boolean)
                 .join(" ")}
               data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}

@@ -26,6 +26,14 @@ export interface ArchivedGuardProps {
   disabled?: boolean;
   /** Tooltip shown when disabled for a reason other than archiving. Ignored once the event is archived — the archived reason always wins. */
   tooltip?: string;
+  /**
+   * Tooltip growth direction. Defaults to `"above"` (pops upward, the usual case).
+   * Use `"below"` for controls that sit near the very top of a scrollable page
+   * (e.g. a toolbar right under the header) — there, the default upward placement
+   * gets visually clipped by the scroll container's overflow boundary before it
+   * can render.
+   */
+  placement?: "above" | "below";
   /** Render prop — spread the returned props onto the single interactive control (Button/IconButton/Switch/input/select). */
   children: (guard: ArchivedGuardRenderProps) => ReactNode;
 }
@@ -46,12 +54,16 @@ export function ArchivedGuard({
   reasonId,
   disabled: fallbackDisabled = false,
   tooltip: fallbackTooltip,
+  placement = "above",
   children,
 }: ArchivedGuardProps) {
   const archived = isEventArchived(event);
   const disabled = archived || fallbackDisabled;
   const tooltip = archived ? ARCHIVED_ACTION_TOOLTIP : fallbackTooltip;
   const showTooltip = disabled && !!tooltip;
+  const tooltipClass = showTooltip
+    ? `at-tooltip${placement === "below" ? " at-tooltip--below" : ""}`
+    : undefined;
 
   // Always render the same wrapping <span>, even when there's nothing to show right
   // now: some callers' fallback disabled/tooltip condition (e.g. "badge item is
@@ -61,7 +73,7 @@ export function ArchivedGuard({
   // remount the control (losing focus/DOM identity) every time the reason
   // appears or disappears — keeping the wrapper stable avoids that entirely.
   return (
-    <span className={showTooltip ? "at-tooltip" : undefined} data-tooltip={showTooltip ? tooltip : undefined}>
+    <span className={tooltipClass} data-tooltip={showTooltip ? tooltip : undefined}>
       {showTooltip && (
         <span id={reasonId} className="sr-only">
           {tooltip}

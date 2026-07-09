@@ -78,6 +78,9 @@ describe("ImportPage archived lockdown", () => {
     expect(uploadFieldset?.disabled).toBe(true);
     expect(uploadFieldset?.className).toContain("at-tooltip");
     expect(uploadFieldset?.getAttribute("data-tooltip")).toBe(ARCHIVED_ACTION_TOOLTIP);
+    // Sits at the very top of the page — tooltip grows downward so the scroll
+    // container's overflow boundary doesn't clip it (real bug found in testing).
+    expect(uploadFieldset?.classList.contains("at-tooltip--below")).toBe(true);
 
     // The overwrite checkbox lives in the same fieldset as the file input.
     const overwriteCheckbox = screen.getByLabelText(/Overwrite existing attendees/);

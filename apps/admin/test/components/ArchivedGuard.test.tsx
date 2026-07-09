@@ -137,4 +137,39 @@ describe("ArchivedGuard", () => {
     expect(button.disabled).toBe(true);
     expect(button.hasAttribute("aria-describedby")).toBe(false);
   });
+
+  it("defaults to the upward tooltip placement, with no extra class, when archived", () => {
+    render(
+      <ArchivedGuard event={{ archived_at: "2026-01-01T00:00:00.000Z" }} reasonId="r7">
+        {(guard) => (
+          <button type="button" {...guard}>
+            Do thing
+          </button>
+        )}
+      </ArchivedGuard>,
+    );
+    const button = screen.getByRole("button", { name: "Do thing" }) as HTMLButtonElement;
+    const wrapper = button.closest(".at-tooltip");
+    expect(wrapper?.className).toBe("at-tooltip");
+    expect(wrapper?.classList.contains("at-tooltip--below")).toBe(false);
+  });
+
+  it("adds the below-placement class when placement=\"below\" is requested, for controls near the page top", () => {
+    render(
+      <ArchivedGuard
+        event={{ archived_at: "2026-01-01T00:00:00.000Z" }}
+        reasonId="r8"
+        placement="below"
+      >
+        {(guard) => (
+          <button type="button" {...guard}>
+            Do thing
+          </button>
+        )}
+      </ArchivedGuard>,
+    );
+    const button = screen.getByRole("button", { name: "Do thing" }) as HTMLButtonElement;
+    const wrapper = button.closest(".at-tooltip");
+    expect(wrapper?.classList.contains("at-tooltip--below")).toBe(true);
+  });
 });
