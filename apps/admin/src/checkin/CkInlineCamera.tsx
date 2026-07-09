@@ -50,12 +50,13 @@ export function CkInlineCamera({
           onScan={onScan}
         />
         {overlayScanResult ? (
-          // Desktop camera reuses the same lightweight ScanFeedback card the
-          // typed-search path renders (never a check-in card here: a real
-          // attendee match promotes to AttendeeCard below, so this only ever
-          // shows an invalid/no-match status) — one styled component for both
-          // surfaces instead of the mobile overlay's full-color result panel,
-          // which read as an unpolished leftover on desktop (PO review).
+          // CheckInPage never sets scanResult (so this never receives one)
+          // for an INVALID/no-match scan while the camera is active — that
+          // reports via the same toast manual lookup's no-match uses instead,
+          // since the camera is scan-only here and shouldn't pause on a miss
+          // (PO review). This branch is only reachable for the brief window
+          // between a PREVIEW response landing and its attendee card finishing
+          // its fetch, right before AttendeeCard takes over below.
           <ScanFeedback result={overlayScanResult} />
         ) : (
           <div className="ck-inline-camera__viewfinder" aria-hidden="true">
