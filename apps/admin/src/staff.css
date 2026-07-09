@@ -505,16 +505,6 @@
   white-space: nowrap;
 }
 
-.checkin-card__warnings {
-  padding: 8px 16px 0;
-}
-
-.checkin-card__warning {
-  color: var(--status-error-fg, #b42318);
-  margin: 0 0 4px;
-  font-size: var(--fs-sm);
-}
-
 /* Block 2 — primary decision (preview state): confirm + cancel as one group. */
 .checkin-card__primary-actions {
   display: flex;

@@ -300,14 +300,14 @@ describe("CheckInPage lookup card states (#379)", () => {
     await typeAndPickSuggestion();
 
     await waitFor(() => {
-      expect(screen.getByText(/Ticket is not admittable/)).toBeTruthy();
+      expect(screen.getByText("Revoked")).toBeTruthy();
     });
     expect(screen.queryByRole("button", { name: "Confirm check-in" })).toBeNull();
     const itemAction = screen.getByRole("button", { name: "Mark badge issued" }) as HTMLButtonElement;
     expect(itemAction.disabled).toBe(true);
     // A revoked card has no Confirm/Cancel — Clear is the only way to dismiss it.
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-    expect(screen.queryByText(/Ticket is not admittable/)).toBeNull();
+    expect(screen.queryByText("Revoked")).toBeNull();
   });
 
   it("not-admitted attendee opens as preview with Confirm available (Enter, single match)", async () => {

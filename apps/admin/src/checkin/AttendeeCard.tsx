@@ -208,7 +208,11 @@ export function AttendeeCard({
             separate full-width colored bar duplicating it for
             already-checked-in/revoked/invalid — one badge, right-aligned
             and centered against the name+meta pair, now covers every
-            status the same way; the bar is gone (PO review, round 4). */}
+            status the same way; the bar is gone (PO review, round 4). The
+            server's warning text ("Ticket is not admittable...") is no
+            longer shown at all here — the badge already says "Revoked" /
+            "Invalid ticket", so the reason line only repeated it (PO
+            review, round 5). */}
         <div className="checkin-card__head">
           <div className={`checkin-card__status-icon checkin-card__status-icon--${statusVariant}`}>
             <i className={`ti ${statusIcon(resolvedStatus)}`} aria-hidden="true" />
@@ -230,16 +234,6 @@ export function AttendeeCard({
             {statusTitle(resolvedStatus)}
           </Badge>
         </div>
-
-        {card.warnings.length > 0 && (
-          <div className="checkin-card__warnings">
-            {card.warnings.map((w, i) => (
-              <p key={`warning-${i}`} className="checkin-card__warning" role="alert">
-                {w}
-              </p>
-            ))}
-          </div>
-        )}
 
         {/* 2. Primary decision — stays above the requirements list. */}
         {showPrimaryActions && (
