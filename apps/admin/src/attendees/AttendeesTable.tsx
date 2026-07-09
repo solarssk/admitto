@@ -1,5 +1,6 @@
 import { Badge, Button, Card, IconButton, Input, Select } from "@admitto/ui";
 import type { AttendeeRowDto, RsvpStatus } from "../api/types.js";
+import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { RsvpStatusBadge } from "./rsvpStatusBadge.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
@@ -37,6 +38,7 @@ export interface AttendeesTableProps {
   onPageChange: (page: number) => void;
   eventTimezone: string;
   eventDate: string | null;
+  event: ArchivedGuardEvent;
 }
 
 export function AttendeesTable({
@@ -62,6 +64,7 @@ export function AttendeesTable({
   onPageChange,
   eventTimezone,
   eventDate,
+  event,
 }: AttendeesTableProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -194,20 +197,36 @@ export function AttendeesTable({
                       onClick={() => onViewAttendee(row.id)}
                     />
                     {row.status === "revoked" && onRestorePass ? (
-                      <IconButton
-                        label="Restore pass"
-                        icon={<i className="ti ti-refresh" aria-hidden="true" />}
+                      <ArchivedGuard
+                        event={event}
+                        reasonId={`restore-pass-reason-${row.id}`}
                         disabled={passActionBusyIds.has(row.id)}
-                        onClick={() => onRestorePass(row)}
-                      />
+                      >
+                        {(guard) => (
+                          <IconButton
+                            label="Restore pass"
+                            icon={<i className="ti ti-refresh" aria-hidden="true" />}
+                            {...guard}
+                            onClick={() => onRestorePass(row)}
+                          />
+                        )}
+                      </ArchivedGuard>
                     ) : null}
                     {row.status !== "cancelled" && row.status !== "revoked" && onRevokePass ? (
-                      <IconButton
-                        label="Revoke pass"
-                        icon={<i className="ti ti-ban" aria-hidden="true" />}
+                      <ArchivedGuard
+                        event={event}
+                        reasonId={`revoke-pass-reason-${row.id}`}
                         disabled={passActionBusyIds.has(row.id)}
-                        onClick={() => onRevokePass(row)}
-                      />
+                      >
+                        {(guard) => (
+                          <IconButton
+                            label="Revoke pass"
+                            icon={<i className="ti ti-ban" aria-hidden="true" />}
+                            {...guard}
+                            onClick={() => onRevokePass(row)}
+                          />
+                        )}
+                      </ArchivedGuard>
                     ) : null}
                   </td>
                 </tr>

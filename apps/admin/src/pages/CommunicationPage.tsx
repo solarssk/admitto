@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useBlocker, useParams } from "react-router-dom";
+import { useBlocker, useOutletContext, useParams } from "react-router-dom";
 import { Badge, Button, Card, Input, PageHeader, Select, StatusBadge, Tabs, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -22,11 +22,13 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type {
   DeliveryDto,
   EventDeliveriesListParams,
+  EventDto,
   EventTemplateDto,
   MailTemplateDetail,
   MailTemplateListItem,
 } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { CommunicationSendDialog } from "../communication/CommunicationSendDialog.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
@@ -91,6 +93,7 @@ function isValidEmail(value: string): boolean {
 /** Admin screen for event mail template editing, preview, test-send, and delivery log. */
 export function CommunicationPage() {
   const { eventId } = useParams();
+  const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
 
@@ -712,9 +715,13 @@ export function CommunicationPage() {
         subtitle="Outlook-safe ticket email · Microsoft Graph transport"
         actions={
           sendTemplateId ? (
-            <Button variant="secondary" onClick={() => setSendDialogOpen(true)}>
-              Send email
-            </Button>
+            <ArchivedGuard event={event} reasonId="send-email-reason">
+              {(guard) => (
+                <Button variant="secondary" onClick={() => setSendDialogOpen(true)} {...guard}>
+                  Send email
+                </Button>
+              )}
+            </ArchivedGuard>
           ) : undefined
         }
       />
@@ -763,14 +770,18 @@ export function CommunicationPage() {
             <nav className="communication-templates" aria-label="Email templates">
               <div className="communication-templates__header">
                 <span>Templates</span>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={templateActionBusy}
-                  onClick={() => requestDirtyProtectedAction({ kind: "create" })}
-                >
-                  New
-                </Button>
+                <ArchivedGuard event={event} reasonId="new-template-reason" disabled={templateActionBusy}>
+                  {(guard) => (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => requestDirtyProtectedAction({ kind: "create" })}
+                      {...guard}
+                    >
+                      New
+                    </Button>
+                  )}
+                </ArchivedGuard>
               </div>
               <ul className="communication-templates__list">
                 {!templates.some((t) => t.name === "ticket") && (
@@ -808,21 +819,29 @@ export function CommunicationPage() {
                     >
                       {t.label}
                     </button>
-                    <button
-                      type="button"
-                      className="communication-templates__delete"
-                      aria-label={`Delete ${t.label}`}
+                    <ArchivedGuard
+                      event={event}
+                      reasonId={`delete-template-${t.id}-reason`}
                       disabled={t.name === "ticket" || templateActionBusy}
-                      onClick={() =>
-                        requestDirtyProtectedAction({
-                          kind: "delete",
-                          templateId: t.id,
-                          name: t.name,
-                        })
-                      }
                     >
-                      <i className="ti ti-trash" aria-hidden="true" />
-                    </button>
+                      {(guard) => (
+                        <button
+                          type="button"
+                          className="communication-templates__delete"
+                          aria-label={`Delete ${t.label}`}
+                          onClick={() =>
+                            requestDirtyProtectedAction({
+                              kind: "delete",
+                              templateId: t.id,
+                              name: t.name,
+                            })
+                          }
+                          {...guard}
+                        >
+                          <i className="ti ti-trash" aria-hidden="true" />
+                        </button>
+                      )}
+                    </ArchivedGuard>
                   </li>
                 ))}
               </ul>
@@ -832,72 +851,80 @@ export function CommunicationPage() {
               title={activeTemplateName === "ticket" ? "Ticket template" : "Template"}
               actions={<Badge variant="neutral">Outlook-safe</Badge>}
             >
-              <div className="communication-ph-row">
-                <span className="communication-overline">Insert placeholder</span>
-                <div className="communication-chips">
-                  {allowedPlaceholders.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      className={[
-                        "communication-chip",
-                        requiredPlaceholders.includes(p) && "communication-chip--required",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      onClick={() => insertPlaceholder(p)}
-                      title={
-                        requiredPlaceholders.includes(p) ? "Required placeholder" : undefined
-                      }
-                    >
-                      {`{{${p}}}`}
-                    </button>
-                  ))}
+              <fieldset
+                className={["communication-editor-fieldset", isEventArchived(event) && "at-tooltip"]
+                  .filter(Boolean)
+                  .join(" ")}
+                data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                disabled={isEventArchived(event)}
+              >
+                <div className="communication-ph-row">
+                  <span className="communication-overline">Insert placeholder</span>
+                  <div className="communication-chips">
+                    {allowedPlaceholders.map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        className={[
+                          "communication-chip",
+                          requiredPlaceholders.includes(p) && "communication-chip--required",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        onClick={() => insertPlaceholder(p)}
+                        title={
+                          requiredPlaceholders.includes(p) ? "Required placeholder" : undefined
+                        }
+                      >
+                        {`{{${p}}}`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              <Input
-                ref={subjectRef}
-                label="Subject"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                onFocus={() => setActiveField("subject")}
-                onClick={() => setActiveField("subject")}
-                disabled={editorSnapshotMissing}
-              />
-
-              <div className="communication-format-row">
-                <Button
-                  variant={format === "mjml" ? "primary" : "secondary"}
-                  size="sm"
-                  onClick={() => setFormat("mjml")}
-                >
-                  MJML
-                </Button>
-                <Button
-                  variant={format === "html" ? "primary" : "secondary"}
-                  size="sm"
-                  onClick={() => setFormat("html")}
-                >
-                  HTML
-                </Button>
-                <span className="communication-format-hint muted">
-                  Changing format does not convert the template body.
-                </span>
-              </div>
-
-              <div className="communication-body-field">
-                <label htmlFor="communication-body">{format === "mjml" ? "MJML body" : "HTML body"}</label>
-                <textarea
-                  id="communication-body"
-                  ref={bodyRef}
-                  className="communication-textarea"
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  onFocus={() => setActiveField("body")}
+                <Input
+                  ref={subjectRef}
+                  label="Subject"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  onFocus={() => setActiveField("subject")}
+                  onClick={() => setActiveField("subject")}
                   disabled={editorSnapshotMissing}
                 />
-              </div>
+
+                <div className="communication-format-row">
+                  <Button
+                    variant={format === "mjml" ? "primary" : "secondary"}
+                    size="sm"
+                    onClick={() => setFormat("mjml")}
+                  >
+                    MJML
+                  </Button>
+                  <Button
+                    variant={format === "html" ? "primary" : "secondary"}
+                    size="sm"
+                    onClick={() => setFormat("html")}
+                  >
+                    HTML
+                  </Button>
+                  <span className="communication-format-hint muted">
+                    Changing format does not convert the template body.
+                  </span>
+                </div>
+
+                <div className="communication-body-field">
+                  <label htmlFor="communication-body">{format === "mjml" ? "MJML body" : "HTML body"}</label>
+                  <textarea
+                    id="communication-body"
+                    ref={bodyRef}
+                    className="communication-textarea"
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                    onFocus={() => setActiveField("body")}
+                    disabled={editorSnapshotMissing}
+                  />
+                </div>
+              </fieldset>
 
               {validationErrors.length > 0 && (
                 <div className="communication-errors" role="alert">
@@ -910,20 +937,28 @@ export function CommunicationPage() {
               )}
 
               <div className="communication-actions">
-                <Button
-                  variant="secondary"
-                  onClick={() => void handlePreview()}
+                <ArchivedGuard
+                  event={event}
+                  reasonId="preview-template-reason"
                   disabled={previewLoading || editorSnapshotMissing}
                 >
-                  {previewLoading ? "Previewing…" : "Preview"}
-                </Button>
-                <Button
-                  variant="primary"
-                  onClick={handleSave}
+                  {(guard) => (
+                    <Button variant="secondary" onClick={() => void handlePreview()} {...guard}>
+                      {previewLoading ? "Previewing…" : "Preview"}
+                    </Button>
+                  )}
+                </ArchivedGuard>
+                <ArchivedGuard
+                  event={event}
+                  reasonId="save-template-reason"
                   disabled={saving || !isDirty || editorSnapshotMissing}
                 >
-                  {saving ? "Saving…" : isDirty ? "Save *" : "Saved"}
-                </Button>
+                  {(guard) => (
+                    <Button variant="primary" onClick={handleSave} {...guard}>
+                      {saving ? "Saving…" : isDirty ? "Save *" : "Saved"}
+                    </Button>
+                  )}
+                </ArchivedGuard>
               </div>
             </Card>
 
@@ -956,13 +991,17 @@ export function CommunicationPage() {
                 onChange={(e) => setTestEmail(e.target.value)}
                 placeholder="you@example.com"
               />
-              <Button
-                variant="secondary"
-                onClick={() => void handleTestSend()}
+              <ArchivedGuard
+                event={event}
+                reasonId="send-test-reason"
                 disabled={testSending || !isValidEmail(testEmail.trim()) || editorSnapshotMissing}
               >
-                {testSending ? "Sending…" : "Send test"}
-              </Button>
+                {(guard) => (
+                  <Button variant="secondary" onClick={() => void handleTestSend()} {...guard}>
+                    {testSending ? "Sending…" : "Send test"}
+                  </Button>
+                )}
+              </ArchivedGuard>
             </div>
             {testStatus && (
               <p

@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useOutletContext, useParams } from "react-router-dom";
 import { Button, Card, PageHeader, useToast } from "@admitto/ui";
 import { ApiError, commitImport, fetchEventItems, previewImport, type EventFullMeta } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { ImportCommitResponse, ImportPreviewResponse, ImportSampleRow } from "../api/types.js";
+import type { EventDto, ImportCommitResponse, ImportPreviewResponse, ImportSampleRow } from "../api/types.js";
 import {
   flattenCustomDataFieldsFromItems,
   type CustomDataFieldDef,
 } from "../attendees/customData.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
+import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import "../attendees/attendees.css";
 import "./import.css";
@@ -103,6 +104,7 @@ function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSam
 /** Admin flow: upload CSV/XLSX → preview counts → commit import. */
 export function ImportPage() {
   const { eventId } = useParams();
+  const { event } = useOutletContext<{ event: EventDto }>();
   const { assignments } = useAuth();
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
@@ -275,49 +277,57 @@ export function ImportPage() {
               Download CSV template
             </a>
 
-            <div className="import-field">
-              <label className="import-label" htmlFor="import-file">
-                File (.csv or .xlsx)
-              </label>
-              <input
-                id="import-file"
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,.xlsx"
-                disabled={loading || step === "preview"}
-                onChange={(e) => {
-                  const picked = e.target.files?.[0] ?? null;
-                  setFile(picked);
-                  setPreview(null);
-                  if (step === "preview") setStep("upload");
-                }}
-              />
-            </div>
+            <fieldset
+              className={["import-upload-fieldset", isEventArchived(event) && "at-tooltip"]
+                .filter(Boolean)
+                .join(" ")}
+              data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+              disabled={isEventArchived(event)}
+            >
+              <div className="import-field">
+                <label className="import-label" htmlFor="import-file">
+                  File (.csv or .xlsx)
+                </label>
+                <input
+                  id="import-file"
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.xlsx"
+                  disabled={loading || step === "preview"}
+                  onChange={(e) => {
+                    const picked = e.target.files?.[0] ?? null;
+                    setFile(picked);
+                    setPreview(null);
+                    if (step === "preview") setStep("upload");
+                  }}
+                />
+              </div>
 
-            <label className="import-checkbox">
-              <input
-                type="checkbox"
-                checked={overwrite}
-                disabled={loading || step === "preview"}
-                onChange={(e) => setOverwrite(e.target.checked)}
-              />
-              <span>
-                Overwrite existing attendees
-                <span className="import-checkbox__hint">
-                  When off, existing attendees matched by email are skipped.
+              <label className="import-checkbox">
+                <input
+                  type="checkbox"
+                  checked={overwrite}
+                  disabled={loading || step === "preview"}
+                  onChange={(e) => setOverwrite(e.target.checked)}
+                />
+                <span>
+                  Overwrite existing attendees
+                  <span className="import-checkbox__hint">
+                    When off, existing attendees matched by email are skipped.
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+            </fieldset>
 
             {step === "upload" && (
               <div className="import-actions">
-                <Button
-                  variant="primary"
-                  disabled={!file || loading}
-                  onClick={() => void onPreview()}
-                >
-                  {loading ? "Previewing…" : "Preview"}
-                </Button>
+                <ArchivedGuard event={event} reasonId="import-preview-reason" disabled={!file || loading}>
+                  {(guard) => (
+                    <Button variant="primary" onClick={() => void onPreview()} {...guard}>
+                      {loading ? "Previewing…" : "Preview"}
+                    </Button>
+                  )}
+                </ArchivedGuard>
               </div>
             )}
           </div>
@@ -398,15 +408,19 @@ export function ImportPage() {
                 )}
               </p>
               {superadmin && preview.summary.toCreate > 0 && (
-                <label className="import-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={forceCapacity}
-                    onChange={(e) => setForceCapacity(e.target.checked)}
-                    disabled={loading}
-                  />
-                  <span>Override capacity limit (superadmin)</span>
-                </label>
+                <ArchivedGuard event={event} reasonId="force-capacity-reason" disabled={loading}>
+                  {(guard) => (
+                    <label className="import-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={forceCapacity}
+                        onChange={(e) => setForceCapacity(e.target.checked)}
+                        {...guard}
+                      />
+                      <span>Override capacity limit (superadmin)</span>
+                    </label>
+                  )}
+                </ArchivedGuard>
               )}
             </div>
           )}
@@ -424,15 +438,19 @@ export function ImportPage() {
             >
               Choose another file
             </Button>
-            <Button
-              variant="primary"
-              disabled={!canCommit}
-              onClick={() => void onCommit({ force: forceCapacity && superadmin })}
-            >
-              {loading
-                ? "Importing…"
-                : `Import ${importCount} attendee${importCount === 1 ? "" : "s"}`}
-            </Button>
+            <ArchivedGuard event={event} reasonId="import-commit-reason" disabled={!canCommit}>
+              {(guard) => (
+                <Button
+                  variant="primary"
+                  onClick={() => void onCommit({ force: forceCapacity && superadmin })}
+                  {...guard}
+                >
+                  {loading
+                    ? "Importing…"
+                    : `Import ${importCount} attendee${importCount === 1 ? "" : "s"}`}
+                </Button>
+              )}
+            </ArchivedGuard>
           </div>
         </Card>
       )}

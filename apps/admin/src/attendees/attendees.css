@@ -124,6 +124,16 @@
   gap: var(--space-3);
 }
 
+.attendee-form__fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
 .attendee-form__warn {
   padding: var(--space-3);
   background: var(--status-warn-bg, #fff8e6);

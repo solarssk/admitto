@@ -49,8 +49,9 @@
   background: transparent; color: var(--text-muted); font-size: 1.1rem;
   transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
-.at-iconbtn:hover { background: var(--surface-hover); color: var(--text-primary); }
+.at-iconbtn:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
 .at-iconbtn:focus-visible { outline: none; box-shadow: var(--ring); }
+.at-iconbtn:disabled { opacity: 0.5; cursor: not-allowed; }
 .at-iconbtn--sm { width: var(--control-h-sm); height: var(--control-h-sm); font-size: 1rem; }
 
 /* ---------------- Input / Select / Textarea ---------------- */
