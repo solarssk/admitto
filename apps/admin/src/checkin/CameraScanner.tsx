@@ -60,10 +60,17 @@ export function CameraScanner({ enabled, wedgeActive, onScan }: CameraScannerPro
     };
   }, [enabled, wedgeActive]);
 
-  if (!enabled) return null;
-
+  // The <video> stays mounted (hidden via the `hidden` attribute) even
+  // when disabled, instead of being unmounted — removing it from the
+  // document while ZXing's internal video.play() is still settling throws
+  // an unhandled AbortError ("play() request was interrupted because the
+  // media was removed from the document"). `enabled` toggles on every scan
+  // result and every entry into the item-issuing screen, so unmounting
+  // fired this often. The effect above already fully starts/stops the
+  // reader based on `enabled`; only the DOM presence/visibility changes
+  // here.
   return (
-    <div className="checkin-camera">
+    <div className="checkin-camera" hidden={!enabled}>
       <video
         ref={videoRef}
         className="checkin-camera__video"

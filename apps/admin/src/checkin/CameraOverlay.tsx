@@ -1,18 +1,20 @@
-import { useCallback, useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@admitto/ui";
 import type {
   AttendeeCardDto,
   CheckInHistoryEntry,
   CheckInScanResponse,
+  LookupAttendeeResult,
 } from "../api/types.js";
 import { CameraScanner } from "./CameraScanner.js";
 import { CheckInCameraResultPanel } from "./CheckInCameraResultPanel.js";
 import { CkRecentScans } from "./CkRecentScans.js";
-import { checkinSearchFieldAttrs } from "./searchFieldAttrs.js";
+import { CameraOverlayManualSearch } from "./CameraOverlayManualSearch.js";
+import { CameraOverlayItemIssuing } from "./CameraOverlayItemIssuing.js";
+import { BrandMark } from "../layouts/BrandMark.js";
 
 type CameraOverlayProps = {
   open: boolean;
-  eventTitle: string;
   eventTimezone: string;
   eventDate?: string | null;
   admittedCount: number;
@@ -20,6 +22,9 @@ type CameraOverlayProps = {
   wedgeActive: boolean;
   onClose: () => void;
   onScan: (raw: string) => void;
+  allowManualLookup: boolean;
+  onSearch: (query: string) => Promise<LookupAttendeeResult[]>;
+  onSelectAttendee: (attendeeId: string) => void;
   onManualEntry: (query: string) => Promise<boolean>;
   manualError?: string | null;
   onClearManualError?: () => void;
@@ -29,11 +34,13 @@ type CameraOverlayProps = {
   canAct: boolean;
   onConfirm?: () => void;
   onReset: () => void;
+  onItemAction?: (itemKey: string, targetState: string) => void;
+  onUndo?: () => void;
+  showUndo?: boolean;
 };
 
 export function CameraOverlay({
   open,
-  eventTitle,
   eventTimezone,
   eventDate = null,
   admittedCount,
@@ -41,6 +48,9 @@ export function CameraOverlay({
   wedgeActive,
   onClose,
   onScan,
+  allowManualLookup,
+  onSearch,
+  onSelectAttendee,
   onManualEntry,
   manualError,
   onClearManualError,
@@ -50,16 +60,48 @@ export function CameraOverlay({
   canAct,
   onConfirm,
   onReset,
+  onItemAction,
+  onUndo,
+  showUndo,
 }: CameraOverlayProps) {
   const [manualMode, setManualMode] = useState(false);
-  const [manualToken, setManualToken] = useState("");
 
   useEffect(() => {
-    if (!open) {
-      setManualMode(false);
-      setManualToken("");
-    }
+    if (!open) setManualMode(false);
   }, [open]);
+
+  // Snapshot of every configured item, taken once per attendee — walked
+  // through in full even when an item (e.g. Badge via badge_at_entry) was
+  // already auto-issued server-side: the operator still needs a step for it
+  // as a reminder to physically hand it over, not just the ones still
+  // missing a system action (PO review).
+  const itemStepKeys = useMemo(
+    () => card?.items.map((item) => item.key) ?? [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally re-snapshot only on attendee change, not on every item mutation from onItemAction (which would reshuffle the order mid-flow)
+    [card?.id],
+  );
+
+  // Manual entry into the item flow from an "Already checked in" result —
+  // e.g. the attendee was admitted earlier but their items weren't handed
+  // out, and the operator scans them again. Reset whenever the displayed
+  // attendee or result changes.
+  const [itemsMode, setItemsMode] = useState(false);
+  useEffect(() => {
+    setItemsMode(false);
+  }, [card?.id, scanResult?.status]);
+
+  // Auto-shown right after a fresh check-in (manual Confirm or auto-admit)
+  // when the event has items configured. ALREADY_CHECKED_IN does NOT take
+  // over automatically — the operator gets the standard result card with a
+  // small "Issue items" entry point instead (PO review), since re-scanning
+  // someone is usually about verifying, not re-issuing.
+  const itemStepActive =
+    !!card &&
+    itemStepKeys.length > 0 &&
+    !!scanResult &&
+    ((scanResult.status === "VALID" && scanResult.confirmed) || itemsMode);
+
+  const pendingItemCount = card?.items.filter((item) => item.actions.length > 0).length ?? 0;
 
   useEffect(() => {
     if (!open) return;
@@ -70,33 +112,14 @@ export function CameraOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  const submitManual = useCallback(async () => {
-    const raw = manualToken.trim();
-    if (!raw || !canAct || pending) return;
-    // Clear immediately (not only on success) so a wedge scan arriving while
-    // this request is in flight can't get typed after the old query text —
-    // this field has no disabled state of its own, mirroring the same fix
-    // applied to CheckInPage's main scan-bar buffer (#277 review).
-    setManualToken("");
-    const ok = await onManualEntry(raw);
-    if (ok) setManualMode(false);
-  }, [canAct, manualToken, onManualEntry, pending]);
-
-  const onManualKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      submitManual();
-    }
-  };
-
   if (!open) return null;
 
   return (
     <div className="ck-overlay" role="dialog" aria-modal="true" aria-label="Camera check-in">
       <header className="ck-overlay__bar">
         <div className="ck-overlay__brand">
-          <span className="ck-overlay__brand-mark" aria-hidden="true" />
-          <span>Check-in · {eventTitle}</span>
+          {BrandMark}
+          <span>Check-in</span>
         </div>
         <span className="ck-overlay__admitted">{admittedCount} checked in</span>
         <button
@@ -109,98 +132,101 @@ export function CameraOverlay({
         </button>
       </header>
 
-      <div className="ck-overlay__body">
-        <div className="ck-overlay__main">
-          <CameraScanner
-            enabled={!scanResult && !pending}
-            wedgeActive={wedgeActive}
-            onScan={onScan}
-          />
-          {scanResult ? (
-            <CheckInCameraResultPanel
-              scanResult={scanResult}
-              card={card}
-              pending={pending}
-              canAct={canAct}
-              eventTimezone={eventTimezone}
-              onConfirm={onConfirm}
-              onReset={onReset}
-            />
-          ) : (
-            <div className="ck-overlay__viewfinder" aria-hidden="true">
-              <div className="vf-frame">
-                <span className="c tl" />
-                <span className="c tr" />
-                <span className="c bl" />
-                <span className="c br" />
-                <span className="vf-line" />
-              </div>
-              <p className="ck-overlay__hint">Point the camera at the attendee&apos;s QR</p>
+      {manualMode ? (
+        <CameraOverlayManualSearch
+          allowManualLookup={allowManualLookup}
+          onSearch={onSearch}
+          onSelectAttendee={(attendeeId) => {
+            setManualMode(false);
+            onSelectAttendee(attendeeId);
+          }}
+          onManualEntry={onManualEntry}
+          manualError={manualError}
+          onClearManualError={onClearManualError}
+          onBack={() => {
+            setManualMode(false);
+            onClearManualError?.();
+          }}
+        />
+      ) : (
+        <div className="ck-overlay__body">
+          <div className="ck-overlay__main">
+            <div className="ck-overlay__frame">
+              <CameraScanner
+                enabled={!scanResult && !pending && !itemStepActive}
+                wedgeActive={wedgeActive}
+                onScan={onScan}
+              />
+              {itemStepActive && card && onItemAction ? (
+                <CameraOverlayItemIssuing
+                  key={card.id}
+                  items={card.items}
+                  stepKeys={itemStepKeys}
+                  onItemAction={onItemAction}
+                  pending={pending}
+                  canAct={canAct}
+                  onDone={onReset}
+                  onUndo={onUndo}
+                  showUndo={showUndo}
+                />
+              ) : scanResult ? (
+                <CheckInCameraResultPanel
+                  scanResult={scanResult}
+                  card={card}
+                  pending={pending}
+                  canAct={canAct}
+                  eventTimezone={eventTimezone}
+                  onConfirm={onConfirm}
+                  onReset={onReset}
+                  onIssueItems={
+                    scanResult.status === "ALREADY_CHECKED_IN" &&
+                    pendingItemCount > 0 &&
+                    onItemAction
+                      ? () => setItemsMode(true)
+                      : undefined
+                  }
+                />
+              ) : (
+                <div className="ck-overlay__viewfinder" aria-hidden="true">
+                  <div className="vf-frame">
+                    <span className="c tl" />
+                    <span className="c tr" />
+                    <span className="c bl" />
+                    <span className="c br" />
+                    <span className="vf-line" />
+                  </div>
+                  <p className="ck-overlay__hint">Point the camera at the attendee&apos;s QR</p>
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        <aside className="ck-overlay__aside">
-          <CkRecentScans
-            history={history}
-            eventTimezone={eventTimezone}
-            eventDate={eventDate}
-            compact
-            limit={6}
-          />
-        </aside>
-      </div>
-
-      <div className="ck-overlay__manual">
-        {manualMode ? (
-          <div className="ck-overlay__manual-form">
-            <input
-              type="text"
-              className="ck-overlay__manual-input"
-              name="checkin-overlay-search"
-              value={manualToken}
-              onChange={(e) => {
-                setManualToken(e.target.value);
-                if (manualError) onClearManualError?.();
-              }}
-              onKeyDown={onManualKeyDown}
-              placeholder="Paste token or search by name, email…"
-              aria-label="Enter token or search by name"
-              aria-invalid={manualError ? true : undefined}
-              aria-describedby={manualError ? "ck-overlay-manual-error" : undefined}
-              {...checkinSearchFieldAttrs}
-            />
-            {manualError && (
-              <p id="ck-overlay-manual-error" className="ck-overlay__manual-error" role="alert">
-                {manualError}
-              </p>
-            )}
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              disabled={!canAct || pending}
-              onClick={submitManual}
-            >
-              Submit
-            </Button>
-            <button type="button" className="link-btn" onClick={() => setManualMode(false)}>
-              Cancel
-            </button>
+            <div className="ck-overlay__manual">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                icon={<i className="ti ti-keyboard" aria-hidden="true" />}
+                onClick={() => {
+                  setManualMode(true);
+                  onClearManualError?.();
+                }}
+              >
+                Manual search
+              </Button>
+            </div>
           </div>
-        ) : (
-          <button
-            type="button"
-            className="link-btn"
-            onClick={() => {
-              setManualMode(true);
-              onClearManualError?.();
-            }}
-          >
-            ⌨ Enter token or search by name, email
-          </button>
-        )}
-      </div>
+
+          <aside className="ck-overlay__aside">
+            <CkRecentScans
+              history={history}
+              eventTimezone={eventTimezone}
+              eventDate={eventDate}
+              compact
+              limit={6}
+            />
+          </aside>
+        </div>
+      )}
     </div>
   );
 }

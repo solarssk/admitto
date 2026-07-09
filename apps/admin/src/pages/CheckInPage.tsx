@@ -23,6 +23,7 @@ import { isAdmin } from "../auth/capabilities.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { CHECKIN_DUPLICATE_DEBOUNCE_MS, normalizeScannedInput } from "../checkin/normalize.js";
 import { scanResultFromCard } from "../checkin/cardScanResult.js";
+import { shouldAutoAdvance } from "../checkin/autoAdvance.js";
 import { canMutateCheckin } from "../checkin/connection.js";
 import { ScanFeedback } from "../checkin/ScanFeedback.js";
 import { AttendeeCard } from "../checkin/AttendeeCard.js";
@@ -384,14 +385,13 @@ export function CheckInPage({
 
   const maybeAutoAdvance = useCallback(
     (response: CheckInScanResponse) => {
-      if (autoAdvanceOnValid && response.status === "VALID" && response.confirmed) {
-        // Dismiss THIS scan's confirmation only — must not clear the buffer or
-        // cancel the wedge timer, which may already hold a different, newer
-        // scan's in-progress keystrokes (#277 follow-up review).
-        clearDisplayedResult();
-      }
+      if (!shouldAutoAdvance(response, { autoAdvanceOnValid, showMobileOverlay })) return;
+      // Dismiss THIS scan's confirmation only — must not clear the buffer or
+      // cancel the wedge timer, which may already hold a different, newer
+      // scan's in-progress keystrokes (#277 follow-up review).
+      clearDisplayedResult();
     },
-    [autoAdvanceOnValid, clearDisplayedResult],
+    [autoAdvanceOnValid, clearDisplayedResult, showMobileOverlay],
   );
 
   const runWithPending = async <T,>(fn: () => Promise<T>): Promise<T | null> => {
@@ -1099,7 +1099,6 @@ export function CheckInPage({
       {showMobileOverlay && (
         <CameraOverlay
           open
-          eventTitle={eventTitle}
           eventTimezone={eventTimezone}
           eventDate={eventDate}
           admittedCount={admittedCount}
@@ -1107,6 +1106,9 @@ export function CheckInPage({
           wedgeActive={buffer.trim().length > 0}
           onClose={() => setCameraActive(false)}
           onScan={(raw) => void runScan(raw)}
+          allowManualLookup={allowManualLookup}
+          onSearch={(query) => lookupCheckInAttendees(eventId, query)}
+          onSelectAttendee={openLookupResult}
           onManualEntry={submitManualTokenOrLookup}
           manualError={overlayManualError}
           onClearManualError={() => setOverlayManualError(null)}
@@ -1120,6 +1122,9 @@ export function CheckInPage({
               : undefined
           }
           onReset={resetScan}
+          onItemAction={(key, state) => void onItemAction(key, state)}
+          onUndo={() => void onUndo()}
+          showUndo={showUndo}
         />
       )}
     </>

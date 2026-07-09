@@ -1108,11 +1108,9 @@
   font-weight: 600;
 }
 
-.ck-overlay__brand-mark {
+.ck-overlay__brand .sidebar__brand-mark {
   width: 24px;
   height: 24px;
-  border-radius: 6px;
-  background: var(--primary, #066fd1);
 }
 
 .ck-overlay__admitted {
@@ -1137,17 +1135,28 @@
 }
 
 .ck-overlay__main {
-  position: relative;
-  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
-.ck-overlay__main .checkin-camera {
+/* Positioning context for the camera/result/viewfinder (previously
+   .ck-overlay__main's own job) — split out so .ck-overlay__main can also
+   hold the manual-entry pill below it in normal flow (#432). */
+.ck-overlay__frame {
+  position: relative;
+  min-height: 280px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.ck-overlay__frame .checkin-camera {
   position: absolute;
   inset: 0;
   margin: 0;
 }
 
-.ck-overlay__main .checkin-camera__video {
+.ck-overlay__frame .checkin-camera__video {
   width: 100%;
   height: 100%;
   max-height: none;
@@ -1160,13 +1169,19 @@
   pointer-events: none;
 }
 
+/* left:50%+transform (no width) let the shrink-to-fit width calculation see
+   only the *half* of the frame to the right of center, wrapping the text
+   early and asymmetrically once the frame narrowed to a square (#432
+   PO review) — left/right insets give it the real available width so
+   text-align actually centers both wrapped lines. */
 .ck-overlay__hint {
   position: absolute;
   bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 12px;
+  right: 12px;
   color: rgba(255, 255, 255, 0.8);
   font-size: var(--fs-sm);
+  text-align: center;
 }
 
 .vf-frame {
@@ -1284,6 +1299,7 @@
   background: rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 4px;
 }
 
@@ -1293,6 +1309,72 @@
   gap: 8px;
   margin-top: 12px;
   width: min(280px, 100%);
+}
+
+/* Mockup parity (#430): full-color result card — mobile overlay only. The
+   ".ck-overlay " ancestor scope means this never applies to CkInlineCamera
+   (desktop), which renders the same CheckInCameraResultPanel component
+   under ".ck-inline-camera" and keeps its existing icon-tint-only look. */
+.ck-overlay .ck-overlay__result {
+  padding: 34px 28px;
+}
+
+.ck-overlay .ck-overlay__result--ok {
+  background: var(--status-ok);
+}
+
+.ck-overlay .ck-overlay__result--warn {
+  background: var(--status-warn);
+}
+
+.ck-overlay .ck-overlay__result--error {
+  background: var(--status-error);
+}
+
+.ck-overlay .ck-overlay__result-icon {
+  font-size: 76px;
+  color: #fff;
+}
+
+.ck-overlay .ck-overlay__result-title {
+  font-size: 34px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.ck-overlay .ck-overlay__result-sub {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.ck-overlay .ck-overlay__result-card {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* Warn (yellow) is too light for white text — dark text throughout,
+   matching the mockup. */
+.ck-overlay .ck-overlay__result--warn .ck-overlay__result-icon,
+.ck-overlay .ck-overlay__result--warn .ck-overlay__result-title,
+.ck-overlay .ck-overlay__result--warn .ck-overlay__result-sub {
+  color: #3a2a00;
+}
+
+.ck-overlay .ck-overlay__result--warn .ck-overlay__result-card {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* "Confirm check-in" is the standard primary (blue) Button — fine against
+   the old dark backdrop on desktop, but clashes against the new full-color
+   card here (PO review). White reads clean on all three tones, matching
+   "Scan next" (secondary/white) which already looks right here — the two
+   never render together, so there's no clash between them either. */
+.ck-overlay .ck-overlay__result-actions .at-btn--primary {
+  background: #fff;
+  color: var(--text-secondary);
+  border-color: transparent;
+}
+
+.ck-overlay .ck-overlay__result-actions .at-btn--primary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .ck-overlay__aside {
@@ -1307,47 +1389,534 @@
   color: rgba(255, 255, 255, 0.65);
 }
 
+/* Fixed min-height + vertical centering so toggling between the collapsed
+   "Manual search" button and the expanded input+Submit+Cancel row doesn't
+   visibly resize the section and shove Recent scans down (PO review). */
 .ck-overlay__manual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 68px;
   padding: 12px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  text-align: center;
 }
 
 .ck-overlay__manual .link-btn {
   color: rgba(255, 255, 255, 0.85);
 }
 
-.ck-overlay__result-actions .link-btn {
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.ck-overlay__manual-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  align-items: center;
-}
-
-.ck-overlay__manual-input {
-  flex: 1;
-  min-width: 200px;
-  padding: 10px 12px;
-  font-size: 1.125rem;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+/* Standard secondary/ghost Buttons read dark-on-dark otherwise — same
+   treatment as the manual-entry input just below (PO review: these were
+   underlined .link-btn text links, wanted normal buttons instead). */
+.ck-overlay__manual .at-btn--secondary {
   background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
   color: #fff;
 }
 
-.ck-overlay__manual-error {
-  width: 100%;
+.ck-overlay__manual .at-btn--secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+/* Secondary action row — Issue items (optional) + Cancel always sit here
+   together, so Cancel's position/row never changes whether or not Issue
+   items is present (PO review). */
+.ck-overlay__result-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Cancel + Issue items as matching small buttons on mobile, not Cancel's
+   default underlined .link-btn text (PO review: "Cancel should obviously be
+   a button"). Scoped under .ck-overlay so desktop's CkInlineCamera (Cancel
+   still a .link-btn there — Issue items never renders on desktop at all)
+   is unaffected. */
+.ck-overlay .ck-overlay__result-chip {
+  background: rgba(255, 255, 255, 0.25);
+  border: none;
+  border-radius: 100px;
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ck-overlay .ck-overlay__result-chip:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* Already-checked-in renders on the warn (yellow) card — dark text, same as
+   the rest of the warn-tone overrides above. */
+.ck-overlay .ck-overlay__result--warn .ck-overlay__result-chip {
+  background: rgba(0, 0, 0, 0.12);
+  color: #3a2a00;
+}
+
+.ck-overlay .ck-overlay__result--warn .ck-overlay__result-chip:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* Full-screen manual search (#433, mockup ManualSearch.jsx parity) —
+   replaces .ck-overlay__body entirely while active. */
+.ms {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ms__header {
+  padding: 28px 32px 20px;
+}
+
+.ms__back {
+  background: none;
+  border: 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  margin-bottom: 14px;
+}
+
+.ms__back:hover {
+  color: #fff;
+}
+
+.ms__header h2 {
+  margin: 0 0 4px;
+  color: #fff;
+  font-size: var(--fs-h2);
+  font-weight: 700;
+}
+
+.ms__header p {
   margin: 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: var(--fs-sm);
+}
+
+.ms__body {
+  padding: 0 32px 32px;
+  flex: 1;
+}
+
+.ms__input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-lg);
+  padding: 0 16px;
+  height: 56px;
+  margin-bottom: 16px;
+}
+
+.ms__input i {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 20px;
+  flex: none;
+}
+
+.ms__input input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  font-family: var(--font-sans);
+  font-size: var(--fs-h3);
+  color: #fff;
+}
+
+.ms__input input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.ms__clear {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 18px;
+  padding: 4px;
+}
+
+.ms__error {
+  margin: -8px 0 16px;
   font-size: var(--fs-sm);
   color: #f87171;
+}
+
+.ms__results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.ms__row:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ms__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ms__info strong {
+  color: #fff;
+  font-size: var(--fs-h3);
+}
+
+.ms__info span {
+  font-size: var(--fs-sm);
+  color: rgba(255, 255, 255, 0.55);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms__checked {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--status-ok);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ms__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 40px;
   text-align: center;
 }
 
+.ms__empty i {
+  font-size: 36px;
+}
+
+/* Item-issuing step (#434, mobile only) — shown after a successful check-in
+   when the event has items configured. Fills .ck-overlay__frame exactly like
+   CheckInCameraResultPanel's .ck-overlay__result does (same slot the camera
+   viewfinder occupies — rounded corners come from .ck-overlay__frame's own
+   radius/overflow:hidden, so the scanner, the green/orange result, and this
+   step all share one consistent shape), so Manual search and Recent scans
+   below stay exactly as in a normal scan — only the frame's content swaps.
+   Single centered column, the same padding/gap as .ck-overlay__result so
+   the primary button lands at the same vertical position as "Confirm
+   check-in" (PO review). The progress row is in the normal flex flow (not
+   absolute) so it contributes its height to the centering calculation —
+   that's the missing ~30 px that kept the button above the result card. */
+/* Top-anchored, not centered: the icon sits at a fixed offset from the top
+   and the button at a fixed offset from the bottom regardless of how much
+   content (description/note text, or a 2- vs 5-item summary list) sits
+   between them — centering the whole stack made both drift depending on
+   total content height, which varies per screen (PO review). Padding/gap
+   tighter than .ck-overlay__result's 34px/8px because this card has two
+   extra fixed rows (progress indicator, back/skip nav) that the result
+   card doesn't. */
+/* padding-top matches .ck-overlay__result's 34px closely (tuned slightly
+   tighter empirically) so the icon — the first in-flow child — lands at
+   the same Y as the icon on the main check-in cards (Valid / Already
+   checked in / Revoked), per PO review point 1: those cards are the
+   reference for icon size AND position. */
+.ck-items {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 23px 24px 12px;
+  background: var(--status-ok-tint);
+  border: 2px solid var(--status-ok);
+  text-align: center;
+}
+
+/* Step-progress dots live inside .ck-items__nav (between Back and Skip),
+   not their own row — a dedicated row either collided with the icon above
+   it or, even moved below the button, added enough height to shift the
+   button out of its reference-matched position (PO review). The dots
+   alone add no extra vertical budget since they sit inside a row that
+   already exists. */
+.ck-items__dots {
+  display: flex;
+  gap: 6px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.ck-items__dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.ck-items__dots span.is-current {
+  background: var(--status-ok);
+}
+
+/* Bare icon at 76px, matching .ck-overlay__result-icon exactly (same font-
+   size as the Valid/Already-checked-in/Revoked icon on the main check-in
+   card) — the previous 76px circle around a 38px glyph made the glyph
+   itself read visibly smaller than the reference (PO review point 1). */
+.ck-items__icon {
+  font-size: 76px;
+  color: var(--status-ok);
+  flex-shrink: 0;
+}
+
+/* Summary screen when one or more items were skipped — must not read as a
+   success confirmation when nothing (or not everything) was actually
+   handed out (PO review). Background/border/button switch to the same
+   light-warn treatment the "Already checked in" card uses elsewhere, not
+   just the border/icon — the background previously stayed green-tinted
+   even on an incomplete summary (PO review). */
+.ck-items--incomplete {
+  background: var(--status-warn-tint);
+  border-color: var(--status-warn);
+}
+
+.ck-items--incomplete .ck-items__icon {
+  color: var(--status-warn-fg);
+}
+
+.ck-items__label {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* Card box matching .ck-overlay__result-card (same background, radius,
+   padding) — groups the description, detail, and already-issued note so
+   the three fields appear as a single data card, matching the name/type
+   card on the result step (PO review: "in a box like name / standard").
+   width: min(280px,100%) keeps it the same width as the button below. */
+/* justify-content: safe center — centers short content within the
+   available flexible space (so it doesn't look stuck to the top of a
+   taller-than-needed box), but falls back to start alignment when content
+   overflows, so overflowing text stays scrollable from its true beginning.
+   Plain "center" here clipped the START of overflowing text above the
+   visible box, inaccessible even via scroll (PO review point 3). */
+.ck-items__card {
+  width: min(280px, 100%);
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  padding: 4px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Description shown in full (capped at 500 chars server-side), not
+   clamped — silently truncating admin-configured text lost content the
+   operator might need (PO review point 3). .ck-items__card no longer
+   needs every field to reserve worst-case height, since the button's
+   position doesn't depend on this card's height any more (top/bottom-
+   anchored layout, not centering); the card scrolls if a long description
+   doesn't fit. */
+.ck-items__desc {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.ck-items__detail {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  flex-shrink: 0;
+}
+
+/* Already-issued state: the same Badge + itemBadgeVariant AttendeeCard.tsx
+   uses on desktop (PO review point 1: main check-in cards are the
+   reference), not a full sentence — "Already issued — remember to hand it
+   over" wrapped to 2 lines and looked messy at card width (PO review point
+   4). align-self:center keeps the pill compact instead of stretching to
+   the card's full width (the card's other children are stretched blocks). */
+.ck-items__note {
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.ck-items .at-btn {
+  width: 100%;
+  max-width: 280px;
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+/* Use .at-btn.at-btn--primary (specificity 0,3,0) so this beats both the
+   UI library base rule (0,1,0) and any same-level overlay overrides. The
+   explicit :disabled rule keeps the green even during pending API calls
+   (base rule adds opacity:0.5 — that stays, just no color reset). */
+.ck-items .at-btn.at-btn--primary,
+.ck-items .at-btn.at-btn--primary:disabled {
+  background: var(--status-ok-hover);
+  border-color: transparent;
+}
+
+.ck-items .at-btn.at-btn--primary:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+/* Incomplete summary: button follows the card into the warn tone instead
+   of staying green — --status-warn-fg (dark amber, already used for text
+   on --status-warn-tint elsewhere) reused here as a button background,
+   the same role --status-ok-hover plays for the ok tone; there's no
+   dedicated "warn hover" shade in the palette yet. */
+.ck-items--incomplete .at-btn.at-btn--primary,
+.ck-items--incomplete .at-btn.at-btn--primary:disabled {
+  background: var(--status-warn-fg);
+}
+
+/* Grid, not flex space-between: with 3 children of unequal width (Back /
+   dots / Skip), space-between distributes the GAPS evenly but not the
+   dots' own center position — it visibly shifted depending on whether
+   Back/Skip rendered as real buttons or empty placeholder spans (PO
+   review). grid-template-columns: 1fr auto 1fr sizes the middle column to
+   the dots' natural width and gives the two flexible side columns equal
+   leftover space, keeping the dots exactly centered regardless of what's
+   in the side columns. */
+.ck-items__nav {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  width: 100%;
+  max-width: 280px;
+  margin-top: 4px;
+  min-height: 36px;
+  flex-shrink: 0;
+}
+
+.ck-items__nav > :first-child {
+  justify-self: start;
+}
+
+.ck-items__nav > :last-child {
+  justify-self: end;
+}
+
+/* Summary screen reuses .ck-items__nav as a same-height reserved slot for
+   the optional "Undo last check-in" link (usually its only, or no,
+   child) — a single centered column instead of the 3-column grid, which
+   would otherwise place that one child in the left column. */
+.ck-items__nav:has(> :only-child) {
+  display: flex;
+  justify-content: center;
+}
+
+.ck-items__nav-btn {
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ck-items__nav-btn:hover {
+  background: var(--border);
+}
+
+/* flex:1 + overflow-y:auto: with 4-5 items the list can outgrow the space
+   between label and button — it scrolls internally instead of pushing the
+   button down or being crushed by flex-shrink (PO review point 4). */
+.ck-items__summary {
+  list-style: none;
+  margin: 0;
+  padding: 8px 14px;
+  width: 100%;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  gap: 0;
+  font-size: var(--fs-sm);
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ck-items__summary li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+}
+
+.ck-items__summary li:last-child {
+  border-bottom: none;
+}
+
+.ck-items__summary li.is-done {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.ck-items__summary li.is-done i {
+  color: var(--status-ok);
+  font-size: 15px;
+}
+
+.ck-items__summary li.is-skipped {
+  color: var(--text-muted);
+}
 
 /* Inline camera (desktop check-in) */
 .ck-operator-actions {
@@ -1451,12 +2020,40 @@
     display: none;
   }
 
+  /* Mockup kiosk parity (#432): recent scans stay visible below the camera
+     instead of being hidden, and the square frame top-anchors instead of
+     stretching to fill (and vertically centering in) the remaining height.
+     .ck-overlay__body is a definite-height flex:1 child of .ck-overlay, and
+     CSS Grid's "auto" row tracks compress below their content size when the
+     grid container's own size is definite and the rows' combined content
+     doesn't fit — same mechanism as flex-shrink, just for grid tracks. With
+     8+ recent scans the two rows (frame+manual, recent-scans list) together
+     overflowed 788px, so the grid silently shrank .ck-overlay__frame well
+     below its intended 390px square (and everything inside it, including
+     the item-issuing button, down to unusable sizes). flex:0 0 auto lets
+     .ck-overlay__body take its natural (unshrunk) height instead of being
+     forced to fit the viewport; .ck-overlay scrolling below reveals the rest. */
   .ck-overlay__body {
     grid-template-columns: 1fr;
+    align-content: start;
+    flex: 0 0 auto;
+  }
+
+  .ck-overlay {
+    overflow-y: auto;
+  }
+
+  .ck-overlay__frame {
+    width: 100%;
+    max-width: 460px;
+    aspect-ratio: 1;
+    min-height: 0;
+    margin-inline: auto;
   }
 
   .ck-overlay__aside {
-    display: none;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
   }
 }
 

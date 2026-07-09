@@ -1,6 +1,7 @@
 import { Button } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInScanResponse, CheckInStatus } from "../api/types.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
+import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 
 function formatAlreadyCheckedInSubtitle(admittedAt: string | undefined, eventTimezone: string): string {
   if (!admittedAt) return "Already checked in";
@@ -71,6 +72,10 @@ type CheckInCameraResultPanelProps = {
   onReset: () => void;
   /** When set, Cancel exits camera mode; otherwise Cancel clears the result only. */
   onCancel?: () => void;
+  /** Small "Issue items" entry point on the Already-checked-in card — mobile
+   * overlay only (desktop's CkInlineCamera never passes it): opens the item
+   * flow for an attendee admitted earlier whose items weren't handed out. */
+  onIssueItems?: () => void;
   className?: string;
 };
 
@@ -83,6 +88,7 @@ export function CheckInCameraResultPanel({
   onConfirm,
   onReset,
   onCancel,
+  onIssueItems,
   className,
 }: CheckInCameraResultPanelProps) {
   const meta = statusMeta(scanResult.status);
@@ -101,7 +107,10 @@ export function CheckInCameraResultPanel({
       {card && (
         <div className="ck-overlay__result-card">
           <strong>{card.name}</strong>
-          {card.ticket_type && <span>{card.ticket_type}</span>}
+          {/* Same TicketTypeBadge AttendeeCard.tsx uses on desktop, not a
+              plain <span> — ticket-type coloring (e.g. VIP) is sourced from
+              one place, not redefined per surface (PO review). */}
+          {card.ticket_type && <TicketTypeBadge ticketType={card.ticket_type} />}
         </div>
       )}
       <div className="ck-overlay__result-actions">
@@ -121,9 +130,16 @@ export function CheckInCameraResultPanel({
             Scan next
           </Button>
         )}
-        <button type="button" className="link-btn" onClick={onCancel ?? onReset}>
-          Cancel
-        </button>
+        <div className="ck-overlay__result-secondary">
+          {onIssueItems && (
+            <button type="button" className="ck-overlay__result-chip" onClick={onIssueItems}>
+              <i className="ti ti-package" aria-hidden="true" /> Issue items
+            </button>
+          )}
+          <button type="button" className="link-btn ck-overlay__result-chip" onClick={onCancel ?? onReset}>
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   );

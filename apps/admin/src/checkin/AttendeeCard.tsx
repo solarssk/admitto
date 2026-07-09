@@ -66,18 +66,20 @@ function statusIcon(status: CheckInStatus): string {
   }
 }
 
-function itemActionLabel(key: string, action: string): string {
+export function itemActionLabel(key: string, action: string): string {
   if (action === "issued") {
     if (key === "headset") return "Issue headset";
-    if (key === "giftbag") return "Give gift bag";
+    // Item keys are slugified from the label (spaces → underscores, see
+    // itemKey.ts) — "Gift bag" is stored as "gift_bag", never "giftbag".
+    if (key === "gift_bag") return "Give gift bag";
     if (key === "badge") return "Issue badge";
-    return `Mark ${key} issued`;
+    return `Mark ${key.replace(/_/g, " ")} issued`;
   }
   if (action === "returned" && key === "headset") return "Return headset";
-  return `${action} ${key}`;
+  return `${action} ${key.replace(/_/g, " ")}`;
 }
 
-function itemBadgeVariant(state: string): BadgeVariant {
+export function itemBadgeVariant(state: string): BadgeVariant {
   const normalized = state.toLowerCase();
   if (normalized === "issued") return "ok";
   if (normalized === "returned") return "neutral";

@@ -224,6 +224,28 @@ export function formatAdmissionDisplay(
   return formatEventDateTime(admittedAtIso, timezone);
 }
 
+/**
+ * Live-feed variant of formatAdmissionDisplay (Recent scans, Overview
+ * "recent check-ins"): "Today HH:MM" / "Yesterday HH:MM" when the admission
+ * happened today or yesterday relative to now — more useful for an operator
+ * watching a feed in real time than a bare date, especially when the
+ * event's own calendar day (formatAdmissionDisplay's rule) is far in the
+ * future or past relative to when staff are actually scanning (setup day,
+ * test scans). Anything older falls back to formatAdmissionDisplay.
+ */
+export function formatRelativeAdmissionDisplay(
+  admittedAtIso: string,
+  eventDateIso: string | null | undefined,
+  timezone?: string,
+): string {
+  const admissionDay = calendarDateInZone(admittedAtIso, timezone ?? "UTC");
+  const today = calendarDateInZone(new Date().toISOString(), timezone ?? "UTC");
+  const yesterday = calendarDateInZone(new Date(Date.now() - 86_400_000).toISOString(), timezone ?? "UTC");
+  if (admissionDay === today) return `Today ${formatEventTime(admittedAtIso, timezone)}`;
+  if (admissionDay === yesterday) return `Yesterday ${formatEventTime(admittedAtIso, timezone)}`;
+  return formatAdmissionDisplay(admittedAtIso, eventDateIso, timezone);
+}
+
 /** Category 2 — admin/system timestamps always in UTC with explicit label. */
 export function formatUtcDateTime(iso: string): string {
   return new Date(iso).toLocaleString(getPreferredLocale(), {

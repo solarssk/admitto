@@ -1,29 +1,35 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CameraOverlay } from "../../src/checkin/CameraOverlay.js";
+import type { LookupAttendeeResult } from "../../src/api/types.js";
 
 vi.mock("../../src/checkin/CameraScanner.js", () => ({
   CameraScanner: () => <div data-testid="camera-scanner" />,
 }));
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
+const SEARCH_DEBOUNCE_MS = 300;
+
+function hit(overrides: Partial<LookupAttendeeResult> = {}): LookupAttendeeResult {
+  return {
+    id: "att-1",
+    name: "Alice Smith",
+    ticket_type: "VIP",
+    company: "Acme",
+    department: null,
+    check_in_status: "not_admitted",
+    ...overrides,
+  };
 }
 
 const baseProps = {
   open: true,
-  eventTitle: "Test Event",
   eventTimezone: "UTC",
   admittedCount: 0,
   history: [],
   wedgeActive: false,
   onClose: () => {},
-  onScan: () => {},
+  allowManualLookup: true,
   onClearManualError: () => {},
   scanResult: null,
   card: null,
@@ -32,63 +38,186 @@ const baseProps = {
   onReset: () => {},
 };
 
-afterEach(() => {
-  cleanup();
+function openManualSearch() {
+  fireEvent.click(screen.getByText("Manual search"));
+}
+
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
 });
 
-describe("CameraOverlay manual entry (#277 review)", () => {
-  it("clears the manual-entry field immediately on submit, not only on success", async () => {
-    const entry = deferred<boolean>();
-    const onManualEntry = vi.fn().mockReturnValueOnce(entry.promise);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
-    render(<CameraOverlay {...baseProps} onManualEntry={onManualEntry} />);
+describe("CameraOverlay manual search (#433)", () => {
+  it("debounces the search — does not call onSearch until typing pauses", async () => {
+    const onSearch = vi.fn().mockResolvedValue([]);
+    render(
+      <CameraOverlay
+        {...baseProps}
+        onSearch={onSearch}
+        onSelectAttendee={vi.fn()}
+        onManualEntry={vi.fn()}
+      />,
+    );
 
-    fireEvent.click(screen.getByText(/Enter token or search/));
-    const input = screen.getByLabelText<HTMLInputElement>("Enter token or search by name");
+    openManualSearch();
+    const input = screen.getByLabelText<HTMLInputElement>("Search by name or email");
+    fireEvent.change(input, { target: { value: "Al" } });
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS - 50);
+    expect(onSearch).not.toHaveBeenCalled();
 
-    fireEvent.change(input, { target: { value: "Alice" } });
-    fireEvent.click(screen.getByText("Submit"));
-
-    expect(onManualEntry).toHaveBeenCalledWith("Alice");
-    // Root cause: this field has no disabled state, so a wedge scan arriving
-    // while the request is pending would otherwise type after "Alice" still
-    // sitting in the input.
-    expect(input.value).toBe("");
-
-    // A wedge scan now injects a real token while the lookup is still pending.
-    fireEvent.change(input, { target: { value: "QRTOKEN-REALPERSON0001" } });
-    expect(input.value).toBe("QRTOKEN-REALPERSON0001"); // not "AliceQRTOKEN-REALPERSON0001"
-
-    entry.resolve(false);
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(onSearch).toHaveBeenCalledWith("Al");
   });
 
-  it("closes the manual panel on success, keeps it open (but cleared) on failure", async () => {
-    const onManualEntrySuccess = vi.fn().mockResolvedValue(true);
-    const { unmount } = render(
-      <CameraOverlay {...baseProps} onManualEntry={onManualEntrySuccess} />,
+  it("renders results and selecting one closes the search and calls onSelectAttendee", async () => {
+    const onSearch = vi.fn().mockResolvedValue([hit()]);
+    const onSelectAttendee = vi.fn();
+    render(
+      <CameraOverlay
+        {...baseProps}
+        onSearch={onSearch}
+        onSelectAttendee={onSelectAttendee}
+        onManualEntry={vi.fn()}
+      />,
     );
 
-    fireEvent.click(screen.getByText(/Enter token or search/));
-    const input = screen.getByLabelText<HTMLInputElement>("Enter token or search by name");
-    fireEvent.change(input, { target: { value: "match-me" } });
-    fireEvent.click(screen.getByText("Submit"));
+    openManualSearch();
+    const input = screen.getByLabelText<HTMLInputElement>("Search by name or email");
+    fireEvent.change(input, { target: { value: "Alice" } });
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
 
+    await waitFor(() => expect(screen.getByText("Alice Smith")).toBeTruthy());
+    expect(screen.getByText("Acme · VIP")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Alice Smith"));
+    expect(onSelectAttendee).toHaveBeenCalledWith("att-1");
+    // Selecting closes the search view — back to the camera frame.
+    expect(screen.queryByLabelText("Search by name or email")).toBeNull();
+  });
+
+  it("shows a checked-in marker for an already-admitted match", async () => {
+    const onSearch = vi.fn().mockResolvedValue([hit({ check_in_status: "admitted" })]);
+    render(
+      <CameraOverlay
+        {...baseProps}
+        onSearch={onSearch}
+        onSelectAttendee={vi.fn()}
+        onManualEntry={vi.fn()}
+      />,
+    );
+
+    openManualSearch();
+    fireEvent.change(screen.getByLabelText("Search by name or email"), {
+      target: { value: "Alice" },
+    });
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+    await waitFor(() => expect(screen.getByText("checked in")).toBeTruthy());
+  });
+
+  it("shows an empty state when nothing matches", async () => {
+    const onSearch = vi.fn().mockResolvedValue([]);
+    render(
+      <CameraOverlay
+        {...baseProps}
+        onSearch={onSearch}
+        onSelectAttendee={vi.fn()}
+        onManualEntry={vi.fn()}
+      />,
+    );
+
+    openManualSearch();
+    fireEvent.change(screen.getByLabelText("Search by name or email"), {
+      target: { value: "nomatch" },
+    });
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
     await waitFor(() =>
-      expect(screen.queryByLabelText("Enter token or search by name")).toBeNull(),
+      expect(screen.getByText('No attendees found for "nomatch"')).toBeTruthy(),
     );
-    unmount();
+  });
 
-    const onManualEntryFail = vi.fn().mockResolvedValue(false);
-    render(<CameraOverlay {...baseProps} onManualEntry={onManualEntryFail} />);
-    fireEvent.click(screen.getByText(/Enter token or search/));
-    const input2 = screen.getByLabelText<HTMLInputElement>("Enter token or search by name");
-    fireEvent.change(input2, { target: { value: "no-match" } });
-    fireEvent.click(screen.getByText("Submit"));
+  it("never calls onSearch when manual lookup is disabled for the event", async () => {
+    const onSearch = vi.fn().mockResolvedValue([hit()]);
+    render(
+      <CameraOverlay
+        {...baseProps}
+        allowManualLookup={false}
+        onSearch={onSearch}
+        onSelectAttendee={vi.fn()}
+        onManualEntry={vi.fn()}
+      />,
+    );
 
-    // Panel stays open for the operator to try again, but the field is empty.
-    await waitFor(() => expect(onManualEntryFail).toHaveBeenCalled());
-    expect(screen.getByLabelText("Enter token or search by name")).toBeTruthy();
-    expect(input2.value).toBe("");
+    openManualSearch();
+    fireEvent.change(screen.getByLabelText("Search by name or email"), {
+      target: { value: "Alice" },
+    });
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+    expect(onSearch).not.toHaveBeenCalled();
+    expect(screen.getByText(/Manual lookup is disabled/)).toBeTruthy();
+  });
+
+  it("Back to scanner closes the search view without selecting anything", async () => {
+    const onSelectAttendee = vi.fn();
+    render(
+      <CameraOverlay
+        {...baseProps}
+        onSearch={vi.fn().mockResolvedValue([])}
+        onSelectAttendee={onSelectAttendee}
+        onManualEntry={vi.fn()}
+      />,
+    );
+
+    openManualSearch();
+    expect(screen.getByLabelText("Search by name or email")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Back to scanner"));
+    expect(screen.queryByLabelText("Search by name or email")).toBeNull();
+    expect(screen.getByText("Manual search")).toBeTruthy();
+    expect(onSelectAttendee).not.toHaveBeenCalled();
+  });
+
+  it("Enter submits the raw query through onManualEntry (token / exact-match path)", async () => {
+    const onManualEntry = vi.fn().mockResolvedValue(true);
+    render(
+      <CameraOverlay
+        {...baseProps}
+        onSearch={vi.fn().mockResolvedValue([])}
+        onSelectAttendee={vi.fn()}
+        onManualEntry={onManualEntry}
+      />,
+    );
+
+    openManualSearch();
+    const input = screen.getByLabelText<HTMLInputElement>("Search by name or email");
+    fireEvent.change(input, { target: { value: "QRTOKEN-REALPERSON0001" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onManualEntry).toHaveBeenCalledWith("QRTOKEN-REALPERSON0001");
+  });
+
+  it("shows manualError inline and clears it as the operator keeps typing", async () => {
+    const onClearManualError = vi.fn();
+    render(
+      <CameraOverlay
+        {...baseProps}
+        onSearch={vi.fn().mockResolvedValue([])}
+        onSelectAttendee={vi.fn()}
+        onManualEntry={vi.fn()}
+        manualError="No attendees matched that search."
+        onClearManualError={onClearManualError}
+      />,
+    );
+
+    openManualSearch();
+    expect(screen.getByText("No attendees matched that search.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Search by name or email"), {
+      target: { value: "a" },
+    });
+    expect(onClearManualError).toHaveBeenCalled();
   });
 });
