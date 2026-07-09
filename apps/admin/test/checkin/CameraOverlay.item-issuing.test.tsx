@@ -457,4 +457,91 @@ describe("CameraOverlay item issuing (#434)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Undo last check-in" }));
     expect(onUndo).toHaveBeenCalled();
   });
+
+  it("a same-tick double-click on Issue only submits the action once (review finding — `pending` never guards this)", () => {
+    const onItemAction = vi.fn().mockResolvedValue(true);
+    render(
+      <CameraOverlay
+        {...baseProps}
+        scanResult={validResult}
+        card={attendeeCard({ items: [item()] })}
+        onItemAction={onItemAction}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Issue badge" });
+    act(() => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+
+    expect(onItemAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("a same-tick double-click on Undo only calls onUndo once", () => {
+    const onUndo = vi.fn().mockResolvedValue(undefined);
+    render(
+      <CameraOverlay
+        {...baseProps}
+        scanResult={validResult}
+        card={attendeeCard()}
+        onItemAction={vi.fn().mockResolvedValue(true)}
+        onUndo={onUndo}
+        showUndo
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Issue badge" }));
+    const undoButton = screen.getByRole("button", { name: "Undo last check-in" });
+    act(() => {
+      fireEvent.click(undoButton);
+      fireEvent.click(undoButton);
+    });
+
+    expect(onUndo).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the just-submitted action, not the stale pre-action state, when navigating Back before the server responds", async () => {
+    let resolveAction!: (success: boolean) => void;
+    const onItemAction = vi.fn(() => new Promise<boolean>((resolve) => { resolveAction = resolve; }));
+    render(
+      <CameraOverlay
+        {...baseProps}
+        scanResult={validResult}
+        card={attendeeCard({
+          items: [item(), item({ key: "gift_bag", label: "Gift bag", actions: ["issued"] })],
+        })}
+        onItemAction={onItemAction}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Issue badge" }));
+    expect(screen.getByText("Item 2 of 2")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Back/ }));
+    // `card` never updated (request still in flight) — item.state is still
+    // "pending", but the badge must reflect what was just submitted
+    // ("issued"), not that stale pre-action state (review finding).
+    expect(screen.getByText(/Already issued/)).toBeTruthy();
+    expect(screen.queryByText(/Already pending/)).toBeNull();
+
+    await act(async () => {
+      resolveAction(true);
+      await Promise.resolve();
+    });
+  });
+
+  it("shows transportError inside the overlay — the page's own transport-error paragraph is hidden behind it (review finding)", () => {
+    render(
+      <CameraOverlay
+        {...baseProps}
+        scanResult={validResult}
+        card={attendeeCard({ items: [item()] })}
+        onItemAction={vi.fn().mockResolvedValue(false)}
+        transportError="Request failed. Try again."
+      />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toBe("Request failed. Try again.");
+  });
 });

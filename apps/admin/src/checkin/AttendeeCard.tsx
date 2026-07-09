@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Badge, Button, Card } from "@admitto/ui";
 import type { BadgeVariant } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInStatus } from "../api/types.js";
@@ -17,9 +17,9 @@ type Props = {
   pending?: boolean;
   canAct: boolean;
   onCheckIn?: () => void;
-  onItemAction?: (itemKey: string, targetState: string) => void;
+  onItemAction?: (itemKey: string, targetState: string) => Promise<boolean> | void;
   onAddNote?: (body: string) => Promise<void>;
-  onUndo?: () => void;
+  onUndo?: () => Promise<unknown> | void;
   showUndo?: boolean;
   onCancel?: () => void;
   /** Admin/superadmin only — reverses this attendee's current admission regardless of who checked them in or when. Rejects on failure so this component can show the error inline. */
@@ -136,6 +136,18 @@ export function AttendeeCard({
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [revokeBusy, setRevokeBusy] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
+  // `pending` reflects the slow-scan/confirm indicator (delayed on purpose,
+  // see PENDING_MS in CheckInPage) — it never flips for item-action or undo
+  // requests, so it gives these buttons no real double-submit protection
+  // (review finding). Tracked locally instead, set synchronously at click
+  // time and cleared once the request settles either way.
+  const [submittingKeys, setSubmittingKeys] = useState<Set<string>>(new Set());
+  const [undoing, setUndoing] = useState(false);
+  // Synchronous companions to the state above — refs (not state) are needed
+  // to actually block a same-tick double-click, since `disabled` only
+  // reflects the state once React commits the re-render.
+  const submittingKeysRef = useRef<Set<string>>(new Set());
+  const undoingRef = useRef(false);
 
   async function handleRevokeConfirm() {
     if (!onRevokeCheckIn) return;
@@ -270,8 +282,23 @@ export function AttendeeCard({
                       key={`${item.key}-${action}`}
                       type="button"
                       className="checkin-card__item-action"
-                      disabled={!canAct || pending || displayMode === "alert"}
-                      onClick={() => onItemAction?.(item.key, action)}
+                      disabled={
+                        !canAct || pending || displayMode === "alert" || submittingKeys.has(item.key)
+                      }
+                      onClick={() => {
+                        if (submittingKeysRef.current.has(item.key)) return;
+                        submittingKeysRef.current.add(item.key);
+                        setSubmittingKeys((prev) => new Set(prev).add(item.key));
+                        Promise.resolve(onItemAction?.(item.key, action)).finally(() => {
+                          submittingKeysRef.current.delete(item.key);
+                          setSubmittingKeys((prev) => {
+                            if (!prev.has(item.key)) return prev;
+                            const next = new Set(prev);
+                            next.delete(item.key);
+                            return next;
+                          });
+                        });
+                      }}
                     >
                       {itemActionLabel(item.key, action)}
                     </button>
@@ -315,8 +342,16 @@ export function AttendeeCard({
                 variant="ghost"
                 size="sm"
                 className="checkin-card__aux-btn"
-                disabled={!canAct || pending}
-                onClick={onUndo}
+                disabled={!canAct || pending || undoing}
+                onClick={() => {
+                  if (undoingRef.current) return;
+                  undoingRef.current = true;
+                  setUndoing(true);
+                  Promise.resolve(onUndo()).finally(() => {
+                    undoingRef.current = false;
+                    setUndoing(false);
+                  });
+                }}
                 icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
               >
                 Undo check-in

@@ -1046,9 +1046,9 @@ export function CheckInPage({
                       ? () => void admitCurrent(card.id, admitOrigin)
                       : undefined
                   }
-                  onItemAction={(key: string, state: string) => void onItemAction(key, state)}
+                  onItemAction={onItemAction}
                   onAddNote={onAddNote}
-                  onUndo={() => void onUndo()}
+                  onUndo={onUndo}
                   showUndo={showUndo}
                   onCancel={resetScan}
                   onRevokeCheckIn={
@@ -1077,9 +1077,9 @@ export function CheckInPage({
                       ? () => void admitCurrent(card.id, admitOrigin)
                       : undefined
                   }
-                  onItemAction={(key: string, state: string) => void onItemAction(key, state)}
+                  onItemAction={onItemAction}
                   onAddNote={onAddNote}
-                  onUndo={() => void onUndo()}
+                  onUndo={onUndo}
                   showUndo={showUndo}
                   onCancel={resetScan}
                   onRevokeCheckIn={
@@ -1133,10 +1133,9 @@ export function CheckInPage({
           }
           onReset={resetScan}
           onItemAction={onItemAction}
-          onUndo={() => {
-            onUndo();
-          }}
+          onUndo={onUndo}
           showUndo={showUndo}
+          transportError={transportError}
         />
       )}
     </>

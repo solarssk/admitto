@@ -46,13 +46,13 @@ describe("shouldAutoAdvance (#434)", () => {
     ).toBe(false);
   });
 
-  it("advances on the mobile overlay once no items remain actionable", () => {
+  it("does not advance on the mobile overlay for an already-issued item — the handover reminder still needs to show (Bugbot)", () => {
     expect(
       shouldAutoAdvance(validConfirmed(card([item({ actions: [] })])), {
         autoAdvanceOnValid: true,
         showMobileOverlay: true,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("advances on the mobile overlay when there are no items at all", () => {

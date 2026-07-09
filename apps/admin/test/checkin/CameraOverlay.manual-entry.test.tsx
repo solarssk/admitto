@@ -200,6 +200,64 @@ describe("CameraOverlay manual search (#433)", () => {
     expect(onManualEntry).toHaveBeenCalledWith("QRTOKEN-REALPERSON0001");
   });
 
+  it("Enter-submit closes the search screen once onManualEntry resolves true (review finding)", async () => {
+    const onManualEntry = vi.fn().mockResolvedValue(true);
+    render(
+      <CameraOverlay
+        {...baseProps}
+        onSearch={vi.fn().mockResolvedValue([])}
+        onSelectAttendee={vi.fn()}
+        onManualEntry={onManualEntry}
+      />,
+    );
+
+    openManualSearch();
+    const input = screen.getByLabelText<HTMLInputElement>("Search by name or email");
+    fireEvent.change(input, { target: { value: "QRTOKEN-REALPERSON0001" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(screen.queryByLabelText("Search by name or email")).toBeNull());
+  });
+
+  it("Enter-submit keeps the search screen open when onManualEntry resolves false", async () => {
+    const onManualEntry = vi.fn().mockResolvedValue(false);
+    render(
+      <CameraOverlay
+        {...baseProps}
+        onSearch={vi.fn().mockResolvedValue([])}
+        onSelectAttendee={vi.fn()}
+        onManualEntry={onManualEntry}
+      />,
+    );
+
+    openManualSearch();
+    const input = screen.getByLabelText<HTMLInputElement>("Search by name or email");
+    fireEvent.change(input, { target: { value: "nomatch" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(onManualEntry).toHaveBeenCalled());
+    expect(screen.getByLabelText("Search by name or email")).toBeTruthy();
+  });
+
+  it("keeps CameraScanner mounted (not torn down) while manual search is open — unmounting it mid-decode throws ZXing's AbortError", () => {
+    render(
+      <CameraOverlay
+        {...baseProps}
+        onSearch={vi.fn().mockResolvedValue([])}
+        onSelectAttendee={vi.fn()}
+        onManualEntry={vi.fn()}
+      />,
+    );
+
+    const scannerBefore = screen.getByTestId("camera-scanner");
+    openManualSearch();
+    expect(screen.getByTestId("camera-scanner")).toBe(scannerBefore);
+    expect(document.body.contains(scannerBefore)).toBe(true);
+
+    fireEvent.click(screen.getByText("Back to scanner"));
+    expect(screen.getByTestId("camera-scanner")).toBe(scannerBefore);
+  });
+
   it("shows manualError inline and clears it as the operator keeps typing", async () => {
     const onClearManualError = vi.fn();
     render(

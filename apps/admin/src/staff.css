@@ -1127,6 +1127,30 @@
   padding: 4px;
 }
 
+/* Transport/item-action errors (handleApiFailure) — rendered inside the
+   overlay itself so they're actually visible while it's open; the page's
+   own .checkin-surface__transport-error sits outside .ck-overlay's fixed
+   full-screen subtree and is fully covered by it (review finding). */
+.ck-overlay__transport-error {
+  margin: 0;
+  padding: 10px 16px;
+  color: #f87171;
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+/* .ck-overlay__body stays mounted (not unmounted) while manual search is
+   open, so CameraScanner's <video> never gets torn out of the document
+   mid-decode (review finding — unmounting it reintroduces the ZXing
+   AbortError CameraScanner.tsx's own `hidden`-instead-of-unmount fix was
+   written to prevent). The [hidden] attribute alone can't hide it: the base
+   rule below sets `display: grid`, an author-stylesheet declaration that
+   otherwise wins over the UA's `[hidden] { display: none }` regardless of
+   selector specificity — this rule re-asserts it explicitly. */
+.ck-overlay__body[hidden] {
+  display: none;
+}
+
 .ck-overlay__body {
   flex: 1;
   display: grid;

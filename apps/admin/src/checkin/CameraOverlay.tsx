@@ -32,12 +32,18 @@ type CameraOverlayProps = {
   card: AttendeeCardDto | null;
   pending: boolean;
   canAct: boolean;
+  /** handleApiFailure's message — rendered inside the overlay (see
+   * .ck-overlay__transport-error) since the page's own transport-error
+   * paragraph is hidden behind this fixed full-screen overlay. */
+  transportError?: string | null;
   onConfirm?: () => void;
   onReset: () => void;
   /** Resolves whether the action actually succeeded — CameraOverlayItemIssuing
    * awaits this to revert its optimistic "issued" mark on failure. */
   onItemAction?: (itemKey: string, targetState: string) => Promise<boolean>;
-  onUndo?: () => void;
+  /** May return a promise — CameraOverlayItemIssuing's summary screen awaits
+   * it to guard against a double-tap firing two undo requests. */
+  onUndo?: () => Promise<unknown> | void;
   showUndo?: boolean;
 };
 
@@ -65,6 +71,7 @@ export function CameraOverlay({
   onItemAction,
   onUndo,
   showUndo,
+  transportError,
 }: CameraOverlayProps) {
   const [manualMode, setManualMode] = useState(false);
 
@@ -184,7 +191,54 @@ export function CameraOverlay({
         </button>
       </header>
 
-      {manualMode ? (
+      {transportError && (
+        <p className="ck-overlay__transport-error" role="alert">
+          {transportError}
+        </p>
+      )}
+
+      {/* Stays mounted (hidden, not unmounted) while manual search is open —
+          see .ck-overlay__body[hidden] in staff.css — so CameraScanner's
+          <video> is never torn out of the document mid-decode. */}
+      <div className="ck-overlay__body" hidden={manualMode}>
+        <div className="ck-overlay__main">
+          <div className="ck-overlay__frame">
+            <CameraScanner
+              enabled={!manualMode && !scanResult && !pending && !itemStepActive}
+              wedgeActive={wedgeActive}
+              onScan={onScan}
+            />
+            {renderFrameContent()}
+          </div>
+
+          <div className="ck-overlay__manual">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              icon={<i className="ti ti-keyboard" aria-hidden="true" />}
+              onClick={() => {
+                setManualMode(true);
+                onClearManualError?.();
+              }}
+            >
+              Manual search
+            </Button>
+          </div>
+        </div>
+
+        <aside className="ck-overlay__aside">
+          <CkRecentScans
+            history={history}
+            eventTimezone={eventTimezone}
+            eventDate={eventDate}
+            compact
+            limit={6}
+          />
+        </aside>
+      </div>
+
+      {manualMode && (
         <CameraOverlayManualSearch
           allowManualLookup={allowManualLookup}
           onSearch={onSearch}
@@ -192,7 +246,12 @@ export function CameraOverlay({
             setManualMode(false);
             onSelectAttendee(attendeeId);
           }}
-          onManualEntry={onManualEntry}
+          onManualEntry={(query) =>
+            onManualEntry(query).then((success) => {
+              if (success) setManualMode(false);
+              return success;
+            })
+          }
           manualError={manualError}
           onClearManualError={onClearManualError}
           onBack={() => {
@@ -200,44 +259,6 @@ export function CameraOverlay({
             onClearManualError?.();
           }}
         />
-      ) : (
-        <div className="ck-overlay__body">
-          <div className="ck-overlay__main">
-            <div className="ck-overlay__frame">
-              <CameraScanner
-                enabled={!scanResult && !pending && !itemStepActive}
-                wedgeActive={wedgeActive}
-                onScan={onScan}
-              />
-              {renderFrameContent()}
-            </div>
-
-            <div className="ck-overlay__manual">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                icon={<i className="ti ti-keyboard" aria-hidden="true" />}
-                onClick={() => {
-                  setManualMode(true);
-                  onClearManualError?.();
-                }}
-              >
-                Manual search
-              </Button>
-            </div>
-          </div>
-
-          <aside className="ck-overlay__aside">
-            <CkRecentScans
-              history={history}
-              eventTimezone={eventTimezone}
-              eventDate={eventDate}
-              compact
-              limit={6}
-            />
-          </aside>
-        </div>
       )}
     </div>
   );

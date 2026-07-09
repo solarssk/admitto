@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Badge, Button } from "@admitto/ui";
 import type { AttendeeCardItemDto } from "../api/types.js";
 import { itemActionLabel, itemBadgeVariant } from "./AttendeeCard.js";
@@ -16,7 +16,7 @@ type CameraOverlayItemIssuingProps = Readonly<{
   canAct: boolean;
   /** "Next scan" on the final summary screen. */
   onDone: () => void;
-  onUndo?: () => void;
+  onUndo?: () => Promise<unknown> | void;
   showUndo?: boolean;
 }>;
 
@@ -25,14 +25,20 @@ type SummaryScreenProps = Readonly<{
   stepKeys: string[];
   isDone: (item: AttendeeCardItemDto) => boolean;
   onDone: () => void;
-  onUndo?: () => void;
+  onUndo?: () => Promise<unknown> | void;
   showUndo?: boolean;
+  canAct: boolean;
 }>;
 
 // Split out of CameraOverlayItemIssuing (Sonar: cognitive complexity) — the
 // final screen after stepping through every item, listing what was issued
 // vs. skipped.
-function SummaryScreen({ items, stepKeys, isDone, onDone, onUndo, showUndo }: SummaryScreenProps) {
+function SummaryScreen({ items, stepKeys, isDone, onDone, onUndo, showUndo, canAct }: SummaryScreenProps) {
+  const [undoing, setUndoing] = useState(false);
+  // Synchronous companion to `undoing` — a ref (not state) is needed to
+  // actually block a same-tick double-click, since the `disabled` attribute
+  // only reflects `undoing` once React commits the re-render.
+  const undoingRef = useRef(false);
   const resolvedItems = stepKeys
     .map((key) => items.find((i) => i.key === key))
     .filter((i): i is AttendeeCardItemDto => !!i);
@@ -72,7 +78,20 @@ function SummaryScreen({ items, stepKeys, isDone, onDone, onUndo, showUndo }: Su
           at the same fixed Y on every screen (PO review point 2). */}
       <div className="ck-items__nav">
         {showUndo && onUndo && (
-          <button type="button" className="link-btn" onClick={onUndo}>
+          <button
+            type="button"
+            className="link-btn"
+            disabled={!canAct || undoing}
+            onClick={() => {
+              if (undoingRef.current) return;
+              undoingRef.current = true;
+              setUndoing(true);
+              Promise.resolve(onUndo()).finally(() => {
+                undoingRef.current = false;
+                setUndoing(false);
+              });
+            }}
+          >
             Undo last check-in
           </button>
         )}
@@ -102,6 +121,15 @@ export function CameraOverlayItemIssuing({
   // reverted if onItemAction's promise resolves false (the request actually
   // failed) — see the click handler below.
   const [locallyIssued, setLocallyIssued] = useState<Set<string>>(new Set());
+  // Guards against a fast double-tap firing onItemAction twice for the same
+  // item: goForward() below advances stepIndex synchronously, but the
+  // re-render that actually swaps the Issue button for the next item's
+  // still lands a tick later, leaving a brief window where a second click
+  // event on the same still-mounted button would fire a second real POST
+  // (review finding — the `pending` prop never reflects an item action's
+  // own in-flight state, so `disabled` alone didn't stop this). A ref (not
+  // state) is required for a same-tick synchronous check.
+  const submittedKeysRef = useRef<Set<string>>(new Set());
 
   const currentKey = stepKeys[stepIndex];
   const currentItem = currentKey ? items.find((i) => i.key === currentKey) : undefined;
@@ -131,6 +159,7 @@ export function CameraOverlayItemIssuing({
         onDone={onDone}
         onUndo={onUndo}
         showUndo={showUndo}
+        canAct={canAct}
       />
     );
   }
@@ -141,6 +170,13 @@ export function CameraOverlayItemIssuing({
 
   const alreadyDone = isDone(currentItem);
   const action = currentItem.actions[0];
+  // While the request from the click below is still in flight, currentItem
+  // still carries the server's PRE-action state (e.g. "pending") — showing
+  // it verbatim as "Already {state}" here would read as if nothing had
+  // happened. `action` (the target state just submitted, e.g. "issued") is
+  // what actually describes what the operator just did (review finding).
+  const optimisticOnly = locallyIssued.has(currentItem.key) && currentItem.actions.length > 0;
+  const badgeState = optimisticOnly ? action : currentItem.state;
 
   return (
     <div className="ck-items">
@@ -163,8 +199,8 @@ export function CameraOverlayItemIssuing({
           {currentItem.description && <p className="ck-items__desc">{currentItem.description}</p>}
           {currentItem.detail && <p className="ck-items__detail">{currentItem.detail}</p>}
           {alreadyDone && (
-            <Badge variant={itemBadgeVariant(currentItem.state)} className="ck-items__note">
-              Already {currentItem.state}
+            <Badge variant={itemBadgeVariant(badgeState)} className="ck-items__note">
+              Already {badgeState}
             </Badge>
           )}
         </div>
@@ -182,10 +218,13 @@ export function CameraOverlayItemIssuing({
           disabled={!canAct || pending}
           onClick={() => {
             const key = currentItem.key;
+            if (submittedKeysRef.current.has(key)) return;
+            submittedKeysRef.current.add(key);
             setLocallyIssued((prev) => new Set(prev).add(key));
             goForward();
             void onItemAction(key, action).then((success) => {
               if (success) return;
+              submittedKeysRef.current.delete(key);
               setLocallyIssued((prev) => {
                 if (!prev.has(key)) return prev;
                 const next = new Set(prev);
