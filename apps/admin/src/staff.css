@@ -2031,6 +2031,20 @@
   object-fit: cover;
 }
 
+/* ScanFeedback is a normal-flow Card elsewhere on the page; inside the fixed
+   camera square it must cover the paused video instead of sitting at the top
+   with the rest of the (black) feed showing through underneath (#456 review). */
+.ck-inline-camera__video-wrap .checkin-feedback {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0;
+  border-radius: 0;
+}
+
 .ck-inline-camera__viewfinder {
   position: absolute;
   inset: 0;

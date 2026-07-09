@@ -25,7 +25,7 @@ import { CHECKIN_DUPLICATE_DEBOUNCE_MS, normalizeScannedInput } from "../checkin
 import { scanResultFromCard } from "../checkin/cardScanResult.js";
 import { shouldAutoAdvance } from "../checkin/autoAdvance.js";
 import { canMutateCheckin } from "../checkin/connection.js";
-import { ScanFeedback } from "../checkin/ScanFeedback.js";
+import { ScanFeedback, feedbackCopy } from "../checkin/ScanFeedback.js";
 import { AttendeeCard } from "../checkin/AttendeeCard.js";
 import { CameraOverlay } from "../checkin/CameraOverlay.js";
 import { CheckinConnectionBanner, CheckinConnectionLiveRegion } from "../checkin/ConnectionBanner.js";
@@ -112,6 +112,14 @@ export function CheckInPage({
   const cameraActive = isOperatorShell ? operatorCamera : useCamera;
   const showMobileOverlay = cameraActive && !isDesktop;
   const showInlineCamera = cameraActive && isDesktop;
+  // applyResponse (below) is read from inside runScanImpl, a useCallback that
+  // isn't recreated when the camera is toggled — without a ref it would keep
+  // seeing whatever showInlineCamera was at mount (always false), never the
+  // current value, and silently never route a no-match scan to the toast.
+  const showInlineCameraRef = useRef(showInlineCamera);
+  useEffect(() => {
+    showInlineCameraRef.current = showInlineCamera;
+  }, [showInlineCamera]);
 
   const setCameraActive = useCallback(
     (open: boolean) => {
@@ -337,6 +345,14 @@ export function CheckInPage({
   };
 
   const applyResponse = (response: CheckInScanResponse) => {
+    if (showInlineCameraRef.current && response.status === "INVALID") {
+      // Desktop camera is scan-only (unlike the mobile overlay, which doubles
+      // as the operator's check-in/item-issuing surface) — no result ever
+      // renders on top of it. A no-match scan reports the same way manual
+      // lookup's no-match does: a toast, camera keeps scanning (PO review).
+      addToast(feedbackCopy("INVALID"), "warning");
+      return;
+    }
     setScanResult(response);
     if (response.card) {
       setCard(response.card);

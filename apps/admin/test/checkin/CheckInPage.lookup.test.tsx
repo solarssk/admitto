@@ -15,6 +15,7 @@ const fetchCheckInOpsConfig = vi.fn();
 const fetchCheckInEvents = vi.fn();
 const fetchAttendeeCard = vi.fn();
 const lookupCheckInAttendees = vi.fn();
+const submitCheckInScan = vi.fn();
 const addToast = vi.fn();
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
@@ -60,7 +61,7 @@ vi.mock("../../src/api/client.js", () => ({
   lookupCheckInAttendees: (...args: unknown[]) => lookupCheckInAttendees(...args),
   submitAttendeeNote: vi.fn(),
   submitCheckInAdmit: vi.fn(),
-  submitCheckInScan: vi.fn(),
+  submitCheckInScan: (...args: unknown[]) => submitCheckInScan(...args),
   submitItemAction: vi.fn(),
   undoLastCheckIn: vi.fn(),
 }));
@@ -415,5 +416,34 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
     // Reopening the camera doesn't resurrect the old card.
     fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
     expect(screen.queryByText("Ready to check in")).toBeNull();
+  });
+
+  it("reports a no-match scan via toast, not a panel over the camera (PO review: camera is scan-only on desktop)", async () => {
+    mockPageBootstrap();
+    submitCheckInScan.mockResolvedValue({ status: "INVALID", confirmed: false });
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
+
+    const input = await scanInput();
+    const token = "QRTOKEN-NO-MATCH-AT-ALL-000";
+    for (let i = 1; i <= token.length; i++) {
+      fireEvent.change(input, { target: { value: token.slice(0, i) } });
+    }
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "This code is not valid for this event. Check the QR or use manual lookup.",
+        "warning",
+      );
+    });
+
+    // No result card/panel ever covers the camera — it stays a live viewfinder.
+    expect(
+      screen.queryByText("This code is not valid for this event. Check the QR or use manual lookup."),
+    ).toBeNull();
+    expect(screen.getByTestId("camera-scanner")).toBeTruthy();
+    expect(screen.getByText("Point the camera at the attendee's QR")).toBeTruthy();
   });
 });
