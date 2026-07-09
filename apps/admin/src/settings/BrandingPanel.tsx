@@ -134,7 +134,7 @@ export function BrandingPanel() {
     >
       <p className="at-hint branding-scope-hint">
         Instance-wide accent colour and custom font for staff UI and public ticket pages. Ticket logos
-        are configured per organization, not here.
+        are configured in the Organisation branding card above, not here.
       </p>
       {loading && <p>Loading branding…</p>}
       {loadError && !loading && (
