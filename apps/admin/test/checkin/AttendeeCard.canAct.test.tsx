@@ -18,7 +18,7 @@ const admittedCard: AttendeeCardDto = {
   admitted_at: "2026-09-01T09:44:00.000Z",
   items: [],
   notes: [],
-  warnings: [],
+  blocked: false,
 };
 
 describe("AttendeeCard — Revoke check-in disabled while offline (bugbot)", () => {

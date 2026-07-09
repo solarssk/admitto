@@ -94,7 +94,8 @@ export async function lookupAttendees(
       // Revoked/cancelled passes never read as "admitted" here even with a
       // stale admitted_at — a stale-green "checked in" hint in the typeahead
       // would contradict the red Revoked card the operator sees on select
-      // (scanResultFromCard gives warnings precedence over admitted_at).
+      // (scanResultFromCard gives the card's `blocked` flag precedence over
+      // admitted_at).
       check_in_status:
         row.admitted_at && !(CAPACITY_EXCLUDED_STATUSES as readonly string[]).includes(row.status)
           ? ("admitted" as const)
@@ -154,10 +155,7 @@ export async function getAttendeeCard(
   );
 
   const { company, department } = companyFromAttendee(attendee);
-  const warnings: string[] = [];
-  if (!isAdmittable(attendee.status as "registered" | "confirmed" | "cancelled")) {
-    warnings.push("Ticket is not admittable (cancelled or revoked).");
-  }
+  const blocked = !isAdmittable(attendee.status as "registered" | "confirmed" | "cancelled");
 
   return {
     id: attendee.id,
@@ -184,7 +182,7 @@ export async function getAttendeeCard(
       author_display: authorMap.get(n.author_user_id) ?? "Operator",
       created_at: n.created_at.toISOString(),
     })),
-    warnings,
+    blocked,
   };
 }
 

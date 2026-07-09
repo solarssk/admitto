@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { admitAttendee } from "../src/admit.js";
 import { undoLastCheckIn as undoFn, revokeCheckIn, UndoNotAllowedError } from "../src/undo.js";
-import { transitionItemState, ensureAttendeeItemStates, operatorItemActions } from "../src/item-states.js";
+import {
+  transitionItemState,
+  revokeItemState,
+  ensureAttendeeItemStates,
+  operatorItemActions,
+} from "../src/item-states.js";
 import { addAttendeeNote, NoteTooLongError, OperatorRequiredError } from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
 import { getAttendeeCard, getCheckInStats, lookupAttendees } from "../src/attendee-card.js";
@@ -458,5 +463,134 @@ describe("revokeCheckIn — admin/superadmin un-admit (any device, any time)", (
         prisma,
       ),
     ).rejects.toThrow(UndoNotAllowedError);
+  });
+
+  it("also resets a NON-badge handed-out item back to pending (blanket reset, not just the badge)", async () => {
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "revoke-all-items@example.com",
+        name: "Revoke All Items",
+        token_hash: hashToken(generateToken()),
+      },
+    });
+
+    // Admit → badge auto-issued (issue_on_checkin). Operator also hands out the
+    // gift bag, so two different items are "issued" before the revoke.
+    await admitAttendee(
+      { attendeeId: att.id, eventId: EVENT_ID, method: "scan", audit: { operator: "operator-1", deviceId: "kiosk-7" } },
+      prisma,
+    );
+    await transitionItemState(
+      { attendeeId: att.id, eventId: EVENT_ID, itemKey: "giftbag", targetState: "issued", audit: { operator: "operator-1", deviceId: "kiosk-7" } },
+      prisma,
+    );
+    const before = await prisma.attendeeItemState.findMany({ where: { attendee_id: att.id } });
+    expect(before.filter((s) => s.state === "issued").length).toBeGreaterThanOrEqual(2);
+
+    await revokeCheckIn({ eventId: EVENT_ID, attendeeId: att.id, audit: { operator: "admin-9" } }, prisma);
+
+    const after = await prisma.attendeeItemState.findMany({ where: { attendee_id: att.id } });
+    expect(after.every((s) => s.state === "pending")).toBe(true);
+
+    // Every item actually reset is audited (badge + giftbag = at least 2).
+    const revokedLogs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: att.id, action_type: "item_revoked" },
+    });
+    expect(revokedLogs.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("revokeItemState — admin/superadmin single-item reset (item revocation feature)", () => {
+  let itemSeq = 0;
+  async function makeAttendeeWithItemState(key: string, state: string) {
+    itemSeq += 1;
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: `revoke-item-${itemSeq}@example.com`,
+        name: "Revoke Item Target",
+        token_hash: hashToken(generateToken()),
+      },
+    });
+    await ensureAttendeeItemStates(att.id, EVENT_ID, prisma);
+    const eventItem = await prisma.eventItem.findFirstOrThrow({
+      where: { event_id: EVENT_ID, key },
+    });
+    await prisma.attendeeItemState.update({
+      where: { attendee_id_event_item_id: { attendee_id: att.id, event_item_id: eventItem.id } },
+      data: { state },
+    });
+    return att;
+  }
+
+  it("resets an issued item to pending and logs item_revoked with the previous state", async () => {
+    const att = await makeAttendeeWithItemState("giftbag", "issued");
+    const result = await revokeItemState(
+      { attendeeId: att.id, eventId: EVENT_ID, itemKey: "giftbag", audit: { operator: "admin-9" } },
+      prisma,
+    );
+    expect(result.state).toBe("pending");
+
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item: { key: "giftbag" } },
+    });
+    expect(after?.state).toBe("pending");
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: att.id, action_type: "item_revoked" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log?.actor_user_id).toBe("admin-9");
+    expect(log?.metadata).toMatchObject({
+      event_item_key: "giftbag",
+      from_state: "issued",
+      to_state: "pending",
+    });
+  });
+
+  it("resets a returned item to pending too — not gated by the operator forward-only machine", async () => {
+    const att = await makeAttendeeWithItemState("headset", "returned");
+    const result = await revokeItemState(
+      { attendeeId: att.id, eventId: EVENT_ID, itemKey: "headset", audit: { operator: "admin-9" } },
+      prisma,
+    );
+    expect(result.state).toBe("pending");
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item: { key: "headset" } },
+    });
+    expect(after?.state).toBe("pending");
+  });
+
+  it("is a harmless no-op on an already-pending item (no audit noise)", async () => {
+    const att = await makeAttendeeWithItemState("giftbag", "pending");
+    const result = await revokeItemState(
+      { attendeeId: att.id, eventId: EVENT_ID, itemKey: "giftbag", audit: { operator: "admin-9" } },
+      prisma,
+    );
+    expect(result.state).toBe("pending");
+    const logs = await prisma.attendeeActionLog.count({
+      where: { attendee_id: att.id, action_type: "item_revoked" },
+    });
+    expect(logs).toBe(0);
+  });
+
+  it("rejects an unknown item key", async () => {
+    const att = await makeAttendeeWithItemState("giftbag", "issued");
+    await expect(
+      revokeItemState(
+        { attendeeId: att.id, eventId: EVENT_ID, itemKey: "does-not-exist", audit: { operator: "admin-9" } },
+        prisma,
+      ),
+    ).rejects.toThrow(/Item not found/);
+  });
+
+  it("rejects an attendee that does not belong to the event", async () => {
+    await expect(
+      revokeItemState(
+        { attendeeId: "no-such-attendee", eventId: EVENT_ID, itemKey: "giftbag", audit: { operator: "admin-9" } },
+        prisma,
+      ),
+    ).rejects.toThrow(/Attendee not found/);
   });
 });

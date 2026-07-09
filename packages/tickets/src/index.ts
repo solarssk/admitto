@@ -10,6 +10,7 @@ export { lookupAttendees, getAttendeeCard, getCheckInStats } from "./attendee-ca
 export {
   ensureAttendeeItemStates,
   transitionItemState,
+  revokeItemState,
   IllegalItemTransitionError,
 } from "./item-states.js";
 export { addAttendeeNote, NoteTooLongError, OperatorRequiredError, MAX_ATTENDEE_NOTE_LENGTH } from "./notes.js";

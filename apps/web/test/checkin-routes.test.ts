@@ -134,7 +134,7 @@ const mockCard = {
   admitted_at: new Date().toISOString(),
   items: [],
   notes: [],
-  warnings: [],
+  blocked: false,
 };
 
   it("returns 200 with domain result for valid input", async () => {

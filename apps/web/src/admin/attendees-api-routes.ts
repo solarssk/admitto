@@ -32,6 +32,9 @@ import {
   isAdmittable,
   revokeCheckIn,
   revokeCheckInMutation,
+  revokeItemState,
+  getAttendeeCard,
+  IllegalItemTransitionError,
   UndoNotAllowedError,
 } from "@admitto/tickets";
 import {
@@ -1428,6 +1431,45 @@ export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient):
       return c.json({ error: err.message }, 409);
     }
     console.error("handleRevokeAttendeeCheckIn failed:", err);
+    return c.json({ error: "server error" }, 500);
+  }
+}
+
+/**
+ * POST /api/admin/events/:eventId/attendees/:id/items/:itemKey/revoke
+ * Admin/superadmin only (assertEventManageAccess) — resets an already-handed-out
+ * item back to "pending" so it can be issued again ("cofnąć to że się to
+ * wydało"). A privileged corrective action, deliberately outside the operator's
+ * forward-only item state machine. Returns the refreshed AttendeeCardDto so the
+ * caller can replace its local card state, matching the sibling item-action and
+ * revoke-checkin endpoints.
+ */
+export async function handleRevokeAttendeeItem(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const attendeeIdOrRes = requireAttendeeId(c);
+  if (attendeeIdOrRes instanceof Response) return attendeeIdOrRes;
+  const attendeeId = attendeeIdOrRes;
+  const itemKey = c.req.param("itemKey");
+  if (!itemKey) return c.json({ error: "itemKey required" }, 400);
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const existing = await loadAttendeeInEvent(db, eventId, attendeeId);
+  if (!existing) return c.json({ error: "forbidden" }, 403);
+
+  try {
+    await revokeItemState({ attendeeId, eventId, itemKey, audit: adminAuditFromContext(c) }, db);
+    const card = await getAttendeeCard(eventId, attendeeId, db);
+    return c.json({ card });
+  } catch (err) {
+    if (err instanceof IllegalItemTransitionError) {
+      // e.g. unknown/disabled item key — mirrors the operator item-action route.
+      return c.json({ error: err.message }, 409);
+    }
+    console.error("handleRevokeAttendeeItem failed:", err);
     return c.json({ error: "server error" }, 500);
   }
 }

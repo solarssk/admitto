@@ -18,7 +18,7 @@ const cardWithItem: AttendeeCardDto = {
   admitted_at: "2026-09-01T09:44:00.000Z",
   items: [{ key: "badge", label: "Badge", icon: null, state: "pending", actions: ["issued"] }],
   notes: [],
-  warnings: [],
+  blocked: false,
 };
 
 // Desktop counterpart of the mobile double-submit guard (CameraOverlay
@@ -118,7 +118,7 @@ describe("AttendeeCard — items section heading and description (review)", () =
       { key: "gift_bag", label: "Gift bag", icon: null, state: "pending", actions: ["issued"] },
     ],
     notes: [],
-    warnings: [],
+    blocked: false,
   };
 
   it('shows an "Items to hand out" heading above the item list', () => {

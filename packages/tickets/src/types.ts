@@ -93,7 +93,13 @@ export type AttendeeCardDto = {
   admitted_at: string | null;
   items: AttendeeCardItemDto[];
   notes: { body: string; author_display: string; created_at: string }[];
-  warnings: string[];
+  /**
+   * True when the pass itself isn't admittable (cancelled/revoked). The UI only
+   * ever needed the boolean — it derives the red "Revoked"/"Invalid ticket"
+   * badge and blocks item actions from this, and never rendered the old warning
+   * strings (removed in the check-in card redesign).
+   */
+  blocked: boolean;
 };
 
 export type LookupAttendeeResult = {

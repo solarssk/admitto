@@ -32,7 +32,7 @@ function attendeeCard(overrides: Partial<AttendeeCardDto> = {}): AttendeeCardDto
     admitted_at: "2026-07-09T10:00:00.000Z",
     items: [item()],
     notes: [],
-    warnings: [],
+    blocked: false,
     ...overrides,
   };
 }
@@ -543,5 +543,70 @@ describe("CameraOverlay item issuing (#434)", () => {
     );
 
     expect(screen.getByRole("alert").textContent).toBe("Request failed. Try again.");
+  });
+
+  it("Back to a multi-step item shows the action just submitted, not its next legal action (B1 review finding)", () => {
+    // A headset with requires_return: once the server confirms pending→issued,
+    // its live actions advance to ["returned"] (the NEXT legal step), NOT [].
+    // The "Already {state}" badge must still read "issued" — what the operator
+    // just did — not "returned" re-derived from actions[0].
+    function Harness() {
+      const [card, setCard] = useState(
+        attendeeCard({
+          items: [
+            item({ key: "headset", label: "Headset", actions: ["issued"] }),
+            item({ key: "gift_bag", label: "Gift bag", actions: ["issued"] }),
+          ],
+        }),
+      );
+      return (
+        <CameraOverlay
+          {...baseProps}
+          scanResult={validResult}
+          card={card}
+          onItemAction={async (key, action) => {
+            setCard((c) => ({
+              ...c,
+              items: c.items.map((i) =>
+                i.key === key
+                  ? { ...i, state: action, actions: key === "headset" ? ["returned"] : [] }
+                  : i,
+              ),
+            }));
+            return true;
+          }}
+        />
+      );
+    }
+    render(<Harness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark headset issued" }));
+    expect(screen.getByText("Item 2 of 2")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Back/ }));
+    expect(screen.getByText("Item 1 of 2")).toBeTruthy();
+    expect(screen.getByText(/Already issued/)).toBeTruthy();
+    expect(screen.queryByText(/Already returned/)).toBeNull();
+  });
+
+  it("disables the summary Undo while a check-in confirm is still pending (B5, desktop parity)", () => {
+    // Reach the summary via an already-issued item's Next button (the Mark
+    // button would be disabled by `pending` and unclickable), then assert the
+    // summary Undo now also respects `pending`.
+    render(
+      <CameraOverlay
+        {...baseProps}
+        pending
+        scanResult={validResult}
+        card={attendeeCard({ items: [item({ actions: [], state: "issued" })] })}
+        onItemAction={vi.fn().mockResolvedValue(true)}
+        onUndo={vi.fn()}
+        showUndo
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    const undo = screen.getByRole("button", { name: "Undo last check-in" }) as HTMLButtonElement;
+    expect(undo.disabled).toBe(true);
   });
 });

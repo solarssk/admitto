@@ -444,6 +444,19 @@ export async function submitAttendeeNote(
   return parseJson<{ card: AttendeeCardDto }>(res);
 }
 
+/** Admin/superadmin-only: reset a handed-out item back to "pending" so it can be issued again. */
+export async function revokeItemState(
+  eventId: string,
+  attendeeId: string,
+  itemKey: string,
+): Promise<{ card: AttendeeCardDto }> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/items/${encodeURIComponent(itemKey)}/revoke`,
+    jsonPostInit({}),
+  );
+  return parseJson<{ card: AttendeeCardDto }>(res);
+}
+
 export async function undoLastCheckIn(
   eventId: string,
   deviceId?: string,

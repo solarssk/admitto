@@ -17,7 +17,7 @@ function card(items: AttendeeCardItemDto[]): AttendeeCardDto {
     admitted_at: null,
     items,
     notes: [],
-    warnings: [],
+    blocked: false,
   };
 }
 

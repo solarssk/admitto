@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { rollbackBadgeForCheckIn } from "./item-states.js";
+import { rollbackBadgeForCheckIn, resetAllItemStatesForRevoke } from "./item-states.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 import { getAttendeeCard } from "./attendee-card.js";
 import type { UndoCheckInResult } from "./types.js";
@@ -175,17 +175,18 @@ export async function revokeCheckInMutation(
     },
   });
 
-  // Only roll back a badge if we found the check-in that issued it — an
-  // admitted_at with no matching VALID/scan-or-manual row (e.g. a legacy
-  // import) has nothing to roll back.
-  if (lastValid) {
-    await rollbackBadgeForCheckIn(tx, {
-      attendeeId: params.attendeeId,
-      eventId: params.eventId,
-      checkInId: lastValid.id,
-      audit: params.audit,
-    });
-  }
+  // Blanket reset of every handed-out item back to pending (PO: "przy revoke
+  // checkin było też revoke items ... bez zagłębiania się w które itemy").
+  // Runs regardless of whether a VALID check-in row was found — it clears the
+  // item states directly, so it also fixes a legacy admitted_at with no
+  // matching scan/manual row. Supersedes the old rollbackBadgeForCheckIn call
+  // here: a blanket "reset every issued/returned item" already covers the
+  // auto-issued badge, so keeping both would double-log the badge reset.
+  await resetAllItemStatesForRevoke(tx, {
+    attendeeId: params.attendeeId,
+    eventId: params.eventId,
+    audit: params.audit,
+  });
 
   await writeActionLog(tx, {
     event_id: params.eventId,

@@ -1162,6 +1162,114 @@ describe("POST /api/admin/events/:eventId/attendees/:id/revoke-checkin", () => {
   });
 });
 
+describe("POST /api/admin/events/:eventId/attendees/:id/items/:itemKey/revoke", () => {
+  const ATT_ITEM_REVOKE = "att-admin-item-revoke-target";
+
+  // Lazily create the item-state rows (getAttendeeCard does this), then force
+  // giftbag to "issued" so there's something to revoke.
+  async function setGiftbagIssued() {
+    await getAttendeeCard(EVENT_A, ATT_ITEM_REVOKE, prisma);
+    const giftbag = await prisma.eventItem.findFirstOrThrow({
+      where: { event_id: EVENT_A, key: "giftbag" },
+    });
+    await prisma.attendeeItemState.update({
+      where: {
+        attendee_id_event_item_id: { attendee_id: ATT_ITEM_REVOKE, event_item_id: giftbag.id },
+      },
+      data: { state: "issued" },
+    });
+  }
+
+  beforeAll(async () => {
+    await prisma.attendee.upsert({
+      where: { id: ATT_ITEM_REVOKE },
+      create: {
+        id: ATT_ITEM_REVOKE,
+        event_id: EVENT_A,
+        email: "item-revoke-target@example.com",
+        name: "Item Revoke Target",
+        token_hash: hashToken(generateToken()),
+      },
+      update: {},
+    });
+  });
+
+  // bulk-resend below counts EVENT_A's attendees — don't leak this fixture.
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_ITEM_REVOKE } });
+    await prisma.attendeeItemState.deleteMany({ where: { attendee_id: ATT_ITEM_REVOKE } });
+    await prisma.attendee.delete({ where: { id: ATT_ITEM_REVOKE } });
+  });
+
+  it("rejects operator (server enforces admin/superadmin, not just frontend hiding)", async () => {
+    await setGiftbagIssued();
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_ITEM_REVOKE}/items/giftbag/revoke`,
+      {
+        method: "POST",
+        headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(403);
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: ATT_ITEM_REVOKE, event_item: { key: "giftbag" } },
+    });
+    expect(after?.state).toBe("issued");
+  });
+
+  it("admin resets the item to pending, logs item_revoked, and returns the refreshed card", async () => {
+    await setGiftbagIssued();
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_ITEM_REVOKE}/items/giftbag/revoke`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      card: { items: { key: string; state: string; actions: string[] }[] };
+    };
+    const giftbag = body.card.items.find((i) => i.key === "giftbag");
+    expect(giftbag?.state).toBe("pending");
+    expect(giftbag?.actions).toContain("issued");
+
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: ATT_ITEM_REVOKE, event_item: { key: "giftbag" } },
+    });
+    expect(after?.state).toBe("pending");
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_ITEM_REVOKE, action_type: "item_revoked" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    expect(log?.metadata).toMatchObject({ event_item_key: "giftbag", from_state: "issued" });
+  });
+
+  it("returns 409 for an unknown item key", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_ITEM_REVOKE}/items/does-not-exist/revoke`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(409);
+  });
+
+  it("returns 403 for an unknown attendee id (no existence oracle, matches sibling routes)", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/does-not-exist/items/giftbag/revoke`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
   const bulkUrl = `/api/admin/events/${EVENT_A}/attendees/bulk-resend`;
 

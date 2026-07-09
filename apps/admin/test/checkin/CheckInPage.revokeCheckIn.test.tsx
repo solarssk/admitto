@@ -16,6 +16,7 @@ const fetchCheckInEvents = vi.fn();
 const fetchAttendeeCard = vi.fn();
 const lookupCheckInAttendees = vi.fn();
 const revokeAttendeeCheckIn = vi.fn();
+const revokeItemState = vi.fn();
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
   useEventStream: () => ({ connected: true, status: "connected" }),
@@ -59,6 +60,7 @@ vi.mock("../../src/api/client.js", () => ({
   fetchAttendeeCard: (...args: unknown[]) => fetchAttendeeCard(...args),
   lookupCheckInAttendees: (...args: unknown[]) => lookupCheckInAttendees(...args),
   revokeAttendeeCheckIn: (...args: unknown[]) => revokeAttendeeCheckIn(...args),
+  revokeItemState: (...args: unknown[]) => revokeItemState(...args),
   submitAttendeeNote: vi.fn(),
   submitCheckInAdmit: vi.fn(),
   submitCheckInScan: vi.fn(),
@@ -109,7 +111,7 @@ const admittedCard = {
   admitted_at: "2026-09-01T09:44:00.000Z",
   items: [],
   notes: [],
-  warnings: [] as string[],
+  blocked: false,
 };
 
 afterEach(() => {
@@ -199,7 +201,7 @@ describe("CheckInPage — admin Revoke check-in (#379/#380/#381 follow-up)", () 
     lookupCheckInAttendees.mockResolvedValue([annaHit]);
     fetchAttendeeCard.mockResolvedValue({
       ...admittedCard,
-      warnings: ["Ticket is not admittable (cancelled or revoked)."],
+      blocked: true,
     });
 
     renderPage();
@@ -216,5 +218,54 @@ describe("CheckInPage — admin Revoke check-in (#379/#380/#381 follow-up)", () 
       expect(screen.getByText("Revoked")).toBeTruthy();
     });
     expect(screen.queryByRole("button", { name: "Revoke check-in" })).toBeNull();
+  });
+});
+
+describe("CheckInPage — admin per-item Revoke wiring (item revocation feature)", () => {
+  const cardWithIssuedItem = {
+    ...admittedCard,
+    items: [{ key: "gift_bag", label: "Gift bag", icon: null, state: "issued", actions: [] as string[] }],
+  };
+
+  async function openCardWithIssuedItem() {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
+    fetchAttendeeCard.mockResolvedValue(cardWithIssuedItem);
+
+    renderPage();
+    const input = await screen.findByLabelText("QR scan or search");
+    fireEvent.change(input, { target: { value: "anna" } });
+    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    fireEvent.click(screen.getByText("Anna Alpha"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Revoke Gift bag" })).toBeTruthy());
+  }
+
+  it("resets the item to pending through the client and updates the card", async () => {
+    await openCardWithIssuedItem();
+    revokeItemState.mockResolvedValue({
+      card: {
+        ...cardWithIssuedItem,
+        items: [{ key: "gift_bag", label: "Gift bag", icon: null, state: "pending", actions: ["issued"] }],
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke Gift bag" }));
+    await waitFor(() => expect(revokeItemState).toHaveBeenCalledWith("evt-live", "att-1", "gift_bag"));
+    // Card refreshed to the pending state — the operator-facing Mark button
+    // comes back and the Revoke button is gone.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Mark gift bag given" })).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "Revoke Gift bag" })).toBeNull();
+  });
+
+  it("surfaces a transport error and leaves the item unchanged on failure", async () => {
+    await openCardWithIssuedItem();
+    revokeItemState.mockRejectedValue(new Error("boom"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke Gift bag" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toBe("Request failed. Try again."),
+    );
+    // Card unchanged (still issued) — the Revoke button is still there.
+    expect(screen.getByRole("button", { name: "Revoke Gift bag" })).toBeTruthy();
   });
 });

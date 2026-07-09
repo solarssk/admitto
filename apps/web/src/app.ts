@@ -111,6 +111,7 @@ import {
   handleListTicketTypes,
   handleExportAttendees,
   handleRevokeAttendeeCheckIn,
+  handleRevokeAttendeeItem,
 } from "./admin/attendees-api-routes.js";
 import { handleImportPreview, handleImportCommit, handleGetImportTemplate, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
 import {
@@ -537,6 +538,12 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleRevokeAttendeeCheckIn(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/items/:itemKey/revoke",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleRevokeAttendeeItem(c, db)),
   );
   app.get("/api/admin/events/:eventId/template", staffAdminGate, (c) =>
     handleGetEventTemplate(c, db),

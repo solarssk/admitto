@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Badge, Button, Card } from "@admitto/ui";
 import type { BadgeVariant } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInStatus } from "../api/types.js";
 import { formatEventTime } from "../utils/event-dates.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { useInFlightIds } from "../hooks/useInFlightIds.js";
 import { canRevokeCheckIn } from "./revokeEligibility.js";
 import { NoteModal } from "./NoteModal.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
@@ -24,6 +25,10 @@ type Props = {
   onCancel?: () => void;
   /** Admin/superadmin only — reverses this attendee's current admission regardless of who checked them in or when. Rejects on failure so this component can show the error inline. */
   onRevokeCheckIn?: () => Promise<void>;
+  /** Admin/superadmin only — resets an already-handed-out item back to "pending" so it can be issued again. Resolves false on failure. */
+  onRevokeItem?: (itemKey: string) => Promise<boolean> | void;
+  /** Gates the per-item Revoke action's visibility — a UX nicety only; the server enforces the same admin/superadmin check independently. */
+  canRevokeItems?: boolean;
 };
 
 function statusForCard(
@@ -66,36 +71,32 @@ function statusIcon(status: CheckInStatus): string {
   }
 }
 
-// "Mark issued/given/returned", not "Issue X" — the operator is confirming
-// a physical hand-over that already happened, not instructing the system to
-// perform one; the button reads as an attestation rather than a description
-// of an automated action (Jadzia review). The item's own name isn't
-// repeated here — it's already the row label right next to this button
-// (desktop) or the heading directly above it (mobile), and including it
-// made the button too wide (PO review, round 3). Kept per-action/per-key so
-// the phrasing still reads naturally ("gift bag" is *given*, a badge or
-// headset is *issued*) instead of forcing one verb onto every item type.
-export function itemActionLabel(key: string, action: string): string {
-  if (action === "issued") return key === "gift_bag" ? "Mark given" : "Mark issued";
-  if (action === "returned") return "Mark returned";
-  return `Mark ${action}`;
+// The one item-specific fact both labels below need: a gift bag is *given*,
+// everything else uses the raw action verb ("issued"/"returned"). Encoded once
+// here instead of re-listing every key in both functions (only gift_bag ever
+// diverged; the other per-key branches produced byte-identical output to the
+// generic fallback).
+function itemActionVerb(key: string, action: string): string {
+  // Item keys are slugified from the label (spaces → underscores, see
+  // itemKey.ts) — "Gift bag" is stored as "gift_bag", never "giftbag".
+  return action === "issued" && key === "gift_bag" ? "given" : action;
 }
 
-// Full accessible name for the same button — a screen reader navigating by
-// a flat list of buttons won't see the visual proximity to the item's own
-// label, so its aria-label needs the item name that the short visible text
-// above deliberately drops.
+// "Mark issued/given/returned", not "Issue X" — the operator is confirming a
+// physical hand-over that already happened, not instructing the system to
+// perform one; the button reads as an attestation (Jadzia review). The item's
+// own name isn't repeated — it's already the row label next to this button
+// (desktop) or the heading above it (mobile), and including it made the button
+// too wide (PO review, round 3).
+export function itemActionLabel(key: string, action: string): string {
+  return `Mark ${itemActionVerb(key, action)}`;
+}
+
+// Full accessible name for the same button — a screen reader navigating by a
+// flat list of buttons won't see the visual proximity to the item's own label,
+// so its aria-label needs the item name the short visible text above drops.
 export function itemActionAriaLabel(key: string, action: string): string {
-  if (action === "issued") {
-    if (key === "headset") return "Mark headset issued";
-    // Item keys are slugified from the label (spaces → underscores, see
-    // itemKey.ts) — "Gift bag" is stored as "gift_bag", never "giftbag".
-    if (key === "gift_bag") return "Mark gift bag given";
-    if (key === "badge") return "Mark badge issued";
-    return `Mark ${key.replaceAll("_", " ")} issued`;
-  }
-  if (action === "returned" && key === "headset") return "Mark headset returned";
-  return `Mark ${key.replaceAll("_", " ")} ${action}`;
+  return `Mark ${key.replaceAll("_", " ")} ${itemActionVerb(key, action)}`;
 }
 
 export function itemBadgeVariant(state: string): BadgeVariant {
@@ -119,11 +120,13 @@ function statusBadgeVariant(status: CheckInStatus): BadgeVariant {
   }
 }
 
-// REVOKED/INVALID block item actions and admin-revoke — the only remaining
-// use of the old inline/strip/alert 3-way split, now that the status badge
-// and its bar render the same way for every status (PO review, round 4).
+// A status blocks item actions and admin-revoke exactly when it's an error
+// status (REVOKED/INVALID today). Derived from statusBadgeVariant rather than
+// re-listing those values so it stays in sync with the badge and, unlike the
+// old allowlist, fails CLOSED for any unrecognized status — matching the
+// fail-closed `default` case every sibling status function here already has.
 function isBlockedStatus(status: CheckInStatus): boolean {
-  return status === "REVOKED" || status === "INVALID";
+  return statusBadgeVariant(status) === "error";
 }
 
 export function AttendeeCard({
@@ -140,6 +143,8 @@ export function AttendeeCard({
   showUndo,
   onCancel,
   onRevokeCheckIn,
+  onRevokeItem,
+  canRevokeItems,
 }: Props) {
   const resolvedStatus = statusForCard(scanStatus, card.check_in_status);
   const cardClass = `checkin-card checkin-card--${resolvedStatus.toLowerCase()}`;
@@ -151,32 +156,25 @@ export function AttendeeCard({
   // `pending` reflects the slow-scan/confirm indicator (delayed on purpose,
   // see PENDING_MS in CheckInPage) — it never flips for item-action or undo
   // requests, so it gives these buttons no real double-submit protection
-  // (review finding). Tracked locally instead, set synchronously at click
-  // time and cleared once the request settles either way.
-  const [submittingKeys, setSubmittingKeys] = useState<Set<string>>(new Set());
-  const [undoing, setUndoing] = useState(false);
-  // Synchronous companions to the state above — refs (not state) are needed
-  // to actually block a same-tick double-click, since `disabled` only
-  // reflects the state once React commits the re-render.
-  const submittingKeysRef = useRef<Set<string>>(new Set());
-  const undoingRef = useRef(false);
+  // (review finding). The shared hook owns both halves of the guard: a
+  // synchronous ref that blocks a same-tick double-click plus the state Set
+  // that drives `disabled` once React commits. One instance keys per-item
+  // actions (mark issued/returned and the admin Revoke, mutually exclusive per
+  // item so their ids can't collide); the other guards the single Undo button.
+  const itemGuard = useInFlightIds();
+  const undoGuard = useInFlightIds();
 
   // Extracted out of the item row's onClick (Sonar S2004: >4 levels of
   // nested functions once this lived inline inside items.map > actions.map
-  // > onClick > .finally > the setSubmittingKeys updater).
+  // > onClick > .finally).
   function handleItemAction(itemKey: string, action: string) {
-    if (submittingKeysRef.current.has(itemKey)) return;
-    submittingKeysRef.current.add(itemKey);
-    setSubmittingKeys((prev) => new Set(prev).add(itemKey));
-    Promise.resolve(onItemAction?.(itemKey, action)).finally(() => {
-      submittingKeysRef.current.delete(itemKey);
-      setSubmittingKeys((prev) => {
-        if (!prev.has(itemKey)) return prev;
-        const next = new Set(prev);
-        next.delete(itemKey);
-        return next;
-      });
-    });
+    if (!itemGuard.start(itemKey)) return;
+    Promise.resolve(onItemAction?.(itemKey, action)).finally(() => itemGuard.finish(itemKey));
+  }
+
+  function handleRevokeItem(itemKey: string) {
+    if (!itemGuard.start(itemKey)) return;
+    Promise.resolve(onRevokeItem?.(itemKey)).finally(() => itemGuard.finish(itemKey));
   }
 
   async function handleRevokeConfirm() {
@@ -288,7 +286,7 @@ export function AttendeeCard({
                       type="button"
                       variant="success"
                       size="sm"
-                      disabled={!canAct || pending || isBlocked || submittingKeys.has(item.key)}
+                      disabled={!canAct || pending || isBlocked || itemGuard.ids.has(item.key)}
                       aria-label={itemActionAriaLabel(item.key, action)}
                       onClick={() => handleItemAction(item.key, action)}
                     >
@@ -296,9 +294,31 @@ export function AttendeeCard({
                     </Button>
                   ))
                 ) : (
-                  <Badge variant={itemBadgeVariant(item.state)} className="checkin-card__item-badge">
-                    {item.state}
-                  </Badge>
+                  <>
+                    <Badge variant={itemBadgeVariant(item.state)} className="checkin-card__item-badge">
+                      {item.state}
+                    </Badge>
+                    {/* Admin/superadmin-only corrective action: reset an item
+                        that's been handed out ("issued"/"returned") back to
+                        pending so it can be issued again. Kept out of the
+                        operator's forward-only flow — hidden for operators and
+                        for a blocked (revoked/invalid) pass. Server enforces the
+                        same check regardless of this visibility. */}
+                    {canRevokeItems && onRevokeItem && !isBlocked && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="checkin-card__item-revoke checkin-card__aux-btn--danger"
+                        disabled={!canAct || pending || itemGuard.ids.has(item.key)}
+                        aria-label={`Revoke ${item.label}`}
+                        onClick={() => handleRevokeItem(item.key)}
+                        icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
+                      >
+                        Revoke
+                      </Button>
+                    )}
+                  </>
                 )}
               </div>
             ))}
@@ -334,15 +354,10 @@ export function AttendeeCard({
                 variant="ghost"
                 size="sm"
                 className="checkin-card__aux-btn"
-                disabled={!canAct || pending || undoing}
+                disabled={!canAct || pending || undoGuard.ids.has("undo")}
                 onClick={() => {
-                  if (undoingRef.current) return;
-                  undoingRef.current = true;
-                  setUndoing(true);
-                  Promise.resolve(onUndo()).finally(() => {
-                    undoingRef.current = false;
-                    setUndoing(false);
-                  });
+                  if (!undoGuard.start("undo")) return;
+                  Promise.resolve(onUndo()).finally(() => undoGuard.finish("undo"));
                 }}
                 icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
               >

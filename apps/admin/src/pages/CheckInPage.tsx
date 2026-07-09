@@ -15,6 +15,7 @@ import {
   submitItemAction,
   undoLastCheckIn,
   revokeAttendeeCheckIn,
+  revokeItemState,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeCardDto, CheckInHistoryEntry, CheckInScanResponse, OpsConfigDto } from "../api/types.js";
@@ -696,8 +697,35 @@ export function CheckInPage({
     runExclusive(async () => {
       if (!eventId || !card || !canAct) return false;
       setBusy(true);
+      // Clear any prior failure banner so a retry that now succeeds doesn't
+      // leave a stale "Request failed" over a successful outcome (review
+      // finding) — mirrors runScanImpl/admitCurrent.
+      setTransportError(null);
       try {
         const { card: updated } = await submitItemAction(eventId, card.id, itemKey, targetState, deviceId);
+        setCard(updated);
+        void refreshSidebar();
+        return true;
+      } catch (err) {
+        handleApiFailure(err);
+        return false;
+      } finally {
+        setBusy(false);
+        focusScan();
+      }
+    });
+
+  // Admin/superadmin only (canRevokeItems) — resets a handed-out item back to
+  // "pending". Same shape as onItemAction (queued, returns true/false so the
+  // guard in AttendeeCard can settle), but hits the admin-gated endpoint; the
+  // server rejects non-admins regardless of the button's visibility.
+  const onRevokeItem = (itemKey: string): Promise<boolean> =>
+    runExclusive(async () => {
+      if (!eventId || !card || !canAct) return false;
+      setBusy(true);
+      setTransportError(null);
+      try {
+        const { card: updated } = await revokeItemState(eventId, card.id, itemKey);
         setCard(updated);
         void refreshSidebar();
         return true;
@@ -714,6 +742,7 @@ export function CheckInPage({
     runExclusive(async () => {
       if (!eventId || !card || !canAct) return;
       setBusy(true);
+      setTransportError(null);
       try {
         const { card: updated } = await submitAttendeeNote(eventId, card.id, body, deviceId);
         setCard(updated);
@@ -733,6 +762,7 @@ export function CheckInPage({
     runExclusive(async () => {
       if (!eventId || !canAct) return;
       setBusy(true);
+      setTransportError(null);
       try {
         const { card: updated } = await undoLastCheckIn(eventId, deviceId);
         setCard(updated);
@@ -1003,7 +1033,12 @@ export function CheckInPage({
             Keyboard wedge auto-submits · Enter to confirm · Esc to clear
           </p>
 
-          {transportError && (
+          {/* Suppressed while the mobile overlay is open: the overlay renders
+              its own role="alert" copy of this same message (it's a fixed
+              full-screen layer covering this paragraph), so without this gate a
+              screen reader would announce the identical error twice (review
+              finding). Exactly one of the two is mounted at any time. */}
+          {transportError && !showMobileOverlay && (
             <p className="checkin-surface__transport-error" role="alert">
               {transportError}
             </p>
@@ -1054,6 +1089,8 @@ export function CheckInPage({
                   onRevokeCheckIn={
                     canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined
                   }
+                  onRevokeItem={canRevokeCheckIn ? onRevokeItem : undefined}
+                  canRevokeItems={canRevokeCheckIn}
                 />
               )}
             </>
@@ -1085,6 +1122,8 @@ export function CheckInPage({
                   onRevokeCheckIn={
                     canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined
                   }
+                  onRevokeItem={canRevokeCheckIn ? onRevokeItem : undefined}
+                  canRevokeItems={canRevokeCheckIn}
                 />
               ) : (
                 !scanResult && <CkEmptyState />
