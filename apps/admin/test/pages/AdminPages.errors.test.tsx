@@ -40,7 +40,6 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchEventSettings: vi.fn(),
     patchEvent: vi.fn(),
     archiveEvent: vi.fn(),
-    unarchiveEvent: vi.fn(),
     exportEventPii: vi.fn(),
     fetchAdminUsers: vi.fn(),
     fetchRoleAssignments: vi.fn(),
@@ -78,7 +77,6 @@ import {
   revokeUserSessions,
   patchEvent,
   submitSessionDeviceLabel,
-  unarchiveEvent,
   updateEventItem,
   updateOpsConfig,
 } from "../../src/api/client.js";
@@ -490,34 +488,6 @@ describe("ReportsPage operator errors", () => {
   });
 });
 
-describe("EventsPickerPage operator errors", () => {
-  it("shows unarchive failure in dialog", async () => {
-    vi.mocked(fetchAdminEvents).mockResolvedValue([archivedEvent]);
-    vi.mocked(unarchiveEvent).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin" element={<EventsPickerPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-    await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /Archived events/ })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("tab", { name: /Archived events/ }));
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Unarchive" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Unarchive" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unarchive" }));
-    await waitFor(() => {
-      expect(within(dialog).getByText(/Failed to unarchive event/)).toBeTruthy();
-    });
-    expect(screen.queryByText("secret_internal")).toBeNull();
-  });
-});
-
 describe("EventsPickerPage archived event navigation", () => {
   it("lets a superadmin click into an archived event from the Archived events tab", async () => {
     vi.mocked(fetchAdminEvents).mockResolvedValue([archivedEvent]);
@@ -538,8 +508,10 @@ describe("EventsPickerPage archived event navigation", () => {
 
     const link = screen.getByRole("link", { name: /Archived Summit/ });
     expect(link.getAttribute("href")).toBe("/admin/events/evt-arch/overview");
-    // Unarchive stays available as an independent action alongside the new link.
-    expect(screen.getByRole("button", { name: "Unarchive" })).toBeTruthy();
+    // Card matches the active-event card style (same badge position, no separate
+    // Unarchive button) — that action now lives on Event settings / Settings only.
+    expect(screen.getByText("Archived")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Unarchive" })).toBeNull();
   });
 });
 
