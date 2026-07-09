@@ -8,6 +8,9 @@ import { render } from "@testing-library/react";
 vi.mock("../../src/settings/BrandingPanel.js", () => ({
   BrandingPanel: () => <div data-testid="branding-panel" />,
 }));
+vi.mock("../../src/settings/OrganisationBrandingPanel.js", () => ({
+  OrganisationBrandingPanel: () => <div data-testid="organisation-branding-panel" />,
+}));
 vi.mock("../../src/settings/InstanceUrlPanel.js", () => ({
   InstanceUrlPanel: () => <div data-testid="instance-url-panel" />,
 }));
