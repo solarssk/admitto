@@ -64,6 +64,15 @@ describe("shouldAutoAdvance (#434)", () => {
     ).toBe(true);
   });
 
+  it("advances on the mobile overlay when the response has no card at all", () => {
+    expect(
+      shouldAutoAdvance(
+        { status: "VALID", confirmed: true },
+        { autoAdvanceOnValid: true, showMobileOverlay: true },
+      ),
+    ).toBe(true);
+  });
+
   it("never advances when the setting is off", () => {
     expect(
       shouldAutoAdvance(validConfirmed(card([])), {
