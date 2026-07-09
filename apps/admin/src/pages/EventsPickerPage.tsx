@@ -185,7 +185,11 @@ export function EventsPickerPage() {
               state={{ event }}
               className="event-card-link"
             >
-              <Card className="event-card">{cardBody}</Card>
+              <Card
+                className={`event-card${event.archived_at ? " event-card--archived" : ""}`}
+              >
+                {cardBody}
+              </Card>
             </Link>
           );
         })}

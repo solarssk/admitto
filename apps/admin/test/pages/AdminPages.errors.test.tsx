@@ -512,6 +512,10 @@ describe("EventsPickerPage archived event navigation", () => {
     // Unarchive button) — that action now lives on Event settings / Settings only.
     expect(screen.getByText("Archived")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Unarchive" })).toBeNull();
+    // Grey (not green) left-border accent distinguishes archived from active cards.
+    expect(link.querySelector(".event-card")?.classList.contains("event-card--archived")).toBe(
+      true,
+    );
   });
 });
 

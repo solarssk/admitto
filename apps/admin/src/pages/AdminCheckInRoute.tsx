@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
-import { Button, Card, PageHeader } from "@admitto/ui";
+import { Button, Card, EmptyState, PageHeader } from "@admitto/ui";
 import type { EventDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import {
@@ -36,13 +36,19 @@ export function AdminCheckInRoute() {
 
   if (event.archived_at) {
     return (
-      <Card>
-        <PageHeader title="Check-in" subtitle="This event is archived — check-in is disabled." />
-        <p>
-          Unarchive it from{" "}
-          <Link to={`/admin/events/${event.id}/settings`}>Event settings</Link> to resume check-in.
-        </p>
-      </Card>
+      <>
+        <PageHeader title="Check-in" subtitle="Scan QR codes and admit guests on event day" />
+        <EmptyState
+          icon={<i className="ti ti-archive" aria-hidden="true" />}
+          title="Check-in is disabled"
+          description="This event is archived, so check-in is turned off to protect its data."
+          action={
+            <Link className="at-btn at-btn--secondary" to={`/admin/events/${event.id}/settings`}>
+              Go to Event settings
+            </Link>
+          }
+        />
+      </>
     );
   }
 
