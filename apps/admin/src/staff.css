@@ -1572,20 +1572,33 @@
   gap: 6px;
 }
 
-.ms__row {
+/* Visual treatment lives on .ms__row-btn (a real <button>), not on the
+   <li> itself — a <li onClick> with a role/tabIndex workaround was flagged
+   by SonarCloud (S6847 + S1082); a real button gets keyboard activation
+   and focus semantics for free. */
+.ms__row-btn {
   display: flex;
   align-items: center;
   gap: 14px;
+  width: 100%;
   padding: 14px 16px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-lg);
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: background 120ms;
 }
 
-.ms__row:hover {
+.ms__row-btn:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.ms__row-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 .ms__info {

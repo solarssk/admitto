@@ -73,10 +73,10 @@ export function itemActionLabel(key: string, action: string): string {
     // itemKey.ts) — "Gift bag" is stored as "gift_bag", never "giftbag".
     if (key === "gift_bag") return "Give gift bag";
     if (key === "badge") return "Issue badge";
-    return `Mark ${key.replace(/_/g, " ")} issued`;
+    return `Mark ${key.replaceAll("_", " ")} issued`;
   }
   if (action === "returned" && key === "headset") return "Return headset";
-  return `${action} ${key.replace(/_/g, " ")}`;
+  return `${action} ${key.replaceAll("_", " ")}`;
 }
 
 export function itemBadgeVariant(state: string): BadgeVariant {

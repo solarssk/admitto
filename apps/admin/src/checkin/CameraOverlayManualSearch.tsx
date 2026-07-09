@@ -128,17 +128,24 @@ export function CameraOverlayManualSearch({
         {allowManualLookup && results.length > 0 && (
           <ul className="ms__results">
             {results.map((a) => (
-              <li key={a.id} className="ms__row" onClick={() => onSelectAttendee(a.id)}>
-                <Avatar name={a.name} />
-                <div className="ms__info">
-                  <strong>{a.name}</strong>
-                  <span>{[a.company, a.ticket_type].filter(Boolean).join(" · ") || "—"}</span>
-                </div>
-                {a.check_in_status === "admitted" && (
-                  <span className="ms__checked">
-                    <i className="ti ti-circle-check" aria-hidden="true" /> checked in
-                  </span>
-                )}
+              <li key={a.id} className="ms__row">
+                {/* A real <button>, not a <li onClick> with a role/tabIndex
+                    workaround — SonarCloud flagged the workaround (S6847 +
+                    S1082): a native interactive element gets keyboard
+                    activation and focus semantics for free instead of
+                    reimplementing them. */}
+                <button type="button" className="ms__row-btn" onClick={() => onSelectAttendee(a.id)}>
+                  <Avatar name={a.name} />
+                  <div className="ms__info">
+                    <strong>{a.name}</strong>
+                    <span>{[a.company, a.ticket_type].filter(Boolean).join(" · ") || "—"}</span>
+                  </div>
+                  {a.check_in_status === "admitted" && (
+                    <span className="ms__checked">
+                      <i className="ti ti-circle-check" aria-hidden="true" /> checked in
+                    </span>
+                  )}
+                </button>
               </li>
             ))}
           </ul>
