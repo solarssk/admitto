@@ -956,7 +956,7 @@ export function CheckInPage({
                 onKeyDown={onKeyDown}
                 autoFocus
                 inputMode="none"
-                placeholder="Scan QR · type name, email or company…"
+                placeholder="Scan QR · type name or email…"
                 aria-label="QR scan or search"
                 aria-describedby="ck-scan-hint"
                 disabled={!canAct}
@@ -1000,7 +1000,7 @@ export function CheckInPage({
             )}
           </div>
           <p id="ck-scan-hint" className="ck-hint">
-            Keyboard wedge auto-submits · Enter to confirm · Esc to clear
+            Scan or paste a code — it submits itself · type a name, then press Enter · Esc clears the field
           </p>
 
           {transportError && (
@@ -1018,17 +1018,6 @@ export function CheckInPage({
                   overlayScanResult={showCompactFeedback ? scanResult : null}
                   onScan={(raw) => void runScan(raw)}
                   onClose={closeInlineCamera}
-                  card={card}
-                  pending={pending}
-                  canAct={canAct && !busy}
-                  eventTimezone={eventTimezone}
-                  onConfirm={
-                    showCompactFeedback &&
-                    card &&
-                    scanResult?.status === "PREVIEW"
-                      ? () => void admitCurrent(card.id, admitOrigin)
-                      : undefined
-                  }
                   onReset={resetScan}
                 />
               )}
@@ -1101,6 +1090,7 @@ export function CheckInPage({
               history={history}
               eventTimezone={eventTimezone}
               eventDate={eventDate}
+              onSelectAttendee={openLookupResult}
             />
           </Card>
         </aside>

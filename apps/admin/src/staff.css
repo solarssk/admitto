@@ -977,6 +977,30 @@
   min-width: 0;
 }
 
+/* Row is clickable (reopen the attendee's card) only when CkRecentScans gets
+   an onSelectAttendee handler — a real <button> reset to look like the plain
+   text block, with hover/focus affordances so it reads as interactive. */
+.ck-recent__info-btn {
+  display: block;
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ck-recent__info-btn:hover .ck-recent__name {
+  text-decoration: underline;
+}
+
+.ck-recent__info-btn:focus-visible {
+  outline: none;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--ring);
+}
+
 .ck-recent__name {
   display: block;
   font-size: var(--fs-sm);
@@ -2034,10 +2058,6 @@
   margin: 0;
   text-align: center;
   pointer-events: none;
-}
-
-.ck-inline-camera__result {
-  z-index: 1;
 }
 
 .ck-inline-camera__close {

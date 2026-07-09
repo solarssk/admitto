@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { AttendeeCardDto, CheckInScanResponse } from "../api/types.js";
+import type { CheckInScanResponse } from "../api/types.js";
 import { CameraScanner } from "./CameraScanner.js";
-import { CheckInCameraResultPanel } from "./CheckInCameraResultPanel.js";
+import { ScanFeedback } from "./ScanFeedback.js";
 
 type CkInlineCameraProps = {
   wedgeActive: boolean;
@@ -11,11 +11,6 @@ type CkInlineCameraProps = {
   overlayScanResult: CheckInScanResponse | null;
   onScan: (raw: string) => void;
   onClose: () => void;
-  card: AttendeeCardDto | null;
-  pending: boolean;
-  canAct: boolean;
-  eventTimezone: string;
-  onConfirm?: () => void;
   onReset: () => void;
 };
 
@@ -25,11 +20,6 @@ export function CkInlineCamera({
   overlayScanResult,
   onScan,
   onClose,
-  card,
-  pending,
-  canAct,
-  eventTimezone,
-  onConfirm,
   onReset,
 }: CkInlineCameraProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -60,17 +50,13 @@ export function CkInlineCamera({
           onScan={onScan}
         />
         {overlayScanResult ? (
-          <CheckInCameraResultPanel
-            className="ck-inline-camera__result"
-            scanResult={overlayScanResult}
-            card={card}
-            pending={pending}
-            canAct={canAct}
-            eventTimezone={eventTimezone}
-            onConfirm={onConfirm}
-            onReset={onReset}
-            onCancel={dismiss}
-          />
+          // Desktop camera reuses the same lightweight ScanFeedback card the
+          // typed-search path renders (never a check-in card here: a real
+          // attendee match promotes to AttendeeCard below, so this only ever
+          // shows an invalid/no-match status) — one styled component for both
+          // surfaces instead of the mobile overlay's full-color result panel,
+          // which read as an unpolished leftover on desktop (PO review).
+          <ScanFeedback result={overlayScanResult} />
         ) : (
           <div className="ck-inline-camera__viewfinder" aria-hidden="true">
             <div className="vf-frame">
