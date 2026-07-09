@@ -378,8 +378,17 @@ export function CheckInPage({
   const prevCameraActiveRef = useRef(cameraActive);
   useEffect(() => {
     if (prevCameraActiveRef.current && !cameraActive) clearDisplayedResult();
+    // Symmetric case: a no-match/invalid result (no card) left showing from
+    // before the camera was opened would otherwise carry straight into
+    // CkInlineCamera as a paused overlay with no reset action — the camera
+    // is scan-only and can only be unstuck by closing and reopening it
+    // (bot review). A pending card (PREVIEW/etc.) is left alone — it keeps
+    // the camera from rendering at all via showResultCard, same as today.
+    if (!prevCameraActiveRef.current && cameraActive && scanResult && !card) {
+      clearDisplayedResult();
+    }
     prevCameraActiveRef.current = cameraActive;
-  }, [cameraActive, clearDisplayedResult]);
+  }, [cameraActive, card, scanResult, clearDisplayedResult]);
 
   /** User-initiated reset (Escape, Cancel button) — also clears the input and
    * cancels any pending wedge timer, since the user explicitly wants a clean slate. */
@@ -1016,7 +1025,7 @@ export function CheckInPage({
             )}
           </div>
           <p id="ck-scan-hint" className="ck-hint">
-            Scan or paste a code — it submits itself · type a name, then press Enter · Esc clears the field
+            Scan a code — it submits itself · type a name, then press Enter · Esc clears the field
           </p>
 
           {transportError && (

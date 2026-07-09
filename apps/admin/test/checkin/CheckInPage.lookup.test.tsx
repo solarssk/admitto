@@ -487,4 +487,35 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
     expect(screen.getByTestId("camera-scanner")).toBeTruthy();
     expect(screen.getByText("Point the camera at the attendee's QR")).toBeTruthy();
   });
+
+  it("clears a stale no-match result from before the camera was opened, instead of opening paused behind it (bot review)", async () => {
+    mockPageBootstrap();
+    submitCheckInScan.mockResolvedValue({ status: "INVALID", confirmed: false });
+
+    renderPage();
+
+    // A no-match scan with the camera OFF — shows the standalone ScanFeedback
+    // card under the search bar, same as ever.
+    const input = await scanInput();
+    const token = "QRTOKEN-STALE-BEFORE-CAMERA-1";
+    for (let i = 1; i <= token.length; i++) {
+      fireEvent.change(input, { target: { value: token.slice(0, i) } });
+    }
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => {
+      expect(
+        screen.getByText("This code is not valid for this event. Check the QR or use manual lookup."),
+      ).toBeTruthy();
+    });
+
+    // Turning the camera on afterward must not carry that stale result in as
+    // a paused overlay with no reset action — the camera opens live instead.
+    fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
+
+    expect(
+      screen.queryByText("This code is not valid for this event. Check the QR or use manual lookup."),
+    ).toBeNull();
+    expect(screen.getByTestId("camera-scanner")).toBeTruthy();
+    expect(screen.getByText("Point the camera at the attendee's QR")).toBeTruthy();
+  });
 });
