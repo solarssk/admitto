@@ -28,57 +28,33 @@ const validConfirmed = (c: AttendeeCardDto): CheckInScanResponse => ({
 });
 
 describe("shouldAutoAdvance (#434)", () => {
-  it("advances on desktop even with pending items — desktop behaviour unchanged", () => {
+  it("does not advance when items still need an action — the operator must hand them out first", () => {
     expect(
-      shouldAutoAdvance(validConfirmed(card([item()])), {
-        autoAdvanceOnValid: true,
-        showMobileOverlay: false,
-      }),
-    ).toBe(true);
-  });
-
-  it("does not advance on the mobile overlay when items still need an action", () => {
-    expect(
-      shouldAutoAdvance(validConfirmed(card([item()])), {
-        autoAdvanceOnValid: true,
-        showMobileOverlay: true,
-      }),
+      shouldAutoAdvance(validConfirmed(card([item()])), { autoAdvanceOnValid: true }),
     ).toBe(false);
   });
 
-  it("does not advance on the mobile overlay for an already-issued item — the handover reminder still needs to show (Bugbot)", () => {
+  it("does not advance for an already-issued item — the handover reminder still needs to show (Bugbot)", () => {
     expect(
-      shouldAutoAdvance(validConfirmed(card([item({ actions: [] })])), {
-        autoAdvanceOnValid: true,
-        showMobileOverlay: true,
-      }),
+      shouldAutoAdvance(validConfirmed(card([item({ actions: [] })])), { autoAdvanceOnValid: true }),
     ).toBe(false);
   });
 
-  it("advances on the mobile overlay when there are no items at all", () => {
+  it("advances when there are no items at all", () => {
     expect(
-      shouldAutoAdvance(validConfirmed(card([])), {
-        autoAdvanceOnValid: true,
-        showMobileOverlay: true,
-      }),
+      shouldAutoAdvance(validConfirmed(card([])), { autoAdvanceOnValid: true }),
     ).toBe(true);
   });
 
-  it("advances on the mobile overlay when the response has no card at all", () => {
+  it("advances when the response has no card at all", () => {
     expect(
-      shouldAutoAdvance(
-        { status: "VALID", confirmed: true },
-        { autoAdvanceOnValid: true, showMobileOverlay: true },
-      ),
+      shouldAutoAdvance({ status: "VALID", confirmed: true }, { autoAdvanceOnValid: true }),
     ).toBe(true);
   });
 
   it("never advances when the setting is off", () => {
     expect(
-      shouldAutoAdvance(validConfirmed(card([])), {
-        autoAdvanceOnValid: false,
-        showMobileOverlay: true,
-      }),
+      shouldAutoAdvance(validConfirmed(card([])), { autoAdvanceOnValid: false }),
     ).toBe(false);
   });
 
@@ -86,13 +62,13 @@ describe("shouldAutoAdvance (#434)", () => {
     expect(
       shouldAutoAdvance(
         { status: "ALREADY_CHECKED_IN", confirmed: true, card: card([]) },
-        { autoAdvanceOnValid: true, showMobileOverlay: false },
+        { autoAdvanceOnValid: true },
       ),
     ).toBe(false);
     expect(
       shouldAutoAdvance(
         { status: "VALID", confirmed: false, card: card([]) },
-        { autoAdvanceOnValid: true, showMobileOverlay: false },
+        { autoAdvanceOnValid: true },
       ),
     ).toBe(false);
   });

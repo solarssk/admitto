@@ -385,13 +385,13 @@ export function CheckInPage({
 
   const maybeAutoAdvance = useCallback(
     (response: CheckInScanResponse) => {
-      if (!shouldAutoAdvance(response, { autoAdvanceOnValid, showMobileOverlay })) return;
+      if (!shouldAutoAdvance(response, { autoAdvanceOnValid })) return;
       // Dismiss THIS scan's confirmation only — must not clear the buffer or
       // cancel the wedge timer, which may already hold a different, newer
       // scan's in-progress keystrokes (#277 follow-up review).
       clearDisplayedResult();
     },
-    [autoAdvanceOnValid, clearDisplayedResult, showMobileOverlay],
+    [autoAdvanceOnValid, clearDisplayedResult],
   );
 
   const runWithPending = async <T,>(fn: () => Promise<T>): Promise<T | null> => {

@@ -167,6 +167,7 @@ describe("CheckInPage live feed", () => {
         company: null,
         department: null,
         check_in_status: "admitted",
+        items: [],
       },
     });
 
