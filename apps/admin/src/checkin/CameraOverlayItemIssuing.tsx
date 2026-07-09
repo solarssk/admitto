@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Badge, Button } from "@admitto/ui";
 import type { AttendeeCardItemDto } from "../api/types.js";
 import { itemActionLabel, itemBadgeVariant } from "./AttendeeCard.js";
@@ -9,7 +9,9 @@ type CameraOverlayItemIssuingProps = {
   items: AttendeeCardItemDto[];
   /** Ordered snapshot of item keys to step through, taken once when this screen opens. */
   stepKeys: string[];
-  onItemAction: (itemKey: string, targetState: string) => void;
+  /** Resolves whether the action actually succeeded, so a failed request can
+   * revert the optimistic mark below instead of leaving a false "issued". */
+  onItemAction: (itemKey: string, targetState: string) => Promise<boolean>;
   pending: boolean;
   canAct: boolean;
   /** "Next scan" on the final summary screen. */
@@ -29,33 +31,16 @@ export function CameraOverlayItemIssuing({
   showUndo,
 }: CameraOverlayItemIssuingProps) {
   const [stepIndex, setStepIndex] = useState(0);
-  // onItemAction is fire-and-forget from the caller (CheckInPage awaits the
-  // API call internally, then updates the `items` prop asynchronously) —
-  // goForward() below runs synchronously, so advancing straight to the
-  // summary after the last item briefly rendered it against the stale
-  // `items` prop, showing the item as still-pending (orange "N skipped")
-  // for one tick before the prop caught up and it flipped to green (PO
-  // review point 5). Tracking the click locally lets the summary compute
-  // "done" immediately, without waiting on the prop.
+  // goForward() below runs synchronously right after the click, while
+  // onItemAction's API call resolves a tick later and updates the `items`
+  // prop — advancing straight to the summary would briefly render it
+  // against the stale prop, showing the item as still-pending (orange "N
+  // skipped") for one frame before the prop caught up and it flipped to
+  // green (PO review point 5). Marking the click locally lets the summary
+  // compute "done" immediately without waiting on the prop; the mark is
+  // reverted if onItemAction's promise resolves false (the request actually
+  // failed) — see the click handler below.
   const [locallyIssued, setLocallyIssued] = useState<Set<string>>(new Set());
-  // Self-correct if the API call actually failed: once `pending` drops back
-  // to false (the call settled, success or error) and `items` still shows a
-  // locally-marked item as pending, the update didn't go through server-side
-  // — drop the optimistic mark so the summary reflects reality instead of a
-  // false "issued".
-  const wasPending = useRef(pending);
-  useEffect(() => {
-    if (wasPending.current && !pending) {
-      setLocallyIssued((prev) => {
-        const stillPending = items.filter((i) => prev.has(i.key) && i.actions.length > 0);
-        if (stillPending.length === 0) return prev;
-        const next = new Set(prev);
-        stillPending.forEach((i) => next.delete(i.key));
-        return next;
-      });
-    }
-    wasPending.current = pending;
-  }, [pending, items]);
 
   const currentKey = stepKeys[stepIndex];
   const currentItem = currentKey ? items.find((i) => i.key === currentKey) : undefined;
@@ -169,9 +154,18 @@ export function CameraOverlayItemIssuing({
           block
           disabled={!canAct || pending}
           onClick={() => {
-            setLocallyIssued((prev) => new Set(prev).add(currentItem.key));
-            onItemAction(currentItem.key, action);
+            const key = currentItem.key;
+            setLocallyIssued((prev) => new Set(prev).add(key));
             goForward();
+            void onItemAction(key, action).then((success) => {
+              if (success) return;
+              setLocallyIssued((prev) => {
+                if (!prev.has(key)) return prev;
+                const next = new Set(prev);
+                next.delete(key);
+                return next;
+              });
+            });
           }}
         >
           {itemActionLabel(currentItem.key, action)}

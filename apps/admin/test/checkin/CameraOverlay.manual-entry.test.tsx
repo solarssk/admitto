@@ -29,6 +29,7 @@ const baseProps = {
   history: [],
   wedgeActive: false,
   onClose: () => {},
+  onScan: vi.fn(),
   allowManualLookup: true,
   onClearManualError: () => {},
   scanResult: null,

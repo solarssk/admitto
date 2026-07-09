@@ -48,6 +48,7 @@ const baseProps = {
   history: [],
   wedgeActive: false,
   onClose: () => {},
+  onScan: vi.fn(),
   allowManualLookup: true,
   onSearch: vi.fn().mockResolvedValue([]),
   onSelectAttendee: vi.fn(),
@@ -69,7 +70,7 @@ describe("CameraOverlay item issuing (#434)", () => {
         {...baseProps}
         scanResult={validResult}
         card={attendeeCard()}
-        onItemAction={vi.fn()}
+        onItemAction={vi.fn().mockResolvedValue(true)}
       />,
     );
 
@@ -87,7 +88,7 @@ describe("CameraOverlay item issuing (#434)", () => {
         {...baseProps}
         scanResult={alreadyCheckedInResult}
         card={attendeeCard()}
-        onItemAction={vi.fn()}
+        onItemAction={vi.fn().mockResolvedValue(true)}
       />,
     );
 
@@ -105,7 +106,7 @@ describe("CameraOverlay item issuing (#434)", () => {
         {...baseProps}
         scanResult={alreadyCheckedInResult}
         card={attendeeCard({ items: [item({ actions: [], state: "issued" })] })}
-        onItemAction={vi.fn()}
+        onItemAction={vi.fn().mockResolvedValue(true)}
       />,
     );
 
@@ -120,7 +121,7 @@ describe("CameraOverlay item issuing (#434)", () => {
         card={attendeeCard({
           items: [item({ description: "Hand out at the badge desk by the entrance" })],
         })}
-        onItemAction={vi.fn()}
+        onItemAction={vi.fn().mockResolvedValue(true)}
       />,
     );
 
@@ -134,7 +135,7 @@ describe("CameraOverlay item issuing (#434)", () => {
         scanResult={previewResult}
         card={attendeeCard()}
         onConfirm={vi.fn()}
-        onItemAction={vi.fn()}
+        onItemAction={vi.fn().mockResolvedValue(true)}
       />,
     );
 
@@ -148,7 +149,7 @@ describe("CameraOverlay item issuing (#434)", () => {
         {...baseProps}
         scanResult={validResult}
         card={attendeeCard({ items: [] })}
-        onItemAction={vi.fn()}
+        onItemAction={vi.fn().mockResolvedValue(true)}
       />,
     );
 
@@ -164,7 +165,7 @@ describe("CameraOverlay item issuing (#434)", () => {
         {...baseProps}
         scanResult={validResult}
         card={attendeeCard({ items: [item({ actions: [], state: "issued" })] })}
-        onItemAction={vi.fn()}
+        onItemAction={vi.fn().mockResolvedValue(true)}
       />,
     );
 
@@ -175,7 +176,7 @@ describe("CameraOverlay item issuing (#434)", () => {
   });
 
   it("Issue action calls onItemAction and advances to the next item, then to the summary", () => {
-    const onItemAction = vi.fn();
+    const onItemAction = vi.fn().mockResolvedValue(true);
     render(
       <CameraOverlay
         {...baseProps}
@@ -206,42 +207,34 @@ describe("CameraOverlay item issuing (#434)", () => {
     expect(screen.getByText("All items issued")).toBeTruthy();
   });
 
-  it("reverts the optimistic issued mark once a failed API call's pending state settles, instead of keeping a false success", async () => {
+  it("reverts the optimistic issued mark when onItemAction resolves false (the request actually failed)", async () => {
     // card never updates — stands in for a failed submitItemAction that
-    // left the server-side state unchanged (CheckInPage's onItemAction
-    // catches the error and never calls setCard, but still flips `pending`
-    // back to false once the call settles).
-    function Harness() {
-      const [pending, setPending] = useState(false);
-      return (
-        <>
-          <button type="button" onClick={() => setPending(false)}>
-            settle
-          </button>
-          <CameraOverlay
-            {...baseProps}
-            scanResult={validResult}
-            card={attendeeCard({ items: [item()] })}
-            pending={pending}
-            onItemAction={() => setPending(true)}
-          />
-        </>
-      );
-    }
-    render(<Harness />);
+    // left the server-side state unchanged (CheckInPage's real onItemAction
+    // catches the error, shows a toast, and resolves false instead of
+    // throwing — see its own comment).
+    let resolveAction!: (success: boolean) => void;
+    const onItemAction = vi.fn(() => new Promise<boolean>((resolve) => { resolveAction = resolve; }));
+    render(
+      <CameraOverlay
+        {...baseProps}
+        scanResult={validResult}
+        card={attendeeCard({ items: [item()] })}
+        onItemAction={onItemAction}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Issue badge" }));
     // Optimistic mark from the click — the flicker fix — shows success
-    // immediately, before the (failed) API call has settled.
+    // immediately, before onItemAction's promise has settled.
     expect(screen.getByText("All items issued")).toBeTruthy();
 
-    act(() => {
-      fireEvent.click(screen.getByRole("button", { name: "settle" }));
+    await act(async () => {
+      resolveAction(false);
+      await Promise.resolve();
     });
-    // `items` still shows the badge as pending (the update never landed),
-    // so once `pending` drops back to false the optimistic mark must be
-    // dropped — a false "issued" would misrepresent the item was actually
-    // handed out and recorded.
+    // `items` still shows the badge as pending (the update never landed) —
+    // the optimistic mark must be dropped, or a false "issued" would
+    // misrepresent the item as actually handed out and recorded.
     await waitFor(() => expect(screen.getByText("1 item skipped")).toBeTruthy());
   });
 
@@ -257,12 +250,13 @@ describe("CameraOverlay item issuing (#434)", () => {
           {...baseProps}
           scanResult={validResult}
           card={card}
-          onItemAction={(key, action) =>
+          onItemAction={async (key, action) => {
             setCard((c) => ({
               ...c,
               items: c.items.map((i) => (i.key === key ? { ...i, actions: [], state: action } : i)),
-            }))
-          }
+            }));
+            return true;
+          }}
         />
       );
     }
@@ -283,7 +277,7 @@ describe("CameraOverlay item issuing (#434)", () => {
         card={attendeeCard({
           items: [item(), item({ key: "gift_bag", label: "Gift bag", actions: ["issued"] })],
         })}
-        onItemAction={vi.fn()}
+        onItemAction={vi.fn().mockResolvedValue(true)}
       />,
     );
 
@@ -296,7 +290,7 @@ describe("CameraOverlay item issuing (#434)", () => {
   });
 
   it("Skip advances without calling onItemAction", () => {
-    const onItemAction = vi.fn();
+    const onItemAction = vi.fn().mockResolvedValue(true);
     render(
       <CameraOverlay
         {...baseProps}
@@ -321,7 +315,7 @@ describe("CameraOverlay item issuing (#434)", () => {
         card={attendeeCard({
           items: [item(), item({ key: "gift_bag", label: "Gift bag", actions: ["issued"] })],
         })}
-        onItemAction={vi.fn()}
+        onItemAction={vi.fn().mockResolvedValue(true)}
       />,
     );
 
@@ -349,12 +343,13 @@ describe("CameraOverlay item issuing (#434)", () => {
           {...baseProps}
           scanResult={validResult}
           card={card}
-          onItemAction={(key, action) =>
+          onItemAction={async (key, action) => {
             setCard((c) => ({
               ...c,
               items: c.items.map((i) => (i.key === key ? { ...i, actions: [], state: action } : i)),
-            }))
-          }
+            }));
+            return true;
+          }}
           onReset={onReset}
         />
       );
@@ -386,12 +381,13 @@ describe("CameraOverlay item issuing (#434)", () => {
           {...baseProps}
           scanResult={validResult}
           card={card}
-          onItemAction={(key, action) =>
+          onItemAction={async (key, action) => {
             setCard((c) => ({
               ...c,
               items: c.items.map((i) => (i.key === key ? { ...i, actions: [], state: action } : i)),
-            }))
-          }
+            }));
+            return true;
+          }}
         />
       );
     }
@@ -422,7 +418,7 @@ describe("CameraOverlay item issuing (#434)", () => {
         scanResult={previewResult}
         card={attendeeCard({ items })}
         onConfirm={vi.fn()}
-        onItemAction={vi.fn()}
+        onItemAction={vi.fn().mockResolvedValue(true)}
       />,
     );
     expect(screen.queryByText(/Item 1 of/)).toBeNull();
@@ -435,7 +431,7 @@ describe("CameraOverlay item issuing (#434)", () => {
           items: [{ ...items[0], actions: [], state: "issued" }, items[1]],
         })}
         onConfirm={vi.fn()}
-        onItemAction={vi.fn()}
+        onItemAction={vi.fn().mockResolvedValue(true)}
       />,
     );
 
@@ -451,7 +447,7 @@ describe("CameraOverlay item issuing (#434)", () => {
         {...baseProps}
         scanResult={validResult}
         card={attendeeCard()}
-        onItemAction={vi.fn()}
+        onItemAction={vi.fn().mockResolvedValue(true)}
         onUndo={onUndo}
         showUndo
       />,

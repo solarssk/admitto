@@ -34,7 +34,9 @@ type CameraOverlayProps = {
   canAct: boolean;
   onConfirm?: () => void;
   onReset: () => void;
-  onItemAction?: (itemKey: string, targetState: string) => void;
+  /** Resolves whether the action actually succeeded — CameraOverlayItemIssuing
+   * awaits this to revert its optimistic "issued" mark on failure. */
+  onItemAction?: (itemKey: string, targetState: string) => Promise<boolean>;
   onUndo?: () => void;
   showUndo?: boolean;
 };

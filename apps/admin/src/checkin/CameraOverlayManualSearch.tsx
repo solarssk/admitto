@@ -44,10 +44,16 @@ export function CameraOverlayManualSearch({
 
   const runSearch = async (value: string) => {
     const seq = ++seqRef.current;
-    const found = await onSearch(value);
-    if (seq === seqRef.current) {
-      setResults(found);
-      setSearched(true);
+    try {
+      const found = await onSearch(value);
+      if (seq === seqRef.current) {
+        setResults(found);
+        setSearched(true);
+      }
+    } catch {
+      // Silent, matching CheckInPage's desktop fetchSuggestions: this is a
+      // live-typeahead assist, not the only way to find someone — an explicit
+      // Enter still routes through the scan-bar pipeline and surfaces errors.
     }
   };
 

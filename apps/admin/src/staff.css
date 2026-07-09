@@ -1465,6 +1465,24 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
+/* OK (green) and error (red) cards: the base chip's white-on-white-wash
+   (rgba(255,255,255,0.25) + white text) has good contrast against the dark
+   base panel, but blended over these saturated backgrounds it lightens
+   them enough that white text falls under AA contrast (CodeRabbit review).
+   A dark wash (same technique as the warn override above) darkens the pill
+   enough that the existing white text reads clearly again — unlike warn's
+   bright yellow, ok/error are saturated enough that darkening the chip
+   alone is enough, without also needing to flip the text color. */
+.ck-overlay .ck-overlay__result--ok .ck-overlay__result-chip,
+.ck-overlay .ck-overlay__result--error .ck-overlay__result-chip {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.ck-overlay .ck-overlay__result--ok .ck-overlay__result-chip:hover,
+.ck-overlay .ck-overlay__result--error .ck-overlay__result-chip:hover {
+  background: rgba(0, 0, 0, 0.28);
+}
+
 /* Full-screen manual search (#433, mockup ManualSearch.jsx parity) —
    replaces .ck-overlay__body entirely while active. */
 .ms {

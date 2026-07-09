@@ -684,16 +684,26 @@ export function CheckInPage({
   // Queued: same rationale as admitCurrent — this reads card.id at run time
   // and overwrites setCard, so it must not race a scan that could swap in a
   // different attendee's card first (#277 review).
-  const onItemAction = (itemKey: string, targetState: string) =>
+  // Resolves `true`/`false` (not just void) so CameraOverlayItemIssuing's
+  // optimistic "issued" mark (set synchronously at click time, before this
+  // promise settles — see its own comment) can be reverted on `false`
+  // instead of assuming every click succeeded; handleApiFailure still fires
+  // the toast either way (CodeRabbit review — a `pending` prop toggled
+  // around this call was the previous attempt, but `pending` only flips
+  // after a 5s delay, so it never transitioned for the fast failures that
+  // actually matter here).
+  const onItemAction = (itemKey: string, targetState: string): Promise<boolean> =>
     runExclusive(async () => {
-      if (!eventId || !card || !canAct) return;
+      if (!eventId || !card || !canAct) return false;
       setBusy(true);
       try {
         const { card: updated } = await submitItemAction(eventId, card.id, itemKey, targetState, deviceId);
         setCard(updated);
         void refreshSidebar();
+        return true;
       } catch (err) {
         handleApiFailure(err);
+        return false;
       } finally {
         setBusy(false);
         focusScan();
@@ -1122,7 +1132,7 @@ export function CheckInPage({
               : undefined
           }
           onReset={resetScan}
-          onItemAction={(key, state) => void onItemAction(key, state)}
+          onItemAction={onItemAction}
           onUndo={() => void onUndo()}
           showUndo={showUndo}
         />
