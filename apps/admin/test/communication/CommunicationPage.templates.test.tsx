@@ -57,6 +57,9 @@ vi.mock("react-router-dom", async (importOriginal) => {
   return {
     ...actual,
     useBlocker: () => blockerState,
+    useOutletContext: () => ({
+      event: { id: "evt-1", title: "Demo", archived_at: null },
+    }),
   };
 });
 

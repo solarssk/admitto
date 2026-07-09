@@ -34,6 +34,16 @@ vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => ({ reportApiError }),
 }));
 
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return {
+    ...actual,
+    useOutletContext: () => ({
+      event: { id: "evt-1", title: "Demo", archived_at: null },
+    }),
+  };
+});
+
 const addToast = vi.fn();
 vi.mock("@admitto/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@admitto/ui")>();
