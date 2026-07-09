@@ -550,8 +550,8 @@ export function EventSettingsPage() {
             <div className="danger-zone__info">
               <div className="danger-zone__title">Archive event</div>
               <p className="danger-zone__desc">
-                An archived event becomes read-only - editing is disabled, but check-in still
-                works. Only a superadmin can undo this.
+                An archived event becomes fully read-only, including check-in. Only a superadmin
+                can undo this.
               </p>
             </div>
             {isSa ? (
@@ -653,7 +653,7 @@ export function EventSettingsPage() {
         title={archiveMode === "archive" ? "Archive this event?" : "Unarchive this event?"}
         message={
           archiveMode === "archive"
-            ? "This event will become read-only. Editing will be disabled, but check-in will still work. Only a superadmin can undo this."
+            ? "This event will become fully read-only, including check-in. Attendee data is kept. Only a superadmin can undo this."
             : "This event will become active again and editable in admin."
         }
         confirmLabel={archiveMode === "archive" ? "Archive event" : "Unarchive event"}

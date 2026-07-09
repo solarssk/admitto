@@ -1,37 +1,28 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Badge, Button, Card, EmptyState, PageHeader, Spinner, Tabs, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, PageHeader, Spinner, Tabs } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
-import { ApiError, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { ApiError, fetchAdminEvents } from "../api/client.js";
 import type { EventDto } from "../api/types.js";
-import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { CreateEventModal } from "../events/CreateEventModal.js";
-import { formatEventCalendarDate, formatUtcDateTime } from "../utils/event-dates.js";
+import { formatEventCalendarDate } from "../utils/event-dates.js";
 
 type PickerTab = "active" | "archived";
-
-type UnarchiveTarget = { event: EventDto };
 
 /** Event picker for org admins and superadmins at `/admin` (no event context). */
 export function EventsPickerPage() {
   const navigate = useNavigate();
   const { assignments } = useAuth();
   const showInstanceSettings = isSuperadmin(assignments);
-  const canUnarchive = showInstanceSettings;
   const [tab, setTab] = useState<PickerTab>("active");
   const [tabTouched, setTabTouched] = useState(false);
   const [events, setEvents] = useState<EventDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
-  const [unarchiveTarget, setUnarchiveTarget] = useState<UnarchiveTarget | null>(null);
-  const [unarchiving, setUnarchiving] = useState(false);
-  const [unarchiveError, setUnarchiveError] = useState<string | null>(null);
   const { reportApiError } = useConnectionState();
-  const { addToast } = useToast();
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -89,23 +80,6 @@ export function EventsPickerPage() {
     // Pass the event we already hold so EventLayout can render the shell
     // immediately instead of re-fetching the events list (#274).
     navigate(`/admin/events/${event.id}/attendees`, { state: { event } });
-  };
-
-  const handleUnarchive = async () => {
-    if (!unarchiveTarget) return;
-    setUnarchiving(true);
-    setUnarchiveError(null);
-    try {
-      await unarchiveEvent(unarchiveTarget.event.id);
-      setUnarchiveTarget(null);
-      addToast("Event unarchived.", "success");
-      await load();
-    } catch (err) {
-      const message = operatorApiErrorMessage(err, "Failed to unarchive event.");
-      setUnarchiveError(message);
-    } finally {
-      setUnarchiving(false);
-    }
   };
 
   return (
@@ -172,14 +146,14 @@ export function EventsPickerPage() {
 
       <div className={gridClass}>
         {displayedEvents.map((event) => {
-          const showUnarchive = tab === "archived" && canUnarchive;
           const cardBody = (
             <>
-              {!event.archived_at && (
-                <Badge variant="ok" className="event-card__status">
-                  Active
-                </Badge>
-              )}
+              <Badge
+                variant={event.archived_at ? "neutral" : "ok"}
+                className="event-card__status"
+              >
+                {event.archived_at ? "Archived" : "Active"}
+              </Badge>
               <h2 className="event-card__title">{event.title}</h2>
               <p className="event-card__meta">
                 <i className="ti ti-calendar" aria-hidden="true" />
@@ -201,40 +175,8 @@ export function EventsPickerPage() {
                   </div>
                 </div>
               )}
-              {event.archived_at && (
-                <p className="event-card__archived">
-                  <Badge variant="neutral">Archived · read-only</Badge>
-                  <span>{formatUtcDateTime(event.archived_at)}</span>
-                </p>
-              )}
             </>
           );
-
-          if (showUnarchive) {
-            return (
-              <Card key={event.id} className="event-card event-card--static">
-                <Link
-                  to={`/admin/events/${event.id}/overview`}
-                  state={{ event }}
-                  className="event-card-link"
-                >
-                  {cardBody}
-                </Link>
-                <p className="event-card__actions">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => {
-                      setUnarchiveError(null);
-                      setUnarchiveTarget({ event });
-                    }}
-                  >
-                    Unarchive
-                  </Button>
-                </p>
-              </Card>
-            );
-          }
 
           return (
             <Link
@@ -243,7 +185,7 @@ export function EventsPickerPage() {
               state={{ event }}
               className="event-card-link"
             >
-              <Card className="event-card event-card--active">{cardBody}</Card>
+              <Card className="event-card">{cardBody}</Card>
             </Link>
           );
         })}
@@ -253,27 +195,6 @@ export function EventsPickerPage() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={handleCreated}
-      />
-
-      <ConfirmDialog
-        open={!!unarchiveTarget}
-        title="Unarchive event"
-        message={
-          unarchiveTarget
-            ? `Restore "${unarchiveTarget.event.title}" to active events? Edits will be allowed again.`
-            : ""
-        }
-        errorMessage={unarchiveError}
-        confirmLabel="Unarchive"
-        confirmVariant="primary"
-        loading={unarchiving}
-        onConfirm={() => void handleUnarchive()}
-        onCancel={() => {
-          if (!unarchiving) {
-            setUnarchiveTarget(null);
-            setUnarchiveError(null);
-          }
-        }}
       />
     </div>
   );
