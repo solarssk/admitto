@@ -10,7 +10,7 @@ const MIN_QUERY_LEN = 2;
 // "name search" ends and "raw token" begins.
 const TOKEN_LEN_THRESHOLD = 20;
 
-type CameraOverlayManualSearchProps = {
+type CameraOverlayManualSearchProps = Readonly<{
   allowManualLookup: boolean;
   onSearch: (query: string) => Promise<LookupAttendeeResult[]>;
   onSelectAttendee: (attendeeId: string) => void;
@@ -18,7 +18,7 @@ type CameraOverlayManualSearchProps = {
   manualError?: string | null;
   onClearManualError?: () => void;
   onBack: () => void;
-};
+}>;
 
 /** Full-screen search — replaces the camera view while active (#433, mockup ManualSearch.jsx parity). */
 export function CameraOverlayManualSearch({

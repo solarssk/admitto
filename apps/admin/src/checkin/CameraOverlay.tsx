@@ -116,6 +116,56 @@ export function CameraOverlay({
 
   if (!open) return null;
 
+  // Extracted from a nested ternary in the JSX below (Sonar S3358) — three
+  // mutually exclusive states for the camera frame's content.
+  function renderFrameContent() {
+    if (itemStepActive && card && onItemAction) {
+      return (
+        <CameraOverlayItemIssuing
+          key={card.id}
+          items={card.items}
+          stepKeys={itemStepKeys}
+          onItemAction={onItemAction}
+          pending={pending}
+          canAct={canAct}
+          onDone={onReset}
+          onUndo={onUndo}
+          showUndo={showUndo}
+        />
+      );
+    }
+    if (scanResult) {
+      return (
+        <CheckInCameraResultPanel
+          scanResult={scanResult}
+          card={card}
+          pending={pending}
+          canAct={canAct}
+          eventTimezone={eventTimezone}
+          onConfirm={onConfirm}
+          onReset={onReset}
+          onIssueItems={
+            scanResult.status === "ALREADY_CHECKED_IN" && pendingItemCount > 0 && onItemAction
+              ? () => setItemsMode(true)
+              : undefined
+          }
+        />
+      );
+    }
+    return (
+      <div className="ck-overlay__viewfinder" aria-hidden="true">
+        <div className="vf-frame">
+          <span className="c tl" />
+          <span className="c tr" />
+          <span className="c bl" />
+          <span className="c br" />
+          <span className="vf-line" />
+        </div>
+        <p className="ck-overlay__hint">Point the camera at the attendee&apos;s QR</p>
+      </div>
+    );
+  }
+
   return (
     <div className="ck-overlay" role="dialog" aria-modal="true" aria-label="Camera check-in">
       <header className="ck-overlay__bar">
@@ -159,47 +209,7 @@ export function CameraOverlay({
                 wedgeActive={wedgeActive}
                 onScan={onScan}
               />
-              {itemStepActive && card && onItemAction ? (
-                <CameraOverlayItemIssuing
-                  key={card.id}
-                  items={card.items}
-                  stepKeys={itemStepKeys}
-                  onItemAction={onItemAction}
-                  pending={pending}
-                  canAct={canAct}
-                  onDone={onReset}
-                  onUndo={onUndo}
-                  showUndo={showUndo}
-                />
-              ) : scanResult ? (
-                <CheckInCameraResultPanel
-                  scanResult={scanResult}
-                  card={card}
-                  pending={pending}
-                  canAct={canAct}
-                  eventTimezone={eventTimezone}
-                  onConfirm={onConfirm}
-                  onReset={onReset}
-                  onIssueItems={
-                    scanResult.status === "ALREADY_CHECKED_IN" &&
-                    pendingItemCount > 0 &&
-                    onItemAction
-                      ? () => setItemsMode(true)
-                      : undefined
-                  }
-                />
-              ) : (
-                <div className="ck-overlay__viewfinder" aria-hidden="true">
-                  <div className="vf-frame">
-                    <span className="c tl" />
-                    <span className="c tr" />
-                    <span className="c bl" />
-                    <span className="c br" />
-                    <span className="vf-line" />
-                  </div>
-                  <p className="ck-overlay__hint">Point the camera at the attendee&apos;s QR</p>
-                </div>
-              )}
+              {renderFrameContent()}
             </div>
 
             <div className="ck-overlay__manual">

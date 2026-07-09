@@ -3,7 +3,7 @@ import { Badge, Button } from "@admitto/ui";
 import type { AttendeeCardItemDto } from "../api/types.js";
 import { itemActionLabel, itemBadgeVariant } from "./AttendeeCard.js";
 
-type CameraOverlayItemIssuingProps = {
+type CameraOverlayItemIssuingProps = Readonly<{
   /** Live item list from the current card — looked up by key so state (e.g. after
    * an action completes) stays in sync while stepping through. */
   items: AttendeeCardItemDto[];
@@ -18,7 +18,68 @@ type CameraOverlayItemIssuingProps = {
   onDone: () => void;
   onUndo?: () => void;
   showUndo?: boolean;
-};
+}>;
+
+type SummaryScreenProps = Readonly<{
+  items: AttendeeCardItemDto[];
+  stepKeys: string[];
+  isDone: (item: AttendeeCardItemDto) => boolean;
+  onDone: () => void;
+  onUndo?: () => void;
+  showUndo?: boolean;
+}>;
+
+// Split out of CameraOverlayItemIssuing (Sonar: cognitive complexity) — the
+// final screen after stepping through every item, listing what was issued
+// vs. skipped.
+function SummaryScreen({ items, stepKeys, isDone, onDone, onUndo, showUndo }: SummaryScreenProps) {
+  const resolvedItems = stepKeys
+    .map((key) => items.find((i) => i.key === key))
+    .filter((i): i is AttendeeCardItemDto => !!i);
+  const skippedCount = resolvedItems.filter((item) => !isDone(item)).length;
+  const allDone = skippedCount === 0;
+  // Not a nested ternary (Sonar S3358): the plural suffix is resolved to its
+  // own variable first.
+  const skippedLabel = `${skippedCount} item${skippedCount === 1 ? "" : "s"} skipped`;
+  const summaryLabel = allDone ? "All items issued" : skippedLabel;
+
+  return (
+    // Skipping an item is a legitimate choice, but the summary must not
+    // read as "everything was handed out" when it wasn't — a big green
+    // checkmark there would be a false confirmation (PO review).
+    <div className={allDone ? "ck-items" : "ck-items ck-items--incomplete"}>
+      <i
+        className={`ti ${allDone ? "ti-circle-check" : "ti-alert-triangle"} ck-items__icon`}
+        aria-hidden="true"
+      />
+      <h2 className="ck-items__label">{summaryLabel}</h2>
+      <ul className="ck-items__summary">
+        {resolvedItems.map((item) => {
+          const done = isDone(item);
+          return (
+            <li key={item.key} className={done ? "is-done" : "is-skipped"}>
+              <i className={`ti ${done ? "ti-check" : "ti-minus"}`} aria-hidden="true" />
+              {item.label}
+            </li>
+          );
+        })}
+      </ul>
+      <Button type="button" variant="primary" size="lg" block onClick={onDone}>
+        Next scan
+      </Button>
+      {/* Always rendered — matches .ck-items__nav's reserved height on the
+          step screens, even when there's no undo link, so the button sits
+          at the same fixed Y on every screen (PO review point 2). */}
+      <div className="ck-items__nav">
+        {showUndo && onUndo && (
+          <button type="button" className="link-btn" onClick={onUndo}>
+            Undo last check-in
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function CameraOverlayItemIssuing({
   items,
@@ -62,49 +123,15 @@ export function CameraOverlayItemIssuing({
   // progress indicator ("Item X of Y") renders below the button, not above
   // the icon — it used to collide with the icon there (PO review).
   if (stepIndex >= stepKeys.length) {
-    const resolvedItems = stepKeys
-      .map((key) => items.find((i) => i.key === key))
-      .filter((i): i is AttendeeCardItemDto => !!i);
-    const skippedCount = resolvedItems.filter((item) => !isDone(item)).length;
-    const allDone = skippedCount === 0;
-
     return (
-      // Skipping an item is a legitimate choice, but the summary must not
-      // read as "everything was handed out" when it wasn't — a big green
-      // checkmark there would be a false confirmation (PO review).
-      <div className={allDone ? "ck-items" : "ck-items ck-items--incomplete"}>
-        <i
-          className={`ti ${allDone ? "ti-circle-check" : "ti-alert-triangle"} ck-items__icon`}
-          aria-hidden="true"
-        />
-        <h2 className="ck-items__label">
-          {allDone ? "All items issued" : `${skippedCount} item${skippedCount === 1 ? "" : "s"} skipped`}
-        </h2>
-        <ul className="ck-items__summary">
-          {resolvedItems.map((item) => {
-            const done = isDone(item);
-            return (
-              <li key={item.key} className={done ? "is-done" : "is-skipped"}>
-                <i className={`ti ${done ? "ti-check" : "ti-minus"}`} aria-hidden="true" />
-                {item.label}
-              </li>
-            );
-          })}
-        </ul>
-        <Button type="button" variant="primary" size="lg" block onClick={onDone}>
-          Next scan
-        </Button>
-        {/* Always rendered — matches .ck-items__nav's reserved height on the
-            step screens, even when there's no undo link, so the button sits
-            at the same fixed Y on every screen (PO review point 2). */}
-        <div className="ck-items__nav">
-          {showUndo && onUndo && (
-            <button type="button" className="link-btn" onClick={onUndo}>
-              Undo last check-in
-            </button>
-          )}
-        </div>
-      </div>
+      <SummaryScreen
+        items={items}
+        stepKeys={stepKeys}
+        isDone={isDone}
+        onDone={onDone}
+        onUndo={onUndo}
+        showUndo={showUndo}
+      />
     );
   }
 

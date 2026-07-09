@@ -1133,7 +1133,9 @@ export function CheckInPage({
           }
           onReset={resetScan}
           onItemAction={onItemAction}
-          onUndo={() => void onUndo()}
+          onUndo={() => {
+            onUndo();
+          }}
           showUndo={showUndo}
         />
       )}

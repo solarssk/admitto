@@ -1414,8 +1414,14 @@
   color: #fff;
 }
 
+/* Solid #32353a, not rgba(255,255,255,0.15) — same rendered color (15%
+   white over .ck-overlay's #0e1117), but as a literal value so a static
+   contrast checker can actually verify it against the white text instead
+   of reading the alpha-blended rgba in isolation as "white on white"
+   (Sonar css:S7924 — a false positive from not modeling the real stacking
+   context, but a solid value sidesteps it either way). */
 .ck-overlay__manual .at-btn--secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
+  background: #32353a;
   color: #fff;
 }
 
@@ -1434,8 +1440,15 @@
    a button"). Scoped under .ck-overlay so desktop's CkInlineCamera (Cancel
    still a .link-btn there — Issue items never renders on desktop at all)
    is unaffected. */
+/* Solid colors below, not the rgba washes this block originally used —
+   same rendered result (each is that wash pre-blended over its actual
+   parent background) but as literal values a static contrast checker can
+   verify directly, instead of reading e.g. rgba(255,255,255,0.25) in
+   isolation as "white on white" and rgba(0,0,0,0.12) as "black on black"
+   (Sonar css:S7924 doesn't model the real stacking context — false
+   positives either way, but solid values sidestep that). */
 .ck-overlay .ck-overlay__result-chip {
-  background: rgba(255, 255, 255, 0.25);
+  background: #4a4d51;
   border: none;
   border-radius: 100px;
   color: #fff;
@@ -1451,36 +1464,41 @@
 }
 
 .ck-overlay .ck-overlay__result-chip:hover {
-  background: rgba(255, 255, 255, 0.35);
+  background: #626468;
 }
 
 /* Already-checked-in renders on the warn (yellow) card — dark text, same as
    the rest of the warn-tone overrides above. */
 .ck-overlay .ck-overlay__result--warn .ck-overlay__result-chip {
-  background: rgba(0, 0, 0, 0.12);
+  background: #d88c00;
   color: #3a2a00;
 }
 
 .ck-overlay .ck-overlay__result--warn .ck-overlay__result-chip:hover {
-  background: rgba(0, 0, 0, 0.2);
+  background: #c47f00;
 }
 
 /* OK (green) and error (red) cards: the base chip's white-on-white-wash
-   (rgba(255,255,255,0.25) + white text) has good contrast against the dark
-   base panel, but blended over these saturated backgrounds it lightens
-   them enough that white text falls under AA contrast (CodeRabbit review).
-   A dark wash (same technique as the warn override above) darkens the pill
-   enough that the existing white text reads clearly again — unlike warn's
-   bright yellow, ok/error are saturated enough that darkening the chip
-   alone is enough, without also needing to flip the text color. */
-.ck-overlay .ck-overlay__result--ok .ck-overlay__result-chip,
-.ck-overlay .ck-overlay__result--error .ck-overlay__result-chip {
-  background: rgba(0, 0, 0, 0.18);
+   had good contrast against the dark base panel, but blended over these
+   saturated backgrounds it lightened them enough that white text fell
+   under AA contrast (CodeRabbit review). A darker pill (same technique as
+   the warn override above) reads clearly with the existing white text —
+   unlike warn's bright yellow, ok/error are saturated enough that
+   darkening the chip alone is enough, without also needing dark text. */
+.ck-overlay .ck-overlay__result--ok .ck-overlay__result-chip {
+  background: #279333;
 }
 
-.ck-overlay .ck-overlay__result--ok .ck-overlay__result-chip:hover,
+.ck-overlay .ck-overlay__result--ok .ck-overlay__result-chip:hover {
+  background: #228131;
+}
+
+.ck-overlay .ck-overlay__result--error .ck-overlay__result-chip {
+  background: #af2f2f;
+}
+
 .ck-overlay .ck-overlay__result--error .ck-overlay__result-chip:hover {
-  background: rgba(0, 0, 0, 0.28);
+  background: #9a2929;
 }
 
 /* Full-screen manual search (#433, mockup ManualSearch.jsx parity) —
