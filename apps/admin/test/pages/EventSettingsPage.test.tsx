@@ -414,14 +414,43 @@ describe("EventSettingsPage — delete event (#395)", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
   }
 
-  it("does not render the Delete event row for an active (non-archived) event", async () => {
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+  it("renders Delete event disabled for an active event with activity (archiving is not required)", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      is_deletable: false,
+    });
     renderSettings();
     await openDangerZone();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Archive event/ })).toBeTruthy();
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
     });
-    expect(screen.queryByText("Delete event")).toBeNull();
+    const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("This event has data and cannot be deleted");
+    expect(
+      screen.getByText(
+        /Only events with no attendees, custom items, contacts, resources, pinned note, or event-specific mail template can be permanently deleted/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("renders Delete event enabled for a superadmin on an active, empty event", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      is_deletable: true,
+    });
+    renderSettings();
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
+    });
+    const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(
+      screen.getByText(
+        /Permanently deletes this event and everything in it\. This can't be undone\./,
+      ),
+    ).toBeTruthy();
   });
 
   it("renders Delete event disabled for an archived event that still has activity", async () => {
@@ -439,7 +468,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     expect(button.title).toBe("This event has data and cannot be deleted");
     expect(
       screen.getByText(
-        /Only archived events with no attendees, custom items, contacts, resources, pinned note, or event-specific mail template can be permanently deleted/,
+        /Only events with no attendees, custom items, contacts, resources, pinned note, or event-specific mail template can be permanently deleted/,
       ),
     ).toBeTruthy();
   });

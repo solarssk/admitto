@@ -1,12 +1,16 @@
 /**
  * Superadmin permanent event deletion (#395).
  *
- * Delete is only reachable for events that are already archived (archiving stays the
- * reversible safety net — see event-archiving.ts) AND show zero real activity across
- * six independent signals. Both the Event Settings DTO hint (`is_deletable`, shown to
- * disable the button in the UI) and the actual delete route re-run the exact same
- * `isEventDeletable` check against the exact same `EventActivitySignals`, so the UI
- * hint and the enforced guard can never drift apart.
+ * Delete does not require the event to be archived first — it is reachable for any
+ * event (active or archived) that shows zero real activity across five independent
+ * signals plus no pinned note. Archiving is a separate, independently useful action
+ * (marks an event read-only/done) but is no longer a delete prerequisite: an event
+ * that never had any real activity is equally safe to delete whether or not it has
+ * been archived, and requiring an extra archive step first only added friction, not
+ * safety, once every activity signal already has to be zero. Both the Event Settings
+ * DTO hint (`is_deletable`, shown to disable the button in the UI) and the actual
+ * delete route re-run the exact same `isEventDeletable` check against the exact same
+ * `EventActivitySignals`, so the UI hint and the enforced guard can never drift apart.
  *
  * FK graph note: Attendee.event_id has no cascade, so 0 attendees transitively means 0
  * CheckIn/EmailDelivery/WalletPass rows (those all require an Attendee row first, and the
@@ -49,17 +53,16 @@ export async function countEventActivitySignals(
 }
 
 /**
- * All 7 conditions must hold: archived (reuses the reversible archive lifecycle as the
- * safety net), no pinned note, and all 5 activity signals at zero. Pure/sync so it is
- * trivially unit-testable and can never diverge between the DTO computation and the
- * actual delete route — both call this against the same signals.
+ * All 6 conditions must hold: no pinned note, and all 5 activity signals at zero.
+ * Deliberately does NOT require `archived_at` — see the file-level comment above.
+ * Pure/sync so it is trivially unit-testable and can never diverge between the DTO
+ * computation and the actual delete route — both call this against the same signals.
  */
 export function isEventDeletable(
   event: { archived_at: Date | null; pinned_note: string | null },
   signals: EventActivitySignals,
 ): boolean {
   return (
-    event.archived_at !== null &&
     event.pinned_note === null &&
     signals.attendeeCount === 0 &&
     signals.nonBadgeItemCount === 0 &&

@@ -157,8 +157,22 @@ describe("DELETE /api/admin/events/:eventId", () => {
     expect(body.error).toBe("not_found");
   });
 
-  it("returns 409 event_not_deletable when the event is still active", async () => {
+  it("permanently deletes a truly-empty ACTIVE event (archiving is not required)", async () => {
     const eventId = await createEvent({ archived: false });
+    const res = await deleteEventRequest(eventId, superCookie);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    expect(event).toBeNull();
+  });
+
+  it("returns 409 when active (not archived) but has an attendee", async () => {
+    const eventId = await createEvent({ archived: false });
+    await prisma.attendee.create({
+      data: { event_id: eventId, email: "guest-active@example.com", name: "Guest" },
+    });
+
     const res = await deleteEventRequest(eventId, superCookie);
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: string };

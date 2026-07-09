@@ -609,40 +609,38 @@ export function EventSettingsPage() {
             </Button>
           </div>
 
-          {isArchived && (
-            <div className="danger-zone__item">
-              <div className="danger-zone__info">
-                <div className="danger-zone__title">Delete event</div>
-                <p className="danger-zone__desc">
-                  {event.is_deletable
-                    ? "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log."
-                    : "Only archived events with no attendees, custom items, contacts, resources, pinned note, or event-specific mail template can be permanently deleted."}
-                </p>
-              </div>
-              {isSa ? (
-                <Button
-                  variant="danger"
-                  disabled={!event.is_deletable || deleting}
-                  title={
-                    event.is_deletable ? undefined : "This event has data and cannot be deleted"
-                  }
-                  icon={<i className="ti ti-trash" aria-hidden="true" />}
-                  onClick={() => setDeleteOpen(true)}
-                >
-                  Delete event
-                </Button>
-              ) : (
-                <Button
-                  variant="danger"
-                  disabled
-                  title="Superadmin only"
-                  icon={<i className="ti ti-trash" aria-hidden="true" />}
-                >
-                  Delete event
-                </Button>
-              )}
+          <div className="danger-zone__item">
+            <div className="danger-zone__info">
+              <div className="danger-zone__title">Delete event</div>
+              <p className="danger-zone__desc">
+                {event.is_deletable
+                  ? "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log."
+                  : "Only events with no attendees, custom items, contacts, resources, pinned note, or event-specific mail template can be permanently deleted."}
+              </p>
             </div>
-          )}
+            {isSa ? (
+              <Button
+                variant="danger"
+                disabled={!event.is_deletable || deleting}
+                title={
+                  event.is_deletable ? undefined : "This event has data and cannot be deleted"
+                }
+                icon={<i className="ti ti-trash" aria-hidden="true" />}
+                onClick={() => setDeleteOpen(true)}
+              >
+                Delete event
+              </Button>
+            ) : (
+              <Button
+                variant="danger"
+                disabled
+                title="Superadmin only"
+                icon={<i className="ti ti-trash" aria-hidden="true" />}
+              >
+                Delete event
+              </Button>
+            )}
+          </div>
         </div>
 
         <p className="danger-zone-notice">
