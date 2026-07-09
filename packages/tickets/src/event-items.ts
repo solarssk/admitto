@@ -18,6 +18,9 @@ const DEFAULT_BADGE_ITEM = {
   config: { issue_on_checkin: true, requires_return: false },
 } as const;
 
+/** Public constant for the structural "badge" item key — reuse instead of the "badge" literal. */
+export const BADGE_ITEM_KEY = DEFAULT_BADGE_ITEM.key;
+
 /**
  * Single source of truth for "can the badge item actually back badge_at_entry
  * right now" — an item that's disabled, or has issue_on_checkin explicitly

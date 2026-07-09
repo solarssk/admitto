@@ -4,6 +4,7 @@ import { Badge, Button, Card, EmptyState, Input, PageHeader, Tabs, useToast } fr
 import {
   ApiError,
   archiveEvent,
+  deleteEvent,
   exportEventPii,
   fetchEventSettings,
   patchEvent,
@@ -131,6 +132,8 @@ export function EventSettingsPage() {
   const [archiveMode, setArchiveMode] = useState<"archive" | "unarchive">("archive");
   const [logoUploading, setLogoUploading] = useState(false);
   const [headerUploading, setHeaderUploading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
   const [tab, setTab] = useState<EventSettingsTab>(initialTab);
@@ -247,6 +250,20 @@ export function EventSettingsPage() {
       addToast(operatorApiErrorMessage(err, "Action failed"), "error");
     } finally {
       setArchiving(false);
+    }
+  }
+
+  async function handleDeleteConfirm() {
+    if (!eventId) return;
+    setDeleting(true);
+    try {
+      await deleteEvent(eventId);
+      addToast("Event permanently deleted", "success");
+      navigate("/admin");
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Delete failed"), "error");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -591,6 +608,41 @@ export function EventSettingsPage() {
               {exporting ? "Exporting…" : "Export personal data"}
             </Button>
           </div>
+
+          {isArchived && (
+            <div className="danger-zone__item">
+              <div className="danger-zone__info">
+                <div className="danger-zone__title">Delete event</div>
+                <p className="danger-zone__desc">
+                  {event.is_deletable
+                    ? "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log."
+                    : "Only archived events with no attendees, custom items, contacts, resources, pinned note, or event-specific mail template can be permanently deleted."}
+                </p>
+              </div>
+              {isSa ? (
+                <Button
+                  variant="danger"
+                  disabled={!event.is_deletable || deleting}
+                  title={
+                    event.is_deletable ? undefined : "This event has data and cannot be deleted"
+                  }
+                  icon={<i className="ti ti-trash" aria-hidden="true" />}
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  Delete event
+                </Button>
+              ) : (
+                <Button
+                  variant="danger"
+                  disabled
+                  title="Superadmin only"
+                  icon={<i className="ti ti-trash" aria-hidden="true" />}
+                >
+                  Delete event
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
         <p className="danger-zone-notice">
@@ -613,6 +665,18 @@ export function EventSettingsPage() {
         loading={archiving}
         onConfirm={() => void handleArchiveConfirm()}
         onCancel={() => setArchiveOpen(false)}
+      />
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Permanently delete this event?"
+        message={`This permanently deletes "${event.title}" and all its configuration. This cannot be undone.`}
+        confirmLabel="Delete event"
+        confirmVariant="danger"
+        loading={deleting}
+        confirmationValue={event.title}
+        confirmationLabel={`Type the event title to confirm: "${event.title}"`}
+        onConfirm={() => void handleDeleteConfirm()}
+        onCancel={() => setDeleteOpen(false)}
       />
       <ConfirmDialog
         open={blocker.state === "blocked"}

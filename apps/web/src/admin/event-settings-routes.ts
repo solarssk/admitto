@@ -10,6 +10,7 @@ import { z } from "zod";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
 import { timezoneField } from "./timezone.js";
+import { countEventActivitySignals, isEventDeletable } from "./event-deletion.js";
 
 const dateOnlyField = z
   .string()
@@ -47,6 +48,8 @@ export type EventSettingsDto = {
   archived_at: string | null;
   /** When the event was first created — shown in the Status card. */
   created_at: string;
+  /** True when the event has zero real activity and can be permanently deleted. */
+  is_deletable: boolean;
   organization_name: string;
   active_items: Array<{ id: string; name: string; enabled: boolean }>;
   /** Event's own branding overrides — null means "inherited from organization". */
@@ -69,6 +72,7 @@ type EventSettingsRow = {
   created_at: Date;
   logo_url: string | null;
   header_image_url: string | null;
+  pinned_note: string | null;
   organization: { name: string; logo_url: string | null; header_image_url: string | null };
   event_items: Array<{ id: string; label: string; enabled: boolean }>;
 };
@@ -89,7 +93,10 @@ function parseEventDateInput(date: string): Date {
   return new Date(date.includes("T") ? date : `${date}T12:00:00.000Z`);
 }
 
-function serializeEventSettings(event: EventSettingsRow): EventSettingsDto {
+function serializeEventSettings(
+  event: EventSettingsRow,
+  deletability: { isDeletable: boolean },
+): EventSettingsDto {
   const resolved = resolveBrandingFromEvent(event);
   return {
     id: event.id,
@@ -102,6 +109,7 @@ function serializeEventSettings(event: EventSettingsRow): EventSettingsDto {
     status: event.archived_at ? "archived" : "active",
     archived_at: event.archived_at ? event.archived_at.toISOString() : null,
     created_at: event.created_at.toISOString(),
+    is_deletable: deletability.isDeletable,
     organization_name: event.organization.name,
     active_items: event.event_items.map((item) => ({
       id: item.id,
@@ -125,6 +133,7 @@ const EVENT_SETTINGS_SELECT = {
   capacity: true,
   archived_at: true,
   created_at: true,
+  pinned_note: true,
   organization_id: true,
   logo_url: true,
   header_image_url: true,
@@ -134,6 +143,16 @@ const EVENT_SETTINGS_SELECT = {
     orderBy: { label: "asc" as const },
   },
 } as const;
+
+/** Load activity signals for an event and evaluate the shared delete guard against them. */
+async function loadDeletability(
+  db: PrismaClient,
+  eventId: string,
+  event: { archived_at: Date | null; pinned_note: string | null },
+): Promise<{ isDeletable: boolean }> {
+  const signals = await countEventActivitySignals(db, eventId);
+  return { isDeletable: isEventDeletable(event, signals) };
+}
 
 async function loadEventSettingsRow(
   db: PrismaClient,
@@ -157,7 +176,8 @@ export async function handleGetEventSettings(c: Context, db: PrismaClient): Prom
   const event = await loadEventSettingsRow(db, eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  return c.json(serializeEventSettings(event));
+  const deletability = await loadDeletability(db, eventId, event);
+  return c.json(serializeEventSettings(event, deletability));
 }
 
 type PatchEventBody = z.infer<typeof patchEventSchema>;
@@ -272,7 +292,8 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       return row;
     });
 
-    return c.json({ event: serializeEventSettings(updated) });
+    const deletability = await loadDeletability(db, eventId, updated);
+    return c.json({ event: serializeEventSettings(updated, deletability) });
   } catch (err) {
     console.error("[audit] event_updated transaction failed", err);
     return c.json({ error: "audit_failed" }, 500);

@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
-import { canManageEvent } from "@admitto/auth";
+import { canManageEvent, canManageInstance } from "@admitto/auth";
 import { IllegalItemTransitionError, type OpsAuditContext } from "@admitto/tickets";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import {
@@ -53,6 +53,24 @@ export function requireEventId(c: Context): string | Response {
   const eventId = c.req.param("eventId");
   if (!eventId) return c.json({ error: "eventId required" }, 400);
   return eventId;
+}
+
+/** Return 403 when the session user is not a superadmin; otherwise null. */
+export async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response | null> {
+  const auth = c.get("auth");
+  if (!(await canManageInstance(db, auth.userId))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  return null;
+}
+
+/** Require authenticated actor for audit writes; 401 when session has no user id. */
+export function requireAuditActor(c: Context): (OpsAuditContext & { operator: string }) | Response {
+  const audit = adminAuditFromContext(c);
+  if (!audit.operator) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  return { ...audit, operator: audit.operator };
 }
 
 /** Parse a positive integer query param with safe fallback and optional upper bound. */

@@ -55,6 +55,8 @@ export interface EventSettingsDto {
   archived_at: string | null;
   /** When the event was first created. */
   created_at: string;
+  /** True when the event has zero real activity and can be permanently deleted. */
+  is_deletable: boolean;
   organization_name: string;
   active_items: Array<{ id: string; name: string; enabled: boolean }>;
   /** Event's own branding overrides — null means "inherited from organization". */

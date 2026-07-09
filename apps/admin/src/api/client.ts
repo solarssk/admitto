@@ -317,6 +317,12 @@ export async function unarchiveEvent(eventId: string): Promise<void> {
   await parseJson(res);
 }
 
+/** Permanently delete an event (superadmin-only DELETE). Only archived, never-used events qualify. */
+export async function deleteEvent(eventId: string): Promise<void> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}`, jsonDeleteInit());
+  await parseJson(res);
+}
+
 /** Load event settings for the settings page. */
 export async function fetchEventSettings(
   eventId: string,
