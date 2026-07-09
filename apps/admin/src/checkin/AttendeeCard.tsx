@@ -66,13 +66,26 @@ function statusIcon(status: CheckInStatus): string {
   }
 }
 
-// "Mark X issued/given/returned", not "Issue X" — the operator is
-// confirming a physical hand-over that already happened, not instructing
-// the system to perform one; the button reads as an attestation rather
-// than a description of an automated action (Jadzia review). Kept per-key
-// so the phrasing still reads naturally ("gift bag" is *given*, a badge or
+// "Mark issued/given/returned", not "Issue X" — the operator is confirming
+// a physical hand-over that already happened, not instructing the system to
+// perform one; the button reads as an attestation rather than a description
+// of an automated action (Jadzia review). The item's own name isn't
+// repeated here — it's already the row label right next to this button
+// (desktop) or the heading directly above it (mobile), and including it
+// made the button too wide (PO review, round 3). Kept per-action/per-key so
+// the phrasing still reads naturally ("gift bag" is *given*, a badge or
 // headset is *issued*) instead of forcing one verb onto every item type.
 export function itemActionLabel(key: string, action: string): string {
+  if (action === "issued") return key === "gift_bag" ? "Mark given" : "Mark issued";
+  if (action === "returned") return "Mark returned";
+  return `Mark ${action}`;
+}
+
+// Full accessible name for the same button — a screen reader navigating by
+// a flat list of buttons won't see the visual proximity to the item's own
+// label, so its aria-label needs the item name that the short visible text
+// above deliberately drops.
+export function itemActionAriaLabel(key: string, action: string): string {
   if (action === "issued") {
     if (key === "headset") return "Mark headset issued";
     // Item keys are slugified from the label (spaces → underscores, see
@@ -273,16 +286,6 @@ export function AttendeeCard({
             >
               Confirm check-in
             </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              block
-              className="checkin-card__aux-btn"
-              disabled={pending}
-              onClick={() => onCancel?.()}
-            >
-              Clear
-            </Button>
           </div>
         )}
 
@@ -297,9 +300,10 @@ export function AttendeeCard({
             <h3 className="checkin-card__items-title">Items to hand out</h3>
             {card.items.map((item) => (
               <div key={item.key} className="checkin-card__item">
-                {/* Icon sits outside the label/description column so it
-                    centers against the pair of lines as a unit, not just
-                    the label row (PO/Jadzia review). */}
+                {/* Icon and the action button/badge both sit outside the
+                    label/description column, as its siblings, so both
+                    center against the pair of lines as a unit instead of
+                    just the label row (PO/Jadzia review, round 3). */}
                 <i
                   className={`ti ti-${item.icon ?? "package"} checkin-card__item-icon`}
                   aria-hidden="true"
@@ -310,31 +314,32 @@ export function AttendeeCard({
                       {item.label}
                       {item.detail && <span className="checkin-card__item-detail">{item.detail}</span>}
                     </span>
-                    {item.actions.length > 0 ? (
-                      item.actions.map((action) => (
-                        <Button
-                          key={`${item.key}-${action}`}
-                          type="button"
-                          variant="success"
-                          size="sm"
-                          disabled={
-                            !canAct || pending || displayMode === "alert" || submittingKeys.has(item.key)
-                          }
-                          onClick={() => handleItemAction(item.key, action)}
-                        >
-                          {itemActionLabel(item.key, action)}
-                        </Button>
-                      ))
-                    ) : (
-                      <Badge variant={itemBadgeVariant(item.state)} className="checkin-card__item-badge">
-                        {item.state}
-                      </Badge>
-                    )}
                   </div>
                   {item.description && (
                     <p className="checkin-card__item-description">{item.description}</p>
                   )}
                 </div>
+                {item.actions.length > 0 ? (
+                  item.actions.map((action) => (
+                    <Button
+                      key={`${item.key}-${action}`}
+                      type="button"
+                      variant="success"
+                      size="sm"
+                      disabled={
+                        !canAct || pending || displayMode === "alert" || submittingKeys.has(item.key)
+                      }
+                      aria-label={itemActionAriaLabel(item.key, action)}
+                      onClick={() => handleItemAction(item.key, action)}
+                    >
+                      {itemActionLabel(item.key, action)}
+                    </Button>
+                  ))
+                ) : (
+                  <Badge variant={itemBadgeVariant(item.state)} className="checkin-card__item-badge">
+                    {item.state}
+                  </Badge>
+                )}
               </div>
             ))}
           </div>
@@ -356,12 +361,12 @@ export function AttendeeCard({
           </div>
         )}
 
-        {/* 4. Secondary actions footer (mockup ci-result__actions). Clear is
-            omitted when showPrimaryActions is true — PREVIEW already has its
-            own block-width Cancel button, so this only appears for states
-            (VALID / ALREADY_CHECKED_IN / REVOKED) that otherwise have no way
-            to dismiss the card short of Escape or scanning someone else. */}
-        {(showUndo || onAddNote || (onCancel && !showPrimaryActions) || showRevokeCheckIn) && (
+        {/* 4. Secondary actions footer (mockup ci-result__actions). Clear
+            lives only here now, as a small ghost button next to Add note —
+            PREVIEW previously had its own second, block-width Clear button
+            directly under Confirm check-in, which read as an oversized,
+            visually-competing pair (PO review, round 3). */}
+        {(showUndo || onAddNote || onCancel || showRevokeCheckIn) && (
           <div className="checkin-card__footer">
             {showUndo && onUndo && (
               <Button
@@ -410,7 +415,7 @@ export function AttendeeCard({
                 Add note
               </Button>
             )}
-            {onCancel && !showPrimaryActions && (
+            {onCancel && (
               <Button
                 type="button"
                 variant="ghost"

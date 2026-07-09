@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Badge, Button } from "@admitto/ui";
 import type { AttendeeCardItemDto } from "../api/types.js";
-import { itemActionLabel, itemBadgeVariant } from "./AttendeeCard.js";
+import { itemActionAriaLabel, itemActionLabel, itemBadgeVariant } from "./AttendeeCard.js";
 
 type CameraOverlayItemIssuingProps = Readonly<{
   /** Live item list from the current card — looked up by key so state (e.g. after
@@ -216,6 +216,7 @@ export function CameraOverlayItemIssuing({
           size="lg"
           block
           disabled={!canAct || pending}
+          aria-label={itemActionAriaLabel(currentItem.key, action)}
           onClick={() => {
             const key = currentItem.key;
             if (submittedKeysRef.current.has(key)) return;
