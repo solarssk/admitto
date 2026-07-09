@@ -303,7 +303,7 @@ describe("CheckInPage lookup card states (#379)", () => {
       expect(screen.getByText(/Ticket is not admittable/)).toBeTruthy();
     });
     expect(screen.queryByRole("button", { name: "Confirm check-in" })).toBeNull();
-    const itemAction = screen.getByRole("button", { name: "Issue badge" }) as HTMLButtonElement;
+    const itemAction = screen.getByRole("button", { name: "Mark badge issued" }) as HTMLButtonElement;
     expect(itemAction.disabled).toBe(true);
     // A revoked card has no Confirm/Cancel — Clear is the only way to dismiss it.
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));

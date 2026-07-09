@@ -66,17 +66,23 @@ function statusIcon(status: CheckInStatus): string {
   }
 }
 
+// "Mark X issued/given/returned", not "Issue X" — the operator is
+// confirming a physical hand-over that already happened, not instructing
+// the system to perform one; the button reads as an attestation rather
+// than a description of an automated action (Jadzia review). Kept per-key
+// so the phrasing still reads naturally ("gift bag" is *given*, a badge or
+// headset is *issued*) instead of forcing one verb onto every item type.
 export function itemActionLabel(key: string, action: string): string {
   if (action === "issued") {
-    if (key === "headset") return "Issue headset";
+    if (key === "headset") return "Mark headset issued";
     // Item keys are slugified from the label (spaces → underscores, see
     // itemKey.ts) — "Gift bag" is stored as "gift_bag", never "giftbag".
-    if (key === "gift_bag") return "Give gift bag";
-    if (key === "badge") return "Issue badge";
+    if (key === "gift_bag") return "Mark gift bag given";
+    if (key === "badge") return "Mark badge issued";
     return `Mark ${key.replaceAll("_", " ")} issued`;
   }
-  if (action === "returned" && key === "headset") return "Return headset";
-  return `${action} ${key.replaceAll("_", " ")}`;
+  if (action === "returned" && key === "headset") return "Mark headset returned";
+  return `Mark ${key.replaceAll("_", " ")} ${action}`;
 }
 
 export function itemBadgeVariant(state: string): BadgeVariant {
@@ -291,38 +297,44 @@ export function AttendeeCard({
             <h3 className="checkin-card__items-title">Items to hand out</h3>
             {card.items.map((item) => (
               <div key={item.key} className="checkin-card__item">
-                <div className="checkin-card__item-row">
-                  <i
-                    className={`ti ti-${item.icon ?? "package"} checkin-card__item-icon`}
-                    aria-hidden="true"
-                  />
-                  <span className="checkin-card__item-label">
-                    {item.label}
-                    {item.detail && <span className="checkin-card__item-detail">{item.detail}</span>}
-                  </span>
-                  {item.actions.length > 0 ? (
-                    item.actions.map((action) => (
-                      <button
-                        key={`${item.key}-${action}`}
-                        type="button"
-                        className="checkin-card__item-action"
-                        disabled={
-                          !canAct || pending || displayMode === "alert" || submittingKeys.has(item.key)
-                        }
-                        onClick={() => handleItemAction(item.key, action)}
-                      >
-                        {itemActionLabel(item.key, action)}
-                      </button>
-                    ))
-                  ) : (
-                    <Badge variant={itemBadgeVariant(item.state)} className="checkin-card__item-badge">
-                      {item.state}
-                    </Badge>
+                {/* Icon sits outside the label/description column so it
+                    centers against the pair of lines as a unit, not just
+                    the label row (PO/Jadzia review). */}
+                <i
+                  className={`ti ti-${item.icon ?? "package"} checkin-card__item-icon`}
+                  aria-hidden="true"
+                />
+                <div className="checkin-card__item-content">
+                  <div className="checkin-card__item-row">
+                    <span className="checkin-card__item-label">
+                      {item.label}
+                      {item.detail && <span className="checkin-card__item-detail">{item.detail}</span>}
+                    </span>
+                    {item.actions.length > 0 ? (
+                      item.actions.map((action) => (
+                        <Button
+                          key={`${item.key}-${action}`}
+                          type="button"
+                          variant="success"
+                          size="sm"
+                          disabled={
+                            !canAct || pending || displayMode === "alert" || submittingKeys.has(item.key)
+                          }
+                          onClick={() => handleItemAction(item.key, action)}
+                        >
+                          {itemActionLabel(item.key, action)}
+                        </Button>
+                      ))
+                    ) : (
+                      <Badge variant={itemBadgeVariant(item.state)} className="checkin-card__item-badge">
+                        {item.state}
+                      </Badge>
+                    )}
+                  </div>
+                  {item.description && (
+                    <p className="checkin-card__item-description">{item.description}</p>
                   )}
                 </div>
-                {item.description && (
-                  <p className="checkin-card__item-description">{item.description}</p>
-                )}
               </div>
             ))}
           </div>

@@ -76,7 +76,7 @@ describe("CameraOverlay item issuing (#434)", () => {
 
     expect(screen.getByText("Item 1 of 1")).toBeTruthy();
     expect(screen.getByText("Badge")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Issue badge" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mark badge issued" })).toBeTruthy();
   });
 
   it("ALREADY_CHECKED_IN keeps the standard result card, with a small Issue items entry point", () => {
@@ -97,7 +97,7 @@ describe("CameraOverlay item issuing (#434)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Issue items/ }));
     expect(screen.getByText("Item 1 of 1")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Issue badge" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mark badge issued" })).toBeTruthy();
   });
 
   it("ALREADY_CHECKED_IN with nothing left to issue does not offer the Issue items button", () => {
@@ -188,12 +188,12 @@ describe("CameraOverlay item issuing (#434)", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue badge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
     expect(onItemAction).toHaveBeenCalledWith("badge", "issued");
     expect(screen.getByText("Item 2 of 2")).toBeTruthy();
     expect(screen.getByText("Gift bag")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Give gift bag" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark gift bag given" }));
     expect(onItemAction).toHaveBeenCalledWith("gift_bag", "issued");
     // onItemAction is a bare spy here (doesn't update `card`), so the
     // `items` prop still shows both as pending — the summary reads them as
@@ -223,7 +223,7 @@ describe("CameraOverlay item issuing (#434)", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue badge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
     // Optimistic mark from the click — the flicker fix — shows success
     // immediately, before onItemAction's promise has settled.
     expect(screen.getByText("All items issued")).toBeTruthy();
@@ -262,8 +262,8 @@ describe("CameraOverlay item issuing (#434)", () => {
     }
     render(<Harness />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue badge" }));
-    fireEvent.click(screen.getByRole("button", { name: "Give gift bag" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark gift bag given" }));
 
     expect(screen.getByText("All items issued")).toBeTruthy();
     expect(document.querySelector(".ck-items--incomplete")).toBeNull();
@@ -356,7 +356,7 @@ describe("CameraOverlay item issuing (#434)", () => {
     }
     render(<Harness />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue badge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
     fireEvent.click(screen.getByRole("button", { name: "Skip" }));
 
     const summary = screen.getByText("1 item skipped").closest(".ck-items") as HTMLElement;
@@ -393,13 +393,13 @@ describe("CameraOverlay item issuing (#434)", () => {
     }
     render(<Harness />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue badge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
     expect(screen.getByText("Item 2 of 2")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Back/ }));
     expect(screen.getByText("Item 1 of 2")).toBeTruthy();
     expect(screen.getByText(/Already issued/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Issue badge" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Mark badge issued" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Skip" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
@@ -453,7 +453,7 @@ describe("CameraOverlay item issuing (#434)", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue badge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
     fireEvent.click(screen.getByRole("button", { name: "Undo last check-in" }));
     expect(onUndo).toHaveBeenCalled();
   });
@@ -469,7 +469,7 @@ describe("CameraOverlay item issuing (#434)", () => {
       />,
     );
 
-    const button = screen.getByRole("button", { name: "Issue badge" });
+    const button = screen.getByRole("button", { name: "Mark badge issued" });
     act(() => {
       fireEvent.click(button);
       fireEvent.click(button);
@@ -491,7 +491,7 @@ describe("CameraOverlay item issuing (#434)", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue badge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
     const undoButton = screen.getByRole("button", { name: "Undo last check-in" });
     act(() => {
       fireEvent.click(undoButton);
@@ -515,7 +515,7 @@ describe("CameraOverlay item issuing (#434)", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue badge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
     expect(screen.getByText("Item 2 of 2")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Back/ }));

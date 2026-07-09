@@ -572,7 +572,18 @@
   color: var(--text-secondary);
 }
 
+/* Icon is a sibling of the label+description column (not nested inside the
+   label row) so align-items: center below centers it against the pair of
+   lines as a unit, not just the first line (PO/Jadzia review). */
 .checkin-card__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.checkin-card__item-content {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -587,18 +598,20 @@
   color: var(--text-secondary);
 }
 
-/* Admin-configured item description (Requirements page) — indented to align
-   under the label, past the icon's own width + row gap (18px + 8px). */
+/* Admin-configured item description (Requirements page). */
 .checkin-card__item-description {
-  margin: 0 0 0 26px;
+  margin: 0;
   color: var(--text-muted);
   font-size: var(--fs-xs);
 }
 
+/* Slightly larger than the old 16px/18px — noticeably its own element next
+   to a two-line block, not so large it overpowers the item label (PO
+   review: "delikatnie większa, ale nie za duża"). */
 .checkin-card__item-icon {
-  font-size: 16px;
+  font-size: 20px;
   color: var(--text-muted);
-  width: 18px;
+  width: 22px;
   flex: none;
 }
 
@@ -616,34 +629,6 @@
   color: var(--text-muted);
   font-size: var(--fs-xs);
   font-weight: 400;
-}
-
-/* Inline row action: same height slot as a Badge chip, but no background or
-   border. The negative margin extends the touch area to 44px without inflating
-   the compact row rhythm. */
-.checkin-card__item-action {
-  min-height: 44px;
-  padding: 0 8px;
-  margin: -8px 0;
-  border: none;
-  border-radius: 100px;
-  background: none;
-  color: var(--primary);
-  font-family: var(--font-sans);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.checkin-card__item-action:hover:not(:disabled) {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.checkin-card__item-action:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 
 .checkin-card__item-badge {

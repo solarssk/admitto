@@ -32,7 +32,7 @@ describe("AttendeeCard — item action button (review finding)", () => {
       <AttendeeCard card={cardWithItem} eventTimezone="UTC" canAct={true} onItemAction={onItemAction} />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Issue badge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
     expect(onItemAction).toHaveBeenCalledWith("badge", "issued");
   });
 
@@ -42,7 +42,7 @@ describe("AttendeeCard — item action button (review finding)", () => {
       <AttendeeCard card={cardWithItem} eventTimezone="UTC" canAct={true} onItemAction={onItemAction} />,
     );
 
-    const button = screen.getByRole("button", { name: "Issue badge" });
+    const button = screen.getByRole("button", { name: "Mark badge issued" });
     act(() => {
       fireEvent.click(button);
       fireEvent.click(button);
@@ -58,7 +58,7 @@ describe("AttendeeCard — item action button (review finding)", () => {
       <AttendeeCard card={cardWithItem} eventTimezone="UTC" canAct={true} onItemAction={onItemAction} />,
     );
 
-    const button = screen.getByRole("button", { name: "Issue badge" }) as HTMLButtonElement;
+    const button = screen.getByRole("button", { name: "Mark badge issued" }) as HTMLButtonElement;
     fireEvent.click(button);
     expect(button.disabled).toBe(true);
 
