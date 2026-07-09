@@ -15,6 +15,7 @@ const fetchCheckInOpsConfig = vi.fn();
 const fetchCheckInEvents = vi.fn();
 const fetchAttendeeCard = vi.fn();
 const lookupCheckInAttendees = vi.fn();
+const submitCheckInAdmit = vi.fn();
 const submitCheckInScan = vi.fn();
 const addToast = vi.fn();
 
@@ -60,7 +61,7 @@ vi.mock("../../src/api/client.js", () => ({
   fetchAttendeeCard: (...args: unknown[]) => fetchAttendeeCard(...args),
   lookupCheckInAttendees: (...args: unknown[]) => lookupCheckInAttendees(...args),
   submitAttendeeNote: vi.fn(),
-  submitCheckInAdmit: vi.fn(),
+  submitCheckInAdmit: (...args: unknown[]) => submitCheckInAdmit(...args),
   submitCheckInScan: (...args: unknown[]) => submitCheckInScan(...args),
   submitItemAction: vi.fn(),
   undoLastCheckIn: vi.fn(),
@@ -364,6 +365,46 @@ describe("CheckInPage lookup card states (#379)", () => {
     await new Promise((r) => setTimeout(r, 50));
 
     expect(screen.queryByText("Anna Beta")).toBeNull();
+  });
+
+  it("keeps the item hand-out buttons visible after confirming a check-in with items (auto-advance on)", async () => {
+    // Regression: on desktop, auto_advance_on_valid used to sweep the whole
+    // AttendeeCard away the instant Confirm succeeded — including the "Items to
+    // hand out" buttons — so the operator had to re-search the attendee just to
+    // mark a badge issued. Desktop now blocks auto-advance whenever the card
+    // carries items, matching the mobile overlay (#434).
+    mockPageBootstrap(); // auto_advance_on_valid: true
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
+    const withBadge = {
+      ...baseCard,
+      items: [
+        { key: "badge", label: "Badge", icon: null, detail: null, state: "pending", actions: ["issued"] },
+      ],
+    };
+    fetchAttendeeCard.mockResolvedValue(withBadge);
+    submitCheckInAdmit.mockResolvedValue({
+      status: "VALID",
+      confirmed: true,
+      admittedAt: "2026-09-01T09:44:00.000Z",
+      attendeeId: "att-1",
+      card: { ...withBadge, check_in_status: "admitted", admitted_at: "2026-09-01T09:44:00.000Z" },
+    });
+
+    await typeAndPickSuggestion();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Confirm check-in" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm check-in" }));
+
+    // Confirm processed (preview → admitted, so its Confirm button is gone)…
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Confirm check-in" })).toBeNull();
+    });
+    // …but the card was NOT auto-advanced away: its hand-out section stays so
+    // the operator can still issue the badge.
+    expect(screen.getByText("Items to hand out")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mark badge issued" })).toBeTruthy();
   });
 });
 
