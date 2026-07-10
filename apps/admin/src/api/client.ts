@@ -329,13 +329,33 @@ export async function fetchEventSettings(
   return parseJson<EventSettingsDto>(res);
 }
 
-/** Patch basic event fields (title, date, location, capacity). */
+/** Patch basic event fields (title, date, location, capacity, branding overrides). */
 export async function patchEvent(
   eventId: string,
-  body: Partial<{ title: string; date: string; timezone: string; location: string | null; capacity: number | null }>,
+  body: Partial<{
+    title: string;
+    date: string;
+    timezone: string;
+    location: string | null;
+    capacity: number | null;
+    logo_url: string | null;
+    header_image_url: string | null;
+  }>,
 ): Promise<{ event: EventSettingsDto }> {
   const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}`, jsonPatchInit(body));
   return parseJson<{ event: EventSettingsDto }>(res);
+}
+
+/** Upload an event-scoped branding image (logo or header); returns public `/uploads/...` URL. */
+export async function uploadEventBrandingFile(
+  eventId: string,
+  formData: FormData,
+): Promise<{ url: string }> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/branding-upload`,
+    multipartPostInit(formData),
+  );
+  return parseJson<{ url: string }>(res);
 }
 
 /** Download PII export CSV (superadmin only). Caller handles blob save. */

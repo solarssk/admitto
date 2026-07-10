@@ -133,7 +133,7 @@ import {
   handleUpdateResource,
   handleDeleteResource,
 } from "./admin/event-context-routes.js";
-import { handlePostUpload } from "./admin/uploads-api-routes.js";
+import { handlePostEventBrandingUpload, handlePostUpload } from "./admin/uploads-api-routes.js";
 import { resolveUploadDir } from "./admin/branding-upload.js";
 import {
   handleGetEventTemplate,
@@ -491,6 +491,13 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handlePatchEvent(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/branding-upload",
+    jsonPostCsrf,
+    staffAdminGate,
+    uploadBodyLimit,
+    guardArchivedEvent((c) => handlePostEventBrandingUpload(c, db)),
   );
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),

@@ -5,6 +5,7 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
+import { InvalidHttpUrlError, resolveBrandingFromEvent, validateBrandingUrl } from "@admitto/mail-templates";
 import { z } from "zod";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
@@ -28,6 +29,8 @@ const patchEventSchema = z
     location: z.string().trim().max(300).nullish(),
     capacity: z.number().int().positive().max(PG_INT_MAX).nullish(),
     timezone: timezoneField.optional(),
+    logo_url: z.string().trim().max(2000).nullish(),
+    header_image_url: z.string().trim().max(2000).nullish(),
   })
   .strict();
 
@@ -40,8 +43,18 @@ export type EventSettingsDto = {
   location: string | null;
   capacity: number | null;
   status: "active" | "archived";
+  /** Null unless status is "archived". */
+  archived_at: string | null;
+  /** When the event was first created — shown in the Status card. */
+  created_at: string;
   organization_name: string;
   active_items: Array<{ id: string; name: string; enabled: boolean }>;
+  /** Event's own branding overrides — null means "inherited from organization". */
+  logo_url: string | null;
+  header_image_url: string | null;
+  /** Effective branding actually used today (event value, else organization's). */
+  resolved_logo_url: string | null;
+  resolved_header_image_url: string | null;
 };
 
 type EventSettingsRow = {
@@ -53,7 +66,10 @@ type EventSettingsRow = {
   location: string | null;
   capacity: number | null;
   archived_at: Date | null;
-  organization: { name: string };
+  created_at: Date;
+  logo_url: string | null;
+  header_image_url: string | null;
+  organization: { name: string; logo_url: string | null; header_image_url: string | null };
   event_items: Array<{ id: string; label: string; enabled: boolean }>;
 };
 
@@ -74,6 +90,7 @@ function parseEventDateInput(date: string): Date {
 }
 
 function serializeEventSettings(event: EventSettingsRow): EventSettingsDto {
+  const resolved = resolveBrandingFromEvent(event);
   return {
     id: event.id,
     title: event.title,
@@ -83,14 +100,40 @@ function serializeEventSettings(event: EventSettingsRow): EventSettingsDto {
     location: event.location,
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
+    archived_at: event.archived_at ? event.archived_at.toISOString() : null,
+    created_at: event.created_at.toISOString(),
     organization_name: event.organization.name,
     active_items: event.event_items.map((item) => ({
       id: item.id,
       name: item.label,
       enabled: item.enabled,
     })),
+    logo_url: event.logo_url,
+    header_image_url: event.header_image_url,
+    resolved_logo_url: resolved.logo_url || null,
+    resolved_header_image_url: resolved.header_image_url || null,
   };
 }
+
+const EVENT_SETTINGS_SELECT = {
+  id: true,
+  title: true,
+  slug: true,
+  date: true,
+  timezone: true,
+  location: true,
+  capacity: true,
+  archived_at: true,
+  created_at: true,
+  organization_id: true,
+  logo_url: true,
+  header_image_url: true,
+  organization: { select: { name: true, logo_url: true, header_image_url: true } },
+  event_items: {
+    select: { id: true, label: true, enabled: true },
+    orderBy: { label: "asc" as const },
+  },
+} as const;
 
 async function loadEventSettingsRow(
   db: PrismaClient,
@@ -98,22 +141,7 @@ async function loadEventSettingsRow(
 ): Promise<(EventSettingsRow & { organization_id: string }) | null> {
   return db.event.findUnique({
     where: { id: eventId },
-    select: {
-      id: true,
-      title: true,
-      slug: true,
-      date: true,
-      timezone: true,
-      location: true,
-      capacity: true,
-      archived_at: true,
-      organization_id: true,
-      organization: { select: { name: true } },
-      event_items: {
-        select: { id: true, label: true, enabled: true },
-        orderBy: { label: "asc" },
-      },
-    },
+    select: EVENT_SETTINGS_SELECT,
   });
 }
 
@@ -170,6 +198,8 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     timezone?: string;
     location?: string | null;
     capacity?: number | null;
+    logo_url?: string | null;
+    header_image_url?: string | null;
   } = {};
 
   if (patch.title !== undefined) data.title = patch.title.trim();
@@ -180,6 +210,22 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
   }
   if (patch.capacity !== undefined) data.capacity = patch.capacity;
 
+  try {
+    if (patch.logo_url !== undefined) {
+      const trimmed = patch.logo_url?.trim() ?? "";
+      data.logo_url = trimmed ? validateBrandingUrl("logo_url", trimmed) : null;
+    }
+    if (patch.header_image_url !== undefined) {
+      const trimmed = patch.header_image_url?.trim() ?? "";
+      data.header_image_url = trimmed ? validateBrandingUrl("header_image_url", trimmed) : null;
+    }
+  } catch (err) {
+    if (err instanceof InvalidHttpUrlError) {
+      return c.json({ error: err.message }, 400);
+    }
+    throw err;
+  }
+
   const changedFields = Object.keys(data);
 
   try {
@@ -187,22 +233,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       const row = await tx.event.update({
         where: { id: eventId },
         data,
-        select: {
-          id: true,
-          title: true,
-          slug: true,
-          date: true,
-          timezone: true,
-          location: true,
-          capacity: true,
-          archived_at: true,
-          organization_id: true,
-          organization: { select: { name: true } },
-          event_items: {
-            select: { id: true, label: true, enabled: true },
-            orderBy: { label: "asc" },
-          },
-        },
+        select: EVENT_SETTINGS_SELECT,
       });
 
       await writeAdminAuditLog(tx, {

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, useBlocker, useNavigate, useParams } from "react-router-dom";
-import { Button, Card, EmptyState, Input, PageHeader, StatusBadge, useToast } from "@admitto/ui";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useBlocker, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Badge, Button, Card, EmptyState, Input, PageHeader, Tabs, useToast } from "@admitto/ui";
 import {
   ApiError,
   archiveEvent,
@@ -8,14 +8,24 @@ import {
   fetchEventSettings,
   patchEvent,
   unarchiveEvent,
+  uploadEventBrandingFile,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventSettingsDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { LogoUploadZone } from "../components/LogoUploadZone.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
+import { formatUtcDateTime } from "../utils/event-dates.js";
+import {
+  EVENT_SETTINGS_TABS,
+  inPageTabFromSearch,
+  isEventSettingsTab,
+  SUPERADMIN_ONLY_TABS,
+  type EventSettingsTab,
+} from "../settings/eventSettingsTabs.js";
 import "./event-settings-page.css";
 
 type SettingsForm = {
@@ -24,7 +34,19 @@ type SettingsForm = {
   timezone: string;
   location: string;
   capacity: string;
+  logoUrl: string;
+  headerImageUrl: string;
 };
+
+type SettingsPatch = Partial<{
+  title: string;
+  date: string;
+  timezone: string;
+  location: string | null;
+  capacity: number | null;
+  logo_url: string | null;
+  header_image_url: string | null;
+}>;
 
 function toForm(data: EventSettingsDto): SettingsForm {
   return {
@@ -33,6 +55,8 @@ function toForm(data: EventSettingsDto): SettingsForm {
     timezone: data.timezone,
     location: data.location ?? "",
     capacity: data.capacity?.toString() ?? "",
+    logoUrl: data.logo_url ?? "",
+    headerImageUrl: data.header_image_url ?? "",
   };
 }
 
@@ -47,12 +71,8 @@ function parseCapacityInput(raw: string): number | null {
   return n;
 }
 
-function buildSettingsPatch(
-  form: SettingsForm,
-  original: SettingsForm,
-): Partial<{ title: string; date: string; timezone: string; location: string | null; capacity: number | null }> {
-  const patch: Partial<{ title: string; date: string; timezone: string; location: string | null; capacity: number | null }> =
-    {};
+function buildSettingsPatch(form: SettingsForm, original: SettingsForm): SettingsPatch {
+  const patch: SettingsPatch = {};
   const title = form.title.trim();
   if (title !== original.title.trim()) patch.title = title;
   if (form.date !== original.date) patch.date = form.date;
@@ -63,13 +83,36 @@ function buildSettingsPatch(
   if (form.capacity.trim() !== original.capacity.trim()) {
     patch.capacity = parseCapacityInput(form.capacity);
   }
+  if (form.logoUrl !== original.logoUrl) patch.logo_url = form.logoUrl.trim() || null;
+  if (form.headerImageUrl !== original.headerImageUrl) {
+    patch.header_image_url = form.headerImageUrl.trim() || null;
+  }
   return patch;
 }
 
-/** Event-scoped settings: basic info, status, items summary, danger zone. */
+interface EventSettingsTabPanelProps {
+  tab: EventSettingsTab;
+  activeTab: EventSettingsTab;
+  visited: ReadonlySet<EventSettingsTab>;
+  label: string;
+  children: ReactNode;
+}
+
+/** Mount on first visit; stay mounted so draft state and scroll position survive tab switches. */
+function EventSettingsTabPanel({ tab, activeTab, visited, label, children }: EventSettingsTabPanelProps) {
+  if (!visited.has(tab)) return null;
+  return (
+    <div role="tabpanel" aria-label={label} hidden={activeTab !== tab} className="event-settings-tabpanel">
+      {children}
+    </div>
+  );
+}
+
+/** Event-scoped settings: General / Branding / Wallet / Danger zone tabs. */
 export function EventSettingsPage() {
   const { eventId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { addToast } = useToast();
   const { assignments } = useAuth();
   const isSa = isSuperadmin(assignments);
@@ -84,6 +127,30 @@ export function EventSettingsPage() {
   const [exporting, setExporting] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveMode, setArchiveMode] = useState<"archive" | "unarchive">("archive");
+
+  const initialTab = inPageTabFromSearch(searchParams, isSa);
+  const [tab, setTab] = useState<EventSettingsTab>(initialTab);
+  const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<EventSettingsTab>>(
+    () => new Set([initialTab]),
+  );
+
+  // URL is the source of truth for the active tab (deep links, Back navigation).
+  useEffect(() => {
+    const target = inPageTabFromSearch(searchParams, isSa);
+    if (target !== tab) {
+      setTab(target);
+      setVisitedTabs((prev) => (prev.has(target) ? prev : new Set(prev).add(target)));
+    }
+  }, [searchParams, tab, isSa]);
+
+  const handleTabChange = useCallback(
+    (id: string) => {
+      if (!isEventSettingsTab(id)) return;
+      if (SUPERADMIN_ONLY_TABS.has(id) && !isSa) return;
+      setSearchParams({ tab: id }, { replace: true });
+    },
+    [setSearchParams, isSa],
+  );
 
   const dirty =
     form !== null && original !== null && JSON.stringify(form) !== JSON.stringify(original);
@@ -235,15 +302,11 @@ export function EventSettingsPage() {
 
   if (!event || !form) return null;
 
-  const enabledItems = event.active_items.filter((i) => i.enabled);
-  const itemsLabel =
-    enabledItems.length > 0 ? enabledItems.map((i) => i.name).join(", ") : "None configured";
-
   return (
     <div className={`event-settings-page screen${isArchived ? " event-settings--archived" : ""}`}>
       <PageHeader
         title="Event settings"
-        subtitle={event.title}
+        subtitle="Manage this event's details, branding, and access controls."
         actions={
           !isArchived ? (
             <span className="save-actions">
@@ -259,169 +322,266 @@ export function EventSettingsPage() {
         }
       />
 
-      <Card title="Basic information" className="event-settings-card">
-        <Input
-          label="Event title"
-          required
-          value={form.title}
-          disabled={isArchived || saving}
-          onChange={(e) => setForm({ ...form, title: e.target.value })}
-        />
-        <p className="field-hint">Displayed everywhere — attendees, tickets, and mail.</p>
+      <Tabs
+        value={tab}
+        onChange={handleTabChange}
+        tabs={EVENT_SETTINGS_TABS.filter((t) => isSa || !SUPERADMIN_ONLY_TABS.has(t.id))}
+      />
 
-        <DatePicker
-          label="Date"
-          required
-          value={form.date}
-          disabled={isArchived || saving}
-          onChange={(next) => setForm({ ...form, date: next })}
-        />
+      <EventSettingsTabPanel tab="general" activeTab={tab} visited={visitedTabs} label="General">
+        <Card title="Basic information" className="event-settings-card">
+          <div className="settings-field-stack">
+            <div className="settings-field-group">
+              <Input
+                label="Event title"
+                required
+                value={form.title}
+                disabled={isArchived || saving}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+              />
+              <p className="field-hint">Shown everywhere - to attendees, on tickets, and in emails.</p>
+            </div>
 
-        <div className="event-settings-timezone">
-          <label className="input-label" htmlFor="event-timezone">
-            Event timezone
-          </label>
-          <TimezoneSelect
-            id="event-timezone"
-            value={form.timezone}
-            onChange={(tz) => setForm({ ...form, timezone: tz })}
-            disabled={isArchived || saving}
-          />
-          <p className="field-hint">
-            All check-in timestamps and reports will use this timezone.
-          </p>
-        </div>
+            <div className="settings-field-group">
+              <DatePicker
+                label="Date"
+                required
+                value={form.date}
+                disabled={isArchived || saving}
+                onChange={(next) => setForm({ ...form, date: next })}
+              />
+            </div>
 
-        <Input
-          label="Location"
-          value={form.location}
-          disabled={isArchived || saving}
-          placeholder="Convention Center, Warsaw"
-          icon={<i className="ti ti-map-pin" aria-hidden="true" />}
-          onChange={(e) => setForm({ ...form, location: e.target.value })}
-        />
-        <p className="field-hint">Optional. Shown on tickets and calendar invites.</p>
+            <div className="settings-field-group event-settings-timezone">
+              <label className="input-label" htmlFor="event-timezone">
+                Event timezone
+              </label>
+              <TimezoneSelect
+                id="event-timezone"
+                compact
+                value={form.timezone}
+                onChange={(tz) => setForm({ ...form, timezone: tz })}
+                disabled={isArchived || saving}
+              />
+              <p className="field-hint">All check-in times and reports use this timezone.</p>
+            </div>
 
-        <Input
-          label="Capacity"
-          type="number"
-          min={1}
-          value={form.capacity}
-          disabled={isArchived || saving}
-          placeholder="500"
-          onChange={(e) => setForm({ ...form, capacity: e.target.value })}
-        />
-        <p className="field-hint">Leave blank for unlimited.</p>
+            <div className="settings-field-group">
+              <Input
+                label="Location"
+                value={form.location}
+                disabled={isArchived || saving}
+                placeholder="Convention Center, Warsaw"
+                icon={<i className="ti ti-map-pin" aria-hidden="true" />}
+                onChange={(e) => setForm({ ...form, location: e.target.value })}
+              />
+              <p className="field-hint">Optional. Shown on tickets and calendar invites.</p>
+            </div>
 
-        <div className="slug-field">
-          <Input
-            label="URL slug"
-            value={event.slug}
-            readOnly
-            disabled
-            icon={<i className="ti ti-link" aria-hidden="true" />}
-          />
-        </div>
-        <p className="field-hint">
-          Slug is immutable after creation — it is embedded in all issued QR codes.
-        </p>
-      </Card>
+            <div className="settings-field-group">
+              <Input
+                label="Capacity"
+                type="number"
+                min={1}
+                value={form.capacity}
+                disabled={isArchived || saving}
+                placeholder="500"
+                onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+              />
+              <p className="field-hint">Leave blank for unlimited.</p>
+            </div>
 
-      <Card title="Status" className="event-settings-card">
-        <p>
-          Current status:{" "}
-          <StatusBadge
-            status={isArchived ? "archived" : "active"}
-            label={isArchived ? "Archived" : "Active"}
-          />
-        </p>
-        <p className="field-hint">
-          Active events accept check-ins and allow attendee edits.
-        </p>
-        <p>
-          Organization: <strong>{event.organization_name}</strong>
-        </p>
-        <p className="field-hint">Events belong to an organization and inherit its branding.</p>
-      </Card>
-
-      <Card title="Event items" className="event-settings-card">
-        <p>
-          Active items: <strong>{itemsLabel}</strong>
-        </p>
-        <Link
-          to={`/admin/events/${eventId}/requirements`}
-          className="event-settings-items-link"
-        >
-          Manage in Requirements →
-        </Link>
-      </Card>
-
-      <Card title="Danger zone" className="event-settings-card">
-        <div className="danger-zone__item">
-          <div className="danger-zone__info">
-            <div className="danger-zone__title">Archive event</div>
-            <p className="danger-zone__desc">
-              Archived events become read-only. Check-in remains available. Unarchivable by superadmin
-              only.
-            </p>
+            <div className="settings-field-group slug-field">
+              <Input
+                label="Event link ID"
+                value={event.slug}
+                readOnly
+                disabled
+                icon={<i className="ti ti-link" aria-hidden="true" />}
+              />
+              <p className="field-hint">
+                This can&apos;t be changed after the event is created - it&apos;s already part
+                of every QR code sent to attendees.
+              </p>
+            </div>
           </div>
-          {isSa ? (
-            isArchived ? (
-              <Button
-                variant="secondary"
-                disabled={archiving}
-                onClick={() => {
-                  setArchiveMode("unarchive");
-                  setArchiveOpen(true);
-                }}
-              >
-                <i className="ti ti-archive-off" aria-hidden="true" /> Unarchive event
-              </Button>
+        </Card>
+
+        <Card title="Status" className="event-settings-card">
+          <div className="settings-status-grid">
+            <div className="settings-field-group">
+              <p>
+                Current status:{" "}
+                <Badge variant={isArchived ? "neutral" : "info"} dot={false}>
+                  {isArchived ? "Archived" : "Active"}
+                </Badge>
+              </p>
+              <p className="field-hint">
+                {isArchived && event.archived_at
+                  ? `Archived on ${formatUtcDateTime(event.archived_at)}.`
+                  : "Active events accept check-ins and allow attendee edits."}
+              </p>
+            </div>
+            <div className="settings-field-group">
+              <p>
+                Organization: <strong>{event.organization_name}</strong>
+              </p>
+              <p className="field-hint">Events belong to an organization and use its branding by default.</p>
+            </div>
+            <div className="settings-field-group">
+              <p>
+                Created: <strong>{formatUtcDateTime(event.created_at)}</strong>
+              </p>
+              <p className="field-hint">When this event was first set up.</p>
+            </div>
+          </div>
+        </Card>
+      </EventSettingsTabPanel>
+
+      <EventSettingsTabPanel tab="branding" activeTab={tab} visited={visitedTabs} label="Branding">
+        <Card title="Event branding" className="event-settings-card">
+          <p className="field-hint">
+            Replace the organization&apos;s logo and header image just for this event. Leave a
+            field blank to keep using the organization&apos;s branding.
+          </p>
+          <div className="settings-field-stack">
+            <div className="settings-field-group">
+              <LogoUploadZone
+                label="Event logo"
+                hint="PNG, JPG, WebP · max 2 MB · leave blank to inherit the organization logo"
+                value={form.logoUrl}
+                disabled={isArchived}
+                onChange={(url) => setForm({ ...form, logoUrl: url })}
+                uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
+              />
+            </div>
+            <div className="settings-field-group">
+              <LogoUploadZone
+                label="Event header image"
+                hint="PNG, JPG, WebP · max 2 MB · wide banner, recommended 1200×300 px"
+                value={form.headerImageUrl}
+                disabled={isArchived}
+                onChange={(url) => setForm({ ...form, headerImageUrl: url })}
+                uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
+              />
+            </div>
+          </div>
+          {isArchived && (
+            <p className="field-hint event-settings-archived-note">
+              This event is archived - branding cannot be changed.
+            </p>
+          )}
+        </Card>
+      </EventSettingsTabPanel>
+
+      <EventSettingsTabPanel tab="wallet" activeTab={tab} visited={visitedTabs} label="Wallet">
+        <EmptyState
+          icon={<i className="ti ti-wallet" aria-hidden="true" />}
+          title="Wallet passes are on the roadmap"
+          description="Attendees will be able to add their ticket to Apple Wallet or Google Wallet. This isn't built yet."
+        />
+      </EventSettingsTabPanel>
+
+      {isSa && (
+        <EventSettingsTabPanel
+          tab="integrations"
+          activeTab={tab}
+          visited={visitedTabs}
+          label="Integrations"
+        >
+          <EmptyState
+            icon={<i className="ti ti-plug-connected" aria-hidden="true" />}
+            title="Ingest and RSVP API tokens are on the roadmap"
+            description="Each event will get its own API token for automatic attendee imports and RSVP replies, with the option to generate a new one anytime. Not built yet - superadmin-only, and kept separate from the everyday settings other admins use."
+          />
+        </EventSettingsTabPanel>
+      )}
+
+      <EventSettingsTabPanel tab="danger-zone" activeTab={tab} visited={visitedTabs} label="Danger zone">
+        <div className="at-card danger-zone-panel">
+          <div className="at-card__header danger-zone-panel__header">
+            <div className="at-card__title">Danger zone</div>
+          </div>
+
+          <div className="danger-zone__item">
+            <div className="danger-zone__info">
+              <div className="danger-zone__title">Archive event</div>
+              <p className="danger-zone__desc">
+                An archived event becomes read-only - editing is disabled, but check-in still
+                works. Only a superadmin can undo this.
+              </p>
+            </div>
+            {isSa ? (
+              isArchived ? (
+                <Button
+                  variant="secondary"
+                  disabled={archiving}
+                  icon={<i className="ti ti-archive-off" aria-hidden="true" />}
+                  onClick={() => {
+                    setArchiveMode("unarchive");
+                    setArchiveOpen(true);
+                  }}
+                >
+                  Unarchive event
+                </Button>
+              ) : (
+                <Button
+                  variant="danger"
+                  disabled={archiving}
+                  icon={<i className="ti ti-archive" aria-hidden="true" />}
+                  onClick={() => {
+                    setArchiveMode("archive");
+                    setArchiveOpen(true);
+                  }}
+                >
+                  Archive event
+                </Button>
+              )
             ) : (
               <Button
                 variant="danger"
-                disabled={archiving}
-                onClick={() => {
-                  setArchiveMode("archive");
-                  setArchiveOpen(true);
-                }}
+                disabled
+                title="Superadmin only"
+                icon={<i className="ti ti-archive" aria-hidden="true" />}
               >
-                <i className="ti ti-archive" aria-hidden="true" /> Archive event
+                Archive event
               </Button>
-            )
-          ) : (
-            <Button variant="danger" disabled title="Superadmin only">
-              <i className="ti ti-archive" aria-hidden="true" /> Archive event
+            )}
+          </div>
+
+          <div className="danger-zone__item">
+            <div className="danger-zone__info">
+              <div className="danger-zone__title">Export personal data</div>
+              <p className="danger-zone__desc">
+                Downloads every attendee&apos;s personal data as a CSV file (a simple
+                spreadsheet). Saved in the history log.
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              disabled={!isSa || exporting}
+              title={isSa ? undefined : "Superadmin only"}
+              icon={<i className="ti ti-file-text" aria-hidden="true" />}
+              onClick={() => void handleExportPii()}
+            >
+              {exporting ? "Exporting…" : "Export personal data"}
             </Button>
-          )}
+          </div>
         </div>
 
-        <div className="danger-zone__item">
-          <div className="danger-zone__info">
-            <div className="danger-zone__title">Export attendee PII</div>
-            <p className="danger-zone__desc">
-              Export all attendee data as CSV for retention or offboarding workflows.
-            </p>
-            <p className="field-hint">Superadmin only. Logged in audit trail.</p>
-          </div>
-          <Button
-            variant="secondary"
-            disabled={!isSa || exporting}
-            title={isSa ? undefined : "Superadmin only"}
-            onClick={() => void handleExportPii()}
-          >
-            <i className="ti ti-file-text" aria-hidden="true" />
-            {exporting ? "Exporting…" : "Export PII"}
-          </Button>
-        </div>
-      </Card>
+        <p className="danger-zone-notice">
+          <i className="ti ti-alert-triangle" aria-hidden="true" /> These actions can affect this
+          event&apos;s data or availability. Some are limited to superadmins and saved in the
+          history log.
+        </p>
+      </EventSettingsTabPanel>
 
       <ConfirmDialog
         open={archiveOpen}
         title={archiveMode === "archive" ? "Archive this event?" : "Unarchive this event?"}
         message={
           archiveMode === "archive"
-            ? "Archived events become read-only. Attendee data is preserved. Check-in continues to work. Unarchivable by superadmin only."
+            ? "This event will become read-only. Editing will be disabled, but check-in will still work. Only a superadmin can undo this."
             : "This event will become active again and editable in admin."
         }
         confirmLabel={archiveMode === "archive" ? "Archive event" : "Unarchive event"}
