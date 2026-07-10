@@ -600,6 +600,12 @@
   text-transform: capitalize;
 }
 
+/* Admin-only per-item Revoke sits inline next to the state badge — never
+   shrinks below its content and keeps the error tint from --danger. */
+.checkin-card__item-revoke {
+  flex: none;
+}
+
 /* Block 4 — secondary actions footer behind a hairline. */
 .checkin-card__footer {
   display: flex;

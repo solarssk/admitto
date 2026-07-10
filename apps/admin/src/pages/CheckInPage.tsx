@@ -15,11 +15,12 @@ import {
   submitItemAction,
   undoLastCheckIn,
   revokeAttendeeCheckIn,
+  revokeItemState,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeCardDto, CheckInHistoryEntry, CheckInScanResponse, OpsConfigDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
-import { isAdmin } from "../auth/capabilities.js";
+import { isOrgAdmin } from "../auth/capabilities.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { CHECKIN_DUPLICATE_DEBOUNCE_MS, normalizeScannedInput } from "../checkin/normalize.js";
 import { scanResultFromCard } from "../checkin/cardScanResult.js";
@@ -87,6 +88,7 @@ export interface CheckInPageProps {
   eventTitle?: string;
   eventTimezone?: string;
   eventDate?: string | null;
+  eventOrganizationId?: string;
   useCamera?: boolean;
   onUseCameraChange?: (open: boolean) => void;
 }
@@ -95,14 +97,18 @@ export function CheckInPage({
   eventTitle = "Event",
   eventTimezone: eventTimezoneProp,
   eventDate: eventDateProp,
+  eventOrganizationId: eventOrganizationIdProp,
   useCamera = false,
   onUseCameraChange,
 }: CheckInPageProps) {
   const { eventId } = useParams();
   const [eventTimezone, setEventTimezone] = useState(eventTimezoneProp ?? "UTC");
   const [eventDate, setEventDate] = useState<string | null>(eventDateProp ?? null);
+  const [eventOrganizationId, setEventOrganizationId] = useState<string | null>(
+    eventOrganizationIdProp ?? null,
+  );
   const { deviceLabel, assignments } = useAuth();
-  const canRevokeCheckIn = isAdmin(assignments);
+  const canRevokeCheckIn = isOrgAdmin(assignments, eventOrganizationId);
   const { state: connectionState, reportApiError } = useConnectionState();
   const { addToast } = useToast();
   const canAct = canMutateCheckin(connectionState);
@@ -248,6 +254,7 @@ export function CheckInPage({
     if (eventTimezoneProp) {
       setEventTimezone(eventTimezoneProp);
       setEventDate(eventDateProp ?? null);
+      setEventOrganizationId(eventOrganizationIdProp ?? null);
       return;
     }
     if (!eventId) return;
@@ -258,18 +265,20 @@ export function CheckInPage({
         if (!cancelled) {
           setEventTimezone(found?.timezone ?? "UTC");
           setEventDate(found?.date ?? null);
+          setEventOrganizationId(found?.organization_id ?? null);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setEventTimezone("UTC");
           setEventDate(null);
+          setEventOrganizationId(null);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [eventId, eventTimezoneProp, eventDateProp]);
+  }, [eventId, eventTimezoneProp, eventDateProp, eventOrganizationIdProp]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -821,23 +830,30 @@ export function CheckInPage({
     [runExclusive, runScan, submitScanOrLookupImpl],
   );
 
-  // Queued: same rationale as admitCurrent — this reads card.id at run time
-  // and overwrites setCard, so it must not race a scan that could swap in a
-  // different attendee's card first (#277 review).
-  // Resolves `true`/`false` (not just void) so CameraOverlayItemIssuing's
-  // optimistic "issued" mark (set synchronously at click time, before this
-  // promise settles — see its own comment) can be reverted on `false`
-  // instead of assuming every click succeeded; handleApiFailure still fires
-  // the toast either way (CodeRabbit review — a `pending` prop toggled
-  // around this call was the previous attempt, but `pending` only flips
-  // after a 5s delay, so it never transitioned for the fast failures that
-  // actually matter here).
-  const onItemAction = (itemKey: string, targetState: string): Promise<boolean> =>
+  // Shared by onItemAction and onRevokeItem below — same queuing/busy/error
+  // shape, differing only in which endpoint they call. Queued: same
+  // rationale as admitCurrent — this reads card.id at run time and
+  // overwrites setCard, so it must not race a scan that could swap in a
+  // different attendee's card first (#277 review). Resolves `true`/`false`
+  // (not just void) so CameraOverlayItemIssuing's optimistic "issued" mark
+  // (set synchronously at click time, before this promise settles — see its
+  // own comment) can be reverted on `false` instead of assuming every click
+  // succeeded; handleApiFailure still fires the toast either way (CodeRabbit
+  // review — a `pending` prop toggled around this call was the previous
+  // attempt, but `pending` only flips after a 5s delay, so it never
+  // transitioned for the fast failures that actually matter here).
+  const runItemMutation = (
+    apiCall: (eventId: string, attendeeId: string) => Promise<{ card: AttendeeCardDto }>,
+  ): Promise<boolean> =>
     runExclusive(async () => {
       if (!eventId || !card || !canAct) return false;
       setBusy(true);
+      // Clear any prior failure banner so a retry that now succeeds doesn't
+      // leave a stale "Request failed" over a successful outcome (review
+      // finding) — mirrors runScanImpl/admitCurrent.
+      setTransportError(null);
       try {
-        const { card: updated } = await submitItemAction(eventId, card.id, itemKey, targetState, deviceId);
+        const { card: updated } = await apiCall(eventId, card.id);
         setCard(updated);
         void refreshSidebar();
         return true;
@@ -850,10 +866,20 @@ export function CheckInPage({
       }
     });
 
+  const onItemAction = (itemKey: string, targetState: string): Promise<boolean> =>
+    runItemMutation((eid, aid) => submitItemAction(eid, aid, itemKey, targetState, deviceId));
+
+  // Admin/superadmin only — resets a handed-out item back to "pending";
+  // hits the admin-gated endpoint, which rejects non-admins regardless of
+  // the button's visibility.
+  const onRevokeItem = (itemKey: string): Promise<boolean> =>
+    runItemMutation((eid, aid) => revokeItemState(eid, aid, itemKey));
+
   const onAddNote = (body: string) =>
     runExclusive(async () => {
       if (!eventId || !card || !canAct) return;
       setBusy(true);
+      setTransportError(null);
       try {
         const { card: updated } = await submitAttendeeNote(eventId, card.id, body, deviceId);
         setCard(updated);
@@ -873,6 +899,7 @@ export function CheckInPage({
     runExclusive(async () => {
       if (!eventId || !canAct) return;
       setBusy(true);
+      setTransportError(null);
       try {
         const { card: updated } = await undoLastCheckIn(eventId, deviceId);
         setCard(updated);
@@ -1135,7 +1162,12 @@ export function CheckInPage({
             Scan a code — it submits itself · type a name, then press Enter · Esc clears the field
           </p>
 
-          {transportError && (
+          {/* Suppressed while the mobile overlay is open: the overlay renders
+              its own role="alert" copy of this same message (it's a fixed
+              full-screen layer covering this paragraph), so without this gate a
+              screen reader would announce the identical error twice (review
+              finding). Exactly one of the two is mounted at any time. */}
+          {transportError && !showMobileOverlay && (
             <p className="checkin-surface__transport-error" role="alert">
               {transportError}
             </p>
@@ -1175,6 +1207,7 @@ export function CheckInPage({
                   onRevokeCheckIn={
                     canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined
                   }
+                  onRevokeItem={canRevokeCheckIn ? onRevokeItem : undefined}
                 />
               )}
             </>
@@ -1206,6 +1239,7 @@ export function CheckInPage({
                   onRevokeCheckIn={
                     canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined
                   }
+                  onRevokeItem={canRevokeCheckIn ? onRevokeItem : undefined}
                 />
               ) : (
                 !scanResult && <CkEmptyState />

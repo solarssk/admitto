@@ -263,7 +263,7 @@ describe("CheckInPage lookup card states (#379)", () => {
     admitted_at: null,
     items: [],
     notes: [],
-    warnings: [] as string[],
+    blocked: false,
   };
 
   async function typeAndPickSuggestion(): Promise<HTMLInputElement> {
@@ -308,7 +308,7 @@ describe("CheckInPage lookup card states (#379)", () => {
     lookupCheckInAttendees.mockResolvedValue([annaHit]);
     fetchAttendeeCard.mockResolvedValue({
       ...baseCard,
-      warnings: ["Ticket is not admittable (status: revoked)."],
+      blocked: true,
       items: [
         { key: "badge", label: "Badge", icon: null, detail: null, state: "pending", actions: ["issued"] },
       ],
@@ -453,7 +453,7 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
       admitted_at: null,
       items: [],
       notes: [],
-      warnings: [],
+      blocked: false,
     });
 
     renderPage();
@@ -552,7 +552,7 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
       admitted_at: null,
       items: [],
       notes: [],
-      warnings: [] as string[],
+      blocked: false,
     };
     submitCheckInScan
       .mockResolvedValueOnce({ status: "PREVIEW", confirmed: false, attendeeId: "att-1", card })
@@ -612,7 +612,7 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
       admitted_at: null,
       items: [],
       notes: [],
-      warnings: [] as string[],
+      blocked: false,
     });
     submitCheckInAdmit.mockResolvedValue({ status: "INVALID", confirmed: false });
 
@@ -656,7 +656,7 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
       admitted_at: null,
       items: [],
       notes: [],
-      warnings: [] as string[],
+      blocked: false,
     });
 
     renderPage();

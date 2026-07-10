@@ -38,6 +38,29 @@ describe("check_in_revoked timeline mapping (#449 review)", () => {
   });
 });
 
+describe("item_revoked timeline mapping (bot review, #457)", () => {
+  it("is event-operational, gets an undo icon and a capitalized label, not the generic fallback", () => {
+    expect(isEventOperationalActivity("item_revoked")).toBe(true);
+    expect(getTimelineIcon("item_revoked")).toBe("arrow-back-up");
+    expect(
+      getTimelineLabel({
+        id: "log-1",
+        action_type: "item_revoked",
+        actor_display: "admin",
+        metadata: null,
+        created_at: "2026-06-28T13:00:00.000Z",
+      }),
+    ).toBe("Item reset to pending");
+  });
+
+  it("uses event timezone for item_revoked, not UTC", () => {
+    setPreferredLocale("en-GB");
+    const result = formatActivityTimestamp("2026-06-28T13:00:00.000Z", "item_revoked", "Europe/Warsaw");
+    expect(result).toMatch(/15:00/);
+    expect(result).toMatch(/CEST|GMT\+2/);
+  });
+});
+
 describe("formatActivityTimestamp", () => {
   afterEach(() => setPreferredLocale(null));
 

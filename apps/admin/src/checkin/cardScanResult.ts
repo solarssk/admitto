@@ -2,14 +2,14 @@ import type { AttendeeCardDto, CheckInScanResponse } from "../api/types.js";
 
 /**
  * Derive the scan-result state for a card loaded via manual lookup, mirroring
- * what POST /scan would return for the same attendee (#379). Warnings take
+ * what POST /scan would return for the same attendee (#379). `blocked` takes
  * precedence over admitted: a voided pass reads as REVOKED even if the holder
  * was admitted earlier, matching checkInScan semantics. Non-PREVIEW states are
  * `confirmed: true` — the card came from the server, so the "Awaiting server
  * confirmation" note must not render.
  */
 export function scanResultFromCard(card: AttendeeCardDto): CheckInScanResponse {
-  if (card.warnings.length > 0) {
+  if (card.blocked) {
     return { status: "REVOKED", confirmed: true, card, attendeeId: card.id };
   }
   if (card.check_in_status === "admitted") {

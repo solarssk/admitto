@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Badge, Button } from "@admitto/ui";
 import type { AttendeeCardItemDto } from "../api/types.js";
+import { useInFlightIds } from "../hooks/useInFlightIds.js";
 import { itemActionAriaLabel, itemActionLabel, itemBadgeVariant } from "./AttendeeCard.js";
 
 type CameraOverlayItemIssuingProps = Readonly<{
@@ -27,18 +28,17 @@ type SummaryScreenProps = Readonly<{
   onDone: () => void;
   onUndo?: () => Promise<unknown> | void;
   showUndo?: boolean;
+  pending: boolean;
   canAct: boolean;
 }>;
 
 // Split out of CameraOverlayItemIssuing (Sonar: cognitive complexity) — the
 // final screen after stepping through every item, listing what was issued
 // vs. skipped.
-function SummaryScreen({ items, stepKeys, isDone, onDone, onUndo, showUndo, canAct }: SummaryScreenProps) {
-  const [undoing, setUndoing] = useState(false);
-  // Synchronous companion to `undoing` — a ref (not state) is needed to
-  // actually block a same-tick double-click, since the `disabled` attribute
-  // only reflects `undoing` once React commits the re-render.
-  const undoingRef = useRef(false);
+function SummaryScreen({ items, stepKeys, isDone, onDone, onUndo, showUndo, pending, canAct }: SummaryScreenProps) {
+  // Double-submit guard for the single Undo button — shared hook (ref + state)
+  // so a same-tick double-tap can't fire two undo requests.
+  const undoGuard = useInFlightIds();
   const resolvedItems = stepKeys
     .map((key) => items.find((i) => i.key === key))
     .filter((i): i is AttendeeCardItemDto => !!i);
@@ -81,15 +81,10 @@ function SummaryScreen({ items, stepKeys, isDone, onDone, onUndo, showUndo, canA
           <button
             type="button"
             className="link-btn"
-            disabled={!canAct || undoing}
+            disabled={!canAct || pending || undoGuard.ids.has("undo")}
             onClick={() => {
-              if (undoingRef.current) return;
-              undoingRef.current = true;
-              setUndoing(true);
-              Promise.resolve(onUndo()).finally(() => {
-                undoingRef.current = false;
-                setUndoing(false);
-              });
+              if (!undoGuard.start("undo")) return;
+              Promise.resolve(onUndo()).finally(() => undoGuard.finish("undo"));
             }}
           >
             Undo last check-in
@@ -119,17 +114,22 @@ export function CameraOverlayItemIssuing({
   // green (PO review point 5). Marking the click locally lets the summary
   // compute "done" immediately without waiting on the prop; the mark is
   // reverted if onItemAction's promise resolves false (the request actually
-  // failed) — see the click handler below.
-  const [locallyIssued, setLocallyIssued] = useState<Set<string>>(new Set());
+  // failed) — see the click handler below. Maps key → the action string that
+  // was submitted (not just a presence Set): re-deriving it from the live
+  // actions[0] is wrong for multi-step items — once the server confirms a
+  // headset's pending→issued, actions[0] becomes its NEXT legal action
+  // ("returned"), so the "Already {state}" badge would read "returned" right
+  // after issuing it (review finding).
+  const [locallyIssued, setLocallyIssued] = useState<Map<string, string>>(new Map());
   // Guards against a fast double-tap firing onItemAction twice for the same
   // item: goForward() below advances stepIndex synchronously, but the
   // re-render that actually swaps the Issue button for the next item's
   // still lands a tick later, leaving a brief window where a second click
   // event on the same still-mounted button would fire a second real POST
   // (review finding — the `pending` prop never reflects an item action's
-  // own in-flight state, so `disabled` alone didn't stop this). A ref (not
-  // state) is required for a same-tick synchronous check.
-  const submittedKeysRef = useRef<Set<string>>(new Set());
+  // own in-flight state, so `disabled` alone didn't stop this). The shared
+  // hook's ref half provides the same-tick synchronous check.
+  const itemGuard = useInFlightIds();
 
   const currentKey = stepKeys[stepIndex];
   const currentItem = currentKey ? items.find((i) => i.key === currentKey) : undefined;
@@ -159,6 +159,7 @@ export function CameraOverlayItemIssuing({
         onDone={onDone}
         onUndo={onUndo}
         showUndo={showUndo}
+        pending={pending}
         canAct={canAct}
       />
     );
@@ -170,13 +171,15 @@ export function CameraOverlayItemIssuing({
 
   const alreadyDone = isDone(currentItem);
   const action = currentItem.actions[0];
-  // While the request from the click below is still in flight, currentItem
-  // still carries the server's PRE-action state (e.g. "pending") — showing
-  // it verbatim as "Already {state}" here would read as if nothing had
-  // happened. `action` (the target state just submitted, e.g. "issued") is
-  // what actually describes what the operator just did (review finding).
-  const optimisticOnly = locallyIssued.has(currentItem.key) && currentItem.actions.length > 0;
-  const badgeState = optimisticOnly ? action : currentItem.state;
+  // The target state the operator actually submitted for this item, remembered
+  // at click time. Prefer it over the live state so the badge reads correctly
+  // both while the request is still in flight (currentItem still carries the
+  // PRE-action state, e.g. "pending") and after it lands for a multi-step item
+  // (currentItem.state is right, but actions[0] has already advanced to the
+  // NEXT action — see the locallyIssued comment above). Falls back to the live
+  // state for items that were already done before this screen opened (e.g. a
+  // badge auto-issued at entry), which the operator never clicked here.
+  const badgeState = locallyIssued.get(currentItem.key) ?? currentItem.state;
 
   return (
     <div className="ck-items">
@@ -219,16 +222,18 @@ export function CameraOverlayItemIssuing({
           aria-label={itemActionAriaLabel(currentItem.key, action)}
           onClick={() => {
             const key = currentItem.key;
-            if (submittedKeysRef.current.has(key)) return;
-            submittedKeysRef.current.add(key);
-            setLocallyIssued((prev) => new Set(prev).add(key));
+            if (!itemGuard.start(key)) return;
+            setLocallyIssued((prev) => new Map(prev).set(key, action));
             goForward();
             void onItemAction(key, action).then((success) => {
               if (success) return;
-              submittedKeysRef.current.delete(key);
+              // Request actually failed — clear the guard so a retry (after
+              // navigating Back) works, and drop the optimistic mark so the
+              // summary doesn't misreport a false "issued".
+              itemGuard.finish(key);
               setLocallyIssued((prev) => {
                 if (!prev.has(key)) return prev;
-                const next = new Set(prev);
+                const next = new Map(prev);
                 next.delete(key);
                 return next;
               });

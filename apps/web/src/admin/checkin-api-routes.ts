@@ -12,7 +12,6 @@ import {
   addAttendeeNote,
   loadEventOpsConfig,
   undoLastCheckIn,
-  IllegalItemTransitionError,
   NoteTooLongError,
   OperatorRequiredError,
   UndoNotAllowedError,
@@ -22,6 +21,7 @@ import {
 } from "@admitto/tickets";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { publishCheckinIfValid } from "./checkin-sse-publish.js";
+import { itemTransitionErrorResponse } from "./admin-helpers.js";
 
 /** GET /api/checkin/events — session-only capability list (P4). */
 export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Promise<Response> {
@@ -217,11 +217,7 @@ export async function handleCheckinItemAction(c: Context, db: PrismaClient): Pro
     const card = await getAttendeeCard(eventId, attendeeId, db);
     return c.json({ ...result, card }, 200);
   } catch (err) {
-    if (err instanceof IllegalItemTransitionError) {
-      return c.json({ error: err.message }, 409);
-    }
-    console.error("transitionItemState failed:", err);
-    return c.json({ error: "server error" }, 500);
+    return itemTransitionErrorResponse(c, err, "transitionItemState");
   }
 }
 

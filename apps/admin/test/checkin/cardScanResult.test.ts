@@ -13,7 +13,7 @@ function card(overrides: Partial<AttendeeCardDto> = {}): AttendeeCardDto {
     admitted_at: null,
     items: [],
     notes: [],
-    warnings: [],
+    blocked: false,
     ...overrides,
   };
 }
@@ -40,17 +40,17 @@ describe("scanResultFromCard (#379)", () => {
     });
   });
 
-  it("card with warnings derives REVOKED", () => {
-    const c = card({ warnings: ["Ticket is not admittable (status: revoked)."] });
+  it("blocked card derives REVOKED", () => {
+    const c = card({ blocked: true });
     expect(scanResultFromCard(c).status).toBe("REVOKED");
     expect(scanResultFromCard(c).confirmed).toBe(true);
   });
 
-  it("warnings take precedence over an earlier admission (voided pass reads as revoked)", () => {
+  it("blocked takes precedence over an earlier admission (voided pass reads as revoked)", () => {
     const c = card({
       check_in_status: "admitted",
       admitted_at: "2026-09-01T09:44:00.000Z",
-      warnings: ["Ticket is not admittable (status: revoked)."],
+      blocked: true,
     });
     expect(scanResultFromCard(c).status).toBe("REVOKED");
   });

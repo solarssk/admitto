@@ -121,7 +121,7 @@ function cardResponse(token: string, name: string) {
       admitted_at: "2026-06-01T10:00:00.000Z",
       items: [],
       notes: [],
-      warnings: [],
+      blocked: false,
     },
   };
 }
@@ -465,7 +465,7 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
           admitted_at: null,
           items: [],
           notes: [],
-          warnings: [],
+          blocked: false,
         },
       })
       .mockResolvedValueOnce(cardResponse(tokenB, "Person B"));
@@ -520,7 +520,7 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
           admitted_at: "2026-06-01T10:05:00.000Z",
           items: [],
           notes: [],
-          warnings: [],
+          blocked: false,
         },
       });
       await vi.advanceTimersByTimeAsync(100);

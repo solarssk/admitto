@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { rollbackBadgeForCheckIn } from "./item-states.js";
+import { rollbackBadgeForCheckIn, resetAllItemStatesForRevoke } from "./item-states.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 import { getAttendeeCard } from "./attendee-card.js";
 import type { UndoCheckInResult } from "./types.js";
@@ -129,9 +129,16 @@ export async function revokeCheckIn(
  * getAttendeeCard's several extra queries — event items, item states,
  * notes, note authors — just to discard the result). Returns the id of the
  * check-in that was undone, if one was found (for callers that want it).
+ *
+ * `resetItems` defaults to false: this mutation is also reused by the
+ * pass-status-change path purely to clear a stale `admitted_at` (so
+ * restoring the pass later doesn't resurrect it) — that path revokes the
+ * *pass*, not specifically the hand-out record, and shouldn't wipe items
+ * that were genuinely already given out (bot review, #457). Only the
+ * explicit "Revoke check-in" action (revokeCheckInTx below) opts in.
  */
 export async function revokeCheckInMutation(
-  params: { eventId: string; attendeeId: string; audit: OpsAuditContext },
+  params: { eventId: string; attendeeId: string; audit: OpsAuditContext; resetItems?: boolean },
   tx: Prisma.TransactionClient,
 ): Promise<{ undoneCheckInId: string | null }> {
   const lastValid = await tx.checkIn.findFirst({
@@ -175,14 +182,18 @@ export async function revokeCheckInMutation(
     },
   });
 
-  // Only roll back a badge if we found the check-in that issued it — an
-  // admitted_at with no matching VALID/scan-or-manual row (e.g. a legacy
-  // import) has nothing to roll back.
-  if (lastValid) {
-    await rollbackBadgeForCheckIn(tx, {
+  // Blanket reset of every handed-out item back to pending (PO: "przy revoke
+  // checkin było też revoke items ... bez zagłębiania się w które itemy") —
+  // opt-in only (see this function's own doc comment above). Runs regardless
+  // of whether a VALID check-in row was found — it clears the item states
+  // directly, so it also fixes a legacy admitted_at with no matching
+  // scan/manual row. Supersedes the old rollbackBadgeForCheckIn call here: a
+  // blanket "reset every issued/returned item" already covers the
+  // auto-issued badge, so keeping both would double-log the badge reset.
+  if (params.resetItems) {
+    await resetAllItemStatesForRevoke(tx, {
       attendeeId: params.attendeeId,
       eventId: params.eventId,
-      checkInId: lastValid.id,
       audit: params.audit,
     });
   }
@@ -199,19 +210,20 @@ export async function revokeCheckInMutation(
 }
 
 /**
- * Same as revokeCheckIn but takes an already-open transaction — reused by
- * the pass-revoke endpoint so revoking a pass also clears any current
- * admission in the same transaction (PO review: restoring a revoked pass
- * was resurrecting a stale "checked in" state from before the revoke). Runs
- * the mutation, then builds the AttendeeCardDto for the standalone action's
- * response — callers that don't need the card should call
- * revokeCheckInMutation directly instead.
+ * Same as revokeCheckIn but takes an already-open transaction. Only current
+ * caller is revokeCheckIn itself, for the explicit "Revoke check-in" admin
+ * action — opts into the blanket item reset, unlike the pass-status-change
+ * path, which calls revokeCheckInMutation directly (see its own doc comment)
+ * to clear a stale admission without touching item state. Runs the mutation,
+ * then builds the AttendeeCardDto for the standalone action's response —
+ * callers that don't need the card should call revokeCheckInMutation
+ * directly instead.
  */
 export async function revokeCheckInTx(
   params: { eventId: string; attendeeId: string; audit: OpsAuditContext },
   tx: Prisma.TransactionClient,
 ): Promise<UndoCheckInResult> {
-  await revokeCheckInMutation(params, tx);
+  await revokeCheckInMutation({ ...params, resetItems: true }, tx);
 
   const card = await getAttendeeCard(params.eventId, params.attendeeId, tx);
   if (!card) throw new Error("Attendee missing after revoke");

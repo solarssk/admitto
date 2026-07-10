@@ -1162,6 +1162,137 @@ describe("POST /api/admin/events/:eventId/attendees/:id/revoke-checkin", () => {
   });
 });
 
+describe("POST /api/admin/events/:eventId/attendees/:id/items/:itemKey/revoke", () => {
+  const ATT_ITEM_REVOKE = "att-admin-item-revoke-target";
+
+  // Lazily create the item-state rows (getAttendeeCard does this), then force
+  // giftbag to "issued" so there's something to revoke.
+  async function setGiftbagIssued() {
+    await getAttendeeCard(EVENT_A, ATT_ITEM_REVOKE, prisma);
+    const giftbag = await prisma.eventItem.findFirstOrThrow({
+      where: { event_id: EVENT_A, key: "giftbag" },
+    });
+    await prisma.attendeeItemState.update({
+      where: {
+        attendee_id_event_item_id: { attendee_id: ATT_ITEM_REVOKE, event_item_id: giftbag.id },
+      },
+      data: { state: "issued" },
+    });
+  }
+
+  beforeAll(async () => {
+    await prisma.attendee.upsert({
+      where: { id: ATT_ITEM_REVOKE },
+      create: {
+        id: ATT_ITEM_REVOKE,
+        event_id: EVENT_A,
+        email: "item-revoke-target@example.com",
+        name: "Item Revoke Target",
+        token_hash: hashToken(generateToken()),
+      },
+      update: {},
+    });
+  });
+
+  // bulk-resend below counts EVENT_A's attendees — don't leak this fixture.
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_ITEM_REVOKE } });
+    await prisma.attendeeItemState.deleteMany({ where: { attendee_id: ATT_ITEM_REVOKE } });
+    await prisma.attendee.delete({ where: { id: ATT_ITEM_REVOKE } });
+  });
+
+  it("rejects operator (server enforces admin/superadmin, not just frontend hiding)", async () => {
+    await setGiftbagIssued();
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_ITEM_REVOKE}/items/giftbag/revoke`,
+      {
+        method: "POST",
+        headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(403);
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: ATT_ITEM_REVOKE, event_item: { key: "giftbag" } },
+    });
+    expect(after?.state).toBe("issued");
+  });
+
+  it("admin resets the item to pending, logs item_revoked, and returns the refreshed card", async () => {
+    await setGiftbagIssued();
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_ITEM_REVOKE}/items/giftbag/revoke`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      card: { items: { key: string; state: string; actions: string[] }[] };
+    };
+    const giftbag = body.card.items.find((i) => i.key === "giftbag");
+    expect(giftbag?.state).toBe("pending");
+    expect(giftbag?.actions).toContain("issued");
+
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: ATT_ITEM_REVOKE, event_item: { key: "giftbag" } },
+    });
+    expect(after?.state).toBe("pending");
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_ITEM_REVOKE, action_type: "item_revoked" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    expect(log?.metadata).toMatchObject({ event_item_key: "giftbag", from_state: "issued" });
+  });
+
+  it("returns 409 for an unknown item key", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_ITEM_REVOKE}/items/does-not-exist/revoke`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(409);
+  });
+
+  it("returns 403 for an unknown attendee id (no existence oracle, matches sibling routes)", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/does-not-exist/items/giftbag/revoke`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("returns a generic 500 without leaking the underlying error for an unexpected failure", async () => {
+    await setGiftbagIssued();
+    // revokeItemState runs inside prisma.$transaction — spying on a model
+    // method directly (e.g. prisma.attendeeItemState.findUnique) doesn't
+    // intercept the transaction-scoped `tx` client Prisma creates internally,
+    // so the mock has to sit on $transaction itself.
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db exploded"));
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/attendees/${ATT_ITEM_REVOKE}/items/giftbag/revoke`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        },
+      );
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("server error");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
   const bulkUrl = `/api/admin/events/${EVENT_A}/attendees/bulk-resend`;
 
@@ -1977,6 +2108,65 @@ describe("Attendees v2 — RSVP and manual create", () => {
       await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE } });
       await prisma.checkIn.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE } });
       await prisma.attendee.delete({ where: { id: ATT_PASS_REVOKE } });
+    }
+  });
+
+  it("PATCH status revoked clears the admission but does not reset already handed-out items (bot review, #457)", async () => {
+    // revokeCheckInMutation is shared with the explicit "Revoke check-in"
+    // action, which DOES blanket-reset items (PO's ask). This path only
+    // revokes the *pass* — it must not wipe a hand-out record that's
+    // genuinely accurate, or restoring the pass later would make the item
+    // card falsely say a gift bag/headset still needs to be given out.
+    const ATT_PASS_REVOKE_ITEMS = "att-admin-pass-revoke-keeps-items";
+    const token = generateToken();
+    await prisma.attendee.upsert({
+      where: { id: ATT_PASS_REVOKE_ITEMS },
+      create: {
+        id: ATT_PASS_REVOKE_ITEMS,
+        event_id: EVENT_A,
+        email: "pass-revoke-keeps-items@example.com",
+        name: "Pass Revoke Keeps Items",
+        token_hash: hashToken(token),
+        admitted_at: new Date("2026-10-01T10:00:00Z"),
+      },
+      update: { status: "registered", admitted_at: new Date("2026-10-01T10:00:00Z"), admitted_by: null },
+    });
+    await getAttendeeCard(EVENT_A, ATT_PASS_REVOKE_ITEMS, prisma);
+    const giftbag = await prisma.eventItem.findFirstOrThrow({ where: { event_id: EVENT_A, key: "giftbag" } });
+    await prisma.attendeeItemState.update({
+      where: { attendee_id_event_item_id: { attendee_id: ATT_PASS_REVOKE_ITEMS, event_item_id: giftbag.id } },
+      data: { state: "issued" },
+    });
+    try {
+      const getRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_PASS_REVOKE_ITEMS}`, {
+        headers: { Cookie: adminCookie },
+      });
+      const detail = (await getRes.json()) as { updated_at: string };
+
+      const patchRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_PASS_REVOKE_ITEMS}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "revoked", expected_updated_at: detail.updated_at }),
+      });
+      expect(patchRes.status).toBe(200);
+
+      const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_PASS_REVOKE_ITEMS } });
+      expect(row.admitted_at).toBeNull();
+
+      const giftbagAfter = await prisma.attendeeItemState.findFirst({
+        where: { attendee_id: ATT_PASS_REVOKE_ITEMS, event_item_id: giftbag.id },
+      });
+      expect(giftbagAfter?.state).toBe("issued");
+
+      const revokedLogs = await prisma.attendeeActionLog.count({
+        where: { attendee_id: ATT_PASS_REVOKE_ITEMS, action_type: "item_revoked" },
+      });
+      expect(revokedLogs).toBe(0);
+    } finally {
+      await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE_ITEMS } });
+      await prisma.attendeeItemState.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE_ITEMS } });
+      await prisma.checkIn.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE_ITEMS } });
+      await prisma.attendee.delete({ where: { id: ATT_PASS_REVOKE_ITEMS } });
     }
   });
 

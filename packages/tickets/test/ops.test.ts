@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { admitAttendee } from "../src/admit.js";
 import { undoLastCheckIn as undoFn, revokeCheckIn, UndoNotAllowedError } from "../src/undo.js";
-import { transitionItemState, ensureAttendeeItemStates, operatorItemActions } from "../src/item-states.js";
+import {
+  transitionItemState,
+  revokeItemState,
+  ensureAttendeeItemStates,
+  operatorItemActions,
+} from "../src/item-states.js";
 import { addAttendeeNote, NoteTooLongError, OperatorRequiredError } from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
 import { getAttendeeCard, getCheckInStats, lookupAttendees } from "../src/attendee-card.js";
@@ -467,5 +472,271 @@ describe("revokeCheckIn — admin/superadmin un-admit (any device, any time)", (
         prisma,
       ),
     ).rejects.toThrow(UndoNotAllowedError);
+  });
+
+  it("also resets a NON-badge handed-out item back to pending (blanket reset, not just the badge)", async () => {
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "revoke-all-items@example.com",
+        name: "Revoke All Items",
+        token_hash: hashToken(generateToken()),
+      },
+    });
+
+    // Admit → badge auto-issued (issue_on_checkin). Operator also hands out the
+    // gift bag, so two different items are "issued" before the revoke.
+    await admitAttendee(
+      { attendeeId: att.id, eventId: EVENT_ID, method: "scan", audit: { operator: "operator-1", deviceId: "kiosk-7" } },
+      prisma,
+    );
+    await transitionItemState(
+      { attendeeId: att.id, eventId: EVENT_ID, itemKey: "giftbag", targetState: "issued", audit: { operator: "operator-1", deviceId: "kiosk-7" } },
+      prisma,
+    );
+    const before = await prisma.attendeeItemState.findMany({ where: { attendee_id: att.id } });
+    expect(before.filter((s) => s.state === "issued").length).toBeGreaterThanOrEqual(2);
+
+    await revokeCheckIn({ eventId: EVENT_ID, attendeeId: att.id, audit: { operator: "admin-9" } }, prisma);
+
+    const after = await prisma.attendeeItemState.findMany({ where: { attendee_id: att.id } });
+    expect(after.every((s) => s.state === "pending")).toBe(true);
+
+    // Every item actually reset is audited (badge + giftbag = at least 2).
+    const revokedLogs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: att.id, action_type: "item_revoked" },
+    });
+    expect(revokedLogs.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does not reset an item in an exceptional state (lost/problem/not_applicable) — those aren't handed-out states (bot review, #457)", async () => {
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "revoke-preserves-lost@example.com",
+        name: "Revoke Preserves Lost",
+        token_hash: hashToken(generateToken()),
+        admitted_at: new Date("2026-09-01T10:00:00Z"),
+      },
+    });
+    await ensureAttendeeItemStates(att.id, EVENT_ID, prisma);
+    const headset = await prisma.eventItem.findFirstOrThrow({ where: { event_id: EVENT_ID, key: "headset" } });
+    await prisma.attendeeItemState.update({
+      where: { attendee_id_event_item_id: { attendee_id: att.id, event_item_id: headset.id } },
+      data: { state: "lost" },
+    });
+
+    await revokeCheckIn({ eventId: EVENT_ID, attendeeId: att.id, audit: { operator: "admin-9" } }, prisma);
+
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item_id: headset.id },
+    });
+    expect(after?.state).toBe("lost");
+  });
+
+  it("does not reset an item state row pointing at a different event's EventItem, even for the same attendee (defense-in-depth, CodeRabbit nitpick)", async () => {
+    // Simulates the invariant CodeRabbit's filter guards against ("attendees
+    // are already event-scoped so this can't currently cross events, but the
+    // filter keeps that invariant explicit") — deliberately construct the
+    // broken state directly, since no real app code path can produce it.
+    const otherEvent = await prisma.event.create({
+      data: {
+        id: "test-event-ops-cross-event-457",
+        title: "Cross-event Ops",
+        slug: "cross-event-ops-457",
+        date: new Date("2026-09-03T09:00:00Z"),
+        organization_id: "org_ops",
+      },
+    });
+    const otherItem = await prisma.eventItem.create({
+      data: { event_id: otherEvent.id, key: "cross-event-swag", label: "Cross-event swag" },
+    });
+
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "revoke-scoped-to-event@example.com",
+        name: "Revoke Scoped To Event",
+        token_hash: hashToken(generateToken()),
+        admitted_at: new Date("2026-09-01T10:00:00Z"),
+      },
+    });
+    await ensureAttendeeItemStates(att.id, EVENT_ID, prisma);
+    await prisma.attendeeItemState.create({
+      data: { attendee_id: att.id, event_item_id: otherItem.id, state: "issued" },
+    });
+
+    await revokeCheckIn({ eventId: EVENT_ID, attendeeId: att.id, audit: { operator: "admin-9" } }, prisma);
+
+    const crossEventAfter = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item_id: otherItem.id },
+    });
+    expect(crossEventAfter?.state).toBe("issued");
+
+    // The attendee's own event's items (e.g. badge, auto-issued on admit) are
+    // still reset normally — the fix scopes the query, it doesn't break it.
+    const badgeAfter = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item: { key: "badge" } },
+    });
+    expect(badgeAfter?.state).toBe("pending");
+  });
+});
+
+describe("revokeItemState — admin/superadmin single-item reset (item revocation feature)", () => {
+  let itemSeq = 0;
+  async function makeAttendeeWithItemState(key: string, state: string) {
+    itemSeq += 1;
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: `revoke-item-${itemSeq}@example.com`,
+        name: "Revoke Item Target",
+        token_hash: hashToken(generateToken()),
+      },
+    });
+    await ensureAttendeeItemStates(att.id, EVENT_ID, prisma);
+    const eventItem = await prisma.eventItem.findFirstOrThrow({
+      where: { event_id: EVENT_ID, key },
+    });
+    await prisma.attendeeItemState.update({
+      where: { attendee_id_event_item_id: { attendee_id: att.id, event_item_id: eventItem.id } },
+      data: { state },
+    });
+    return att;
+  }
+
+  it("resets an issued item to pending and logs item_revoked with the previous state", async () => {
+    const att = await makeAttendeeWithItemState("giftbag", "issued");
+    const result = await revokeItemState(
+      { attendeeId: att.id, eventId: EVENT_ID, itemKey: "giftbag", audit: { operator: "admin-9" } },
+      prisma,
+    );
+    expect(result.state).toBe("pending");
+
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item: { key: "giftbag" } },
+    });
+    expect(after?.state).toBe("pending");
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: att.id, action_type: "item_revoked" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log?.actor_user_id).toBe("admin-9");
+    expect(log?.metadata).toMatchObject({
+      event_item_key: "giftbag",
+      from_state: "issued",
+      to_state: "pending",
+    });
+  });
+
+  it("resets a returned item to pending too — not gated by the operator forward-only machine", async () => {
+    const att = await makeAttendeeWithItemState("headset", "returned");
+    const result = await revokeItemState(
+      { attendeeId: att.id, eventId: EVENT_ID, itemKey: "headset", audit: { operator: "admin-9" } },
+      prisma,
+    );
+    expect(result.state).toBe("pending");
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item: { key: "headset" } },
+    });
+    expect(after?.state).toBe("pending");
+  });
+
+  it("is a harmless no-op on an already-pending item (no audit noise)", async () => {
+    const att = await makeAttendeeWithItemState("giftbag", "pending");
+    const result = await revokeItemState(
+      { attendeeId: att.id, eventId: EVENT_ID, itemKey: "giftbag", audit: { operator: "admin-9" } },
+      prisma,
+    );
+    expect(result.state).toBe("pending");
+    const logs = await prisma.attendeeActionLog.count({
+      where: { attendee_id: att.id, action_type: "item_revoked" },
+    });
+    expect(logs).toBe(0);
+  });
+
+  it("is a no-op on an item in an exceptional state (lost/problem/not_applicable) — those aren't handed-out states (bot review, #457)", async () => {
+    const att = await makeAttendeeWithItemState("giftbag", "problem");
+    const result = await revokeItemState(
+      { attendeeId: att.id, eventId: EVENT_ID, itemKey: "giftbag", audit: { operator: "admin-9" } },
+      prisma,
+    );
+    expect(result.state).toBe("problem");
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item: { key: "giftbag" } },
+    });
+    expect(after?.state).toBe("problem");
+    const logs = await prisma.attendeeActionLog.count({
+      where: { attendee_id: att.id, action_type: "item_revoked" },
+    });
+    expect(logs).toBe(0);
+  });
+
+  it("rejects an unknown item key", async () => {
+    const att = await makeAttendeeWithItemState("giftbag", "issued");
+    await expect(
+      revokeItemState(
+        { attendeeId: att.id, eventId: EVENT_ID, itemKey: "does-not-exist", audit: { operator: "admin-9" } },
+        prisma,
+      ),
+    ).rejects.toThrow(/Item not found/);
+  });
+
+  it("rejects an attendee that does not belong to the event", async () => {
+    await expect(
+      revokeItemState(
+        { attendeeId: "no-such-attendee", eventId: EVENT_ID, itemKey: "giftbag", audit: { operator: "admin-9" } },
+        prisma,
+      ),
+    ).rejects.toThrow(/Attendee not found/);
+  });
+
+  it("rejects revoking an item on a blocked (revoked/cancelled) pass — server enforces it independently of the card's Revoke button being hidden (bot review, #457)", async () => {
+    const att = await makeAttendeeWithItemState("giftbag", "issued");
+    await prisma.attendee.update({ where: { id: att.id }, data: { status: "revoked" } });
+
+    await expect(
+      revokeItemState(
+        { attendeeId: att.id, eventId: EVENT_ID, itemKey: "giftbag", audit: { operator: "admin-9" } },
+        prisma,
+      ),
+    ).rejects.toThrow(/not active/);
+
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item: { key: "giftbag" } },
+    });
+    expect(after?.state).toBe("issued");
+  });
+
+  it("resets an item to pending even after its EventItem type was disabled — a past hand-out can still be corrected (bot review, #457)", async () => {
+    // Unlike transitionItemState (operator forward-only), revoke is a
+    // corrective admin action: it shouldn't leave a hand-out permanently
+    // stuck just because the item type is no longer offered going forward.
+    const item = await prisma.eventItem.create({
+      data: { event_id: EVENT_ID, key: "discontinued-swag", label: "Discontinued swag", enabled: false },
+    });
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "revoke-disabled-item@example.com",
+        name: "Revoke Disabled Item Target",
+        token_hash: hashToken(generateToken()),
+      },
+    });
+    await prisma.attendeeItemState.create({
+      data: { attendee_id: att.id, event_item_id: item.id, state: "issued" },
+    });
+
+    const result = await revokeItemState(
+      { attendeeId: att.id, eventId: EVENT_ID, itemKey: "discontinued-swag", audit: { operator: "admin-9" } },
+      prisma,
+    );
+    expect(result.state).toBe("pending");
+
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item_id: item.id },
+    });
+    expect(after?.state).toBe("pending");
   });
 });

@@ -94,7 +94,8 @@ export interface AttendeeCardDto {
   admitted_at: string | null;
   items: AttendeeCardItemDto[];
   notes: { body: string; author_display: string; created_at: string }[];
-  warnings: string[];
+  /** True when the pass itself isn't admittable (cancelled/revoked). */
+  blocked: boolean;
 }
 
 export interface LookupAttendeeResult {
