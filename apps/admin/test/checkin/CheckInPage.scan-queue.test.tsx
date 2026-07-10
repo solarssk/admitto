@@ -578,7 +578,7 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
   });
 });
 
-describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
+describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
@@ -587,9 +587,9 @@ describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
     vi.useRealTimers();
   });
 
-  it("routes a slowly-typed long query to lookup on Enter, not to a scan", async () => {
+  it("routes a slowly-typed long query to a scan attempt on Enter, not a lookup", async () => {
     mockPageBootstrap();
-    lookupCheckInAttendees.mockResolvedValueOnce([]);
+    submitCheckInScan.mockResolvedValueOnce({ status: "INVALID", confirmed: false });
 
     renderPage();
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
@@ -598,22 +598,28 @@ describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
     // character at a time, well under burst speed (60ms > WEDGE_MAX_INTER_KEY_GAP_MS).
     const query = "someone.long-name@international-trade-fair.example.com";
     await typeWedge(input, query, { gapMs: 60 });
-    // The debounce timer must not have auto-submitted this as a scan while typing.
+    // The debounce timer must not have auto-submitted this while still typing
+    // — only the explicit Enter below decides anything for non-burst input.
     expect(submitCheckInScan).not.toHaveBeenCalled();
 
-    // The field's own hint text ("Enter to confirm") is exactly what the
-    // operator is expected to do next.
+    // The field's own hint text ("it submits itself") is exactly what happens
+    // next: an explicit Enter on a value this long is unconditionally an
+    // intentional "try this now", the same way the suggestion dropdown
+    // already refuses to treat anything this long as a name/email query
+    // (bot review — this used to also require proof of a genuine keyboard-
+    // wedge burst, which made a real pasted/typed code fall through to a
+    // doomed name/email lookup instead of the scan attempt it obviously was).
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
 
-    await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", query));
-    expect(submitCheckInScan).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", query, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
   });
 
-  it("does not treat a pasted long value as a wedge burst", async () => {
+  it("routes a pasted long value to a scan attempt on Enter, not a lookup", async () => {
     mockPageBootstrap();
-    lookupCheckInAttendees.mockResolvedValueOnce([]);
+    submitCheckInScan.mockResolvedValueOnce({ status: "INVALID", confirmed: false });
 
     renderPage();
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
@@ -625,22 +631,26 @@ describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
     fireEvent.paste(input);
     fireEvent.change(input, { target: { value: pasted } });
 
-    // The auto-submit timer must not fire a scan for pasted text.
+    // The silent, no-Enter auto-submit timer must still never fire for
+    // pasted text — that path has no user confirmation at all, so it stays
+    // gated on a genuine hardware-scanner burst.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(50); // WEDGE_DEBOUNCE_MS
     });
     expect(submitCheckInScan).not.toHaveBeenCalled();
 
+    // An explicit Enter, though, is a deliberate submit regardless of how the
+    // text arrived (bot review).
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
-    await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", pasted));
-    expect(submitCheckInScan).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", pasted, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
   });
 
-  it("does not treat a single-event long value dropped into an empty field as a burst without a paste event (Codex review)", async () => {
+  it("routes a single-event long value dropped into an empty field to a scan attempt on Enter (Codex review)", async () => {
     mockPageBootstrap();
-    lookupCheckInAttendees.mockResolvedValueOnce([]);
+    submitCheckInScan.mockResolvedValueOnce({ status: "INVALID", confirmed: false });
 
     renderPage();
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
@@ -649,7 +659,7 @@ describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
     // composition, or voice dictation can all insert a long value into an
     // empty field in one change event without ever firing a paste event —
     // so `justPasted` alone can't catch this. Only the length-jump-per-event
-    // check does.
+    // check does, for the purposes of NOT silently auto-submitting it.
     const value = "someone.long-name@international-trade-fair.example.com";
     fireEvent.change(input, { target: { value } });
 
@@ -659,11 +669,13 @@ describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
     });
     expect(submitCheckInScan).not.toHaveBeenCalled();
 
+    // An explicit Enter still submits it as a scan attempt, same as any
+    // other value at least WEDGE_AUTO_SUBMIT_LEN long.
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
-    await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", value));
-    expect(submitCheckInScan).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", value, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
   });
 
   it("still auto-submits a genuine fast wedge burst on Enter (no regression)", async () => {

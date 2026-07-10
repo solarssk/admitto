@@ -664,16 +664,25 @@ export function CheckInPage({
   // lookup is still in flight can't get appended after the old query text —
   // the combined string would otherwise cross the scan-length threshold and
   // get auto-submitted as a corrupted, unmatchable scan payload (#277 review).
-  // Shared routing logic for both submit entry points. When requireBurst is
-  // true the long-token path only fires a scan if the input arrived as a
-  // genuine keyboard-wedge burst; false skips that gate (camera overlay field
-  // is never fed by a wedge — see submitManualTokenOrLookup comment below).
+  // Shared routing logic for both submit entry points (main scan bar and the
+  // mobile camera overlay's manual-entry field). An explicit Enter/Search-
+  // button submit is unconditionally an intentional "try this now" — unlike
+  // the silent, no-Enter auto-submit in handleBufferChange below, which still
+  // requires wedgeIsBurstRef (a real hardware scanner) since it fires with no
+  // user confirmation at all. Length alone already decides whether a value
+  // even looks like a name/email query elsewhere (the suggestion dropdown
+  // stops appearing past WEDGE_AUTO_SUBMIT_LEN too) — this matches that same
+  // threshold instead of additionally demanding proof the text arrived via a
+  // fast burst, which used to make an explicitly-submitted pasted token
+  // route to a doomed name/email lookup instead of the scan it obviously was
+  // (bot review; originally #262 tried to solve this by requiring a burst on
+  // Enter too, which fixed the "long typed query" case but broke paste).
   const submitOrLookup = useCallback(
-    (query: string, requireBurst: boolean): Promise<boolean> => {
+    (query: string): Promise<boolean> => {
       const trimmed = query.trim();
       if (!trimmed) return Promise.resolve(false);
 
-      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN && (!requireBurst || wedgeIsBurstRef.current)) {
+      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN) {
         void runScan(trimmed);
         return Promise.resolve(true);
       }
@@ -688,21 +697,13 @@ export function CheckInPage({
     [runExclusive, runScan, submitScanOrLookupImpl],
   );
 
-  // Length alone is not enough here (#262 review): an explicit Enter/Search-
-  // button submit of a long, slowly-typed or pasted query must route to
-  // lookup, not runScan — otherwise pressing Enter misfires a manually-typed
-  // long query as a scan. wedgeIsBurstRef gates the distinction.
   const submitScanOrLookup = useCallback(
-    (query: string) => submitOrLookup(query, true),
+    (query: string) => submitOrLookup(query),
     [submitOrLookup],
   );
 
-  // The mobile camera overlay's manual-entry field is a paste/type fallback;
-  // nothing feeds it via a keyboard wedge, so gating on wedgeIsBurstRef would
-  // be wrong — it tracks the main scan bar's typing, an entirely different
-  // field. Uses the burst-independent length heuristic instead (#262 review).
   const submitManualTokenOrLookup = useCallback(
-    (query: string) => submitOrLookup(query, false),
+    (query: string) => submitOrLookup(query),
     [submitOrLookup],
   );
 
