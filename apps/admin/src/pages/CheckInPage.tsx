@@ -518,7 +518,7 @@ export function CheckInPage({
       try {
         const response = await runWithPending(() => submitCheckInScan(eventId, scanned, deviceId));
         if (!response) return false;
-        if (fallbackToLookup && response.status === "INVALID") {
+        if (fallbackToLookup && allowManualLookup && response.status === "INVALID") {
           // An explicit submit (Enter/Search) that didn't resolve as a scan
           // code — try it as a name/email search instead of reporting
           // "invalid code". The server's resolver already recognizes every
@@ -533,6 +533,17 @@ export function CheckInPage({
           // recognize a token by its shape client-side, which by
           // construction can't also recognize a ticket URL or an
           // externally-issued agency ID).
+          //
+          // Gated on allowManualLookup too (bot review, round 10): without
+          // it, a QR-only event (manual lookup deliberately turned off)
+          // still fell into this branch for a bad scan, and
+          // submitScanOrLookupImpl's own first check immediately bails with
+          // "Manual lookup is disabled for this event" — the wrong message
+          // for an operator who scanned a QR and never attempted a name
+          // search at all, and it skips applyResponse below entirely, so
+          // the normal invalid-scan feedback (toast/card-clearing) never
+          // ran either. When lookup isn't allowed, an INVALID scan is
+          // unambiguous — there's no second interpretation to fall back to.
           return (await submitScanOrLookupImplRef.current?.(scanned)) ?? false;
         }
         applyResponse(response, true);
@@ -559,7 +570,17 @@ export function CheckInPage({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleApiFailure and runWithPending are plain component functions (not useCallback); adding them would recreate this callback every render — to be refactored in #280
-    [deviceId, eventId, focusScan, maybeAutoAdvance, applyLocalAdmit, refreshSidebar, refreshStatsOnly, reportApiError],
+    [
+      deviceId,
+      eventId,
+      focusScan,
+      maybeAutoAdvance,
+      applyLocalAdmit,
+      refreshSidebar,
+      refreshStatsOnly,
+      reportApiError,
+      allowManualLookup,
+    ],
   );
 
   // Synchronous entry point: normalizes, dedups, and clears the buffer

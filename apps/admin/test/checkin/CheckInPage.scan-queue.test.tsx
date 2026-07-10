@@ -846,6 +846,44 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
     expect(lookupCheckInAttendees).not.toHaveBeenCalled();
   });
+
+  it("reports a bad code as invalid, not 'manual lookup is disabled', in a QR-only event (bot review, round 10)", async () => {
+    // allow_manual_lookup: false means the operator explicitly can't search
+    // by name/email — but a long, non-burst submit still tries a scan first
+    // (round 6+) with a lookup fallback on INVALID (round 6). Without gating
+    // that fallback on allowManualLookup too, a bad QR/token in a QR-only
+    // event fell into submitScanOrLookupImpl, whose own first check bails
+    // immediately with "Manual lookup is disabled" — the wrong message for
+    // an operator who scanned a code and never attempted a name search, and
+    // the normal invalid-scan feedback never ran.
+    mockPageBootstrap();
+    fetchCheckInOpsConfig.mockResolvedValue({
+      require_confirm_on_scan: false,
+      badge_at_entry: true,
+      allow_manual_lookup: false,
+      auto_advance_on_valid: true,
+    });
+    const value = "someone.long-name@international-trade-fair.example.com";
+    submitCheckInScan.mockResolvedValueOnce({ status: "INVALID", confirmed: false });
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    await typeWedge(input, value, { gapMs: 60 });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("This code is not valid for this event. Check the QR or use manual lookup."),
+      ).toBeTruthy(),
+    );
+    expect(
+      screen.queryByText("Manual lookup is disabled for this event — use QR scan only."),
+    ).toBeNull();
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
 });
 
 describe("CheckInPage scan queue — event timestamp vs handler wall-clock (#262 review)", () => {
