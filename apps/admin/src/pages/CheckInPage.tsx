@@ -27,7 +27,13 @@ import { scanResultFromCard } from "../checkin/cardScanResult.js";
 import { shouldAutoAdvance } from "../checkin/autoAdvance.js";
 import { canMutateCheckin } from "../checkin/connection.js";
 import { ScanFeedback, feedbackCopy } from "../checkin/ScanFeedback.js";
-import { playScanFeedback, useScanSoundMuted } from "../checkin/scanSoundFeedback.js";
+import {
+  playScanFeedback,
+  scanSoundMuteIconClass,
+  scanSoundMuteLabel,
+  scanSoundMuteTitle,
+  useScanSoundMuted,
+} from "../checkin/scanSoundFeedback.js";
 import { AttendeeCard } from "../checkin/AttendeeCard.js";
 import { CameraOverlay } from "../checkin/CameraOverlay.js";
 import { CheckinConnectionBanner, CheckinConnectionLiveRegion } from "../checkin/ConnectionBanner.js";
@@ -424,31 +430,32 @@ export function CheckInPage({
   // Header "Disable camera" toggles (AdminCheckInRoute, operator desktop) flip
   // the parent's camera state directly and don't go through closeInlineCamera's
   // onReset — clear any stale scan/card display here so a stopped-then-restarted
-  // camera doesn't overlay an old result (#381). Keyed on cameraViewActive (the
-  // combination of both presentation surfaces below), not raw cameraActive: a
-  // viewport resize/rotation crossing the desktop breakpoint (useIsDesktop's
-  // matchMedia listener) while cameraActive never changes is a real transition
-  // into/out of this view too — cameraActive alone missed that case (bot
-  // review, round 5).
+  // camera doesn't overlay an old result (#381).
   //
   // showInlineCamera (desktop) and showMobileOverlay are two different
   // presentation surfaces for the same card/scanResult state — a card looked
   // up from the desktop scan bar, then carried straight into the mobile
   // camera overlay on open (or the reverse on close), reads as the wrong
   // person's result appearing in a surface that never scanned them (PO
-  // review). Clears unconditionally on BOTH the entry and exit transition —
-  // opening or closing the camera is always a fresh start, whether or not a
-  // real card (not just an invalid/no-match leftover) was showing; an
-  // earlier version of this effect preserved a pending card across the
-  // entry transition specifically, but that reads as the same "wrong
-  // person's result" carryover the exit case already guards against (PO
-  // review).
-  const cameraViewActive = showInlineCamera || showMobileOverlay;
-  const prevCameraViewActiveRef = useRef(cameraViewActive);
+  // review). Clears unconditionally on entry, exit, AND a swap between the
+  // two surfaces — tracked as a 3-state "which surface is showing" value
+  // rather than a boolean, because showInlineCamera/showMobileOverlay
+  // partition cameraActive by isDesktop (cameraActive && isDesktop /
+  // cameraActive && !isDesktop), so their OR is always exactly cameraActive:
+  // a viewport resize/rotation crossing the desktop breakpoint while the
+  // camera stays on swaps which surface renders without cameraActive ever
+  // changing, and a boolean derived from either would miss it (code review).
+  type ActiveCameraSurface = "none" | "inline" | "overlay";
+  const activeCameraSurface: ActiveCameraSurface = showInlineCamera
+    ? "inline"
+    : showMobileOverlay
+      ? "overlay"
+      : "none";
+  const prevActiveCameraSurfaceRef = useRef(activeCameraSurface);
   useEffect(() => {
-    if (prevCameraViewActiveRef.current !== cameraViewActive) clearDisplayedResult();
-    prevCameraViewActiveRef.current = cameraViewActive;
-  }, [cameraViewActive, clearDisplayedResult]);
+    if (prevActiveCameraSurfaceRef.current !== activeCameraSurface) clearDisplayedResult();
+    prevActiveCameraSurfaceRef.current = activeCameraSurface;
+  }, [activeCameraSurface, clearDisplayedResult]);
 
   /** User-initiated reset (Escape, Cancel button) — also clears the input and
    * cancels any pending wedge timer, since the user explicitly wants a clean slate. */
@@ -1102,8 +1109,9 @@ export function CheckInPage({
             variant="secondary"
             size="sm"
             aria-pressed={scanSoundMuted}
-            aria-label={scanSoundMuted ? "Unmute scan sound" : "Mute scan sound"}
-            icon={<i className={`ti ti-volume-${scanSoundMuted ? "off" : "2"}`} aria-hidden="true" />}
+            aria-label={scanSoundMuteLabel(scanSoundMuted)}
+            title={scanSoundMuteTitle(scanSoundMuted)}
+            icon={<i className={scanSoundMuteIconClass(scanSoundMuted)} aria-hidden="true" />}
             onClick={toggleScanSoundMuted}
           />
         </div>

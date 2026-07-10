@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import type { CheckInStatus } from "../api/types.js";
 
 // Named differently from ScanFeedback.tsx (the visual status card) — this
@@ -10,7 +10,7 @@ const MUTE_KEY = "admitto_checkin_sound_muted";
 // disabled by policy) — never let a mute-preference read/write break the
 // scan flow. Defaults to "not muted" on failure: the feature's whole point
 // is audible feedback, so failing toward silence would be the worse default.
-export function isScanSoundMuted(): boolean {
+function readMutedFromStorage(): boolean {
   try {
     return localStorage.getItem(MUTE_KEY) === "true";
   } catch {
@@ -18,27 +18,67 @@ export function isScanSoundMuted(): boolean {
   }
 }
 
+// Module-level cache + subscriber set, not per-component useState: this
+// feature has 3 simultaneously-mounted mute toggles (operator desktop shell,
+// operator-shell action row, mobile camera overlay), and independent
+// per-instance state left them out of sync — toggling one didn't update the
+// aria-pressed/icon of the other two until each was itself clicked (code
+// review). `cachedMuted` is the single source of truth for the page's
+// lifetime; every mutation goes through setScanSoundMuted, which also
+// notifies every subscribed useScanSoundMuted instance synchronously.
+let cachedMuted = readMutedFromStorage();
+const listeners = new Set<() => void>();
+
+export function isScanSoundMuted(): boolean {
+  return cachedMuted;
+}
+
 export function setScanSoundMuted(muted: boolean): void {
+  cachedMuted = muted;
   try {
     localStorage.setItem(MUTE_KEY, String(muted));
   } catch {
-    // Best-effort only — the toggle still works for the current page life via useScanSoundMuted's own state.
+    // Best-effort only — the toggle still works for the current page life via cachedMuted.
   }
+  listeners.forEach((listener) => listener());
 }
 
 /** Shared by every surface with its own mute toggle (operator desktop shell,
- * mobile camera overlay) — keeps each in sync with localStorage without
- * needing to lift shared state through props. */
+ * mobile camera overlay) — all mounted instances read the same module-level
+ * store, so toggling in one immediately updates the others. */
 export function useScanSoundMuted(): [boolean, () => void] {
-  const [muted, setMuted] = useState(isScanSoundMuted);
+  const muted = useSyncExternalStore(
+    (onStoreChange) => {
+      listeners.add(onStoreChange);
+      return () => listeners.delete(onStoreChange);
+    },
+    () => cachedMuted,
+  );
   const toggle = useCallback(() => {
-    setMuted((prev) => {
-      const next = !prev;
-      setScanSoundMuted(next);
-      return next;
-    });
+    setScanSoundMuted(!cachedMuted);
   }, []);
   return [muted, toggle];
+}
+
+/** Shared aria-label/icon derivation for the 3 mute-toggle buttons
+ * (AdminCheckInRoute, CheckInPage, CameraOverlay) — kept in one place so a
+ * future wording/icon change can't drift out of sync between them. */
+export function scanSoundMuteLabel(muted: boolean): string {
+  return muted ? "Unmute scan sound" : "Mute scan sound";
+}
+
+export function scanSoundMuteIconClass(muted: boolean): string {
+  return `ti ti-volume-${muted ? "off" : "2"}`;
+}
+
+/** Tooltip text — makes explicit that this only silences the beep, since
+ * vibration (where the platform supports it) ignores the mute toggle and an
+ * operator could otherwise read a still-buzzing phone as "mute is broken"
+ * (code review). */
+export function scanSoundMuteTitle(muted: boolean): string {
+  return muted
+    ? "Scan sound muted (vibration, where supported, is unaffected)"
+    : "Mute scan sound (vibration, where supported, is unaffected)";
 }
 
 type FeedbackTone = "ok" | "warn" | "error";

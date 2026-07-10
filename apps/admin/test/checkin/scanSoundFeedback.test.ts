@@ -126,6 +126,31 @@ describe("useScanSoundMuted", () => {
     expect(result.current[0]).toBe(false);
     expect(mod.isScanSoundMuted()).toBe(false);
   });
+
+  it("keeps multiple simultaneously-mounted instances in sync — toggling one updates the other (code review)", () => {
+    // Regression: the 3 real mute buttons (AdminCheckInRoute, CheckInPage,
+    // CameraOverlay) can all be mounted at once. A prior implementation gave
+    // each its own useState seeded once at mount, so toggling one left the
+    // others showing a stale aria-pressed/icon until clicked themselves.
+    const first = renderHook(() => mod.useScanSoundMuted());
+    const second = renderHook(() => mod.useScanSoundMuted());
+    expect(first.result.current[0]).toBe(false);
+    expect(second.result.current[0]).toBe(false);
+
+    act(() => first.result.current[1]());
+
+    expect(first.result.current[0]).toBe(true);
+    expect(second.result.current[0]).toBe(true);
+  });
+});
+
+describe("scanSoundMuteLabel / scanSoundMuteIconClass", () => {
+  it("derives the same aria-label and icon class the 3 mute buttons share", () => {
+    expect(mod.scanSoundMuteLabel(false)).toBe("Mute scan sound");
+    expect(mod.scanSoundMuteLabel(true)).toBe("Unmute scan sound");
+    expect(mod.scanSoundMuteIconClass(false)).toBe("ti ti-volume-2");
+    expect(mod.scanSoundMuteIconClass(true)).toBe("ti ti-volume-off");
+  });
 });
 
 describe("playScanFeedback — graceful degradation when APIs are unavailable", () => {

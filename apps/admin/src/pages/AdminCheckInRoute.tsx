@@ -3,7 +3,12 @@ import { useOutletContext } from "react-router-dom";
 import { Button, Card, PageHeader } from "@admitto/ui";
 import type { EventDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
-import { useScanSoundMuted } from "../checkin/scanSoundFeedback.js";
+import {
+  scanSoundMuteIconClass,
+  scanSoundMuteLabel,
+  scanSoundMuteTitle,
+  useScanSoundMuted,
+} from "../checkin/scanSoundFeedback.js";
 import { CheckInPage } from "./CheckInPage.js";
 
 /** Admin check-in: live scanner only when an Admitto session exists (CF-only cannot call scan API). */
@@ -50,8 +55,9 @@ export function AdminCheckInRoute() {
               variant="secondary"
               size="sm"
               aria-pressed={scanSoundMuted}
-              aria-label={scanSoundMuted ? "Unmute scan sound" : "Mute scan sound"}
-              icon={<i className={`ti ti-volume-${scanSoundMuted ? "off" : "2"}`} aria-hidden="true" />}
+              aria-label={scanSoundMuteLabel(scanSoundMuted)}
+              title={scanSoundMuteTitle(scanSoundMuted)}
+              icon={<i className={scanSoundMuteIconClass(scanSoundMuted)} aria-hidden="true" />}
               onClick={toggleScanSoundMuted}
             />
           </>

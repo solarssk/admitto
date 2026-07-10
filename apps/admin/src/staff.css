@@ -1127,6 +1127,13 @@
 
 .ck-overlay__close,
 .ck-overlay__mute {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* ~44x44px hit area (code review) without growing the visible icon —
+     the icon itself stays at its existing font-size/1.25rem visual size. */
+  min-width: 44px;
+  min-height: 44px;
   background: none;
   border: none;
   color: inherit;

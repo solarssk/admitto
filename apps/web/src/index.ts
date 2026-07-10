@@ -25,25 +25,36 @@ async function main(): Promise<void> {
   // check-in features from a phone over the LAN, since getUserMedia()
   // requires a secure context. Absent in CI/production, where this is
   // always plain HTTP as before.
-  const certDir = fileURLToPath(new URL("../.certs/", import.meta.url));
-  const certPath = `${certDir}cert.pem`;
-  const keyPath = `${certDir}key.pem`;
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from a fixed relative location, not user input
-  const useHttps = isDevelopment && existsSync(certPath) && existsSync(keyPath);
+  //
+  // This file's own directory differs between `tsx src/index.ts` (dev) and
+  // the compiled `dist/src/index.js` (`npm start`) — one dir shallower under
+  // dist/src than under src, since tsconfig's rootDir is "." — so both
+  // candidate locations are checked rather than assuming one (code review).
+  const certDirCandidates = [
+    fileURLToPath(new URL("../.certs/", import.meta.url)),
+    fileURLToPath(new URL("../../.certs/", import.meta.url)),
+  ];
+  const certDir = certDirCandidates.find(
+    (dir) =>
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from a fixed relative location, not user input
+      existsSync(`${dir}cert.pem`) && existsSync(`${dir}key.pem`),
+  );
+  const useHttps = isDevelopment && certDir !== undefined;
 
-  const options = useHttps
-    ? {
-        fetch: app.fetch,
-        port,
-        createServer: createHttpsServer,
-        serverOptions: {
-          // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from a fixed relative location, not user input
-          cert: readFileSync(certPath),
-          // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from a fixed relative location, not user input
-          key: readFileSync(keyPath),
-        },
-      }
-    : { fetch: app.fetch, port };
+  const options =
+    useHttps && certDir !== undefined
+      ? {
+          fetch: app.fetch,
+          port,
+          createServer: createHttpsServer,
+          serverOptions: {
+            // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from a fixed relative location, not user input
+            cert: readFileSync(`${certDir}cert.pem`),
+            // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from a fixed relative location, not user input
+            key: readFileSync(`${certDir}key.pem`),
+          },
+        }
+      : { fetch: app.fetch, port };
   serve(options, () => {
     console.log(`Admitto web running at ${useHttps ? "https" : "http"}://localhost:${port}`);
   });

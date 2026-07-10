@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useSyncExternalStore } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@admitto/ui";
@@ -16,13 +17,29 @@ vi.mock("../../src/checkin/CameraScanner.js", () => ({
   },
 }));
 
-// Mobile viewport — the layout the camera-off scan bar/result-card view
-// (`showMobileOverlay === false`) shares with desktop is what a phone sees
-// before the camera is toggled on; CameraOverlay is the mobile-only surface
-// that appears once it is.
+// Mobile viewport by default — the layout the camera-off scan bar/result-card
+// view (`showMobileOverlay === false`) shares with desktop is what a phone
+// sees before the camera is toggled on; CameraOverlay is the mobile-only
+// surface that appears once it is. Backed by a tiny external store (not a
+// static return value) so the breakpoint-crossing test below can flip it
+// mid-render via setDesktopMatch, the same way useIsDesktop's real
+// matchMedia listener would.
+let desktopMatch = false;
+const desktopMatchListeners = new Set<() => void>();
+function setDesktopMatch(value: boolean) {
+  desktopMatch = value;
+  desktopMatchListeners.forEach((listener) => listener());
+}
 vi.mock("../../src/hooks/useIsDesktop.js", () => ({
-  useIsDesktop: () => false,
-  isDesktopViewport: () => false,
+  useIsDesktop: () =>
+    useSyncExternalStore(
+      (onStoreChange) => {
+        desktopMatchListeners.add(onStoreChange);
+        return () => desktopMatchListeners.delete(onStoreChange);
+      },
+      () => desktopMatch,
+    ),
+  isDesktopViewport: () => desktopMatch,
 }));
 
 const fetchCheckInHistory = vi.fn();
@@ -105,6 +122,8 @@ const admittedCard = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  desktopMatch = false;
+  desktopMatchListeners.clear();
 });
 
 describe("check-in card/scanResult — mobile camera view no longer inherits stale state (PO review)", () => {
@@ -165,5 +184,37 @@ describe("check-in card/scanResult — mobile camera view no longer inherits sta
     await waitFor(() => expect(screen.queryByLabelText("Camera check-in")).toBeNull());
     expect(screen.queryAllByText("Anna Alpha")).toHaveLength(0);
     expect(screen.getByText("Scan a QR code or search by name to begin")).toBeTruthy();
+  });
+
+  it("a desktop↔mobile breakpoint crossing while the camera stays on clears the surface it swapped away from (code review)", async () => {
+    mockPageBootstrap();
+    renderPage();
+    // Starts on the mobile overlay (camera defaults on on mobile).
+    await waitFor(() => expect(screen.getByLabelText("Camera check-in")).toBeTruthy());
+    await waitFor(() => expect(capturedOnScan).toBeTypeOf("function"));
+
+    submitCheckInScan.mockResolvedValueOnce({
+      status: "ALREADY_CHECKED_IN",
+      confirmed: true,
+      card: admittedCard,
+    });
+    await act(async () => {
+      capturedOnScan?.("TEST-FIXTURE-TOKEN-NOT-REAL-SECRET-000003");
+    });
+    await waitFor(() => expect(screen.getAllByText("Anna Alpha").length).toBeGreaterThan(0));
+
+    // The device crosses the desktop breakpoint (rotation/resize) while the
+    // camera stays on the whole time — cameraActive never changes, only
+    // which surface renders it does.
+    await act(async () => {
+      setDesktopMatch(true);
+    });
+
+    // Swapped from the mobile overlay to the desktop inline camera — Anna
+    // Alpha's card must not carry over into a surface that never scanned
+    // her.
+    await waitFor(() => expect(screen.queryByLabelText("Camera check-in")).toBeNull());
+    expect(document.querySelector(".ck-inline-camera")).toBeTruthy();
+    expect(screen.queryAllByText("Anna Alpha")).toHaveLength(0);
   });
 });

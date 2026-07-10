@@ -44,9 +44,17 @@ export function CameraScanner({ enabled, wedgeActive, onScan }: CameraScannerPro
         // possible improvement on browsers that do support it (PO review:
         // still not perfect on iPhone, a platform/API limitation, not
         // something a constraint can force).
+        //
+        // This same component also renders the desktop inline camera, whose
+        // laptop webcams commonly report no environment-facing capability at
+        // all — a bare `facingMode` string is a required/exact match per
+        // spec (unlike an `advanced` entry), so it must be wrapped as
+        // `{ ideal: ... }` or a desktop-only camera throws
+        // OverconstrainedError and check-in's camera breaks entirely there
+        // (code review).
         const constraints: MediaStreamConstraints = {
           video: {
-            facingMode: "environment",
+            facingMode: { ideal: "environment" },
             advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
           },
         };

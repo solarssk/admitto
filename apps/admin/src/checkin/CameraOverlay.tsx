@@ -12,7 +12,12 @@ import { CkRecentScans } from "./CkRecentScans.js";
 import { CameraOverlayManualSearch } from "./CameraOverlayManualSearch.js";
 import { CameraOverlayItemIssuing } from "./CameraOverlayItemIssuing.js";
 import { BrandMark } from "../layouts/BrandMark.js";
-import { useScanSoundMuted } from "./scanSoundFeedback.js";
+import {
+  scanSoundMuteIconClass,
+  scanSoundMuteLabel,
+  scanSoundMuteTitle,
+  useScanSoundMuted,
+} from "./scanSoundFeedback.js";
 
 type CameraOverlayProps = {
   open: boolean;
@@ -187,10 +192,11 @@ export function CameraOverlay({
           type="button"
           className="ck-overlay__mute"
           aria-pressed={scanSoundMuted}
-          aria-label={scanSoundMuted ? "Unmute scan sound" : "Mute scan sound"}
+          aria-label={scanSoundMuteLabel(scanSoundMuted)}
+          title={scanSoundMuteTitle(scanSoundMuted)}
           onClick={toggleScanSoundMuted}
         >
-          <i className={`ti ti-volume-${scanSoundMuted ? "off" : "2"}`} aria-hidden="true" />
+          <i className={scanSoundMuteIconClass(scanSoundMuted)} aria-hidden="true" />
         </button>
         <button
           type="button"

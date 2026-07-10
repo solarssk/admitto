@@ -45,7 +45,11 @@ describe("CameraScanner", () => {
 
     const [constraints] = decodeFromConstraints.mock.calls[0] as [MediaStreamConstraints];
     const video = constraints.video as MediaTrackConstraints;
-    expect(video.facingMode).toBe("environment");
+    // `ideal`, not a bare string — a bare facingMode is a required/exact
+    // match per spec, which throws OverconstrainedError on a desktop webcam
+    // with no environment-facing capability (this same component also
+    // renders the desktop inline camera).
+    expect(video.facingMode).toEqual({ ideal: "environment" });
     expect(video.advanced).toEqual([{ focusMode: "continuous" }]);
   });
 
