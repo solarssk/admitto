@@ -489,14 +489,24 @@ export function CheckInPage({
   // With a backlog, that gap can exceed CHECKIN_DUPLICATE_DEBOUNCE_MS and
   // silently defeat the duplicate-scan guard, or leave stale text on screen
   // for the next physical scan's keystrokes to land on top of.
+  //
+  // Resolves `true` only once a positive outcome is actually known — an
+  // attendee was found (any non-INVALID status) or the lookup fallback
+  // opened a single match — not merely once the request was *sent*. The
+  // mobile manual-entry overlay's onManualEntry prop closes on `true`; it
+  // used to receive that signal immediately (a bare `void runScan(...);
+  // return Promise.resolve(true)`), before the scan — let alone its lookup
+  // fallback — had even started, so the overlay could close while the
+  // request was still in flight and any error/no-match ended up set behind
+  // an already-hidden screen (bot review, round 7).
   const runScanImpl = useCallback(
-    async (scanned: string, fallbackToLookup = false) => {
-      if (!eventId) return;
+    async (scanned: string, fallbackToLookup = false): Promise<boolean> => {
+      if (!eventId) return false;
       setBusy(true);
       setTransportError(null);
       try {
         const response = await runWithPending(() => submitCheckInScan(eventId, scanned, deviceId));
-        if (!response) return;
+        if (!response) return false;
         if (fallbackToLookup && response.status === "INVALID") {
           // An explicit submit (Enter/Search) that didn't resolve as a scan
           // code — try it as a name/email search instead of reporting
@@ -512,8 +522,7 @@ export function CheckInPage({
           // recognize a token by its shape client-side, which by
           // construction can't also recognize a ticket URL or an
           // externally-issued agency ID).
-          await submitScanOrLookupImplRef.current?.(scanned);
-          return;
+          return (await submitScanOrLookupImplRef.current?.(scanned)) ?? false;
         }
         applyResponse(response, true);
         maybeAutoAdvance(response);
@@ -528,9 +537,11 @@ export function CheckInPage({
         } else {
           void refreshSidebar();
         }
+        return response.status !== "INVALID";
       } catch (err) {
         setScanResult(null);
         handleApiFailure(err);
+        return false;
       } finally {
         setBusy(false);
         focusScan();
@@ -545,17 +556,17 @@ export function CheckInPage({
   // enqueues only the network round-trip so it still runs FIFO behind any
   // scan already in flight.
   const runScan = useCallback(
-    (raw: string, fallbackToLookup = false): Promise<void> => {
-      if (!eventId || !canAct) return Promise.resolve();
+    (raw: string, fallbackToLookup = false): Promise<boolean> => {
+      if (!eventId || !canAct) return Promise.resolve(false);
       const scanned = normalizeScannedInput(raw);
-      if (!scanned) return Promise.resolve();
+      if (!scanned) return Promise.resolve(false);
 
       const now = Date.now();
       const last = lastScanRef.current;
       if (last && last.value === scanned && now - last.at < CHECKIN_DUPLICATE_DEBOUNCE_MS) {
         setBuffer("");
         focusScan();
-        return Promise.resolve();
+        return Promise.resolve(false);
       }
       lastScanRef.current = { value: scanned, at: now };
       setBuffer("");
@@ -745,8 +756,7 @@ export function CheckInPage({
       if (!trimmed) return Promise.resolve(false);
 
       if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN) {
-        void runScan(trimmed, true);
-        return Promise.resolve(true);
+        return runScan(trimmed, true);
       }
 
       setBuffer("");
