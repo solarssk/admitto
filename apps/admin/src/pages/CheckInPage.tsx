@@ -58,6 +58,15 @@ const LOOKUP_DISABLED_MSG =
   "Manual lookup is disabled for this event — use QR scan only.";
 const LOOKUP_NO_MATCH_MSG = "No attendees matched that search.";
 
+/** A real ticket token is 32 random bytes, base64url-encoded (`generateToken`,
+ * @admitto/crypto) — that alphabet never produces a space or `@`, so this
+ * cheaply tells a token apart from an email or a multi-word name without a
+ * network round-trip. Used to decide whether a long explicit submit (Enter)
+ * should be tried as a scan at all (bot review, round 4). */
+function looksLikeToken(value: string): boolean {
+  return !/[\s@]/.test(value);
+}
+
 /** Build a sidebar history row from a live SSE check-in event. */
 function historyEntryFromStream(event: StreamCheckinEvent, eventId: string): CheckInHistoryEntry {
   return {
@@ -676,20 +685,20 @@ export function CheckInPage({
   // button submit is unconditionally an intentional "try this now" — unlike
   // the silent, no-Enter auto-submit in handleBufferChange below, which still
   // requires wedgeIsBurstRef (a real hardware scanner) since it fires with no
-  // user confirmation at all. Length alone already decides whether a value
-  // even looks like a name/email query elsewhere (the suggestion dropdown
-  // stops appearing past WEDGE_AUTO_SUBMIT_LEN too) — this matches that same
-  // threshold instead of additionally demanding proof the text arrived via a
-  // fast burst, which used to make an explicitly-submitted pasted token
-  // route to a doomed name/email lookup instead of the scan it obviously was
-  // (bot review; originally #262 tried to solve this by requiring a burst on
-  // Enter too, which fixed the "long typed query" case but broke paste).
+  // user confirmation at all. Length alone decided this for a while (matching
+  // the suggestion dropdown, which also stops appearing past
+  // WEDGE_AUTO_SUBMIT_LEN) instead of additionally demanding proof the text
+  // arrived via a fast burst — fixed a pasted/typed token routing to a doomed
+  // name/email lookup instead of the scan it obviously was, but broke a
+  // genuinely long name/email search the same way (bot review, round 4): both
+  // are equally "long", so length alone can't tell them apart. looksLikeToken
+  // (module scope, above) adds the missing signal.
   const submitOrLookup = useCallback(
     (query: string): Promise<boolean> => {
       const trimmed = query.trim();
       if (!trimmed) return Promise.resolve(false);
 
-      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN) {
+      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN && looksLikeToken(trimmed)) {
         void runScan(trimmed);
         return Promise.resolve(true);
       }
