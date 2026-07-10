@@ -75,7 +75,9 @@ function mockPageBootstrap() {
     allow_manual_lookup: true,
     auto_advance_on_valid: true,
   });
-  fetchCheckInEvents.mockResolvedValue([{ id: "evt-live", timezone: "UTC" }]);
+  // organization_id must match the mocked admin's scope_id (isOrgAdmin
+  // requires the SAME org as the event, not just any admin assignment).
+  fetchCheckInEvents.mockResolvedValue([{ id: "evt-live", timezone: "UTC", organization_id: "org-1" }]);
   fetchCheckInHistory.mockResolvedValue([]);
   fetchCheckInStats.mockResolvedValue({ admitted_count: 0, total_count: 1 });
 }
@@ -143,6 +145,26 @@ describe("CheckInPage — admin Revoke check-in (#379/#380/#381 follow-up)", () 
   it("shows Revoke check-in for an admin on an already-admitted card", async () => {
     await openAlreadyCheckedInCard();
     expect(screen.getByRole("button", { name: "Revoke check-in" })).toBeTruthy();
+  });
+
+  it("hides Revoke check-in and per-item Revoke for a mixed-role user — admin of a different org than this event (bot review, #457)", async () => {
+    // The mocked user is "admin" of org-1 (top of file), but this event
+    // belongs to org-2 — the server's canManageEvent would 403 them, so the
+    // client must not show a control gated on isAdmin() alone.
+    mockPageBootstrap();
+    fetchCheckInEvents.mockResolvedValueOnce([{ id: "evt-live", timezone: "UTC", organization_id: "org-2" }]);
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
+    fetchAttendeeCard.mockResolvedValue(admittedCard);
+
+    renderPage();
+    await waitFor(() => expect(screen.getByLabelText("QR scan or search")).toBeTruthy());
+    const input = screen.getByLabelText("QR scan or search") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "anna" } });
+    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    fireEvent.click(screen.getByText("Anna Alpha"));
+    await waitFor(() => expect(screen.getByText("Already checked in")).toBeTruthy());
+
+    expect(screen.queryByRole("button", { name: "Revoke check-in" })).toBeNull();
   });
 
   it("asks for confirmation, then revokes and updates the card", async () => {
@@ -267,5 +289,25 @@ describe("CheckInPage — admin per-item Revoke wiring (item revocation feature)
     );
     // Card unchanged (still issued) — the Revoke button is still there.
     expect(screen.getByRole("button", { name: "Revoke Gift bag" })).toBeTruthy();
+  });
+
+  it("hides the per-item Revoke button for a mixed-role user — admin of a different org than this event (Codex review, #457)", async () => {
+    // Same isOrgAdmin gap as the check-in Revoke button above: the endpoint
+    // checks canManageEvent for THIS event's org, so a control gated on the
+    // user's global admin status would show but always 403 for someone who's
+    // admin elsewhere and only an operator here.
+    mockPageBootstrap();
+    fetchCheckInEvents.mockResolvedValueOnce([{ id: "evt-live", timezone: "UTC", organization_id: "org-2" }]);
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
+    fetchAttendeeCard.mockResolvedValue(cardWithIssuedItem);
+
+    renderPage();
+    const input = await screen.findByLabelText("QR scan or search");
+    fireEvent.change(input, { target: { value: "anna" } });
+    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    fireEvent.click(screen.getByText("Anna Alpha"));
+    await waitFor(() => expect(screen.getByText("Already checked in")).toBeTruthy());
+
+    expect(screen.queryByRole("button", { name: "Revoke Gift bag" })).toBeNull();
   });
 });

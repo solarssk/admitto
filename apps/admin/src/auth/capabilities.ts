@@ -30,3 +30,22 @@ export function isAdmin(assignments: RoleAssignment[]): boolean {
     assignments.some((a) => a.role === "admin" && a.scope_type === "organization" && a.scope_id)
   );
 }
+
+/**
+ * Admin for a SPECIFIC organization — unlike isAdmin, doesn't count an admin
+ * assignment on some other org. Matches the server's canManageEvent, which
+ * resolves the event's own organization_id before checking the assignment
+ * (bot review, #457): a mixed-role user (admin of org A, only operator for
+ * an event in org B) is isAdmin()===true globally but canManageEvent()===
+ * false for that event, so a control gated on isAdmin() alone would show but
+ * always 403. `organizationId` is `null` while the current event's org
+ * hasn't loaded yet — treated as not-admin (fail closed) rather than
+ * flashing an admin control that might not apply.
+ */
+export function isOrgAdmin(assignments: RoleAssignment[], organizationId: string | null): boolean {
+  if (isSuperadmin(assignments)) return true;
+  if (!organizationId) return false;
+  return assignments.some(
+    (a) => a.role === "admin" && a.scope_type === "organization" && a.scope_id === organizationId,
+  );
+}

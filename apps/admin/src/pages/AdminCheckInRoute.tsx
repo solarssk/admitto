@@ -48,6 +48,7 @@ export function AdminCheckInRoute() {
         eventTitle={event.title}
         eventTimezone={event.timezone}
         eventDate={event.date}
+        eventOrganizationId={event.organization_id}
         useCamera={useCamera}
         onUseCameraChange={setUseCamera}
       />

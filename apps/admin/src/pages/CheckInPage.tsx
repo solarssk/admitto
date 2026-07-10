@@ -20,7 +20,7 @@ import {
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeCardDto, CheckInHistoryEntry, CheckInScanResponse, OpsConfigDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
-import { isAdmin } from "../auth/capabilities.js";
+import { isOrgAdmin } from "../auth/capabilities.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { CHECKIN_DUPLICATE_DEBOUNCE_MS, normalizeScannedInput } from "../checkin/normalize.js";
 import { scanResultFromCard } from "../checkin/cardScanResult.js";
@@ -88,6 +88,7 @@ export interface CheckInPageProps {
   eventTitle?: string;
   eventTimezone?: string;
   eventDate?: string | null;
+  eventOrganizationId?: string;
   useCamera?: boolean;
   onUseCameraChange?: (open: boolean) => void;
 }
@@ -96,14 +97,18 @@ export function CheckInPage({
   eventTitle = "Event",
   eventTimezone: eventTimezoneProp,
   eventDate: eventDateProp,
+  eventOrganizationId: eventOrganizationIdProp,
   useCamera = false,
   onUseCameraChange,
 }: CheckInPageProps) {
   const { eventId } = useParams();
   const [eventTimezone, setEventTimezone] = useState(eventTimezoneProp ?? "UTC");
   const [eventDate, setEventDate] = useState<string | null>(eventDateProp ?? null);
+  const [eventOrganizationId, setEventOrganizationId] = useState<string | null>(
+    eventOrganizationIdProp ?? null,
+  );
   const { deviceLabel, assignments } = useAuth();
-  const canRevokeCheckIn = isAdmin(assignments);
+  const canRevokeCheckIn = isOrgAdmin(assignments, eventOrganizationId);
   const { state: connectionState, reportApiError } = useConnectionState();
   const { addToast } = useToast();
   const canAct = canMutateCheckin(connectionState);
@@ -249,6 +254,7 @@ export function CheckInPage({
     if (eventTimezoneProp) {
       setEventTimezone(eventTimezoneProp);
       setEventDate(eventDateProp ?? null);
+      setEventOrganizationId(eventOrganizationIdProp ?? null);
       return;
     }
     if (!eventId) return;
@@ -259,18 +265,20 @@ export function CheckInPage({
         if (!cancelled) {
           setEventTimezone(found?.timezone ?? "UTC");
           setEventDate(found?.date ?? null);
+          setEventOrganizationId(found?.organization_id ?? null);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setEventTimezone("UTC");
           setEventDate(null);
+          setEventOrganizationId(null);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [eventId, eventTimezoneProp, eventDateProp]);
+  }, [eventId, eventTimezoneProp, eventDateProp, eventOrganizationIdProp]);
 
   useEffect(() => {
     if (!eventId) return;
