@@ -25,10 +25,8 @@ type Props = {
   onCancel?: () => void;
   /** Admin/superadmin only — reverses this attendee's current admission regardless of who checked them in or when. Rejects on failure so this component can show the error inline. */
   onRevokeCheckIn?: () => Promise<void>;
-  /** Admin/superadmin only — resets an already-handed-out item back to "pending" so it can be issued again. Resolves false on failure. */
+  /** Admin/superadmin only — resets an already-handed-out item back to "pending" so it can be issued again. Its presence alone gates the Revoke button's visibility (a UX nicety only; the server enforces the same admin/superadmin check independently), matching how onRevokeCheckIn's presence gates the check-in Revoke button. Resolves false on failure. */
   onRevokeItem?: (itemKey: string) => Promise<boolean> | void;
-  /** Gates the per-item Revoke action's visibility — a UX nicety only; the server enforces the same admin/superadmin check independently. */
-  canRevokeItems?: boolean;
 };
 
 function statusForCard(
@@ -144,7 +142,6 @@ export function AttendeeCard({
   onCancel,
   onRevokeCheckIn,
   onRevokeItem,
-  canRevokeItems,
 }: Props) {
   const resolvedStatus = statusForCard(scanStatus, card.check_in_status);
   const cardClass = `checkin-card checkin-card--${resolvedStatus.toLowerCase()}`;
@@ -309,7 +306,7 @@ export function AttendeeCard({
                     operator's forward-only flow — hidden for operators and
                     for a blocked (revoked/invalid) pass. Server enforces the
                     same check regardless of this visibility. */}
-                {canRevokeItems && onRevokeItem && !isBlocked && item.state !== "pending" && (
+                {onRevokeItem && !isBlocked && item.state !== "pending" && (
                   <Button
                     type="button"
                     variant="ghost"

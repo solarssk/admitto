@@ -1,6 +1,8 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import type { AttendeeStatus } from "@admitto/db";
 import { ensureBadgeEventItem } from "./event-items.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
+import { isAdmittable } from "./admittable.js";
 
 import type { EventItemConfig } from "./types.js";
 
@@ -48,6 +50,22 @@ export async function ensureAttendeeItemStates(
 
 function allowedTarget(current: string, target: string): boolean {
   return OPERATOR_TRANSITIONS[current]?.includes(target) ?? false;
+}
+
+/** Shared attendee lookup for both item-transition paths below — throws the same error either way. */
+async function loadAttendeeForItemAction(
+  tx: DbClient,
+  attendeeId: string,
+  eventId: string,
+): Promise<{ id: string; status: AttendeeStatus }> {
+  const attendee = await tx.attendee.findFirst({
+    where: { id: attendeeId, event_id: eventId },
+    select: { id: true, status: true },
+  });
+  if (!attendee) {
+    throw new IllegalItemTransitionError("Attendee not found for this event");
+  }
+  return { id: attendee.id, status: attendee.status as AttendeeStatus };
 }
 
 /** Operator-visible actions for current state; omits return when `requires_return` is false. */
@@ -123,13 +141,7 @@ export async function transitionItemState(
   prisma: PrismaClient,
 ): Promise<{ state: string }> {
   return prisma.$transaction(async (tx) => {
-    const attendee = await tx.attendee.findFirst({
-      where: { id: params.attendeeId, event_id: params.eventId },
-      select: { id: true },
-    });
-    if (!attendee) {
-      throw new IllegalItemTransitionError("Attendee not found for this event");
-    }
+    await loadAttendeeForItemAction(tx, params.attendeeId, params.eventId);
 
     await ensureAttendeeItemStates(params.attendeeId, params.eventId, tx);
 
@@ -189,8 +201,11 @@ export async function transitionItemState(
  * Force one item state back to "pending" and audit it. Privileged/admin path:
  * bypasses OPERATOR_TRANSITIONS on purpose (issued OR returned → pending),
  * separate from the operator's forward-only machine. The `state: fromState`
- * filter makes the update a no-op (and skips the log) if a concurrent change
- * already moved it.
+ * filter guards against a concurrent change: if another caller already reset
+ * this item to "pending" in the meantime, that's a harmless race and this is
+ * a no-op; any other observed state means a *different* concurrent change
+ * raced this one, which is surfaced as an error rather than silently
+ * dropped (matches transitionItemState's same-shaped race check above).
  */
 async function resetItemStateToPending(
   tx: Prisma.TransactionClient,
@@ -211,7 +226,15 @@ async function resetItemStateToPending(
     },
     data: { state: "pending", updated_by: params.audit.operator ?? null },
   });
-  if (updated.count === 0) return;
+  if (updated.count === 0) {
+    const reread = await tx.attendeeItemState.findUnique({
+      where: {
+        attendee_id_event_item_id: { attendee_id: params.attendeeId, event_item_id: params.eventItemId },
+      },
+    });
+    if (reread?.state === "pending") return;
+    throw new IllegalItemTransitionError(`Concurrent transition on ${params.itemKey}`);
+  }
 
   await writeActionLog(tx, {
     event_id: params.eventId,
@@ -227,7 +250,15 @@ async function resetItemStateToPending(
  * can be issued again ("cofnąć to że się to wydało"). Unlike transitionItemState
  * this is NOT gated by OPERATOR_TRANSITIONS — issued OR returned both go
  * straight to pending. Idempotent: an already-pending item is a harmless no-op
- * (no state change, no audit row). Gated by canManageEvent at the route level.
+ * (no state change, no audit row). Gated by canManageEvent at the route level,
+ * and independently rejects a blocked (revoked/cancelled) pass server-side —
+ * the admin card's Revoke button hides itself for a blocked pass too, but
+ * that's UX only, not the enforcement boundary. Doesn't require the item to
+ * still be `enabled`: this corrects a *past* hand-out regardless of whether
+ * the item type is still offered going forward — unlike the operator's
+ * forward-only transitionItemState, which shouldn't let anyone issue a
+ * disabled item but has no reason to block undoing one that was already
+ * issued before it got disabled.
  */
 export async function revokeItemState(
   params: {
@@ -239,18 +270,13 @@ export async function revokeItemState(
   prisma: PrismaClient,
 ): Promise<{ state: string }> {
   return prisma.$transaction(async (tx) => {
-    const attendee = await tx.attendee.findFirst({
-      where: { id: params.attendeeId, event_id: params.eventId },
-      select: { id: true },
-    });
-    if (!attendee) {
-      throw new IllegalItemTransitionError("Attendee not found for this event");
+    const attendee = await loadAttendeeForItemAction(tx, params.attendeeId, params.eventId);
+    if (!isAdmittable(attendee.status)) {
+      throw new IllegalItemTransitionError("Attendee's pass is not active");
     }
 
-    await ensureAttendeeItemStates(params.attendeeId, params.eventId, tx);
-
     const item = await tx.eventItem.findFirst({
-      where: { event_id: params.eventId, key: params.itemKey, enabled: true },
+      where: { event_id: params.eventId, key: params.itemKey },
     });
     if (!item) throw new IllegalItemTransitionError("Item not found or disabled");
 
@@ -302,6 +328,9 @@ export async function resetAllItemStatesForRevoke(
     where: { id: { in: states.map((s) => s.event_item_id) } },
     select: { id: true, key: true },
   });
+  // Every event_item_id in `states` resolves here: same transaction, no
+  // deletion in between, and AttendeeItemState.event_item cascade-deletes
+  // (schema.prisma) so an orphaned state row can't exist either way.
   const keyById = new Map(items.map((i) => [i.id, i.key]));
 
   for (const s of states) {
@@ -309,7 +338,7 @@ export async function resetAllItemStatesForRevoke(
       attendeeId: params.attendeeId,
       eventId: params.eventId,
       eventItemId: s.event_item_id,
-      itemKey: keyById.get(s.event_item_id) ?? "unknown",
+      itemKey: keyById.get(s.event_item_id)!,
       fromState: s.state,
       audit: params.audit,
     });

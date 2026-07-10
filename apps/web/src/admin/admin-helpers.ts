@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canManageEvent } from "@admitto/auth";
-import type { OpsAuditContext } from "@admitto/tickets";
+import { IllegalItemTransitionError, type OpsAuditContext } from "@admitto/tickets";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import {
   InstanceUrlRequiredError,
@@ -64,4 +64,13 @@ export function positiveIntQuery(
   const n = Number(raw);
   if (!Number.isSafeInteger(n) || n < 1) return fallback;
   return max !== undefined ? Math.min(n, max) : n;
+}
+
+/** Shared error shape for a failed item-state transition/revoke (operator and admin routes). */
+export function itemTransitionErrorResponse(c: Context, err: unknown, logLabel: string): Response {
+  if (err instanceof IllegalItemTransitionError) {
+    return c.json({ error: err.message }, 409);
+  }
+  console.error(`${logLabel} failed:`, err);
+  return c.json({ error: "server error" }, 500);
 }

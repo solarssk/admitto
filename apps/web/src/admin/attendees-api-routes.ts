@@ -34,7 +34,6 @@ import {
   revokeCheckInMutation,
   revokeItemState,
   getAttendeeCard,
-  IllegalItemTransitionError,
   UndoNotAllowedError,
 } from "@admitto/tickets";
 import {
@@ -47,6 +46,7 @@ import {
 import {
   adminAuditFromContext,
   assertEventManageAccess,
+  itemTransitionErrorResponse,
   positiveIntQuery,
   requireEventId,
   resolveMailInstanceBaseUrl,
@@ -1465,12 +1465,8 @@ export async function handleRevokeAttendeeItem(c: Context, db: PrismaClient): Pr
     const card = await getAttendeeCard(eventId, attendeeId, db);
     return c.json({ card });
   } catch (err) {
-    if (err instanceof IllegalItemTransitionError) {
-      // e.g. unknown/disabled item key — mirrors the operator item-action route.
-      return c.json({ error: err.message }, 409);
-    }
-    console.error("handleRevokeAttendeeItem failed:", err);
-    return c.json({ error: "server error" }, 500);
+    // e.g. unknown/disabled item key, blocked pass — mirrors the operator item-action route.
+    return itemTransitionErrorResponse(c, err, "handleRevokeAttendeeItem");
   }
 }
 

@@ -552,7 +552,7 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
       admitted_at: null,
       items: [],
       notes: [],
-      warnings: [] as string[],
+      blocked: false,
     };
     submitCheckInScan
       .mockResolvedValueOnce({ status: "PREVIEW", confirmed: false, attendeeId: "att-1", card })
@@ -612,7 +612,7 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
       admitted_at: null,
       items: [],
       notes: [],
-      warnings: [] as string[],
+      blocked: false,
     });
     submitCheckInAdmit.mockResolvedValue({ status: "INVALID", confirmed: false });
 
@@ -656,7 +656,7 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
       admitted_at: null,
       items: [],
       notes: [],
-      warnings: [] as string[],
+      blocked: false,
     });
 
     renderPage();

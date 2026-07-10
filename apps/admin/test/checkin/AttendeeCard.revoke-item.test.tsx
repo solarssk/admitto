@@ -26,26 +26,13 @@ const issuedItemCard: AttendeeCardDto = {
 describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () => {
   it("shows Revoke for an admin/superadmin on a handed-out item", () => {
     render(
-      <AttendeeCard
-        card={issuedItemCard}
-        eventTimezone="UTC"
-        canAct
-        canRevokeItems
-        onRevokeItem={vi.fn()}
-      />,
+      <AttendeeCard card={issuedItemCard} eventTimezone="UTC" canAct onRevokeItem={vi.fn()} />,
     );
     expect(screen.getByRole("button", { name: "Revoke Gift bag" })).toBeTruthy();
   });
 
-  it("does not show Revoke for a regular operator (canRevokeItems falsy)", () => {
-    render(
-      <AttendeeCard card={issuedItemCard} eventTimezone="UTC" canAct onRevokeItem={vi.fn()} />,
-    );
-    expect(screen.queryByRole("button", { name: "Revoke Gift bag" })).toBeNull();
-  });
-
-  it("does not show Revoke when no onRevokeItem handler is wired", () => {
-    render(<AttendeeCard card={issuedItemCard} eventTimezone="UTC" canAct canRevokeItems />);
+  it("does not show Revoke when no onRevokeItem handler is wired (its presence alone gates visibility, like onRevokeCheckIn)", () => {
+    render(<AttendeeCard card={issuedItemCard} eventTimezone="UTC" canAct />);
     expect(screen.queryByRole("button", { name: "Revoke Gift bag" })).toBeNull();
   });
 
@@ -58,7 +45,6 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
         }}
         eventTimezone="UTC"
         canAct
-        canRevokeItems
         onRevokeItem={vi.fn()}
       />,
     );
@@ -73,7 +59,6 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
         eventTimezone="UTC"
         scanStatus="REVOKED"
         canAct
-        canRevokeItems
         onRevokeItem={vi.fn()}
       />,
     );
@@ -83,13 +68,7 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
   it("clicking Revoke calls onRevokeItem with the item key", () => {
     const onRevokeItem = vi.fn().mockResolvedValue(true);
     render(
-      <AttendeeCard
-        card={issuedItemCard}
-        eventTimezone="UTC"
-        canAct
-        canRevokeItems
-        onRevokeItem={onRevokeItem}
-      />,
+      <AttendeeCard card={issuedItemCard} eventTimezone="UTC" canAct onRevokeItem={onRevokeItem} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Revoke Gift bag" }));
     expect(onRevokeItem).toHaveBeenCalledWith("gift_bag");
@@ -98,13 +77,7 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
   it("a same-tick double-click only calls onRevokeItem once (shared useInFlightIds guard)", () => {
     const onRevokeItem = vi.fn().mockResolvedValue(true);
     render(
-      <AttendeeCard
-        card={issuedItemCard}
-        eventTimezone="UTC"
-        canAct
-        canRevokeItems
-        onRevokeItem={onRevokeItem}
-      />,
+      <AttendeeCard card={issuedItemCard} eventTimezone="UTC" canAct onRevokeItem={onRevokeItem} />,
     );
     const button = screen.getByRole("button", { name: "Revoke Gift bag" });
     act(() => {
@@ -120,7 +93,6 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
         card={issuedItemCard}
         eventTimezone="UTC"
         canAct={false}
-        canRevokeItems
         onRevokeItem={vi.fn()}
       />,
     );
@@ -134,7 +106,6 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
         card={issuedItemCard}
         eventTimezone="UTC"
         canAct
-        canRevokeItems
         onRevokeItem={vi.fn()}
         onItemAction={vi.fn()}
       />,
@@ -149,7 +120,6 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
         }}
         eventTimezone="UTC"
         canAct
-        canRevokeItems
         onRevokeItem={vi.fn()}
         onItemAction={vi.fn()}
       />,
@@ -171,7 +141,6 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
         }}
         eventTimezone="UTC"
         canAct
-        canRevokeItems
         onRevokeItem={vi.fn()}
         onItemAction={vi.fn()}
       />,

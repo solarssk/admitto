@@ -602,4 +602,52 @@ describe("revokeItemState — admin/superadmin single-item reset (item revocatio
       ),
     ).rejects.toThrow(/Attendee not found/);
   });
+
+  it("rejects revoking an item on a blocked (revoked/cancelled) pass — server enforces it independently of the card's Revoke button being hidden (bot review, #457)", async () => {
+    const att = await makeAttendeeWithItemState("giftbag", "issued");
+    await prisma.attendee.update({ where: { id: att.id }, data: { status: "revoked" } });
+
+    await expect(
+      revokeItemState(
+        { attendeeId: att.id, eventId: EVENT_ID, itemKey: "giftbag", audit: { operator: "admin-9" } },
+        prisma,
+      ),
+    ).rejects.toThrow(/not active/);
+
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item: { key: "giftbag" } },
+    });
+    expect(after?.state).toBe("issued");
+  });
+
+  it("resets an item to pending even after its EventItem type was disabled — a past hand-out can still be corrected (bot review, #457)", async () => {
+    // Unlike transitionItemState (operator forward-only), revoke is a
+    // corrective admin action: it shouldn't leave a hand-out permanently
+    // stuck just because the item type is no longer offered going forward.
+    const item = await prisma.eventItem.create({
+      data: { event_id: EVENT_ID, key: "discontinued-swag", label: "Discontinued swag", enabled: false },
+    });
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "revoke-disabled-item@example.com",
+        name: "Revoke Disabled Item Target",
+        token_hash: hashToken(generateToken()),
+      },
+    });
+    await prisma.attendeeItemState.create({
+      data: { attendee_id: att.id, event_item_id: item.id, state: "issued" },
+    });
+
+    const result = await revokeItemState(
+      { attendeeId: att.id, eventId: EVENT_ID, itemKey: "discontinued-swag", audit: { operator: "admin-9" } },
+      prisma,
+    );
+    expect(result.state).toBe("pending");
+
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item_id: item.id },
+    });
+    expect(after?.state).toBe("pending");
+  });
 });

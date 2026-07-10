@@ -822,18 +822,21 @@ export function CheckInPage({
     [runExclusive, runScan, submitScanOrLookupImpl],
   );
 
-  // Queued: same rationale as admitCurrent — this reads card.id at run time
-  // and overwrites setCard, so it must not race a scan that could swap in a
-  // different attendee's card first (#277 review).
-  // Resolves `true`/`false` (not just void) so CameraOverlayItemIssuing's
-  // optimistic "issued" mark (set synchronously at click time, before this
-  // promise settles — see its own comment) can be reverted on `false`
-  // instead of assuming every click succeeded; handleApiFailure still fires
-  // the toast either way (CodeRabbit review — a `pending` prop toggled
-  // around this call was the previous attempt, but `pending` only flips
-  // after a 5s delay, so it never transitioned for the fast failures that
-  // actually matter here).
-  const onItemAction = (itemKey: string, targetState: string): Promise<boolean> =>
+  // Shared by onItemAction and onRevokeItem below — same queuing/busy/error
+  // shape, differing only in which endpoint they call. Queued: same
+  // rationale as admitCurrent — this reads card.id at run time and
+  // overwrites setCard, so it must not race a scan that could swap in a
+  // different attendee's card first (#277 review). Resolves `true`/`false`
+  // (not just void) so CameraOverlayItemIssuing's optimistic "issued" mark
+  // (set synchronously at click time, before this promise settles — see its
+  // own comment) can be reverted on `false` instead of assuming every click
+  // succeeded; handleApiFailure still fires the toast either way (CodeRabbit
+  // review — a `pending` prop toggled around this call was the previous
+  // attempt, but `pending` only flips after a 5s delay, so it never
+  // transitioned for the fast failures that actually matter here).
+  const runItemMutation = (
+    apiCall: (eventId: string, attendeeId: string) => Promise<{ card: AttendeeCardDto }>,
+  ): Promise<boolean> =>
     runExclusive(async () => {
       if (!eventId || !card || !canAct) return false;
       setBusy(true);
@@ -842,7 +845,7 @@ export function CheckInPage({
       // finding) — mirrors runScanImpl/admitCurrent.
       setTransportError(null);
       try {
-        const { card: updated } = await submitItemAction(eventId, card.id, itemKey, targetState, deviceId);
+        const { card: updated } = await apiCall(eventId, card.id);
         setCard(updated);
         void refreshSidebar();
         return true;
@@ -855,28 +858,14 @@ export function CheckInPage({
       }
     });
 
-  // Admin/superadmin only (canRevokeItems) — resets a handed-out item back to
-  // "pending". Same shape as onItemAction (queued, returns true/false so the
-  // guard in AttendeeCard can settle), but hits the admin-gated endpoint; the
-  // server rejects non-admins regardless of the button's visibility.
+  const onItemAction = (itemKey: string, targetState: string): Promise<boolean> =>
+    runItemMutation((eid, aid) => submitItemAction(eid, aid, itemKey, targetState, deviceId));
+
+  // Admin/superadmin only — resets a handed-out item back to "pending";
+  // hits the admin-gated endpoint, which rejects non-admins regardless of
+  // the button's visibility.
   const onRevokeItem = (itemKey: string): Promise<boolean> =>
-    runExclusive(async () => {
-      if (!eventId || !card || !canAct) return false;
-      setBusy(true);
-      setTransportError(null);
-      try {
-        const { card: updated } = await revokeItemState(eventId, card.id, itemKey);
-        setCard(updated);
-        void refreshSidebar();
-        return true;
-      } catch (err) {
-        handleApiFailure(err);
-        return false;
-      } finally {
-        setBusy(false);
-        focusScan();
-      }
-    });
+    runItemMutation((eid, aid) => revokeItemState(eid, aid, itemKey));
 
   const onAddNote = (body: string) =>
     runExclusive(async () => {
@@ -1211,7 +1200,6 @@ export function CheckInPage({
                     canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined
                   }
                   onRevokeItem={canRevokeCheckIn ? onRevokeItem : undefined}
-                  canRevokeItems={canRevokeCheckIn}
                 />
               )}
             </>
@@ -1244,7 +1232,6 @@ export function CheckInPage({
                     canRevokeCheckIn ? () => onRevokeCheckIn(card.id) : undefined
                   }
                   onRevokeItem={canRevokeCheckIn ? onRevokeItem : undefined}
-                  canRevokeItems={canRevokeCheckIn}
                 />
               ) : (
                 !scanResult && <CkEmptyState />
