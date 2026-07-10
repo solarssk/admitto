@@ -48,6 +48,8 @@ type SettingsPatch = Partial<{
   header_image_url: string | null;
 }>;
 
+const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, branding, and access controls.";
+
 function toForm(data: EventSettingsDto): SettingsForm {
   return {
     title: data.title,
@@ -281,7 +283,12 @@ export function EventSettingsPage() {
   if (!eventId) return <p>Missing event.</p>;
 
   if (loading && !event) {
-    return <p role="status">Loading event settings…</p>;
+    return (
+      <div className="event-settings-page screen">
+        <PageHeader title="Event settings" subtitle={EVENT_SETTINGS_SUBTITLE} />
+        <p role="status">Loading event settings…</p>
+      </div>
+    );
   }
 
   if (notFound) {
@@ -308,7 +315,7 @@ export function EventSettingsPage() {
     <div className={`event-settings-page screen${isArchived ? " event-settings--archived" : ""}`}>
       <PageHeader
         title="Event settings"
-        subtitle="Manage this event's details, branding, and access controls."
+        subtitle={EVENT_SETTINGS_SUBTITLE}
         actions={
           !isArchived ? (
             <span className="save-actions">

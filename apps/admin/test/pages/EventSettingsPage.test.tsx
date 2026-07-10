@@ -89,6 +89,28 @@ function renderSettings(entry = "/admin/events/evt-1/settings") {
   );
 }
 
+describe("EventSettingsPage subtitle", () => {
+  const SUBTITLE = "Manage this event's details, branding, and access controls.";
+
+  it("shows the stable purpose subtitle while loading, before the event title is known", () => {
+    vi.mocked(fetchEventSettings).mockImplementation(() => new Promise(() => {}));
+    renderSettings();
+    expect(screen.getByText(SUBTITLE)).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toMatch(/Loading event settings/);
+  });
+
+  it("shows the same stable subtitle once loaded, not the event's title", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Event title")).toBeTruthy();
+    });
+    expect(screen.getByText(SUBTITLE)).toBeTruthy();
+    expect(SUBTITLE).not.toContain(activeEvent.title);
+    expect(screen.queryByText(activeEvent.title, { selector: "p" })).toBeNull();
+  });
+});
+
 describe("EventSettingsPage tabs", () => {
   it("shows the General tab by default with Basic information", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
