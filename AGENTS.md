@@ -90,9 +90,11 @@ Staff UI uses `useToast()` from `@admitto/ui` (`ToastProvider` in the admin shel
 | **Toast** | Transient outcome of an action the user just took; does not need a retry control | Save/test success, mutation API errors, import finished, wizard step saved |
 | **Inline / `EmptyState`** | Initial page load failed or data is missing until the user retries | Attendees/Requirements load error with **Retry** |
 | **`ConfirmDialog`** | Destructive or irreversible confirmation | Delete attendee, archive event — do not also toast the same message |
-| **In-context inline** | Error is tied to a modal, form field, or overlay that already has focus | Check-in camera overlay (no-match → overlay message, not toast behind overlay); form field validation |
+| **In-context inline** | Error is tied to a modal, form field, or overlay that already has focus | Mobile check-in camera overlay (no-match → overlay message, not toast behind overlay); form field validation |
 
 Toasts dedupe identical `message + variant`, cap at five, and sit below the check-in overlay (`--z-toast` &lt; `--z-overlay`). Prefer `renderWithToast()` in admin tests when asserting toast behavior.
+
+**Check-in camera exception:** the desktop inline camera (`CkInlineCamera`) is scan-only — unlike the mobile fullscreen overlay, it never doubles as the operator's check-in/item-issuing surface, so no result ever renders on top of it. A no-match scan there reports via **toast**, the same as manual lookup's no-match, and the camera keeps scanning. This is the opposite of the in-context-inline row above, which still governs the mobile overlay (where a toast would render below `--z-overlay`, invisible).
 
 ### Admin API errors in the UI
 

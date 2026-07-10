@@ -30,6 +30,10 @@ type CkRecentScansProps = {
   eventDate?: string | null;
   compact?: boolean;
   limit?: number;
+  /** When set, a row's name+ticket area becomes a button that reopens that
+   * attendee's card — lets an operator revisit a recent scan (e.g. to hand
+   * out a missed item) without re-scanning the QR (PO review). */
+  onSelectAttendee?: (attendeeId: string) => void;
 };
 
 export function CkRecentScans({
@@ -38,6 +42,7 @@ export function CkRecentScans({
   eventDate = null,
   compact = false,
   limit,
+  onSelectAttendee,
 }: CkRecentScansProps) {
   const rows = limit != null ? history.slice(0, limit) : history;
   // Matches what's actually rendered below (`rows`), not the raw fetched
@@ -56,11 +61,9 @@ export function CkRecentScans({
         <p className="ck-recent__empty">No scans yet</p>
       ) : (
         <ul className="ck-recent__list">
-          {rows.map((row) => (
-            // Mockup ci-row: dot | info (name + ticket, left) | right (status + time).
-            <li key={row.id} className="ck-recent__row">
-              <span className={`rec-dot ${dotClass(row.status, row.source)}`} aria-hidden="true" />
-              <div className="ck-recent__info">
+          {rows.map((row) => {
+            const info = (
+              <>
                 <strong className="ck-recent__name">{row.attendee.name}</strong>
                 {/* device_id is actually the operator's session device_label
                     (e.g. "Entrance A", or a detected device name) — the only
@@ -74,13 +77,33 @@ export function CkRecentScans({
                     {[row.attendee.ticket_type, row.device_id].filter(Boolean).join(" · ")}
                   </span>
                 )}
-              </div>
-              <div className="ck-recent__right">
-                <span className="ck-recent__status">{statusLabel(row.status, row.source)}</span>
-                <time>{formatRelativeAdmissionDisplay(row.checked_in_at, eventDate, eventTimezone)}</time>
-              </div>
-            </li>
-          ))}
+              </>
+            );
+            return (
+              // Mockup ci-row: dot | info (name + ticket, left) | right (status + time).
+              <li key={row.id} className="ck-recent__row">
+                <span className={`rec-dot ${dotClass(row.status, row.source)}`} aria-hidden="true" />
+                {onSelectAttendee ? (
+                  // A real <button>, not a <li onClick>/role+tabIndex workaround
+                  // — same accessibility pattern as CameraOverlayManualSearch's
+                  // .ms__row-btn (SonarCloud S6847/S1082).
+                  <button
+                    type="button"
+                    className="ck-recent__info ck-recent__info-btn"
+                    onClick={() => onSelectAttendee(row.attendee_id)}
+                  >
+                    {info}
+                  </button>
+                ) : (
+                  <div className="ck-recent__info">{info}</div>
+                )}
+                <div className="ck-recent__right">
+                  <span className="ck-recent__status">{statusLabel(row.status, row.source)}</span>
+                  <time>{formatRelativeAdmissionDisplay(row.checked_in_at, eventDate, eventTimezone)}</time>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

@@ -234,6 +234,7 @@ export function CameraOverlay({
             eventDate={eventDate}
             compact
             limit={6}
+            onSelectAttendee={onSelectAttendee}
           />
         </aside>
       </div>

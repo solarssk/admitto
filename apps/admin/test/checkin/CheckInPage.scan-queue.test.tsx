@@ -578,7 +578,7 @@ describe("CheckInPage scan queue — review follow-ups (#277)", () => {
   });
 });
 
-describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
+describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
@@ -587,8 +587,9 @@ describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
     vi.useRealTimers();
   });
 
-  it("routes a slowly-typed long query to lookup on Enter, not to a scan", async () => {
+  it("routes a slowly-typed long email to lookup on Enter, after a scan attempt comes back no-match", async () => {
     mockPageBootstrap();
+    submitCheckInScan.mockResolvedValueOnce({ status: "INVALID", confirmed: false });
     lookupCheckInAttendees.mockResolvedValueOnce([]);
 
     renderPage();
@@ -598,21 +599,27 @@ describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
     // character at a time, well under burst speed (60ms > WEDGE_MAX_INTER_KEY_GAP_MS).
     const query = "someone.long-name@international-trade-fair.example.com";
     await typeWedge(input, query, { gapMs: 60 });
-    // The debounce timer must not have auto-submitted this as a scan while typing.
+    // The debounce timer must not have auto-submitted this while still typing
+    // — only the explicit Enter below decides anything for non-burst input.
     expect(submitCheckInScan).not.toHaveBeenCalled();
 
-    // The field's own hint text ("Enter to confirm") is exactly what the
-    // operator is expected to do next.
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
 
+    // An explicit Enter on a value this long always tries a scan attempt
+    // first (round 6 — the server's resolver recognizes every valid code
+    // shape, including formats a client-side heuristic can't, e.g. a ticket
+    // URL or an agency-issued QR payload/UUID; earlier rounds tried to guess
+    // "is this a code" client-side instead, which was never complete).
+    // Since this isn't a real code, it falls back to a name/email lookup.
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", query, "desk-1"));
     await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", query));
-    expect(submitCheckInScan).not.toHaveBeenCalled();
   });
 
-  it("does not treat a pasted long value as a wedge burst", async () => {
+  it("routes a pasted long email to lookup on Enter, after a scan attempt comes back no-match", async () => {
     mockPageBootstrap();
+    submitCheckInScan.mockResolvedValueOnce({ status: "INVALID", confirmed: false });
     lookupCheckInAttendees.mockResolvedValueOnce([]);
 
     renderPage();
@@ -625,7 +632,6 @@ describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
     fireEvent.paste(input);
     fireEvent.change(input, { target: { value: pasted } });
 
-    // The auto-submit timer must not fire a scan for pasted text.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(50); // WEDGE_DEBOUNCE_MS
     });
@@ -634,13 +640,97 @@ describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", pasted, "desk-1"));
     await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", pasted));
-    expect(submitCheckInScan).not.toHaveBeenCalled();
   });
 
-  it("does not treat a single-event long value dropped into an empty field as a burst without a paste event (Codex review)", async () => {
+  it("routes a slowly-typed long token to a successful scan attempt on Enter, no lookup fallback needed", async () => {
     mockPageBootstrap();
-    lookupCheckInAttendees.mockResolvedValueOnce([]);
+    const query = "TEST-FIXTURE-TOKEN-NOT-REAL-SECRET-000001";
+    submitCheckInScan.mockResolvedValueOnce(cardResponse(query, "Typed Token Person"));
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    await typeWedge(input, query, { gapMs: 60 });
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+
+    // The field's own hint text ("it submits itself") is exactly what happens
+    // next: an explicit Enter on a value this long is unconditionally an
+    // intentional "try this now" (this used to also require proof of a
+    // genuine keyboard-wedge burst, which made a real pasted/typed code fall
+    // through to a doomed name/email lookup instead of the scan attempt it
+    // obviously was).
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", query, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+
+  it("routes a pasted long token to a successful scan attempt on Enter, no lookup fallback needed", async () => {
+    mockPageBootstrap();
+    const pasted = "TEST-FIXTURE-TOKEN-NOT-REAL-SECRET-000001";
+    submitCheckInScan.mockResolvedValueOnce(cardResponse(pasted, "Pasted Token Person"));
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    fireEvent.paste(input);
+    fireEvent.change(input, { target: { value: pasted } });
+
+    // The silent, no-Enter auto-submit timer must still never fire for
+    // pasted text — that path has no user confirmation at all, so it stays
+    // gated on a genuine hardware-scanner burst.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50); // WEDGE_DEBOUNCE_MS
+    });
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+
+    // An explicit Enter, though, is a deliberate submit regardless of how the
+    // text arrived.
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", pasted, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+
+  it("routes a pasted ticket URL to a successful scan attempt on Enter (bot review, round 6)", async () => {
+    // An operator who copies the whole link (e.g. from an email) rather than
+    // just the token must still get a working check-in, not a doomed
+    // name/email search for the URL text. normalizeScannedInput
+    // (checkin/normalize.ts) already extracts the bare token from a full
+    // ticket URL before it ever reaches submitCheckInScan — round 5's
+    // looksLikeInternalToken gate ran before that normalization got a
+    // chance, rejecting the URL outright and routing it to lookup instead.
+    mockPageBootstrap();
+    const token = "TEST-FIXTURE-TOKEN-NOT-REAL-SECRET-000001";
+    const url = `https://admitto.example.com/t/${token}`;
+    submitCheckInScan.mockResolvedValueOnce(cardResponse(token, "URL Pasted Person"));
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    fireEvent.paste(input);
+    fireEvent.change(input, { target: { value: url } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50); // WEDGE_DEBOUNCE_MS
+    });
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+
+  it("does not silently auto-submit a single-event long value dropped into an empty field, but Enter still attempts a scan (Codex review)", async () => {
+    mockPageBootstrap();
+    const value = "TEST-FIXTURE-TOKEN-NOT-REAL-SECRET-000001";
+    submitCheckInScan.mockResolvedValueOnce(cardResponse(value, "One Shot Insert Person"));
 
     renderPage();
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
@@ -649,8 +739,7 @@ describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
     // composition, or voice dictation can all insert a long value into an
     // empty field in one change event without ever firing a paste event —
     // so `justPasted` alone can't catch this. Only the length-jump-per-event
-    // check does.
-    const value = "someone.long-name@international-trade-fair.example.com";
+    // check does, for the purposes of NOT silently auto-submitting it.
     fireEvent.change(input, { target: { value } });
 
     // The auto-submit timer must not fire a scan for this one-shot insert.
@@ -659,16 +748,44 @@ describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
     });
     expect(submitCheckInScan).not.toHaveBeenCalled();
 
+    // An explicit Enter still attempts it as a scan.
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
-    await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", value));
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", value, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+
+  it("does not silently auto-submit a single-event long email dropped into an empty field, and Enter falls back to lookup (round 5/6, coverage restored)", async () => {
+    mockPageBootstrap();
+    submitCheckInScan.mockResolvedValueOnce({ status: "INVALID", confirmed: false });
+    lookupCheckInAttendees.mockResolvedValueOnce([]);
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    // Same one-shot-insert shape as the token case above (autofill/IME/
+    // drag-drop/voice dictation), but email-shaped content — the scan
+    // attempt comes back no-match, and it falls back to lookup, same as the
+    // typed/pasted email cases above.
+    const value = "someone.long-name@international-trade-fair.example.com";
+    fireEvent.change(input, { target: { value } });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50); // WEDGE_DEBOUNCE_MS
+    });
     expect(submitCheckInScan).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", value, "desk-1"));
+    await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", value));
   });
 
   it("still auto-submits a genuine fast wedge burst on Enter (no regression)", async () => {
     mockPageBootstrap();
-    const token = "QRTOKEN-GENUINEWEDGE01";
+    const token = "QRTOKEN-GENUINEWEDGE01-DPADPADPADPADPADPADP";
     submitCheckInScan.mockResolvedValueOnce(cardResponse(token, "Wedge Person"));
 
     renderPage();
@@ -682,12 +799,98 @@ describe("CheckInPage scan queue — #262 review (Enter/paste routing)", () => {
     await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
     expect(lookupCheckInAttendees).not.toHaveBeenCalled();
   });
+
+  it("attempts a scan (not a lookup) for a short, burst-typed agency-style code on Enter (bot review, round 9)", async () => {
+    // qr_payload/external_uuid (Mode B agency identifiers) aren't length-
+    // constrained the way an internal token is — packages/tickets' own
+    // tests use values like "AGENCY-QR-001" (13 chars, well under
+    // WEDGE_AUTO_SUBMIT_LEN). A genuine hardware-scanner burst must still
+    // attempt a scan for a short code like this, not fall straight to a
+    // doomed name/email lookup just because it's short.
+    mockPageBootstrap();
+    const code = "AGENCY-QR-001";
+    submitCheckInScan.mockResolvedValueOnce(cardResponse(code, "Agency Person"));
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    await typeWedge(input, code, { gapMs: 2 });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", code, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+
+  it("reports a burst-scanned code as invalid, not a lookup fallback, when Enter arrives before the auto-submit timer (bot review, round 9)", async () => {
+    // A hardware wedge that appends its own Enter/CR terminator reaches
+    // onKeyDown before the no-Enter auto-submit timer (WEDGE_DEBOUNCE_MS)
+    // gets a chance to fire — this must still be treated as a definitive
+    // scan (no ambiguity, no lookup fallback), the same as if the timer had
+    // fired it. A burst-typed value that turns out INVALID should report
+    // as an invalid scan, not silently retry as a name/email search.
+    mockPageBootstrap();
+    const token = "QRTOKEN-BURST-THEN-ENTER-BEFORE-TIMER-00000";
+    submitCheckInScan.mockResolvedValueOnce({ status: "INVALID", confirmed: false });
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    await typeWedge(input, token, { gapMs: 2 });
+    // Enter fires immediately — well before the 50ms auto-submit debounce.
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+
+  it("reports a bad code as invalid, not 'manual lookup is disabled', in a QR-only event (bot review, round 10)", async () => {
+    // allow_manual_lookup: false means the operator explicitly can't search
+    // by name/email — but a long, non-burst submit still tries a scan first
+    // (round 6+) with a lookup fallback on INVALID (round 6). Without gating
+    // that fallback on allowManualLookup too, a bad QR/token in a QR-only
+    // event fell into submitScanOrLookupImpl, whose own first check bails
+    // immediately with "Manual lookup is disabled" — the wrong message for
+    // an operator who scanned a code and never attempted a name search, and
+    // the normal invalid-scan feedback never ran.
+    mockPageBootstrap();
+    fetchCheckInOpsConfig.mockResolvedValue({
+      require_confirm_on_scan: false,
+      badge_at_entry: true,
+      allow_manual_lookup: false,
+      auto_advance_on_valid: true,
+    });
+    const value = "someone.long-name@international-trade-fair.example.com";
+    submitCheckInScan.mockResolvedValueOnce({ status: "INVALID", confirmed: false });
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    await typeWedge(input, value, { gapMs: 60 });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("This code is not valid for this event. Check the QR or use manual lookup."),
+      ).toBeTruthy(),
+    );
+    expect(
+      screen.queryByText("Manual lookup is disabled for this event — use QR scan only."),
+    ).toBeNull();
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
 });
 
 describe("CheckInPage scan queue — event timestamp vs handler wall-clock (#262 review)", () => {
   it("classifies a genuine fast burst correctly even when Date.now() would suggest otherwise", async () => {
     mockPageBootstrap();
-    const token = "QRTOKEN-REALWEDGE00001"; // 23 chars
+    // Token-shaped (base64url, 40-60 chars) so it passes looksLikeInternalToken.
+    const token = "QRTOKEN-REALWEDGE00001-DPADPADPADPADPADPADP";
     submitCheckInScan.mockResolvedValueOnce(cardResponse(token, "Real Wedge Person"));
 
     renderPage();

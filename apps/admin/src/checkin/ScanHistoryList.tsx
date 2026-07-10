@@ -12,6 +12,7 @@ type ScanHistoryListProps = {
   eventTimezone: string;
   eventDate?: string | null;
   compact?: boolean;
+  onSelectAttendee?: (attendeeId: string) => void;
 };
 
 export function ScanHistoryList({
@@ -21,6 +22,7 @@ export function ScanHistoryList({
   eventTimezone,
   eventDate = null,
   compact = false,
+  onSelectAttendee,
 }: ScanHistoryListProps) {
   return (
     <>
@@ -31,6 +33,7 @@ export function ScanHistoryList({
         eventDate={eventDate}
         compact={compact}
         limit={compact ? 3 : CK_RECENT_SCANS_SIDEBAR_LIMIT}
+        onSelectAttendee={onSelectAttendee}
       />
     </>
   );
