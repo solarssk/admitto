@@ -1,7 +1,10 @@
 import { Card, StatusBadge } from "@admitto/ui";
 import type { CheckInScanResponse, CheckInStatus } from "../api/types.js";
 
-function feedbackCopy(status: CheckInStatus): string {
+/** Shared with CheckInPage: the desktop camera reports a no-match scan via
+ * the same toast as manual lookup's no-match, using this exact copy, rather
+ * than rendering this card on top of the camera view (#456 review). */
+export function feedbackCopy(status: CheckInStatus): string {
   switch (status) {
     case "INVALID":
       return "This code is not valid for this event. Check the QR or use manual lookup.";

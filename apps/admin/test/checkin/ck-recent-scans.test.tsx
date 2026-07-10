@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CheckInHistoryEntry } from "../../src/api/types.js";
 import { CkRecentScans } from "../../src/checkin/CkRecentScans.js";
 import {
@@ -93,5 +93,28 @@ describe("CkRecentScans", () => {
       />,
     );
     expect(screen.getByText(/14:00/)).toBeTruthy();
+  });
+
+  it("makes each row a button that reopens the attendee when onSelectAttendee is set", () => {
+    const onSelectAttendee = vi.fn();
+    render(
+      <CkRecentScans
+        history={[makeEntry("1", "Guest One")]}
+        eventTimezone="UTC"
+        limit={8}
+        onSelectAttendee={onSelectAttendee}
+      />,
+    );
+    screen.getByRole("button", { name: "Guest One" }).click();
+    expect(onSelectAttendee).toHaveBeenCalledWith("att-1");
+  });
+
+  it("renders plain, non-interactive rows when no onSelectAttendee is given", () => {
+    const { container } = render(
+      <CkRecentScans history={[makeEntry("1", "Guest One")]} eventTimezone="UTC" limit={8} />,
+    );
+    expect(container.querySelector(".ck-recent__info-btn")).toBeNull();
+    expect(container.querySelector("button")).toBeNull();
+    expect(screen.getByText("Guest One")).toBeTruthy();
   });
 });

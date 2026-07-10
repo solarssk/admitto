@@ -26,7 +26,7 @@ import { CHECKIN_DUPLICATE_DEBOUNCE_MS, normalizeScannedInput } from "../checkin
 import { scanResultFromCard } from "../checkin/cardScanResult.js";
 import { shouldAutoAdvance } from "../checkin/autoAdvance.js";
 import { canMutateCheckin } from "../checkin/connection.js";
-import { ScanFeedback } from "../checkin/ScanFeedback.js";
+import { ScanFeedback, feedbackCopy } from "../checkin/ScanFeedback.js";
 import { AttendeeCard } from "../checkin/AttendeeCard.js";
 import { CameraOverlay } from "../checkin/CameraOverlay.js";
 import { CheckinConnectionBanner, CheckinConnectionLiveRegion } from "../checkin/ConnectionBanner.js";
@@ -113,6 +113,22 @@ export function CheckInPage({
   const cameraActive = isOperatorShell ? operatorCamera : useCamera;
   const showMobileOverlay = cameraActive && !isDesktop;
   const showInlineCamera = cameraActive && isDesktop;
+  // applyResponse (below) is read from inside runScanImpl, a useCallback that
+  // isn't recreated when the camera is toggled — without a ref it would keep
+  // seeing whatever showInlineCamera was at mount (always false), never the
+  // current value, and silently never route a no-match scan to the toast.
+  // Assigned directly in the render body (matching historyRef below) rather
+  // than a useEffect, so the ref is current the instant this render commits
+  // instead of one tick later (bot review, round 5).
+  const showInlineCameraRef = useRef(showInlineCamera);
+  showInlineCameraRef.current = showInlineCamera;
+  // runScanImpl (declared before submitScanOrLookupImpl further down) needs
+  // to call it on a no-match fallback (see runScanImpl's fallbackToLookup
+  // param) — a ref sidesteps both the declaration-order problem and the
+  // stale-closure trap of listing it in runScanImpl's own deps array (same
+  // reasoning as showInlineCameraRef above). Assigned once submitScanOrLookupImpl
+  // itself is declared.
+  const submitScanOrLookupImplRef = useRef<((trimmed: string) => Promise<boolean>) | null>(null);
 
   const setCameraActive = useCallback(
     (open: boolean) => {
@@ -337,7 +353,42 @@ export function CheckInPage({
     }
   };
 
-  const applyResponse = (response: CheckInScanResponse) => {
+  // `fromScan` restricts the camera toast-diversion below to actual scan
+  // attempts — admitCurrent (the Confirm-check-in button) also funnels
+  // through here, and can itself resolve to a bare, card-less INVALID if the
+  // attendee vanished server-side between the card loading and the click
+  // (packages/tickets/src/admit.ts: `if (!attendee) return { status:
+  // "INVALID", ... }`); that's a confirm failure, not a no-match scan, and
+  // showing scan-specific copy ("Check the QR...") while wiping the card the
+  // operator was just looking at would be actively misleading (bot review,
+  // round 5).
+  const applyResponse = (response: CheckInScanResponse, fromScan = false) => {
+    // Keyed on the literal INVALID status, not a card-less response in
+    // general: a PREVIEW response can legitimately arrive without an
+    // embedded card too (packages/tickets/src/checkin.ts: `card: card ??
+    // undefined`, when getAttendeeCard's own read comes back empty) — the
+    // code below already handles that by fetching the card separately.
+    // Widening this to `!response.card` (round 5's own "consistency"
+    // change) intercepted that legitimate case: it showed the invalid-code
+    // toast and wiped scanResult for a real, pending scan, and since
+    // showResultCard requires both card and scanResult, the confirm card
+    // that fetch was about to populate could never appear (bot review,
+    // round 8).
+    if (showInlineCameraRef.current && fromScan && response.status === "INVALID") {
+      // Desktop camera is scan-only (unlike the mobile overlay, which doubles
+      // as the operator's check-in/item-issuing surface) — no result ever
+      // renders on top of it. A no-match scan reports the same way manual
+      // lookup's no-match does: a toast, camera keeps scanning (PO review).
+      addToast(feedbackCopy("INVALID"), "warning");
+      // showInlineCameraRef only says the camera toggle is on, not that the
+      // camera is what's actually visible right now — an attendee card from
+      // an earlier scan may still be showing (it hides the camera, but the
+      // scan bar above it stays live). This new scan supersedes that card
+      // even though it doesn't get one of its own, or the toast would fire
+      // over a stale, unrelated attendee's card (bot review).
+      clearDisplayedResult();
+      return;
+    }
     setScanResult(response);
     if (response.card) {
       setCard(response.card);
@@ -356,15 +407,37 @@ export function CheckInPage({
     setOverlayManualError(null);
   }, []);
 
+  // Direct-render-body refs (not reactive deps) so the transition effect below
+  // can read the current card/scanResult without re-running on every scan —
+  // only the show/hide transition itself (showInlineCamera changing) matters,
+  // not every update to what's currently displayed (bot review, round 5).
+  const cardRef = useRef(card);
+  cardRef.current = card;
+  const scanResultRef = useRef(scanResult);
+  scanResultRef.current = scanResult;
+
   // Header "Disable camera" toggles (AdminCheckInRoute, operator desktop) flip
   // the parent's camera state directly and don't go through closeInlineCamera's
   // onReset — clear any stale scan/card display here so a stopped-then-restarted
-  // camera doesn't overlay an old result (#381).
-  const prevCameraActiveRef = useRef(cameraActive);
+  // camera doesn't overlay an old result (#381). Keyed on showInlineCamera, not
+  // raw cameraActive: a viewport resize/rotation crossing the desktop
+  // breakpoint (useIsDesktop's matchMedia listener) while cameraActive never
+  // changes is a real transition into/out of this view too — cameraActive
+  // alone missed that case (bot review, round 5).
+  const prevShowInlineCameraRef = useRef(showInlineCamera);
   useEffect(() => {
-    if (prevCameraActiveRef.current && !cameraActive) clearDisplayedResult();
-    prevCameraActiveRef.current = cameraActive;
-  }, [cameraActive, clearDisplayedResult]);
+    if (prevShowInlineCameraRef.current && !showInlineCamera) clearDisplayedResult();
+    // Symmetric case: a no-match/invalid result (no card) left showing from
+    // before the camera view appeared would otherwise carry straight into
+    // CkInlineCamera as a paused overlay with no reset action — the camera
+    // is scan-only and can only be unstuck by closing and reopening it
+    // (bot review). A pending card (PREVIEW/etc.) is left alone — it keeps
+    // the camera from rendering at all via showResultCard, same as today.
+    if (!prevShowInlineCameraRef.current && showInlineCamera && scanResultRef.current && !cardRef.current) {
+      clearDisplayedResult();
+    }
+    prevShowInlineCameraRef.current = showInlineCamera;
+  }, [showInlineCamera, clearDisplayedResult]);
 
   /** User-initiated reset (Escape, Cancel button) — also clears the input and
    * cancels any pending wedge timer, since the user explicitly wants a clean slate. */
@@ -386,13 +459,13 @@ export function CheckInPage({
 
   const maybeAutoAdvance = useCallback(
     (response: CheckInScanResponse) => {
-      if (!shouldAutoAdvance(response, { autoAdvanceOnValid, showMobileOverlay })) return;
+      if (!shouldAutoAdvance(response, { autoAdvanceOnValid })) return;
       // Dismiss THIS scan's confirmation only — must not clear the buffer or
       // cancel the wedge timer, which may already hold a different, newer
       // scan's in-progress keystrokes (#277 follow-up review).
       clearDisplayedResult();
     },
-    [autoAdvanceOnValid, clearDisplayedResult, showMobileOverlay],
+    [autoAdvanceOnValid, clearDisplayedResult],
   );
 
   const runWithPending = async <T,>(fn: () => Promise<T>): Promise<T | null> => {
@@ -428,15 +501,53 @@ export function CheckInPage({
   // With a backlog, that gap can exceed CHECKIN_DUPLICATE_DEBOUNCE_MS and
   // silently defeat the duplicate-scan guard, or leave stale text on screen
   // for the next physical scan's keystrokes to land on top of.
+  //
+  // Resolves `true` only once a positive outcome is actually known — an
+  // attendee was found (any non-INVALID status) or the lookup fallback
+  // opened a single match — not merely once the request was *sent*. The
+  // mobile manual-entry overlay's onManualEntry prop closes on `true`; it
+  // used to receive that signal immediately (a bare `void runScan(...);
+  // return Promise.resolve(true)`), before the scan — let alone its lookup
+  // fallback — had even started, so the overlay could close while the
+  // request was still in flight and any error/no-match ended up set behind
+  // an already-hidden screen (bot review, round 7).
   const runScanImpl = useCallback(
-    async (scanned: string) => {
-      if (!eventId) return;
+    async (scanned: string, fallbackToLookup = false): Promise<boolean> => {
+      if (!eventId) return false;
       setBusy(true);
       setTransportError(null);
       try {
         const response = await runWithPending(() => submitCheckInScan(eventId, scanned, deviceId));
-        if (!response) return;
-        applyResponse(response);
+        if (!response) return false;
+        if (fallbackToLookup && allowManualLookup && response.status === "INVALID") {
+          // An explicit submit (Enter/Search) that didn't resolve as a scan
+          // code — try it as a name/email search instead of reporting
+          // "invalid code". The server's resolver already recognizes every
+          // valid code shape (raw token, full ticket URL, agency QR
+          // payload/external UUID — resolve.ts), so a scan failure here
+          // means it genuinely isn't a code; the only other thing an
+          // operator explicitly submits is a manual search that happened to
+          // be long enough to attempt a scan first. Camera-decoded scans and
+          // the hands-free wedge auto-submit never set this — a QR a camera
+          // actually decoded, or a genuine hardware burst, isn't a name to
+          // fall back to (bot review, round 6 — the previous fix tried to
+          // recognize a token by its shape client-side, which by
+          // construction can't also recognize a ticket URL or an
+          // externally-issued agency ID).
+          //
+          // Gated on allowManualLookup too (bot review, round 10): without
+          // it, a QR-only event (manual lookup deliberately turned off)
+          // still fell into this branch for a bad scan, and
+          // submitScanOrLookupImpl's own first check immediately bails with
+          // "Manual lookup is disabled for this event" — the wrong message
+          // for an operator who scanned a QR and never attempted a name
+          // search at all, and it skips applyResponse below entirely, so
+          // the normal invalid-scan feedback (toast/card-clearing) never
+          // ran either. When lookup isn't allowed, an INVALID scan is
+          // unambiguous — there's no second interpretation to fall back to.
+          return (await submitScanOrLookupImplRef.current?.(scanned)) ?? false;
+        }
+        applyResponse(response, true);
         maybeAutoAdvance(response);
         setAdmitOrigin("scan");
         if (response.status === "PREVIEW" && response.attendeeId && !response.card) {
@@ -449,16 +560,28 @@ export function CheckInPage({
         } else {
           void refreshSidebar();
         }
+        return response.status !== "INVALID";
       } catch (err) {
         setScanResult(null);
         handleApiFailure(err);
+        return false;
       } finally {
         setBusy(false);
         focusScan();
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleApiFailure and runWithPending are plain component functions (not useCallback); adding them would recreate this callback every render — to be refactored in #280
-    [deviceId, eventId, focusScan, maybeAutoAdvance, applyLocalAdmit, refreshSidebar, refreshStatsOnly, reportApiError],
+    [
+      deviceId,
+      eventId,
+      focusScan,
+      maybeAutoAdvance,
+      applyLocalAdmit,
+      refreshSidebar,
+      refreshStatsOnly,
+      reportApiError,
+      allowManualLookup,
+    ],
   );
 
   // Synchronous entry point: normalizes, dedups, and clears the buffer
@@ -466,17 +589,17 @@ export function CheckInPage({
   // enqueues only the network round-trip so it still runs FIFO behind any
   // scan already in flight.
   const runScan = useCallback(
-    (raw: string): Promise<void> => {
-      if (!eventId || !canAct) return Promise.resolve();
+    (raw: string, fallbackToLookup = false): Promise<boolean> => {
+      if (!eventId || !canAct) return Promise.resolve(false);
       const scanned = normalizeScannedInput(raw);
-      if (!scanned) return Promise.resolve();
+      if (!scanned) return Promise.resolve(false);
 
       const now = Date.now();
       const last = lastScanRef.current;
       if (last && last.value === scanned && now - last.at < CHECKIN_DUPLICATE_DEBOUNCE_MS) {
         setBuffer("");
         focusScan();
-        return Promise.resolve();
+        return Promise.resolve(false);
       }
       lastScanRef.current = { value: scanned, at: now };
       setBuffer("");
@@ -484,7 +607,7 @@ export function CheckInPage({
       suggestSeqRef.current += 1;
       setSuggestions([]);
 
-      return runExclusive(() => runScanImpl(scanned));
+      return runExclusive(() => runScanImpl(scanned, fallbackToLookup));
     },
     [canAct, eventId, focusScan, runExclusive, runScanImpl],
   );
@@ -629,6 +752,7 @@ export function CheckInPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- openLookupResultImpl is a plain component function (not useCallback); adding it would recreate this callback every render — to be refactored in #280
     [allowManualLookup, addToast, canAct, eventId, reportApiError, showMobileOverlay],
   );
+  submitScanOrLookupImplRef.current = submitScanOrLookupImpl;
 
   // Synchronous entry point, mirroring runScan above: a long buffer is
   // recognized and delegated to runScan (which does its own dedup/clear)
@@ -640,18 +764,52 @@ export function CheckInPage({
   // lookup is still in flight can't get appended after the old query text —
   // the combined string would otherwise cross the scan-length threshold and
   // get auto-submitted as a corrupted, unmatchable scan payload (#277 review).
-  // Shared routing logic for both submit entry points. When requireBurst is
-  // true the long-token path only fires a scan if the input arrived as a
-  // genuine keyboard-wedge burst; false skips that gate (camera overlay field
-  // is never fed by a wedge — see submitManualTokenOrLookup comment below).
+  // Shared routing logic for both submit entry points (main scan bar and the
+  // mobile camera overlay's manual-entry field, called directly at each call
+  // site below). An explicit Enter/Search-button submit is unconditionally
+  // an intentional "try this now" — unlike the silent, no-Enter auto-submit
+  // in handleBufferChange below, which still requires wedgeIsBurstRef (a
+  // real hardware scanner) since it fires with no user confirmation at all.
+  //
+  // A long value (>= WEDGE_AUTO_SUBMIT_LEN, matching the suggestion
+  // dropdown's own cutoff) is tried as a scan first; runScan's
+  // fallbackToLookup falls back to a name/email search if that comes back
+  // INVALID. Earlier attempts tried to recognize a token by its client-side
+  // shape up front (bare length, then length + no space/@, then a precise
+  // base64url regex) to decide scan-vs-lookup before ever asking the server —
+  // all three were incomplete, since the server's resolver also accepts a
+  // full ticket URL and an externally-issued agency QR payload/UUID, neither
+  // of which share the internal token's shape (resolve.ts; bot review, round
+  // 6). Trying the scan first delegates "is this a valid code" to the
+  // server, which already knows every valid shape, instead of the client
+  // re-guessing an incomplete subset of them.
+  //
+  // `isBurst` also feeds the decision (bot review, round 9), for two
+  // reasons: a hardware wedge scanner that appends its own Enter/CR
+  // terminator reaches this function (via onKeyDown, below) *before* the
+  // no-Enter auto-submit timer gets a chance to fire — without checking it
+  // here too, a burst-scanned code that turns out INVALID would fall back to
+  // a name/email search instead of reporting as the invalid scan it was, and
+  // a *short* one (an agency QR payload/external UUID isn't length-
+  // constrained the way an internal token is — e.g. "AGENCY-QR-001") would
+  // miss the length cutoff and go straight to a doomed lookup, never
+  // attempting a scan at all. A genuine burst is trusted at any length; a
+  // burst is never ambiguous the way typed/pasted text is, so it also skips
+  // the lookup fallback — the resolver already checked every valid shape.
+  //
+  // Deliberately a parameter, not read from wedgeIsBurstRef.current inside
+  // this function: that ref tracks the *main scan bar's* typing only — the
+  // mobile camera overlay's manual-entry field (onManualEntry, below) is a
+  // separate input nothing ever wedges into, so its calls correctly default
+  // this to false (never treated as a burst) instead of inheriting whatever
+  // stale value the main scan bar's ref happens to hold.
   const submitOrLookup = useCallback(
-    (query: string, requireBurst: boolean): Promise<boolean> => {
+    (query: string, isBurst = false): Promise<boolean> => {
       const trimmed = query.trim();
       if (!trimmed) return Promise.resolve(false);
 
-      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN && (!requireBurst || wedgeIsBurstRef.current)) {
-        void runScan(trimmed);
-        return Promise.resolve(true);
+      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN || isBurst) {
+        return runScan(trimmed, !isBurst);
       }
 
       setBuffer("");
@@ -662,24 +820,6 @@ export function CheckInPage({
       return runExclusive(() => submitScanOrLookupImpl(trimmed));
     },
     [runExclusive, runScan, submitScanOrLookupImpl],
-  );
-
-  // Length alone is not enough here (#262 review): an explicit Enter/Search-
-  // button submit of a long, slowly-typed or pasted query must route to
-  // lookup, not runScan — otherwise pressing Enter misfires a manually-typed
-  // long query as a scan. wedgeIsBurstRef gates the distinction.
-  const submitScanOrLookup = useCallback(
-    (query: string) => submitOrLookup(query, true),
-    [submitOrLookup],
-  );
-
-  // The mobile camera overlay's manual-entry field is a paste/type fallback;
-  // nothing feeds it via a keyboard wedge, so gating on wedgeIsBurstRef would
-  // be wrong — it tracks the main scan bar's typing, an entirely different
-  // field. Uses the burst-independent length heuristic instead (#262 review).
-  const submitManualTokenOrLookup = useCallback(
-    (query: string) => submitOrLookup(query, false),
-    [submitOrLookup],
   );
 
   // Queued: same rationale as admitCurrent — this reads card.id at run time
@@ -815,20 +955,12 @@ export function CheckInPage({
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    void submitScanOrLookup(buffer);
+    void submitOrLookup(buffer, wedgeIsBurstRef.current);
   };
 
   const handleBufferChange = (value: string, eventTimestamp: number) => {
     const justPasted = wedgeJustPastedRef.current;
     wedgeJustPastedRef.current = false;
-
-    if (value.includes("\r") || value.includes("\n")) {
-      const cleaned = value.replace(/[\r\n]+/g, "").trim();
-      if (justPasted) wedgeIsBurstRef.current = false;
-      setBuffer("");
-      if (cleaned && canAct) void submitScanOrLookup(cleaned);
-      return;
-    }
 
     // Use the DOM event's own timestamp, not Date.now() at handler-execution
     // time: if the main thread is busy (e.g. a previous scan's response is
@@ -902,7 +1034,7 @@ export function CheckInPage({
     }
     if (event.key === "Enter") {
       event.preventDefault();
-      void submitScanOrLookup(buffer);
+      void submitOrLookup(buffer, wedgeIsBurstRef.current);
     }
   };
 
@@ -986,7 +1118,7 @@ export function CheckInPage({
                 onKeyDown={onKeyDown}
                 autoFocus
                 inputMode="none"
-                placeholder="Scan QR · type name, email or company…"
+                placeholder="Scan QR · type name or email…"
                 aria-label="QR scan or search"
                 aria-describedby="ck-scan-hint"
                 disabled={!canAct}
@@ -1030,7 +1162,7 @@ export function CheckInPage({
             )}
           </div>
           <p id="ck-scan-hint" className="ck-hint">
-            Keyboard wedge auto-submits · Enter to confirm · Esc to clear
+            Scan a code — it submits itself · type a name, then press Enter · Esc clears the field
           </p>
 
           {/* Suppressed while the mobile overlay is open: the overlay renders
@@ -1053,17 +1185,6 @@ export function CheckInPage({
                   overlayScanResult={showCompactFeedback ? scanResult : null}
                   onScan={(raw) => void runScan(raw)}
                   onClose={closeInlineCamera}
-                  card={card}
-                  pending={pending}
-                  canAct={canAct && !busy}
-                  eventTimezone={eventTimezone}
-                  onConfirm={
-                    showCompactFeedback &&
-                    card &&
-                    scanResult?.status === "PREVIEW"
-                      ? () => void admitCurrent(card.id, admitOrigin)
-                      : undefined
-                  }
                   onReset={resetScan}
                 />
               )}
@@ -1140,6 +1261,7 @@ export function CheckInPage({
               history={history}
               eventTimezone={eventTimezone}
               eventDate={eventDate}
+              onSelectAttendee={openLookupResult}
             />
           </Card>
         </aside>
@@ -1158,7 +1280,7 @@ export function CheckInPage({
           allowManualLookup={allowManualLookup}
           onSearch={(query) => lookupCheckInAttendees(eventId, query)}
           onSelectAttendee={openLookupResult}
-          onManualEntry={submitManualTokenOrLookup}
+          onManualEntry={submitOrLookup}
           manualError={overlayManualError}
           onClearManualError={() => setOverlayManualError(null)}
           scanResult={scanResult}

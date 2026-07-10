@@ -35,9 +35,6 @@ const baseProps = {
   overlayScanResult: null,
   onScan: () => {},
   onClose: () => {},
-  card: null,
-  pending: false,
-  canAct: true,
   onReset: () => {},
 };
 
@@ -88,38 +85,6 @@ describe("CkInlineCamera", () => {
     expect(screen.queryByText(/Point the camera at the attendee's QR/i)).toBeNull();
   });
 
-  it("Scan next resets without closing inline camera", () => {
-    const onClose = vi.fn();
-    const onReset = vi.fn();
-    render(
-      <CkInlineCamera
-        {...baseProps}
-        onClose={onClose}
-        onReset={onReset}
-        overlayScanResult={{ status: "INVALID", confirmed: false }}
-      />,
-    );
-    screen.getByRole("button", { name: "Scan next" }).click();
-    expect(onReset).toHaveBeenCalledTimes(1);
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it("Cancel dismisses inline camera", () => {
-    const onClose = vi.fn();
-    const onReset = vi.fn();
-    render(
-      <CkInlineCamera
-        {...baseProps}
-        onClose={onClose}
-        onReset={onReset}
-        overlayScanResult={{ status: "INVALID", confirmed: false }}
-      />,
-    );
-    screen.getByRole("button", { name: "Cancel" }).click();
-    expect(onReset).toHaveBeenCalledTimes(1);
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
   it("calls onReset and onClose when exit is clicked", () => {
     const onClose = vi.fn();
     const onReset = vi.fn();
@@ -136,7 +101,16 @@ describe("CkInlineCamera", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("renders result panel when overlayScanResult is set", () => {
+  it("dismisses via Escape", () => {
+    const onClose = vi.fn();
+    const onReset = vi.fn();
+    render(<CkInlineCamera {...baseProps} onClose={onClose} onReset={onReset} />);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(onReset).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the shared ScanFeedback card (not the mobile full-color result panel) on no-match", () => {
     render(
       <CkInlineCamera
         {...baseProps}
@@ -144,7 +118,13 @@ describe("CkInlineCamera", () => {
         overlayScanResult={{ status: "INVALID", confirmed: false }}
       />,
     );
-    expect(screen.getByRole("heading", { name: "Invalid ticket" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Scan next" })).toBeTruthy();
+    // ScanFeedback copy + status strip, never the CheckInCameraResultPanel's
+    // "Invalid ticket" heading or Scan next / Cancel buttons (Fix: desktop
+    // camera reuses the typed-search feedback component — PO review).
+    expect(screen.getByText(/This code is not valid for this event/i)).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Invalid ticket" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Scan next" })).toBeNull();
+    // Exit (X) is the only way out and stays available.
+    expect(screen.getByLabelText("Exit camera mode")).toBeTruthy();
   });
 });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { AttendeeCardDto, CheckInScanResponse } from "../api/types.js";
+import type { CheckInScanResponse } from "../api/types.js";
 import { CameraScanner } from "./CameraScanner.js";
-import { CheckInCameraResultPanel } from "./CheckInCameraResultPanel.js";
+import { ScanFeedback } from "./ScanFeedback.js";
 
 type CkInlineCameraProps = {
   wedgeActive: boolean;
@@ -11,11 +11,6 @@ type CkInlineCameraProps = {
   overlayScanResult: CheckInScanResponse | null;
   onScan: (raw: string) => void;
   onClose: () => void;
-  card: AttendeeCardDto | null;
-  pending: boolean;
-  canAct: boolean;
-  eventTimezone: string;
-  onConfirm?: () => void;
   onReset: () => void;
 };
 
@@ -25,11 +20,6 @@ export function CkInlineCamera({
   overlayScanResult,
   onScan,
   onClose,
-  card,
-  pending,
-  canAct,
-  eventTimezone,
-  onConfirm,
   onReset,
 }: CkInlineCameraProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -60,17 +50,14 @@ export function CkInlineCamera({
           onScan={onScan}
         />
         {overlayScanResult ? (
-          <CheckInCameraResultPanel
-            className="ck-inline-camera__result"
-            scanResult={overlayScanResult}
-            card={card}
-            pending={pending}
-            canAct={canAct}
-            eventTimezone={eventTimezone}
-            onConfirm={onConfirm}
-            onReset={onReset}
-            onCancel={dismiss}
-          />
+          // CheckInPage never sets scanResult (so this never receives one)
+          // for an INVALID/no-match scan while the camera is active — that
+          // reports via the same toast manual lookup's no-match uses instead,
+          // since the camera is scan-only here and shouldn't pause on a miss
+          // (PO review). This branch is only reachable for the brief window
+          // between a PREVIEW response landing and its attendee card finishing
+          // its fetch, right before AttendeeCard takes over below.
+          <ScanFeedback result={overlayScanResult} />
         ) : (
           <div className="ck-inline-camera__viewfinder" aria-hidden="true">
             <div className="vf-frame">

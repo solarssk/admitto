@@ -111,8 +111,8 @@ describe("admitAttendee + undo badge rollback (Lock #1)", () => {
   });
 });
 
-describe("lookupAttendees — custom_data fields", () => {
-  it("matches company/department stored only in custom_data JSON", async () => {
+describe("lookupAttendees — name/email only, never company/department", () => {
+  it("does not match on company/department stored in custom_data JSON (but still matches the name)", async () => {
     const token = generateToken();
     const att = await prisma.attendee.create({
       data: {
@@ -125,31 +125,40 @@ describe("lookupAttendees — custom_data fields", () => {
     });
 
     const byCompany = await lookupAttendees(EVENT_ID, "Acme From JSON", prisma);
-    expect(byCompany.some((r) => r.id === att.id)).toBe(true);
+    expect(byCompany.some((r) => r.id === att.id)).toBe(false);
 
     const byDept = await lookupAttendees(EVENT_ID, "IT Department", prisma);
-    expect(byDept.some((r) => r.id === att.id)).toBe(true);
+    expect(byDept.some((r) => r.id === att.id)).toBe(false);
+
+    // Search itself still works — the same attendee is found by name, and the
+    // company is still carried through on the returned result for display.
+    const byName = await lookupAttendees(EVENT_ID, "JSON Only Guest", prisma);
+    const hit = byName.find((r) => r.id === att.id);
+    expect(hit).toBeDefined();
+    expect(hit?.company).toBe("Acme From JSON");
   });
 
-  it("returns JSON-only matches ordered by name before the limit", async () => {
-    const company = "Shared JSON Corp";
-    const names = ["Zulu Guest", "Alpha Guest", "Mike Guest"];
-    for (const name of names) {
-      const token = generateToken();
-      await prisma.attendee.create({
-        data: {
-          event_id: EVENT_ID,
-          email: `${name.replace(/\s+/g, ".").toLowerCase()}@example.com`,
-          name,
-          token_hash: hashToken(token),
-          custom_data: { company },
-        },
-      });
-    }
+  it("does not match on company/department stored in the DB columns (but still matches the email)", async () => {
+    const token = generateToken();
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "column-company@example.com",
+        name: "Column Company Guest",
+        token_hash: hashToken(token),
+        company: "Contoso Column Ltd",
+        department: "Logistics Column Dept",
+      },
+    });
 
-    const results = await lookupAttendees(EVENT_ID, company, prisma);
-    const jsonOnly = results.filter((r) => names.includes(r.name));
-    expect(jsonOnly.map((r) => r.name)).toEqual(["Alpha Guest", "Mike Guest", "Zulu Guest"]);
+    const byCompany = await lookupAttendees(EVENT_ID, "Contoso Column Ltd", prisma);
+    expect(byCompany.some((r) => r.id === att.id)).toBe(false);
+
+    const byDept = await lookupAttendees(EVENT_ID, "Logistics Column Dept", prisma);
+    expect(byDept.some((r) => r.id === att.id)).toBe(false);
+
+    const byEmail = await lookupAttendees(EVENT_ID, "column-company@example.com", prisma);
+    expect(byEmail.some((r) => r.id === att.id)).toBe(true);
   });
 });
 

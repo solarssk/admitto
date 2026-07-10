@@ -15,6 +15,8 @@ const fetchCheckInOpsConfig = vi.fn();
 const fetchCheckInEvents = vi.fn();
 const fetchAttendeeCard = vi.fn();
 const lookupCheckInAttendees = vi.fn();
+const submitCheckInAdmit = vi.fn();
+const submitCheckInScan = vi.fn();
 const addToast = vi.fn();
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
@@ -59,8 +61,8 @@ vi.mock("../../src/api/client.js", () => ({
   fetchAttendeeCard: (...args: unknown[]) => fetchAttendeeCard(...args),
   lookupCheckInAttendees: (...args: unknown[]) => lookupCheckInAttendees(...args),
   submitAttendeeNote: vi.fn(),
-  submitCheckInAdmit: vi.fn(),
-  submitCheckInScan: vi.fn(),
+  submitCheckInAdmit: (...args: unknown[]) => submitCheckInAdmit(...args),
+  submitCheckInScan: (...args: unknown[]) => submitCheckInScan(...args),
   submitItemAction: vi.fn(),
   undoLastCheckIn: vi.fn(),
 }));
@@ -129,6 +131,21 @@ describe("CheckInPage scan-bar lookup", () => {
       expect(screen.getByText("Anna Beta")).toBeTruthy();
     });
     expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("clicking Search (form submit, not Enter) routes the same way as Enter", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([]);
+
+    renderPage();
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "filip" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+    await waitFor(() => {
+      expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", "filip");
+      expect(addToast).toHaveBeenCalledWith("No attendees matched that search.", "warning");
+    });
   });
 
   it("cancels a pending suggestion request on unmount", async () => {
@@ -364,6 +381,46 @@ describe("CheckInPage lookup card states (#379)", () => {
 
     expect(screen.queryByText("Anna Beta")).toBeNull();
   });
+
+  it("keeps the item hand-out buttons visible after confirming a check-in with items (auto-advance on)", async () => {
+    // Regression: on desktop, auto_advance_on_valid used to sweep the whole
+    // AttendeeCard away the instant Confirm succeeded — including the "Items to
+    // hand out" buttons — so the operator had to re-search the attendee just to
+    // mark a badge issued. Desktop now blocks auto-advance whenever the card
+    // carries items, matching the mobile overlay (#434).
+    mockPageBootstrap(); // auto_advance_on_valid: true
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
+    const withBadge = {
+      ...baseCard,
+      items: [
+        { key: "badge", label: "Badge", icon: null, detail: null, state: "pending", actions: ["issued"] },
+      ],
+    };
+    fetchAttendeeCard.mockResolvedValue(withBadge);
+    submitCheckInAdmit.mockResolvedValue({
+      status: "VALID",
+      confirmed: true,
+      admittedAt: "2026-09-01T09:44:00.000Z",
+      attendeeId: "att-1",
+      card: { ...withBadge, check_in_status: "admitted", admitted_at: "2026-09-01T09:44:00.000Z" },
+    });
+
+    await typeAndPickSuggestion();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Confirm check-in" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm check-in" }));
+
+    // Confirm processed (preview → admitted, so its Confirm button is gone)…
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Confirm check-in" })).toBeNull();
+    });
+    // …but the card was NOT auto-advanced away: its hand-out section stays so
+    // the operator can still issue the badge.
+    expect(screen.getByText("Items to hand out")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Mark badge issued" })).toBeTruthy();
+  });
 });
 
 describe("CheckInPage operator desktop camera toggle (#381)", () => {
@@ -415,5 +472,207 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
     // Reopening the camera doesn't resurrect the old card.
     fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
     expect(screen.queryByText("Ready to check in")).toBeNull();
+  });
+
+  it("reports a no-match scan via toast, not a panel over the camera (PO review: camera is scan-only on desktop)", async () => {
+    mockPageBootstrap();
+    submitCheckInScan.mockResolvedValue({ status: "INVALID", confirmed: false });
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
+
+    const input = await scanInput();
+    const token = "QRTOKEN-NO-MATCH-AT-ALL-000";
+    // Burst-typed, no Enter — a definitive scan (hardware wedge or camera
+    // decode), not an explicit Enter/Search submit. An explicit submit now
+    // tries a name/email lookup as a fallback when the scan itself is
+    // invalid (round 6), which is a different, separately-tested path.
+    for (let i = 1; i <= token.length; i++) {
+      fireEvent.change(input, { target: { value: token.slice(0, i) } });
+    }
+    await new Promise((r) => setTimeout(r, 60)); // > WEDGE_DEBOUNCE_MS
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "This code is not valid for this event. Check the QR or use manual lookup.",
+        "warning",
+      );
+    });
+
+    // No result card/panel ever covers the camera — it stays a live viewfinder.
+    expect(
+      screen.queryByText("This code is not valid for this event. Check the QR or use manual lookup."),
+    ).toBeNull();
+    expect(screen.getByTestId("camera-scanner")).toBeTruthy();
+    expect(screen.getByText("Point the camera at the attendee's QR")).toBeTruthy();
+  });
+
+  it("clears a stale no-match result from before the camera was opened, instead of opening paused behind it (bot review)", async () => {
+    mockPageBootstrap();
+    submitCheckInScan.mockResolvedValue({ status: "INVALID", confirmed: false });
+
+    renderPage();
+
+    // A no-match scan with the camera OFF — shows the standalone ScanFeedback
+    // card under the search bar, same as ever. Burst-typed, no Enter — a
+    // definitive scan; an explicit Enter/Search submit now falls back to a
+    // name/email lookup instead when the scan is invalid (round 6).
+    const input = await scanInput();
+    const token = "QRTOKEN-STALE-BEFORE-CAMERA-1";
+    for (let i = 1; i <= token.length; i++) {
+      fireEvent.change(input, { target: { value: token.slice(0, i) } });
+    }
+    await new Promise((r) => setTimeout(r, 60)); // > WEDGE_DEBOUNCE_MS
+    await waitFor(() => {
+      expect(
+        screen.getByText("This code is not valid for this event. Check the QR or use manual lookup."),
+      ).toBeTruthy();
+    });
+
+    // Turning the camera on afterward must not carry that stale result in as
+    // a paused overlay with no reset action — the camera opens live instead.
+    fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
+
+    expect(
+      screen.queryByText("This code is not valid for this event. Check the QR or use manual lookup."),
+    ).toBeNull();
+    expect(screen.getByTestId("camera-scanner")).toBeTruthy();
+    expect(screen.getByText("Point the camera at the attendee's QR")).toBeTruthy();
+  });
+
+  it("clears a stale attendee card when a new scan comes back no-match while the camera is on (bot review)", async () => {
+    mockPageBootstrap();
+    const card = {
+      id: "att-1",
+      name: "Anna Alpha",
+      company: null,
+      department: null,
+      ticket_type: "vip",
+      check_in_status: "not_admitted" as const,
+      admitted_at: null,
+      items: [],
+      notes: [],
+      warnings: [] as string[],
+    };
+    submitCheckInScan
+      .mockResolvedValueOnce({ status: "PREVIEW", confirmed: false, attendeeId: "att-1", card })
+      .mockResolvedValueOnce({ status: "INVALID", confirmed: false });
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
+
+    const input = await scanInput();
+    // Token-shaped (base64url, 40-60 chars) so it passes looksLikeInternalToken.
+    const firstToken = "QRTOKEN-VALID-FIRST-SCAN-001-DPADPADPADPADP";
+    for (let i = 1; i <= firstToken.length; i++) {
+      fireEvent.change(input, { target: { value: firstToken.slice(0, i) } });
+    }
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+
+    // showInlineCameraRef only reflects the camera toggle — the camera itself
+    // is hidden behind this card, but the scan bar above it stays live, so a
+    // second scan (or a wedge device firing again) can still land here.
+    // Burst-typed, no Enter — a definitive scan; an explicit Enter/Search
+    // submit now falls back to a name/email lookup instead when the scan is
+    // invalid (round 6), which is a different, separately-tested path.
+    const secondToken = "QRTOKEN-INVALID-SECOND-SCAN-2-PADPADPADPADP";
+    for (let i = 1; i <= secondToken.length; i++) {
+      fireEvent.change(input, { target: { value: secondToken.slice(0, i) } });
+    }
+    await new Promise((r) => setTimeout(r, 60)); // > WEDGE_DEBOUNCE_MS
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "This code is not valid for this event. Check the QR or use manual lookup.",
+        "warning",
+      );
+    });
+    // The stale card from the first scan must not linger under the toast.
+    expect(screen.queryByText("Anna Alpha")).toBeNull();
+    expect(screen.getByTestId("camera-scanner")).toBeTruthy();
+  });
+
+  it("does not show the scan no-match toast when Confirm check-in itself resolves to a card-less INVALID (bot review, round 5)", async () => {
+    // admitCurrent (the Confirm check-in button) shares applyResponse with
+    // the scan path. If the attendee row vanishes server-side between the
+    // card loading and the click (packages/tickets/src/admit.ts: `if
+    // (!attendee) return { status: "INVALID", ... }`), that's a confirm
+    // failure, not a no-match scan — it must not show scan-specific "Check
+    // the QR" copy or wipe the card the operator was just looking at.
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
+    fetchAttendeeCard.mockResolvedValue({
+      id: "att-1",
+      name: "Anna Alpha",
+      company: null,
+      department: null,
+      ticket_type: "vip",
+      check_in_status: "not_admitted" as const,
+      admitted_at: null,
+      items: [],
+      notes: [],
+      warnings: [] as string[],
+    });
+    submitCheckInAdmit.mockResolvedValue({ status: "INVALID", confirmed: false });
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
+
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "anna" } });
+    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    fireEvent.click(screen.getByText("Anna Alpha"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Confirm check-in" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm check-in" }));
+
+    await waitFor(() => expect(submitCheckInAdmit).toHaveBeenCalled());
+    expect(addToast).not.toHaveBeenCalledWith(
+      "This code is not valid for this event. Check the QR or use manual lookup.",
+      "warning",
+    );
+  });
+
+  it("shows the confirm card for a PREVIEW scan with no embedded card while the camera is on, not the invalid-code toast (bot review, round 8)", async () => {
+    // packages/tickets/src/checkin.ts can legitimately return PREVIEW with
+    // `card: undefined` (getAttendeeCard's own read came back empty) — the
+    // client already handles this by fetching the card separately below.
+    // applyResponse must not treat this as a no-match scan just because
+    // response.card is momentarily absent.
+    mockPageBootstrap();
+    submitCheckInScan.mockResolvedValueOnce({
+      status: "PREVIEW",
+      confirmed: false,
+      attendeeId: "att-1",
+    });
+    fetchAttendeeCard.mockResolvedValueOnce({
+      id: "att-1",
+      name: "Anna Alpha",
+      company: null,
+      department: null,
+      ticket_type: "vip",
+      check_in_status: "not_admitted" as const,
+      admitted_at: null,
+      items: [],
+      notes: [],
+      warnings: [] as string[],
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
+
+    const input = await scanInput();
+    const token = "QRTOKEN-PREVIEW-NO-CARD-YET-000000000000000";
+    for (let i = 1; i <= token.length; i++) {
+      fireEvent.change(input, { target: { value: token.slice(0, i) } });
+    }
+    await new Promise((r) => setTimeout(r, 60)); // > WEDGE_DEBOUNCE_MS
+
+    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    expect(addToast).not.toHaveBeenCalledWith(
+      "This code is not valid for this event. Check the QR or use manual lookup.",
+      "warning",
+    );
   });
 });
