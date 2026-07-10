@@ -761,13 +761,33 @@ export function CheckInPage({
   // 6). Trying the scan first delegates "is this a valid code" to the
   // server, which already knows every valid shape, instead of the client
   // re-guessing an incomplete subset of them.
+  //
+  // `isBurst` also feeds the decision (bot review, round 9), for two
+  // reasons: a hardware wedge scanner that appends its own Enter/CR
+  // terminator reaches this function (via onKeyDown, below) *before* the
+  // no-Enter auto-submit timer gets a chance to fire — without checking it
+  // here too, a burst-scanned code that turns out INVALID would fall back to
+  // a name/email search instead of reporting as the invalid scan it was, and
+  // a *short* one (an agency QR payload/external UUID isn't length-
+  // constrained the way an internal token is — e.g. "AGENCY-QR-001") would
+  // miss the length cutoff and go straight to a doomed lookup, never
+  // attempting a scan at all. A genuine burst is trusted at any length; a
+  // burst is never ambiguous the way typed/pasted text is, so it also skips
+  // the lookup fallback — the resolver already checked every valid shape.
+  //
+  // Deliberately a parameter, not read from wedgeIsBurstRef.current inside
+  // this function: that ref tracks the *main scan bar's* typing only — the
+  // mobile camera overlay's manual-entry field (onManualEntry, below) is a
+  // separate input nothing ever wedges into, so its calls correctly default
+  // this to false (never treated as a burst) instead of inheriting whatever
+  // stale value the main scan bar's ref happens to hold.
   const submitOrLookup = useCallback(
-    (query: string): Promise<boolean> => {
+    (query: string, isBurst = false): Promise<boolean> => {
       const trimmed = query.trim();
       if (!trimmed) return Promise.resolve(false);
 
-      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN) {
-        return runScan(trimmed, true);
+      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN || isBurst) {
+        return runScan(trimmed, !isBurst);
       }
 
       setBuffer("");
@@ -884,7 +904,7 @@ export function CheckInPage({
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    void submitOrLookup(buffer);
+    void submitOrLookup(buffer, wedgeIsBurstRef.current);
   };
 
   const handleBufferChange = (value: string, eventTimestamp: number) => {
@@ -963,7 +983,7 @@ export function CheckInPage({
     }
     if (event.key === "Enter") {
       event.preventDefault();
-      void submitOrLookup(buffer);
+      void submitOrLookup(buffer, wedgeIsBurstRef.current);
     }
   };
 

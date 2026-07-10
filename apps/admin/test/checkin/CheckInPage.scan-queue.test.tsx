@@ -785,7 +785,6 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
 
   it("still auto-submits a genuine fast wedge burst on Enter (no regression)", async () => {
     mockPageBootstrap();
-    // Token-shaped (base64url, 40-60 chars) so it passes looksLikeInternalToken.
     const token = "QRTOKEN-GENUINEWEDGE01-DPADPADPADPADPADPADP";
     submitCheckInScan.mockResolvedValueOnce(cardResponse(token, "Wedge Person"));
 
@@ -793,6 +792,53 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
 
     await typeWedge(input, token, { gapMs: 2 });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", token, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+
+  it("attempts a scan (not a lookup) for a short, burst-typed agency-style code on Enter (bot review, round 9)", async () => {
+    // qr_payload/external_uuid (Mode B agency identifiers) aren't length-
+    // constrained the way an internal token is — packages/tickets' own
+    // tests use values like "AGENCY-QR-001" (13 chars, well under
+    // WEDGE_AUTO_SUBMIT_LEN). A genuine hardware-scanner burst must still
+    // attempt a scan for a short code like this, not fall straight to a
+    // doomed name/email lookup just because it's short.
+    mockPageBootstrap();
+    const code = "AGENCY-QR-001";
+    submitCheckInScan.mockResolvedValueOnce(cardResponse(code, "Agency Person"));
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    await typeWedge(input, code, { gapMs: 2 });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+
+    await vi.waitFor(() => expect(submitCheckInScan).toHaveBeenCalledWith("evt-live", code, "desk-1"));
+    expect(lookupCheckInAttendees).not.toHaveBeenCalled();
+  });
+
+  it("reports a burst-scanned code as invalid, not a lookup fallback, when Enter arrives before the auto-submit timer (bot review, round 9)", async () => {
+    // A hardware wedge that appends its own Enter/CR terminator reaches
+    // onKeyDown before the no-Enter auto-submit timer (WEDGE_DEBOUNCE_MS)
+    // gets a chance to fire — this must still be treated as a definitive
+    // scan (no ambiguity, no lookup fallback), the same as if the timer had
+    // fired it. A burst-typed value that turns out INVALID should report
+    // as an invalid scan, not silently retry as a name/email search.
+    mockPageBootstrap();
+    const token = "QRTOKEN-BURST-THEN-ENTER-BEFORE-TIMER-00000";
+    submitCheckInScan.mockResolvedValueOnce({ status: "INVALID", confirmed: false });
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    await typeWedge(input, token, { gapMs: 2 });
+    // Enter fires immediately — well before the 50ms auto-submit debounce.
     await act(async () => {
       fireEvent.keyDown(input, { key: "Enter" });
     });
