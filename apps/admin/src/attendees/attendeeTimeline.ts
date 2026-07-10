@@ -13,6 +13,7 @@ const EVENT_OPERATIONAL_ACTIONS = new Set([
   "item_issued",
   "item_state_changed",
   "item_returned",
+  "item_revoked",
   "scan_preview",
 ]);
 
@@ -60,6 +61,7 @@ export function getTimelineIcon(actionType: string): string {
     item_issued: "package",
     item_state_changed: "package",
     item_returned: "package",
+    item_revoked: "arrow-back-up",
     pass_revoked: "ban",
     pass_restored: "refresh",
     attendee_edited: "pencil",
@@ -106,6 +108,8 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
       return "Badge/Gift bag issued";
     case "item_returned":
       return "Item returned";
+    case "item_revoked":
+      return "Item reset to pending";
     case "attendee_edited":
       return "Profile updated";
     case "pass_revoked":

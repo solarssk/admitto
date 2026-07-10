@@ -13,6 +13,15 @@ const OPERATOR_TRANSITIONS: Record<string, string[]> = {
   issued: ["returned"],
 };
 
+/**
+ * States a hand-out is actually revocable from. Excludes not just "pending"
+ * (nothing to revoke) but also the exceptional outcomes "lost" / "problem" /
+ * "not_applicable" (ADR 0010) — those aren't handed-out states, and a revoke
+ * shouldn't silently turn them back into "pending" as if ready to hand out
+ * again (bot review, #457).
+ */
+const REVOCABLE_ITEM_STATES = ["issued", "returned"];
+
 export class IllegalItemTransitionError extends Error {
   constructor(message: string) {
     super(message);
@@ -286,7 +295,7 @@ export async function revokeItemState(
       },
     });
     const fromState = current?.state ?? "pending";
-    if (fromState === "pending") return { state: "pending" };
+    if (!REVOCABLE_ITEM_STATES.includes(fromState)) return { state: fromState };
 
     await resetItemStateToPending(tx, {
       attendeeId: params.attendeeId,
@@ -301,14 +310,17 @@ export async function revokeItemState(
 }
 
 /**
- * Reset EVERY non-pending item for this attendee back to "pending" in the
+ * Reset EVERY handed-out item for this attendee back to "pending" in the
  * caller's transaction — the blanket version used when an admin revokes a
  * check-in ("i wtedy przy revoke checkin było też revoke items ... bez
  * zagłębiania się w które itemy"). Deliberately coarser than
  * rollbackBadgeForCheckIn: no attempt to trace which check-in issued which
  * item — just clear them all. Since this already covers the auto-issued badge,
  * the admin-revoke path uses this instead of rollbackBadgeForCheckIn. Each item
- * actually reset is audited (item_revoked).
+ * actually reset is audited (item_revoked). Scoped to `params.eventId` on both
+ * queries as defense-in-depth (CodeRabbit nitpick) — attendees are already
+ * event-scoped so this can't currently cross events, but the filter keeps that
+ * invariant explicit instead of implicit.
  */
 export async function resetAllItemStatesForRevoke(
   tx: Prisma.TransactionClient,
@@ -319,13 +331,17 @@ export async function resetAllItemStatesForRevoke(
   },
 ): Promise<void> {
   const states = await tx.attendeeItemState.findMany({
-    where: { attendee_id: params.attendeeId, state: { not: "pending" } },
+    where: {
+      attendee_id: params.attendeeId,
+      state: { in: REVOCABLE_ITEM_STATES },
+      event_item: { event_id: params.eventId },
+    },
     select: { event_item_id: true, state: true },
   });
   if (states.length === 0) return;
 
   const items = await tx.eventItem.findMany({
-    where: { id: { in: states.map((s) => s.event_item_id) } },
+    where: { id: { in: states.map((s) => s.event_item_id) }, event_id: params.eventId },
     select: { id: true, key: true },
   });
   // Every event_item_id in `states` resolves here: same transaction, no

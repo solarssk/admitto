@@ -1268,6 +1268,29 @@ describe("POST /api/admin/events/:eventId/attendees/:id/items/:itemKey/revoke", 
     );
     expect(res.status).toBe(403);
   });
+
+  it("returns a generic 500 without leaking the underlying error for an unexpected failure", async () => {
+    await setGiftbagIssued();
+    // revokeItemState runs inside prisma.$transaction — spying on a model
+    // method directly (e.g. prisma.attendeeItemState.findUnique) doesn't
+    // intercept the transaction-scoped `tx` client Prisma creates internally,
+    // so the mock has to sit on $transaction itself.
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db exploded"));
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/attendees/${ATT_ITEM_REVOKE}/items/giftbag/revoke`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        },
+      );
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("server error");
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {

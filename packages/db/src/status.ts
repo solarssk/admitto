@@ -84,6 +84,7 @@ export type AttendeeActionType =
   | 'scan_preview'
   | 'item_issued'
   | 'item_returned'
+  | 'item_revoked'
   | 'note_added'
   | 'attendee_edited'
   | 'ticket_resent'
@@ -104,6 +105,7 @@ export const ATTENDEE_ACTION_TYPE = [
   'scan_preview',
   'item_issued',
   'item_returned',
+  'item_revoked',
   'note_added',
   'attendee_edited',
   'ticket_resent',

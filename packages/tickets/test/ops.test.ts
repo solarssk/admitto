@@ -508,6 +508,78 @@ describe("revokeCheckIn — admin/superadmin un-admit (any device, any time)", (
     });
     expect(revokedLogs.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("does not reset an item in an exceptional state (lost/problem/not_applicable) — those aren't handed-out states (bot review, #457)", async () => {
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "revoke-preserves-lost@example.com",
+        name: "Revoke Preserves Lost",
+        token_hash: hashToken(generateToken()),
+        admitted_at: new Date("2026-09-01T10:00:00Z"),
+      },
+    });
+    await ensureAttendeeItemStates(att.id, EVENT_ID, prisma);
+    const headset = await prisma.eventItem.findFirstOrThrow({ where: { event_id: EVENT_ID, key: "headset" } });
+    await prisma.attendeeItemState.update({
+      where: { attendee_id_event_item_id: { attendee_id: att.id, event_item_id: headset.id } },
+      data: { state: "lost" },
+    });
+
+    await revokeCheckIn({ eventId: EVENT_ID, attendeeId: att.id, audit: { operator: "admin-9" } }, prisma);
+
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item_id: headset.id },
+    });
+    expect(after?.state).toBe("lost");
+  });
+
+  it("does not reset an item state row pointing at a different event's EventItem, even for the same attendee (defense-in-depth, CodeRabbit nitpick)", async () => {
+    // Simulates the invariant CodeRabbit's filter guards against ("attendees
+    // are already event-scoped so this can't currently cross events, but the
+    // filter keeps that invariant explicit") — deliberately construct the
+    // broken state directly, since no real app code path can produce it.
+    const otherEvent = await prisma.event.create({
+      data: {
+        id: "test-event-ops-cross-event-457",
+        title: "Cross-event Ops",
+        slug: "cross-event-ops-457",
+        date: new Date("2026-09-03T09:00:00Z"),
+        organization_id: "org_ops",
+      },
+    });
+    const otherItem = await prisma.eventItem.create({
+      data: { event_id: otherEvent.id, key: "cross-event-swag", label: "Cross-event swag" },
+    });
+
+    const att = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_ID,
+        email: "revoke-scoped-to-event@example.com",
+        name: "Revoke Scoped To Event",
+        token_hash: hashToken(generateToken()),
+        admitted_at: new Date("2026-09-01T10:00:00Z"),
+      },
+    });
+    await ensureAttendeeItemStates(att.id, EVENT_ID, prisma);
+    await prisma.attendeeItemState.create({
+      data: { attendee_id: att.id, event_item_id: otherItem.id, state: "issued" },
+    });
+
+    await revokeCheckIn({ eventId: EVENT_ID, attendeeId: att.id, audit: { operator: "admin-9" } }, prisma);
+
+    const crossEventAfter = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item_id: otherItem.id },
+    });
+    expect(crossEventAfter?.state).toBe("issued");
+
+    // The attendee's own event's items (e.g. badge, auto-issued on admit) are
+    // still reset normally — the fix scopes the query, it doesn't break it.
+    const badgeAfter = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item: { key: "badge" } },
+    });
+    expect(badgeAfter?.state).toBe("pending");
+  });
 });
 
 describe("revokeItemState — admin/superadmin single-item reset (item revocation feature)", () => {
@@ -578,6 +650,23 @@ describe("revokeItemState — admin/superadmin single-item reset (item revocatio
       prisma,
     );
     expect(result.state).toBe("pending");
+    const logs = await prisma.attendeeActionLog.count({
+      where: { attendee_id: att.id, action_type: "item_revoked" },
+    });
+    expect(logs).toBe(0);
+  });
+
+  it("is a no-op on an item in an exceptional state (lost/problem/not_applicable) — those aren't handed-out states (bot review, #457)", async () => {
+    const att = await makeAttendeeWithItemState("giftbag", "problem");
+    const result = await revokeItemState(
+      { attendeeId: att.id, eventId: EVENT_ID, itemKey: "giftbag", audit: { operator: "admin-9" } },
+      prisma,
+    );
+    expect(result.state).toBe("problem");
+    const after = await prisma.attendeeItemState.findFirst({
+      where: { attendee_id: att.id, event_item: { key: "giftbag" } },
+    });
+    expect(after?.state).toBe("problem");
     const logs = await prisma.attendeeActionLog.count({
       where: { attendee_id: att.id, action_type: "item_revoked" },
     });
