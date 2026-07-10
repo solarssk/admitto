@@ -1,6 +1,9 @@
 node_modules/
 dist/
 _reference/
+# Local mkcert/dev TLS certs and keys — never commit
+.certs/
+*.pem
 # Local docs — ignore by default; corp compliance pack is versioned (v0.4.3+)
 docs/*
 !docs/assets/
