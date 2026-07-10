@@ -351,6 +351,13 @@ export function CheckInPage({
       // renders on top of it. A no-match scan reports the same way manual
       // lookup's no-match does: a toast, camera keeps scanning (PO review).
       addToast(feedbackCopy("INVALID"), "warning");
+      // showInlineCameraRef only says the camera toggle is on, not that the
+      // camera is what's actually visible right now — an attendee card from
+      // an earlier scan may still be showing (it hides the camera, but the
+      // scan bar above it stays live). This new scan supersedes that card
+      // even though it doesn't get one of its own, or the toast would fire
+      // over a stale, unrelated attendee's card (bot review).
+      clearDisplayedResult();
       return;
     }
     setScanResult(response);

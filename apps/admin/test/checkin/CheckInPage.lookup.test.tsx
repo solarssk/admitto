@@ -518,4 +518,53 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
     expect(screen.getByTestId("camera-scanner")).toBeTruthy();
     expect(screen.getByText("Point the camera at the attendee's QR")).toBeTruthy();
   });
+
+  it("clears a stale attendee card when a new scan comes back no-match while the camera is on (bot review)", async () => {
+    mockPageBootstrap();
+    const card = {
+      id: "att-1",
+      name: "Anna Alpha",
+      company: null,
+      department: null,
+      ticket_type: "vip",
+      check_in_status: "not_admitted" as const,
+      admitted_at: null,
+      items: [],
+      notes: [],
+      warnings: [] as string[],
+    };
+    submitCheckInScan
+      .mockResolvedValueOnce({ status: "PREVIEW", confirmed: false, attendeeId: "att-1", card })
+      .mockResolvedValueOnce({ status: "INVALID", confirmed: false });
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
+
+    const input = await scanInput();
+    const firstToken = "QRTOKEN-VALID-FIRST-SCAN-001";
+    for (let i = 1; i <= firstToken.length; i++) {
+      fireEvent.change(input, { target: { value: firstToken.slice(0, i) } });
+    }
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+
+    // showInlineCameraRef only reflects the camera toggle — the camera itself
+    // is hidden behind this card, but the scan bar above it stays live, so a
+    // second scan (or a wedge device firing again) can still land here.
+    const secondToken = "QRTOKEN-INVALID-SECOND-SCAN-2";
+    for (let i = 1; i <= secondToken.length; i++) {
+      fireEvent.change(input, { target: { value: secondToken.slice(0, i) } });
+    }
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "This code is not valid for this event. Check the QR or use manual lookup.",
+        "warning",
+      );
+    });
+    // The stale card from the first scan must not linger under the toast.
+    expect(screen.queryByText("Anna Alpha")).toBeNull();
+    expect(screen.getByTestId("camera-scanner")).toBeTruthy();
+  });
 });
