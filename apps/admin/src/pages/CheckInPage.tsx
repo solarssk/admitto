@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useParams } from "react-router-dom";
 import { Button, Card, useToast } from "@admitto/ui";
+import { looksLikeInternalToken } from "@admitto/tickets";
 import {
   ApiError,
   fetchAttendeeCard,
@@ -57,15 +58,6 @@ const HISTORY_CAP = 8;
 const LOOKUP_DISABLED_MSG =
   "Manual lookup is disabled for this event — use QR scan only.";
 const LOOKUP_NO_MATCH_MSG = "No attendees matched that search.";
-
-/** A real ticket token is 32 random bytes, base64url-encoded (`generateToken`,
- * @admitto/crypto) — that alphabet never produces a space or `@`, so this
- * cheaply tells a token apart from an email or a multi-word name without a
- * network round-trip. Used to decide whether a long explicit submit (Enter)
- * should be tried as a scan at all (bot review, round 4). */
-function looksLikeToken(value: string): boolean {
-  return !/[\s@]/.test(value);
-}
 
 /** Build a sidebar history row from a live SSE check-in event. */
 function historyEntryFromStream(event: StreamCheckinEvent, eventId: string): CheckInHistoryEntry {
@@ -125,10 +117,11 @@ export function CheckInPage({
   // isn't recreated when the camera is toggled — without a ref it would keep
   // seeing whatever showInlineCamera was at mount (always false), never the
   // current value, and silently never route a no-match scan to the toast.
+  // Assigned directly in the render body (matching historyRef below) rather
+  // than a useEffect, so the ref is current the instant this render commits
+  // instead of one tick later (bot review, round 5).
   const showInlineCameraRef = useRef(showInlineCamera);
-  useEffect(() => {
-    showInlineCameraRef.current = showInlineCamera;
-  }, [showInlineCamera]);
+  showInlineCameraRef.current = showInlineCamera;
 
   const setCameraActive = useCallback(
     (open: boolean) => {
@@ -353,8 +346,17 @@ export function CheckInPage({
     }
   };
 
-  const applyResponse = (response: CheckInScanResponse) => {
-    if (showInlineCameraRef.current && response.status === "INVALID") {
+  // `fromScan` restricts the camera toast-diversion below to actual scan
+  // attempts — admitCurrent (the Confirm-check-in button) also funnels
+  // through here, and can itself resolve to a bare, card-less INVALID if the
+  // attendee vanished server-side between the card loading and the click
+  // (packages/tickets/src/admit.ts: `if (!attendee) return { status:
+  // "INVALID", ... }`); that's a confirm failure, not a no-match scan, and
+  // showing scan-specific copy ("Check the QR...") while wiping the card the
+  // operator was just looking at would be actively misleading (bot review,
+  // round 5).
+  const applyResponse = (response: CheckInScanResponse, fromScan = false) => {
+    if (showInlineCameraRef.current && fromScan && !response.card) {
       // Desktop camera is scan-only (unlike the mobile overlay, which doubles
       // as the operator's check-in/item-issuing surface) — no result ever
       // renders on top of it. A no-match scan reports the same way manual
@@ -387,24 +389,37 @@ export function CheckInPage({
     setOverlayManualError(null);
   }, []);
 
+  // Direct-render-body refs (not reactive deps) so the transition effect below
+  // can read the current card/scanResult without re-running on every scan —
+  // only the show/hide transition itself (showInlineCamera changing) matters,
+  // not every update to what's currently displayed (bot review, round 5).
+  const cardRef = useRef(card);
+  cardRef.current = card;
+  const scanResultRef = useRef(scanResult);
+  scanResultRef.current = scanResult;
+
   // Header "Disable camera" toggles (AdminCheckInRoute, operator desktop) flip
   // the parent's camera state directly and don't go through closeInlineCamera's
   // onReset — clear any stale scan/card display here so a stopped-then-restarted
-  // camera doesn't overlay an old result (#381).
-  const prevCameraActiveRef = useRef(cameraActive);
+  // camera doesn't overlay an old result (#381). Keyed on showInlineCamera, not
+  // raw cameraActive: a viewport resize/rotation crossing the desktop
+  // breakpoint (useIsDesktop's matchMedia listener) while cameraActive never
+  // changes is a real transition into/out of this view too — cameraActive
+  // alone missed that case (bot review, round 5).
+  const prevShowInlineCameraRef = useRef(showInlineCamera);
   useEffect(() => {
-    if (prevCameraActiveRef.current && !cameraActive) clearDisplayedResult();
+    if (prevShowInlineCameraRef.current && !showInlineCamera) clearDisplayedResult();
     // Symmetric case: a no-match/invalid result (no card) left showing from
-    // before the camera was opened would otherwise carry straight into
+    // before the camera view appeared would otherwise carry straight into
     // CkInlineCamera as a paused overlay with no reset action — the camera
     // is scan-only and can only be unstuck by closing and reopening it
     // (bot review). A pending card (PREVIEW/etc.) is left alone — it keeps
     // the camera from rendering at all via showResultCard, same as today.
-    if (!prevCameraActiveRef.current && cameraActive && scanResult && !card) {
+    if (!prevShowInlineCameraRef.current && showInlineCamera && scanResultRef.current && !cardRef.current) {
       clearDisplayedResult();
     }
-    prevCameraActiveRef.current = cameraActive;
-  }, [cameraActive, card, scanResult, clearDisplayedResult]);
+    prevShowInlineCameraRef.current = showInlineCamera;
+  }, [showInlineCamera, clearDisplayedResult]);
 
   /** User-initiated reset (Escape, Cancel button) — also clears the input and
    * cancels any pending wedge timer, since the user explicitly wants a clean slate. */
@@ -476,7 +491,7 @@ export function CheckInPage({
       try {
         const response = await runWithPending(() => submitCheckInScan(eventId, scanned, deviceId));
         if (!response) return;
-        applyResponse(response);
+        applyResponse(response, true);
         maybeAutoAdvance(response);
         setAdmitOrigin("scan");
         if (response.status === "PREVIEW" && response.attendeeId && !response.card) {
@@ -681,7 +696,11 @@ export function CheckInPage({
   // the combined string would otherwise cross the scan-length threshold and
   // get auto-submitted as a corrupted, unmatchable scan payload (#277 review).
   // Shared routing logic for both submit entry points (main scan bar and the
-  // mobile camera overlay's manual-entry field). An explicit Enter/Search-
+  // mobile camera overlay's manual-entry field, called directly at each call
+  // site below — the two used to be separately-named wrappers distinguished
+  // by a `requireBurst` argument; once that argument was dropped they were
+  // byte-for-byte identical, so keeping two names invited them to silently
+  // re-diverge with no compiler signal (bot review, round 5)). An explicit Enter/Search-
   // button submit is unconditionally an intentional "try this now" — unlike
   // the silent, no-Enter auto-submit in handleBufferChange below, which still
   // requires wedgeIsBurstRef (a real hardware scanner) since it fires with no
@@ -690,15 +709,20 @@ export function CheckInPage({
   // WEDGE_AUTO_SUBMIT_LEN) instead of additionally demanding proof the text
   // arrived via a fast burst — fixed a pasted/typed token routing to a doomed
   // name/email lookup instead of the scan it obviously was, but broke a
-  // genuinely long name/email search the same way (bot review, round 4): both
-  // are equally "long", so length alone can't tell them apart. looksLikeToken
-  // (module scope, above) adds the missing signal.
+  // genuinely long name/email search the same way (round 4): both are equally
+  // "long", so length alone can't tell them apart. `looksLikeInternalToken`
+  // (@admitto/tickets — the same shape check the server itself uses to
+  // recognize a raw token in resolve.ts) replaces the length check entirely:
+  // its own `{40,60}` bound is tighter than WEDGE_AUTO_SUBMIT_LEN and, being a
+  // positive base64url-shape match rather than a "no space/@" exclusion,
+  // doesn't misclassify a long single-word name/company as a token or admit
+  // unbounded-length pasted garbage as one (bot review, round 5).
   const submitOrLookup = useCallback(
     (query: string): Promise<boolean> => {
       const trimmed = query.trim();
       if (!trimmed) return Promise.resolve(false);
 
-      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN && looksLikeToken(trimmed)) {
+      if (looksLikeInternalToken(trimmed)) {
         void runScan(trimmed);
         return Promise.resolve(true);
       }
@@ -711,16 +735,6 @@ export function CheckInPage({
       return runExclusive(() => submitScanOrLookupImpl(trimmed));
     },
     [runExclusive, runScan, submitScanOrLookupImpl],
-  );
-
-  const submitScanOrLookup = useCallback(
-    (query: string) => submitOrLookup(query),
-    [submitOrLookup],
-  );
-
-  const submitManualTokenOrLookup = useCallback(
-    (query: string) => submitOrLookup(query),
-    [submitOrLookup],
   );
 
   // Queued: same rationale as admitCurrent — this reads card.id at run time
@@ -827,7 +841,7 @@ export function CheckInPage({
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    void submitScanOrLookup(buffer);
+    void submitOrLookup(buffer);
   };
 
   const handleBufferChange = (value: string, eventTimestamp: number) => {
@@ -838,7 +852,7 @@ export function CheckInPage({
       const cleaned = value.replace(/[\r\n]+/g, "").trim();
       if (justPasted) wedgeIsBurstRef.current = false;
       setBuffer("");
-      if (cleaned && canAct) void submitScanOrLookup(cleaned);
+      if (cleaned && canAct) void submitOrLookup(cleaned);
       return;
     }
 
@@ -914,7 +928,7 @@ export function CheckInPage({
     }
     if (event.key === "Enter") {
       event.preventDefault();
-      void submitScanOrLookup(buffer);
+      void submitOrLookup(buffer);
     }
   };
 
@@ -1151,7 +1165,7 @@ export function CheckInPage({
           allowManualLookup={allowManualLookup}
           onSearch={(query) => lookupCheckInAttendees(eventId, query)}
           onSelectAttendee={openLookupResult}
-          onManualEntry={submitManualTokenOrLookup}
+          onManualEntry={submitOrLookup}
           manualError={overlayManualError}
           onClearManualError={() => setOverlayManualError(null)}
           scanResult={scanResult}

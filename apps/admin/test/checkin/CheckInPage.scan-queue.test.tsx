@@ -725,9 +725,39 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
     expect(lookupCheckInAttendees).not.toHaveBeenCalled();
   });
 
+  it("does not silently auto-submit a single-event long email dropped into an empty field, and Enter routes it to lookup (round 5, coverage restored)", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValueOnce([]);
+
+    renderPage();
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+
+    // Same one-shot-insert shape as the token case above (autofill/IME/
+    // drag-drop/voice dictation), but email-shaped content — must still
+    // route to lookup on Enter, not a doomed scan attempt (this exact
+    // arrival-mechanism + email-content combination briefly lost its
+    // coverage when round 4 swapped this test's fixture to a token; the
+    // token case now has its own dedicated test above, and this restores
+    // the email one).
+    const value = "someone.long-name@international-trade-fair.example.com";
+    fireEvent.change(input, { target: { value } });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50); // WEDGE_DEBOUNCE_MS
+    });
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    await vi.waitFor(() => expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", value));
+    expect(submitCheckInScan).not.toHaveBeenCalled();
+  });
+
   it("still auto-submits a genuine fast wedge burst on Enter (no regression)", async () => {
     mockPageBootstrap();
-    const token = "QRTOKEN-GENUINEWEDGE01";
+    // Token-shaped (base64url, 40-60 chars) so it passes looksLikeInternalToken.
+    const token = "QRTOKEN-GENUINEWEDGE01-DPADPADPADPADPADPADP";
     submitCheckInScan.mockResolvedValueOnce(cardResponse(token, "Wedge Person"));
 
     renderPage();
@@ -746,7 +776,8 @@ describe("CheckInPage scan queue — #262/bot review (Enter/paste routing)", () 
 describe("CheckInPage scan queue — event timestamp vs handler wall-clock (#262 review)", () => {
   it("classifies a genuine fast burst correctly even when Date.now() would suggest otherwise", async () => {
     mockPageBootstrap();
-    const token = "QRTOKEN-REALWEDGE00001"; // 23 chars
+    // Token-shaped (base64url, 40-60 chars) so it passes looksLikeInternalToken.
+    const token = "QRTOKEN-REALWEDGE00001-DPADPADPADPADPADPADP";
     submitCheckInScan.mockResolvedValueOnce(cardResponse(token, "Real Wedge Person"));
 
     renderPage();
