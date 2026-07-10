@@ -1,14 +1,17 @@
 .danger-zone__item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--border);
+  padding: var(--space-4) var(--pad-card);
+  border-top: 1px solid var(--border);
 }
 
-.danger-zone__item:last-child {
-  border-bottom: none;
+/* The item right after the header never doubles up with the header's own
+   border-bottom. `:first-child` doesn't work here because the header div,
+   not the first item, is the true first child of `.danger-zone-panel`. */
+.danger-zone-panel__header + .danger-zone__item {
+  border-top: none;
 }
 
 .danger-zone__info {
@@ -24,13 +27,13 @@
 .danger-zone__desc {
   font-size: var(--fs-sm);
   color: var(--text-muted);
-  max-width: 480px;
+  max-width: 640px;
 }
 
 .event-settings-page .field-hint {
   font-size: var(--fs-sm);
   color: var(--text-muted);
-  margin-top: var(--space-1);
+  margin: var(--space-1) 0 0;
 }
 
 .slug-field input:disabled {
@@ -39,8 +42,8 @@
   cursor: not-allowed;
 }
 
-.event-settings--archived .at-input input,
-.event-settings--archived .at-input input:focus {
+.event-settings--archived .at-input,
+.event-settings--archived .at-input:focus {
   background: var(--surface-sunken);
   pointer-events: none;
 }
@@ -53,6 +56,113 @@
   margin-top: var(--space-4);
 }
 
-.event-settings-items-link {
-  margin-top: var(--space-3);
+/* Tab bar + panels ------------------------------------------------------ */
+
+.event-settings-page .at-tabs {
+  margin-bottom: var(--space-4);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  flex-wrap: nowrap;
 }
+
+.event-settings-page .at-tab {
+  flex-shrink: 0;
+}
+
+.event-settings-tabpanel {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Field spacing ----------------------------------------------------------
+   Group a field (label + control) with its own hint, then use one
+   consistent gap between groups — avoids the old accumulated-margin
+   problem where every <p class="field-hint"> also picked up the global
+   `p { margin-bottom: var(--space-3) }` reset, doubling the real gap. */
+
+.settings-field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.settings-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Basic information: Date and Capacity are both short fields — pair them into one row
+   on wider screens instead of each taking a full-width line of mostly empty space. */
+.settings-field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 640px) {
+  .settings-field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.settings-field-group > p {
+  margin: 0;
+}
+
+/* Status card: three short items, so use three columns on wide screens
+   instead of stacking them into a tall single column. */
+.settings-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-6);
+}
+
+@media (max-width: 768px) {
+  .settings-status-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Branding tab ----------------------------------------------------------- */
+
+.event-settings-archived-note {
+  margin-top: var(--space-3) !important;
+}
+
+/* Danger zone - the JSX puts `at-card` / `at-card__header` / `at-card__title`
+   on these elements alongside the classes below, so the panel is built
+   directly on the same base as every other card and can't quietly drift out
+   of sync again (it previously had its own hand-copied border-radius that
+   went out of sync with `.at-card`). The red border-color is the only actual
+   difference; the "danger" cue otherwise lives in the notice below, not
+   repeated in the header.
+   Compound selector (not just `.danger-zone-panel`) so this reliably beats
+   `.at-card`'s own `border: ... var(--border)` shorthand - equal-specificity
+   single-class selectors are resolved by source order, and `.at-card` happens
+   to load later in the bundle, which was silently overwriting the red color
+   back to the default grey border. */
+
+.at-card.danger-zone-panel {
+  border-color: var(--status-error);
+  overflow: hidden;
+}
+
+/* Subtle notice under the panel (not inside the header, so the header stays
+   the same height as every other card's header). */
+.danger-zone-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--status-error-tint);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  color: var(--status-error-fg);
+}
+
+.danger-zone-notice i {
+  margin-top: 2px;
+}
+

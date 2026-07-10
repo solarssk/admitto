@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@admitto/ui";
 import { ApiError, uploadFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -8,13 +8,79 @@ import "./logo-upload.css";
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 
 export interface LogoUploadZoneProps {
-  value: string;
-  onChange: (url: string) => void;
-  onDirty?: () => void;
+  readonly value: string;
+  readonly onChange: (url: string) => void;
+  readonly onDirty?: () => void;
+  /** Field label above the drop zone. Defaults to "Organisation logo" for the existing usage. */
+  readonly label?: string;
+  /** Format/size hint line under the drop zone. Defaults to the square-logo recommendation. */
+  readonly hint?: string;
+  /** Custom upload function (e.g. event-scoped upload). Defaults to the org-level upload endpoint. */
+  readonly uploadFn?: (formData: FormData) => Promise<{ url: string }>;
+  /** Disables all interaction (e.g. archived event). Defaults to false — org branding is never disabled. */
+  readonly disabled?: boolean;
+  /** Notified whenever an upload starts/finishes, so a caller can e.g. block Save while one is in flight. */
+  readonly onUploadingChange?: (uploading: boolean) => void;
+}
+
+interface LogoPreviewProps {
+  readonly label: string;
+  readonly previewSrc: string;
+  readonly isUploadedFile: boolean;
+  readonly disabled: boolean;
+  readonly onExternalUrlFailed: () => void;
+  readonly onUploadedFileCorrupt: () => void;
+  readonly onRemove: () => void;
+}
+
+/** Preview image with its two distinct failure modes, plus the remove button. */
+function LogoPreview({
+  label,
+  previewSrc,
+  isUploadedFile,
+  disabled,
+  onExternalUrlFailed,
+  onUploadedFileCorrupt,
+  onRemove,
+}: LogoPreviewProps) {
+  return (
+    <>
+      <div className="logo-upload__preview-inner">
+        <img
+          src={previewSrc}
+          alt={`${label} preview`}
+          className="logo-upload__img"
+          onError={() => (isUploadedFile ? onUploadedFileCorrupt() : onExternalUrlFailed())}
+        />
+      </div>
+      <button
+        type="button"
+        className="logo-upload__clear"
+        aria-label={`Remove ${label.toLowerCase()}`}
+        disabled={disabled}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+      >
+        <i className="ti ti-x" aria-hidden="true" />
+      </button>
+    </>
+  );
 }
 
 /** Upload to server or link an external HTTPS image — both are supported. */
-export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps) {
+export function LogoUploadZone({
+  value,
+  onChange,
+  onDirty,
+  label = "Organisation logo",
+  hint = "PNG, JPG, WebP · max 2 MB · recommended 160×48 px",
+  uploadFn = uploadFile,
+  disabled = false,
+  onUploadingChange,
+}: LogoUploadZoneProps) {
+  const urlInputId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadSeqRef = useRef(0);
   const [uploading, setUploading] = useState(false);
@@ -26,6 +92,10 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
   const previewSrc = useMemo(() => brandingLogoImgSrc(value), [value]);
   const [previewFailed, setPreviewFailed] = useState(false);
   const showPreview = Boolean(previewSrc) && !previewFailed;
+
+  useEffect(() => {
+    onUploadingChange?.(uploading);
+  }, [uploading, onUploadingChange]);
 
   useEffect(() => {
     setPreviewFailed(false);
@@ -51,7 +121,7 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const result = await uploadFile(fd);
+      const result = await uploadFn(fd);
       if (seq !== uploadSeqRef.current) return;
       onChange(result.url);
       onDirty?.();
@@ -66,17 +136,18 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
+    if (disabled) return;
     const file = e.dataTransfer.files[0];
     if (file) void handleFile(file);
   };
 
   const openFilePicker = () => {
-    if (!uploading) fileRef.current?.click();
+    if (!uploading && !disabled) fileRef.current?.click();
   };
 
   return (
     <div className="logo-upload">
-      <span className="at-label">Organisation logo</span>
+      <span className="at-label">{label}</span>
       <p className="logo-upload__intro">
         Upload a file to this server, or use an image hosted elsewhere (HTTPS).
       </p>
@@ -87,20 +158,22 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
           dragging && "logo-upload__zone--dragging",
           previewSrc && showPreview && "logo-upload__zone--has-preview",
           zoneError && "logo-upload__zone--invalid",
+          disabled && "logo-upload__zone--disabled",
         ]
           .filter(Boolean)
           .join(" ")}
         onDrop={(e) => void onDrop(e)}
         onDragOver={(e) => {
           e.preventDefault();
-          setDragging(true);
+          if (!disabled) setDragging(true);
         }}
         onDragLeave={() => setDragging(false)}
         onClick={() => {
           if (!showPreview) openFilePicker();
         }}
         role={showPreview ? undefined : "button"}
-        tabIndex={showPreview ? undefined : 0}
+        tabIndex={showPreview || disabled ? undefined : 0}
+        aria-disabled={disabled || undefined}
         onKeyDown={(e) => {
           if (!showPreview && (e.key === "Enter" || e.key === " ")) {
             e.preventDefault();
@@ -109,47 +182,31 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
         }}
       >
         {showPreview ? (
-          <>
-            <div className="logo-upload__preview-inner">
-              <img
-                src={previewSrc!}
-                alt="Organisation logo preview"
-                className="logo-upload__img"
-                onError={() => {
-                  if (!isUploadedFile) {
-                    setZoneError(
-                      "Could not load logo preview from this URL. Check the link or try again later.",
-                    );
-                    setPreviewFailed(true);
-                    return;
-                  }
-                  setZoneError(
-                    "Uploaded file appears corrupt or unsupported. Please try another image.",
-                  );
-                  uploadSeqRef.current += 1;
-                  setPreviewFailed(false);
-                  onChange("");
-                  onDirty?.();
-                }}
-              />
-            </div>
-            <button
-              type="button"
-              className="logo-upload__clear"
-              aria-label="Remove logo"
-              onClick={(e) => {
-                e.stopPropagation();
-                clearLogo();
-              }}
-            >
-              <i className="ti ti-x" aria-hidden="true" />
-            </button>
-          </>
+          <LogoPreview
+            label={label}
+            previewSrc={previewSrc!}
+            isUploadedFile={isUploadedFile}
+            disabled={disabled}
+            onExternalUrlFailed={() => {
+              setZoneError(
+                "Could not load logo preview from this URL. Check the link or try again later.",
+              );
+              setPreviewFailed(true);
+            }}
+            onUploadedFileCorrupt={() => {
+              setZoneError("Uploaded file appears corrupt or unsupported. Please try another image.");
+              uploadSeqRef.current += 1;
+              setPreviewFailed(false);
+              onChange("");
+              onDirty?.();
+            }}
+            onRemove={clearLogo}
+          />
         ) : (
           <>
             <i className="ti ti-photo-up" aria-hidden="true" />
             <span>{uploading ? "Uploading…" : "Drop logo here or click to browse"}</span>
-            <span className="logo-upload__hint">PNG, JPG, WebP · max 2 MB · recommended 160×48 px</span>
+            <span className="logo-upload__hint">{hint}</span>
           </>
         )}
         <input
@@ -162,7 +219,7 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
             if (f) void handleFile(f);
             e.target.value = "";
           }}
-          disabled={uploading}
+          disabled={uploading || disabled}
           aria-hidden="true"
           tabIndex={-1}
         />
@@ -178,7 +235,7 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
             type="button"
             variant="ghost"
             size="sm"
-            disabled={uploading}
+            disabled={uploading || disabled}
             icon={<i className="ti ti-refresh" aria-hidden="true" />}
             onClick={openFilePicker}
           >
@@ -189,6 +246,7 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
           type="button"
           variant="ghost"
           size="sm"
+          disabled={disabled}
           icon={<i className={showUrlInput ? "ti ti-chevron-up" : "ti ti-link"} aria-hidden="true" />}
           onClick={() => setShowUrlInput((v) => !v)}
         >
@@ -197,14 +255,15 @@ export function LogoUploadZone({ value, onChange, onDirty }: LogoUploadZoneProps
       </div>
       {showUrlInput && (
         <div className="at-field">
-          <label className="at-label" htmlFor="logo-url-external">
+          <label className="at-label" htmlFor={urlInputId}>
             External logo URL (HTTPS)
           </label>
           <input
-            id="logo-url-external"
+            id={urlInputId}
             className="at-input"
             type="url"
             value={isUploadedFile ? "" : value}
+            disabled={disabled}
             onChange={(e) => {
               onChange(e.target.value);
               onDirty?.();

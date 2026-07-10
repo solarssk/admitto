@@ -14,13 +14,20 @@ const sameOrigin = { Origin: "http://localhost" };
 
 const EMAIL_SUPER = "uploads-super@example.com";
 const EMAIL_ADMIN = "uploads-admin@example.com";
+const EMAIL_ADMIN_OTHER = "uploads-admin-other@example.com";
 const PASSWORD = "uploads-pass-123";
+
+const ORG_OTHER = "org-uploads-other";
+const EVENT_OWN = "evt-uploads-own";
+const EVENT_OTHER_ORG = "evt-uploads-other-org";
+const EVENT_ARCHIVED = "evt-uploads-archived";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let uploadDir: string;
 let superCookie = "";
 let adminCookie = "";
+let adminOtherCookie = "";
 
 beforeAll(async () => {
   uploadDir = mkdtempSync(join(tmpdir(), "admitto-uploads-"));
@@ -32,18 +39,25 @@ beforeAll(async () => {
 
   const password_hash = await hashPassword(PASSWORD);
   await prisma.session.deleteMany({
-    where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
+    where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_ADMIN_OTHER] } } },
   });
   await prisma.userMfaMethod.deleteMany({
-    where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
+    where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_ADMIN_OTHER] } } },
   });
   await prisma.roleAssignment.deleteMany({
-    where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
+    where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_ADMIN_OTHER] } } },
   });
-  await prisma.user.deleteMany({ where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } });
+  await prisma.user.deleteMany({
+    where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_ADMIN_OTHER] } },
+  });
+  await prisma.event.deleteMany({ where: { id: { in: [EVENT_OWN, EVENT_OTHER_ORG, EVENT_ARCHIVED] } } });
+  await prisma.organization.deleteMany({ where: { id: ORG_OTHER } });
 
   const superUser = await prisma.user.create({ data: { email: EMAIL_SUPER, password_hash } });
   const adminUser = await prisma.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
+  const adminOtherUser = await prisma.user.create({
+    data: { email: EMAIL_ADMIN_OTHER, password_hash },
+  });
   const existingInstanceSuper = await prisma.roleAssignment.findFirst({
     where: { role: "superadmin", scope_type: "instance" },
     select: { id: true },
@@ -61,12 +75,46 @@ beforeAll(async () => {
   await prisma.roleAssignment.create({
     data: { user_id: adminUser.id, role: "admin", scope_type: "organization", scope_id: "org-uploads" },
   });
+  await prisma.roleAssignment.create({
+    data: { user_id: adminOtherUser.id, role: "admin", scope_type: "organization", scope_id: ORG_OTHER },
+  });
   await prisma.organization.upsert({
     where: { id: "org-uploads" },
     create: { id: "org-uploads", name: "Uploads Org", slug: "uploads-org" },
     update: {},
   });
-  for (const userId of [superUser.id, adminUser.id]) {
+  await prisma.organization.upsert({
+    where: { id: ORG_OTHER },
+    create: { id: ORG_OTHER, name: "Uploads Org Other", slug: "uploads-org-other" },
+    update: {},
+  });
+  await prisma.event.createMany({
+    data: [
+      {
+        id: EVENT_OWN,
+        title: "Uploads Own Event",
+        slug: "uploads-own-event",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: "org-uploads",
+      },
+      {
+        id: EVENT_OTHER_ORG,
+        title: "Uploads Other Org Event",
+        slug: "uploads-other-org-event",
+        date: new Date("2026-10-02T12:00:00.000Z"),
+        organization_id: ORG_OTHER,
+      },
+      {
+        id: EVENT_ARCHIVED,
+        title: "Uploads Archived Event",
+        slug: "uploads-archived-event",
+        date: new Date("2026-10-03T12:00:00.000Z"),
+        organization_id: "org-uploads",
+        archived_at: new Date(),
+      },
+    ],
+  });
+  for (const userId of [superUser.id, adminUser.id, adminOtherUser.id]) {
     await prisma.userMfaMethod.create({
       data: {
         user_id: userId,
@@ -85,8 +133,13 @@ beforeAll(async () => {
     userId: adminUser.id,
     stage: SESSION_STAGE.FULL,
   });
+  const adminOtherSession = await createSession(prisma, {
+    userId: adminOtherUser.id,
+    stage: SESSION_STAGE.FULL,
+  });
   superCookie = `admitto_session=${superSession.rawToken}`;
   adminCookie = `admitto_session=${adminSession.rawToken}`;
+  adminOtherCookie = `admitto_session=${adminOtherSession.rawToken}`;
 });
 
 afterAll(async () => {
@@ -136,5 +189,72 @@ describe("POST /api/admin/uploads", () => {
       body: uploadForm(new Blob([new Uint8Array(8)], { type: "image/png" }), "logo.png"),
     });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("POST /api/admin/events/:eventId/branding-upload", () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+
+  it("accepts PNG for superadmin and scopes the URL under the event", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { url: string };
+    expect(body.url).toMatch(
+      new RegExp(`^/uploads/default/events/${EVENT_OWN}/[0-9a-f-]+\\.png$`),
+    );
+
+    const getRes = await app.request(body.url);
+    expect(getRes.status).toBe(200);
+  });
+
+  it("accepts PNG for the org admin who manages the event (not superadmin-only)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+      body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("returns 403 for an admin of a different organization", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: adminOtherCookie, ...sameOrigin },
+      body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 event_archived for an archived event", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_ARCHIVED}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+      body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("event_archived");
+  });
+
+  it("rejects unsupported file type with 415", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_OWN}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+      body: uploadForm(new Blob(["MZ"], { type: "application/octet-stream" }), "bad.exe"),
+    });
+    expect(res.status).toBe(415);
+  });
+
+  it("returns 404 for a non-existent event", async () => {
+    const res = await app.request("/api/admin/events/evt-uploads-missing/branding-upload", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm(new Blob([png], { type: "image/png" }), "logo.png"),
+    });
+    expect(res.status).toBe(404);
   });
 });
