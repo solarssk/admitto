@@ -27,6 +27,13 @@ import { scanResultFromCard } from "../checkin/cardScanResult.js";
 import { shouldAutoAdvance } from "../checkin/autoAdvance.js";
 import { canMutateCheckin } from "../checkin/connection.js";
 import { ScanFeedback, feedbackCopy } from "../checkin/ScanFeedback.js";
+import {
+  playScanFeedback,
+  scanSoundMuteIconClass,
+  scanSoundMuteLabel,
+  scanSoundMuteTitle,
+  useScanSoundMuted,
+} from "../checkin/scanSoundFeedback.js";
 import { AttendeeCard } from "../checkin/AttendeeCard.js";
 import { CameraOverlay } from "../checkin/CameraOverlay.js";
 import { CheckinConnectionBanner, CheckinConnectionLiveRegion } from "../checkin/ConnectionBanner.js";
@@ -112,6 +119,7 @@ export function CheckInPage({
   const { state: connectionState, reportApiError } = useConnectionState();
   const { addToast } = useToast();
   const canAct = canMutateCheckin(connectionState);
+  const [scanSoundMuted, toggleScanSoundMuted] = useScanSoundMuted();
   const isOperatorShell = onUseCameraChange === undefined;
   const isDesktop = useIsDesktop();
   const [operatorCamera, setOperatorCamera] = useState(() => !isDesktopViewport());
@@ -371,6 +379,10 @@ export function CheckInPage({
   // operator was just looking at would be actively misleading (bot review,
   // round 5).
   const applyResponse = (response: CheckInScanResponse, fromScan = false) => {
+    // Every settled outcome gets a beep/vibration, including the
+    // toast-diverted INVALID branch below — the operator needs the
+    // non-visual cue regardless of which surface renders the result.
+    playScanFeedback(response.status);
     // Keyed on the literal INVALID status, not a card-less response in
     // general: a PREVIEW response can legitimately arrive without an
     // embedded card too (packages/tickets/src/checkin.ts: `card: card ??
@@ -415,37 +427,35 @@ export function CheckInPage({
     setOverlayManualError(null);
   }, []);
 
-  // Direct-render-body refs (not reactive deps) so the transition effect below
-  // can read the current card/scanResult without re-running on every scan —
-  // only the show/hide transition itself (showInlineCamera changing) matters,
-  // not every update to what's currently displayed (bot review, round 5).
-  const cardRef = useRef(card);
-  cardRef.current = card;
-  const scanResultRef = useRef(scanResult);
-  scanResultRef.current = scanResult;
-
   // Header "Disable camera" toggles (AdminCheckInRoute, operator desktop) flip
   // the parent's camera state directly and don't go through closeInlineCamera's
   // onReset — clear any stale scan/card display here so a stopped-then-restarted
-  // camera doesn't overlay an old result (#381). Keyed on showInlineCamera, not
-  // raw cameraActive: a viewport resize/rotation crossing the desktop
-  // breakpoint (useIsDesktop's matchMedia listener) while cameraActive never
-  // changes is a real transition into/out of this view too — cameraActive
-  // alone missed that case (bot review, round 5).
-  const prevShowInlineCameraRef = useRef(showInlineCamera);
+  // camera doesn't overlay an old result (#381).
+  //
+  // showInlineCamera (desktop) and showMobileOverlay are two different
+  // presentation surfaces for the same card/scanResult state — a card looked
+  // up from the desktop scan bar, then carried straight into the mobile
+  // camera overlay on open (or the reverse on close), reads as the wrong
+  // person's result appearing in a surface that never scanned them (PO
+  // review). Clears unconditionally on entry, exit, AND a swap between the
+  // two surfaces — tracked as a 3-state "which surface is showing" value
+  // rather than a boolean, because showInlineCamera/showMobileOverlay
+  // partition cameraActive by isDesktop (cameraActive && isDesktop /
+  // cameraActive && !isDesktop), so their OR is always exactly cameraActive:
+  // a viewport resize/rotation crossing the desktop breakpoint while the
+  // camera stays on swaps which surface renders without cameraActive ever
+  // changing, and a boolean derived from either would miss it (code review).
+  type ActiveCameraSurface = "none" | "inline" | "overlay";
+  const activeCameraSurface: ActiveCameraSurface = showInlineCamera
+    ? "inline"
+    : showMobileOverlay
+      ? "overlay"
+      : "none";
+  const prevActiveCameraSurfaceRef = useRef(activeCameraSurface);
   useEffect(() => {
-    if (prevShowInlineCameraRef.current && !showInlineCamera) clearDisplayedResult();
-    // Symmetric case: a no-match/invalid result (no card) left showing from
-    // before the camera view appeared would otherwise carry straight into
-    // CkInlineCamera as a paused overlay with no reset action — the camera
-    // is scan-only and can only be unstuck by closing and reopening it
-    // (bot review). A pending card (PREVIEW/etc.) is left alone — it keeps
-    // the camera from rendering at all via showResultCard, same as today.
-    if (!prevShowInlineCameraRef.current && showInlineCamera && scanResultRef.current && !cardRef.current) {
-      clearDisplayedResult();
-    }
-    prevShowInlineCameraRef.current = showInlineCamera;
-  }, [showInlineCamera, clearDisplayedResult]);
+    if (prevActiveCameraSurfaceRef.current !== activeCameraSurface) clearDisplayedResult();
+    prevActiveCameraSurfaceRef.current = activeCameraSurface;
+  }, [activeCameraSurface, clearDisplayedResult]);
 
   /** User-initiated reset (Escape, Cancel button) — also clears the input and
    * cancels any pending wedge timer, since the user explicitly wants a clean slate. */
@@ -1094,6 +1104,16 @@ export function CheckInPage({
           >
             {cameraActive ? "Disable camera" : "Use camera"}
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            aria-pressed={scanSoundMuted}
+            aria-label={scanSoundMuteLabel(scanSoundMuted)}
+            title={scanSoundMuteTitle(scanSoundMuted)}
+            icon={<i className={scanSoundMuteIconClass(scanSoundMuted)} aria-hidden="true" />}
+            onClick={toggleScanSoundMuted}
+          />
         </div>
       )}
 
