@@ -64,14 +64,24 @@ async function main(): Promise<void> {
   const httpsCerts = isDevelopment && certDir !== undefined ? readHttpsCerts(certDir) : undefined;
   const useHttps = httpsCerts !== undefined;
 
+  // `@hono/node-server` binds to every interface (LAN-reachable) unless a
+  // hostname is given. In dev, that's only actually wanted while a local
+  // cert is present for phone-over-LAN camera testing — otherwise the dev
+  // server has no business being reachable from other devices on the
+  // network (PO review: safety). Production keeps the default (no
+  // hostname override) since it needs to accept traffic from the container
+  // network / reverse proxy, not just loopback.
+  const hostname = isDevelopment && !useHttps ? "localhost" : undefined;
+
   const options = httpsCerts
     ? {
         fetch: app.fetch,
         port,
+        hostname,
         createServer: createHttpsServer,
         serverOptions: httpsCerts,
       }
-    : { fetch: app.fetch, port };
+    : { fetch: app.fetch, port, hostname };
   serve(options, () => {
     console.log(`Admitto web running at ${useHttps ? "https" : "http"}://localhost:${port}`);
   });
