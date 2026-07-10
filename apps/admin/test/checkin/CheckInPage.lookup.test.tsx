@@ -133,6 +133,21 @@ describe("CheckInPage scan-bar lookup", () => {
     expect(addToast).not.toHaveBeenCalled();
   });
 
+  it("clicking Search (form submit, not Enter) routes the same way as Enter", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([]);
+
+    renderPage();
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "filip" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+    await waitFor(() => {
+      expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", "filip");
+      expect(addToast).toHaveBeenCalledWith("No attendees matched that search.", "warning");
+    });
+  });
+
   it("cancels a pending suggestion request on unmount", async () => {
     mockPageBootstrap();
     lookupCheckInAttendees.mockResolvedValue([annaHit]);
@@ -468,10 +483,14 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
 
     const input = await scanInput();
     const token = "QRTOKEN-NO-MATCH-AT-ALL-000";
+    // Burst-typed, no Enter — a definitive scan (hardware wedge or camera
+    // decode), not an explicit Enter/Search submit. An explicit submit now
+    // tries a name/email lookup as a fallback when the scan itself is
+    // invalid (round 6), which is a different, separately-tested path.
     for (let i = 1; i <= token.length; i++) {
       fireEvent.change(input, { target: { value: token.slice(0, i) } });
     }
-    fireEvent.keyDown(input, { key: "Enter" });
+    await new Promise((r) => setTimeout(r, 60)); // > WEDGE_DEBOUNCE_MS
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(
@@ -495,13 +514,15 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
     renderPage();
 
     // A no-match scan with the camera OFF — shows the standalone ScanFeedback
-    // card under the search bar, same as ever.
+    // card under the search bar, same as ever. Burst-typed, no Enter — a
+    // definitive scan; an explicit Enter/Search submit now falls back to a
+    // name/email lookup instead when the scan is invalid (round 6).
     const input = await scanInput();
     const token = "QRTOKEN-STALE-BEFORE-CAMERA-1";
     for (let i = 1; i <= token.length; i++) {
       fireEvent.change(input, { target: { value: token.slice(0, i) } });
     }
-    fireEvent.keyDown(input, { key: "Enter" });
+    await new Promise((r) => setTimeout(r, 60)); // > WEDGE_DEBOUNCE_MS
     await waitFor(() => {
       expect(
         screen.getByText("This code is not valid for this event. Check the QR or use manual lookup."),
@@ -552,11 +573,14 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
     // showInlineCameraRef only reflects the camera toggle — the camera itself
     // is hidden behind this card, but the scan bar above it stays live, so a
     // second scan (or a wedge device firing again) can still land here.
+    // Burst-typed, no Enter — a definitive scan; an explicit Enter/Search
+    // submit now falls back to a name/email lookup instead when the scan is
+    // invalid (round 6), which is a different, separately-tested path.
     const secondToken = "QRTOKEN-INVALID-SECOND-SCAN-2-PADPADPADPADP";
     for (let i = 1; i <= secondToken.length; i++) {
       fireEvent.change(input, { target: { value: secondToken.slice(0, i) } });
     }
-    fireEvent.keyDown(input, { key: "Enter" });
+    await new Promise((r) => setTimeout(r, 60)); // > WEDGE_DEBOUNCE_MS
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(

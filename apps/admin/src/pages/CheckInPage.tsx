@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useParams } from "react-router-dom";
 import { Button, Card, useToast } from "@admitto/ui";
-import { looksLikeInternalToken } from "@admitto/tickets";
 import {
   ApiError,
   fetchAttendeeCard,
@@ -122,6 +121,13 @@ export function CheckInPage({
   // instead of one tick later (bot review, round 5).
   const showInlineCameraRef = useRef(showInlineCamera);
   showInlineCameraRef.current = showInlineCamera;
+  // runScanImpl (declared before submitScanOrLookupImpl further down) needs
+  // to call it on a no-match fallback (see runScanImpl's fallbackToLookup
+  // param) — a ref sidesteps both the declaration-order problem and the
+  // stale-closure trap of listing it in runScanImpl's own deps array (same
+  // reasoning as showInlineCameraRef above). Assigned once submitScanOrLookupImpl
+  // itself is declared.
+  const submitScanOrLookupImplRef = useRef<((trimmed: string) => Promise<boolean>) | null>(null);
 
   const setCameraActive = useCallback(
     (open: boolean) => {
@@ -484,13 +490,31 @@ export function CheckInPage({
   // silently defeat the duplicate-scan guard, or leave stale text on screen
   // for the next physical scan's keystrokes to land on top of.
   const runScanImpl = useCallback(
-    async (scanned: string) => {
+    async (scanned: string, fallbackToLookup = false) => {
       if (!eventId) return;
       setBusy(true);
       setTransportError(null);
       try {
         const response = await runWithPending(() => submitCheckInScan(eventId, scanned, deviceId));
         if (!response) return;
+        if (fallbackToLookup && response.status === "INVALID") {
+          // An explicit submit (Enter/Search) that didn't resolve as a scan
+          // code — try it as a name/email search instead of reporting
+          // "invalid code". The server's resolver already recognizes every
+          // valid code shape (raw token, full ticket URL, agency QR
+          // payload/external UUID — resolve.ts), so a scan failure here
+          // means it genuinely isn't a code; the only other thing an
+          // operator explicitly submits is a manual search that happened to
+          // be long enough to attempt a scan first. Camera-decoded scans and
+          // the hands-free wedge auto-submit never set this — a QR a camera
+          // actually decoded, or a genuine hardware burst, isn't a name to
+          // fall back to (bot review, round 6 — the previous fix tried to
+          // recognize a token by its shape client-side, which by
+          // construction can't also recognize a ticket URL or an
+          // externally-issued agency ID).
+          await submitScanOrLookupImplRef.current?.(scanned);
+          return;
+        }
         applyResponse(response, true);
         maybeAutoAdvance(response);
         setAdmitOrigin("scan");
@@ -521,7 +545,7 @@ export function CheckInPage({
   // enqueues only the network round-trip so it still runs FIFO behind any
   // scan already in flight.
   const runScan = useCallback(
-    (raw: string): Promise<void> => {
+    (raw: string, fallbackToLookup = false): Promise<void> => {
       if (!eventId || !canAct) return Promise.resolve();
       const scanned = normalizeScannedInput(raw);
       if (!scanned) return Promise.resolve();
@@ -539,7 +563,7 @@ export function CheckInPage({
       suggestSeqRef.current += 1;
       setSuggestions([]);
 
-      return runExclusive(() => runScanImpl(scanned));
+      return runExclusive(() => runScanImpl(scanned, fallbackToLookup));
     },
     [canAct, eventId, focusScan, runExclusive, runScanImpl],
   );
@@ -684,6 +708,7 @@ export function CheckInPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- openLookupResultImpl is a plain component function (not useCallback); adding it would recreate this callback every render — to be refactored in #280
     [allowManualLookup, addToast, canAct, eventId, reportApiError, showMobileOverlay],
   );
+  submitScanOrLookupImplRef.current = submitScanOrLookupImpl;
 
   // Synchronous entry point, mirroring runScan above: a long buffer is
   // recognized and delegated to runScan (which does its own dedup/clear)
@@ -697,33 +722,30 @@ export function CheckInPage({
   // get auto-submitted as a corrupted, unmatchable scan payload (#277 review).
   // Shared routing logic for both submit entry points (main scan bar and the
   // mobile camera overlay's manual-entry field, called directly at each call
-  // site below — the two used to be separately-named wrappers distinguished
-  // by a `requireBurst` argument; once that argument was dropped they were
-  // byte-for-byte identical, so keeping two names invited them to silently
-  // re-diverge with no compiler signal (bot review, round 5)). An explicit Enter/Search-
-  // button submit is unconditionally an intentional "try this now" — unlike
-  // the silent, no-Enter auto-submit in handleBufferChange below, which still
-  // requires wedgeIsBurstRef (a real hardware scanner) since it fires with no
-  // user confirmation at all. Length alone decided this for a while (matching
-  // the suggestion dropdown, which also stops appearing past
-  // WEDGE_AUTO_SUBMIT_LEN) instead of additionally demanding proof the text
-  // arrived via a fast burst — fixed a pasted/typed token routing to a doomed
-  // name/email lookup instead of the scan it obviously was, but broke a
-  // genuinely long name/email search the same way (round 4): both are equally
-  // "long", so length alone can't tell them apart. `looksLikeInternalToken`
-  // (@admitto/tickets — the same shape check the server itself uses to
-  // recognize a raw token in resolve.ts) replaces the length check entirely:
-  // its own `{40,60}` bound is tighter than WEDGE_AUTO_SUBMIT_LEN and, being a
-  // positive base64url-shape match rather than a "no space/@" exclusion,
-  // doesn't misclassify a long single-word name/company as a token or admit
-  // unbounded-length pasted garbage as one (bot review, round 5).
+  // site below). An explicit Enter/Search-button submit is unconditionally
+  // an intentional "try this now" — unlike the silent, no-Enter auto-submit
+  // in handleBufferChange below, which still requires wedgeIsBurstRef (a
+  // real hardware scanner) since it fires with no user confirmation at all.
+  //
+  // A long value (>= WEDGE_AUTO_SUBMIT_LEN, matching the suggestion
+  // dropdown's own cutoff) is tried as a scan first; runScan's
+  // fallbackToLookup falls back to a name/email search if that comes back
+  // INVALID. Earlier attempts tried to recognize a token by its client-side
+  // shape up front (bare length, then length + no space/@, then a precise
+  // base64url regex) to decide scan-vs-lookup before ever asking the server —
+  // all three were incomplete, since the server's resolver also accepts a
+  // full ticket URL and an externally-issued agency QR payload/UUID, neither
+  // of which share the internal token's shape (resolve.ts; bot review, round
+  // 6). Trying the scan first delegates "is this a valid code" to the
+  // server, which already knows every valid shape, instead of the client
+  // re-guessing an incomplete subset of them.
   const submitOrLookup = useCallback(
     (query: string): Promise<boolean> => {
       const trimmed = query.trim();
       if (!trimmed) return Promise.resolve(false);
 
-      if (looksLikeInternalToken(trimmed)) {
-        void runScan(trimmed);
+      if (trimmed.length >= WEDGE_AUTO_SUBMIT_LEN) {
+        void runScan(trimmed, true);
         return Promise.resolve(true);
       }
 
