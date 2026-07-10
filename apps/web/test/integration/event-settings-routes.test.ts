@@ -462,6 +462,20 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(body.event.resolved_logo_url).toBe("https://cdn.example.com/org-logo.png");
   });
 
+  it("clears location to null when set to an empty string", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ location: "" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { event: { location: string | null } };
+    expect(body.event.location).toBeNull();
+
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.location).toBeNull();
+  });
+
   it("returns 400 for a non-URL logo_url and does not mutate", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
       method: "PATCH",

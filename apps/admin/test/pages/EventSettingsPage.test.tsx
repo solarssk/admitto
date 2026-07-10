@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
@@ -43,7 +43,12 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
-import { fetchEventSettings, uploadEventBrandingFile } from "../../src/api/client.js";
+import {
+  fetchEventSettings,
+  patchEvent,
+  unarchiveEvent,
+  uploadEventBrandingFile,
+} from "../../src/api/client.js";
 import { formatUtcDateTime } from "../../src/utils/event-dates.js";
 
 const activeEvent = {
@@ -212,6 +217,43 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByAltText("Event logo preview")).toBeTruthy();
   });
 
+  it("saves both branding fields after uploading, sending the full patch payload", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(uploadEventBrandingFile)
+      .mockResolvedValueOnce({ url: "/uploads/default/logo.png" })
+      .mockResolvedValueOnce({ url: "/uploads/default/header.png" });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: {
+        ...activeEvent,
+        logo_url: "/uploads/default/logo.png",
+        header_image_url: "/uploads/default/header.png",
+      },
+    });
+    renderSettings();
+    await waitFor(() => screen.getByRole("tab", { name: "Branding" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
+    await screen.findByText("Event logo");
+
+    const [logoInput, headerInput] = document.querySelectorAll('input[type="file"]');
+    fireEvent.change(logoInput!, {
+      target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
+    });
+    await waitFor(() => screen.getByAltText("Event logo preview"));
+    fireEvent.change(headerInput!, {
+      target: { files: [new File(["y"], "header.png", { type: "image/png" })] },
+    });
+    await waitFor(() => screen.getByAltText("Event header image preview"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        logo_url: "/uploads/default/logo.png",
+        header_image_url: "/uploads/default/header.png",
+      });
+    });
+  });
+
   it("disables branding upload zones when the event is archived", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(archivedEvent);
     renderSettings("/admin/events/evt-2/settings");
@@ -243,6 +285,26 @@ describe("EventSettingsPage tabs", () => {
     expect(await screen.findByRole("button", { name: /Archive event/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Export personal data/ })).toBeTruthy();
     expect(document.querySelector(".danger-zone-panel")).toBeTruthy();
+  });
+
+  it("unarchives the event from the Danger zone tab", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(archivedEvent);
+    vi.mocked(unarchiveEvent).mockResolvedValueOnce(undefined);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...archivedEvent, status: "active" });
+    renderSettings("/admin/events/evt-2/settings");
+    await waitFor(() => screen.getByRole("tab", { name: "Danger zone" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Unarchive event/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unarchive event" }));
+
+    await waitFor(() => {
+      expect(unarchiveEvent).toHaveBeenCalledWith("evt-2");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Event unarchived/);
+    });
   });
 
   it("keeps the Danger zone header title-only and shows the impact notice outside the panel", async () => {
