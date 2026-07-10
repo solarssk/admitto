@@ -342,14 +342,29 @@ export function EventSettingsPage() {
               <p className="field-hint">Shown everywhere - to attendees, on tickets, and in emails.</p>
             </div>
 
-            <div className="settings-field-group">
-              <DatePicker
-                label="Date"
-                required
-                value={form.date}
-                disabled={isArchived || saving}
-                onChange={(next) => setForm({ ...form, date: next })}
-              />
+            <div className="settings-field-row">
+              <div className="settings-field-group">
+                <DatePicker
+                  label="Date"
+                  required
+                  value={form.date}
+                  disabled={isArchived || saving}
+                  onChange={(next) => setForm({ ...form, date: next })}
+                />
+              </div>
+
+              <div className="settings-field-group">
+                <Input
+                  label="Capacity"
+                  type="number"
+                  min={1}
+                  value={form.capacity}
+                  disabled={isArchived || saving}
+                  placeholder="500"
+                  onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                />
+                <p className="field-hint">Leave blank for unlimited.</p>
+              </div>
             </div>
 
             <div className="settings-field-group event-settings-timezone">
@@ -376,19 +391,6 @@ export function EventSettingsPage() {
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
               />
               <p className="field-hint">Optional. Shown on tickets and calendar invites.</p>
-            </div>
-
-            <div className="settings-field-group">
-              <Input
-                label="Capacity"
-                type="number"
-                min={1}
-                value={form.capacity}
-                disabled={isArchived || saving}
-                placeholder="500"
-                onChange={(e) => setForm({ ...form, capacity: e.target.value })}
-              />
-              <p className="field-hint">Leave blank for unlimited.</p>
             </div>
 
             <div className="settings-field-group slug-field">

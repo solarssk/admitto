@@ -85,6 +85,20 @@
   gap: var(--space-1);
 }
 
+/* Basic information: Date and Capacity are both short fields — pair them into one row
+   on wider screens instead of each taking a full-width line of mostly empty space. */
+.settings-field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 640px) {
+  .settings-field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .settings-field-group > p {
   margin: 0;
 }
