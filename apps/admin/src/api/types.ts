@@ -51,8 +51,18 @@ export interface EventSettingsDto {
   location: string | null;
   capacity: number | null;
   status: "active" | "archived";
+  /** Null unless status is "archived". */
+  archived_at: string | null;
+  /** When the event was first created. */
+  created_at: string;
   organization_name: string;
   active_items: Array<{ id: string; name: string; enabled: boolean }>;
+  /** Event's own branding overrides — null means "inherited from organization". */
+  logo_url: string | null;
+  header_image_url: string | null;
+  /** Effective branding actually used today (event value, else organization's). */
+  resolved_logo_url: string | null;
+  resolved_header_image_url: string | null;
 }
 
 export interface BrandingThemeDto {

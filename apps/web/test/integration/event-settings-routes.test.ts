@@ -172,7 +172,13 @@ afterEach(async () => {
       timezone: "UTC",
       capacity: null,
       archived_at: null,
+      logo_url: null,
+      header_image_url: null,
     },
+  });
+  await prisma.organization.update({
+    where: { id: ORG_SET },
+    data: { logo_url: null, header_image_url: null },
   });
 });
 
@@ -214,8 +220,14 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       location: string | null;
       capacity: number | null;
       status: string;
+      archived_at: string | null;
+      created_at: string;
       organization_name: string;
       active_items: { id: string; name: string; enabled: boolean }[];
+      logo_url: string | null;
+      header_image_url: string | null;
+      resolved_logo_url: string | null;
+      resolved_header_image_url: string | null;
     };
     expect(body.id).toBe(EVENT_SET);
     expect(body.title).toBe("Settings Event");
@@ -224,8 +236,74 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.timezone).toBe("UTC");
     expect(body.capacity).toBeNull();
     expect(body.status).toBe("active");
+    expect(body.archived_at).toBeNull();
+    expect(new Date(body.created_at).toString()).not.toBe("Invalid Date");
     expect(body.organization_name).toBe("Settings Org");
     expect(body.active_items.some((i) => i.id === ITEM_SET && i.name === "Badge")).toBe(true);
+    expect(body.logo_url).toBeNull();
+    expect(body.header_image_url).toBeNull();
+    expect(body.resolved_logo_url).toBeNull();
+    expect(body.resolved_header_image_url).toBeNull();
+  });
+
+  it("returns archived_at for an archived event", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_ARCHIVED}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      status: string;
+      archived_at: string | null;
+    };
+    expect(body.status).toBe("archived");
+    expect(body.archived_at).not.toBeNull();
+  });
+
+  it("resolves branding from the organization when the event has no override", async () => {
+    await prisma.organization.update({
+      where: { id: ORG_SET },
+      data: {
+        logo_url: "https://cdn.example.com/org-logo.png",
+        header_image_url: "https://cdn.example.com/org-header.png",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      logo_url: string | null;
+      header_image_url: string | null;
+      resolved_logo_url: string | null;
+      resolved_header_image_url: string | null;
+    };
+    expect(body.logo_url).toBeNull();
+    expect(body.header_image_url).toBeNull();
+    expect(body.resolved_logo_url).toBe("https://cdn.example.com/org-logo.png");
+    expect(body.resolved_header_image_url).toBe("https://cdn.example.com/org-header.png");
+  });
+
+  it("prefers the event's own branding over the organization's", async () => {
+    await prisma.organization.update({
+      where: { id: ORG_SET },
+      data: { logo_url: "https://cdn.example.com/org-logo.png" },
+    });
+    await prisma.event.update({
+      where: { id: EVENT_SET },
+      data: { logo_url: "https://cdn.example.com/event-logo.png" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      logo_url: string | null;
+      resolved_logo_url: string | null;
+    };
+    expect(body.logo_url).toBe("https://cdn.example.com/event-logo.png");
+    expect(body.resolved_logo_url).toBe("https://cdn.example.com/event-logo.png");
   });
 
   it("returns 404 for non-existent event (superadmin)", async () => {
@@ -332,6 +410,97 @@ describe("PATCH /api/admin/events/:eventId", () => {
 
     const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
     expect(row.timezone).toBe(before.timezone);
+  });
+
+  it("updates logo_url and header_image_url, writing AdminAuditLog", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        logo_url: "https://cdn.example.com/event-logo.png",
+        header_image_url: "https://cdn.example.com/event-header.png",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      event: { logo_url: string | null; header_image_url: string | null };
+    };
+    expect(body.event.logo_url).toBe("https://cdn.example.com/event-logo.png");
+    expect(body.event.header_image_url).toBe("https://cdn.example.com/event-header.png");
+
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.logo_url).toBe("https://cdn.example.com/event-logo.png");
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_SET, action_type: "event_updated" },
+    });
+    const meta = audit!.metadata as { fields?: string[] };
+    expect(meta.fields).toContain("logo_url");
+    expect(meta.fields).toContain("header_image_url");
+  });
+
+  it("clears logo_url back to inherited branding when set to null", async () => {
+    await prisma.organization.update({
+      where: { id: ORG_SET },
+      data: { logo_url: "https://cdn.example.com/org-logo.png" },
+    });
+    await prisma.event.update({
+      where: { id: EVENT_SET },
+      data: { logo_url: "https://cdn.example.com/event-logo.png" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ logo_url: null }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      event: { logo_url: string | null; resolved_logo_url: string | null };
+    };
+    expect(body.event.logo_url).toBeNull();
+    expect(body.event.resolved_logo_url).toBe("https://cdn.example.com/org-logo.png");
+  });
+
+  it("clears location to null when set to an empty string", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ location: "" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { event: { location: string | null } };
+    expect(body.event.location).toBeNull();
+
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.location).toBeNull();
+  });
+
+  it("returns 400 for a non-URL logo_url and does not mutate", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ logo_url: "not-a-url" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/http:\/\/ or https:\/\//);
+
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.logo_url).toBeNull();
+  });
+
+  it("returns 403 event_archived when patching branding on an archived event", async () => {
+    await prisma.event.update({ where: { id: EVENT_SET }, data: { archived_at: new Date() } });
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ logo_url: "https://cdn.example.com/event-logo.png" }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("event_archived");
   });
 
   it("updates capacity and clears capacity with null", async () => {

@@ -92,8 +92,14 @@ const eventSettings = {
   location: "Hall A",
   capacity: 100,
   status: "active" as const,
+  archived_at: null as string | null,
+  created_at: "2026-01-01T00:00:00.000Z",
   organization_name: "Org",
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
+  logo_url: null as string | null,
+  header_image_url: null as string | null,
+  resolved_logo_url: null as string | null,
+  resolved_header_image_url: null as string | null,
 };
 
 const sampleItem = {
@@ -202,6 +208,10 @@ describe("EventSettingsPage operator errors", () => {
     vi.mocked(archiveEvent).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderSettings();
     await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Danger zone" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
+    await waitFor(() => {
       expect(screen.getAllByRole("button", { name: "Archive event" }).length).toBeGreaterThan(0);
     });
     fireEvent.click(screen.getAllByRole("button", { name: "Archive event" })[0]!);
@@ -217,9 +227,13 @@ describe("EventSettingsPage operator errors", () => {
     vi.mocked(exportEventPii).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderSettings();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export PII" })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: "Danger zone" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export PII" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export personal data" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Export personal data" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
     });

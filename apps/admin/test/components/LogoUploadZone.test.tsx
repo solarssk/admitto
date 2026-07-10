@@ -37,7 +37,7 @@ describe("LogoUploadZone", () => {
       />,
     );
     expect(screen.getByAltText("Organisation logo preview")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Remove logo" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove organisation logo" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Replace image" })).toBeTruthy();
     expect(screen.queryByText(/drop logo here/i)).toBeNull();
   });
@@ -55,7 +55,7 @@ describe("LogoUploadZone", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Remove logo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove organisation logo" }));
     expect(onChange).toHaveBeenCalledWith("");
   });
 
