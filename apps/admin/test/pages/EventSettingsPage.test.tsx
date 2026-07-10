@@ -281,7 +281,11 @@ describe("EventSettingsPage tabs", () => {
     });
     await waitFor(() => screen.getByAltText("Event header image preview"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    // The alt-text preview and the Save button's label flip in separate React commits
+    // (the button label only updates once LogoUploadZone's onUploadingChange effect fires
+    // one tick later) — wait for the button itself rather than assuming it's already there.
+    const saveButton = await screen.findByRole("button", { name: "Save changes" });
+    fireEvent.click(saveButton);
 
     await waitFor(() => {
       expect(patchEvent).toHaveBeenCalledWith("evt-1", {
