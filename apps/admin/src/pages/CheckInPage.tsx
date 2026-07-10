@@ -362,7 +362,18 @@ export function CheckInPage({
   // operator was just looking at would be actively misleading (bot review,
   // round 5).
   const applyResponse = (response: CheckInScanResponse, fromScan = false) => {
-    if (showInlineCameraRef.current && fromScan && !response.card) {
+    // Keyed on the literal INVALID status, not a card-less response in
+    // general: a PREVIEW response can legitimately arrive without an
+    // embedded card too (packages/tickets/src/checkin.ts: `card: card ??
+    // undefined`, when getAttendeeCard's own read comes back empty) — the
+    // code below already handles that by fetching the card separately.
+    // Widening this to `!response.card` (round 5's own "consistency"
+    // change) intercepted that legitimate case: it showed the invalid-code
+    // toast and wiped scanResult for a real, pending scan, and since
+    // showResultCard requires both card and scanResult, the confirm card
+    // that fetch was about to populate could never appear (bot review,
+    // round 8).
+    if (showInlineCameraRef.current && fromScan && response.status === "INVALID") {
       // Desktop camera is scan-only (unlike the mobile overlay, which doubles
       // as the operator's check-in/item-issuing surface) — no result ever
       // renders on top of it. A no-match scan reports the same way manual
@@ -879,14 +890,6 @@ export function CheckInPage({
   const handleBufferChange = (value: string, eventTimestamp: number) => {
     const justPasted = wedgeJustPastedRef.current;
     wedgeJustPastedRef.current = false;
-
-    if (value.includes("\r") || value.includes("\n")) {
-      const cleaned = value.replace(/[\r\n]+/g, "").trim();
-      if (justPasted) wedgeIsBurstRef.current = false;
-      setBuffer("");
-      if (cleaned && canAct) void submitOrLookup(cleaned);
-      return;
-    }
 
     // Use the DOM event's own timestamp, not Date.now() at handler-execution
     // time: if the main thread is busy (e.g. a previous scan's response is

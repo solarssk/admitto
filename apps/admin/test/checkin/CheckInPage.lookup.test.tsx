@@ -633,4 +633,46 @@ describe("CheckInPage operator desktop camera toggle (#381)", () => {
       "warning",
     );
   });
+
+  it("shows the confirm card for a PREVIEW scan with no embedded card while the camera is on, not the invalid-code toast (bot review, round 8)", async () => {
+    // packages/tickets/src/checkin.ts can legitimately return PREVIEW with
+    // `card: undefined` (getAttendeeCard's own read came back empty) — the
+    // client already handles this by fetching the card separately below.
+    // applyResponse must not treat this as a no-match scan just because
+    // response.card is momentarily absent.
+    mockPageBootstrap();
+    submitCheckInScan.mockResolvedValueOnce({
+      status: "PREVIEW",
+      confirmed: false,
+      attendeeId: "att-1",
+    });
+    fetchAttendeeCard.mockResolvedValueOnce({
+      id: "att-1",
+      name: "Anna Alpha",
+      company: null,
+      department: null,
+      ticket_type: "vip",
+      check_in_status: "not_admitted" as const,
+      admitted_at: null,
+      items: [],
+      notes: [],
+      warnings: [] as string[],
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Use camera" }));
+
+    const input = await scanInput();
+    const token = "QRTOKEN-PREVIEW-NO-CARD-YET-000000000000000";
+    for (let i = 1; i <= token.length; i++) {
+      fireEvent.change(input, { target: { value: token.slice(0, i) } });
+    }
+    await new Promise((r) => setTimeout(r, 60)); // > WEDGE_DEBOUNCE_MS
+
+    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    expect(addToast).not.toHaveBeenCalledWith(
+      "This code is not valid for this event. Check the QR or use manual lookup.",
+      "warning",
+    );
+  });
 });
