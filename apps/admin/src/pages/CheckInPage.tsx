@@ -421,37 +421,34 @@ export function CheckInPage({
     setOverlayManualError(null);
   }, []);
 
-  // Direct-render-body refs (not reactive deps) so the transition effect below
-  // can read the current card/scanResult without re-running on every scan —
-  // only the show/hide transition itself (showInlineCamera changing) matters,
-  // not every update to what's currently displayed (bot review, round 5).
-  const cardRef = useRef(card);
-  cardRef.current = card;
-  const scanResultRef = useRef(scanResult);
-  scanResultRef.current = scanResult;
-
   // Header "Disable camera" toggles (AdminCheckInRoute, operator desktop) flip
   // the parent's camera state directly and don't go through closeInlineCamera's
   // onReset — clear any stale scan/card display here so a stopped-then-restarted
-  // camera doesn't overlay an old result (#381). Keyed on showInlineCamera, not
-  // raw cameraActive: a viewport resize/rotation crossing the desktop
-  // breakpoint (useIsDesktop's matchMedia listener) while cameraActive never
-  // changes is a real transition into/out of this view too — cameraActive
-  // alone missed that case (bot review, round 5).
-  const prevShowInlineCameraRef = useRef(showInlineCamera);
+  // camera doesn't overlay an old result (#381). Keyed on cameraViewActive (the
+  // combination of both presentation surfaces below), not raw cameraActive: a
+  // viewport resize/rotation crossing the desktop breakpoint (useIsDesktop's
+  // matchMedia listener) while cameraActive never changes is a real transition
+  // into/out of this view too — cameraActive alone missed that case (bot
+  // review, round 5).
+  //
+  // showInlineCamera (desktop) and showMobileOverlay are two different
+  // presentation surfaces for the same card/scanResult state — a card looked
+  // up from the desktop scan bar, then carried straight into the mobile
+  // camera overlay on open (or the reverse on close), reads as the wrong
+  // person's result appearing in a surface that never scanned them (PO
+  // review). Clears unconditionally on BOTH the entry and exit transition —
+  // opening or closing the camera is always a fresh start, whether or not a
+  // real card (not just an invalid/no-match leftover) was showing; an
+  // earlier version of this effect preserved a pending card across the
+  // entry transition specifically, but that reads as the same "wrong
+  // person's result" carryover the exit case already guards against (PO
+  // review).
+  const cameraViewActive = showInlineCamera || showMobileOverlay;
+  const prevCameraViewActiveRef = useRef(cameraViewActive);
   useEffect(() => {
-    if (prevShowInlineCameraRef.current && !showInlineCamera) clearDisplayedResult();
-    // Symmetric case: a no-match/invalid result (no card) left showing from
-    // before the camera view appeared would otherwise carry straight into
-    // CkInlineCamera as a paused overlay with no reset action — the camera
-    // is scan-only and can only be unstuck by closing and reopening it
-    // (bot review). A pending card (PREVIEW/etc.) is left alone — it keeps
-    // the camera from rendering at all via showResultCard, same as today.
-    if (!prevShowInlineCameraRef.current && showInlineCamera && scanResultRef.current && !cardRef.current) {
-      clearDisplayedResult();
-    }
-    prevShowInlineCameraRef.current = showInlineCamera;
-  }, [showInlineCamera, clearDisplayedResult]);
+    if (prevCameraViewActiveRef.current !== cameraViewActive) clearDisplayedResult();
+    prevCameraViewActiveRef.current = cameraViewActive;
+  }, [cameraViewActive, clearDisplayedResult]);
 
   /** User-initiated reset (Escape, Cancel button) — also clears the input and
    * cancels any pending wedge timer, since the user explicitly wants a clean slate. */
