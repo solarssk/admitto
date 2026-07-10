@@ -2111,6 +2111,65 @@ describe("Attendees v2 — RSVP and manual create", () => {
     }
   });
 
+  it("PATCH status revoked clears the admission but does not reset already handed-out items (bot review, #457)", async () => {
+    // revokeCheckInMutation is shared with the explicit "Revoke check-in"
+    // action, which DOES blanket-reset items (PO's ask). This path only
+    // revokes the *pass* — it must not wipe a hand-out record that's
+    // genuinely accurate, or restoring the pass later would make the item
+    // card falsely say a gift bag/headset still needs to be given out.
+    const ATT_PASS_REVOKE_ITEMS = "att-admin-pass-revoke-keeps-items";
+    const token = generateToken();
+    await prisma.attendee.upsert({
+      where: { id: ATT_PASS_REVOKE_ITEMS },
+      create: {
+        id: ATT_PASS_REVOKE_ITEMS,
+        event_id: EVENT_A,
+        email: "pass-revoke-keeps-items@example.com",
+        name: "Pass Revoke Keeps Items",
+        token_hash: hashToken(token),
+        admitted_at: new Date("2026-10-01T10:00:00Z"),
+      },
+      update: { status: "registered", admitted_at: new Date("2026-10-01T10:00:00Z"), admitted_by: null },
+    });
+    await getAttendeeCard(EVENT_A, ATT_PASS_REVOKE_ITEMS, prisma);
+    const giftbag = await prisma.eventItem.findFirstOrThrow({ where: { event_id: EVENT_A, key: "giftbag" } });
+    await prisma.attendeeItemState.update({
+      where: { attendee_id_event_item_id: { attendee_id: ATT_PASS_REVOKE_ITEMS, event_item_id: giftbag.id } },
+      data: { state: "issued" },
+    });
+    try {
+      const getRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_PASS_REVOKE_ITEMS}`, {
+        headers: { Cookie: adminCookie },
+      });
+      const detail = (await getRes.json()) as { updated_at: string };
+
+      const patchRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_PASS_REVOKE_ITEMS}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "revoked", expected_updated_at: detail.updated_at }),
+      });
+      expect(patchRes.status).toBe(200);
+
+      const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_PASS_REVOKE_ITEMS } });
+      expect(row.admitted_at).toBeNull();
+
+      const giftbagAfter = await prisma.attendeeItemState.findFirst({
+        where: { attendee_id: ATT_PASS_REVOKE_ITEMS, event_item_id: giftbag.id },
+      });
+      expect(giftbagAfter?.state).toBe("issued");
+
+      const revokedLogs = await prisma.attendeeActionLog.count({
+        where: { attendee_id: ATT_PASS_REVOKE_ITEMS, action_type: "item_revoked" },
+      });
+      expect(revokedLogs).toBe(0);
+    } finally {
+      await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE_ITEMS } });
+      await prisma.attendeeItemState.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE_ITEMS } });
+      await prisma.checkIn.deleteMany({ where: { attendee_id: ATT_PASS_REVOKE_ITEMS } });
+      await prisma.attendee.delete({ where: { id: ATT_PASS_REVOKE_ITEMS } });
+    }
+  });
+
   it("PATCH restore returns 409 event_full when capacity is full", async () => {
     await resetEventACustomFields();
     const current = await countActiveEventAAttendees();
