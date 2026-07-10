@@ -12,6 +12,12 @@ import { CkRecentScans } from "./CkRecentScans.js";
 import { CameraOverlayManualSearch } from "./CameraOverlayManualSearch.js";
 import { CameraOverlayItemIssuing } from "./CameraOverlayItemIssuing.js";
 import { BrandMark } from "../layouts/BrandMark.js";
+import {
+  scanSoundMuteIconClass,
+  scanSoundMuteLabel,
+  scanSoundMuteTitle,
+  useScanSoundMuted,
+} from "./scanSoundFeedback.js";
 
 type CameraOverlayProps = {
   open: boolean;
@@ -73,6 +79,7 @@ export function CameraOverlay({
   showUndo,
   transportError,
 }: CameraOverlayProps) {
+  const [scanSoundMuted, toggleScanSoundMuted] = useScanSoundMuted();
   const [manualMode, setManualMode] = useState(false);
 
   useEffect(() => {
@@ -181,6 +188,16 @@ export function CameraOverlay({
           <span>Check-in</span>
         </div>
         <span className="ck-overlay__admitted">{admittedCount} checked in</span>
+        <button
+          type="button"
+          className="ck-overlay__mute"
+          aria-pressed={scanSoundMuted}
+          aria-label={scanSoundMuteLabel(scanSoundMuted)}
+          title={scanSoundMuteTitle(scanSoundMuted)}
+          onClick={toggleScanSoundMuted}
+        >
+          <i className={scanSoundMuteIconClass(scanSoundMuted)} aria-hidden="true" />
+        </button>
         <button
           type="button"
           className="ck-overlay__close"

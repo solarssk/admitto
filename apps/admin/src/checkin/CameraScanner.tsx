@@ -32,7 +32,33 @@ export function CameraScanner({ enabled, wedgeActive, onScan }: CameraScannerPro
         if (stopped) return;
 
         const reader = new BrowserQRCodeReader();
-        const nextControls = await reader.decodeFromVideoDevice(undefined, video, (result) => {
+        // decodeFromVideoDevice(undefined, ...) leaves device selection and
+        // focus entirely to the browser's defaults, which on some phones
+        // (e.g. iPhone's default rear lens) hunts poorly at the close range
+        // a handheld QR code is usually scanned at. `focusMode: "continuous"`
+        // is a real MediaTrackConstraintSet property (Image Capture API
+        // extensions) but isn't in TS's DOM lib yet, hence the cast; it's an
+        // `advanced` constraint, so unsupported engines (Safari/iOS has no
+        // focus-mode control via getUserMedia at all) just ignore it rather
+        // than failing the whole request — no regression there, only a
+        // possible improvement on browsers that do support it (PO review:
+        // still not perfect on iPhone, a platform/API limitation, not
+        // something a constraint can force).
+        //
+        // This same component also renders the desktop inline camera, whose
+        // laptop webcams commonly report no environment-facing capability at
+        // all — a bare `facingMode` string is a required/exact match per
+        // spec (unlike an `advanced` entry), so it must be wrapped as
+        // `{ ideal: ... }` or a desktop-only camera throws
+        // OverconstrainedError and check-in's camera breaks entirely there
+        // (code review).
+        const constraints: MediaStreamConstraints = {
+          video: {
+            facingMode: { ideal: "environment" },
+            advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
+          },
+        };
+        const nextControls = await reader.decodeFromConstraints(constraints, video, (result) => {
           if (!result || stopped) return;
 
           const text = result.getText();
