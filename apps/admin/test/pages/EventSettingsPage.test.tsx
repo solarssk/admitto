@@ -176,6 +176,42 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
+  it("keeps both uploads when a logo upload and a header-image upload race each other", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    let resolveLogo!: (result: { url: string }) => void;
+    let resolveHeader!: (result: { url: string }) => void;
+    vi.mocked(uploadEventBrandingFile)
+      .mockReturnValueOnce(new Promise((resolve) => (resolveLogo = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (resolveHeader = resolve)));
+    renderSettings();
+    await waitFor(() => screen.getByRole("tab", { name: "Branding" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
+    await screen.findByText("Event logo");
+
+    const [logoInput, headerInput] = document.querySelectorAll('input[type="file"]');
+    // Start both uploads before either resolves — both onChange closures capture the same
+    // pre-upload form snapshot, which is exactly what makes a non-functional setForm racy.
+    fireEvent.change(logoInput!, {
+      target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
+    });
+    fireEvent.change(headerInput!, {
+      target: { files: [new File(["y"], "header.png", { type: "image/png" })] },
+    });
+
+    resolveLogo({ url: "/uploads/default/logo.png" });
+    await waitFor(() => {
+      expect(screen.getByAltText("Event logo preview")).toBeTruthy();
+    });
+
+    resolveHeader({ url: "/uploads/default/header.png" });
+    await waitFor(() => {
+      expect(screen.getByAltText("Event header image preview")).toBeTruthy();
+    });
+
+    // The header upload completing later must not revert the logo that already landed.
+    expect(screen.getByAltText("Event logo preview")).toBeTruthy();
+  });
+
   it("disables branding upload zones when the event is archived", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(archivedEvent);
     renderSettings("/admin/events/evt-2/settings");

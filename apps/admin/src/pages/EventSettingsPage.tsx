@@ -471,7 +471,7 @@ export function EventSettingsPage() {
                 hint="PNG, JPG, WebP · max 2 MB · leave blank to inherit the organization logo"
                 value={form.logoUrl}
                 disabled={isArchived || saving}
-                onChange={(url) => setForm({ ...form, logoUrl: url })}
+                onChange={(url) => setForm((prev) => prev && { ...prev, logoUrl: url })}
                 uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
               />
             </div>
@@ -481,7 +481,7 @@ export function EventSettingsPage() {
                 hint="PNG, JPG, WebP · max 2 MB · wide banner, recommended 1200×300 px"
                 value={form.headerImageUrl}
                 disabled={isArchived || saving}
-                onChange={(url) => setForm({ ...form, headerImageUrl: url })}
+                onChange={(url) => setForm((prev) => prev && { ...prev, headerImageUrl: url })}
                 uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
               />
             </div>
