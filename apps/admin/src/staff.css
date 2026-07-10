@@ -1125,13 +1125,18 @@
   color: rgba(255, 255, 255, 0.75);
 }
 
-.ck-overlay__close {
+.ck-overlay__close,
+.ck-overlay__mute {
   background: none;
   border: none;
   color: inherit;
   font-size: 1.25rem;
   cursor: pointer;
   padding: 4px;
+}
+
+.ck-overlay__mute[aria-pressed="true"] {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 /* Transport/item-action errors (handleApiFailure) — rendered inside the

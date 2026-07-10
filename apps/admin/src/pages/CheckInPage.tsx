@@ -27,6 +27,7 @@ import { scanResultFromCard } from "../checkin/cardScanResult.js";
 import { shouldAutoAdvance } from "../checkin/autoAdvance.js";
 import { canMutateCheckin } from "../checkin/connection.js";
 import { ScanFeedback, feedbackCopy } from "../checkin/ScanFeedback.js";
+import { playScanFeedback, useScanSoundMuted } from "../checkin/scanSoundFeedback.js";
 import { AttendeeCard } from "../checkin/AttendeeCard.js";
 import { CameraOverlay } from "../checkin/CameraOverlay.js";
 import { CheckinConnectionBanner, CheckinConnectionLiveRegion } from "../checkin/ConnectionBanner.js";
@@ -112,6 +113,7 @@ export function CheckInPage({
   const { state: connectionState, reportApiError } = useConnectionState();
   const { addToast } = useToast();
   const canAct = canMutateCheckin(connectionState);
+  const [scanSoundMuted, toggleScanSoundMuted] = useScanSoundMuted();
   const isOperatorShell = onUseCameraChange === undefined;
   const isDesktop = useIsDesktop();
   const [operatorCamera, setOperatorCamera] = useState(() => !isDesktopViewport());
@@ -371,6 +373,10 @@ export function CheckInPage({
   // operator was just looking at would be actively misleading (bot review,
   // round 5).
   const applyResponse = (response: CheckInScanResponse, fromScan = false) => {
+    // Every settled outcome gets a beep/vibration, including the
+    // toast-diverted INVALID branch below — the operator needs the
+    // non-visual cue regardless of which surface renders the result.
+    playScanFeedback(response.status);
     // Keyed on the literal INVALID status, not a card-less response in
     // general: a PREVIEW response can legitimately arrive without an
     // embedded card too (packages/tickets/src/checkin.ts: `card: card ??
@@ -1094,6 +1100,15 @@ export function CheckInPage({
           >
             {cameraActive ? "Disable camera" : "Use camera"}
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            aria-pressed={scanSoundMuted}
+            aria-label={scanSoundMuted ? "Unmute scan sound" : "Mute scan sound"}
+            icon={<i className={`ti ti-volume-${scanSoundMuted ? "off" : "2"}`} aria-hidden="true" />}
+            onClick={toggleScanSoundMuted}
+          />
         </div>
       )}
 
