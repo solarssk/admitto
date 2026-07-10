@@ -7,6 +7,28 @@ import { createApp } from "./app.js";
 import { validateCfAccessBootConfig } from "./config.js";
 import { devConsoleExportSink, warnExportOnlyProductionEnv } from "./dev-export-sink.js";
 
+type HttpsServerOptions = { cert: Buffer; key: Buffer };
+
+/** Reads the mkcert cert/key pair for dev HTTPS. Corrupted/unreadable files
+ * (a truncated or hand-edited cert, say) fall back to plain HTTP with a
+ * warning instead of crashing server startup entirely (code review). */
+function readHttpsCerts(certDir: string): HttpsServerOptions | undefined {
+  try {
+    return {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from a fixed relative location, not user input
+      cert: readFileSync(`${certDir}cert.pem`),
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from a fixed relative location, not user input
+      key: readFileSync(`${certDir}key.pem`),
+    };
+  } catch (err) {
+    console.warn(
+      `Ignoring local dev cert at ${certDir} (unreadable) — falling back to HTTP:`,
+      err instanceof Error ? err.message : err,
+    );
+    return undefined;
+  }
+}
+
 /** Boot the Admitto web server; wires a dev-only export_only sink when NODE_ENV is development. */
 async function main(): Promise<void> {
   await validateCfAccessBootConfig(prisma);
@@ -39,22 +61,17 @@ async function main(): Promise<void> {
       // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from a fixed relative location, not user input
       existsSync(`${dir}cert.pem`) && existsSync(`${dir}key.pem`),
   );
-  const useHttps = isDevelopment && certDir !== undefined;
+  const httpsCerts = isDevelopment && certDir !== undefined ? readHttpsCerts(certDir) : undefined;
+  const useHttps = httpsCerts !== undefined;
 
-  const options =
-    useHttps && certDir !== undefined
-      ? {
-          fetch: app.fetch,
-          port,
-          createServer: createHttpsServer,
-          serverOptions: {
-            // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from a fixed relative location, not user input
-            cert: readFileSync(`${certDir}cert.pem`),
-            // eslint-disable-next-line security/detect-non-literal-fs-filename -- path joined from a fixed relative location, not user input
-            key: readFileSync(`${certDir}key.pem`),
-          },
-        }
-      : { fetch: app.fetch, port };
+  const options = httpsCerts
+    ? {
+        fetch: app.fetch,
+        port,
+        createServer: createHttpsServer,
+        serverOptions: httpsCerts,
+      }
+    : { fetch: app.fetch, port };
   serve(options, () => {
     console.log(`Admitto web running at ${useHttps ? "https" : "http"}://localhost:${port}`);
   });
