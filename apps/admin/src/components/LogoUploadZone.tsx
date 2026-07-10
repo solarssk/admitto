@@ -119,7 +119,8 @@ export function LogoUploadZone({
           if (!showPreview) openFilePicker();
         }}
         role={showPreview ? undefined : "button"}
-        tabIndex={showPreview ? undefined : 0}
+        tabIndex={showPreview || disabled ? undefined : 0}
+        aria-disabled={disabled || undefined}
         onKeyDown={(e) => {
           if (!showPreview && (e.key === "Enter" || e.key === " ")) {
             e.preventDefault();

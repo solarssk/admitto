@@ -440,6 +440,10 @@ describe("PATCH /api/admin/events/:eventId", () => {
   });
 
   it("clears logo_url back to inherited branding when set to null", async () => {
+    await prisma.organization.update({
+      where: { id: ORG_SET },
+      data: { logo_url: "https://cdn.example.com/org-logo.png" },
+    });
     await prisma.event.update({
       where: { id: EVENT_SET },
       data: { logo_url: "https://cdn.example.com/event-logo.png" },
@@ -451,8 +455,11 @@ describe("PATCH /api/admin/events/:eventId", () => {
       body: JSON.stringify({ logo_url: null }),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { event: { logo_url: string | null } };
+    const body = (await res.json()) as {
+      event: { logo_url: string | null; resolved_logo_url: string | null };
+    };
     expect(body.event.logo_url).toBeNull();
+    expect(body.event.resolved_logo_url).toBe("https://cdn.example.com/org-logo.png");
   });
 
   it("returns 400 for a non-URL logo_url and does not mutate", async () => {

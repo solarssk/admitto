@@ -92,9 +92,14 @@ const eventSettings = {
   location: "Hall A",
   capacity: 100,
   status: "active" as const,
+  archived_at: null as string | null,
   created_at: "2026-01-01T00:00:00.000Z",
   organization_name: "Org",
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
+  logo_url: null as string | null,
+  header_image_url: null as string | null,
+  resolved_logo_url: null as string | null,
+  resolved_header_image_url: null as string | null,
 };
 
 const sampleItem = {
