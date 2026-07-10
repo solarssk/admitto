@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useOutletContext } from "react-router-dom";
+import { useOutletContext } from "react-router-dom";
 import { Button, Card, EmptyState, PageHeader } from "@admitto/ui";
 import type { EventDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
@@ -42,11 +42,6 @@ export function AdminCheckInRoute() {
           icon={<i className="ti ti-archive" aria-hidden="true" />}
           title="Check-in is disabled"
           description="This event is archived, so check-in is turned off to protect its data."
-          action={
-            <Link className="at-btn at-btn--secondary" to={`/admin/events/${event.id}/settings`}>
-              Go to Event settings
-            </Link>
-          }
         />
       </>
     );

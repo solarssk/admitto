@@ -103,7 +103,6 @@ describe("AdminCheckInRoute archived event lockdown", () => {
       screen.getByText("This event is archived, so check-in is turned off to protect its data."),
     ).toBeTruthy();
     expect(screen.queryByTestId("checkin-page")).toBeNull();
-    const link = screen.getByRole("link", { name: "Go to Event settings" });
-    expect(link.getAttribute("href")).toBe("/admin/events/evt-1/settings");
+    expect(screen.queryByRole("link", { name: "Go to Event settings" })).toBeNull();
   });
 });
