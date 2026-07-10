@@ -91,11 +91,11 @@ function buildSettingsPatch(form: SettingsForm, original: SettingsForm): Setting
 }
 
 interface EventSettingsTabPanelProps {
-  tab: EventSettingsTab;
-  activeTab: EventSettingsTab;
-  visited: ReadonlySet<EventSettingsTab>;
-  label: string;
-  children: ReactNode;
+  readonly tab: EventSettingsTab;
+  readonly activeTab: EventSettingsTab;
+  readonly visited: ReadonlySet<EventSettingsTab>;
+  readonly label: string;
+  readonly children: ReactNode;
 }
 
 /** Mount on first visit; stay mounted so draft state and scroll position survive tab switches. */

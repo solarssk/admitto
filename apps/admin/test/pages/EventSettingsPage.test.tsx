@@ -145,7 +145,7 @@ describe("EventSettingsPage tabs", () => {
     await screen.findByText("Event logo");
 
     const fileInputs = document.querySelectorAll('input[type="file"]');
-    expect(fileInputs.length).toBe(2);
+    expect(fileInputs).toHaveLength(2);
     const file = new File(["x"], "logo.png", { type: "image/png" });
     fireEvent.change(fileInputs[0]!, { target: { files: [file] } });
 
@@ -162,7 +162,7 @@ describe("EventSettingsPage tabs", () => {
     await screen.findByText("Event logo");
 
     const fileInputs = document.querySelectorAll('input[type="file"]');
-    expect(fileInputs.length).toBe(2);
+    expect(fileInputs).toHaveLength(2);
     for (const input of fileInputs) {
       expect((input as HTMLInputElement).disabled).toBe(true);
     }

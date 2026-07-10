@@ -8,17 +8,63 @@ import "./logo-upload.css";
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 
 export interface LogoUploadZoneProps {
-  value: string;
-  onChange: (url: string) => void;
-  onDirty?: () => void;
+  readonly value: string;
+  readonly onChange: (url: string) => void;
+  readonly onDirty?: () => void;
   /** Field label above the drop zone. Defaults to "Organisation logo" for the existing usage. */
-  label?: string;
+  readonly label?: string;
   /** Format/size hint line under the drop zone. Defaults to the square-logo recommendation. */
-  hint?: string;
+  readonly hint?: string;
   /** Custom upload function (e.g. event-scoped upload). Defaults to the org-level upload endpoint. */
-  uploadFn?: (formData: FormData) => Promise<{ url: string }>;
+  readonly uploadFn?: (formData: FormData) => Promise<{ url: string }>;
   /** Disables all interaction (e.g. archived event). Defaults to false — org branding is never disabled. */
-  disabled?: boolean;
+  readonly disabled?: boolean;
+}
+
+interface LogoPreviewProps {
+  readonly label: string;
+  readonly previewSrc: string;
+  readonly isUploadedFile: boolean;
+  readonly disabled: boolean;
+  readonly onExternalUrlFailed: () => void;
+  readonly onUploadedFileCorrupt: () => void;
+  readonly onRemove: () => void;
+}
+
+/** Preview image with its two distinct failure modes, plus the remove button. */
+function LogoPreview({
+  label,
+  previewSrc,
+  isUploadedFile,
+  disabled,
+  onExternalUrlFailed,
+  onUploadedFileCorrupt,
+  onRemove,
+}: LogoPreviewProps) {
+  return (
+    <>
+      <div className="logo-upload__preview-inner">
+        <img
+          src={previewSrc}
+          alt={`${label} preview`}
+          className="logo-upload__img"
+          onError={() => (isUploadedFile ? onUploadedFileCorrupt() : onExternalUrlFailed())}
+        />
+      </div>
+      <button
+        type="button"
+        className="logo-upload__clear"
+        aria-label={`Remove ${label.toLowerCase()}`}
+        disabled={disabled}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+      >
+        <i className="ti ti-x" aria-hidden="true" />
+      </button>
+    </>
+  );
 }
 
 /** Upload to server or link an external HTTPS image — both are supported. */
@@ -129,43 +175,26 @@ export function LogoUploadZone({
         }}
       >
         {showPreview ? (
-          <>
-            <div className="logo-upload__preview-inner">
-              <img
-                src={previewSrc!}
-                alt={`${label} preview`}
-                className="logo-upload__img"
-                onError={() => {
-                  if (!isUploadedFile) {
-                    setZoneError(
-                      "Could not load logo preview from this URL. Check the link or try again later.",
-                    );
-                    setPreviewFailed(true);
-                    return;
-                  }
-                  setZoneError(
-                    "Uploaded file appears corrupt or unsupported. Please try another image.",
-                  );
-                  uploadSeqRef.current += 1;
-                  setPreviewFailed(false);
-                  onChange("");
-                  onDirty?.();
-                }}
-              />
-            </div>
-            <button
-              type="button"
-              className="logo-upload__clear"
-              aria-label={`Remove ${label.toLowerCase()}`}
-              disabled={disabled}
-              onClick={(e) => {
-                e.stopPropagation();
-                clearLogo();
-              }}
-            >
-              <i className="ti ti-x" aria-hidden="true" />
-            </button>
-          </>
+          <LogoPreview
+            label={label}
+            previewSrc={previewSrc!}
+            isUploadedFile={isUploadedFile}
+            disabled={disabled}
+            onExternalUrlFailed={() => {
+              setZoneError(
+                "Could not load logo preview from this URL. Check the link or try again later.",
+              );
+              setPreviewFailed(true);
+            }}
+            onUploadedFileCorrupt={() => {
+              setZoneError("Uploaded file appears corrupt or unsupported. Please try another image.");
+              uploadSeqRef.current += 1;
+              setPreviewFailed(false);
+              onChange("");
+              onDirty?.();
+            }}
+            onRemove={clearLogo}
+          />
         ) : (
           <>
             <i className="ti ti-photo-up" aria-hidden="true" />

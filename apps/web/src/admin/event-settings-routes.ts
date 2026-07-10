@@ -160,6 +160,51 @@ export async function handleGetEventSettings(c: Context, db: PrismaClient): Prom
   return c.json(serializeEventSettings(event));
 }
 
+type PatchEventBody = z.infer<typeof patchEventSchema>;
+
+/** Maps the schema's basic (non-branding) fields onto Prisma update data. */
+function buildBasicFieldsPatch(patch: PatchEventBody): {
+  title?: string;
+  date?: Date;
+  timezone?: string;
+  location?: string | null;
+  capacity?: number | null;
+} {
+  const data: ReturnType<typeof buildBasicFieldsPatch> = {};
+  if (patch.title !== undefined) data.title = patch.title.trim();
+  if (patch.date !== undefined) data.date = parseEventDateInput(patch.date);
+  if (patch.timezone !== undefined) data.timezone = patch.timezone;
+  if (patch.location !== undefined) {
+    data.location = patch.location?.trim() ? patch.location.trim() : null;
+  }
+  if (patch.capacity !== undefined) data.capacity = patch.capacity;
+  return data;
+}
+
+/** Validates and writes patch.logo_url/header_image_url into `data`; returns an error Response, or null on success. */
+function applyBrandingPatch(
+  c: Context,
+  data: { logo_url?: string | null; header_image_url?: string | null },
+  patch: PatchEventBody,
+): Response | null {
+  try {
+    if (patch.logo_url !== undefined) {
+      const trimmed = patch.logo_url?.trim() ?? "";
+      data.logo_url = trimmed ? validateBrandingUrl("logo_url", trimmed) : null;
+    }
+    if (patch.header_image_url !== undefined) {
+      const trimmed = patch.header_image_url?.trim() ?? "";
+      data.header_image_url = trimmed ? validateBrandingUrl("header_image_url", trimmed) : null;
+    }
+    return null;
+  } catch (err) {
+    if (err instanceof InvalidHttpUrlError) {
+      return c.json({ error: err.message }, 400);
+    }
+    throw err;
+  }
+}
+
 /** PATCH /api/admin/events/:eventId — basic fields only (archive guard applied upstream). */
 export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -200,31 +245,10 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     capacity?: number | null;
     logo_url?: string | null;
     header_image_url?: string | null;
-  } = {};
+  } = buildBasicFieldsPatch(patch);
 
-  if (patch.title !== undefined) data.title = patch.title.trim();
-  if (patch.date !== undefined) data.date = parseEventDateInput(patch.date);
-  if (patch.timezone !== undefined) data.timezone = patch.timezone;
-  if (patch.location !== undefined) {
-    data.location = patch.location?.trim() ? patch.location.trim() : null;
-  }
-  if (patch.capacity !== undefined) data.capacity = patch.capacity;
-
-  try {
-    if (patch.logo_url !== undefined) {
-      const trimmed = patch.logo_url?.trim() ?? "";
-      data.logo_url = trimmed ? validateBrandingUrl("logo_url", trimmed) : null;
-    }
-    if (patch.header_image_url !== undefined) {
-      const trimmed = patch.header_image_url?.trim() ?? "";
-      data.header_image_url = trimmed ? validateBrandingUrl("header_image_url", trimmed) : null;
-    }
-  } catch (err) {
-    if (err instanceof InvalidHttpUrlError) {
-      return c.json({ error: err.message }, 400);
-    }
-    throw err;
-  }
+  const brandingError = applyBrandingPatch(c, data, patch);
+  if (brandingError) return brandingError;
 
   const changedFields = Object.keys(data);
 
