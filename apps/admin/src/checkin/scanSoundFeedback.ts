@@ -88,7 +88,7 @@ function beep(ctx: AudioContext, frequency: number, durationMs: number, delayMs 
   gain.connect(ctx.destination);
   const start = ctx.currentTime + delayMs / 1000;
   const end = start + durationMs / 1000;
-  gain.gain.setValueAtTime(0.15, start);
+  gain.gain.setValueAtTime(0.35, start);
   gain.gain.exponentialRampToValueAtTime(0.001, end);
   oscillator.start(start);
   oscillator.stop(end);
