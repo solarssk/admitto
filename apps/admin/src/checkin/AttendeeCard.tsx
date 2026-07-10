@@ -279,46 +279,49 @@ export function AttendeeCard({
                     <p className="checkin-card__item-description">{item.description}</p>
                   )}
                 </div>
-                {item.actions.length > 0 ? (
-                  item.actions.map((action) => (
-                    <Button
-                      key={`${item.key}-${action}`}
-                      type="button"
-                      variant="success"
-                      size="sm"
-                      disabled={!canAct || pending || isBlocked || itemGuard.ids.has(item.key)}
-                      aria-label={itemActionAriaLabel(item.key, action)}
-                      onClick={() => handleItemAction(item.key, action)}
-                    >
-                      {itemActionLabel(item.key, action)}
-                    </Button>
-                  ))
-                ) : (
-                  <>
-                    <Badge variant={itemBadgeVariant(item.state)} className="checkin-card__item-badge">
-                      {item.state}
-                    </Badge>
-                    {/* Admin/superadmin-only corrective action: reset an item
-                        that's been handed out ("issued"/"returned") back to
-                        pending so it can be issued again. Kept out of the
-                        operator's forward-only flow — hidden for operators and
-                        for a blocked (revoked/invalid) pass. Server enforces the
-                        same check regardless of this visibility. */}
-                    {canRevokeItems && onRevokeItem && !isBlocked && (
+                {item.actions.length > 0
+                  ? item.actions.map((action) => (
                       <Button
+                        key={`${item.key}-${action}`}
                         type="button"
-                        variant="ghost"
+                        variant="success"
                         size="sm"
-                        className="checkin-card__item-revoke checkin-card__aux-btn--danger"
-                        disabled={!canAct || pending || itemGuard.ids.has(item.key)}
-                        aria-label={`Revoke ${item.label}`}
-                        onClick={() => handleRevokeItem(item.key)}
-                        icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
+                        disabled={!canAct || pending || isBlocked || itemGuard.ids.has(item.key)}
+                        aria-label={itemActionAriaLabel(item.key, action)}
+                        onClick={() => handleItemAction(item.key, action)}
                       >
-                        Revoke
+                        {itemActionLabel(item.key, action)}
                       </Button>
+                    ))
+                  : (
+                      <Badge variant={itemBadgeVariant(item.state)} className="checkin-card__item-badge">
+                        {item.state}
+                      </Badge>
                     )}
-                  </>
+                {/* Admin/superadmin-only corrective action: reset an item
+                    that's been handed out ("issued"/"returned") back to
+                    pending so it can be issued again. Independent of the
+                    action buttons above — an issued item with
+                    `requires_return: true` still has a "Mark returned"
+                    action, but the server's revoke path resets issued OR
+                    returned straight to pending, so Revoke must be offered
+                    alongside it too (bot review, #457). Kept out of the
+                    operator's forward-only flow — hidden for operators and
+                    for a blocked (revoked/invalid) pass. Server enforces the
+                    same check regardless of this visibility. */}
+                {canRevokeItems && onRevokeItem && !isBlocked && item.state !== "pending" && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="checkin-card__item-revoke checkin-card__aux-btn--danger"
+                    disabled={!canAct || pending || itemGuard.ids.has(item.key)}
+                    aria-label={`Revoke ${item.label}`}
+                    onClick={() => handleRevokeItem(item.key)}
+                    icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
+                  >
+                    Revoke
+                  </Button>
                 )}
               </div>
             ))}

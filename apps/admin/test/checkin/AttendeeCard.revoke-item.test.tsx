@@ -157,4 +157,26 @@ describe("AttendeeCard — admin per-item Revoke (item revocation feature)", () 
     expect(screen.queryByRole("button", { name: "Revoke Gift bag" })).toBeNull();
     expect(screen.getByRole("button", { name: "Mark gift bag given" })).toBeTruthy();
   });
+
+  it("shows Revoke alongside the Mark returned action for an issued item that still requires return (bot review, #457)", () => {
+    // A `requires_return: true` item still has a pending "returned" action
+    // once issued, so it falls in the actions.length > 0 branch — but the
+    // server's revoke path resets issued OR returned straight to pending,
+    // so an admin shouldn't have to mark it returned first just to reset it.
+    render(
+      <AttendeeCard
+        card={{
+          ...issuedItemCard,
+          items: [{ key: "headset", label: "Headset", icon: null, state: "issued", actions: ["returned"] }],
+        }}
+        eventTimezone="UTC"
+        canAct
+        canRevokeItems
+        onRevokeItem={vi.fn()}
+        onItemAction={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Mark headset returned" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Revoke Headset" })).toBeTruthy();
+  });
 });
