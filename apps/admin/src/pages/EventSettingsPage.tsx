@@ -1,12 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import {
-  Link,
-  useBlocker,
-  useNavigate,
-  useOutletContext,
-  useParams,
-  useSearchParams,
-} from "react-router-dom";
+import { useBlocker, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { Badge, Button, Card, EmptyState, Input, PageHeader, Tabs, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -345,8 +338,6 @@ export function EventSettingsPage() {
 
   if (!event || !form) return null;
 
-  const enabledItemsCount = event.active_items.filter((i) => i.enabled).length;
-
   return (
     <div className={`event-settings-page screen${isArchived ? " event-settings--archived" : ""}`}>
       <PageHeader
@@ -480,15 +471,6 @@ export function EventSettingsPage() {
                 Created: <strong>{formatUtcDateTime(event.created_at)}</strong>
               </p>
               <p className="field-hint">When this event was first set up.</p>
-            </div>
-            <div className="settings-field-group">
-              <p>
-                Items:{" "}
-                <strong>{enabledItemsCount > 0 ? `${enabledItemsCount} configured` : "None configured"}</strong>
-              </p>
-              <p className="field-hint">
-                <Link to={`/admin/events/${eventId}/requirements`}>Manage in Requirements →</Link>
-              </p>
             </div>
           </div>
         </Card>
