@@ -60,6 +60,13 @@
 
 .event-settings-page .at-tabs {
   margin-bottom: var(--space-4);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  flex-wrap: nowrap;
+}
+
+.event-settings-page .at-tab {
+  flex-shrink: 0;
 }
 
 .event-settings-tabpanel {

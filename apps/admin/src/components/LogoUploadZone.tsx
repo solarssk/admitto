@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@admitto/ui";
 import { ApiError, uploadFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -31,6 +31,7 @@ export function LogoUploadZone({
   uploadFn = uploadFile,
   disabled = false,
 }: LogoUploadZoneProps) {
+  const urlInputId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadSeqRef = useRef(0);
   const [uploading, setUploading] = useState(false);
@@ -217,11 +218,11 @@ export function LogoUploadZone({
       </div>
       {showUrlInput && (
         <div className="at-field">
-          <label className="at-label" htmlFor="logo-url-external">
+          <label className="at-label" htmlFor={urlInputId}>
             External logo URL (HTTPS)
           </label>
           <input
-            id="logo-url-external"
+            id={urlInputId}
             className="at-input"
             type="url"
             value={isUploadedFile ? "" : value}
