@@ -217,6 +217,43 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByAltText("Event logo preview")).toBeTruthy();
   });
 
+  it("disables Save while a branding upload is in flight, even if another field is already dirty", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    let resolveLogo!: (result: { url: string }) => void;
+    vi.mocked(uploadEventBrandingFile).mockReturnValueOnce(
+      new Promise((resolve) => (resolveLogo = resolve)),
+    );
+    renderSettings();
+    await waitFor(() => screen.getByLabelText("Event title"));
+
+    // Dirty the page via an unrelated field first — this is what makes the button
+    // enabled-except-for-upload-state observable (it isn't just `!dirty` gating it).
+    fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2027" } });
+    expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
+    await screen.findByText("Event logo");
+    const [logoInput] = document.querySelectorAll('input[type="file"]');
+    fireEvent.change(logoInput!, {
+      target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Uploading…" }).hasAttribute("disabled")).toBe(
+        true,
+      );
+    });
+
+    resolveLogo({ url: "/uploads/default/logo.png" });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(
+        false,
+      );
+    });
+  });
+
   it("saves both branding fields after uploading, sending the full patch payload", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(uploadEventBrandingFile)

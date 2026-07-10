@@ -19,6 +19,8 @@ export interface LogoUploadZoneProps {
   readonly uploadFn?: (formData: FormData) => Promise<{ url: string }>;
   /** Disables all interaction (e.g. archived event). Defaults to false — org branding is never disabled. */
   readonly disabled?: boolean;
+  /** Notified whenever an upload starts/finishes, so a caller can e.g. block Save while one is in flight. */
+  readonly onUploadingChange?: (uploading: boolean) => void;
 }
 
 interface LogoPreviewProps {
@@ -76,6 +78,7 @@ export function LogoUploadZone({
   hint = "PNG, JPG, WebP · max 2 MB · recommended 160×48 px",
   uploadFn = uploadFile,
   disabled = false,
+  onUploadingChange,
 }: LogoUploadZoneProps) {
   const urlInputId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -89,6 +92,10 @@ export function LogoUploadZone({
   const previewSrc = useMemo(() => brandingLogoImgSrc(value), [value]);
   const [previewFailed, setPreviewFailed] = useState(false);
   const showPreview = Boolean(previewSrc) && !previewFailed;
+
+  useEffect(() => {
+    onUploadingChange?.(uploading);
+  }, [uploading, onUploadingChange]);
 
   useEffect(() => {
     setPreviewFailed(false);

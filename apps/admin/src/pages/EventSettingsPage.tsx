@@ -129,6 +129,8 @@ export function EventSettingsPage() {
   const [exporting, setExporting] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveMode, setArchiveMode] = useState<"archive" | "unarchive">("archive");
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [headerUploading, setHeaderUploading] = useState(false);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
   const [tab, setTab] = useState<EventSettingsTab>(initialTab);
@@ -321,10 +323,10 @@ export function EventSettingsPage() {
             <span className="save-actions">
               <Button
                 variant="primary"
-                disabled={!dirty || saving}
+                disabled={!dirty || saving || logoUploading || headerUploading}
                 onClick={() => void handleSave()}
               >
-                {saving ? "Saving…" : "Save changes"}
+                {saving ? "Saving…" : logoUploading || headerUploading ? "Uploading…" : "Save changes"}
               </Button>
             </span>
           ) : undefined
@@ -473,6 +475,7 @@ export function EventSettingsPage() {
                 disabled={isArchived || saving}
                 onChange={(url) => setForm((prev) => prev && { ...prev, logoUrl: url })}
                 uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
+                onUploadingChange={setLogoUploading}
               />
             </div>
             <div className="settings-field-group">
@@ -483,6 +486,7 @@ export function EventSettingsPage() {
                 disabled={isArchived || saving}
                 onChange={(url) => setForm((prev) => prev && { ...prev, headerImageUrl: url })}
                 uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
+                onUploadingChange={setHeaderUploading}
               />
             </div>
           </div>
