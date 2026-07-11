@@ -186,6 +186,28 @@ describe("DELETE /api/account/sessions/:id", () => {
     expect(audit?.actor_user_id).toBe(userId);
     expect(audit?.metadata).toMatchObject({ sessionId: other.session.id });
   });
+
+  it("retrying a revoke on an already-revoked session is a no-op and writes no extra audit row", async () => {
+    const other = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
+    await app.request(`/api/account/sessions/${other.session.id}`, {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+    });
+
+    const res = await app.request(`/api/account/sessions/${other.session.id}`, {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+    });
+    expect(auditCountAfter).toBe(auditCountBefore);
+  });
 });
 
 describe("POST /api/account/mfa/totp/*", () => {

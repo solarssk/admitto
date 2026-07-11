@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import {
   cancelPendingTotpEnrollment,
@@ -26,6 +26,22 @@ import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 function hasLocalPassword(passwordHash: string | null): boolean {
   return passwordHash !== null;
+}
+
+/** Revoke every other session for `userId`, or all of them if no current session to keep. */
+async function revokeSessionsExcludingCurrent(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  currentSessionId: string | undefined,
+): Promise<number> {
+  if (currentSessionId) {
+    return revokeOtherSessions(tx, userId, currentSessionId);
+  }
+  const revoked = await tx.session.updateMany({
+    where: { user_id: userId, revoked_at: null },
+    data: { revoked_at: new Date() },
+  });
+  return revoked.count;
 }
 
 const ROLE_PRIORITY: Record<string, number> = { superadmin: 3, admin: 2, operator: 1 };
@@ -232,14 +248,7 @@ export async function handlePatchAccountPassword(c: Context, db: PrismaClient): 
       where: { id: userId },
       data: { password_hash, must_change_password: false },
     });
-    const revokedCount = currentSessionId
-      ? await revokeOtherSessions(tx, userId, currentSessionId)
-      : (
-          await tx.session.updateMany({
-            where: { user_id: userId, revoked_at: null },
-            data: { revoked_at: new Date() },
-          })
-        ).count;
+    const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
       actorUserId: audit.operator ?? userId,
@@ -289,10 +298,12 @@ export async function handleDeleteAccountSession(c: Context, db: PrismaClient): 
 
   const row = await db.session.findUnique({
     where: { id: sessionId },
-    select: { user_id: true },
+    select: { user_id: true, revoked_at: true },
   });
   if (!row) return c.json({}, 200);
   if (row.user_id !== auth.userId) return c.json({ error: "forbidden" }, 403);
+  // Already revoked (retry/double-click): no state change, so no audit row either.
+  if (row.revoked_at) return c.json({}, 200);
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -374,24 +385,28 @@ export async function handlePostMfaConfirm(
     return c.json({ error: "too many requests" }, 429);
   }
 
-  const ok = await confirmTotpEnrollment(db, userId, code);
-  if (!ok) return c.json({ code: "invalid_code" }, 400);
-
-  // Self-service enroll already returned backup codes to the client (unlike the
-  // login-time flow's separate acknowledgment step) — mark them acknowledged now so
-  // this already-`full` session isn't rejected by the backup-codes gate (IAM-002) on
-  // its very next request.
-  await markBackupCodesAcknowledged(db, userId);
-
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId: audit.operator ?? userId,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    actionType: "account_mfa_enrolled",
+
+  const ok = await runInTransaction(db, async (tx) => {
+    const confirmed = await confirmTotpEnrollment(tx, userId, code);
+    if (!confirmed) return false;
+
+    // Self-service enroll already returned backup codes to the client (unlike the
+    // login-time flow's separate acknowledgment step) — mark them acknowledged now so
+    // this already-`full` session isn't rejected by the backup-codes gate (IAM-002) on
+    // its very next request.
+    await markBackupCodesAcknowledged(tx, userId);
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "account_mfa_enrolled",
+    });
+    return true;
   });
+  if (!ok) return c.json({ code: "invalid_code" }, 400);
 
   return c.json({ ok: true });
 }
@@ -431,14 +446,7 @@ export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<
   const sessions_revoked = await runInTransaction(db, async (tx) => {
     await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
     await revokeAllTrustedDevicesForUser(tx, userId);
-    const revokedCount = currentSessionId
-      ? await revokeOtherSessions(tx, userId, currentSessionId)
-      : (
-          await tx.session.updateMany({
-            where: { user_id: userId, revoked_at: null },
-            data: { revoked_at: new Date() },
-          })
-        ).count;
+    const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
       actorUserId: audit.operator ?? userId,
