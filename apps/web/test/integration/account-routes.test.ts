@@ -37,6 +37,7 @@ async function seed(client: PrismaClient) {
   await client.session.deleteMany({ where: { user: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER] } } } });
   await client.userMfaMethod.deleteMany({ where: { user: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER] } } } });
   await client.roleAssignment.deleteMany({ where: { scope_id: ORG_ACCOUNT } });
+  await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_ACCOUNT } });
   await client.user.deleteMany({ where: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER] } } });
   await client.organization.deleteMany({ where: { id: ORG_ACCOUNT } });
 
@@ -127,6 +128,13 @@ describe("PATCH /api/account/password", () => {
     expect(await verifyPassword(NEW_PASSWORD, dbUser!.password_hash!)).toBe(true);
     expect((await prisma.session.findUnique({ where: { id: userSessionId } }))?.revoked_at).toBeNull();
     expect((await prisma.session.findUnique({ where: { id: other.session.id } }))?.revoked_at).not.toBeNull();
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_password_changed" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(userId);
+    expect(audit?.metadata).toMatchObject({ sessionsRevoked: 1 });
   });
 
   it("returns 400 no_local_password for OIDC-only account", async () => {
@@ -161,6 +169,23 @@ describe("DELETE /api/account/sessions/:id", () => {
     expect(res.status).toBe(403);
     await prisma.session.delete({ where: { id: otherSession.session.id } });
   });
+
+  it("revokes own non-current session and writes an audit row", async () => {
+    const other = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
+    const res = await app.request(`/api/account/sessions/${other.session.id}`, {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+    expect((await prisma.session.findUnique({ where: { id: other.session.id } }))?.revoked_at).not.toBeNull();
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(userId);
+    expect(audit?.metadata).toMatchObject({ sessionId: other.session.id });
+  });
 });
 
 describe("POST /api/account/mfa/totp/*", () => {
@@ -178,6 +203,18 @@ describe("POST /api/account/mfa/totp/*", () => {
       body: JSON.stringify({ code: generateTotpCode(secret!) }),
     });
     expect(confirmRes.status).toBe(200);
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_enrolled" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(userId);
+
+    // The already-`full` session used to confirm must stay usable for the very next
+    // request — self-service enroll already showed backup codes at the /enroll step,
+    // so this session must not be rejected by the backup-codes-acknowledgment gate.
+    const meRes = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    expect(meRes.status).toBe(200);
   });
 
   it("returns 401 on MFA reset with wrong password", async () => {
@@ -209,6 +246,13 @@ describe("POST /api/account/mfa/totp/*", () => {
     expect(await prisma.userMfaMethod.count({ where: { user_id: userId } })).toBe(0);
     expect((await prisma.session.findUnique({ where: { id: userSessionId } }))?.revoked_at).toBeNull();
     expect((await prisma.session.findUnique({ where: { id: extra.session.id } }))?.revoked_at).not.toBeNull();
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(userId);
+    expect(audit?.metadata).toMatchObject({ sessionsRevoked: 1 });
   });
 
   it("returns 400 no_local_password for OIDC-only TOTP enroll", async () => {

@@ -6,6 +6,7 @@ import {
   confirmTotpEnrollment,
   getOrStartTotpEnrollment,
   hashPassword,
+  markBackupCodesAcknowledged,
   revokeAllTrustedDevicesForUser,
   revokeOtherSessions,
   revokeSession,
@@ -19,6 +20,9 @@ import {
   isSupportedLocale,
   sanitizePreferredLocale,
 } from "@admitto/shared";
+import { writeAdminAuditLog } from "@admitto/tickets";
+import { adminAuditFromContext } from "./admin-helpers.js";
+import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 function hasLocalPassword(passwordHash: string | null): boolean {
   return passwordHash !== null;
@@ -221,19 +225,30 @@ export async function handlePatchAccountPassword(c: Context, db: PrismaClient): 
   if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
 
   const password_hash = await hashPassword(new_password);
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
   const sessions_revoked = await runInTransaction(db, async (tx) => {
     await tx.user.update({
       where: { id: userId },
       data: { password_hash, must_change_password: false },
     });
-    if (currentSessionId) {
-      return revokeOtherSessions(tx, userId, currentSessionId);
-    }
-    const revoked = await tx.session.updateMany({
-      where: { user_id: userId, revoked_at: null },
-      data: { revoked_at: new Date() },
+    const revokedCount = currentSessionId
+      ? await revokeOtherSessions(tx, userId, currentSessionId)
+      : (
+          await tx.session.updateMany({
+            where: { user_id: userId, revoked_at: null },
+            data: { revoked_at: new Date() },
+          })
+        ).count;
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "account_password_changed",
+      metadata: { sessionsRevoked: revokedCount },
     });
-    return revoked.count;
+    return revokedCount;
   });
 
   return c.json({ sessions_revoked });
@@ -279,7 +294,19 @@ export async function handleDeleteAccountSession(c: Context, db: PrismaClient): 
   if (!row) return c.json({}, 200);
   if (row.user_id !== auth.userId) return c.json({ error: "forbidden" }, 403);
 
-  await revokeSession(db, sessionId);
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+  await runInTransaction(db, async (tx) => {
+    await revokeSession(tx, sessionId);
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? auth.userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "account_session_revoked",
+      metadata: { sessionId },
+    });
+  });
   return c.json({}, 200);
 }
 
@@ -349,6 +376,23 @@ export async function handlePostMfaConfirm(
 
   const ok = await confirmTotpEnrollment(db, userId, code);
   if (!ok) return c.json({ code: "invalid_code" }, 400);
+
+  // Self-service enroll already returned backup codes to the client (unlike the
+  // login-time flow's separate acknowledgment step) — mark them acknowledged now so
+  // this already-`full` session isn't rejected by the backup-codes gate (IAM-002) on
+  // its very next request.
+  await markBackupCodesAcknowledged(db, userId);
+
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+  await writeAdminAuditLog(db, {
+    organizationId: orgId,
+    actorUserId: audit.operator ?? userId,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    actionType: "account_mfa_enrolled",
+  });
+
   return c.json({ ok: true });
 }
 
@@ -382,17 +426,28 @@ export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<
   const passwordOk = await verifyPasswordOrDummy(parsed.data.password, user.password_hash);
   if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
 
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
   const sessions_revoked = await runInTransaction(db, async (tx) => {
     await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
     await revokeAllTrustedDevicesForUser(tx, userId);
-    if (currentSessionId) {
-      return revokeOtherSessions(tx, userId, currentSessionId);
-    }
-    const revoked = await tx.session.updateMany({
-      where: { user_id: userId, revoked_at: null },
-      data: { revoked_at: new Date() },
+    const revokedCount = currentSessionId
+      ? await revokeOtherSessions(tx, userId, currentSessionId)
+      : (
+          await tx.session.updateMany({
+            where: { user_id: userId, revoked_at: null },
+            data: { revoked_at: new Date() },
+          })
+        ).count;
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "account_mfa_reset",
+      metadata: { sessionsRevoked: revokedCount },
     });
-    return revoked.count;
+    return revokedCount;
   });
 
   return c.json({ ok: true, sessions_revoked });
