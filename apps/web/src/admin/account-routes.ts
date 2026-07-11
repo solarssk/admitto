@@ -1,11 +1,12 @@
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import {
   cancelPendingTotpEnrollment,
   confirmTotpEnrollment,
   getOrStartTotpEnrollment,
   hashPassword,
+  markBackupCodesAcknowledged,
   revokeAllTrustedDevicesForUser,
   revokeOtherSessions,
   revokeSession,
@@ -19,9 +20,28 @@ import {
   isSupportedLocale,
   sanitizePreferredLocale,
 } from "@admitto/shared";
+import { writeAdminAuditLog } from "@admitto/tickets";
+import { adminAuditFromContext } from "./admin-helpers.js";
+import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 function hasLocalPassword(passwordHash: string | null): boolean {
   return passwordHash !== null;
+}
+
+/** Revoke every other session for `userId`, or all of them if no current session to keep. */
+async function revokeSessionsExcludingCurrent(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  currentSessionId: string | undefined,
+): Promise<number> {
+  if (currentSessionId) {
+    return revokeOtherSessions(tx, userId, currentSessionId);
+  }
+  const revoked = await tx.session.updateMany({
+    where: { user_id: userId, revoked_at: null },
+    data: { revoked_at: new Date() },
+  });
+  return revoked.count;
 }
 
 const ROLE_PRIORITY: Record<string, number> = { superadmin: 3, admin: 2, operator: 1 };
@@ -221,19 +241,23 @@ export async function handlePatchAccountPassword(c: Context, db: PrismaClient): 
   if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
 
   const password_hash = await hashPassword(new_password);
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
   const sessions_revoked = await runInTransaction(db, async (tx) => {
     await tx.user.update({
       where: { id: userId },
       data: { password_hash, must_change_password: false },
     });
-    if (currentSessionId) {
-      return revokeOtherSessions(tx, userId, currentSessionId);
-    }
-    const revoked = await tx.session.updateMany({
-      where: { user_id: userId, revoked_at: null },
-      data: { revoked_at: new Date() },
+    const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "account_password_changed",
+      metadata: { sessionsRevoked: revokedCount },
     });
-    return revoked.count;
+    return revokedCount;
   });
 
   return c.json({ sessions_revoked });
@@ -274,12 +298,30 @@ export async function handleDeleteAccountSession(c: Context, db: PrismaClient): 
 
   const row = await db.session.findUnique({
     where: { id: sessionId },
-    select: { user_id: true },
+    select: { user_id: true, revoked_at: true, expires_at: true },
   });
   if (!row) return c.json({}, 200);
   if (row.user_id !== auth.userId) return c.json({ error: "forbidden" }, 403);
+  // Already revoked, or already expired (stale sessions-list page): no live session was cut
+  // short, so no audit row either.
+  if (row.revoked_at || row.expires_at <= new Date()) return c.json({}, 200);
 
-  await revokeSession(db, sessionId);
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+  await runInTransaction(db, async (tx) => {
+    // Re-check inside the transaction: two concurrent DELETEs can both pass the read above
+    // before either commits. Only the one that actually revoked the session gets audited.
+    const revoked = await revokeSession(tx, sessionId);
+    if (!revoked) return;
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? auth.userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "account_session_revoked",
+      metadata: { sessionId },
+    });
+  });
   return c.json({}, 200);
 }
 
@@ -347,8 +389,29 @@ export async function handlePostMfaConfirm(
     return c.json({ error: "too many requests" }, 429);
   }
 
-  const ok = await confirmTotpEnrollment(db, userId, code);
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+
+  const ok = await runInTransaction(db, async (tx) => {
+    const confirmed = await confirmTotpEnrollment(tx, userId, code);
+    if (!confirmed) return false;
+
+    // Self-service enroll already returned backup codes to the client (unlike the
+    // login-time flow's separate acknowledgment step) — mark them acknowledged now so
+    // this already-`full` session isn't rejected by the backup-codes gate (IAM-002) on
+    // its very next request.
+    await markBackupCodesAcknowledged(tx, userId);
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "account_mfa_enrolled",
+    });
+    return true;
+  });
   if (!ok) return c.json({ code: "invalid_code" }, 400);
+
   return c.json({ ok: true });
 }
 
@@ -382,17 +445,28 @@ export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<
   const passwordOk = await verifyPasswordOrDummy(parsed.data.password, user.password_hash);
   if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
 
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
   const sessions_revoked = await runInTransaction(db, async (tx) => {
-    await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
-    await revokeAllTrustedDevicesForUser(tx, userId);
-    if (currentSessionId) {
-      return revokeOtherSessions(tx, userId, currentSessionId);
+    const mfaDeleted = await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
+    const devicesRevoked = await revokeAllTrustedDevicesForUser(tx, userId);
+    const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
+    // Gate on any real effect, not just an MFA method actually being deleted: a
+    // no-MFA-enrolled account calling this still revokes trusted devices and other
+    // sessions, which is itself security-relevant and must stay audited. This still
+    // suppresses the duplicate audit on a true no-op (two concurrent resets, or a retry
+    // after the state is already fully cleared) — that case has all three counts at 0.
+    if (mfaDeleted.count > 0 || devicesRevoked > 0 || revokedCount > 0) {
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId: audit.operator ?? userId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        actionType: "account_mfa_reset",
+        metadata: { sessionsRevoked: revokedCount },
+      });
     }
-    const revoked = await tx.session.updateMany({
-      where: { user_id: userId, revoked_at: null },
-      data: { revoked_at: new Date() },
-    });
-    return revoked.count;
+    return revokedCount;
   });
 
   return c.json({ ok: true, sessions_revoked });

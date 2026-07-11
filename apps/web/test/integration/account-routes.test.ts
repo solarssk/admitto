@@ -37,6 +37,7 @@ async function seed(client: PrismaClient) {
   await client.session.deleteMany({ where: { user: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER] } } } });
   await client.userMfaMethod.deleteMany({ where: { user: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER] } } } });
   await client.roleAssignment.deleteMany({ where: { scope_id: ORG_ACCOUNT } });
+  await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_ACCOUNT } });
   await client.user.deleteMany({ where: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER] } } });
   await client.organization.deleteMany({ where: { id: ORG_ACCOUNT } });
 
@@ -127,6 +128,13 @@ describe("PATCH /api/account/password", () => {
     expect(await verifyPassword(NEW_PASSWORD, dbUser!.password_hash!)).toBe(true);
     expect((await prisma.session.findUnique({ where: { id: userSessionId } }))?.revoked_at).toBeNull();
     expect((await prisma.session.findUnique({ where: { id: other.session.id } }))?.revoked_at).not.toBeNull();
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_password_changed" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(userId);
+    expect(audit?.metadata).toMatchObject({ sessionsRevoked: 1 });
   });
 
   it("returns 400 no_local_password for OIDC-only account", async () => {
@@ -161,6 +169,88 @@ describe("DELETE /api/account/sessions/:id", () => {
     expect(res.status).toBe(403);
     await prisma.session.delete({ where: { id: otherSession.session.id } });
   });
+
+  it("revokes own non-current session and writes an audit row", async () => {
+    const other = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
+    const res = await app.request(`/api/account/sessions/${other.session.id}`, {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+    expect((await prisma.session.findUnique({ where: { id: other.session.id } }))?.revoked_at).not.toBeNull();
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(userId);
+    expect(audit?.metadata).toMatchObject({ sessionId: other.session.id });
+  });
+
+  it("retrying a revoke on an already-revoked session is a no-op and writes no extra audit row", async () => {
+    const other = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
+    await app.request(`/api/account/sessions/${other.session.id}`, {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+    });
+
+    const res = await app.request(`/api/account/sessions/${other.session.id}`, {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+    });
+    expect(auditCountAfter).toBe(auditCountBefore);
+  });
+
+  it("two concurrent revokes of the same session write exactly one audit row", async () => {
+    const other = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+    });
+
+    const request = () =>
+      app.request(`/api/account/sessions/${other.session.id}`, {
+        method: "DELETE",
+        headers: { Cookie: userCookie, ...sameOrigin },
+      });
+    const [resA, resB] = await Promise.all([request(), request()]);
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+    });
+    expect(auditCountAfter - auditCountBefore).toBe(1);
+  });
+
+  it("revoking a session that already expired (stale sessions-list page) writes no audit row", async () => {
+    const other = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
+    await prisma.session.update({
+      where: { id: other.session.id },
+      data: { expires_at: new Date(Date.now() - 1000) },
+    });
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+    });
+
+    const res = await app.request(`/api/account/sessions/${other.session.id}`, {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+    });
+    expect(auditCountAfter).toBe(auditCountBefore);
+  });
 });
 
 describe("POST /api/account/mfa/totp/*", () => {
@@ -178,6 +268,50 @@ describe("POST /api/account/mfa/totp/*", () => {
       body: JSON.stringify({ code: generateTotpCode(secret!) }),
     });
     expect(confirmRes.status).toBe(200);
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_enrolled" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(userId);
+
+    // The already-`full` session used to confirm must stay usable for the very next
+    // request — self-service enroll already showed backup codes at the /enroll step,
+    // so this session must not be rejected by the backup-codes-acknowledgment gate.
+    const meRes = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    expect(meRes.status).toBe(200);
+  });
+
+  it("two concurrent confirms of the same pending enrollment write exactly one audit row", async () => {
+    // account/password, mfa/totp/confirm, and mfa/reset all share one per-IP rate-limit
+    // bucket (loginRateLimitJson); reset it so this test's own requests don't trip a limit
+    // exhausted by everything else that already ran in this file.
+    rateLimitStore.reset();
+    const enrollRes = await app.request("/api/account/mfa/totp/enroll", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    const enroll = (await enrollRes.json()) as { otpauthUri: string };
+    const secret = parseTotpSecretFromOtpauthUri(enroll.otpauthUri);
+    const code = generateTotpCode(secret!);
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_enrolled" },
+    });
+
+    const confirm = () =>
+      app.request("/api/account/mfa/totp/confirm", {
+        method: "POST",
+        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+    const [resA, resB] = await Promise.all([confirm(), confirm()]);
+    const statuses = [resA.status, resB.status].sort();
+    expect(statuses).toEqual([200, 400]);
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_enrolled" },
+    });
+    expect(auditCountAfter - auditCountBefore).toBe(1);
   });
 
   it("returns 401 on MFA reset with wrong password", async () => {
@@ -209,6 +343,82 @@ describe("POST /api/account/mfa/totp/*", () => {
     expect(await prisma.userMfaMethod.count({ where: { user_id: userId } })).toBe(0);
     expect((await prisma.session.findUnique({ where: { id: userSessionId } }))?.revoked_at).toBeNull();
     expect((await prisma.session.findUnique({ where: { id: extra.session.id } }))?.revoked_at).not.toBeNull();
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(userId);
+    expect(audit?.metadata).toMatchObject({ sessionsRevoked: 1 });
+  });
+
+  it("two concurrent MFA resets write exactly one audit row", async () => {
+    rateLimitStore.reset();
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+    });
+
+    const reset = () =>
+      app.request("/api/account/mfa/reset", {
+        method: "POST",
+        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ password: PASSWORD }),
+      });
+    const [resA, resB] = await Promise.all([reset(), reset()]);
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId } })).toBe(0);
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+    });
+    expect(auditCountAfter - auditCountBefore).toBe(1);
+  });
+
+  it("audits a reset that revokes other sessions even with no MFA enrolled", async () => {
+    rateLimitStore.reset();
+    // No userMfaMethod row at all — only a second session to be revoked.
+    const extra = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+    });
+
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: PASSWORD }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { sessions_revoked: number };
+    expect(body.sessions_revoked).toBe(1);
+    expect((await prisma.session.findUnique({ where: { id: extra.session.id } }))?.revoked_at).not.toBeNull();
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+    });
+    expect(auditCountAfter - auditCountBefore).toBe(1);
+  });
+
+  it("does not audit a reset that changes nothing (no MFA, no other sessions, no trusted devices)", async () => {
+    rateLimitStore.reset();
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+    });
+
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: PASSWORD }),
+    });
+    expect(res.status).toBe(200);
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+    });
+    expect(auditCountAfter).toBe(auditCountBefore);
   });
 
   it("returns 400 no_local_password for OIDC-only TOTP enroll", async () => {
