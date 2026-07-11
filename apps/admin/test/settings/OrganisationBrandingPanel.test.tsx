@@ -79,6 +79,46 @@ describe("OrganisationBrandingPanel", () => {
     });
   });
 
+  it("saves with a valid external HTTPS logo URL, passing it through to the API", async () => {
+    mockFetch.mockResolvedValueOnce({ org_name: "Acme Corp", logo_url: "" });
+    mockPatch.mockResolvedValueOnce({
+      org_name: "Acme Corp",
+      logo_url: "https://cdn.example.com/logo.png",
+    });
+    renderWithToast(<OrganisationBrandingPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Organisation name")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use external HTTPS URL" }));
+    fireEvent.change(screen.getByLabelText("External logo URL (HTTPS)"), {
+      target: { value: "https://cdn.example.com/logo.png" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save branding" }));
+    await waitFor(() => {
+      expect(mockPatch).toHaveBeenCalledWith({
+        org_name: "Acme Corp",
+        logo_url: "https://cdn.example.com/logo.png",
+      });
+    });
+  });
+
+  it("blocks save with a non-HTTPS logo URL, without calling the API", async () => {
+    mockFetch.mockResolvedValueOnce({ org_name: "Acme Corp", logo_url: "" });
+    renderWithToast(<OrganisationBrandingPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Organisation name")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use external HTTPS URL" }));
+    fireEvent.change(screen.getByLabelText("External logo URL (HTTPS)"), {
+      target: { value: "http://insecure.example.com/logo.png" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save branding" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Logo must be a valid HTTPS URL/);
+    });
+    expect(mockPatch).not.toHaveBeenCalled();
+  });
+
   it("toasts save failure without leaking server detail", async () => {
     mockFetch.mockResolvedValueOnce({ org_name: "Acme Corp", logo_url: "" });
     mockPatch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
