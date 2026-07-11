@@ -378,6 +378,49 @@ describe("POST /api/account/mfa/totp/*", () => {
     expect(auditCountAfter - auditCountBefore).toBe(1);
   });
 
+  it("audits a reset that revokes other sessions even with no MFA enrolled", async () => {
+    rateLimitStore.reset();
+    // No userMfaMethod row at all — only a second session to be revoked.
+    const extra = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+    });
+
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: PASSWORD }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { sessions_revoked: number };
+    expect(body.sessions_revoked).toBe(1);
+    expect((await prisma.session.findUnique({ where: { id: extra.session.id } }))?.revoked_at).not.toBeNull();
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+    });
+    expect(auditCountAfter - auditCountBefore).toBe(1);
+  });
+
+  it("does not audit a reset that changes nothing (no MFA, no other sessions, no trusted devices)", async () => {
+    rateLimitStore.reset();
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+    });
+
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: PASSWORD }),
+    });
+    expect(res.status).toBe(200);
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+    });
+    expect(auditCountAfter).toBe(auditCountBefore);
+  });
+
   it("returns 400 no_local_password for OIDC-only TOTP enroll", async () => {
     const oidcSession = await createSession(prisma, { userId: oidcUserId, stage: SESSION_STAGE.FULL });
     const res = await app.request("/api/account/mfa/totp/enroll", {

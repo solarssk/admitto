@@ -449,11 +449,14 @@ export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<
   const audit = adminAuditFromContext(c);
   const sessions_revoked = await runInTransaction(db, async (tx) => {
     const mfaDeleted = await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
-    await revokeAllTrustedDevicesForUser(tx, userId);
+    const devicesRevoked = await revokeAllTrustedDevicesForUser(tx, userId);
     const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
-    // Gate on an actual MFA removal so two concurrent resets (double-submit/retry) can't both
-    // audit account_mfa_reset — only the request that really cleared a method did anything.
-    if (mfaDeleted.count > 0) {
+    // Gate on any real effect, not just an MFA method actually being deleted: a
+    // no-MFA-enrolled account calling this still revokes trusted devices and other
+    // sessions, which is itself security-relevant and must stay audited. This still
+    // suppresses the duplicate audit on a true no-op (two concurrent resets, or a retry
+    // after the state is already fully cleared) — that case has all three counts at 0.
+    if (mfaDeleted.count > 0 || devicesRevoked > 0 || revokedCount > 0) {
       await writeAdminAuditLog(tx, {
         organizationId: orgId,
         actorUserId: audit.operator ?? userId,
