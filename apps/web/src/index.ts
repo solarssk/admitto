@@ -88,7 +88,7 @@ async function main(): Promise<void> {
       }
     : { fetch: app.fetch, port, hostname };
   serve(options, () => {
-    console.log(`Admitto web running at ${useHttps ? "https" : "http"}://localhost:${port}`);
+    console.log(`Admitto web running at ${useHttps ? "https" : "http"}://${hostname ?? "0.0.0.0"}:${port}`);
   });
 }
 
