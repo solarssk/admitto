@@ -17,6 +17,7 @@ const ORG_B = "org-event-settings-b";
 const EVENT_SET = "evt-event-settings";
 const EVENT_B = "evt-event-settings-b";
 const EVENT_ARCHIVED = "evt-event-settings-archived";
+const EVENT_ACTIVE_EMPTY = "evt-event-settings-active-empty";
 const EVENT_MISSING = "evt-event-settings-missing";
 const ATT_SET = "att-event-settings-1";
 const ITEM_SET = "item-event-settings-1";
@@ -51,7 +52,9 @@ async function seed(client: PrismaClient) {
     where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
   });
   await client.user.deleteMany({ where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_OP] } } });
-  await client.event.deleteMany({ where: { id: { in: [EVENT_SET, EVENT_ARCHIVED, EVENT_B] } } });
+  await client.event.deleteMany({
+    where: { id: { in: [EVENT_SET, EVENT_ARCHIVED, EVENT_B, EVENT_ACTIVE_EMPTY] } },
+  });
   await client.organization.deleteMany({ where: { id: { in: [ORG_SET, ORG_B] } } });
 
   const password_hash = await hashPassword(PASSWORD);
@@ -87,6 +90,13 @@ async function seed(client: PrismaClient) {
         slug: "event-settings-b",
         date: new Date("2026-12-01T12:00:00.000Z"),
         organization_id: ORG_B,
+      },
+      {
+        id: EVENT_ACTIVE_EMPTY,
+        title: "Active Empty Settings Event",
+        slug: "event-settings-active-empty",
+        date: new Date("2027-01-01T12:00:00.000Z"),
+        organization_id: ORG_SET,
       },
     ],
   });
@@ -222,6 +232,7 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       status: string;
       archived_at: string | null;
       created_at: string;
+      is_deletable: boolean;
       organization_name: string;
       active_items: { id: string; name: string; enabled: boolean }[];
       logo_url: string | null;
@@ -238,6 +249,7 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.status).toBe("active");
     expect(body.archived_at).toBeNull();
     expect(new Date(body.created_at).toString()).not.toBe("Invalid Date");
+    expect(body.is_deletable).toBe(false);
     expect(body.organization_name).toBe("Settings Org");
     expect(body.active_items.some((i) => i.id === ITEM_SET && i.name === "Badge")).toBe(true);
     expect(body.logo_url).toBeNull();
@@ -306,6 +318,34 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.resolved_logo_url).toBe("https://cdn.example.com/event-logo.png");
   });
 
+  it("returns is_deletable: true for an archived event with zero activity", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_ARCHIVED}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      archived_at: string | null;
+      is_deletable: boolean;
+    };
+    expect(body.archived_at).not.toBeNull();
+    expect(body.is_deletable).toBe(true);
+  });
+
+  it("returns is_deletable: true for an ACTIVE event with zero activity (archiving is not required)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_ACTIVE_EMPTY}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      status: string;
+      archived_at: string | null;
+      is_deletable: boolean;
+    };
+    expect(body.status).toBe("active");
+    expect(body.archived_at).toBeNull();
+    expect(body.is_deletable).toBe(true);
+  });
+
   it("returns 404 for non-existent event (superadmin)", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_MISSING}/settings`, {
       headers: { Cookie: superCookie },
@@ -371,9 +411,12 @@ describe("PATCH /api/admin/events/:eventId", () => {
       body: JSON.stringify({ title: "Renamed Event" }),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { event: { title: string; slug: string } };
+    const body = (await res.json()) as {
+      event: { title: string; slug: string; is_deletable: boolean };
+    };
     expect(body.event.title).toBe("Renamed Event");
     expect(body.event.slug).toBe("event-settings");
+    expect(body.event.is_deletable).toBe(false);
 
     const audit = await prisma.adminAuditLog.findFirst({
       where: { organization_id: ORG_SET, action_type: "event_updated" },

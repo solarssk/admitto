@@ -95,6 +95,7 @@ import {
   handlePostUnarchiveEvent,
   withEventArchiveGuard,
 } from "./admin/event-archiving.js";
+import { handleDeleteEvent } from "./admin/event-deletion.js";
 import {
   handleGetEventSettings,
   handlePatchEvent,
@@ -482,6 +483,13 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/api/admin/events/:eventId/unarchive", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostUnarchiveEvent(c, db),
+  );
+  // Delete is intentionally not wrapped in guardArchivedEvent: it does NOT require the
+  // event to be archived (isEventDeletable in event-deletion.ts checks zero-activity
+  // signals only, never archived_at), so gating it behind "already archived" would be
+  // the opposite of that guard's "block mutations on archived events" purpose.
+  app.delete("/api/admin/events/:eventId", jsonPostCsrf, staffAdminGate, (c) =>
+    handleDeleteEvent(c, db),
   );
   // PATCH /events/:eventId is the bare event id (no trailing segment). Hono matches the
   // full path, so this does not shadow /attendees/:id, /items/:itemId, or /ops-config.
