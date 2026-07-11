@@ -308,7 +308,10 @@ export async function handleDeleteAccountSession(c: Context, db: PrismaClient): 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
   await runInTransaction(db, async (tx) => {
-    await revokeSession(tx, sessionId);
+    // Re-check inside the transaction: two concurrent DELETEs can both pass the read above
+    // before either commits. Only the one that actually revoked the session gets audited.
+    const revoked = await revokeSession(tx, sessionId);
+    if (!revoked) return;
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
       actorUserId: audit.operator ?? auth.userId,

@@ -208,6 +208,27 @@ describe("DELETE /api/account/sessions/:id", () => {
     });
     expect(auditCountAfter).toBe(auditCountBefore);
   });
+
+  it("two concurrent revokes of the same session write exactly one audit row", async () => {
+    const other = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+    });
+
+    const request = () =>
+      app.request(`/api/account/sessions/${other.session.id}`, {
+        method: "DELETE",
+        headers: { Cookie: userCookie, ...sameOrigin },
+      });
+    const [resA, resB] = await Promise.all([request(), request()]);
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+    });
+    expect(auditCountAfter - auditCountBefore).toBe(1);
+  });
 });
 
 describe("POST /api/account/mfa/totp/*", () => {
