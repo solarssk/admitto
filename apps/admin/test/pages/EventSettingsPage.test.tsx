@@ -429,7 +429,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     expect(button.title).toBe("This event has data and cannot be deleted");
     expect(
       screen.getByText(
-        /Only events with no attendees, custom items, contacts, resources, pinned note, or event-specific mail template can be permanently deleted/,
+        /Only events with no attendees, custom items, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
       ),
     ).toBeTruthy();
   });
@@ -468,7 +468,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     expect(button.title).toBe("This event has data and cannot be deleted");
     expect(
       screen.getByText(
-        /Only events with no attendees, custom items, contacts, resources, pinned note, or event-specific mail template can be permanently deleted/,
+        /Only events with no attendees, custom items, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
       ),
     ).toBeTruthy();
   });
@@ -547,7 +547,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     });
   });
 
-  it("keeps the dialog open and shows a toast when delete fails", async () => {
+  it("keeps the dialog open and shows the failure reason inline, not just as a toast", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...archivedEvent,
       title: "Summit 2026",
@@ -572,5 +572,38 @@ describe("EventSettingsPage — delete event (#395)", () => {
     });
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(screen.queryByText("events picker")).toBeNull();
+    expect(within(screen.getByRole("dialog")).getByRole("alert")).toBeTruthy();
+  });
+
+  it("clears the delete error when the dialog is cancelled and reopened", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...archivedEvent,
+      title: "Summit 2026",
+      is_deletable: true,
+    });
+    const { ApiError } = await import("../../src/api/client.js");
+    vi.mocked(deleteEvent).mockRejectedValueOnce(new ApiError(409, "event_not_deletable"));
+    renderSettings("/admin/events/evt-2/settings");
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Delete event/ }));
+    let dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText('Type the event title to confirm: "Summit 2026"'), {
+      target: { value: "Summit 2026" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete event" }));
+    await waitFor(() => {
+      expect(within(screen.getByRole("dialog")).getByRole("alert")).toBeTruthy();
+    });
+
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Delete event/ }));
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByRole("alert")).toBeNull();
   });
 });
