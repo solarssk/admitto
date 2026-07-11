@@ -12,7 +12,7 @@ import {
 import { isBadgeItemUsable } from "@admitto/tickets";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, EventItemDto, OpsConfigDto } from "../api/types.js";
-import { ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
+import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";

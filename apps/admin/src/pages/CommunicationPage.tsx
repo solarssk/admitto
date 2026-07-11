@@ -851,6 +851,28 @@ export function CommunicationPage() {
               title={activeTemplateName === "ticket" ? "Ticket template" : "Template"}
               actions={<Badge variant="neutral">Outlook-safe</Badge>}
             >
+              <div className="communication-ph-row">
+                <span className="communication-overline">Insert placeholder</span>
+                <div className="communication-chips">
+                  {allowedPlaceholders.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      className={[
+                        "communication-chip",
+                        requiredPlaceholders.includes(p) && "communication-chip--required",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onClick={() => insertPlaceholder(p)}
+                      title={requiredPlaceholders.includes(p) ? "Required placeholder" : undefined}
+                    >
+                      {`{{${p}}}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <fieldset
                 className={["communication-editor-fieldset", isEventArchived(event) && "at-tooltip"]
                   .filter(Boolean)
@@ -858,30 +880,6 @@ export function CommunicationPage() {
                 data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
                 disabled={isEventArchived(event)}
               >
-                <div className="communication-ph-row">
-                  <span className="communication-overline">Insert placeholder</span>
-                  <div className="communication-chips">
-                    {allowedPlaceholders.map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        className={[
-                          "communication-chip",
-                          requiredPlaceholders.includes(p) && "communication-chip--required",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                        onClick={() => insertPlaceholder(p)}
-                        title={
-                          requiredPlaceholders.includes(p) ? "Required placeholder" : undefined
-                        }
-                      >
-                        {`{{${p}}}`}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
                 <Input
                   ref={subjectRef}
                   label="Subject"
@@ -891,27 +889,35 @@ export function CommunicationPage() {
                   onClick={() => setActiveField("subject")}
                   disabled={editorSnapshotMissing}
                 />
+              </fieldset>
 
-                <div className="communication-format-row">
-                  <Button
-                    variant={format === "mjml" ? "primary" : "secondary"}
-                    size="sm"
-                    onClick={() => setFormat("mjml")}
-                  >
-                    MJML
-                  </Button>
-                  <Button
-                    variant={format === "html" ? "primary" : "secondary"}
-                    size="sm"
-                    onClick={() => setFormat("html")}
-                  >
-                    HTML
-                  </Button>
-                  <span className="communication-format-hint muted">
-                    Changing format does not convert the template body.
-                  </span>
-                </div>
+              <div className="communication-format-row">
+                <Button
+                  variant={format === "mjml" ? "primary" : "secondary"}
+                  size="sm"
+                  onClick={() => setFormat("mjml")}
+                >
+                  MJML
+                </Button>
+                <Button
+                  variant={format === "html" ? "primary" : "secondary"}
+                  size="sm"
+                  onClick={() => setFormat("html")}
+                >
+                  HTML
+                </Button>
+                <span className="communication-format-hint muted">
+                  Changing format does not convert the template body.
+                </span>
+              </div>
 
+              <fieldset
+                className={["communication-editor-fieldset", isEventArchived(event) && "at-tooltip"]
+                  .filter(Boolean)
+                  .join(" ")}
+                data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                disabled={isEventArchived(event)}
+              >
                 <div className="communication-body-field">
                   <label htmlFor="communication-body">{format === "mjml" ? "MJML body" : "HTML body"}</label>
                   <textarea

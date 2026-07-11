@@ -172,5 +172,17 @@ describe("CommunicationPage archived lockdown", () => {
     expect(editorFieldset?.disabled).toBe(true);
     expect(editorFieldset?.className).toContain("at-tooltip");
     expect(editorFieldset?.getAttribute("data-tooltip")).toBe(ARCHIVED_ACTION_TOOLTIP);
+
+    // Inserting a placeholder or switching MJML/HTML only touches local component
+    // state — no API call — so these stay usable even though Save is blocked.
+    expect(
+      (screen.getByRole("button", { name: "{{first_name}}" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    expect((screen.getByRole("button", { name: "MJML" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    expect((screen.getByRole("button", { name: "HTML" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
   });
 });

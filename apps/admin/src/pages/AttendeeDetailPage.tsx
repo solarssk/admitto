@@ -609,6 +609,14 @@ export function AttendeeDetailPage() {
         <div className="attendee-detail-grid">
           <Card title="Profile" className="attendee-detail-profile">
             <form className="attendee-form" onSubmit={handleSave}>
+              {staleWrite && (
+                <div className="attendee-form__warn">
+                  <p>Someone else updated this attendee — reload and reapply your edits.</p>
+                  <Button type="button" variant="secondary" size="sm" onClick={() => void handleReload()} disabled={reloading}>
+                    {reloading ? "Reloading…" : "Reload"}
+                  </Button>
+                </div>
+              )}
               <fieldset
                 className={["attendee-form__fieldset", isEventArchived(event) && "at-tooltip"]
                   .filter(Boolean)
@@ -624,14 +632,6 @@ export function AttendeeDetailPage() {
                 )}
                 {emailConflict && (
                   <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
-                )}
-                {staleWrite && (
-                  <div className="attendee-form__warn">
-                    <p>Someone else updated this attendee — reload and reapply your edits.</p>
-                    <Button type="button" variant="secondary" size="sm" onClick={() => void handleReload()} disabled={reloading}>
-                      {reloading ? "Reloading…" : "Reload"}
-                    </Button>
-                  </div>
                 )}
                 <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
                 <Input label="Company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
