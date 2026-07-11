@@ -286,8 +286,8 @@ describe("POST /api/admin/events/:eventId/unarchive", () => {
   });
 });
 
-describe("check-in on archived events (intentional, ADR 0022)", () => {
-  it("still lists archived event for operator check-in picker", async () => {
+describe("check-in on archived events", () => {
+  it("excludes archived event from operator check-in picker", async () => {
     await prisma.event.update({
       where: { id: EVENT_ARCH },
       data: { archived_at: new Date() },
@@ -298,7 +298,44 @@ describe("check-in on archived events (intentional, ADR 0022)", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { events: Array<{ id: string }> };
-    expect(body.events.map((e) => e.id)).toContain(EVENT_ARCH);
+    expect(body.events.map((e) => e.id)).not.toContain(EVENT_ARCH);
+  });
+
+  it("blocks a session-authenticated check-in action with 403 event_archived", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_ARCH },
+      data: { archived_at: new Date() },
+    });
+
+    const res = await app.request(`/api/checkin/ops-config?eventId=${EVENT_ARCH}`, {
+      headers: { Cookie: opCookie },
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code?: string };
+    expect(body.code).toBe("event_archived");
+  });
+
+  it("blocks an emergency-bearer-authenticated check-in action with 403 event_archived", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_ARCH },
+      data: { archived_at: new Date() },
+    });
+
+    const bearerApp = createApp({
+      prisma,
+      rateLimitStore: createRateLimitStore(),
+      skipCheckinBootValidation: true,
+      adminDistRoot,
+      allowCheckinBearer: true,
+      checkinToken: "test-archived-bearer-token",
+    });
+
+    const res = await bearerApp.request(`/api/checkin/ops-config?eventId=${EVENT_ARCH}`, {
+      headers: { Authorization: "Bearer test-archived-bearer-token" },
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code?: string };
+    expect(body.code).toBe("event_archived");
   });
 });
 

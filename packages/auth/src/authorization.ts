@@ -145,13 +145,17 @@ const eventSelect = {
   archived_at: true,
 } as const;
 
-/** Events where user has check-in capability (matches canPerformCheckIn). Archived events remain visible for late check-in after admin archive (ADR 0022). */
+/** Events where user has check-in capability (matches canPerformCheckIn). Excludes archived events — archiving an event ends check-in for it, same as admin mutating APIs. */
 export async function listCheckInEvents(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
 ): Promise<EventSummary[]> {
   if (await hasScope(prisma, userId, "superadmin", "instance")) {
-    return prisma.event.findMany({ select: eventSelect, orderBy: { date: "asc" } });
+    return prisma.event.findMany({
+      where: { archived_at: null },
+      select: eventSelect,
+      orderBy: { date: "asc" },
+    });
   }
 
   const assignments = await prisma.roleAssignment.findMany({
@@ -182,7 +186,7 @@ export async function listCheckInEvents(
   }
 
   return prisma.event.findMany({
-    where: { OR: or },
+    where: { archived_at: null, OR: or },
     select: eventSelect,
     orderBy: { date: "asc" },
   });

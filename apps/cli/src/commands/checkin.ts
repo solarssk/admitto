@@ -4,12 +4,25 @@ import { CliError, arg, hasFlag, parseFormat } from "../lib/args.js";
 import { formatJson, formatTable, printError } from "../lib/output.js";
 import { resolveOperatorContext } from "../lib/audit.js";
 
+/**
+ * Archiving fully locks down check-in (admin UI and API alike) — the CLI shares the same
+ * domain functions as the HTTP routes, so it needs its own guard rather than relying on
+ * `assertEventNotArchived`, which builds an HTTP `Response` and isn't usable outside a route.
+ */
+async function assertEventNotArchivedCli(db: PrismaClient, eventId: string): Promise<void> {
+  const event = await db.event.findUnique({ where: { id: eventId }, select: { archived_at: true } });
+  if (event?.archived_at) {
+    throw new CliError("This event is archived. Check-in is disabled.");
+  }
+}
+
 export async function runCheckinLookup(db: PrismaClient): Promise<void> {
   const eventId = arg("event");
   const query = arg("query");
   if (!eventId || !query) {
     throw new CliError("Usage: admitto checkin lookup --event <id> --query <text>");
   }
+  await assertEventNotArchivedCli(db, eventId);
 
   const rows = await lookupAttendees(eventId, query, db);
   const format = parseFormat();
@@ -39,6 +52,7 @@ export async function runCheckinAdmit(db: PrismaClient): Promise<void> {
       "Usage: admitto checkin admit --event <id> (--attendee-id <id> | --scan <url-or-token>) [--notes ...]",
     );
   }
+  await assertEventNotArchivedCli(db, eventId);
 
   if (hasFlag("dry-run")) {
     console.log("Dry run: would admit attendee (no write).");

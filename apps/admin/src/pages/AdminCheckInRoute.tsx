@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Button, Card, PageHeader } from "@admitto/ui";
+import { Button, Card, EmptyState, PageHeader } from "@admitto/ui";
 import type { EventDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import {
@@ -31,6 +31,19 @@ export function AdminCheckInRoute() {
           or use the <a href="/operator">operator check-in</a> surface on event day.
         </p>
       </Card>
+    );
+  }
+
+  if (event.archived_at) {
+    return (
+      <>
+        <PageHeader title="Check-in" subtitle="Scan QR codes and admit guests on event day" />
+        <EmptyState
+          icon={<i className="ti ti-archive" aria-hidden="true" />}
+          title="Check-in is disabled"
+          description="This event is archived, so check-in is turned off to protect its data."
+        />
+      </>
     );
   }
 

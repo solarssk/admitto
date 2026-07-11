@@ -1,9 +1,12 @@
 /**
- * Event archive / unarchive and admin read-only guard (ADR 0022).
+ * Event archive / unarchive and read-only guard.
  *
- * Check-in routes (`/api/checkin/*`) are intentionally excluded from `withEventArchiveGuard`:
- * archive is expected after the event day, but operators may still need late check-in on a
- * closed admin lifecycle. Admin mutating APIs remain blocked via `event_archived`.
+ * Archiving is a terminal, reversible-only-via-unarchive lifecycle state: once archived, an
+ * event is fully read-only — no admin mutations and no check-in. Admin mutating APIs are
+ * blocked via `withEventArchiveGuard`/`assertEventNotArchived` (`event_archived`); check-in
+ * routes (`/api/checkin/*`) reuse the same `assertEventNotArchived` check inside
+ * `createCheckinEventScope` (see checkin-gate.ts), for both session and emergency-bearer auth.
+ * Complete check-in before archiving an event.
  */
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";

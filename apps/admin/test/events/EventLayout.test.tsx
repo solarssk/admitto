@@ -19,7 +19,23 @@ vi.mock("../../src/api/client.js", () => ({
 }));
 
 vi.mock("../../src/layouts/AdminShell.js", () => ({
-  AdminShell: ({ event }: { event: EventDto }) => <div>shell:{event.title}</div>,
+  AdminShell: ({
+    event,
+    refreshEvent,
+  }: {
+    event: EventDto;
+    refreshEvent?: () => Promise<void>;
+  }) => (
+    <div>
+      <div>shell:{event.title}</div>
+      <div data-testid="shell-archived-at">{event.archived_at ?? "active"}</div>
+      {refreshEvent && (
+        <button type="button" onClick={() => void refreshEvent()}>
+          refresh
+        </button>
+      )}
+    </div>
+  ),
 }));
 
 function eventDto(id: string, title: string, archivedAt: string | null = null): EventDto {
@@ -140,5 +156,39 @@ describe("EventLayout (#274)", () => {
 
     await waitFor(() => expect(fetchAdminEvents).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByText("shell:Spring Gala")).toBeTruthy());
+  });
+
+  it("refreshEvent re-fetches and updates the shared event snapshot in place", async () => {
+    renderLayout({
+      pathname: "/admin/events/evt-1/overview",
+      state: { event: eventDto("evt-1", "Spring Gala") },
+    });
+    expect(screen.getByTestId("shell-archived-at").textContent).toBe("active");
+
+    fetchAdminEvents.mockResolvedValueOnce([
+      eventDto("evt-1", "Spring Gala", "2026-02-01T00:00:00.000Z"),
+    ]);
+    screen.getByRole("button", { name: "refresh" }).click();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("shell-archived-at").textContent).toBe(
+        "2026-02-01T00:00:00.000Z",
+      );
+    });
+    expect(fetchAdminEvents).toHaveBeenCalledWith({ includeArchived: true });
+  });
+
+  it("refreshEvent silently keeps the last-known snapshot when the background re-fetch fails", async () => {
+    renderLayout({
+      pathname: "/admin/events/evt-1/overview",
+      state: { event: eventDto("evt-1", "Spring Gala") },
+    });
+
+    fetchAdminEvents.mockRejectedValueOnce(new Error("network down"));
+    screen.getByRole("button", { name: "refresh" }).click();
+
+    await waitFor(() => expect(fetchAdminEvents).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("shell:Spring Gala")).toBeTruthy();
+    expect(screen.getByTestId("shell-archived-at").textContent).toBe("active");
   });
 });

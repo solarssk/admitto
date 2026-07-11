@@ -40,7 +40,6 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchEventSettings: vi.fn(),
     patchEvent: vi.fn(),
     archiveEvent: vi.fn(),
-    unarchiveEvent: vi.fn(),
     exportEventPii: vi.fn(),
     fetchAdminUsers: vi.fn(),
     fetchRoleAssignments: vi.fn(),
@@ -78,7 +77,6 @@ import {
   revokeUserSessions,
   patchEvent,
   submitSessionDeviceLabel,
-  unarchiveEvent,
   updateEventItem,
   updateOpsConfig,
 } from "../../src/api/client.js";
@@ -490,10 +488,39 @@ describe("ReportsPage operator errors", () => {
   });
 });
 
-describe("EventsPickerPage operator errors", () => {
-  it("shows unarchive failure in dialog", async () => {
+describe("EventsPickerPage archived event navigation", () => {
+  it("renders an active event card with the Active badge and no archived styling", async () => {
+    const activeEvent = {
+      id: "evt-active",
+      title: "Spring Gala",
+      slug: "spring-gala",
+      date: "2026-06-01",
+      timezone: "Europe/Warsaw",
+      location: "Hall A",
+      capacity: 100,
+      archived_at: null as string | null,
+    };
+    vi.mocked(fetchAdminEvents).mockResolvedValue([activeEvent]);
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin" element={<EventsPickerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Spring Gala")).toBeTruthy();
+    });
+
+    const link = screen.getByRole("link", { name: /Spring Gala/ });
+    expect(screen.getByText("Active")).toBeTruthy();
+    expect(link.querySelector(".event-card")?.classList.contains("event-card--archived")).toBe(
+      false,
+    );
+  });
+
+  it("lets a superadmin click into an archived event from the Archived events tab", async () => {
     vi.mocked(fetchAdminEvents).mockResolvedValue([archivedEvent]);
-    vi.mocked(unarchiveEvent).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(
       <MemoryRouter initialEntries={["/admin"]}>
         <Routes>
@@ -506,15 +533,19 @@ describe("EventsPickerPage operator errors", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: /Archived events/ }));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Unarchive" })).toBeTruthy();
+      expect(screen.getByText("Archived Summit")).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Unarchive" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unarchive" }));
-    await waitFor(() => {
-      expect(within(dialog).getByText(/Failed to unarchive event/)).toBeTruthy();
-    });
-    expect(screen.queryByText("secret_internal")).toBeNull();
+
+    const link = screen.getByRole("link", { name: /Archived Summit/ });
+    expect(link.getAttribute("href")).toBe("/admin/events/evt-arch/overview");
+    // Card matches the active-event card style (same badge position, no separate
+    // Unarchive button) — that action now lives on Event settings / Settings only.
+    expect(screen.getByText("Archived")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Unarchive" })).toBeNull();
+    // Grey (not green) left-border accent distinguishes archived from active cards.
+    expect(link.querySelector(".event-card")?.classList.contains("event-card--archived")).toBe(
+      true,
+    );
   });
 });
 

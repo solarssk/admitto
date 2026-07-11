@@ -251,6 +251,13 @@ describe("Bearer emergency path", () => {
     });
     expect(res.status).toBe(200);
   });
+
+  it("Bearer without an eventId skips the archived check and reaches the handler (no eventId to check archived status against)", async () => {
+    const res = await bearerApp().request("/api/checkin/test", {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(res.status).toBe(200);
+  });
 });
 
 describe("scan middleware order", () => {

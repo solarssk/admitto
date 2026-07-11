@@ -44,10 +44,11 @@ function mapsUrl(location: string): string {
 
 export interface AdminShellProps {
   event: EventDto;
+  refreshEvent: () => Promise<void>;
 }
 
 /** Event-scoped admin layout: lifecycle sidebar, top bar, and nested route outlet. */
-export function AdminShell({ event }: AdminShellProps) {
+export function AdminShell({ event, refreshEvent }: AdminShellProps) {
   const { eventId } = useParams();
 
   const sidebar = (
@@ -114,7 +115,7 @@ export function AdminShell({ event }: AdminShellProps) {
 
   return (
     <StaffShell sidebar={sidebar}>
-      <Outlet context={{ event }} />
+      <Outlet context={{ event, refreshEvent }} />
     </StaffShell>
   );
 }
