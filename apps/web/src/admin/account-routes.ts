@@ -298,12 +298,13 @@ export async function handleDeleteAccountSession(c: Context, db: PrismaClient): 
 
   const row = await db.session.findUnique({
     where: { id: sessionId },
-    select: { user_id: true, revoked_at: true },
+    select: { user_id: true, revoked_at: true, expires_at: true },
   });
   if (!row) return c.json({}, 200);
   if (row.user_id !== auth.userId) return c.json({ error: "forbidden" }, 403);
-  // Already revoked (retry/double-click): no state change, so no audit row either.
-  if (row.revoked_at) return c.json({}, 200);
+  // Already revoked, or already expired (stale sessions-list page): no live session was cut
+  // short, so no audit row either.
+  if (row.revoked_at || row.expires_at <= new Date()) return c.json({}, 200);
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);

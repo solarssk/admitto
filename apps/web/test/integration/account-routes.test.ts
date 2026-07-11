@@ -229,6 +229,28 @@ describe("DELETE /api/account/sessions/:id", () => {
     });
     expect(auditCountAfter - auditCountBefore).toBe(1);
   });
+
+  it("revoking a session that already expired (stale sessions-list page) writes no audit row", async () => {
+    const other = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
+    await prisma.session.update({
+      where: { id: other.session.id },
+      data: { expires_at: new Date(Date.now() - 1000) },
+    });
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+    });
+
+    const res = await app.request(`/api/account/sessions/${other.session.id}`, {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
+    });
+    expect(auditCountAfter).toBe(auditCountBefore);
+  });
 });
 
 describe("POST /api/account/mfa/totp/*", () => {
