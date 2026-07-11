@@ -12,7 +12,9 @@ import {
   revokeSession,
   runInTransaction,
   userHasConfirmedTotp,
+  userRequiresMfa,
   verifyPasswordOrDummy,
+  verifyTotpOrRecoveryCode,
 } from "@admitto/auth";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
@@ -415,10 +417,19 @@ export async function handlePostMfaConfirm(
   return c.json({ ok: true });
 }
 
-const resetSchema = z.object({ password: z.string() }).strict();
+const resetSchema = z.object({ password: z.string(), code: z.string().optional() }).strict();
 
-/** POST /api/account/mfa/reset — re-auth, remove MFA, revoke other sessions (keeps current). */
-export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<Response> {
+/**
+ * POST /api/account/mfa/reset — re-auth, remove MFA, revoke other sessions (keeps current).
+ * Requires a TOTP/recovery-code step-up (mirroring `verifyOidcLinkStepUp`) whenever the user's
+ * role requires MFA and TOTP is confirmed — password alone must not be able to strip MFA from an
+ * MFA-required account.
+ */
+export async function handlePostMfaReset(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
   const auth = c.get("auth");
   const userId = auth.userId;
   const currentSessionId = auth.sessionId;
@@ -447,7 +458,32 @@ export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  const sessions_revoked = await runInTransaction(db, async (tx) => {
+
+  const requiresStepUp =
+    (await userRequiresMfa(db, userId)) && (await userHasConfirmedTotp(db, userId));
+
+  let code: string | undefined;
+  if (requiresStepUp) {
+    if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
+
+    code = parsed.data.code?.trim();
+    if (!code) return c.json({ code: "totp_required" }, 400);
+
+    const ip = resolveMfaClientIp(c);
+    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
+
+  // Step-up verification runs inside the same transaction as the reset itself: a recovery
+  // code is consumed as soon as it's checked, so if the reset work below fails, the whole
+  // transaction (including that consumption) rolls back rather than burning a one-time code
+  // for a reset that never actually happened.
+  const result = await runInTransaction(db, async (tx) => {
+    if (requiresStepUp && !(await verifyTotpOrRecoveryCode(tx, userId, code!))) {
+      return { ok: false as const };
+    }
+
     const mfaDeleted = await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
     const devicesRevoked = await revokeAllTrustedDevicesForUser(tx, userId);
     const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
@@ -466,8 +502,9 @@ export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<
         metadata: { sessionsRevoked: revokedCount },
       });
     }
-    return revokedCount;
+    return { ok: true as const, revokedCount };
   });
 
-  return c.json({ ok: true, sessions_revoked });
+  if (!result.ok) return c.json({ code: "invalid_totp" }, 401);
+  return c.json({ ok: true, sessions_revoked: result.revokedCount });
 }

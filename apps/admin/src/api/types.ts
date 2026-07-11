@@ -770,6 +770,7 @@ export interface ConfirmMfaTotpBody {
 
 export interface ResetMfaBody {
   password: string;
+  code?: string;
 }
 
 export interface ResetMfaResponse {

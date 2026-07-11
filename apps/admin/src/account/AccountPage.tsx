@@ -12,7 +12,7 @@ import {
   patchAccountProfile,
   resetMfa,
 } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AccountDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
@@ -106,6 +106,8 @@ export function AccountPage() {
   const [resetFormOpen, setResetFormOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetPassword, setResetPassword] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetCodeRequired, setResetCodeRequired] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionListDto[]>([]);
@@ -533,6 +535,22 @@ export function AccountPage() {
                     onChange={(e) => setResetPassword(e.target.value)}
                   />
                 </div>
+                {resetCodeRequired && (
+                  <div className="mail-field-row">
+                    <label className="mail-field-label" htmlFor="account-reset-code">Authenticator or backup code</label>
+                    <Input
+                      id="account-reset-code"
+                      name="reset-code"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      value={resetCode}
+                      onChange={(e) => setResetCode(e.target.value)}
+                    />
+                  </div>
+                )}
               </>
             )}
             {totpEnrolled && !account.has_local_password && (
@@ -575,8 +593,8 @@ export function AccountPage() {
             )}
             {resetFormOpen && (
               <div className="mail-transport-footer">
-                <Button type="button" variant="secondary" onClick={() => { setResetFormOpen(false); setResetPassword(""); setResetError(null); }}>Cancel</Button>
-                <Button type="button" variant="danger" disabled={!resetPassword} onClick={() => setResetConfirmOpen(true)}>Reset 2FA</Button>
+                <Button type="button" variant="secondary" onClick={() => { setResetFormOpen(false); setResetPassword(""); setResetCode(""); setResetCodeRequired(false); setResetError(null); }}>Cancel</Button>
+                <Button type="button" variant="danger" disabled={!resetPassword || (resetCodeRequired && !resetCode)} onClick={() => setResetConfirmOpen(true)}>Reset 2FA</Button>
               </div>
             )}
         </Card>
@@ -647,15 +665,18 @@ export function AccountPage() {
       <ConfirmDialog open={resetConfirmOpen} title="Reset two-factor authentication" message="This removes your authenticator app and all backup codes, and ends your other active sessions. You will stay signed in on this device." confirmLabel="Reset 2FA" confirmVariant="danger" loading={resetting} errorMessage={resetError ?? undefined} onConfirm={async () => {
         setResetting(true); setResetError(null);
         try {
-          const { sessions_revoked } = await resetMfa({ password: resetPassword });
-          setResetFormOpen(false); setResetPassword(""); setResetConfirmOpen(false);
+          const { sessions_revoked } = await resetMfa({ password: resetPassword, code: resetCode || undefined });
+          setResetFormOpen(false); setResetPassword(""); setResetCode(""); setResetCodeRequired(false); setResetConfirmOpen(false);
           addToast(
             `Two-factor authentication reset.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} ended.` : ""}`,
             "success",
           );
           await loadAccount(); await loadSessions();
         }
-        catch (err) { setResetError(operatorApiErrorMessage(err, "Failed to reset 2FA.")); }
+        catch (err) {
+          if (hasApiErrorCode(err, "totp_required")) { setResetCodeRequired(true); setResetConfirmOpen(false); }
+          setResetError(operatorApiErrorMessage(err, "Failed to reset 2FA."));
+        }
         finally { setResetting(false); }
       }} onCancel={() => { if (!resetting) setResetConfirmOpen(false); }} />
     </>

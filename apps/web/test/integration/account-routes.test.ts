@@ -1,12 +1,16 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import {
+  bootstrapSuperadmin,
+  confirmTotpEnrollment,
   createSession,
   hashPassword,
+  markBackupCodesAcknowledged,
   parseTotpSecretFromOtpauthUri,
   SESSION_STAGE,
+  startTotpEnrollment,
   verifyPassword,
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpCode, generateTotpSecret } from "@admitto/auth/testing";
@@ -20,8 +24,10 @@ const ORG_ACCOUNT = "org-account-test";
 const EMAIL_USER = "account-user@example.com";
 const EMAIL_OIDC = "account-oidc@example.com";
 const EMAIL_OTHER = "account-other@example.com";
+const EMAIL_ADMIN = "account-admin@example.com";
 const PASSWORD = "account-pass-123";
 const NEW_PASSWORD = "account-new-pass-456";
+const ADMIN_PASSWORD = "account-admin-pass-123";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -29,16 +35,18 @@ let rateLimitStore: InMemoryRateLimitStore;
 let userId = "";
 let oidcUserId = "";
 let otherUserId = "";
+let adminUserId = "";
 let userCookie = "";
 let userSessionId = "";
+let adminCookie = "";
 let prevInstanceOrgId: string | undefined;
 
 async function seed(client: PrismaClient) {
-  await client.session.deleteMany({ where: { user: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER] } } } });
-  await client.userMfaMethod.deleteMany({ where: { user: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER] } } } });
-  await client.roleAssignment.deleteMany({ where: { scope_id: ORG_ACCOUNT } });
+  await client.session.deleteMany({ where: { user: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER, EMAIL_ADMIN] } } } });
+  await client.userMfaMethod.deleteMany({ where: { user: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER, EMAIL_ADMIN] } } } });
+  await client.roleAssignment.deleteMany({ where: { OR: [{ scope_id: ORG_ACCOUNT }, { user: { email: EMAIL_ADMIN } }] } });
   await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_ACCOUNT } });
-  await client.user.deleteMany({ where: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER] } } });
+  await client.user.deleteMany({ where: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER, EMAIL_ADMIN] } } });
   await client.organization.deleteMany({ where: { id: ORG_ACCOUNT } });
 
   const password_hash = await hashPassword(PASSWORD);
@@ -77,12 +85,21 @@ beforeAll(async () => {
   const session = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL, ip: "127.0.0.1" });
   userCookie = `admitto_session=${session.rawToken}`;
   userSessionId = session.session.id;
+
+  // Superadmin role → in the default mfa_required_roles set, so this fixture exercises the
+  // TOTP/recovery-code step-up gate on MFA reset (the `userId`/operator fixture above is not
+  // MFA-required and continues to reset with just a password).
+  const admin = await bootstrapSuperadmin(prisma, EMAIL_ADMIN, ADMIN_PASSWORD);
+  adminUserId = admin.userId;
+  const adminSession = await createSession(prisma, { userId: adminUserId, stage: SESSION_STAGE.FULL, ip: "127.0.0.1" });
+  adminCookie = `admitto_session=${adminSession.rawToken}`;
 });
 
 afterEach(async () => {
   await prisma.userMfaMethod.deleteMany({ where: { user_id: userId } });
   await prisma.session.deleteMany({ where: { user_id: userId, id: { not: userSessionId } } });
   await prisma.user.update({ where: { id: userId }, data: { password_hash: await hashPassword(PASSWORD), must_change_password: false } });
+  await prisma.userMfaMethod.deleteMany({ where: { user_id: adminUserId } });
 });
 
 afterAll(async () => {
@@ -430,6 +447,91 @@ describe("POST /api/account/mfa/totp/*", () => {
     expect(res.status).toBe(400);
     expect(((await res.json()) as { code: string }).code).toBe("no_local_password");
     await prisma.session.delete({ where: { id: oidcSession.session.id } });
+  });
+});
+
+describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () => {
+  // Enroll+confirm via direct function calls (not the HTTP endpoints) so these setup steps
+  // don't consume the shared per-IP login rate-limit bucket that `/api/account/mfa/reset`
+  // itself is gated by.
+  beforeEach(() => rateLimitStore.reset());
+
+  async function enrollConfirmedTotp(): Promise<string> {
+    const enrollment = await startTotpEnrollment(prisma, adminUserId);
+    const secret = parseTotpSecretFromOtpauthUri(enrollment!.otpauthUri);
+    await confirmTotpEnrollment(prisma, adminUserId, generateTotpCode(secret!));
+    // confirmTotpEnrollment always marks backup codes unacknowledged (IAM-002) — acknowledge
+    // them here so this fixture's session stays usable, mirroring what the self-service HTTP
+    // confirm handler does for a real logged-in user.
+    await markBackupCodesAcknowledged(prisma, adminUserId);
+    return enrollment!.backupCodes[0]!;
+  }
+
+  it("returns 400 totp_required when no code is given for an MFA-required role", async () => {
+    await enrollConfirmedTotp();
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("totp_required");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBeGreaterThan(0);
+  });
+
+  it("returns 401 invalid_totp for a wrong code", async () => {
+    await enrollConfirmedTotp();
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD, code: "000000" }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("invalid_totp");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBeGreaterThan(0);
+  });
+
+  it("resets MFA with a correct TOTP code", async () => {
+    // Seeded directly (not via enroll+confirm) so this is the only code ever verified against
+    // this secret — verifyUserTotpCode rejects replaying the same time-step twice, which
+    // confirming via HTTP first and then reset-with-a-freshly-generated-code could hit if both
+    // land in the same 30s window.
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: { user_id: adminUserId, type: "totp", secret_enc: encryptTotpSecret(secret), confirmed_at: new Date() },
+    });
+
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD, code: generateTotpCode(secret) }),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBe(0);
+  });
+
+  it("resets MFA with a valid backup recovery code, and consumes it", async () => {
+    const backupCode = await enrollConfirmedTotp();
+
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD, code: backupCode }),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBe(0);
+  });
+
+  it("does not require a code for the non-MFA-required operator fixture", async () => {
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: PASSWORD }),
+    });
+    expect(res.status).toBe(200);
   });
 });
 

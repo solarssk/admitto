@@ -181,6 +181,7 @@ export {
   userHasUnacknowledgedBackupCodes,
   markBackupCodesAcknowledged,
 } from "./mfa/policy.js";
+export { verifyTotpOrRecoveryCode } from "./mfa/verify-step-up-code.js";
 export {
   startTotpEnrollment,
   getOrStartTotpEnrollment,
