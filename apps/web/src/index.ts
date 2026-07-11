@@ -29,6 +29,18 @@ function readHttpsCerts(certDir: string): HttpsServerOptions | undefined {
   }
 }
 
+/**
+ * `@hono/node-server` binds to every interface (LAN-reachable) unless a hostname is
+ * given. In dev, that's only actually wanted while a local cert is present for
+ * phone-over-LAN camera testing — otherwise the dev server has no business being
+ * reachable from other devices on the network (PO review: safety). Production keeps
+ * the default (`undefined`, i.e. no override) since it needs to accept traffic from
+ * the container network / reverse proxy, not just loopback.
+ */
+export function resolveDevServeHostname(isDevelopment: boolean, useHttps: boolean): string | undefined {
+  return isDevelopment && !useHttps ? "localhost" : undefined;
+}
+
 /** Boot the Admitto web server; wires a dev-only export_only sink when NODE_ENV is development. */
 async function main(): Promise<void> {
   await validateCfAccessBootConfig(prisma);
@@ -64,20 +76,30 @@ async function main(): Promise<void> {
   const httpsCerts = isDevelopment && certDir !== undefined ? readHttpsCerts(certDir) : undefined;
   const useHttps = httpsCerts !== undefined;
 
+  const hostname = resolveDevServeHostname(isDevelopment, useHttps);
+
   const options = httpsCerts
     ? {
         fetch: app.fetch,
         port,
+        hostname,
         createServer: createHttpsServer,
         serverOptions: httpsCerts,
       }
-    : { fetch: app.fetch, port };
+    : { fetch: app.fetch, port, hostname };
   serve(options, () => {
-    console.log(`Admitto web running at ${useHttps ? "https" : "http"}://localhost:${port}`);
+    console.log(`Admitto web running at ${useHttps ? "https" : "http"}://${hostname ?? "0.0.0.0"}:${port}`);
   });
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Don't boot a real server (or connect to Prisma) when this file is imported by a
+// unit test pulling in resolveDevServeHostname — same NODE_ENV=test guard already
+// used for this exact reason in ops/migrations-check.ts, rather than an
+// import.meta.url/argv[1] comparison, which breaks if the invocation path ever
+// crosses a symlink (e.g. a symlinked release directory).
+if (process.env.NODE_ENV !== "test") {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
