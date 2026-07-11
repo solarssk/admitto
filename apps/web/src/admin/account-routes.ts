@@ -387,7 +387,7 @@ export async function handlePostMfaConfirm(
   if (!sessionId) return c.json({ error: "unauthorized" }, 401);
 
   const ip = resolveMfaClientIp(c);
-  if (!(await checkMfaVerifyRateLimit(rateLimitStore, sessionId, ip, code))) {
+  if (!(await checkMfaVerifyRateLimit(rateLimitStore, sessionId, ip, code, "mfa-confirm"))) {
     return c.json({ error: "too many requests" }, 429);
   }
 
@@ -472,10 +472,17 @@ export async function handlePostMfaReset(
   // connection (mirrors `handlePostOidcLink`'s step-up gate).
   if (code && currentSessionId) {
     const ip = resolveMfaClientIp(c);
-    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code))) {
+    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, "mfa-reset"))) {
       return c.json({ error: "too many requests" }, 429);
     }
   }
+
+  // Resolved via the root `db` client, before the transaction opens: a query against `db`
+  // from inside an active `tx` callback needs a second pooled connection, which deadlocks on
+  // deployments running Prisma with a single DB connection (e.g. `connection_limit=1`) — the
+  // transaction holds the only connection while waiting on a query that needs another one.
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
 
   // The step-up requirement is re-read from `tx`, not the pre-check above, so a role change
   // racing this request can't let a password-only call skip step-up entirely. A recovery code
@@ -492,9 +499,6 @@ export async function handlePostMfaReset(
         return { ok: false as const, reason: "invalid_totp" as const };
       }
     }
-
-    const orgId = await resolveInstanceOrganizationId(db);
-    const audit = adminAuditFromContext(c);
 
     const mfaDeleted = await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
     const devicesRevoked = await revokeAllTrustedDevicesForUser(tx, userId);
