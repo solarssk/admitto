@@ -1145,13 +1145,13 @@ export async function fetchSetupChecks(signal?: AbortSignal): Promise<SetupCheck
   return parseJson<SetupChecksResponse>(res);
 }
 
-/** Load instance organisation name and logo URL for setup wizard branding step. */
+/** Load instance organisation name and logo URL — setup wizard branding step and Settings → General. */
 export async function fetchOrgBranding(signal?: AbortSignal): Promise<SetupOrgBrandingDto> {
   const res = await fetch("/api/admin/setup/org-branding", { credentials: "same-origin", signal });
   return parseJson<SetupOrgBrandingDto>(res);
 }
 
-/** Save organisation name and HTTPS logo URL during first-run branding step. */
+/** Save organisation name and HTTPS logo URL — setup wizard branding step and Settings → General. */
 export async function patchOrgBranding(
   body: PatchSetupOrgBrandingBody,
 ): Promise<SetupOrgBrandingDto> {
