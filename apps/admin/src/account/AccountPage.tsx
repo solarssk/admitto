@@ -542,7 +542,6 @@ export function AccountPage() {
                       id="account-reset-code"
                       name="reset-code"
                       type="text"
-                      inputMode="numeric"
                       autoComplete="one-time-code"
                       autoCapitalize="off"
                       spellCheck={false}
