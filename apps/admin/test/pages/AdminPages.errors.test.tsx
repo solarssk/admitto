@@ -489,6 +489,36 @@ describe("ReportsPage operator errors", () => {
 });
 
 describe("EventsPickerPage archived event navigation", () => {
+  it("renders an active event card with the Active badge and no archived styling", async () => {
+    const activeEvent = {
+      id: "evt-active",
+      title: "Spring Gala",
+      slug: "spring-gala",
+      date: "2026-06-01",
+      timezone: "Europe/Warsaw",
+      location: "Hall A",
+      capacity: 100,
+      archived_at: null as string | null,
+    };
+    vi.mocked(fetchAdminEvents).mockResolvedValue([activeEvent]);
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin" element={<EventsPickerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Spring Gala")).toBeTruthy();
+    });
+
+    const link = screen.getByRole("link", { name: /Spring Gala/ });
+    expect(screen.getByText("Active")).toBeTruthy();
+    expect(link.querySelector(".event-card")?.classList.contains("event-card--archived")).toBe(
+      false,
+    );
+  });
+
   it("lets a superadmin click into an archived event from the Archived events tab", async () => {
     vi.mocked(fetchAdminEvents).mockResolvedValue([archivedEvent]);
     renderWithToast(
