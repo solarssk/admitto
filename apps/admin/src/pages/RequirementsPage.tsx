@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useOutletContext, useParams } from "react-router-dom";
 import { Button, Card, EmptyState, IconButton, PageHeader, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -11,7 +11,8 @@ import {
 } from "../api/client.js";
 import { isBadgeItemUsable } from "@admitto/tickets";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventItemDto, OpsConfigDto } from "../api/types.js";
+import type { EventDto, EventItemDto, OpsConfigDto } from "../api/types.js";
+import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
@@ -23,6 +24,7 @@ import "../requirements/requirements.css";
 /** Admin screen for per-event item configuration and operational behaviour. */
 export function RequirementsPage() {
   const { eventId } = useParams();
+  const { event } = useOutletContext<{ event: EventDto }>();
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
   const listAbortRef = useRef<AbortController | null>(null);
@@ -231,17 +233,22 @@ export function RequirementsPage() {
           padded={false}
           title="Event items"
           actions={
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={<i className="ti ti-plus" />}
-              onClick={() => {
-                if (addOpen) closeAddModal();
-                else setAddOpen(true);
-              }}
-            >
-              Add item
-            </Button>
+            <ArchivedGuard event={event} reasonId="add-item-reason">
+              {(guard) => (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={<i className="ti ti-plus" />}
+                  {...guard}
+                  onClick={() => {
+                    if (addOpen) closeAddModal();
+                    else setAddOpen(true);
+                  }}
+                >
+                  Add item
+                </Button>
+              )}
+            </ArchivedGuard>
           }
         >
           <div className="attendees-table-wrap">
@@ -285,19 +292,32 @@ export function RequirementsPage() {
                       </td>
                       <td className="requirements-item-actions">
                         <div className="requirements-item-actions__wrap">
-                          <Switch
-                            label={item.enabled ? "On" : "Off"}
-                            checked={item.enabled}
+                          <ArchivedGuard
+                            event={event}
+                            reasonId={`toggle-item-reason-${item.id}`}
                             disabled={togglingIds.has(item.id)}
-                            aria-busy={togglingIds.has(item.id)}
-                            onChange={() => void handleToggleEnabled(item)}
-                            aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
-                          />
-                          <IconButton
-                            label="Edit item"
-                            icon={<i className="ti ti-pencil" aria-hidden="true" />}
-                            onClick={() => setSelectedItem(item)}
-                          />
+                          >
+                            {(guard) => (
+                              <Switch
+                                label={item.enabled ? "On" : "Off"}
+                                checked={item.enabled}
+                                aria-busy={togglingIds.has(item.id)}
+                                onChange={() => void handleToggleEnabled(item)}
+                                aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
+                                {...guard}
+                              />
+                            )}
+                          </ArchivedGuard>
+                          <ArchivedGuard event={event} reasonId={`edit-item-reason-${item.id}`}>
+                            {(guard) => (
+                              <IconButton
+                                label="Edit item"
+                                icon={<i className="ti ti-pencil" aria-hidden="true" />}
+                                onClick={() => setSelectedItem(item)}
+                                {...guard}
+                              />
+                            )}
+                          </ArchivedGuard>
                         </div>
                       </td>
                     </tr>
@@ -323,42 +343,43 @@ export function RequirementsPage() {
                     item to exist, be active, and have "Issue on check-in" enabled.
                   </p>
                 </div>
-                <span
-                  className={badgeInactive ? "at-tooltip" : undefined}
-                  data-tooltip={
+                <ArchivedGuard
+                  event={event}
+                  reasonId="badge-at-entry-reason"
+                  disabled={opsSaving || badgeInactive}
+                  tooltip={
                     badgeInactive
                       ? "Can't enable this — the badge item is disabled or has \"Issue on check-in\" turned off."
                       : undefined
                   }
                 >
-                  {badgeInactive && (
-                    <span id="badge-at-entry-reason" className="sr-only">
-                      Can't enable this — the badge item is disabled or has "Issue on check-in"
-                      turned off.
-                    </span>
+                  {(guard) => (
+                    <Switch
+                      checked={opsConfig.badge_at_entry}
+                      onChange={(e) => void handleOpsToggle("badge_at_entry", e.target.checked)}
+                      aria-label="Issue badge at entry"
+                      {...guard}
+                    />
                   )}
-                  <Switch
-                    checked={opsConfig.badge_at_entry}
-                    disabled={opsSaving || badgeInactive}
-                    onChange={(e) => void handleOpsToggle("badge_at_entry", e.target.checked)}
-                    aria-label="Issue badge at entry"
-                    aria-describedby={badgeInactive ? "badge-at-entry-reason" : undefined}
-                  />
-                </span>
+                </ArchivedGuard>
               </div>
               <div className="requirements-behaviour-row">
                 <div className="requirements-behaviour-row__text">
                   <strong>Require confirmation on scan</strong>
                   <p>Scan shows a preview; operator must confirm before check-in is recorded.</p>
                 </div>
-                <Switch
-                  checked={opsConfig.require_confirm_on_scan}
-                  disabled={opsSaving}
-                  onChange={(e) =>
-                    void handleOpsToggle("require_confirm_on_scan", e.target.checked)
-                  }
-                  aria-label="Require confirmation on scan"
-                />
+                <ArchivedGuard event={event} reasonId="confirm-on-scan-reason" disabled={opsSaving}>
+                  {(guard) => (
+                    <Switch
+                      checked={opsConfig.require_confirm_on_scan}
+                      onChange={(e) =>
+                        void handleOpsToggle("require_confirm_on_scan", e.target.checked)
+                      }
+                      aria-label="Require confirmation on scan"
+                      {...guard}
+                    />
+                  )}
+                </ArchivedGuard>
               </div>
               <div className="requirements-behaviour-row">
                 <div className="requirements-behaviour-row__text">
@@ -369,12 +390,16 @@ export function RequirementsPage() {
                     page.
                   </p>
                 </div>
-                <Switch
-                  checked={opsConfig.allow_manual_lookup}
-                  disabled={opsSaving}
-                  onChange={(e) => void handleOpsToggle("allow_manual_lookup", e.target.checked)}
-                  aria-label="Allow manual lookup"
-                />
+                <ArchivedGuard event={event} reasonId="manual-lookup-reason" disabled={opsSaving}>
+                  {(guard) => (
+                    <Switch
+                      checked={opsConfig.allow_manual_lookup}
+                      onChange={(e) => void handleOpsToggle("allow_manual_lookup", e.target.checked)}
+                      aria-label="Allow manual lookup"
+                      {...guard}
+                    />
+                  )}
+                </ArchivedGuard>
               </div>
               <div className="requirements-behaviour-row">
                 <div className="requirements-behaviour-row__text">
@@ -384,14 +409,18 @@ export function RequirementsPage() {
                     attendee — without tapping Next.
                   </p>
                 </div>
-                <Switch
-                  checked={opsConfig.auto_advance_on_valid}
-                  disabled={opsSaving}
-                  onChange={(e) =>
-                    void handleOpsToggle("auto_advance_on_valid", e.target.checked)
-                  }
-                  aria-label="Auto-advance on valid scan"
-                />
+                <ArchivedGuard event={event} reasonId="auto-advance-reason" disabled={opsSaving}>
+                  {(guard) => (
+                    <Switch
+                      checked={opsConfig.auto_advance_on_valid}
+                      onChange={(e) =>
+                        void handleOpsToggle("auto_advance_on_valid", e.target.checked)
+                      }
+                      aria-label="Auto-advance on valid scan"
+                      {...guard}
+                    />
+                  )}
+                </ArchivedGuard>
               </div>
             </>
           ) : null}

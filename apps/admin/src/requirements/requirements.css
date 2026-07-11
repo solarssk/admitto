@@ -289,39 +289,8 @@
   opacity: 1;
 }
 
-/* Generic hover tooltip via data-tooltip attribute — works on any element,
-   including disabled buttons (disabled only suppresses click, not :hover).
-   Anchored to the right edge (growing leftward) since usage so far is on
-   right-aligned controls inside containers with overflow:hidden — a
-   centered tooltip would spill past the right edge and get clipped. */
-.at-tooltip {
-  position: relative;
-}
-
-.at-tooltip::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: calc(100% + 5px);
-  right: 0;
-  background: var(--text-primary);
-  color: var(--surface-card);
-  font-size: 11px;
-  line-height: 1.3;
-  padding: 4px 8px;
-  border-radius: 4px;
-  white-space: normal;
-  width: max-content;
-  max-width: 220px;
-  text-align: left;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.12s;
-  z-index: 500;
-}
-
-.at-tooltip:hover::after {
-  opacity: 1;
-}
+/* .at-tooltip moved to staff.css (global stylesheet) so it can be reused
+   outside Requirements — see staff.css for the rule. */
 
 .contents-row__type-btn:hover:not(.contents-row__type-btn--active) {
   background: var(--surface-hover, var(--surface-sunken));

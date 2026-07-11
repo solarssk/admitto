@@ -36,6 +36,7 @@ import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
 import { readCustomDataField, validateCustomFieldsForm } from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { ArchivedGuard, ARCHIVED_ACTION_TOOLTIP, isEventArchived } from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useClickOutside } from "../components/useClickOutside.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
@@ -50,10 +51,14 @@ function RevokeActionMenu({
   canRevokeCheckIn,
   onRevokePass,
   onRevokeCheckIn,
+  disabled = false,
+  "aria-describedby": ariaDescribedBy,
 }: {
   canRevokeCheckIn: boolean;
   onRevokePass: () => void;
   onRevokeCheckIn: () => void;
+  disabled?: boolean;
+  "aria-describedby"?: string;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -89,6 +94,8 @@ function RevokeActionMenu({
         hasMenu
         aria-haspopup="menu"
         aria-expanded={open}
+        disabled={disabled}
+        aria-describedby={ariaDescribedBy}
         onClick={() => setOpen((o) => !o)}
       >
         Revoke
@@ -514,40 +521,54 @@ export function AttendeeDetailPage() {
         actions={
           <>
             {isRevoked && <Badge variant="error">Revoked</Badge>}
-            <Button
-              variant="ghost"
-              icon={<i className="ti ti-refresh" aria-hidden="true" />}
-              onClick={() => setResendOpen(true)}
-            >
-              Resend ticket
-            </Button>
+            <ArchivedGuard event={event} reasonId="resend-ticket-reason">
+              {(guard) => (
+                <Button
+                  variant="ghost"
+                  icon={<i className="ti ti-refresh" aria-hidden="true" />}
+                  {...guard}
+                  onClick={() => setResendOpen(true)}
+                >
+                  Resend ticket
+                </Button>
+              )}
+            </ArchivedGuard>
             {isRevoked ? (
-              <Button
-                variant="primary"
-                onClick={() =>
-                  void handlePassStatusChange("registered", {
-                    force: restoreForceCapacity && superadmin,
-                  })
-                }
-                disabled={revokeBusy}
-              >
-                {revokeBusy ? "Restoring…" : "Restore pass"}
-              </Button>
+              <ArchivedGuard event={event} reasonId="restore-pass-reason" disabled={revokeBusy}>
+                {(guard) => (
+                  <Button
+                    variant="primary"
+                    onClick={() =>
+                      void handlePassStatusChange("registered", {
+                        force: restoreForceCapacity && superadmin,
+                      })
+                    }
+                    {...guard}
+                  >
+                    {revokeBusy ? "Restoring…" : "Restore pass"}
+                  </Button>
+                )}
+              </ArchivedGuard>
             ) : (
-              <RevokeActionMenu
-                canRevokeCheckIn={canRevokeCheckIn({
-                  checkInStatus: detail.check_in_status,
-                  blocked: isRevoked,
-                })}
-                onRevokePass={() => {
-                  setRevokeError(null);
-                  setActiveRevoke("pass");
-                }}
-                onRevokeCheckIn={() => {
-                  setRevokeError(null);
-                  setActiveRevoke("checkin");
-                }}
-              />
+              <ArchivedGuard event={event} reasonId="revoke-menu-reason">
+                {(guard) => (
+                  <RevokeActionMenu
+                    canRevokeCheckIn={canRevokeCheckIn({
+                      checkInStatus: detail.check_in_status,
+                      blocked: isRevoked,
+                    })}
+                    onRevokePass={() => {
+                      setRevokeError(null);
+                      setActiveRevoke("pass");
+                    }}
+                    onRevokeCheckIn={() => {
+                      setRevokeError(null);
+                      setActiveRevoke("checkin");
+                    }}
+                    {...guard}
+                  />
+                )}
+              </ArchivedGuard>
             )}
             <Button variant="secondary" onClick={handleBack}>
               Back
@@ -588,15 +609,6 @@ export function AttendeeDetailPage() {
         <div className="attendee-detail-grid">
           <Card title="Profile" className="attendee-detail-profile">
             <form className="attendee-form" onSubmit={handleSave}>
-              <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-              {emailChanged && (
-                <p className="attendee-form__warn">
-                  This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
-                </p>
-              )}
-              {emailConflict && (
-                <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
-              )}
               {staleWrite && (
                 <div className="attendee-form__warn">
                   <p>Someone else updated this attendee — reload and reapply your edits.</p>
@@ -605,24 +617,41 @@ export function AttendeeDetailPage() {
                   </Button>
                 </div>
               )}
-              <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-<Input label="Company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
-              <Input label="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
-              <Input label="Ticket type" value={form.ticket_type} onChange={(e) => setForm({ ...form, ticket_type: e.target.value })} />
-              {attributeFields.map((field) => (
-                <CustomDataFieldInput
-                  key={field.source_field}
-                  field={field}
-                  value={form.customFields[field.source_field] ?? ""}
-                  disabled={saving || reloading || staleWrite}
-                  onChange={(next) =>
-                    setForm({
-                      ...form,
-                      customFields: { ...form.customFields, [field.source_field]: next },
-                    })
-                  }
-                />
-              ))}
+              <fieldset
+                className={["attendee-form__fieldset", isEventArchived(event) && "at-tooltip"]
+                  .filter(Boolean)
+                  .join(" ")}
+                data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                disabled={isEventArchived(event)}
+              >
+                <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+                {emailChanged && (
+                  <p className="attendee-form__warn">
+                    This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
+                  </p>
+                )}
+                {emailConflict && (
+                  <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
+                )}
+                <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+                <Input label="Company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
+                <Input label="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+                <Input label="Ticket type" value={form.ticket_type} onChange={(e) => setForm({ ...form, ticket_type: e.target.value })} />
+                {attributeFields.map((field) => (
+                  <CustomDataFieldInput
+                    key={field.source_field}
+                    field={field}
+                    value={form.customFields[field.source_field] ?? ""}
+                    disabled={saving || reloading || staleWrite}
+                    onChange={(next) =>
+                      setForm({
+                        ...form,
+                        customFields: { ...form.customFields, [field.source_field]: next },
+                      })
+                    }
+                  />
+                ))}
+              </fieldset>
               <div className="attendee-detail-readonly-row">
                 <span className="attendee-detail-readonly-row__label">Token</span>
                 <span className="attendee-detail-mono">{detail.ticket_ref ?? "Not issued yet"}</span>
@@ -631,9 +660,17 @@ export function AttendeeDetailPage() {
                 )}
               </div>
               <div className="attendee-form__actions">
-                <Button type="submit" variant="primary" disabled={saving || reloading || staleWrite || rsvpSaving}>
-                  {saving ? "Saving…" : "Save changes"}
-                </Button>
+                <ArchivedGuard
+                  event={event}
+                  reasonId="save-changes-reason"
+                  disabled={saving || reloading || staleWrite || rsvpSaving}
+                >
+                  {(guard) => (
+                    <Button type="submit" variant="primary" {...guard}>
+                      {saving ? "Saving…" : "Save changes"}
+                    </Button>
+                  )}
+                </ArchivedGuard>
               </div>
             </form>
           </Card>
@@ -643,18 +680,22 @@ export function AttendeeDetailPage() {
               <div className="status-stats-grid">
                 <div className="status-stats-grid__item">
                   <span className="status-stats-grid__label">Attendee status</span>
-                  <Select
-                    label="RSVP status"
-                    value={detail.rsvp_status}
-                    disabled={rsvpSaving}
-                    onChange={(e) => void handleRsvpChange(e.target.value as RsvpStatus)}
-                  >
-                    <option value="none">Registered</option>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="declined">Declined</option>
-                    <option value="tentative">Tentative</option>
-                    <option value="cancelled">Cancelled</option>
-                  </Select>
+                  <ArchivedGuard event={event} reasonId="rsvp-status-reason" disabled={rsvpSaving}>
+                    {(guard) => (
+                      <Select
+                        label="RSVP status"
+                        value={detail.rsvp_status}
+                        {...guard}
+                        onChange={(e) => void handleRsvpChange(e.target.value as RsvpStatus)}
+                      >
+                        <option value="none">Registered</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="declined">Declined</option>
+                        <option value="tentative">Tentative</option>
+                        <option value="cancelled">Cancelled</option>
+                      </Select>
+                    )}
+                  </ArchivedGuard>
                 </div>
                 <div className="status-stats-grid__item">
                   <span className="status-stats-grid__label">Email</span>

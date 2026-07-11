@@ -10,6 +10,7 @@ const fetchEventItems = vi.fn();
 const fetchOpsConfig = vi.fn();
 const updateEventItem = vi.fn();
 const createEventItem = vi.fn();
+const updateOpsConfig = vi.fn();
 
 vi.mock("../../src/api/client.js", () => ({
   ApiError: class ApiError extends Error {
@@ -26,13 +27,23 @@ vi.mock("../../src/api/client.js", () => ({
   updateEventItem: (...args: unknown[]) => updateEventItem(...args),
   createEventItem: (...args: unknown[]) => createEventItem(...args),
   deleteEventItem: vi.fn(),
-  updateOpsConfig: vi.fn(),
+  updateOpsConfig: (...args: unknown[]) => updateOpsConfig(...args),
 }));
 
 const reportApiError = vi.fn();
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => ({ reportApiError }),
 }));
+
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return {
+    ...actual,
+    useOutletContext: () => ({
+      event: { id: "evt-1", title: "Demo", archived_at: null },
+    }),
+  };
+});
 
 const addToast = vi.fn();
 vi.mock("@admitto/ui", async (importOriginal) => {
@@ -157,6 +168,39 @@ describe("RequirementsPage badge/ops-config sync", () => {
       expect(updateEventItem).toHaveBeenCalled();
     });
     expect(fetchOpsConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it("toggles require-confirm-on-scan, allow-manual-lookup, and auto-advance", async () => {
+    fetchEventItems.mockResolvedValue([badgeItem]);
+    fetchOpsConfig.mockResolvedValue(
+      makeOpsConfig({
+        require_confirm_on_scan: false,
+        allow_manual_lookup: true,
+        auto_advance_on_valid: true,
+      }),
+    );
+    updateOpsConfig
+      .mockResolvedValueOnce(makeOpsConfig({ require_confirm_on_scan: true }))
+      .mockResolvedValueOnce(makeOpsConfig({ allow_manual_lookup: false }))
+      .mockResolvedValueOnce(makeOpsConfig({ auto_advance_on_valid: false }));
+
+    renderPage();
+    await screen.findByRole("switch", { name: "Issue badge at entry" });
+
+    fireEvent.click(screen.getByRole("switch", { name: "Require confirmation on scan" }));
+    await waitFor(() => {
+      expect(updateOpsConfig).toHaveBeenCalledWith("evt-1", { require_confirm_on_scan: true });
+    });
+
+    fireEvent.click(screen.getByRole("switch", { name: "Allow manual lookup" }));
+    await waitFor(() => {
+      expect(updateOpsConfig).toHaveBeenCalledWith("evt-1", { allow_manual_lookup: false });
+    });
+
+    fireEvent.click(screen.getByRole("switch", { name: "Auto-advance on valid scan" }));
+    await waitFor(() => {
+      expect(updateOpsConfig).toHaveBeenCalledWith("evt-1", { auto_advance_on_valid: false });
+    });
   });
 });
 

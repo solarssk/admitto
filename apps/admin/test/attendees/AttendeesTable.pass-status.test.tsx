@@ -38,6 +38,7 @@ const tableProps = {
   onPageChange: vi.fn(),
   eventTimezone: "UTC",
   eventDate: "2026-06-01T12:00:00.000Z" as string | null,
+  event: { archived_at: null as string | null },
 };
 
 afterEach(cleanup);
@@ -75,6 +76,22 @@ describe("AttendeesTable pass status actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Restore pass" }));
     expect(onRestorePass).toHaveBeenCalledWith(revokedRow);
     expect(screen.queryByRole("button", { name: "Revoke pass" })).toBeNull();
+  });
+
+  it("disables Restore/Revoke pass when the event is archived", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        event={{ archived_at: "2026-07-01T00:00:00.000Z" }}
+        items={[baseRow]}
+        onRevokePass={vi.fn()}
+        onRestorePass={vi.fn()}
+      />,
+    );
+
+    expect(
+      (screen.getByRole("button", { name: "Revoke pass" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 
   it("hides pass actions for cancelled attendees", () => {

@@ -57,6 +57,9 @@ vi.mock("react-router-dom", async (importOriginal) => {
   return {
     ...actual,
     useBlocker: () => blockerState,
+    useOutletContext: () => ({
+      event: { id: "evt-1", title: "Demo", archived_at: null },
+    }),
   };
 });
 
@@ -188,6 +191,36 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
     });
     expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
+  });
+
+  it("marks only required placeholders and lets the operator focus/click/type into Subject and Body", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    fetchEventTemplate.mockResolvedValueOnce({
+      ...legacyTemplate,
+      allowed_placeholders: ["first_name", "ticket_url"],
+      required_url_placeholders: ["ticket_url"],
+    });
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+
+    const optionalChip = screen.getByRole("button", { name: "{{first_name}}" });
+    const requiredChip = screen.getByRole("button", { name: "{{ticket_url}}" });
+    expect(optionalChip.getAttribute("title")).toBeNull();
+    expect(requiredChip.getAttribute("title")).toBe("Required placeholder");
+
+    const subjectInput = screen.getByLabelText("Subject");
+    fireEvent.focus(subjectInput);
+    fireEvent.click(subjectInput);
+    fireEvent.change(subjectInput, { target: { value: "New subject" } });
+    expect(subjectInput).toHaveProperty("value", "New subject");
+
+    const bodyTextarea = screen.getByLabelText("HTML body");
+    fireEvent.focus(bodyTextarea);
+    fireEvent.change(bodyTextarea, { target: { value: "<p>New body</p>" } });
+    expect(bodyTextarea).toHaveProperty("value", "<p>New body</p>");
   });
 
   it("selects persisted ticket template from list", async () => {

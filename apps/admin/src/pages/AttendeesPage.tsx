@@ -6,6 +6,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeDetailDto, AttendeeRowDto, EventDto, RsvpStatus } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
+import { ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
@@ -427,23 +428,46 @@ export function AttendeesPage() {
             >
               {exportingFormat === "pdf" ? "Exporting…" : "Export PDF"}
             </Button>
-            <Link to={`/admin/events/${eventId}/attendees/import`}>
-              <Button variant="secondary">Import</Button>
-            </Link>
-            <Button variant="primary" onClick={() => setAddOpen(true)}>
-              + Add attendee
-            </Button>
-            <Button
-              variant="secondary"
+            {isEventArchived(event) ? (
+              <ArchivedGuard event={event} reasonId="import-attendees-reason" placement="below">
+                {(guard) => (
+                  <Button variant="secondary" {...guard}>
+                    Import
+                  </Button>
+                )}
+              </ArchivedGuard>
+            ) : (
+              <Link to={`/admin/events/${eventId}/attendees/import`}>
+                <Button variant="secondary">Import</Button>
+              </Link>
+            )}
+            <ArchivedGuard event={event} reasonId="add-attendee-reason" placement="below">
+              {(guard) => (
+                <Button variant="primary" {...guard} onClick={() => setAddOpen(true)}>
+                  + Add attendee
+                </Button>
+              )}
+            </ArchivedGuard>
+            <ArchivedGuard
+              event={event}
+              reasonId="send-tickets-reason"
               disabled={sendBusy}
-              onClick={() => {
-                setSendTarget("unsent");
-                setSendError(null);
-                setSendTicketsOpen(true);
-              }}
+              placement="below"
             >
-              {sendBusy ? "Sending…" : "Send tickets"}
-            </Button>
+              {(guard) => (
+                <Button
+                  variant="secondary"
+                  {...guard}
+                  onClick={() => {
+                    setSendTarget("unsent");
+                    setSendError(null);
+                    setSendTicketsOpen(true);
+                  }}
+                >
+                  {sendBusy ? "Sending…" : "Send tickets"}
+                </Button>
+              )}
+            </ArchivedGuard>
           </>
         }
       />
@@ -495,6 +519,7 @@ export function AttendeesPage() {
         onPageChange={setPage}
         eventTimezone={event.timezone}
         eventDate={event.date}
+        event={event}
       />
       )}
 

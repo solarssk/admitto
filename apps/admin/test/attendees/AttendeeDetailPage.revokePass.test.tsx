@@ -16,8 +16,12 @@ vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
   };
 });
 
+let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
+  { role: "admin", scope_type: "organization", scope_id: "org-1" },
+];
+
 vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments: [{ role: "admin", scope_type: "organization", scope_id: "org-1" }] }),
+  useAuth: () => ({ assignments: mockAssignments }),
 }));
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -91,6 +95,7 @@ function renderPage() {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mockAssignments = [{ role: "admin", scope_type: "organization", scope_id: "org-1" }];
 });
 
 describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confirm-flow state)", () => {
@@ -133,5 +138,36 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     });
     // This is the page-level banner, not the (pass-revoke-only) ConfirmDialog.
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("lets a superadmin override the capacity block and retries with force: true", async () => {
+    mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+    mockLoad(baseDetail({ status: "revoked" }));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    const { ApiError } = await import("../../src/api/client.js");
+    updateAttendee
+      .mockRejectedValueOnce(
+        new ApiError(409, "event_full", "event_full", { current: 5, capacity: 5 }),
+      )
+      .mockResolvedValueOnce(baseDetail({ status: "registered" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore pass" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Event is at capacity/)).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText(/Override capacity limit/));
+    fireEvent.click(screen.getByRole("button", { name: "Restore pass" }));
+
+    await waitFor(() => {
+      expect(updateAttendee).toHaveBeenLastCalledWith(
+        "evt-1",
+        "att-1",
+        expect.objectContaining({ status: "registered" }),
+        { force: true },
+      );
+    });
   });
 });
