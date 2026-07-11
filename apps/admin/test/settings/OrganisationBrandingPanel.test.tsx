@@ -10,13 +10,15 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     ...actual,
     fetchOrgBranding: vi.fn(),
     patchOrgBranding: vi.fn(),
+    uploadFile: vi.fn(),
   };
 });
 
-import { ApiError, fetchOrgBranding, patchOrgBranding } from "../../src/api/client.js";
+import { ApiError, fetchOrgBranding, patchOrgBranding, uploadFile } from "../../src/api/client.js";
 
 const mockFetch = vi.mocked(fetchOrgBranding);
 const mockPatch = vi.mocked(patchOrgBranding);
+const mockUpload = vi.mocked(uploadFile);
 
 afterEach(() => {
   cleanup();
@@ -36,14 +38,15 @@ describe("OrganisationBrandingPanel", () => {
     expect(screen.getByAltText(/organisation logo preview/i)).toBeTruthy();
   });
 
-  it("shows an operator-safe message with Retry when loading fails", async () => {
+  it("shows an operator-safe inline message with Retry when loading fails, without a toast", async () => {
     mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<OrganisationBrandingPanel />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
-    expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to load organisation branding/);
+    expect(screen.getByRole("alert").textContent).toMatch(/Failed to load organisation branding/);
     expect(screen.queryByText("secret_internal")).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
   });
 
   it("blocks save with an empty organisation name, without calling the API", async () => {
@@ -147,5 +150,39 @@ describe("OrganisationBrandingPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset to saved" }));
     expect(screen.getByLabelText("Organisation name")).toHaveProperty("value", "Acme Corp");
     expect(mockPatch).not.toHaveBeenCalled();
+  });
+
+  it("disables Save and Reset while a logo upload is in flight, so a mid-upload click can't save a stale logo", async () => {
+    mockFetch.mockResolvedValueOnce({ org_name: "Acme Corp", logo_url: "" });
+    let resolveUpload!: (result: { url: string }) => void;
+    mockUpload.mockReturnValueOnce(new Promise((resolve) => (resolveUpload = resolve)));
+    renderWithToast(<OrganisationBrandingPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Organisation name")).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "Save branding" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+
+    const [fileInput] = document.querySelectorAll('input[type="file"]');
+    fireEvent.change(fileInput!, {
+      target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Uploading…" }).hasAttribute("disabled")).toBe(
+        true,
+      );
+    });
+    expect(screen.getByRole("button", { name: "Reset to saved" }).hasAttribute("disabled")).toBe(
+      true,
+    );
+
+    resolveUpload({ url: "/uploads/default/logo.png" });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Save branding" }).hasAttribute("disabled")).toBe(
+        false,
+      );
+    });
   });
 });

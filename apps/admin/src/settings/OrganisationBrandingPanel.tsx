@@ -17,12 +17,14 @@ export function OrganisationBrandingPanel() {
   const { addToast } = useToast();
   const [draft, setDraft] = useState<SetupOrgBrandingDto>(EMPTY_DRAFT);
   const [loading, setLoading] = useState(true);
-  const [loadedOk, setLoadedOk] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const savedRef = useRef<SetupOrgBrandingDto>(EMPTY_DRAFT);
   const loadAbortRef = useRef<AbortController | null>(null);
+
+  const loadedOk = !loading && !loadError;
 
   const loadBranding = useCallback(async () => {
     loadAbortRef.current?.abort();
@@ -32,23 +34,19 @@ export function OrganisationBrandingPanel() {
 
     setLoading(true);
     setLoadError(null);
-    setLoadedOk(false);
     try {
       const data = await fetchOrgBranding(signal);
       if (signal.aborted) return;
       savedRef.current = data;
       setDraft(data);
       setNameError(null);
-      setLoadedOk(true);
     } catch {
       if (signal.aborted) return;
-      const message = "Failed to load organisation branding. Use Retry to reload.";
-      setLoadError(message);
-      addToast(message, "error");
+      setLoadError("Failed to load organisation branding. Use Retry to reload.");
     } finally {
       if (!signal.aborted) setLoading(false);
     }
-  }, [addToast]);
+  }, []);
 
   useEffect(() => {
     void loadBranding();
@@ -94,15 +92,19 @@ export function OrganisationBrandingPanel() {
       title="Organisation branding"
       footer={
         <div className="foot-actions">
-          <Button variant="secondary" disabled={!loadedOk || formDisabled} onClick={handleReset}>
+          <Button
+            variant="secondary"
+            disabled={!loadedOk || formDisabled || uploading}
+            onClick={handleReset}
+          >
             Reset to saved
           </Button>
           <Button
             variant="primary"
-            disabled={!loadedOk || formDisabled}
+            disabled={!loadedOk || formDisabled || uploading}
             onClick={() => void handleSave()}
           >
-            {saving ? "Saving…" : "Save branding"}
+            {saving ? "Saving…" : uploading ? "Uploading…" : "Save branding"}
           </Button>
         </div>
       }
@@ -133,7 +135,9 @@ export function OrganisationBrandingPanel() {
           />
           <LogoUploadZone
             value={draft.logo_url ?? ""}
+            disabled={formDisabled}
             onChange={(url) => setDraft((prev) => ({ ...prev, logo_url: url }))}
+            onUploadingChange={setUploading}
           />
         </div>
       )}
