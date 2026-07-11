@@ -1,7 +1,7 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { findUserById } from "../user.js";
 import { verifyPassword } from "../password.js";
-import { userRequiresMfa, userHasConfirmedTotp } from "../mfa/policy.js";
+import { userRequiresMfaStepUp } from "../mfa/policy.js";
 import { verifyTotpOrRecoveryCode } from "../mfa/verify-step-up-code.js";
 import { runInTransaction } from "../prisma-tx.js";
 
@@ -39,9 +39,7 @@ async function verifyOidcLinkStepUpInTransaction(
     return { ok: false, reason: "invalid_credentials" };
   }
 
-  const requiresMfa = await userRequiresMfa(tx, input.userId);
-  const hasTotp = await userHasConfirmedTotp(tx, input.userId);
-  if (!requiresMfa || !hasTotp) {
+  if (!(await userRequiresMfaStepUp(tx, input.userId))) {
     return { ok: true };
   }
 

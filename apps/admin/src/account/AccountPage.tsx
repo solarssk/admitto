@@ -593,7 +593,7 @@ export function AccountPage() {
             {resetFormOpen && (
               <div className="mail-transport-footer">
                 <Button type="button" variant="secondary" onClick={() => { setResetFormOpen(false); setResetPassword(""); setResetCode(""); setResetCodeRequired(false); setResetError(null); }}>Cancel</Button>
-                <Button type="button" variant="danger" disabled={!resetPassword || (resetCodeRequired && !resetCode)} onClick={() => setResetConfirmOpen(true)}>Reset 2FA</Button>
+                <Button type="button" variant="danger" disabled={!resetPassword || (resetCodeRequired && !resetCode)} onClick={() => { setResetError(null); setResetConfirmOpen(true); }}>Reset 2FA</Button>
               </div>
             )}
         </Card>
@@ -673,8 +673,15 @@ export function AccountPage() {
           await loadAccount(); await loadSessions();
         }
         catch (err) {
-          if (hasApiErrorCode(err, "totp_required")) { setResetCodeRequired(true); setResetConfirmOpen(false); }
-          setResetError(operatorApiErrorMessage(err, "Failed to reset 2FA."));
+          if (hasApiErrorCode(err, "totp_required")) {
+            // The dialog is about to close (progressive disclosure reveals the code field
+            // below it instead), so an inline dialog error would never be seen — toast it.
+            setResetCodeRequired(true);
+            setResetConfirmOpen(false);
+            addToast(operatorApiErrorMessage(err, "Failed to reset 2FA."), "info");
+          } else {
+            setResetError(operatorApiErrorMessage(err, "Failed to reset 2FA."));
+          }
         }
         finally { setResetting(false); }
       }} onCancel={() => { if (!resetting) setResetConfirmOpen(false); }} />

@@ -491,6 +491,28 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBeGreaterThan(0);
   });
 
+  it("returns 429 after exceeding the step-up code rate limit", async () => {
+    await enrollConfirmedTotp();
+    for (let i = 0; i < 10; i++) {
+      const res = await app.request("/api/account/mfa/reset", {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ password: ADMIN_PASSWORD, code: "000000" }),
+      });
+      expect(res.status).toBe(401);
+    }
+
+    const limited = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD, code: "000000" }),
+    });
+    expect(limited.status).toBe(429);
+    const body = (await limited.json()) as { error?: string };
+    expect(body.error).toBe("too many requests");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBeGreaterThan(0);
+  });
+
   it("resets MFA with a correct TOTP code", async () => {
     // Seeded directly (not via enroll+confirm) so this is the only code ever verified against
     // this secret — verifyUserTotpCode rejects replaying the same time-step twice, which

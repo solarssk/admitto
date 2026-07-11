@@ -12,7 +12,7 @@ import {
   revokeSession,
   runInTransaction,
   userHasConfirmedTotp,
-  userRequiresMfa,
+  userRequiresMfaStepUp,
   verifyPasswordOrDummy,
   verifyTotpOrRecoveryCode,
 } from "@admitto/auth";
@@ -456,33 +456,45 @@ export async function handlePostMfaReset(
   const passwordOk = await verifyPasswordOrDummy(parsed.data.password, user.password_hash);
   if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
 
-  const orgId = await resolveInstanceOrganizationId(db);
-  const audit = adminAuditFromContext(c);
+  const code = parsed.data.code?.trim();
 
-  const requiresStepUp =
-    (await userRequiresMfa(db, userId)) && (await userHasConfirmedTotp(db, userId));
-
-  let code: string | undefined;
-  if (requiresStepUp) {
+  // Advisory pre-check: lets the common case fail fast (400) without opening a transaction.
+  // It is NOT the security gate — `requiresStepUp` is re-read from `tx` below, so this
+  // pre-check can only make a request fail earlier or the same way, never skip the
+  // authoritative check.
+  if (await userRequiresMfaStepUp(db, userId)) {
     if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
-
-    code = parsed.data.code?.trim();
     if (!code) return c.json({ code: "totp_required" }, 400);
+  }
 
+  // Rate-limit any submitted step-up code before opening a transaction, regardless of the
+  // advisory check above, so the limiter's Redis round-trip never blocks a held Postgres
+  // connection (mirrors `handlePostOidcLink`'s step-up gate).
+  if (code && currentSessionId) {
     const ip = resolveMfaClientIp(c);
     if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code))) {
       return c.json({ error: "too many requests" }, 429);
     }
   }
 
-  // Step-up verification runs inside the same transaction as the reset itself: a recovery
-  // code is consumed as soon as it's checked, so if the reset work below fails, the whole
-  // transaction (including that consumption) rolls back rather than burning a one-time code
-  // for a reset that never actually happened.
+  // The step-up requirement is re-read from `tx`, not the pre-check above, so a role change
+  // racing this request can't let a password-only call skip step-up entirely. A recovery code
+  // is consumed as soon as it's checked, so if the reset work below fails for any other
+  // reason, the whole transaction (including that consumption) rolls back rather than burning
+  // a one-time code for a reset that never actually happened.
   const result = await runInTransaction(db, async (tx) => {
-    if (requiresStepUp && !(await verifyTotpOrRecoveryCode(tx, userId, code!))) {
-      return { ok: false as const };
+    const requiresStepUp = await userRequiresMfaStepUp(tx, userId);
+
+    if (requiresStepUp) {
+      if (!currentSessionId) return { ok: false as const, reason: "unauthorized" as const };
+      if (!code) return { ok: false as const, reason: "totp_required" as const };
+      if (!(await verifyTotpOrRecoveryCode(tx, userId, code))) {
+        return { ok: false as const, reason: "invalid_totp" as const };
+      }
     }
+
+    const orgId = await resolveInstanceOrganizationId(db);
+    const audit = adminAuditFromContext(c);
 
     const mfaDeleted = await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
     const devicesRevoked = await revokeAllTrustedDevicesForUser(tx, userId);
@@ -505,6 +517,15 @@ export async function handlePostMfaReset(
     return { ok: true as const, revokedCount };
   });
 
-  if (!result.ok) return c.json({ code: "invalid_totp" }, 401);
+  if (!result.ok) {
+    switch (result.reason) {
+      case "unauthorized":
+        return c.json({ error: "unauthorized" }, 401);
+      case "totp_required":
+        return c.json({ code: "totp_required" }, 400);
+      case "invalid_totp":
+        return c.json({ code: "invalid_totp" }, 401);
+    }
+  }
   return c.json({ ok: true, sessions_revoked: result.revokedCount });
 }
