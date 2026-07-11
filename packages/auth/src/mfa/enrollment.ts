@@ -138,7 +138,11 @@ export async function getOrStartTotpEnrollment(
   return startTotpEnrollment(prisma, userId);
 }
 
-/** Confirm TOTP enrollment with a valid code. */
+/**
+ * Confirm TOTP enrollment with a valid code. Returns false on a lost race too: the update is
+ * gated on `confirmed_at: null` so two concurrent confirms for the same pending enrollment
+ * can't both report success (and both trigger a caller's "MFA enrolled" audit write).
+ */
 export async function confirmTotpEnrollment(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
@@ -151,8 +155,8 @@ export async function confirmTotpEnrollment(
   const verified = verifyTotpCodeDetailed(row.secret_enc, code);
   if (!verified.valid) return false;
 
-  await prisma.userMfaMethod.update({
-    where: { id: row.id },
+  const updated = await prisma.userMfaMethod.updateMany({
+    where: { id: row.id, confirmed_at: null },
     data: {
       confirmed_at: new Date(),
       last_totp_time_step: verified.timeStep,
@@ -161,7 +165,7 @@ export async function confirmTotpEnrollment(
       backup_codes_acknowledged_at: null,
     },
   });
-  return true;
+  return updated.count > 0;
 }
 
 /** Verify TOTP for login step (confirmed method only). */

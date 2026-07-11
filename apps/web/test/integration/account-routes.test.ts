@@ -282,6 +282,38 @@ describe("POST /api/account/mfa/totp/*", () => {
     expect(meRes.status).toBe(200);
   });
 
+  it("two concurrent confirms of the same pending enrollment write exactly one audit row", async () => {
+    // account/password, mfa/totp/confirm, and mfa/reset all share one per-IP rate-limit
+    // bucket (loginRateLimitJson); reset it so this test's own requests don't trip a limit
+    // exhausted by everything else that already ran in this file.
+    rateLimitStore.reset();
+    const enrollRes = await app.request("/api/account/mfa/totp/enroll", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    const enroll = (await enrollRes.json()) as { otpauthUri: string };
+    const secret = parseTotpSecretFromOtpauthUri(enroll.otpauthUri);
+    const code = generateTotpCode(secret!);
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_enrolled" },
+    });
+
+    const confirm = () =>
+      app.request("/api/account/mfa/totp/confirm", {
+        method: "POST",
+        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+    const [resA, resB] = await Promise.all([confirm(), confirm()]);
+    const statuses = [resA.status, resB.status].sort();
+    expect(statuses).toEqual([200, 400]);
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_enrolled" },
+    });
+    expect(auditCountAfter - auditCountBefore).toBe(1);
+  });
+
   it("returns 401 on MFA reset with wrong password", async () => {
     await prisma.userMfaMethod.create({
       data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
@@ -318,6 +350,32 @@ describe("POST /api/account/mfa/totp/*", () => {
     });
     expect(audit?.actor_user_id).toBe(userId);
     expect(audit?.metadata).toMatchObject({ sessionsRevoked: 1 });
+  });
+
+  it("two concurrent MFA resets write exactly one audit row", async () => {
+    rateLimitStore.reset();
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+    });
+
+    const reset = () =>
+      app.request("/api/account/mfa/reset", {
+        method: "POST",
+        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ password: PASSWORD }),
+      });
+    const [resA, resB] = await Promise.all([reset(), reset()]);
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId } })).toBe(0);
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
+    });
+    expect(auditCountAfter - auditCountBefore).toBe(1);
   });
 
   it("returns 400 no_local_password for OIDC-only TOTP enroll", async () => {
