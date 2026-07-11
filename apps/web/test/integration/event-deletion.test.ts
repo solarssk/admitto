@@ -277,6 +277,19 @@ describe("DELETE /api/admin/events/:eventId", () => {
     expect(event).not.toBeNull();
   });
 
+  it("returns 409 when archived but has an event-scoped action log entry with no attendee", async () => {
+    const eventId = await createEvent({ archived: true });
+    await prisma.attendeeActionLog.create({
+      data: { event_id: eventId, attendee_id: null, action_type: "reports_exported" },
+    });
+
+    const res = await deleteEventRequest(eventId, superCookie);
+    expect(res.status).toBe(409);
+
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    expect(event).not.toBeNull();
+  });
+
   it("permanently deletes a truly-empty archived event and writes AdminAuditLog", async () => {
     const eventId = await createEvent({ archived: true });
 

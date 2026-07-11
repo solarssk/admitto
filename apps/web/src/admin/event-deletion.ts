@@ -2,7 +2,7 @@
  * Superadmin permanent event deletion (#395).
  *
  * Delete does not require the event to be archived first — it is reachable for any
- * event (active or archived) that shows zero real activity across five independent
+ * event (active or archived) that shows zero real activity across six independent
  * signals plus no pinned note. Archiving is a separate, independently useful action
  * (marks an event read-only/done) but is no longer a delete prerequisite: an event
  * that never had any real activity is equally safe to delete whether or not it has
@@ -19,9 +19,14 @@
  * MailTemplate has no FK to Event (matched by scope_id string) so it can't block the
  * delete at the DB level — the guard checks it explicitly, and the transaction below
  * defensively removes any event-scoped template so nothing is left orphaned.
+ * AttendeeActionLog.event_id cascades on event delete too, but — unlike the other
+ * cascaded models — its `attendee_id` is optional: bulk actions (report exports, item/
+ * config changes, imports, sends) write event-scoped rows with no attendee at all, so
+ * this audit trail can hold real history even on an event with 0 attendees. It is
+ * checked explicitly below rather than assumed covered by `attendeeCount`.
  */
 import type { Context } from "hono";
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { BADGE_ITEM_KEY, writeAdminAuditLog } from "@admitto/tickets";
 import { requireAuditActor, requireEventId, requireSuperadmin } from "./admin-helpers.js";
 
@@ -34,6 +39,7 @@ export type EventActivitySignals = {
   contactCount: number;
   resourceCount: number;
   eventMailTemplateCount: number;
+  actionLogCount: number;
 };
 
 /** Count the six activity signals for one event. Cheap, indexed, single round-trip. */
@@ -41,19 +47,33 @@ export async function countEventActivitySignals(
   db: DbClient,
   eventId: string,
 ): Promise<EventActivitySignals> {
-  const [attendeeCount, nonBadgeItemCount, contactCount, resourceCount, eventMailTemplateCount] =
-    await Promise.all([
-      db.attendee.count({ where: { event_id: eventId } }),
-      db.eventItem.count({ where: { event_id: eventId, key: { not: BADGE_ITEM_KEY } } }),
-      db.eventContact.count({ where: { event_id: eventId } }),
-      db.eventResource.count({ where: { event_id: eventId } }),
-      db.mailTemplate.count({ where: { scope_type: "event", scope_id: eventId } }),
-    ]);
-  return { attendeeCount, nonBadgeItemCount, contactCount, resourceCount, eventMailTemplateCount };
+  const [
+    attendeeCount,
+    nonBadgeItemCount,
+    contactCount,
+    resourceCount,
+    eventMailTemplateCount,
+    actionLogCount,
+  ] = await Promise.all([
+    db.attendee.count({ where: { event_id: eventId } }),
+    db.eventItem.count({ where: { event_id: eventId, key: { not: BADGE_ITEM_KEY } } }),
+    db.eventContact.count({ where: { event_id: eventId } }),
+    db.eventResource.count({ where: { event_id: eventId } }),
+    db.mailTemplate.count({ where: { scope_type: "event", scope_id: eventId } }),
+    db.attendeeActionLog.count({ where: { event_id: eventId } }),
+  ]);
+  return {
+    attendeeCount,
+    nonBadgeItemCount,
+    contactCount,
+    resourceCount,
+    eventMailTemplateCount,
+    actionLogCount,
+  };
 }
 
 /**
- * All 6 conditions must hold: no pinned note, and all 5 activity signals at zero.
+ * All 7 conditions must hold: no pinned note, and all 6 activity signals at zero.
  * Deliberately does NOT require `archived_at` — see the file-level comment above.
  * Pure/sync so it is trivially unit-testable and can never diverge between the DTO
  * computation and the actual delete route — both call this against the same signals.
@@ -68,7 +88,8 @@ export function isEventDeletable(
     signals.nonBadgeItemCount === 0 &&
     signals.contactCount === 0 &&
     signals.resourceCount === 0 &&
-    signals.eventMailTemplateCount === 0
+    signals.eventMailTemplateCount === 0 &&
+    signals.actionLogCount === 0
   );
 }
 
@@ -91,15 +112,15 @@ export async function deleteEvent(
   sessionId: string | null | undefined,
 ): Promise<DeleteEventResult> {
   try {
-    const outcome = await db.$transaction(async (tx) => {
+    return await db.$transaction(async (tx): Promise<DeleteEventResult> => {
       const event = await tx.event.findUnique({
         where: { id: eventId },
         select: { archived_at: true, pinned_note: true, organization_id: true },
       });
-      if (!event) return { kind: "not_found" as const };
+      if (!event) return { code: "not_found" };
 
       const signals = await countEventActivitySignals(tx, eventId);
-      if (!isEventDeletable(event, signals)) return { kind: "not_deletable" as const };
+      if (!isEventDeletable(event, signals)) return { code: "not_deletable" };
 
       // Defensive cleanup: MailTemplate has no FK to Event, so this is a no-op given the
       // guard above already requires eventMailTemplateCount === 0 — kept so a deleted
@@ -116,13 +137,16 @@ export async function deleteEvent(
         actionType: "event_deleted",
         metadata: { eventId },
       });
-      return { kind: "ok" as const };
+      return { ok: true };
     });
-
-    if (outcome.kind === "not_found") return { code: "not_found" };
-    if (outcome.kind === "not_deletable") return { code: "not_deletable" };
-    return { ok: true };
   } catch (err) {
+    // A concurrent change adding real activity between the count-check and the delete
+    // (e.g. a new attendee) is caught here as a Postgres FK-restrict rejection — that is
+    // the guard working as intended, not an audit-log bug, so it maps to the same
+    // "not_deletable" the caller already handles rather than a generic 500.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+      return { code: "not_deletable" };
+    }
     console.error("[audit] event_deleted transaction failed", err);
     return { code: "audit_failed" };
   }

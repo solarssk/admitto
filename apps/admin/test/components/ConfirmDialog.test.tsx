@@ -92,6 +92,22 @@ describe("ConfirmDialog", () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
+  it("with an empty confirmationValue, the confirm button stays disabled (fails closed, never unlocks)", () => {
+    render(
+      <ConfirmDialog
+        open
+        title="Permanently delete this event?"
+        message="This cannot be undone."
+        confirmLabel="Delete event"
+        confirmationValue=""
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    const confirmButton = screen.getByRole("button", { name: "Delete event" }) as HTMLButtonElement;
+    expect(confirmButton.disabled).toBe(true);
+  });
+
   it("uses a custom confirmationLabel when provided", () => {
     render(
       <ConfirmDialog

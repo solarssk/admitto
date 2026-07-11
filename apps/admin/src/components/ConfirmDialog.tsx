@@ -53,7 +53,10 @@ export function ConfirmDialog({
   if (!open) return null;
 
   const needsTypedConfirmation = confirmationValue !== undefined;
-  const confirmDisabled = loading || (needsTypedConfirmation && typedValue !== confirmationValue);
+  // An empty confirmationValue can never be "typed" to confirm — fail closed rather than
+  // let the confirm button unlock immediately (typedValue also starts as "").
+  const confirmDisabled =
+    loading || (needsTypedConfirmation && (!confirmationValue || typedValue !== confirmationValue));
 
   return (
     <div

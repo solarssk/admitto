@@ -618,28 +618,21 @@ export function EventSettingsPage() {
                   : "Only events with no attendees, custom items, contacts, resources, pinned note, or event-specific mail template can be permanently deleted."}
               </p>
             </div>
-            {isSa ? (
-              <Button
-                variant="danger"
-                disabled={!event.is_deletable || deleting}
-                title={
-                  event.is_deletable ? undefined : "This event has data and cannot be deleted"
-                }
-                icon={<i className="ti ti-trash" aria-hidden="true" />}
-                onClick={() => setDeleteOpen(true)}
-              >
-                Delete event
-              </Button>
-            ) : (
-              <Button
-                variant="danger"
-                disabled
-                title="Superadmin only"
-                icon={<i className="ti ti-trash" aria-hidden="true" />}
-              >
-                Delete event
-              </Button>
-            )}
+            <Button
+              variant="danger"
+              disabled={!isSa || !event.is_deletable || deleting}
+              title={
+                !isSa
+                  ? "Superadmin only"
+                  : event.is_deletable
+                    ? undefined
+                    : "This event has data and cannot be deleted"
+              }
+              icon={<i className="ti ti-trash" aria-hidden="true" />}
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete event
+            </Button>
           </div>
         </div>
 
