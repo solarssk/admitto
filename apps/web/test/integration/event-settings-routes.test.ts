@@ -290,6 +290,35 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     }
   });
 
+  // Regression (bot review): revokeAllItemsForEvent skips a blocked-pass attendee's items via
+  // the isAdmittable guard, so counting their items here would show/enable "Revoke all items
+  // issued" for items the bulk action can never actually revoke, leaving the count stuck nonzero.
+  it("excludes items belonging to a blocked-pass (cancelled/revoked) attendee from issued_items_count", async () => {
+    const blockedAttendee = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_SET,
+        email: "blocked-pass-guest@example.com",
+        name: "Blocked Pass Guest",
+        status: "cancelled",
+      },
+    });
+    await prisma.attendeeItemState.create({
+      data: { attendee_id: blockedAttendee.id, event_item_id: ITEM_SET, state: "issued" },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { issued_items_count: number };
+      expect(body.issued_items_count).toBe(0);
+    } finally {
+      await prisma.attendeeItemState.deleteMany({ where: { attendee_id: blockedAttendee.id } });
+      await prisma.attendee.delete({ where: { id: blockedAttendee.id } });
+    }
+  });
+
   it("returns archived_at for an archived event", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_ARCHIVED}/settings`, {
       headers: { Cookie: adminCookie },

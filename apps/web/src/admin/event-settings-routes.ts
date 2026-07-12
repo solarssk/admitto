@@ -4,7 +4,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
-import { REVOCABLE_ITEM_STATES, writeAdminAuditLog } from "@admitto/tickets";
+import { ADMITTABLE_STATUS_LIST, REVOCABLE_ITEM_STATES, writeAdminAuditLog } from "@admitto/tickets";
 import { InvalidHttpUrlError, resolveBrandingFromEvent, validateBrandingUrl } from "@admitto/mail-templates";
 import { z } from "zod";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
@@ -161,7 +161,11 @@ async function loadDeletability(
   return { isDeletable: isEventDeletable(event, signals) };
 }
 
-/** Live counts backing the Danger Zone's "Revoke all check-ins" / "Revoke all items issued" rows. */
+/** Live counts backing the Danger Zone's "Revoke all check-ins" / "Revoke all items issued" rows.
+ * issuedItemsCount is scoped to attendees whose pass is still admittable - revokeAllItemsForEvent
+ * skips a blocked (revoked/cancelled) attendee's items via the same isAdmittable guard the
+ * single-item revoke enforces (bot review), so counting their items here would show/enable the
+ * Danger Zone row for items the bulk action can never actually revoke. */
 async function loadRevokeCounts(
   db: PrismaClient,
   eventId: string,
@@ -169,7 +173,11 @@ async function loadRevokeCounts(
   const [admittedCount, issuedItemsCount] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
     db.attendeeItemState.count({
-      where: { state: { in: REVOCABLE_ITEM_STATES }, event_item: { event_id: eventId } },
+      where: {
+        state: { in: REVOCABLE_ITEM_STATES },
+        event_item: { event_id: eventId },
+        attendee: { status: { in: ADMITTABLE_STATUS_LIST } },
+      },
     }),
   ]);
   return { admittedCount, issuedItemsCount };

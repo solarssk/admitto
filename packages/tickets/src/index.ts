@@ -5,6 +5,7 @@ export { generateQrPng, buildQrPayload } from "./qr.js";
 export { resolveTicket } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
 export { checkInScan, getRecentCheckIns, isAdmittable } from "./checkin.js";
+export { ADMITTABLE_STATUS_LIST } from "./admittable.js";
 export { admitAttendee, shouldRequireConfirmOnScan } from "./admit.js";
 export { lookupAttendees, getAttendeeCard, getCheckInStats } from "./attendee-card.js";
 export {
