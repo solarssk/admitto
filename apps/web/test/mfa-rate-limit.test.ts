@@ -28,13 +28,22 @@ describe("checkMfaVerifyRateLimit", () => {
     expect(await checkMfaVerifyRateLimit(store, SESSION, IP, RECOVERY_CODE, "mfa-reset")).toBe(true);
   });
 
-  it("keeps the un-namespaced (login-time) bucket separate from any action-tagged bucket", async () => {
+  it("keeps the un-namespaced (login-time) TOTP bucket separate from any action-tagged bucket", async () => {
     const store = new InMemoryRateLimitStore();
     for (let i = 0; i < TOTP_MAX; i++) {
       expect(await checkMfaVerifyRateLimit(store, SESSION, IP, TOTP_CODE)).toBe(true);
     }
     expect(await checkMfaVerifyRateLimit(store, SESSION, IP, TOTP_CODE)).toBe(false);
     expect(await checkMfaVerifyRateLimit(store, SESSION, IP, TOTP_CODE, "oidc-link")).toBe(true);
+  });
+
+  it("keeps the un-namespaced (login-time) recovery-code bucket separate from any action-tagged bucket", async () => {
+    const store = new InMemoryRateLimitStore();
+    for (let i = 0; i < RECOVERY_MAX; i++) {
+      expect(await checkMfaVerifyRateLimit(store, SESSION, IP, RECOVERY_CODE)).toBe(true);
+    }
+    expect(await checkMfaVerifyRateLimit(store, SESSION, IP, RECOVERY_CODE)).toBe(false);
+    expect(await checkMfaVerifyRateLimit(store, SESSION, IP, RECOVERY_CODE, "mfa-confirm")).toBe(true);
   });
 
   it("still rate-limits by IP within the same action — a fresh session from an exhausted IP is blocked", async () => {
