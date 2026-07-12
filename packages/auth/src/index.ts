@@ -178,9 +178,11 @@ export { runInTransaction } from "./prisma-tx.js";
 export {
   userRequiresMfa,
   userHasConfirmedTotp,
+  userRequiresMfaStepUp,
   userHasUnacknowledgedBackupCodes,
   markBackupCodesAcknowledged,
 } from "./mfa/policy.js";
+export { verifyTotpOrRecoveryCode } from "./mfa/verify-step-up-code.js";
 export {
   startTotpEnrollment,
   getOrStartTotpEnrollment,

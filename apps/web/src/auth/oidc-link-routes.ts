@@ -2,8 +2,7 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import {
   findOidcProviderById,
-  userRequiresMfa,
-  userHasConfirmedTotp,
+  userRequiresMfaStepUp,
   verifyOidcLinkStepUp,
 } from "@admitto/auth";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
@@ -36,7 +35,7 @@ async function parseForm(c: Context): Promise<Record<string, string>> {
 }
 
 async function requiresTotpForUser(db: PrismaClient, userId: string): Promise<boolean> {
-  return (await userRequiresMfa(db, userId)) && (await userHasConfirmedTotp(db, userId));
+  return userRequiresMfaStepUp(db, userId);
 }
 
 function renderLinkForm(
@@ -111,7 +110,7 @@ export async function handlePostOidcLink(
   }
 
   if (code) {
-    if (!(await checkMfaVerifyRateLimit(rateLimitStore, auth.sessionId, ip, code))) {
+    if (!(await checkMfaVerifyRateLimit(rateLimitStore, auth.sessionId, ip, code, "oidc-link"))) {
       return c.text("Too many requests", 429);
     }
   }

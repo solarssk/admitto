@@ -1,11 +1,8 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { findUserById } from "../user.js";
 import { verifyPassword } from "../password.js";
-import { userRequiresMfa, userHasConfirmedTotp } from "../mfa/policy.js";
-import { verifyUserTotpCode } from "../mfa/enrollment.js";
-import { findBackupRecoveryRowId } from "../mfa/backup-recovery.js";
-import { consumeRecoveryRow } from "../mfa/recovery-consume.js";
-import { findEmergencyRecoveryRowId } from "../mfa/emergency-recovery.js";
+import { userRequiresMfaStepUp } from "../mfa/policy.js";
+import { verifyTotpOrRecoveryCode } from "../mfa/verify-step-up-code.js";
 import { runInTransaction } from "../prisma-tx.js";
 
 export type OidcLinkStepUpFailureReason =
@@ -42,9 +39,7 @@ async function verifyOidcLinkStepUpInTransaction(
     return { ok: false, reason: "invalid_credentials" };
   }
 
-  const requiresMfa = await userRequiresMfa(tx, input.userId);
-  const hasTotp = await userHasConfirmedTotp(tx, input.userId);
-  if (!requiresMfa || !hasTotp) {
+  if (!(await userRequiresMfaStepUp(tx, input.userId))) {
     return { ok: true };
   }
 
@@ -53,21 +48,8 @@ async function verifyOidcLinkStepUpInTransaction(
     return { ok: false, reason: "totp_required" };
   }
 
-  const totpOk = await verifyUserTotpCode(tx, input.userId, code);
-  if (totpOk) {
-    return { ok: true };
-  }
-
-  let recoveryRowId = await findBackupRecoveryRowId(tx, input.userId, code);
-  if (!recoveryRowId) {
-    recoveryRowId = await findEmergencyRecoveryRowId(tx, input.userId, code);
-  }
-  if (!recoveryRowId) {
-    return { ok: false, reason: "invalid_totp" };
-  }
-
-  const consumed = await consumeRecoveryRow(tx, recoveryRowId);
-  if (!consumed) {
+  const codeOk = await verifyTotpOrRecoveryCode(tx, input.userId, code);
+  if (!codeOk) {
     return { ok: false, reason: "invalid_totp" };
   }
 

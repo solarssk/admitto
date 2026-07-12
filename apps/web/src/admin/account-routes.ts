@@ -12,7 +12,9 @@ import {
   revokeSession,
   runInTransaction,
   userHasConfirmedTotp,
+  userRequiresMfaStepUp,
   verifyPasswordOrDummy,
+  verifyTotpOrRecoveryCode,
 } from "@admitto/auth";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
@@ -385,7 +387,7 @@ export async function handlePostMfaConfirm(
   if (!sessionId) return c.json({ error: "unauthorized" }, 401);
 
   const ip = resolveMfaClientIp(c);
-  if (!(await checkMfaVerifyRateLimit(rateLimitStore, sessionId, ip, code))) {
+  if (!(await checkMfaVerifyRateLimit(rateLimitStore, sessionId, ip, code, "mfa-confirm"))) {
     return c.json({ error: "too many requests" }, 429);
   }
 
@@ -415,10 +417,19 @@ export async function handlePostMfaConfirm(
   return c.json({ ok: true });
 }
 
-const resetSchema = z.object({ password: z.string() }).strict();
+const resetSchema = z.object({ password: z.string(), code: z.string().optional() }).strict();
 
-/** POST /api/account/mfa/reset — re-auth, remove MFA, revoke other sessions (keeps current). */
-export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<Response> {
+/**
+ * POST /api/account/mfa/reset — re-auth, remove MFA, revoke other sessions (keeps current).
+ * Requires a TOTP/recovery-code step-up (mirroring `verifyOidcLinkStepUp`) whenever the user's
+ * role requires MFA and TOTP is confirmed — password alone must not be able to strip MFA from an
+ * MFA-required account.
+ */
+export async function handlePostMfaReset(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
   const auth = c.get("auth");
   const userId = auth.userId;
   const currentSessionId = auth.sessionId;
@@ -445,9 +456,50 @@ export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<
   const passwordOk = await verifyPasswordOrDummy(parsed.data.password, user.password_hash);
   if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
 
+  const code = parsed.data.code?.trim();
+
+  // Advisory pre-check: lets the common case fail fast (400) without opening a transaction.
+  // It is NOT the security gate — `requiresStepUp` is re-read from `tx` below, so this
+  // pre-check can only make a request fail earlier or the same way, never skip the
+  // authoritative check.
+  if (await userRequiresMfaStepUp(db, userId)) {
+    if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
+    if (!code) return c.json({ code: "totp_required" }, 400);
+  }
+
+  // Rate-limit any submitted step-up code before opening a transaction, regardless of the
+  // advisory check above, so the limiter's Redis round-trip never blocks a held Postgres
+  // connection (mirrors `handlePostOidcLink`'s step-up gate).
+  if (code && currentSessionId) {
+    const ip = resolveMfaClientIp(c);
+    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, "mfa-reset"))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
+
+  // Resolved via the root `db` client, before the transaction opens: a query against `db`
+  // from inside an active `tx` callback needs a second pooled connection, which deadlocks on
+  // deployments running Prisma with a single DB connection (e.g. `connection_limit=1`) — the
+  // transaction holds the only connection while waiting on a query that needs another one.
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  const sessions_revoked = await runInTransaction(db, async (tx) => {
+
+  // The step-up requirement is re-read from `tx`, not the pre-check above, so a role change
+  // racing this request can't let a password-only call skip step-up entirely. A recovery code
+  // is consumed as soon as it's checked, so if the reset work below fails for any other
+  // reason, the whole transaction (including that consumption) rolls back rather than burning
+  // a one-time code for a reset that never actually happened.
+  const result = await runInTransaction(db, async (tx) => {
+    const requiresStepUp = await userRequiresMfaStepUp(tx, userId);
+
+    if (requiresStepUp) {
+      if (!currentSessionId) return { ok: false as const, reason: "unauthorized" as const };
+      if (!code) return { ok: false as const, reason: "totp_required" as const };
+      if (!(await verifyTotpOrRecoveryCode(tx, userId, code))) {
+        return { ok: false as const, reason: "invalid_totp" as const };
+      }
+    }
+
     const mfaDeleted = await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
     const devicesRevoked = await revokeAllTrustedDevicesForUser(tx, userId);
     const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
@@ -466,8 +518,18 @@ export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<
         metadata: { sessionsRevoked: revokedCount },
       });
     }
-    return revokedCount;
+    return { ok: true as const, revokedCount };
   });
 
-  return c.json({ ok: true, sessions_revoked });
+  if (!result.ok) {
+    switch (result.reason) {
+      case "unauthorized":
+        return c.json({ error: "unauthorized" }, 401);
+      case "totp_required":
+        return c.json({ code: "totp_required" }, 400);
+      case "invalid_totp":
+        return c.json({ code: "invalid_totp" }, 401);
+    }
+  }
+  return c.json({ ok: true, sessions_revoked: result.revokedCount });
 }

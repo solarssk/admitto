@@ -774,7 +774,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostAccountMfaConfirm(c, db, rateLimitStore),
   );
   app.post("/api/account/mfa/reset", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
-    handlePostAccountMfaReset(c, db),
+    handlePostAccountMfaReset(c, db, rateLimitStore),
   );
 
   app.get("/api/checkin/events", requireSession, (c) => handleGetCheckinEvents(c, db));

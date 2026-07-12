@@ -902,6 +902,106 @@ describe("AccountPage toasts", () => {
       expect(within(dialog).getByText(/Failed to reset 2FA/)).toBeTruthy();
     });
   });
+
+  it("toasts and reveals the code field when reset requires a step-up code", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockResetMfa.mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    fireEvent.change(screen.getByLabelText("Current password", { selector: "#account-reset-password" }), {
+      target: { value: "current-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+
+    // The dialog closes (progressive disclosure reveals the code field instead), so the
+    // explanation must reach the user via toast, not the now-unmounted dialog's inline error.
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Enter your authenticator app code to continue\./,
+      );
+    });
+    expect(screen.getByLabelText("Authenticator or backup code")).toBeTruthy();
+  });
+
+  it("submits the entered step-up code and completes the reset", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetchAccount
+      .mockResolvedValueOnce(totpEnrolledAccount)
+      .mockResolvedValueOnce(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockResetMfa
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ sessions_revoked: 0 });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    fireEvent.change(screen.getByLabelText("Current password", { selector: "#account-reset-password" }), {
+      target: { value: "current-password" },
+    });
+
+    // Reset button stays disabled once the code field appears, until a code is entered.
+    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+    let dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Authenticator or backup code")).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "Reset 2FA" }).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.change(screen.getByLabelText("Authenticator or backup code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+    dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Two-factor authentication reset\./)).toBeTruthy();
+    });
+    expect(mockResetMfa).toHaveBeenLastCalledWith({ password: "current-password", code: "123456" });
+  });
+
+  it("clears a stale reset error when the confirm dialog is reopened", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockResetMfa.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    fireEvent.change(screen.getByLabelText("Current password", { selector: "#account-reset-password" }), {
+      target: { value: "current-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+
+    let dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset 2FA" }));
+    await waitFor(() => {
+      expect(within(dialog).getByText(/Failed to reset 2FA/)).toBeTruthy();
+    });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText(/Failed to reset 2FA/)).toBeNull();
+  });
 });
 
 describe("AccountPage profile: sign-in method", () => {

@@ -21,6 +21,7 @@ let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let mockIdp: MockOidcIdp;
 let linkUserId: string;
+let rateLimitStore: ReturnType<typeof createRateLimitStore>;
 
 beforeAll(async () => {
   prisma = new PrismaClient();
@@ -56,11 +57,12 @@ beforeAll(async () => {
     },
   });
 
+  rateLimitStore = createRateLimitStore();
   app = createApp({
     prisma,
     baseUrl: BASE,
     skipCheckinBootValidation: true,
-    rateLimitStore: createRateLimitStore(),
+    rateLimitStore,
     allowCheckinBearer: false,
     checkinToken: "test-checkin-token-for-vitest-32chars!",
   });
@@ -91,6 +93,14 @@ async function fullSessionCookie(): Promise<string> {
     stage: SESSION_STAGE.FULL,
   });
   return `${SESSION_COOKIE_NAME}=${rawToken}`;
+}
+
+async function fullSession(): Promise<{ cookie: string; sessionId: string }> {
+  const { rawToken, session } = await createSession(prisma, {
+    userId: linkUserId,
+    stage: SESSION_STAGE.FULL,
+  });
+  return { cookie: `${SESSION_COOKIE_NAME}=${rawToken}`, sessionId: session.id };
 }
 
 describe("oidc link step-up", () => {
@@ -166,5 +176,28 @@ describe("oidc link step-up", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).not.toContain('name="next"');
+  });
+
+  it("returns 429 when the step-up code rate limit is exceeded", async () => {
+    const { cookie, sessionId } = await fullSession();
+    // Pre-fill this endpoint's own "oidc-link"-namespaced bucket directly: hitting it via
+    // repeated real requests would also drive the separate oidc:link-stepup limiter (also
+    // max 10, keyed by userId — shared across every test in this file), making it ambiguous
+    // which limiter actually produced a 429.
+    for (let i = 0; i < 10; i++) {
+      await rateLimitStore.hit(`mfa:totp:session:oidc-link:${sessionId}`, 15 * 60_000, 10);
+    }
+    const res = await app.request(`/account/oidc/${PROVIDER_ID}/link`, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        Cookie: cookie,
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...sameOrigin,
+      },
+      body: new URLSearchParams({ password: LINK_PASSWORD, code: "000000" }).toString(),
+    });
+    expect(res.status).toBe(429);
+    expect(await res.text()).toBe("Too many requests");
   });
 });
