@@ -300,7 +300,7 @@ describe("AccountPage toasts", () => {
     });
   });
 
-  it("reveals a step-up code field on totp_required, in the same form, without a dialog", async () => {
+  it("opens a step-up dialog on totp_required, without touching the password form's own layout", async () => {
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     const { ApiError } = await import("../../src/api/client.js");
@@ -315,18 +315,14 @@ describe("AccountPage toasts", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Change password" }));
 
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(
-        /Enter your authenticator app code to continue\./,
-      );
-    });
-    // No dialog ever opens for this form — the field appears inline, same card.
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByLabelText("Authenticator or backup code")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Change password" }).hasAttribute("disabled")).toBe(true);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
+    // The field appears in the dialog, not in the (unchanged) form behind it.
+    expect(screen.getByLabelText("Current password")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Change password" }).hasAttribute("disabled")).toBe(true);
   });
 
-  it("shows an inline error for a wrong step-up code and keeps the entered password", async () => {
+  it("shows an inline error in the dialog for a wrong step-up code and keeps it open", async () => {
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     const { ApiError } = await import("../../src/api/client.js");
@@ -341,22 +337,21 @@ describe("AccountPage toasts", () => {
 
     fillPasswordForm();
     fireEvent.click(screen.getByRole("button", { name: "Change password" }));
-    await waitFor(() => {
-      expect(screen.getByLabelText("Authenticator or backup code")).toBeTruthy();
-    });
+    const dialog = await screen.findByRole("dialog");
 
-    fireEvent.change(screen.getByLabelText("Authenticator or backup code"), {
+    fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
       target: { value: "000000" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change password" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Invalid authenticator or backup code.")).toBeTruthy();
+      expect(within(dialog).getByText("Invalid authenticator or backup code.")).toBeTruthy();
     });
+    expect(screen.queryByRole("dialog")).toBeTruthy();
     expect((screen.getByLabelText("Current password") as HTMLInputElement).value).toBe("old-password-1");
   });
 
-  it("submits the entered step-up code and completes the password change", async () => {
+  it("submits the code entered in the dialog and completes the password change", async () => {
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     const { ApiError } = await import("../../src/api/client.js");
@@ -371,14 +366,12 @@ describe("AccountPage toasts", () => {
 
     fillPasswordForm();
     fireEvent.click(screen.getByRole("button", { name: "Change password" }));
-    await waitFor(() => {
-      expect(screen.getByLabelText("Authenticator or backup code")).toBeTruthy();
-    });
+    const dialog = await screen.findByRole("dialog");
 
-    fireEvent.change(screen.getByLabelText("Authenticator or backup code"), {
+    fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
       target: { value: "123456" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change password" }));
 
     await waitFor(() => {
       expect(screen.getByText(/Password changed\. 1 other session revoked\./)).toBeTruthy();
@@ -389,7 +382,7 @@ describe("AccountPage toasts", () => {
       new_password_confirm: "new-password-12",
       code: "123456",
     });
-    expect(screen.queryByLabelText("Authenticator or backup code")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("toasts MFA enrollment errors", async () => {
