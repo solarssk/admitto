@@ -627,7 +627,10 @@ describe("PATCH /api/account/password — step-up for MFA-required roles", () =>
 
   it("changes the password with a correct TOTP code, and writes an audit row", async () => {
     // Seeded directly (not via enroll+confirm) so this is the only code ever verified against
-    // this secret — see the equivalent mfa/reset test above for why.
+    // this secret — see the equivalent mfa/reset test above for why. `backup_codes_acknowledged_at`
+    // is left unset deliberately: it defaults to row-creation time (schema.prisma), so this row
+    // reads as already-acknowledged — the enroll+confirm flow is the one that explicitly nulls it
+    // to force that step, which isn't what this test is exercising.
     const secret = generateTotpSecret();
     await prisma.userMfaMethod.create({
       data: { user_id: adminUserId, type: "totp", secret_enc: encryptTotpSecret(secret), confirmed_at: new Date() },

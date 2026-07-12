@@ -20,6 +20,14 @@ import { LOCALE_OPTIONS, setPreferredLocale as setPreferredLocaleStore } from ".
 import { TotpDigitInput } from "./TotpDigitInput.js";
 import { TotpQrCode } from "./TotpQrCode.js";
 
+/** Discourage password managers from offering to save a "login" for a TOTP/backup-code field. */
+const stepUpCodeFieldAttrs = {
+  "data-bwignore": "",
+  "data-lpignore": "true",
+  "data-1p-ignore": "",
+  "data-form-type": "other",
+} as const;
+
 function parseUserAgent(ua: string | null): string {
   if (!ua) return "Unknown";
   const browser = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : null;
@@ -567,6 +575,7 @@ export function AccountPage() {
                         spellCheck={false}
                         value={resetCode}
                         onChange={(e) => setResetCode(e.target.value)}
+                        {...stepUpCodeFieldAttrs}
                       />
                     </div>
                   )}
@@ -726,6 +735,7 @@ export function AccountPage() {
               setPasswordCodeError(operatorApiErrorMessage(err, "Failed to change password."));
             } else {
               setPasswordStepUpOpen(false);
+              setPasswordCode("");
               addToast(operatorApiErrorMessage(err, "Failed to change password."), "error");
             }
           } finally {
@@ -751,6 +761,7 @@ export function AccountPage() {
             spellCheck={false}
             value={passwordCode}
             onChange={(e) => setPasswordCode(e.target.value)}
+            {...stepUpCodeFieldAttrs}
           />
         </div>
       </ConfirmDialog>

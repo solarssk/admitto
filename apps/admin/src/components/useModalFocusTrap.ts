@@ -21,12 +21,9 @@ export function useModalFocusTrap(
     document.body.style.overflow = "hidden";
 
     const panel = panelRef.current;
-    const focusables = panel
-      ? Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE))
-      : [];
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    first?.focus();
+    const queryFocusables = (): HTMLElement[] =>
+      panel ? Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)) : [];
+    queryFocusables()[0]?.focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -35,7 +32,16 @@ export function useModalFocusTrap(
         onCancelRef.current();
         return;
       }
-      if (event.key !== "Tab" || focusables.length === 0) return;
+      if (event.key !== "Tab") return;
+
+      // Re-queried on every Tab press, not snapshotted once at mount: a confirm button
+      // that starts disabled (e.g. `ConfirmDialog`'s `disableConfirm`/typed-confirmation)
+      // is excluded from `:not([disabled])` at that point, so a stale snapshot would trap
+      // keyboard focus between the remaining elements even after the button becomes enabled.
+      const focusables = queryFocusables();
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
 
       if (event.shiftKey) {
         if (document.activeElement === first) {
