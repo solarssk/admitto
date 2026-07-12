@@ -413,8 +413,8 @@ export async function createEventImageAsset(
   return parseJson<EventImageAssetDto>(res);
 }
 
-/** Delete a named branding image asset. Leaves any saved template referencing its token intact
- * (it will fail loudly at next save/render if still used - no reference tracking today). */
+/** Delete a named branding image asset. Rejected with 409 asset_in_use while one of the event's
+ * saved email templates still references the asset's {{token}} — remove it from the template first. */
 export async function deleteEventImageAsset(eventId: string, assetId: string): Promise<void> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/image-assets/${encodeURIComponent(assetId)}`,

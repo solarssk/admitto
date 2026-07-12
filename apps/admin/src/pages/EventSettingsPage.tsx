@@ -331,6 +331,7 @@ export function EventSettingsPage() {
       );
       setRevokeCheckinsOpen(false);
       await load();
+      await refreshLayoutEvent?.();
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Failed to revoke check-ins"), "error");
     } finally {
@@ -351,6 +352,7 @@ export function EventSettingsPage() {
       );
       setRevokeItemsOpen(false);
       await load();
+      await refreshLayoutEvent?.();
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Failed to revoke items"), "error");
     } finally {

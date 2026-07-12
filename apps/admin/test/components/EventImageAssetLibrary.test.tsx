@@ -56,6 +56,19 @@ describe("EventImageAssetLibrary", () => {
     expect(await screen.findByText("Something went wrong. Try again.")).toBeTruthy();
   });
 
+  it("re-fetches and renders the assets when Retry is clicked after a load failure", async () => {
+    mockFetch.mockRejectedValueOnce(new ApiError(500, "server error"));
+    mockFetch.mockResolvedValueOnce([asset]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+
+    expect(await screen.findByText("Could not load image assets")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("sponsor.png")).toBeTruthy();
+    expect(screen.queryByText("Could not load image assets")).toBeNull();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
   it("renders an existing asset with filename, size, and a copyable token chip", async () => {
     mockFetch.mockResolvedValueOnce([asset]);
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);

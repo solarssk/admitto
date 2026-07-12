@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,6 +63,13 @@ beforeAll(async () => {
   await prisma.eventImageAsset.deleteMany({
     where: {
       event_id: { in: [EVENT_IA, EVENT_IA_OTHER_ORG, EVENT_IA_ARCHIVED, EVENT_IA_LIMIT] },
+    },
+  });
+  // MailTemplate has no FK to Event, so event deleteMany below does not cascade these rows.
+  await prisma.mailTemplate.deleteMany({
+    where: {
+      scope_type: "event",
+      scope_id: { in: [EVENT_IA, EVENT_IA_OTHER_ORG, EVENT_IA_ARCHIVED, EVENT_IA_LIMIT] },
     },
   });
   await prisma.roleAssignment.deleteMany({
@@ -280,13 +287,16 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
     expect(body.error).toBe("reserved_token");
   });
 
-  it("rejects a duplicate token within the same event with 409", async () => {
+  it("rejects a duplicate token within the same event with 409 and leaves no orphaned file", async () => {
     const first = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin },
       body: uploadForm("dup_token"),
     });
     expect(first.status).toBe(201);
+
+    const eventUploadDir = join(uploadDir, "default", "events", EVENT_IA);
+    const filesBefore = readdirSync(eventUploadDir).length;
 
     const second = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
@@ -296,6 +306,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
     expect(second.status).toBe(409);
     const body = (await second.json()) as { error: string };
     expect(body.error).toBe("token_conflict");
+    expect(readdirSync(eventUploadDir).length).toBe(filesBefore);
   });
 
   it("rejects unsupported file type with 415", async () => {
@@ -392,6 +403,48 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
     });
     expect(log?.attendee_id).toBeNull();
     expect(log?.metadata).toEqual({ token: "to_delete" });
+  });
+
+  it("returns 409 asset_in_use while a saved event template references the token", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+      body: uploadForm("in_use_logo"),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string };
+
+    const template = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_IA,
+        name: "ticket",
+        label: "Ticket email",
+        subject_template: "Subject",
+        body_template: '<p><img src="{{in_use_logo}}" alt="" /></p>',
+        template_format: "html",
+        compiled_html_template: '<p><img src="{{in_use_logo}}" alt="" /></p>',
+      },
+    });
+
+    const blockedRes = await app.request(
+      `/api/admin/events/${EVENT_IA}/image-assets/${created.id}`,
+      { method: "DELETE", headers: { Cookie: adminCookie, ...sameOrigin } },
+    );
+    expect(blockedRes.status).toBe(409);
+    const blockedBody = (await blockedRes.json()) as { error: string };
+    expect(blockedBody.error).toBe("asset_in_use");
+
+    const stillThere = await prisma.eventImageAsset.findUnique({ where: { id: created.id } });
+    expect(stillThere).not.toBeNull();
+
+    // Once the template no longer references the token, deletion proceeds.
+    await prisma.mailTemplate.delete({ where: { id: template.id } });
+    const delRes = await app.request(
+      `/api/admin/events/${EVENT_IA}/image-assets/${created.id}`,
+      { method: "DELETE", headers: { Cookie: adminCookie, ...sameOrigin } },
+    );
+    expect(delRes.status).toBe(200);
   });
 
   it("returns 403 for an asset belonging to a different event", async () => {

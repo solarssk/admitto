@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Button, Card, Input, useToast } from "@admitto/ui";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button, Card, EmptyState, Input, useToast } from "@admitto/ui";
 import { createEventImageAsset, deleteEventImageAsset, fetchEventImageAssets } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventImageAssetDto } from "../api/types.js";
@@ -47,8 +47,12 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadAbortRef = useRef<AbortController | null>(null);
+
+  const load = useCallback(() => {
+    loadAbortRef.current?.abort();
     const controller = new AbortController();
+    loadAbortRef.current = controller;
     setLoading(true);
     setLoadError(null);
     fetchEventImageAssets(eventId, controller.signal)
@@ -63,8 +67,12 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
-    return () => controller.abort();
   }, [eventId]);
+
+  useEffect(() => {
+    load();
+    return () => loadAbortRef.current?.abort();
+  }, [load]);
 
   const tokenTrimmed = token.trim();
   const tokenValid =
@@ -237,9 +245,15 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
         {loading ? (
           <p className="field-hint">Loading assets…</p>
         ) : loadError ? (
-          <p className="at-hint at-hint--error" role="alert">
-            {loadError}
-          </p>
+          <EmptyState
+            title="Could not load image assets"
+            description={loadError}
+            action={
+              <Button type="button" variant="secondary" onClick={load}>
+                Retry
+              </Button>
+            }
+          />
         ) : assets.length === 0 ? (
           <p className="field-hint">
             No image assets yet. Upload one above to use it as a placeholder in email templates.

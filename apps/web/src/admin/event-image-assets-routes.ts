@@ -128,6 +128,17 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
     );
   }
 
+  // saveEventUpload writes the file to disk before the unique (event_id, token) insert - check
+  // for an existing token first so a duplicate upload fails cleanly instead of leaving an
+  // orphaned file behind. The P2002 catch below stays as the guard for concurrent uploads.
+  const duplicate = await db.eventImageAsset.findUnique({
+    where: { event_id_token: { event_id: eventId, token } },
+    select: { id: true },
+  });
+  if (duplicate) {
+    return c.json({ error: "token_conflict" }, 409);
+  }
+
   // TODO(multi-org): same single-tenant assumption as handlePostEventBrandingUpload.
   const orgId = "default";
 
@@ -189,8 +200,10 @@ async function loadImageAssetInEvent(db: PrismaClient, eventId: string, assetId:
  * uploaded file is intentionally left on disk (same precedent as removing a logo/header image
  * elsewhere in this app - nothing in this codebase deletes uploaded files from disk yet; a real
  * StorageAdapter cleanup pass is future work per ADR 0008, not introduced here). If the token is
- * still referenced by a saved template's {{token}}, that template fails loudly (as an unknown
- * placeholder) at its next save/render rather than silently breaking - no reference tracking.
+ * still referenced by a saved event template's {{token}}, the delete is rejected (409
+ * asset_in_use) - the batch send path renders saved templates without whitelist re-validation
+ * (renderTemplateTrustedForStorage), so after a delete the token would silently resolve to ""
+ * and the image would just vanish from attendee emails.
  */
 export async function handleDeleteEventImageAsset(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -204,6 +217,26 @@ export async function handleDeleteEventImageAsset(c: Context, db: PrismaClient):
 
   const existing = await loadImageAssetInEvent(db, eventId, assetId);
   if (!existing) return c.json({ error: "forbidden" }, 403);
+
+  // Only saved event-scoped templates count: org-scoped templates never get the widened
+  // placeholder whitelist (resolveScopeCustomPlaceholders), so they cannot reference custom
+  // tokens, and the builtin default has none. Placeholders are exact {{name}} with no padding
+  // (VALID_PLACEHOLDER_RE), so a literal substring match is sufficient.
+  const placeholder = `{{${existing.token}}}`;
+  const referencing = await db.mailTemplate.findFirst({
+    where: {
+      scope_type: "event",
+      scope_id: eventId,
+      OR: [
+        { subject_template: { contains: placeholder } },
+        { body_template: { contains: placeholder } },
+      ],
+    },
+    select: { id: true },
+  });
+  if (referencing) {
+    return c.json({ error: "asset_in_use" }, 409);
+  }
 
   await db.$transaction(async (tx) => {
     await tx.eventImageAsset.delete({ where: { id: assetId } });

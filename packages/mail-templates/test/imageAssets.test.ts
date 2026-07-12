@@ -13,8 +13,8 @@ import { resetDb } from "./resetDb.js";
 
 const prisma = new PrismaClient();
 
-beforeAll(() => {
-  resetDb();
+beforeAll(async () => {
+  await resetDb();
 });
 
 beforeAll(async () => {

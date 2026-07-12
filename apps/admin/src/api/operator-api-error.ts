@@ -20,6 +20,8 @@ const CODE_MESSAGES: Record<string, string> = {
   email_conflict: "That email is already in use.",
   email_taken: "A user with this email already exists.",
   empty_file: "The file is empty.",
+  asset_in_use:
+    "This image is still used in this event's email template. Remove it from the template first.",
   asset_limit_reached: "This event has reached its image asset limit.",
   event_archived: "This event is archived.",
   event_full: "Event is at capacity.",

@@ -261,6 +261,9 @@ describe("ConfirmDialog", () => {
       expect(onConfirm).toHaveBeenCalledTimes(1);
     });
 
+    // Regression: the component stays mounted while closed (`open=false` returns null), so
+    // `armed` must be reset before paint on reopen — otherwise the confirm button is briefly
+    // enabled and a queued double-click/Enter could bypass the safety pause.
     it("re-arms the countdown every time the dialog reopens", () => {
       vi.useFakeTimers();
       const { rerender } = render(
@@ -306,6 +309,21 @@ describe("ConfirmDialog", () => {
       expect(
         (screen.getByRole("button", { name: "Revoke all check-ins" }) as HTMLButtonElement).disabled,
       ).toBe(true);
+
+      // ...and it only re-enables after the full delay elapses again.
+      act(() => {
+        vi.advanceTimersByTime(9999);
+      });
+      expect(
+        (screen.getByRole("button", { name: "Revoke all check-ins" }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(
+        (screen.getByRole("button", { name: "Revoke all check-ins" }) as HTMLButtonElement).disabled,
+      ).toBe(false);
     });
   });
 });

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Button, Input } from "@admitto/ui";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import "./confirm-dialog.css";
@@ -66,7 +66,10 @@ export function ConfirmDialog({
     if (open) setTypedValue("");
   }, [open]);
 
-  useEffect(() => {
+  // Layout effect: the component stays mounted while closed, so `armed` can still be true from
+  // the previous open. Resetting before paint means a reopen never shows an enabled confirm
+  // button for a frame (where a queued double-click/Enter could bypass the safety pause).
+  useLayoutEffect(() => {
     if (!open || confirmDelaySeconds === undefined) return;
     setArmed(false);
     const timer = window.setTimeout(() => setArmed(true), confirmDelaySeconds * 1000);
