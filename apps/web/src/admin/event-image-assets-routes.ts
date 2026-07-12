@@ -99,6 +99,67 @@ export async function handleListEventImageAssets(c: Context, db: PrismaClient): 
  * flows into attendee-facing email content). Archive guard applied by the caller (app.ts wraps
  * with guardArchivedEvent).
  */
+type CreateAssetValidation =
+  | { ok: true; fileField: File; token: string }
+  | { ok: false; response: Response };
+
+/** Parses and validates the upload request (form fields, reserved/duplicate token, per-event
+ * cap) ahead of the actual file write - split out of handleCreateEventImageAsset to keep that
+ * function's own cognitive complexity down to its real job (upload + transaction + error
+ * mapping) instead of also carrying this linear validation chain. */
+async function validateCreateAssetRequest(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+): Promise<CreateAssetValidation> {
+  let body: Record<string, string | File>;
+  try {
+    body = await c.req.parseBody();
+  } catch {
+    return { ok: false, response: c.json({ error: "invalid_form_data" }, 400) };
+  }
+
+  const fileField = body.file;
+  if (!(fileField instanceof File)) {
+    return { ok: false, response: c.json({ error: "file_required" }, 400) };
+  }
+
+  const tokenField = body.token;
+  const tokenParsed = tokenSchema.safeParse(typeof tokenField === "string" ? tokenField : "");
+  if (!tokenParsed.success) {
+    return { ok: false, response: c.json({ error: "invalid_token" }, 400) };
+  }
+  const token = tokenParsed.data;
+
+  if (ALLOWED_PLACEHOLDERS.has(token)) {
+    return { ok: false, response: c.json({ error: "reserved_token" }, 409) };
+  }
+
+  // Fast-path rejection only (avoids writing a file to disk when the library is obviously
+  // already full); handleCreateEventImageAsset's transaction rechecks this for real.
+  const count = await db.eventImageAsset.count({ where: { event_id: eventId } });
+  if (count >= MAX_IMAGE_ASSETS_PER_EVENT) {
+    return {
+      ok: false,
+      response: c.json({ error: "asset_limit_reached", limit: MAX_IMAGE_ASSETS_PER_EVENT }, 422),
+    };
+  }
+
+  // saveEventUpload writes the file to disk before the unique (event_id, token) insert - check
+  // for an existing token first so a duplicate upload fails cleanly instead of leaving an
+  // orphaned file behind. The P2002 catch in handleCreateEventImageAsset stays as the guard for
+  // concurrent uploads.
+  const duplicate = await db.eventImageAsset.findUnique({
+    where: { event_id_token: { event_id: eventId, token } },
+    select: { id: true },
+  });
+  if (duplicate) {
+    return { ok: false, response: c.json({ error: "token_conflict" }, 409) };
+  }
+
+  return { ok: true, fileField, token };
+}
+
 export async function handleCreateEventImageAsset(c: Context, db: PrismaClient): Promise<Response> {
   const superadminDenied = await requireSuperadmin(c, db);
   if (superadminDenied) return superadminDenied;
@@ -116,47 +177,9 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
   const exists = await db.event.findUnique({ where: { id: eventId }, select: { id: true } });
   if (!exists) return c.json({ error: "not_found" }, 404);
 
-  let body: Record<string, string | File>;
-  try {
-    body = await c.req.parseBody();
-  } catch {
-    return c.json({ error: "invalid_form_data" }, 400);
-  }
-
-  const fileField = body.file;
-  if (!(fileField instanceof File)) {
-    return c.json({ error: "file_required" }, 400);
-  }
-
-  const tokenField = body.token;
-  const tokenParsed = tokenSchema.safeParse(typeof tokenField === "string" ? tokenField : "");
-  if (!tokenParsed.success) {
-    return c.json({ error: "invalid_token" }, 400);
-  }
-  const token = tokenParsed.data;
-
-  if (ALLOWED_PLACEHOLDERS.has(token)) {
-    return c.json({ error: "reserved_token" }, 409);
-  }
-
-  const count = await db.eventImageAsset.count({ where: { event_id: eventId } });
-  if (count >= MAX_IMAGE_ASSETS_PER_EVENT) {
-    return c.json(
-      { error: "asset_limit_reached", limit: MAX_IMAGE_ASSETS_PER_EVENT },
-      422,
-    );
-  }
-
-  // saveEventUpload writes the file to disk before the unique (event_id, token) insert - check
-  // for an existing token first so a duplicate upload fails cleanly instead of leaving an
-  // orphaned file behind. The P2002 catch below stays as the guard for concurrent uploads.
-  const duplicate = await db.eventImageAsset.findUnique({
-    where: { event_id_token: { event_id: eventId, token } },
-    select: { id: true },
-  });
-  if (duplicate) {
-    return c.json({ error: "token_conflict" }, 409);
-  }
+  const validation = await validateCreateAssetRequest(c, db, eventId);
+  if (!validation.ok) return validation.response;
+  const { fileField, token } = validation;
 
   // TODO(multi-org): same single-tenant assumption as handlePostEventBrandingUpload.
   const orgId = "default";
@@ -224,7 +247,7 @@ async function loadImageAssetInEvent(db: PrismaClient, eventId: string, assetId:
     where: { id: assetId },
     select: { id: true, event_id: true, token: true },
   });
-  if (!row || row.event_id !== eventId) return null;
+  if (row?.event_id !== eventId) return null;
   return row;
 }
 

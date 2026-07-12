@@ -313,7 +313,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
     expect(second.status).toBe(409);
     const body = (await second.json()) as { error: string };
     expect(body.error).toBe("token_conflict");
-    expect(readdirSync(eventUploadDir).length).toBe(filesBefore);
+    expect(readdirSync(eventUploadDir)).toHaveLength(filesBefore);
   });
 
   it("rejects unsupported file type with 415", async () => {

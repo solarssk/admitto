@@ -67,6 +67,11 @@ const BULK_REVOKE_CONFIRM_DELAY_SECONDS = 10;
 // with no trace (bot review).
 const UNSAVED_CHANGES_WARNING = " You also have unsaved changes elsewhere on this page — they'll be lost when this finishes.";
 
+/** English plural suffix for a count — used by the Danger Zone's toasts and row descriptions. */
+function pluralSuffix(count: number): string {
+  return count === 1 ? "" : "s";
+}
+
 function toForm(data: EventSettingsDto): SettingsForm {
   return {
     title: data.title,
@@ -183,6 +188,9 @@ export function EventSettingsPage() {
 
   const dirty =
     form !== null && original !== null && JSON.stringify(form) !== JSON.stringify(original);
+  let saveButtonLabel = "Save changes";
+  if (saving) saveButtonLabel = "Saving…";
+  else if (logoUploading) saveButtonLabel = "Uploading…";
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       dirty && currentLocation.pathname !== nextLocation.pathname,
@@ -331,7 +339,7 @@ export function EventSettingsPage() {
       const { revokedCount } = await revokeAllCheckIns(eventId);
       addToast(
         revokedCount > 0
-          ? `Revoked check-in for ${revokedCount} attendee${revokedCount === 1 ? "" : "s"}`
+          ? `Revoked check-in for ${revokedCount} attendee${pluralSuffix(revokedCount)}`
           : "No check-ins to revoke",
         "success",
       );
@@ -352,7 +360,7 @@ export function EventSettingsPage() {
       const { revokedCount } = await revokeAllItemsIssued(eventId);
       addToast(
         revokedCount > 0
-          ? `Reset ${revokedCount} issued item${revokedCount === 1 ? "" : "s"} back to pending`
+          ? `Reset ${revokedCount} issued item${pluralSuffix(revokedCount)} back to pending`
           : "No items to revoke",
         "success",
       );
@@ -395,6 +403,18 @@ export function EventSettingsPage() {
 
   if (!event || !form) return null;
 
+  let revokeCheckinsTooltip: string | undefined;
+  if (!isSa) revokeCheckinsTooltip = "Superadmin only";
+  else if (event.admitted_count === 0) revokeCheckinsTooltip = "No check-ins to revoke";
+
+  let revokeItemsTooltip: string | undefined;
+  if (!isSa) revokeItemsTooltip = "Superadmin only";
+  else if (event.issued_items_count === 0) revokeItemsTooltip = "No items to revoke";
+
+  let deleteEventTooltip: string | undefined;
+  if (!isSa) deleteEventTooltip = "Superadmin only";
+  else if (!event.is_deletable) deleteEventTooltip = "This event has data and cannot be deleted";
+
   return (
     <div className={`event-settings-page screen${isArchived ? " event-settings--archived" : ""}`}>
       <PageHeader
@@ -408,7 +428,7 @@ export function EventSettingsPage() {
                 disabled={!dirty || saving || logoUploading}
                 onClick={() => void handleSave()}
               >
-                {saving ? "Saving…" : logoUploading ? "Uploading…" : "Save changes"}
+                {saveButtonLabel}
               </Button>
             </span>
           ) : undefined
@@ -630,7 +650,7 @@ export function EventSettingsPage() {
               <div className="danger-zone__title">Revoke all check-ins</div>
               <p className="danger-zone__desc">
                 {event.admitted_count > 0
-                  ? `Reverses check-in for all ${event.admitted_count} currently checked-in attendee${event.admitted_count === 1 ? "" : "s"}. They can check in again afterwards.`
+                  ? `Reverses check-in for all ${event.admitted_count} currently checked-in attendee${pluralSuffix(event.admitted_count)}. They can check in again afterwards.`
                   : "No attendees are currently checked in."}
               </p>
             </div>
@@ -638,13 +658,7 @@ export function EventSettingsPage() {
               event={event}
               reasonId="revoke-checkins-reason"
               disabled={!isSa || event.admitted_count === 0 || revokingCheckins}
-              tooltip={
-                !isSa
-                  ? "Superadmin only"
-                  : event.admitted_count === 0
-                    ? "No check-ins to revoke"
-                    : undefined
-              }
+              tooltip={revokeCheckinsTooltip}
             >
               {(guard) => (
                 <Button
@@ -664,7 +678,7 @@ export function EventSettingsPage() {
               <div className="danger-zone__title">Revoke all items issued</div>
               <p className="danger-zone__desc">
                 {event.issued_items_count > 0
-                  ? `Resets all ${event.issued_items_count} issued item${event.issued_items_count === 1 ? "" : "s"} back to pending, for every attendee. They can be handed out again afterwards.`
+                  ? `Resets all ${event.issued_items_count} issued item${pluralSuffix(event.issued_items_count)} back to pending, for every attendee. They can be handed out again afterwards.`
                   : "No items have been issued yet."}
               </p>
             </div>
@@ -672,13 +686,7 @@ export function EventSettingsPage() {
               event={event}
               reasonId="revoke-items-reason"
               disabled={!isSa || event.issued_items_count === 0 || revokingItems}
-              tooltip={
-                !isSa
-                  ? "Superadmin only"
-                  : event.issued_items_count === 0
-                    ? "No items to revoke"
-                    : undefined
-              }
+              tooltip={revokeItemsTooltip}
             >
               {(guard) => (
                 <Button
@@ -776,13 +784,7 @@ export function EventSettingsPage() {
               event={null}
               reasonId="delete-event-reason"
               disabled={!isSa || !event.is_deletable || deleting}
-              tooltip={
-                !isSa
-                  ? "Superadmin only"
-                  : event.is_deletable
-                    ? undefined
-                    : "This event has data and cannot be deleted"
-              }
+              tooltip={deleteEventTooltip}
             >
               {(guard) => (
                 <Button
@@ -812,7 +814,7 @@ export function EventSettingsPage() {
         open={revokeCheckinsOpen}
         title="Revoke all check-ins?"
         message={
-          `This will revoke check-in for ${event.admitted_count} attendee${event.admitted_count === 1 ? "" : "s"}. They can check in again afterwards.` +
+          `This will revoke check-in for ${event.admitted_count} attendee${pluralSuffix(event.admitted_count)}. They can check in again afterwards.` +
           (dirty ? UNSAVED_CHANGES_WARNING : "")
         }
         confirmLabel="Revoke all check-ins"
@@ -826,7 +828,7 @@ export function EventSettingsPage() {
         open={revokeItemsOpen}
         title="Revoke all items issued?"
         message={
-          `This will reset ${event.issued_items_count} issued item${event.issued_items_count === 1 ? "" : "s"} back to pending. They can be handed out again afterwards.` +
+          `This will reset ${event.issued_items_count} issued item${pluralSuffix(event.issued_items_count)} back to pending. They can be handed out again afterwards.` +
           (dirty ? UNSAVED_CHANGES_WARNING : "")
         }
         confirmLabel="Revoke all items issued"

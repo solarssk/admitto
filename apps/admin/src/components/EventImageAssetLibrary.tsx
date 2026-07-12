@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Card, EmptyState, Input, useToast } from "@admitto/ui";
 import { createEventImageAsset, deleteEventImageAsset, fetchEventImageAssets } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -21,6 +21,10 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function pluralSuffix(count: number): string {
+  return count === 1 ? "" : "s";
 }
 
 /**
@@ -147,6 +151,83 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
 
   const deletingAsset = assets.find((a) => a.id === confirmDeleteId) ?? null;
 
+  function renderAssetsList(): ReactNode {
+    if (loading) return <p className="field-hint">Loading assets…</p>;
+    if (loadError) {
+      return (
+        <EmptyState
+          title="Could not load image assets"
+          description={loadError}
+          action={
+            <Button type="button" variant="secondary" onClick={load}>
+              Retry
+            </Button>
+          }
+        />
+      );
+    }
+    if (assets.length === 0) {
+      return (
+        <p className="field-hint">
+          No image assets yet. Upload one above to use it as a placeholder in email templates.
+        </p>
+      );
+    }
+    return (
+      <>
+        <p className="field-hint">
+          {assets.length} image{pluralSuffix(assets.length)}. Each one has a short name you can use
+          in any email.
+        </p>
+        <div className="image-asset-library__grid">
+          {assets.map((a) => {
+            const src = brandingLogoImgSrc(a.url);
+            return (
+              <div key={a.id} className="image-asset-library__card">
+                <div className="image-asset-library__card-thumb">
+                  {src ? <img src={src} alt="" /> : <i className="ti ti-photo" aria-hidden="true" />}
+                </div>
+                <div className="image-asset-library__card-body">
+                  <span className="image-asset-library__card-name" title={a.filename}>
+                    {a.filename}
+                  </span>
+                  <span className="image-asset-library__card-size">{formatFileSize(a.size_bytes)}</span>
+                  <span className="image-asset-library__token">{`{{${a.token}}}`}</span>
+                  <div className="image-asset-library__card-actions">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="image-asset-library__copy-btn"
+                      title="Copy placeholder"
+                      onClick={() => void copyToken(a.token)}
+                      icon={<i className="ti ti-copy" aria-hidden="true" />}
+                    >
+                      Copy
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="image-asset-library__delete-btn"
+                      aria-label={`Delete ${a.filename}`}
+                      disabled={disabled}
+                      onClick={() => {
+                        setDeleteError(null);
+                        setConfirmDeleteId(a.id);
+                      }}
+                      icon={<i className="ti ti-trash" aria-hidden="true" />}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <Card title="Upload images" className="event-settings-card">
@@ -242,75 +323,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
       </Card>
 
       <Card title="Your images" className="event-settings-card">
-        {loading ? (
-          <p className="field-hint">Loading assets…</p>
-        ) : loadError ? (
-          <EmptyState
-            title="Could not load image assets"
-            description={loadError}
-            action={
-              <Button type="button" variant="secondary" onClick={load}>
-                Retry
-              </Button>
-            }
-          />
-        ) : assets.length === 0 ? (
-          <p className="field-hint">
-            No image assets yet. Upload one above to use it as a placeholder in email templates.
-          </p>
-        ) : (
-          <>
-            <p className="field-hint">
-              {assets.length} image{assets.length === 1 ? "" : "s"}. Each one has a short name you can use
-              in any email.
-            </p>
-            <div className="image-asset-library__grid">
-              {assets.map((a) => {
-                const src = brandingLogoImgSrc(a.url);
-                return (
-                  <div key={a.id} className="image-asset-library__card">
-                    <div className="image-asset-library__card-thumb">
-                      {src ? <img src={src} alt="" /> : <i className="ti ti-photo" aria-hidden="true" />}
-                    </div>
-                    <div className="image-asset-library__card-body">
-                      <span className="image-asset-library__card-name" title={a.filename}>
-                        {a.filename}
-                      </span>
-                      <span className="image-asset-library__card-size">{formatFileSize(a.size_bytes)}</span>
-                      <span className="image-asset-library__token">{`{{${a.token}}}`}</span>
-                      <div className="image-asset-library__card-actions">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          className="image-asset-library__copy-btn"
-                          title="Copy placeholder"
-                          onClick={() => void copyToken(a.token)}
-                          icon={<i className="ti ti-copy" aria-hidden="true" />}
-                        >
-                          Copy
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          className="image-asset-library__delete-btn"
-                          aria-label={`Delete ${a.filename}`}
-                          disabled={disabled}
-                          onClick={() => {
-                            setDeleteError(null);
-                            setConfirmDeleteId(a.id);
-                          }}
-                          icon={<i className="ti ti-trash" aria-hidden="true" />}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
+        {renderAssetsList()}
       </Card>
 
       <ConfirmDialog
