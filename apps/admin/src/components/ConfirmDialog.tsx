@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input } from "@admitto/ui";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
@@ -28,6 +29,10 @@ export type ConfirmDialogProps = {
    * dialog itself. Restarts every time the dialog re-opens.
    */
   confirmDelaySeconds?: number;
+  /** Extra fields rendered between the error message and the action buttons (e.g. a step-up code input). */
+  children?: ReactNode;
+  /** External confirm-disabled condition (e.g. a required field in `children` is still empty), ORed with the built-in checks. */
+  disableConfirm?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -45,6 +50,8 @@ export function ConfirmDialog({
   confirmationValue,
   confirmationLabel,
   confirmDelaySeconds,
+  children,
+  disableConfirm = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -74,6 +81,7 @@ export function ConfirmDialog({
   const confirmDisabled =
     loading ||
     !armed ||
+    disableConfirm ||
     (needsTypedConfirmation && (!confirmationValue || typedValue !== confirmationValue));
 
   return (
@@ -106,6 +114,7 @@ export function ConfirmDialog({
             onChange={(e) => setTypedValue(e.target.value)}
           />
         )}
+        {children}
         <div className="confirm-dialog__actions">
           <Button type="button" variant="secondary" disabled={loading} onClick={onCancel}>
             {cancelLabel}

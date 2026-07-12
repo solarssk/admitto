@@ -1,17 +1,20 @@
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import {
   cancelPendingTotpEnrollment,
   confirmTotpEnrollment,
   getOrStartTotpEnrollment,
   hashPassword,
+  markBackupCodesAcknowledged,
   revokeAllTrustedDevicesForUser,
   revokeOtherSessions,
   revokeSession,
   runInTransaction,
   userHasConfirmedTotp,
+  userRequiresMfaStepUp,
   verifyPasswordOrDummy,
+  verifyTotpOrRecoveryCode,
 } from "@admitto/auth";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
@@ -19,9 +22,137 @@ import {
   isSupportedLocale,
   sanitizePreferredLocale,
 } from "@admitto/shared";
+import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
+import { adminAuditFromContext } from "./admin-helpers.js";
+import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 function hasLocalPassword(passwordHash: string | null): boolean {
   return passwordHash !== null;
+}
+
+/** Revoke every other session for `userId`, or all of them if no current session to keep. */
+async function revokeSessionsExcludingCurrent(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  currentSessionId: string | undefined,
+): Promise<number> {
+  if (currentSessionId) {
+    return revokeOtherSessions(tx, userId, currentSessionId);
+  }
+  const revoked = await tx.session.updateMany({
+    where: { user_id: userId, revoked_at: null },
+    data: { revoked_at: new Date() },
+  });
+  return revoked.count;
+}
+
+type StepUpFailureReason = "unauthorized" | "totp_required" | "invalid_totp";
+
+/**
+ * Advisory pre-check + rate-limit for a step-up-gated self-service action (password change,
+ * MFA reset): lets the common case fail fast (400/429) without opening a transaction, and keeps
+ * the rate limiter's Redis round-trip out of a held Postgres connection. NOT the security gate —
+ * callers must still re-check via `checkStepUpInTransaction` inside their own transaction,
+ * immediately before the sensitive write, so this pre-check can only make a request fail earlier
+ * or the same way, never skip the authoritative check.
+ */
+async function stepUpPreflight(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  userId: string,
+  currentSessionId: string | undefined,
+  code: string | undefined,
+  rateLimitAction: string,
+): Promise<Response | null> {
+  if (await userRequiresMfaStepUp(db, userId)) {
+    if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
+    if (!code) return c.json({ code: "totp_required" }, 400);
+  }
+  if (code && currentSessionId) {
+    const ip = resolveMfaClientIp(c);
+    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, rateLimitAction))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
+  return null;
+}
+
+/**
+ * Authoritative step-up check, read via `tx` rather than the pre-check's `db`, so a role change
+ * racing this request can't let a password-only call skip step-up entirely.
+ */
+async function checkStepUpInTransaction(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  currentSessionId: string | undefined,
+  code: string | undefined,
+): Promise<{ ok: true } | { ok: false; reason: StepUpFailureReason }> {
+  if (!(await userRequiresMfaStepUp(tx, userId))) return { ok: true };
+  if (!currentSessionId) return { ok: false, reason: "unauthorized" };
+  if (!code) return { ok: false, reason: "totp_required" };
+  if (!(await verifyTotpOrRecoveryCode(tx, userId, code))) {
+    return { ok: false, reason: "invalid_totp" };
+  }
+  return { ok: true };
+}
+
+function stepUpFailureResponse(c: Context, reason: StepUpFailureReason): Response {
+  switch (reason) {
+    case "unauthorized":
+      return c.json({ error: "unauthorized" }, 401);
+    case "totp_required":
+      return c.json({ code: "totp_required" }, 400);
+    case "invalid_totp":
+      return c.json({ code: "invalid_totp" }, 401);
+  }
+}
+
+/**
+ * Runs `body` inside a step-up-gated transaction, shared by every self-service action that
+ * requires a TOTP/recovery-code step-up (password change, MFA reset): `stepUpPreflight` fails
+ * the common case fast (400/429), outside any transaction; `orgId`/`audit` are then resolved via
+ * the root `db` client, also before the transaction opens, so that query never runs from inside
+ * an active `tx` callback (which would need a second pooled connection and deadlock on a
+ * single-connection deployment, e.g. `connection_limit=1`); only once the authoritative
+ * in-transaction step-up check has passed does `body` run and do the actual sensitive write.
+ */
+async function withStepUpGate<T>(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  params: {
+    userId: string;
+    currentSessionId: string | undefined;
+    rawCode: string | undefined;
+    rateLimitAction: string;
+  },
+  body: (tx: Prisma.TransactionClient, orgId: string, audit: OpsAuditContext) => Promise<T>,
+): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
+  const { userId, currentSessionId, rateLimitAction } = params;
+  const code = params.rawCode?.trim();
+  const preflightDenied = await stepUpPreflight(
+    c,
+    db,
+    rateLimitStore,
+    userId,
+    currentSessionId,
+    code,
+    rateLimitAction,
+  );
+  if (preflightDenied) return { ok: false, response: preflightDenied };
+
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+
+  const result = await runInTransaction(db, async (tx) => {
+    const step = await checkStepUpInTransaction(tx, userId, currentSessionId, code);
+    if (!step.ok) return step;
+    return { ok: true as const, value: await body(tx, orgId, audit) };
+  });
+
+  if (!result.ok) return { ok: false, response: stepUpFailureResponse(c, result.reason) };
+  return { ok: true, value: result.value };
 }
 
 const ROLE_PRIORITY: Record<string, number> = { superadmin: 3, admin: 2, operator: 1 };
@@ -184,11 +315,21 @@ const passwordSchema = z
     current_password: z.string(),
     new_password: z.string().min(12),
     new_password_confirm: z.string(),
+    code: z.string().optional(),
   })
   .strict();
 
-/** PATCH /api/account/password — re-auth required; revokes other sessions. */
-export async function handlePatchAccountPassword(c: Context, db: PrismaClient): Promise<Response> {
+/**
+ * PATCH /api/account/password — re-auth required; revokes other sessions.
+ * Requires a TOTP/recovery-code step-up (mirroring `handlePostMfaReset`) whenever the user's
+ * role requires MFA and TOTP is confirmed — password alone must not be enough to change the
+ * password (and lock the legitimate owner out) on an MFA-required account.
+ */
+export async function handlePatchAccountPassword(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
   const auth = c.get("auth");
   const userId = auth.userId;
   const currentSessionId = auth.sessionId;
@@ -220,23 +361,34 @@ export async function handlePatchAccountPassword(c: Context, db: PrismaClient): 
   const passwordOk = await verifyPasswordOrDummy(current_password, user.password_hash);
   if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
 
-  const password_hash = await hashPassword(new_password);
-  const sessions_revoked = await runInTransaction(db, async (tx) => {
-    await tx.user.update({
-      where: { id: userId },
-      data: { password_hash, must_change_password: false },
-    });
-    if (currentSessionId) {
-      return revokeOtherSessions(tx, userId, currentSessionId);
-    }
-    const revoked = await tx.session.updateMany({
-      where: { user_id: userId, revoked_at: null },
-      data: { revoked_at: new Date() },
-    });
-    return revoked.count;
-  });
+  // The new password is only hashed once step-up has passed (or wasn't required), so a
+  // totp_required/invalid_totp/rate-limited request never pays for the hash.
+  const gated = await withStepUpGate(
+    c,
+    db,
+    rateLimitStore,
+    { userId, currentSessionId, rawCode: parsed.data.code, rateLimitAction: "account-password" },
+    async (tx, orgId, audit) => {
+      const password_hash = await hashPassword(new_password);
+      await tx.user.update({
+        where: { id: userId },
+        data: { password_hash, must_change_password: false },
+      });
+      const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId: audit.operator ?? userId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        actionType: "account_password_changed",
+        metadata: { sessionsRevoked: revokedCount },
+      });
+      return revokedCount;
+    },
+  );
 
-  return c.json({ sessions_revoked });
+  if (!gated.ok) return gated.response;
+  return c.json({ sessions_revoked: gated.value });
 }
 
 /** GET /api/account/sessions — own active sessions only. */
@@ -274,12 +426,30 @@ export async function handleDeleteAccountSession(c: Context, db: PrismaClient): 
 
   const row = await db.session.findUnique({
     where: { id: sessionId },
-    select: { user_id: true },
+    select: { user_id: true, revoked_at: true, expires_at: true },
   });
   if (!row) return c.json({}, 200);
   if (row.user_id !== auth.userId) return c.json({ error: "forbidden" }, 403);
+  // Already revoked, or already expired (stale sessions-list page): no live session was cut
+  // short, so no audit row either.
+  if (row.revoked_at || row.expires_at <= new Date()) return c.json({}, 200);
 
-  await revokeSession(db, sessionId);
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+  await runInTransaction(db, async (tx) => {
+    // Re-check inside the transaction: two concurrent DELETEs can both pass the read above
+    // before either commits. Only the one that actually revoked the session gets audited.
+    const revoked = await revokeSession(tx, sessionId);
+    if (!revoked) return;
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? auth.userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "account_session_revoked",
+      metadata: { sessionId },
+    });
+  });
   return c.json({}, 200);
 }
 
@@ -343,19 +513,49 @@ export async function handlePostMfaConfirm(
   if (!sessionId) return c.json({ error: "unauthorized" }, 401);
 
   const ip = resolveMfaClientIp(c);
-  if (!(await checkMfaVerifyRateLimit(rateLimitStore, sessionId, ip, code))) {
+  if (!(await checkMfaVerifyRateLimit(rateLimitStore, sessionId, ip, code, "mfa-confirm"))) {
     return c.json({ error: "too many requests" }, 429);
   }
 
-  const ok = await confirmTotpEnrollment(db, userId, code);
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+
+  const ok = await runInTransaction(db, async (tx) => {
+    const confirmed = await confirmTotpEnrollment(tx, userId, code);
+    if (!confirmed) return false;
+
+    // Self-service enroll already returned backup codes to the client (unlike the
+    // login-time flow's separate acknowledgment step) — mark them acknowledged now so
+    // this already-`full` session isn't rejected by the backup-codes gate (IAM-002) on
+    // its very next request.
+    await markBackupCodesAcknowledged(tx, userId);
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "account_mfa_enrolled",
+    });
+    return true;
+  });
   if (!ok) return c.json({ code: "invalid_code" }, 400);
+
   return c.json({ ok: true });
 }
 
-const resetSchema = z.object({ password: z.string() }).strict();
+const resetSchema = z.object({ password: z.string(), code: z.string().optional() }).strict();
 
-/** POST /api/account/mfa/reset — re-auth, remove MFA, revoke other sessions (keeps current). */
-export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<Response> {
+/**
+ * POST /api/account/mfa/reset — re-auth, remove MFA, revoke other sessions (keeps current).
+ * Requires a TOTP/recovery-code step-up (mirroring `verifyOidcLinkStepUp`) whenever the user's
+ * role requires MFA and TOTP is confirmed — password alone must not be able to strip MFA from an
+ * MFA-required account.
+ */
+export async function handlePostMfaReset(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
   const auth = c.get("auth");
   const userId = auth.userId;
   const currentSessionId = auth.sessionId;
@@ -382,18 +582,37 @@ export async function handlePostMfaReset(c: Context, db: PrismaClient): Promise<
   const passwordOk = await verifyPasswordOrDummy(parsed.data.password, user.password_hash);
   if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
 
-  const sessions_revoked = await runInTransaction(db, async (tx) => {
-    await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
-    await revokeAllTrustedDevicesForUser(tx, userId);
-    if (currentSessionId) {
-      return revokeOtherSessions(tx, userId, currentSessionId);
-    }
-    const revoked = await tx.session.updateMany({
-      where: { user_id: userId, revoked_at: null },
-      data: { revoked_at: new Date() },
-    });
-    return revoked.count;
-  });
+  // A recovery code is consumed as soon as it's checked, so if the reset work below fails for
+  // any other reason, the whole transaction (including that consumption) rolls back rather than
+  // burning a one-time code for a reset that never actually happened.
+  const gated = await withStepUpGate(
+    c,
+    db,
+    rateLimitStore,
+    { userId, currentSessionId, rawCode: parsed.data.code, rateLimitAction: "mfa-reset" },
+    async (tx, orgId, audit) => {
+      const mfaDeleted = await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
+      const devicesRevoked = await revokeAllTrustedDevicesForUser(tx, userId);
+      const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
+      // Gate on any real effect, not just an MFA method actually being deleted: a
+      // no-MFA-enrolled account calling this still revokes trusted devices and other
+      // sessions, which is itself security-relevant and must stay audited. This still
+      // suppresses the duplicate audit on a true no-op (two concurrent resets, or a retry
+      // after the state is already fully cleared) — that case has all three counts at 0.
+      if (mfaDeleted.count > 0 || devicesRevoked > 0 || revokedCount > 0) {
+        await writeAdminAuditLog(tx, {
+          organizationId: orgId,
+          actorUserId: audit.operator ?? userId,
+          sessionId: audit.sessionId,
+          ip: audit.ip,
+          actionType: "account_mfa_reset",
+          metadata: { sessionsRevoked: revokedCount },
+        });
+      }
+      return revokedCount;
+    },
+  );
 
-  return c.json({ ok: true, sessions_revoked });
+  if (!gated.ok) return gated.response;
+  return c.json({ ok: true, sessions_revoked: gated.value });
 }

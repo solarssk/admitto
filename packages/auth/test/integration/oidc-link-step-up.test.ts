@@ -75,6 +75,13 @@ describe("verifyOidcLinkStepUp", () => {
     });
     expect(missing).toEqual({ ok: false, reason: "totp_required" });
 
+    const wrong = await verifyOidcLinkStepUp(prisma, {
+      userId,
+      password: "pw",
+      code: "000000",
+    });
+    expect(wrong).toEqual({ ok: false, reason: "invalid_totp" });
+
     const ok = await verifyOidcLinkStepUp(prisma, {
       userId,
       password: "pw",

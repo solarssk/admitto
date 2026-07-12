@@ -12,13 +12,21 @@ import {
   patchAccountProfile,
   resetMfa,
 } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AccountDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 import { LOCALE_OPTIONS, setPreferredLocale as setPreferredLocaleStore } from "../utils/locale-store.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
 import { TotpQrCode } from "./TotpQrCode.js";
+
+/** Discourage password managers from offering to save a "login" for a TOTP/backup-code field. */
+const stepUpCodeFieldAttrs = {
+  "data-bwignore": "",
+  "data-lpignore": "true",
+  "data-1p-ignore": "",
+  "data-form-type": "other",
+} as const;
 
 function parseUserAgent(ua: string | null): string {
   if (!ua) return "Unknown";
@@ -97,6 +105,9 @@ export function AccountPage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordCode, setPasswordCode] = useState("");
+  const [passwordStepUpOpen, setPasswordStepUpOpen] = useState(false);
+  const [passwordCodeError, setPasswordCodeError] = useState<string | null>(null);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [enrollData, setEnrollData] = useState<MfaEnrollResponse | null>(null);
   const [totpCode, setTotpCode] = useState("");
@@ -106,6 +117,8 @@ export function AccountPage() {
   const [resetFormOpen, setResetFormOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [resetPassword, setResetPassword] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetCodeRequired, setResetCodeRequired] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionListDto[]>([]);
@@ -191,6 +204,27 @@ export function AccountPage() {
     newPassword.length >= 12 &&
     confirmPassword.length > 0 &&
     !passwordMismatch;
+
+  /** Shared by the form's own submit and the step-up dialog's confirm — `code` is only passed once the server has asked for one. */
+  async function submitPasswordChange(code?: string): Promise<void> {
+    const { sessions_revoked } = await patchAccountPassword({
+      current_password: currentPassword,
+      new_password: newPassword,
+      new_password_confirm: confirmPassword,
+      code,
+    });
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordCode("");
+    setPasswordStepUpOpen(false);
+    addToast(
+      `Password changed.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} revoked.` : ""}`,
+      "success",
+    );
+    await loadAccount();
+    await loadSessions();
+  }
 
   return (
     <>
@@ -291,22 +325,17 @@ export function AccountPage() {
                 if (passwordSaving || !passwordFormValid) return;
                 setPasswordSaving(true);
                 try {
-                  const { sessions_revoked } = await patchAccountPassword({
-                    current_password: currentPassword,
-                    new_password: newPassword,
-                    new_password_confirm: confirmPassword,
-                  });
-                  setCurrentPassword("");
-                  setNewPassword("");
-                  setConfirmPassword("");
-                  addToast(
-                    `Password changed.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} revoked.` : ""}`,
-                    "success",
-                  );
-                  await loadAccount();
-                  await loadSessions();
+                  await submitPasswordChange();
                 } catch (err) {
-                  addToast(operatorApiErrorMessage(err, "Failed to change password."), "error");
+                  if (hasApiErrorCode(err, "totp_required")) {
+                    // This account's role requires MFA — collect the step-up code in a
+                    // dialog instead of growing this form, so the Password/2FA cards (which
+                    // stretch to match each other's height) don't jump when it appears.
+                    setPasswordCodeError(null);
+                    setPasswordStepUpOpen(true);
+                  } else {
+                    addToast(operatorApiErrorMessage(err, "Failed to change password."), "error");
+                  }
                 } finally {
                   setPasswordSaving(false);
                 }
@@ -519,19 +548,37 @@ export function AccountPage() {
             )}
             {totpEnrolled && account.has_local_password && resetFormOpen && (
               <>
-                <p className="account-info-block" style={{ marginTop: "var(--space-3)" }}>Resetting 2FA removes your authenticator and backup codes, and ends your other active sessions. Your current session stays signed in.</p>
-                <div className="mail-field-row">
-                  <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
-                  <Input
-                    id="account-reset-password"
-                    name="current-password"
-                    type="password"
-                    autoComplete="current-password"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    value={resetPassword}
-                    onChange={(e) => setResetPassword(e.target.value)}
-                  />
+                <p className="account-info-block">Resetting 2FA removes your authenticator and backup codes, and ends your other active sessions. Your current session stays signed in.</p>
+                <div className="account-reset-mfa-fields">
+                  <div className="mail-field-row">
+                    <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
+                    <Input
+                      id="account-reset-password"
+                      name="current-password"
+                      type="password"
+                      autoComplete="current-password"
+                      autoCapitalize="off"
+                      spellCheck={false}
+                      value={resetPassword}
+                      onChange={(e) => setResetPassword(e.target.value)}
+                    />
+                  </div>
+                  {resetCodeRequired && (
+                    <div className="mail-field-row">
+                      <label className="mail-field-label" htmlFor="account-reset-code">Authenticator or backup code</label>
+                      <Input
+                        id="account-reset-code"
+                        name="reset-code"
+                        type="text"
+                        autoComplete="one-time-code"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        value={resetCode}
+                        onChange={(e) => setResetCode(e.target.value)}
+                        {...stepUpCodeFieldAttrs}
+                      />
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -575,8 +622,8 @@ export function AccountPage() {
             )}
             {resetFormOpen && (
               <div className="mail-transport-footer">
-                <Button type="button" variant="secondary" onClick={() => { setResetFormOpen(false); setResetPassword(""); setResetError(null); }}>Cancel</Button>
-                <Button type="button" variant="danger" disabled={!resetPassword} onClick={() => setResetConfirmOpen(true)}>Reset 2FA</Button>
+                <Button type="button" variant="secondary" onClick={() => { setResetFormOpen(false); setResetPassword(""); setResetCode(""); setResetCodeRequired(false); setResetError(null); }}>Cancel</Button>
+                <Button type="button" variant="danger" disabled={!resetPassword || (resetCodeRequired && !resetCode)} onClick={() => { setResetError(null); setResetConfirmOpen(true); }}>Reset 2FA</Button>
               </div>
             )}
         </Card>
@@ -647,17 +694,77 @@ export function AccountPage() {
       <ConfirmDialog open={resetConfirmOpen} title="Reset two-factor authentication" message="This removes your authenticator app and all backup codes, and ends your other active sessions. You will stay signed in on this device." confirmLabel="Reset 2FA" confirmVariant="danger" loading={resetting} errorMessage={resetError ?? undefined} onConfirm={async () => {
         setResetting(true); setResetError(null);
         try {
-          const { sessions_revoked } = await resetMfa({ password: resetPassword });
-          setResetFormOpen(false); setResetPassword(""); setResetConfirmOpen(false);
+          const { sessions_revoked } = await resetMfa({ password: resetPassword, code: resetCode || undefined });
+          setResetFormOpen(false); setResetPassword(""); setResetCode(""); setResetCodeRequired(false); setResetConfirmOpen(false);
           addToast(
             `Two-factor authentication reset.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} ended.` : ""}`,
             "success",
           );
           await loadAccount(); await loadSessions();
         }
-        catch (err) { setResetError(operatorApiErrorMessage(err, "Failed to reset 2FA.")); }
+        catch (err) {
+          if (hasApiErrorCode(err, "totp_required")) {
+            // The dialog is about to close (progressive disclosure reveals the code field
+            // below it instead), so an inline dialog error would never be seen — toast it.
+            setResetCodeRequired(true);
+            setResetConfirmOpen(false);
+            addToast(operatorApiErrorMessage(err, "Failed to reset 2FA."), "info");
+          } else {
+            setResetError(operatorApiErrorMessage(err, "Failed to reset 2FA."));
+          }
+        }
         finally { setResetting(false); }
       }} onCancel={() => { if (!resetting) setResetConfirmOpen(false); }} />
+
+      <ConfirmDialog
+        open={passwordStepUpOpen}
+        title="Enter your authenticator code"
+        message="This account requires a second factor to change its password. Enter a code from your authenticator app, or a backup code."
+        confirmLabel="Change password"
+        confirmVariant="primary"
+        loading={passwordSaving}
+        errorMessage={passwordCodeError ?? undefined}
+        disableConfirm={!passwordCode}
+        onConfirm={async () => {
+          setPasswordSaving(true);
+          setPasswordCodeError(null);
+          try {
+            await submitPasswordChange(passwordCode);
+          } catch (err) {
+            if (hasApiErrorCode(err, "invalid_totp")) {
+              setPasswordCodeError(operatorApiErrorMessage(err, "Failed to change password."));
+            } else {
+              setPasswordStepUpOpen(false);
+              setPasswordCode("");
+              addToast(operatorApiErrorMessage(err, "Failed to change password."), "error");
+            }
+          } finally {
+            setPasswordSaving(false);
+          }
+        }}
+        onCancel={() => {
+          if (!passwordSaving) {
+            setPasswordStepUpOpen(false);
+            setPasswordCode("");
+            setPasswordCodeError(null);
+          }
+        }}
+      >
+        <div className="mail-field-row">
+          <label className="mail-field-label" htmlFor="account-password-code">Authenticator or backup code</label>
+          <Input
+            id="account-password-code"
+            name="password-code"
+            type="text"
+            autoComplete="one-time-code"
+            autoCapitalize="off"
+            spellCheck={false}
+            value={passwordCode}
+            onChange={(e) => setPasswordCode(e.target.value)}
+            {...stepUpCodeFieldAttrs}
+          />
+        </div>
+      </ConfirmDialog>
     </>
   );
 }

@@ -34,6 +34,17 @@ export async function userHasConfirmedTotp(
 }
 
 /**
+ * True when a sensitive re-auth action (OIDC link, MFA reset, ...) must require a TOTP/recovery
+ * step-up code, not just a password: the user's role requires MFA and they have TOTP confirmed.
+ */
+export async function userRequiresMfaStepUp(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<boolean> {
+  return (await userRequiresMfa(prisma, userId)) && (await userHasConfirmedTotp(prisma, userId));
+}
+
+/**
  * True when the user has a confirmed TOTP method whose backup recovery codes
  * were never acknowledged. Persisted server-side so the acknowledgment gate
  * survives a fresh login and works across multiple processes (IAM-002).

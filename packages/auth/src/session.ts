@@ -305,15 +305,16 @@ export async function updateSessionDeviceLabel(
   return result.count === 1;
 }
 
-/** Mark one session revoked by id (no-op if already revoked). */
+/** Mark one session revoked by id (no-op if already revoked). Returns whether it actually revoked one. */
 export async function revokeSession(
   prisma: PrismaClient | Prisma.TransactionClient,
   sessionId: string,
-): Promise<void> {
-  await prisma.session.updateMany({
+): Promise<boolean> {
+  const result = await prisma.session.updateMany({
     where: { id: sessionId, revoked_at: null },
     data: { revoked_at: new Date() },
   });
+  return result.count > 0;
 }
 
 /**

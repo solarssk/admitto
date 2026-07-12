@@ -4,20 +4,20 @@ import { INLINE_RATE_LIMITS } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 
-function mfaTotpSessionKey(sessionId: string): string {
-  return `mfa:totp:session:${sessionId}`;
+function mfaTotpSessionKey(sessionId: string, action?: string): string {
+  return action ? `mfa:totp:session:${action}:${sessionId}` : `mfa:totp:session:${sessionId}`;
 }
 
-function mfaTotpIpKey(ip: string): string {
-  return `mfa:totp:ip:${ip}`;
+function mfaTotpIpKey(ip: string, action?: string): string {
+  return action ? `mfa:totp:ip:${action}:${ip}` : `mfa:totp:ip:${ip}`;
 }
 
-function mfaRecoverySessionKey(sessionId: string): string {
-  return `mfa:recovery:session:${sessionId}`;
+function mfaRecoverySessionKey(sessionId: string, action?: string): string {
+  return action ? `mfa:recovery:session:${action}:${sessionId}` : `mfa:recovery:session:${sessionId}`;
 }
 
-function mfaRecoveryIpKey(ip: string): string {
-  return `mfa:recovery:ip:${ip}`;
+function mfaRecoveryIpKey(ip: string, action?: string): string {
+  return action ? `mfa:recovery:ip:${action}:${ip}` : `mfa:recovery:ip:${ip}`;
 }
 
 /** True when the submitted value looks like a 6-digit TOTP (not a recovery code). */
@@ -28,19 +28,27 @@ export function isTotpMfaAttempt(code: string): boolean {
 /**
  * Rate-limit MFA verification per session and IP.
  * Dual-key check stays inline — bucket choice depends on submitted code shape.
+ *
+ * `action` namespaces the bucket per call site (e.g. "oidc-link", "mfa-confirm",
+ * "mfa-reset") so unrelated self-service actions sharing a session don't throttle each
+ * other. Omit it only for the login-time step-up flow, which keeps its original,
+ * un-namespaced key.
  */
 export async function checkMfaVerifyRateLimit(
   store: RateLimitStore,
   sessionId: string,
   ip: string,
   code: string,
+  action?: string,
 ): Promise<boolean> {
   const totpAttempt = isTotpMfaAttempt(code);
   const { windowMs, max } =
     INLINE_RATE_LIMITS[totpAttempt ? "mfa:verify-totp" : "mfa:verify-recovery"];
 
-  const sessionKey = totpAttempt ? mfaTotpSessionKey(sessionId) : mfaRecoverySessionKey(sessionId);
-  const ipKey = totpAttempt ? mfaTotpIpKey(ip) : mfaRecoveryIpKey(ip);
+  const sessionKey = totpAttempt
+    ? mfaTotpSessionKey(sessionId, action)
+    : mfaRecoverySessionKey(sessionId, action);
+  const ipKey = totpAttempt ? mfaTotpIpKey(ip, action) : mfaRecoveryIpKey(ip, action);
 
   const sessionResult = await store.hit(sessionKey, windowMs, max);
   if (!sessionResult.allowed) {

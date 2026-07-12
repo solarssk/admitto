@@ -29,6 +29,7 @@ const CODE_MESSAGES: Record<string, string> = {
   forbidden: "You do not have access.",
   invalid_form_data: "Could not read the upload. Try again.",
   invalid_code: "Invalid authenticator code.",
+  invalid_totp: "Invalid authenticator or backup code.",
   invalid_issuer:
     "Issuer URL must use HTTPS (http://localhost or http://127.0.0.1 is allowed in development only).",
   invalid_json: "Invalid request.",
@@ -66,6 +67,7 @@ const CODE_MESSAGES: Record<string, string> = {
   too_many_attendees: "Too many attendees selected.",
   too_many_rows: "File exceeds the 50 000 row limit. Split the file and import in parts.",
   too_many_streams: "Too many live connections. Try again shortly.",
+  totp_required: "Enter your authenticator app code to continue.",
   unauthorized: "Your session has expired. Sign in again.",
   unknown_custom_data_field: "Unknown custom field.",
   unsupported_file_type: "Unsupported file type. Upload a PNG, JPG, or WebP image.",

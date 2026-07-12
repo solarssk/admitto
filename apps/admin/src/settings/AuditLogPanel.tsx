@@ -7,6 +7,10 @@ import { formatUtcDateTime, utcDayEndIso, utcDayStartIso } from "../utils/event-
 
 /** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
+  account_mfa_enrolled: "2FA enrolled (self-service)",
+  account_mfa_reset: "2FA reset (self-service)",
+  account_password_changed: "Password changed (self-service)",
+  account_session_revoked: "Session revoked (self-service)",
   event_archived: "Event archived",
   event_created: "Event created",
   event_pii_exported: "Event PII exported",

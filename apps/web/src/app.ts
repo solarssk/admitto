@@ -787,7 +787,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePatchAccountProfile(c, db),
   );
   app.patch("/api/account/password", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
-    handlePatchAccountPassword(c, db),
+    handlePatchAccountPassword(c, db, rateLimitStore),
   );
   app.get("/api/account/sessions", requireSession, (c) => handleGetAccountSessions(c, db));
   app.delete("/api/account/sessions/:sessionId", jsonPostCsrf, requireSession, (c) =>
@@ -808,7 +808,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostAccountMfaConfirm(c, db, rateLimitStore),
   );
   app.post("/api/account/mfa/reset", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
-    handlePostAccountMfaReset(c, db),
+    handlePostAccountMfaReset(c, db, rateLimitStore),
   );
 
   app.get("/api/checkin/events", requireSession, (c) => handleGetCheckinEvents(c, db));
