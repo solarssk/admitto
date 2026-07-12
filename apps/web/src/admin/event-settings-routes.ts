@@ -162,16 +162,24 @@ async function loadDeletability(
 }
 
 /** Live counts backing the Danger Zone's "Revoke all check-ins" / "Revoke all items issued" rows.
- * issuedItemsCount is scoped to attendees whose pass is still admittable - revokeAllItemsForEvent
- * skips a blocked (revoked/cancelled) attendee's items via the same isAdmittable guard the
- * single-item revoke enforces (bot review), so counting their items here would show/enable the
- * Danger Zone row for items the bulk action can never actually revoke. */
+ * Both are scoped to attendees whose pass is still admittable: revokeAllCheckInsForEvent's
+ * resetItems:true cascade and revokeAllItemsForEvent both skip a blocked (revoked/cancelled)
+ * attendee via the same isAdmittable guard the single-item actions enforce (bot review) - an
+ * admitted-but-blocked attendee's check-in revoke rolls back entirely rather than clearing, so
+ * counting them here would show/enable a Danger Zone row for attendees/items the bulk action can
+ * never actually revoke. */
 async function loadRevokeCounts(
   db: PrismaClient,
   eventId: string,
 ): Promise<{ admittedCount: number; issuedItemsCount: number }> {
   const [admittedCount, issuedItemsCount] = await Promise.all([
-    db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
+    db.attendee.count({
+      where: {
+        event_id: eventId,
+        admitted_at: { not: null },
+        status: { in: ADMITTABLE_STATUS_LIST },
+      },
+    }),
     db.attendeeItemState.count({
       where: {
         state: { in: REVOCABLE_ITEM_STATES },

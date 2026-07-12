@@ -319,6 +319,35 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     }
   });
 
+  // Regression (CodeRabbit review): same gap as issued_items_count above, for the sibling
+  // count. revokeAllCheckInsForEvent's resetItems:true cascade rolls back the whole per-attendee
+  // transaction (including the admitted_at clear) when it hits a blocked pass, so an
+  // admitted-but-blocked attendee's check-in is never actually revoked by the bulk action even
+  // though admitted_at is still set - counting them here would show/enable "Revoke all
+  // check-ins" for an attendee the bulk action can never actually revoke.
+  it("excludes an admitted attendee whose pass is blocked (cancelled/revoked) from admitted_count", async () => {
+    const blockedAdmitted = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_SET,
+        email: "blocked-admitted-guest@example.com",
+        name: "Blocked Admitted Guest",
+        status: "cancelled",
+        admitted_at: new Date(),
+      },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { admitted_count: number };
+      expect(body.admitted_count).toBe(0);
+    } finally {
+      await prisma.attendee.delete({ where: { id: blockedAdmitted.id } });
+    }
+  });
+
   it("returns archived_at for an archived event", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_ARCHIVED}/settings`, {
       headers: { Cookie: adminCookie },
