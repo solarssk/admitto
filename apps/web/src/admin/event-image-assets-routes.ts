@@ -4,7 +4,12 @@ import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { ALLOWED_PLACEHOLDERS } from "@admitto/mail-templates";
 import { writeBulkActionLog } from "@admitto/tickets";
-import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import {
+  adminAuditFromContext,
+  assertEventManageAccess,
+  requireEventId,
+  requireSuperadmin,
+} from "./admin-helpers.js";
 import { BrandingUploadError, saveEventUpload } from "./branding-upload.js";
 import { logger } from "../logger.js";
 
@@ -53,8 +58,12 @@ function serializeImageAsset(row: {
   };
 }
 
-/** GET /api/admin/events/:eventId/image-assets */
+/** GET /api/admin/events/:eventId/image-assets — superadmin only (this data flows into
+ * attendee-facing email content, same posture as the sibling branding upload/revoke routes). */
 export async function handleListEventImageAssets(c: Context, db: PrismaClient): Promise<Response> {
+  const superadminDenied = await requireSuperadmin(c, db);
+  if (superadminDenied) return superadminDenied;
+
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
@@ -81,9 +90,14 @@ export async function handleListEventImageAssets(c: Context, db: PrismaClient): 
 
 /**
  * POST /api/admin/events/:eventId/image-assets — multipart upload (fields: `file`, `token`).
- * Archive guard applied by the caller (app.ts wraps with guardArchivedEvent).
+ * Superadmin only (same posture as the sibling branding upload/revoke routes, since this data
+ * flows into attendee-facing email content). Archive guard applied by the caller (app.ts wraps
+ * with guardArchivedEvent).
  */
 export async function handleCreateEventImageAsset(c: Context, db: PrismaClient): Promise<Response> {
+  const superadminDenied = await requireSuperadmin(c, db);
+  if (superadminDenied) return superadminDenied;
+
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
@@ -203,9 +217,13 @@ async function loadImageAssetInEvent(db: PrismaClient, eventId: string, assetId:
  * still referenced by a saved event template's {{token}}, the delete is rejected (409
  * asset_in_use) - the batch send path renders saved templates without whitelist re-validation
  * (renderTemplateTrustedForStorage), so after a delete the token would silently resolve to ""
- * and the image would just vanish from attendee emails.
+ * and the image would just vanish from attendee emails. Superadmin only, same posture as the
+ * sibling branding upload/revoke routes.
  */
 export async function handleDeleteEventImageAsset(c: Context, db: PrismaClient): Promise<Response> {
+  const superadminDenied = await requireSuperadmin(c, db);
+  if (superadminDenied) return superadminDenied;
+
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;

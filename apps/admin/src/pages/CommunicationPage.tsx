@@ -93,6 +93,26 @@ function findMjmlColumnFallbackIndex(value: string): number {
   return value.lastIndexOf("</mj-column>");
 }
 
+/** True when [start, end] falls inside some `<mj-column ...>...</mj-column>` pair in `value`.
+ * Being "within the `<mjml>` root" isn't enough on its own — a cursor can sit inside the root
+ * but between components (e.g. right after `</mj-section>` and before `</mj-body>`, or between
+ * two sibling `<mj-section>` blocks), which is just as much a loose-text-drop hazard as being
+ * outside the root entirely (see the comment in `insertTokenIntoField`). `<mj-column>` is the
+ * innermost element every real template's text content actually lives inside (see
+ * DEFAULT_BODY_MJML in packages/mail-templates), and MJML doesn't nest one `<mj-column>` inside
+ * another, so a simple sequential tag scan — matching the pragmatic style of
+ * `findMjmlColumnFallbackIndex` above — is enough without a full XML parser. */
+function isInsideMjColumn(value: string, start: number, end: number): boolean {
+  const openTagPattern = /<mj-column[^>]*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = openTagPattern.exec(value))) {
+    const openEnd = match.index + match[0].length;
+    const closeIdx = value.indexOf("</mj-column>", openEnd);
+    if (closeIdx !== -1 && start >= openEnd && end <= closeIdx) return true;
+  }
+  return false;
+}
+
 const DELIVERY_PAGE_SIZE = 25;
 
 type DirtyProtectedAction =
@@ -631,11 +651,17 @@ export function CommunicationPage() {
     // warning, it just never reaches the compiled output. This happens in practice whenever a
     // chip is clicked before the textarea has ever been focused (the browser then reports
     // selectionStart/End as 0, i.e. the very start of the raw text, which sits *before* `<mjml>`
-    // opens). Redirect to a location guaranteed to be inside a valid `<mj-column>` instead, and
-    // wrap bare `{{token}}` text in its own `<mj-text>` — loose text nodes between components are
-    // just as silently dropped as content outside the root, so a bare token needs the same
-    // wrapping a real edit at a normal cursor position would already have from surrounding markup.
-    if (el === bodyRef.current && format === "mjml" && !isWithinMjmlRoot(el.value, start, end)) {
+    // opens). The same silent drop also happens for loose text nodes *inside* the root but
+    // between components (e.g. between two sibling `<mj-section>`s) — `isWithinMjmlRoot` alone
+    // doesn't catch that, so also redirect whenever the cursor isn't inside a `<mj-column>`.
+    // Redirect to a location guaranteed to be inside a valid `<mj-column>` instead, and wrap bare
+    // `{{token}}` text in its own `<mj-text>` — a bare token needs the same wrapping a real edit
+    // at a normal cursor position would already have from surrounding markup.
+    if (
+      el === bodyRef.current &&
+      format === "mjml" &&
+      (!isWithinMjmlRoot(el.value, start, end) || !isInsideMjColumn(el.value, start, end))
+    ) {
       const fallbackIdx = findMjmlColumnFallbackIndex(el.value);
       if (fallbackIdx !== -1) {
         start = fallbackIdx;

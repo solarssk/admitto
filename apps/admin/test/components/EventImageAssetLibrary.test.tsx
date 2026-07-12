@@ -189,6 +189,26 @@ describe("EventImageAssetLibrary", () => {
     ).toBeTruthy();
   });
 
+  // Regression coverage: the confirm dialog used to describe the *old* delete behavior (deletion
+  // always proceeds, the placeholder silently breaks in email templates afterwards). The DELETE
+  // route now rejects deletion with 409 asset_in_use while the token is still referenced by one
+  // of the event's saved templates (see event-image-assets-routes.ts), so the copy must describe
+  // that the delete is *blocked*, not that the placeholder quietly stops working.
+  it("describes the delete as blocked while the token is still in use, not as silently breaking", async () => {
+    mockFetch.mockResolvedValueOnce([asset]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("sponsor.png");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete sponsor.png" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(
+        'Delete "sponsor.png"? If its {{sponsor_logo}} placeholder is still used in this event\'s email template, deletion will be blocked until you remove it from the template.',
+      ),
+    ).toBeTruthy();
+    expect(within(dialog).queryByText(/will stop working/)).toBeNull();
+  });
+
   it("deletes an asset after confirming in the dialog", async () => {
     mockFetch.mockResolvedValueOnce([asset]);
     mockDelete.mockResolvedValueOnce(undefined);

@@ -41,6 +41,7 @@ type SettingsForm = {
   location: string;
   capacity: string;
   logoUrl: string;
+  headerImageUrl: string;
 };
 
 type SettingsPatch = Partial<{
@@ -50,6 +51,7 @@ type SettingsPatch = Partial<{
   location: string | null;
   capacity: number | null;
   logo_url: string | null;
+  header_image_url: string | null;
 }>;
 
 const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, branding, and access controls.";
@@ -69,6 +71,7 @@ function toForm(data: EventSettingsDto): SettingsForm {
     location: data.location ?? "",
     capacity: data.capacity?.toString() ?? "",
     logoUrl: data.logo_url ?? "",
+    headerImageUrl: data.header_image_url ?? "",
   };
 }
 
@@ -96,6 +99,9 @@ function buildSettingsPatch(form: SettingsForm, original: SettingsForm): Setting
     patch.capacity = parseCapacityInput(form.capacity);
   }
   if (form.logoUrl !== original.logoUrl) patch.logo_url = form.logoUrl.trim() || null;
+  if (form.headerImageUrl !== original.headerImageUrl) {
+    patch.header_image_url = form.headerImageUrl.trim() || null;
+  }
   return patch;
 }
 
@@ -143,6 +149,7 @@ export function EventSettingsPage() {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveMode, setArchiveMode] = useState<"archive" | "unarchive">("archive");
   const [logoUploading, setLogoUploading] = useState(false);
+  const [headerUploading, setHeaderUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -399,10 +406,10 @@ export function EventSettingsPage() {
             <span className="save-actions">
               <Button
                 variant="primary"
-                disabled={!dirty || saving || logoUploading}
+                disabled={!dirty || saving || logoUploading || headerUploading}
                 onClick={() => void handleSave()}
               >
-                {saving ? "Saving…" : logoUploading ? "Uploading…" : "Save changes"}
+                {saving ? "Saving…" : logoUploading || headerUploading ? "Uploading…" : "Save changes"}
               </Button>
             </span>
           ) : undefined
@@ -530,19 +537,33 @@ export function EventSettingsPage() {
       <EventSettingsTabPanel tab="branding" activeTab={tab} visited={visitedTabs} label="Branding">
         <Card title="Event branding" className="event-settings-card">
           <p className="field-hint">
-            Use a different logo just for this event, or leave it blank to use the
-            organization&apos;s logo.
+            Use a different logo or header image just for this event, or leave either blank to
+            use the organization&apos;s branding.
           </p>
-          <LogoUploadZone
-            label="Event logo"
-            hideLabel
-            hint="PNG, JPG, WebP · max 2 MB · leave blank to use the organization's logo"
-            value={form.logoUrl}
-            disabled={isArchived || saving}
-            onChange={(url) => setForm((prev) => prev && { ...prev, logoUrl: url })}
-            uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
-            onUploadingChange={setLogoUploading}
-          />
+          <div className="settings-field-stack">
+            <div className="settings-field-group">
+              <LogoUploadZone
+                label="Event logo"
+                hint="PNG, JPG, WebP · max 2 MB · leave blank to use the organization's logo"
+                value={form.logoUrl}
+                disabled={isArchived || saving}
+                onChange={(url) => setForm((prev) => prev && { ...prev, logoUrl: url })}
+                uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
+                onUploadingChange={setLogoUploading}
+              />
+            </div>
+            <div className="settings-field-group">
+              <LogoUploadZone
+                label="Event header image"
+                hint="PNG, JPG, WebP · max 2 MB · wide banner, recommended 1200×300 px · leave blank to use the organization's header image"
+                value={form.headerImageUrl}
+                disabled={isArchived || saving}
+                onChange={(url) => setForm((prev) => prev && { ...prev, headerImageUrl: url })}
+                uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
+                onUploadingChange={setHeaderUploading}
+              />
+            </div>
+          </div>
           {isArchived && (
             <p className="field-hint event-settings-archived-note">
               This event is archived - branding cannot be changed.

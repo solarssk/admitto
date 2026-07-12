@@ -318,7 +318,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
         title="Delete image asset"
         message={
           deletingAsset
-            ? `Delete "${deletingAsset.filename}"? Its {{${deletingAsset.token}}} placeholder will stop working in any email template that still uses it.`
+            ? `Delete "${deletingAsset.filename}"? If its {{${deletingAsset.token}}} placeholder is still used in this event's email template, deletion will be blocked until you remove it from the template.`
             : "Delete this image asset?"
         }
         confirmLabel="Delete"

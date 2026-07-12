@@ -52,12 +52,15 @@
 }
 
 /* Countdown-arm bar — sits inside the confirm button's own bottom edge (clipped to its
-   rounded corners) so the timer is visible without changing the button's height. */
+   rounded corners) so the timer is visible without changing the button's height. The wrap
+   itself must stay `overflow: visible` (no clip, no radius) — `.at-btn:focus-visible` renders
+   its ring as a box-shadow entirely outside the button's box (see --ring in
+   packages/ui/src/styles/tokens/elevation.css), so clipping the wrap would clip that ring on
+   every dialog in the app, not just these countdown ones. The rounded-corner clip only needs to
+   apply to the thin track strip, so it lives there instead. */
 .confirm-dialog__confirm-wrap {
   position: relative;
   display: inline-flex;
-  border-radius: var(--radius);
-  overflow: hidden;
 }
 
 .confirm-dialog__arm-track {
@@ -66,6 +69,8 @@
   right: 0;
   bottom: 0;
   height: 3px;
+  border-radius: 0 0 var(--radius) var(--radius);
+  overflow: hidden;
   background: rgba(0, 0, 0, 0.18);
   pointer-events: none;
 }

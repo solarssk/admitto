@@ -262,6 +262,35 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
     );
   });
 
+  // Regression coverage: `isWithinMjmlRoot` alone only checks whether the cursor sits between
+  // `<mjml>` and `</mjml>` — it says nothing about whether that position is inside a text-capable
+  // container. A cursor placed right after `</mj-section>` (still "within root", but between
+  // components, not inside any `<mj-column>`) used to fall through with no redirect, inserting a
+  // bare `{{token}}` as a loose text node that MJML silently drops. `isInsideMjColumn` closes
+  // that gap.
+  it("redirects a chip click when the cursor sits between components inside the <mjml> root (e.g. right after </mj-section>, before </mj-body>)", async () => {
+    fetchEventTemplate.mockResolvedValue(mjmlTemplate);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("MJML body")).toBeTruthy();
+    });
+
+    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    fireEvent.focus(bodyTextarea);
+    const afterSectionPos = bodyTextarea.value.indexOf("</mj-section>") + "</mj-section>".length;
+    bodyTextarea.setSelectionRange(afterSectionPos, afterSectionPos);
+
+    const chip = screen.getByRole("button", { name: "{{first_name}}" });
+    fireEvent.click(chip);
+
+    // Must redirect into the last <mj-column>, wrapped in its own <mj-text> — same as the
+    // outside-root cases above — not land as loose text between </mj-section> and </mj-body>.
+    expect(bodyTextarea.value).toBe(
+      '<mjml><mj-body><mj-section><mj-column><mj-text>{{event_name}}</mj-text>' +
+        "<mj-text>{{first_name}}</mj-text></mj-column></mj-section></mj-body></mjml>",
+    );
+  });
+
   it("leaves insertion untouched for a template with no <mj-column> to redirect into (no safe fallback available)", async () => {
     fetchEventTemplate.mockResolvedValue({
       ...mjmlTemplate,

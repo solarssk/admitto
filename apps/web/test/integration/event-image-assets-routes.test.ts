@@ -197,7 +197,7 @@ afterAll(async () => {
 describe("GET /api/admin/events/:eventId/image-assets", () => {
   it("returns an empty list for a fresh event", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: unknown[] };
@@ -207,6 +207,13 @@ describe("GET /api/admin/events/:eventId/image-assets", () => {
   it("returns 403 for a non-managing operator", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       headers: { Cookie: opCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects a same-org admin (non-superadmin) with 403 — image assets are superadmin-only since this data flows into attendee-facing email content", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      headers: { Cookie: adminCookie, ...sameOrigin },
     });
     expect(res.status).toBe(403);
   });
@@ -223,7 +230,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
   it("creates an asset and it appears in the list", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("sponsor_logo"),
     });
     expect(res.status).toBe(201);
@@ -243,7 +250,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
     expect(body.url).toMatch(new RegExp(`^/uploads/default/events/${EVENT_IA}/[0-9a-f-]+\\.png$`));
 
     const listRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
     });
     const listBody = (await listRes.json()) as { items: Array<{ id: string }> };
     expect(listBody.items.some((item) => item.id === body.id)).toBe(true);
@@ -259,7 +266,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
   it("rejects an invalid token format with 400", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("Not-Valid!"),
     });
     expect(res.status).toBe(400);
@@ -270,7 +277,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
   it("rejects a token beginning with a digit", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("1sponsor"),
     });
     expect(res.status).toBe(400);
@@ -279,7 +286,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
   it("rejects a token colliding with a reserved static placeholder", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("logo_url"),
     });
     expect(res.status).toBe(409);
@@ -290,7 +297,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
   it("rejects a duplicate token within the same event with 409 and leaves no orphaned file", async () => {
     const first = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("dup_token"),
     });
     expect(first.status).toBe(201);
@@ -300,7 +307,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
 
     const second = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("dup_token"),
     });
     expect(second.status).toBe(409);
@@ -312,13 +319,22 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
   it("rejects unsupported file type with 415", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm(
         "bad_file",
         new Blob(["MZ"], { type: "application/octet-stream" }),
       ),
     });
     expect(res.status).toBe(415);
+  });
+
+  it("rejects a same-org admin (non-superadmin) with 403 — image assets are superadmin-only since this data flows into attendee-facing email content", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+      body: uploadForm("same_org_admin_denied"),
+    });
+    expect(res.status).toBe(403);
   });
 
   it("returns 403 for an admin of a different organization", async () => {
@@ -333,7 +349,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
   it("returns 403 event_archived for an archived event", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA_ARCHIVED}/image-assets`, {
       method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("archived_token"),
     });
     expect(res.status).toBe(403);
@@ -364,7 +380,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
 
     const res = await app.request(`/api/admin/events/${EVENT_IA_LIMIT}/image-assets`, {
       method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("one_too_many"),
     });
     expect(res.status).toBe(422);
@@ -378,21 +394,21 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
   it("deletes the asset and it no longer appears in the list", async () => {
     const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("to_delete"),
     });
     const created = (await createRes.json()) as { id: string };
 
     const delRes = await app.request(
       `/api/admin/events/${EVENT_IA}/image-assets/${created.id}`,
-      { method: "DELETE", headers: { Cookie: adminCookie, ...sameOrigin } },
+      { method: "DELETE", headers: { Cookie: superCookie, ...sameOrigin } },
     );
     expect(delRes.status).toBe(200);
     const delBody = (await delRes.json()) as { ok: boolean };
     expect(delBody.ok).toBe(true);
 
     const listRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
     });
     const listBody = (await listRes.json()) as { items: Array<{ id: string }> };
     expect(listBody.items.some((item) => item.id === created.id)).toBe(false);
@@ -408,7 +424,7 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
   it("returns 409 asset_in_use while a saved event template references the token", async () => {
     const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("in_use_logo"),
     });
     expect(createRes.status).toBe(201);
@@ -429,7 +445,7 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
 
     const blockedRes = await app.request(
       `/api/admin/events/${EVENT_IA}/image-assets/${created.id}`,
-      { method: "DELETE", headers: { Cookie: adminCookie, ...sameOrigin } },
+      { method: "DELETE", headers: { Cookie: superCookie, ...sameOrigin } },
     );
     expect(blockedRes.status).toBe(409);
     const blockedBody = (await blockedRes.json()) as { error: string };
@@ -442,7 +458,7 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
     await prisma.mailTemplate.delete({ where: { id: template.id } });
     const delRes = await app.request(
       `/api/admin/events/${EVENT_IA}/image-assets/${created.id}`,
-      { method: "DELETE", headers: { Cookie: adminCookie, ...sameOrigin } },
+      { method: "DELETE", headers: { Cookie: superCookie, ...sameOrigin } },
     );
     expect(delRes.status).toBe(200);
   });
@@ -450,14 +466,14 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
   it("returns 403 for an asset belonging to a different event", async () => {
     const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("cross_event_victim"),
     });
     const created = (await createRes.json()) as { id: string };
 
     const res = await app.request(
       `/api/admin/events/${EVENT_IA_LIMIT}/image-assets/${created.id}`,
-      { method: "DELETE", headers: { Cookie: adminCookie, ...sameOrigin } },
+      { method: "DELETE", headers: { Cookie: superCookie, ...sameOrigin } },
     );
     expect(res.status).toBe(403);
   });
@@ -465,6 +481,21 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
   it("returns 403 for a non-existent asset id", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_IA}/image-assets/does-not-exist`,
+      { method: "DELETE", headers: { Cookie: superCookie, ...sameOrigin } },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects a same-org admin (non-superadmin) with 403 — image assets are superadmin-only since this data flows into attendee-facing email content", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm("same_org_admin_delete_denied"),
+    });
+    const created = (await createRes.json()) as { id: string };
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_IA}/image-assets/${created.id}`,
       { method: "DELETE", headers: { Cookie: adminCookie, ...sameOrigin } },
     );
     expect(res.status).toBe(403);
@@ -473,7 +504,7 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
   it("returns 403 for an admin of a different organization", async () => {
     const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("cross_org_delete"),
     });
     const created = (await createRes.json()) as { id: string };
@@ -488,7 +519,7 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
   it("returns 403 event_archived for an archived event", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_IA_ARCHIVED}/image-assets/does-not-exist`,
-      { method: "DELETE", headers: { Cookie: adminCookie, ...sameOrigin } },
+      { method: "DELETE", headers: { Cookie: superCookie, ...sameOrigin } },
     );
     expect(res.status).toBe(403);
     const body = (await res.json()) as { code: string };

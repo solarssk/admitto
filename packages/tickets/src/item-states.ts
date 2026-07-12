@@ -321,6 +321,20 @@ export async function revokeItemState(
  * queries as defense-in-depth (CodeRabbit nitpick) — attendees are already
  * event-scoped so this can't currently cross events, but the filter keeps that
  * invariant explicit instead of implicit.
+ *
+ * Same blocked-pass guard as the single-item revokeItemState (isAdmittable
+ * check first, same error) — this blanket path was missing it, which let the
+ * bulk "Revoke all items issued" action silently reset a blocked (revoked/
+ * cancelled) attendee's items even though the single-item action explicitly
+ * refuses to. Callers that batch over many attendees (bulk-revoke.ts) treat
+ * IllegalItemTransitionError as an expected mid-batch skip; the cascade from
+ * revokeCheckInMutation must do the same (see that function's own handling).
+ *
+ * Returns the number of items actually reset (not the number scanned) so
+ * callers reporting a count don't overstate it when fewer items than
+ * expected turn out to be revocable inside this transaction (e.g. one was
+ * already reset by a concurrent process between the caller's own pre-scan
+ * and this transaction's turn).
  */
 export async function resetAllItemStatesForRevoke(
   tx: Prisma.TransactionClient,
@@ -329,7 +343,12 @@ export async function resetAllItemStatesForRevoke(
     eventId: string;
     audit: OpsAuditContext;
   },
-): Promise<void> {
+): Promise<number> {
+  const attendee = await loadAttendeeForItemAction(tx, params.attendeeId, params.eventId);
+  if (!isAdmittable(attendee.status)) {
+    throw new IllegalItemTransitionError("Attendee's pass is not active");
+  }
+
   const states = await tx.attendeeItemState.findMany({
     where: {
       attendee_id: params.attendeeId,
@@ -338,7 +357,7 @@ export async function resetAllItemStatesForRevoke(
     },
     select: { event_item_id: true, state: true },
   });
-  if (states.length === 0) return;
+  if (states.length === 0) return 0;
 
   const items = await tx.eventItem.findMany({
     where: { id: { in: states.map((s) => s.event_item_id) }, event_id: params.eventId },
@@ -359,6 +378,7 @@ export async function resetAllItemStatesForRevoke(
       audit: params.audit,
     });
   }
+  return states.length;
 }
 
 /** Roll back badge issued during a specific check-in (Lock #1 undo). */

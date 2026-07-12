@@ -192,6 +192,48 @@ describe("revokeAllCheckInsForEvent", () => {
     });
     expect(dUndoLogs).toBe(0);
   });
+
+  it("tolerates a mid-batch IllegalItemTransitionError from the resetItems cascade (blocked-pass attendee) and keeps processing the rest", async () => {
+    // L has a stale admitted_at alongside a blocked pass (the same shape as
+    // the Bugbot #448 lookup scenario) — the resetItems: true cascade into
+    // resetAllItemStatesForRevoke now rejects a blocked pass, which used to
+    // escape this loop uncaught and abort the whole batch with a 500. M is a
+    // normal admitted attendee that must still get revoked despite L's failure.
+    const [l, m] = await Promise.all([
+      prisma.attendee.create({
+        data: {
+          event_id: EVENT_ID,
+          email: "checkin-blocked-l@example.com",
+          name: "Blocked L",
+          status: "revoked",
+          admitted_at: new Date(),
+        },
+      }),
+      prisma.attendee.create({
+        data: {
+          event_id: EVENT_ID,
+          email: "checkin-active-m@example.com",
+          name: "Active M",
+          admitted_at: new Date(),
+        },
+      }),
+    ]);
+
+    const count = await revokeAllCheckInsForEvent(prisma, { eventId: EVENT_ID, audit });
+
+    // Only M was revoked. L's own per-attendee transaction throws inside the
+    // resetItems cascade and rolls back entirely (Prisma transaction
+    // semantics), so L's admitted_at is left untouched rather than being
+    // half-reverted.
+    expect(count).toBe(1);
+
+    const [refetchedL, refetchedM] = await Promise.all([
+      prisma.attendee.findUnique({ where: { id: l.id } }),
+      prisma.attendee.findUnique({ where: { id: m.id } }),
+    ]);
+    expect(refetchedL?.admitted_at).not.toBeNull();
+    expect(refetchedM?.admitted_at).toBeNull();
+  });
 });
 
 describe("revokeAllItemsForEvent", () => {
@@ -280,11 +322,54 @@ describe("revokeAllItemsForEvent", () => {
     const count = await revokeAllItemsForEvent(prisma, { eventId: EVENT_ID, audit });
     findManySpy.mockRestore();
 
-    // Does not throw despite the stale snapshot; H's real item is reset for real.
-    expect(count).toBeGreaterThanOrEqual(1);
+    // Does not throw despite the stale snapshot; H's real item is reset for
+    // real. The returned count reflects the actual number of items reset
+    // (just H's one item) — not the stale pre-scan, which counted I's
+    // already-reset item too and would have overstated this as 2.
+    expect(count).toBe(1);
     const stateH = await prisma.attendeeItemState.findUnique({
       where: { attendee_id_event_item_id: { attendee_id: h.id, event_item_id: giftbagItemId } },
     });
     expect(stateH?.state).toBe("pending");
+  });
+
+  it("skips an attendee whose pass is blocked (revoked/cancelled) — item stays issued, other attendees still get processed (same guard as the single-item revokeItemState)", async () => {
+    const [j, k] = await Promise.all([
+      prisma.attendee.create({
+        data: {
+          event_id: EVENT_ID,
+          email: "items-blocked-j@example.com",
+          name: "Blocked J",
+          status: "revoked",
+        },
+      }),
+      prisma.attendee.create({
+        data: { event_id: EVENT_ID, email: "items-active-k@example.com", name: "Active K" },
+      }),
+    ]);
+    await prisma.attendeeItemState.createMany({
+      data: [
+        { attendee_id: j.id, event_item_id: giftbagItemId, state: "issued" },
+        { attendee_id: k.id, event_item_id: giftbagItemId, state: "issued" },
+      ],
+    });
+
+    const count = await revokeAllItemsForEvent(prisma, { eventId: EVENT_ID, audit });
+
+    // Only K's item is reset; J is skipped because their pass is blocked —
+    // the bulk action must not silently reset items for a blocked-pass
+    // attendee the way the single-item revokeItemState already refuses to.
+    expect(count).toBe(1);
+
+    const [stateJ, stateK] = await Promise.all([
+      prisma.attendeeItemState.findUnique({
+        where: { attendee_id_event_item_id: { attendee_id: j.id, event_item_id: giftbagItemId } },
+      }),
+      prisma.attendeeItemState.findUnique({
+        where: { attendee_id_event_item_id: { attendee_id: k.id, event_item_id: giftbagItemId } },
+      }),
+    ]);
+    expect(stateJ?.state).toBe("issued");
+    expect(stateK?.state).toBe("pending");
   });
 });
