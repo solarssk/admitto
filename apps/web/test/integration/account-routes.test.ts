@@ -39,6 +39,7 @@ let adminUserId = "";
 let userCookie = "";
 let userSessionId = "";
 let adminCookie = "";
+let adminSessionId = "";
 let prevInstanceOrgId: string | undefined;
 
 async function seed(client: PrismaClient) {
@@ -93,6 +94,7 @@ beforeAll(async () => {
   adminUserId = admin.userId;
   const adminSession = await createSession(prisma, { userId: adminUserId, stage: SESSION_STAGE.FULL, ip: "127.0.0.1" });
   adminCookie = `admitto_session=${adminSession.rawToken}`;
+  adminSessionId = adminSession.session.id;
 });
 
 afterEach(async () => {
@@ -493,22 +495,23 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
 
   it("returns 429 after exceeding the step-up code rate limit", async () => {
     await enrollConfirmedTotp();
+    // Pre-fill only this endpoint's own session bucket directly, instead of looping HTTP
+    // requests: /api/account/mfa/reset also sits behind the shared per-IP login rate limiter
+    // (loginRateLimitJson, max 10/min) applied in app.ts before this handler runs, which would
+    // trip first on repeated real requests and mask whether this handler's own step-up rate
+    // limit is actually the thing returning 429.
+    const bucketKey = `mfa:totp:session:mfa-reset:${adminSessionId}`;
     for (let i = 0; i < 10; i++) {
-      const res = await app.request("/api/account/mfa/reset", {
-        method: "POST",
-        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ password: ADMIN_PASSWORD, code: "000000" }),
-      });
-      expect(res.status).toBe(401);
+      await rateLimitStore.hit(bucketKey, 15 * 60_000, 10);
     }
 
-    const limited = await app.request("/api/account/mfa/reset", {
+    const res = await app.request("/api/account/mfa/reset", {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({ password: ADMIN_PASSWORD, code: "000000" }),
     });
-    expect(limited.status).toBe(429);
-    const body = (await limited.json()) as { error?: string };
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as { error?: string };
     expect(body.error).toBe("too many requests");
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBeGreaterThan(0);
   });
