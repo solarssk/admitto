@@ -110,7 +110,7 @@ export async function handlePostOidcLink(
   }
 
   if (code) {
-    if (!(await checkMfaVerifyRateLimit(rateLimitStore, auth.sessionId, ip, code))) {
+    if (!(await checkMfaVerifyRateLimit(rateLimitStore, auth.sessionId, ip, code, "oidc-link"))) {
       return c.text("Too many requests", 429);
     }
   }
