@@ -753,7 +753,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePatchAccountProfile(c, db),
   );
   app.patch("/api/account/password", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
-    handlePatchAccountPassword(c, db),
+    handlePatchAccountPassword(c, db, rateLimitStore),
   );
   app.get("/api/account/sessions", requireSession, (c) => handleGetAccountSessions(c, db));
   app.delete("/api/account/sessions/:sessionId", jsonPostCsrf, requireSession, (c) =>

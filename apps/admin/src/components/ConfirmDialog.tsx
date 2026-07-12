@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input } from "@admitto/ui";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
@@ -21,6 +22,10 @@ export type ConfirmDialogProps = {
   confirmationValue?: string;
   /** Label for the typed-confirmation input. Defaults to a generic "Type X to confirm" hint. */
   confirmationLabel?: string;
+  /** Extra fields rendered between the error message and the action buttons (e.g. a step-up code input). */
+  children?: ReactNode;
+  /** External confirm-disabled condition (e.g. a required field in `children` is still empty), ORed with the built-in checks. */
+  disableConfirm?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -37,6 +42,8 @@ export function ConfirmDialog({
   loading = false,
   confirmationValue,
   confirmationLabel,
+  children,
+  disableConfirm = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -56,7 +63,9 @@ export function ConfirmDialog({
   // An empty confirmationValue can never be "typed" to confirm — fail closed rather than
   // let the confirm button unlock immediately (typedValue also starts as "").
   const confirmDisabled =
-    loading || (needsTypedConfirmation && (!confirmationValue || typedValue !== confirmationValue));
+    loading ||
+    disableConfirm ||
+    (needsTypedConfirmation && (!confirmationValue || typedValue !== confirmationValue));
 
   return (
     <div
@@ -88,6 +97,7 @@ export function ConfirmDialog({
             onChange={(e) => setTypedValue(e.target.value)}
           />
         )}
+        {children}
         <div className="confirm-dialog__actions">
           <Button type="button" variant="secondary" disabled={loading} onClick={onCancel}>
             {cancelLabel}

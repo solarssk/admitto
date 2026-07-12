@@ -20,6 +20,14 @@ import { LOCALE_OPTIONS, setPreferredLocale as setPreferredLocaleStore } from ".
 import { TotpDigitInput } from "./TotpDigitInput.js";
 import { TotpQrCode } from "./TotpQrCode.js";
 
+/** Discourage password managers from offering to save a "login" for a TOTP/backup-code field. */
+const stepUpCodeFieldAttrs = {
+  "data-bwignore": "",
+  "data-lpignore": "true",
+  "data-1p-ignore": "",
+  "data-form-type": "other",
+} as const;
+
 function parseUserAgent(ua: string | null): string {
   if (!ua) return "Unknown";
   const browser = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : null;
@@ -97,6 +105,9 @@ export function AccountPage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordCode, setPasswordCode] = useState("");
+  const [passwordStepUpOpen, setPasswordStepUpOpen] = useState(false);
+  const [passwordCodeError, setPasswordCodeError] = useState<string | null>(null);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [enrollData, setEnrollData] = useState<MfaEnrollResponse | null>(null);
   const [totpCode, setTotpCode] = useState("");
@@ -193,6 +204,27 @@ export function AccountPage() {
     newPassword.length >= 12 &&
     confirmPassword.length > 0 &&
     !passwordMismatch;
+
+  /** Shared by the form's own submit and the step-up dialog's confirm — `code` is only passed once the server has asked for one. */
+  async function submitPasswordChange(code?: string): Promise<void> {
+    const { sessions_revoked } = await patchAccountPassword({
+      current_password: currentPassword,
+      new_password: newPassword,
+      new_password_confirm: confirmPassword,
+      code,
+    });
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPasswordCode("");
+    setPasswordStepUpOpen(false);
+    addToast(
+      `Password changed.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} revoked.` : ""}`,
+      "success",
+    );
+    await loadAccount();
+    await loadSessions();
+  }
 
   return (
     <>
@@ -293,22 +325,17 @@ export function AccountPage() {
                 if (passwordSaving || !passwordFormValid) return;
                 setPasswordSaving(true);
                 try {
-                  const { sessions_revoked } = await patchAccountPassword({
-                    current_password: currentPassword,
-                    new_password: newPassword,
-                    new_password_confirm: confirmPassword,
-                  });
-                  setCurrentPassword("");
-                  setNewPassword("");
-                  setConfirmPassword("");
-                  addToast(
-                    `Password changed.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} revoked.` : ""}`,
-                    "success",
-                  );
-                  await loadAccount();
-                  await loadSessions();
+                  await submitPasswordChange();
                 } catch (err) {
-                  addToast(operatorApiErrorMessage(err, "Failed to change password."), "error");
+                  if (hasApiErrorCode(err, "totp_required")) {
+                    // This account's role requires MFA — collect the step-up code in a
+                    // dialog instead of growing this form, so the Password/2FA cards (which
+                    // stretch to match each other's height) don't jump when it appears.
+                    setPasswordCodeError(null);
+                    setPasswordStepUpOpen(true);
+                  } else {
+                    addToast(operatorApiErrorMessage(err, "Failed to change password."), "error");
+                  }
                 } finally {
                   setPasswordSaving(false);
                 }
@@ -548,6 +575,7 @@ export function AccountPage() {
                         spellCheck={false}
                         value={resetCode}
                         onChange={(e) => setResetCode(e.target.value)}
+                        {...stepUpCodeFieldAttrs}
                       />
                     </div>
                   )}
@@ -687,6 +715,56 @@ export function AccountPage() {
         }
         finally { setResetting(false); }
       }} onCancel={() => { if (!resetting) setResetConfirmOpen(false); }} />
+
+      <ConfirmDialog
+        open={passwordStepUpOpen}
+        title="Enter your authenticator code"
+        message="This account requires a second factor to change its password. Enter a code from your authenticator app, or a backup code."
+        confirmLabel="Change password"
+        confirmVariant="primary"
+        loading={passwordSaving}
+        errorMessage={passwordCodeError ?? undefined}
+        disableConfirm={!passwordCode}
+        onConfirm={async () => {
+          setPasswordSaving(true);
+          setPasswordCodeError(null);
+          try {
+            await submitPasswordChange(passwordCode);
+          } catch (err) {
+            if (hasApiErrorCode(err, "invalid_totp")) {
+              setPasswordCodeError(operatorApiErrorMessage(err, "Failed to change password."));
+            } else {
+              setPasswordStepUpOpen(false);
+              setPasswordCode("");
+              addToast(operatorApiErrorMessage(err, "Failed to change password."), "error");
+            }
+          } finally {
+            setPasswordSaving(false);
+          }
+        }}
+        onCancel={() => {
+          if (!passwordSaving) {
+            setPasswordStepUpOpen(false);
+            setPasswordCode("");
+            setPasswordCodeError(null);
+          }
+        }}
+      >
+        <div className="mail-field-row">
+          <label className="mail-field-label" htmlFor="account-password-code">Authenticator or backup code</label>
+          <Input
+            id="account-password-code"
+            name="password-code"
+            type="text"
+            autoComplete="one-time-code"
+            autoCapitalize="off"
+            spellCheck={false}
+            value={passwordCode}
+            onChange={(e) => setPasswordCode(e.target.value)}
+            {...stepUpCodeFieldAttrs}
+          />
+        </div>
+      </ConfirmDialog>
     </>
   );
 }

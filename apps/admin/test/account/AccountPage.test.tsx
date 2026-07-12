@@ -300,6 +300,157 @@ describe("AccountPage toasts", () => {
     });
   });
 
+  it("opens a step-up dialog on totp_required, without touching the password form's own layout", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockPatchPassword.mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Current password")).toBeTruthy();
+    });
+
+    fillPasswordForm();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
+    // The field appears in the dialog, not in the (unchanged) form behind it.
+    expect(screen.getByLabelText("Current password")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Change password" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("shows an inline error in the dialog for a wrong step-up code and keeps it open", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockPatchPassword
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockRejectedValueOnce(new ApiError(401, "invalid_totp", "invalid_totp"));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Current password")).toBeTruthy();
+    });
+
+    fillPasswordForm();
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    const dialog = await screen.findByRole("dialog");
+
+    fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
+      target: { value: "000000" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change password" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByText("Invalid authenticator or backup code.")).toBeTruthy();
+    });
+    expect(screen.queryByRole("dialog")).toBeTruthy();
+    expect((screen.getByLabelText("Current password") as HTMLInputElement).value).toBe("old-password-1");
+  });
+
+  it("submits the code entered in the dialog and completes the password change", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockPatchPassword
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ sessions_revoked: 1 });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Current password")).toBeTruthy();
+    });
+
+    fillPasswordForm();
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    const dialog = await screen.findByRole("dialog");
+
+    fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change password" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Password changed\. 1 other session revoked\./)).toBeTruthy();
+    });
+    expect(mockPatchPassword).toHaveBeenLastCalledWith({
+      current_password: "old-password-1",
+      new_password: "new-password-12",
+      new_password_confirm: "new-password-12",
+      code: "123456",
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("closes the step-up dialog, toasts, and clears the entered code on a non-invalid_totp failure", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockPatchPassword
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockRejectedValueOnce(new ApiError(429, "too many requests"))
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Current password")).toBeTruthy();
+    });
+
+    fillPasswordForm();
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    let dialog = await screen.findByRole("dialog");
+
+    fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change password" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/too many requests/i);
+    });
+
+    // Reopening the dialog must not resurface the previously-rejected/rate-limited code.
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    dialog = await screen.findByRole("dialog");
+    expect((within(dialog).getByLabelText("Authenticator or backup code") as HTMLInputElement).value).toBe("");
+  });
+
+  it("cancels the step-up dialog without submitting and clears the entered code", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockPatchPassword
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Current password")).toBeTruthy();
+    });
+
+    fillPasswordForm();
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    let dialog = await screen.findByRole("dialog");
+
+    fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(mockPatchPassword).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    dialog = await screen.findByRole("dialog");
+    expect((within(dialog).getByLabelText("Authenticator or backup code") as HTMLInputElement).value).toBe("");
+  });
+
   it("toasts MFA enrollment errors", async () => {
     mockLoadedAccount();
     const { ApiError } = await import("../../src/api/client.js");
