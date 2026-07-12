@@ -252,6 +252,14 @@
   margin-bottom: 0;
 }
 
+/* Reset-2FA fields: not an actual <form>, so same 1rem gap via flex instead of
+   the .account-password-form margin-bottom rule above. */
+.account-reset-mfa-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 1rem);
+}
+
 /* Render the strength bar in normal flow (not position:absolute) so it
    occupies space between the new-password input and "Confirm new password". */
 .account-password-form .at-password-slot {

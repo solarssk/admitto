@@ -521,35 +521,37 @@ export function AccountPage() {
             )}
             {totpEnrolled && account.has_local_password && resetFormOpen && (
               <>
-                <p className="account-info-block" style={{ marginTop: "var(--space-3)" }}>Resetting 2FA removes your authenticator and backup codes, and ends your other active sessions. Your current session stays signed in.</p>
-                <div className="mail-field-row">
-                  <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
-                  <Input
-                    id="account-reset-password"
-                    name="current-password"
-                    type="password"
-                    autoComplete="current-password"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    value={resetPassword}
-                    onChange={(e) => setResetPassword(e.target.value)}
-                  />
-                </div>
-                {resetCodeRequired && (
+                <p className="account-info-block">Resetting 2FA removes your authenticator and backup codes, and ends your other active sessions. Your current session stays signed in.</p>
+                <div className="account-reset-mfa-fields">
                   <div className="mail-field-row">
-                    <label className="mail-field-label" htmlFor="account-reset-code">Authenticator or backup code</label>
+                    <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
                     <Input
-                      id="account-reset-code"
-                      name="reset-code"
-                      type="text"
-                      autoComplete="one-time-code"
+                      id="account-reset-password"
+                      name="current-password"
+                      type="password"
+                      autoComplete="current-password"
                       autoCapitalize="off"
                       spellCheck={false}
-                      value={resetCode}
-                      onChange={(e) => setResetCode(e.target.value)}
+                      value={resetPassword}
+                      onChange={(e) => setResetPassword(e.target.value)}
                     />
                   </div>
-                )}
+                  {resetCodeRequired && (
+                    <div className="mail-field-row">
+                      <label className="mail-field-label" htmlFor="account-reset-code">Authenticator or backup code</label>
+                      <Input
+                        id="account-reset-code"
+                        name="reset-code"
+                        type="text"
+                        autoComplete="one-time-code"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        value={resetCode}
+                        onChange={(e) => setResetCode(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
               </>
             )}
             {totpEnrolled && !account.has_local_password && (
