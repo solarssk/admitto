@@ -18,6 +18,11 @@ import { logger } from "../logger.js";
  * communication-api-routes.ts). */
 export const MAX_IMAGE_ASSETS_PER_EVENT = 20;
 
+/** Thrown when the per-event cap is still exceeded on the transaction-scoped recheck (bot
+ * review: two concurrent uploads could otherwise both pass the earlier, non-transactional count
+ * check before either insert committed). Caught below and mapped to the same 422 response. */
+class AssetLimitReachedError extends Error {}
+
 /** Same {{snake_case}} shape as the mail-templates placeholder whitelist - an asset's token
  * becomes usable as {{token}} in email templates, so it must be a valid placeholder name. */
 const tokenSchema = z
@@ -159,6 +164,14 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
   try {
     const uploaded = await saveEventUpload(fileField, orgId, eventId);
     const created = await db.$transaction(async (tx) => {
+      // Recheck the cap inside the transaction: the earlier count() above is a fast-path
+      // rejection only (avoids writing a file to disk when the library is obviously already
+      // full) and isn't race-safe on its own - two concurrent uploads could both read a count
+      // under the cap before either insert commits.
+      const recount = await tx.eventImageAsset.count({ where: { event_id: eventId } });
+      if (recount >= MAX_IMAGE_ASSETS_PER_EVENT) {
+        throw new AssetLimitReachedError();
+      }
       const row = await tx.eventImageAsset.create({
         data: {
           event_id: eventId,
@@ -190,6 +203,12 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
   } catch (err) {
     if (err instanceof BrandingUploadError) {
       return c.json({ error: err.code, ...err.details }, err.status as 400 | 413 | 415);
+    }
+    if (err instanceof AssetLimitReachedError) {
+      return c.json(
+        { error: "asset_limit_reached", limit: MAX_IMAGE_ASSETS_PER_EVENT },
+        422,
+      );
     }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return c.json({ error: "token_conflict" }, 409);

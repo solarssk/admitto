@@ -190,6 +190,24 @@ describe("EventSettingsPage tabs", () => {
     ).toBeTruthy();
   });
 
+  it("shows a superadmin-only notice instead of the image asset library for a non-superadmin org admin", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Branding" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
+    expect(await screen.findByText("Event branding")).toBeTruthy();
+    // Event logo stays available to any event admin...
+    expect(screen.getByText("Drop logo here or click to browse")).toBeTruthy();
+    // ...but the image asset library (upload/list/delete routes require superadmin) does not
+    // mount at all for a non-superadmin, so it never fires the 403 fetch it otherwise would.
+    expect(screen.queryByText("Upload images")).toBeNull();
+    expect(screen.getByText("Superadmin only")).toBeTruthy();
+    expect(fetchEventImageAssets).not.toHaveBeenCalled();
+  });
+
   it("uploads a branding file through the event-scoped upload endpoint", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(uploadEventBrandingFile).mockResolvedValueOnce({ url: "/uploads/default/logo.png" });

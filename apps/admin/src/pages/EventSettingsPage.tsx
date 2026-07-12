@@ -550,7 +550,17 @@ export function EventSettingsPage() {
           )}
         </Card>
 
-        <EventImageAssetLibrary eventId={eventId} disabled={isArchived} />
+        {isSa ? (
+          <EventImageAssetLibrary eventId={eventId} disabled={isArchived} />
+        ) : (
+          <Card title="Image assets" className="event-settings-card">
+            <EmptyState
+              icon={<i className="ti ti-photo" aria-hidden="true" />}
+              title="Superadmin only"
+              description="Uploading and managing named branding images for this event's email templates is restricted to superadmins."
+            />
+          </Card>
+        )}
       </EventSettingsTabPanel>
 
       <EventSettingsTabPanel tab="wallet" activeTab={tab} visited={visitedTabs} label="Wallet">

@@ -269,6 +269,7 @@ model AttendeeItemState {
 
   @@unique([attendee_id, event_item_id])
   @@index([attendee_id])
+  @@index([event_item_id, state])
 }
 
 // Append-only operator notes — author + timestamp preserved — ADR 0010.

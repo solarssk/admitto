@@ -243,6 +243,35 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
     );
   });
 
+  // Regression (bot review): <mj-image> is not a valid child of <mj-text> — MJML rejects the
+  // nested markup at compile time. Being inside a <mj-column> was previously treated as always
+  // safe, but an image chip clicked from inside an existing <mj-text> paragraph needs its own
+  // redirect, unlike a bare token (which belongs inside <mj-text> just fine).
+  it("redirects an image chip click out of an existing <mj-text>, instead of nesting <mj-image> inside it", async () => {
+    fetchEventTemplate.mockResolvedValue(mjmlTemplate);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("MJML body")).toBeTruthy();
+    });
+
+    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    // Cursor genuinely inside the existing <mj-text>{{event_name}}</mj-text> — same position the
+    // previous test used for a bare token, where inserting in place is correct.
+    fireEvent.focus(bodyTextarea);
+    const insideTextPos = bodyTextarea.value.indexOf("{{event_name}}") + "{{event_name}}".length;
+    bodyTextarea.setSelectionRange(insideTextPos, insideTextPos);
+
+    const chip = screen.getByRole("button", { name: "{{logo_url}}" });
+    fireEvent.click(chip);
+
+    // Must land after </mj-text>, inside <mj-column> but not nested inside the <mj-text> — not
+    // '<mj-text>{{event_name}}<mj-image .../></mj-text>', which MJML would reject.
+    expect(bodyTextarea.value).toBe(
+      '<mjml><mj-body><mj-section><mj-column><mj-text>{{event_name}}</mj-text>' +
+        '<mj-image src="{{logo_url}}" alt="Logo" width="200px" /></mj-column></mj-section></mj-body></mjml>',
+    );
+  });
+
   it("redirects when the cursor sits after </mjml> (e.g. clicking at the very end of a template with no trailing content)", async () => {
     fetchEventTemplate.mockResolvedValue(mjmlTemplate);
     renderPage();

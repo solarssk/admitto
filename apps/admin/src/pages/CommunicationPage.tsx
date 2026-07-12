@@ -122,6 +122,21 @@ function isInsideMjColumn(value: string, start: number, end: number): boolean {
   return false;
 }
 
+/** True when [start, end] falls inside some `<mj-text ...>...</mj-text>` pair in `value`. A
+ * bare `{{token}}` inserted there is fine (that's exactly what mj-text is for), but an image
+ * element (`<mj-image>`) is not a valid child of mj-text — MJML rejects the nested markup at
+ * compile time (bot review). Same sequential-scan approach as `isInsideMjColumn`. */
+function isInsideMjText(value: string, start: number, end: number): boolean {
+  const openTagPattern = /<mj-text[^>]*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = openTagPattern.exec(value))) {
+    const openEnd = match.index + match[0].length;
+    const closeIdx = value.indexOf("</mj-text>", openEnd);
+    if (closeIdx !== -1 && start >= openEnd && end <= closeIdx) return true;
+  }
+  return false;
+}
+
 const DELIVERY_PAGE_SIZE = 25;
 
 type DirtyProtectedAction =
@@ -663,13 +678,20 @@ export function CommunicationPage() {
     // opens). The same silent drop also happens for loose text nodes *inside* the root but
     // between components (e.g. between two sibling `<mj-section>`s) — `isWithinMjmlRoot` alone
     // doesn't catch that, so also redirect whenever the cursor isn't inside a `<mj-column>`.
+    // A third case: an image element (`<mj-image>`) landing inside an existing `<mj-text>` isn't
+    // silently dropped, it's outright invalid MJML that fails to compile — `<mj-image>` can't
+    // nest inside `<mj-text>` (bot review). Redirect that case too, but only for image markup;
+    // a bare `{{token}}` inserted inside an existing `<mj-text>` is exactly where it belongs.
     // Redirect to a location guaranteed to be inside a valid `<mj-column>` instead, and wrap bare
     // `{{token}}` text in its own `<mj-text>` — a bare token needs the same wrapping a real edit
     // at a normal cursor position would already have from surrounding markup.
+    const isImageMarkup = insertion.startsWith("<mj-");
     if (
       el === bodyRef.current &&
       format === "mjml" &&
-      (!isWithinMjmlRoot(el.value, start, end) || !isInsideMjColumn(el.value, start, end))
+      (!isWithinMjmlRoot(el.value, start, end) ||
+        !isInsideMjColumn(el.value, start, end) ||
+        (isImageMarkup && isInsideMjText(el.value, start, end)))
     ) {
       const fallbackIdx = findMjmlColumnFallbackIndex(el.value);
       if (fallbackIdx !== -1) {

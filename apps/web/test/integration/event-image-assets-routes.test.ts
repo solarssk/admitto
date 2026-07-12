@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -387,6 +387,59 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
     const body = (await res.json()) as { error: string; limit: number };
     expect(body.error).toBe("asset_limit_reached");
     expect(body.limit).toBe(20);
+  });
+
+  it("returns 422 from the transaction-scoped recheck when the cap is only reached after the fast-path count passed (concurrent-upload race)", async () => {
+    await prisma.eventImageAsset.createMany({
+      data: Array.from({ length: 19 }, (_, i) => ({
+        event_id: EVENT_IA_LIMIT,
+        token: `race_token_${i}`,
+        filename: "seed.png",
+        url: `/uploads/default/events/${EVENT_IA_LIMIT}/race-seed-${i}.png`,
+        size_bytes: 12,
+        mime_type: "image/png",
+      })),
+    });
+
+    // Simulate a concurrent upload landing its own 20th row right after this request's
+    // fast-path count() read a stale, still-under-the-cap snapshot. `tx.eventImageAsset.count`
+    // inside the transaction is a distinct method on the transaction-scoped client Prisma
+    // creates internally, so mocking `prisma.eventImageAsset.count` only ever intercepts this
+    // one fast-path call, never the transaction's own recount — the real row genuinely exists
+    // in the DB by the time the transaction's unmocked recheck runs and must catch it for real.
+    const countSpy = vi
+      .spyOn(prisma.eventImageAsset, "count")
+      .mockImplementationOnce(async () => {
+        await prisma.eventImageAsset.create({
+          data: {
+            event_id: EVENT_IA_LIMIT,
+            token: "race_winner",
+            filename: "seed.png",
+            url: `/uploads/default/events/${EVENT_IA_LIMIT}/race-winner.png`,
+            size_bytes: 12,
+            mime_type: "image/png",
+          },
+        });
+        return 19;
+      });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_IA_LIMIT}/image-assets`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin },
+        body: uploadForm("race_loser"),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string; limit: number };
+      expect(body.error).toBe("asset_limit_reached");
+
+      const loser = await prisma.eventImageAsset.findFirst({
+        where: { event_id: EVENT_IA_LIMIT, token: "race_loser" },
+      });
+      expect(loser).toBeNull();
+    } finally {
+      countSpy.mockRestore();
+    }
   });
 });
 
