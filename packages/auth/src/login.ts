@@ -25,10 +25,7 @@ import {
 } from "./constants.js";
 import { userRequiresMfa, userHasConfirmedTotp, userHasUnacknowledgedBackupCodes } from "./mfa/policy.js";
 import { validateTrustedDevice, createTrustedDevice } from "./mfa/trusted-device.js";
-import { findBackupRecoveryRowId } from "./mfa/backup-recovery.js";
-import { findEmergencyRecoveryRowId } from "./mfa/emergency-recovery.js";
-import { consumeRecoveryRow } from "./mfa/recovery-consume.js";
-import { verifyUserTotpCode } from "./mfa/enrollment.js";
+import { verifyTotpOrRecoveryCodeDetailed } from "./mfa/verify-step-up-code.js";
 import { getTrustedDeviceDays } from "./settings/resolver.js";
 
 /** Credentials and request metadata for `login()`. */
@@ -160,38 +157,19 @@ async function completeMfaInTransaction(
 ): Promise<CompleteMfaTxResult> {
   const { userId, sessionId, code } = input;
 
-  const totpOk = await verifyUserTotpCode(tx, userId, code);
-  let recoveryRowId: string | null = null;
-  let recoveryMethod: "backup" | "emergency" | null = null;
-
-  if (!totpOk) {
-    recoveryRowId = await findBackupRecoveryRowId(tx, userId, code);
-    if (recoveryRowId) {
-      recoveryMethod = "backup";
-    } else {
-      recoveryRowId = await findEmergencyRecoveryRowId(tx, userId, code);
-      if (recoveryRowId) recoveryMethod = "emergency";
-    }
-  }
-
-  if (!totpOk && !recoveryRowId) return { ok: false, reason: "invalid_code" };
-
-  if (recoveryRowId) {
-    const consumed = await consumeRecoveryRow(tx, recoveryRowId);
-    if (!consumed) return { ok: false, reason: "recovery_consume_conflict" };
+  const codeResult = await verifyTotpOrRecoveryCodeDetailed(tx, userId, code);
+  if (!codeResult.ok) {
+    return {
+      ok: false,
+      reason: codeResult.reason === "consume_conflict" ? "recovery_consume_conflict" : "invalid_code",
+    };
   }
 
   const promotedStage = await promoteSessionToFull(tx, sessionId, userId);
   if (!promotedStage) return { ok: false, reason: "session_not_promoted" };
 
-  let method: MfaMethod;
-  if (totpOk) {
-    method = "totp";
-  } else if (recoveryMethod) {
-    method = recoveryMethod;
-  } else {
-    return { ok: false, reason: "invalid_code" };
-  }
+  const method: MfaMethod = codeResult.method;
+  const recoveryMethod = method === "totp" ? undefined : method;
 
   if (input.rememberDevice) {
     const days = await getTrustedDeviceDays(tx);
@@ -205,14 +183,14 @@ async function completeMfaInTransaction(
       return {
         ok: true,
         method,
-        recoveryMethod: recoveryMethod ?? undefined,
+        recoveryMethod,
         trustedDeviceRawToken: rawToken,
         stage: promotedStage,
       };
     }
   }
 
-  return { ok: true, method, recoveryMethod: recoveryMethod ?? undefined, stage: promotedStage };
+  return { ok: true, method, recoveryMethod, stage: promotedStage };
 }
 
 /** Emit MFA audit events after the DB transaction commits (success paths only). */
