@@ -272,6 +272,35 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
     );
   });
 
+  // Regression (bot review): filling in an existing image element's src (a common edit — the
+  // admin placed an <mj-image> earlier and now wants to pick its source) must insert the bare
+  // token right there, not a second whole <mj-image> element nested inside the attribute value.
+  it("inserts the bare token when the cursor is inside an existing attribute value, not a full image element", async () => {
+    fetchEventTemplate.mockResolvedValue({
+      ...mjmlTemplate,
+      body_template:
+        '<mjml><mj-body><mj-section><mj-column><mj-image src="" alt="Logo" /></mj-column></mj-section></mj-body></mjml>',
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("MJML body")).toBeTruthy();
+    });
+
+    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    fireEvent.focus(bodyTextarea);
+    const insideSrcPos = bodyTextarea.value.indexOf('src="') + 'src="'.length;
+    bodyTextarea.setSelectionRange(insideSrcPos, insideSrcPos);
+
+    const chip = screen.getByRole("button", { name: "{{logo_url}}" });
+    fireEvent.click(chip);
+
+    // Bare {{logo_url}} filled into the existing src="" — not a second <mj-image> spliced inside
+    // the attribute value, which would produce unparsable, uncompilable markup.
+    expect(bodyTextarea.value).toBe(
+      '<mjml><mj-body><mj-section><mj-column><mj-image src="{{logo_url}}" alt="Logo" /></mj-column></mj-section></mj-body></mjml>',
+    );
+  });
+
   it("redirects when the cursor sits after </mjml> (e.g. clicking at the very end of a template with no trailing content)", async () => {
     fetchEventTemplate.mockResolvedValue(mjmlTemplate);
     renderPage();

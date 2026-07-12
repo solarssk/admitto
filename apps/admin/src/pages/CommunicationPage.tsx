@@ -137,6 +137,35 @@ function isInsideMjText(value: string, start: number, end: number): boolean {
   return false;
 }
 
+/** True when `index` sits inside a quoted HTML attribute value, e.g. between the quotes of an
+ * existing `<mj-image src="|">` an admin is editing. Splicing a full element there (instead of a
+ * bare token) produces markup nested inside an attribute value, which fails to compile (bot
+ * review) — `insertTokenIntoField` uses this to always fall back to the bare token in that one
+ * spot, regardless of placeholder type. Ported from `isInsideQuotedAttribute` in
+ * `packages/mail-templates/src/htmlContext.ts` (kept in sync manually, same pattern as
+ * `apps/admin/src/utils/safeBrandingLogoHref.ts`) — not imported directly, since that package
+ * pulls in the MJML compiler and DB access, neither of which belong in this client bundle. */
+function isInsideQuotedAttributeValue(value: string, index: number): boolean {
+  const tagStart = value.lastIndexOf("<", index);
+  if (tagStart === -1) return false;
+  if (value[tagStart + 1] === "/" || value[tagStart + 1] === "!") return false;
+
+  let inQuote: '"' | "'" | null = null;
+  for (let i = tagStart + 1; i < index; i++) {
+    const ch = value[i]!;
+    if (inQuote) {
+      if (ch === inQuote) inQuote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inQuote = ch;
+      continue;
+    }
+    if (ch === ">" || (ch === "/" && value[i + 1] === ">")) return false;
+  }
+  return inQuote !== null;
+}
+
 const DELIVERY_PAGE_SIZE = 25;
 
 type DirtyProtectedAction =
@@ -661,9 +690,27 @@ export function CommunicationPage() {
    * keeps every insertion's start position accurate regardless of click timing, since React skips
    * touching the DOM value/selection of a controlled input when they already match its state.
    */
+  /**
+   * Inserts `token` (the caller's preferred markup — possibly a full `<mj-image>`/`<img>`
+   * element) at the field's cursor, falling back to `bareToken` (always just `{{name}}`) instead
+   * when the preferred markup can't safely go where the cursor actually is. Three MJML-specific
+   * hazards this guards against, in order — each one found by bot review on a previous edit:
+   *
+   * 1. Cursor inside an existing quoted attribute value (e.g. filling in `<mj-image src="">`):
+   *    always the bare token, right there, never a full element — an element spliced inside an
+   *    attribute value is nested-inside-a-string markup that fails to compile.
+   * 2. Cursor outside the `<mjml>...</mjml>` root, or inside the root but between components
+   *    (not inside any `<mj-column>`): MJML silently drops content there with no error — redirect
+   *    into the template's last `<mj-column>` instead, wrapping a bare token in its own
+   *    `<mj-text>` so it isn't itself dropped as loose text between components.
+   * 3. Image markup specifically landing inside an existing `<mj-text>`: not silently dropped,
+   *    outright invalid (`<mj-image>` can't nest inside `<mj-text>`) — redirect the same way as
+   *    (2). A bare token inside `<mj-text>` is fine as-is and skips this case.
+   */
   function insertTokenIntoField(
     el: HTMLInputElement | HTMLTextAreaElement | null,
     token: string,
+    bareToken: string,
     setValue: (value: string) => void,
   ) {
     if (!el) return;
@@ -671,33 +718,23 @@ export function CommunicationPage() {
     let end = el.selectionEnd ?? el.value.length;
     let insertion = token;
 
-    // MJML silently discards any markup outside the `<mjml>...</mjml>` root — no error, no
-    // warning, it just never reaches the compiled output. This happens in practice whenever a
-    // chip is clicked before the textarea has ever been focused (the browser then reports
-    // selectionStart/End as 0, i.e. the very start of the raw text, which sits *before* `<mjml>`
-    // opens). The same silent drop also happens for loose text nodes *inside* the root but
-    // between components (e.g. between two sibling `<mj-section>`s) — `isWithinMjmlRoot` alone
-    // doesn't catch that, so also redirect whenever the cursor isn't inside a `<mj-column>`.
-    // A third case: an image element (`<mj-image>`) landing inside an existing `<mj-text>` isn't
-    // silently dropped, it's outright invalid MJML that fails to compile — `<mj-image>` can't
-    // nest inside `<mj-text>` (bot review). Redirect that case too, but only for image markup;
-    // a bare `{{token}}` inserted inside an existing `<mj-text>` is exactly where it belongs.
-    // Redirect to a location guaranteed to be inside a valid `<mj-column>` instead, and wrap bare
-    // `{{token}}` text in its own `<mj-text>` — a bare token needs the same wrapping a real edit
-    // at a normal cursor position would already have from surrounding markup.
-    const isImageMarkup = insertion.startsWith("<mj-");
-    if (
-      el === bodyRef.current &&
-      format === "mjml" &&
-      (!isWithinMjmlRoot(el.value, start, end) ||
-        !isInsideMjColumn(el.value, start, end) ||
-        (isImageMarkup && isInsideMjText(el.value, start, end)))
-    ) {
-      const fallbackIdx = findMjmlColumnFallbackIndex(el.value);
-      if (fallbackIdx !== -1) {
-        start = fallbackIdx;
-        end = fallbackIdx;
-        insertion = token.startsWith("<mj-") ? token : `<mj-text>${token}</mj-text>`;
+    if (el === bodyRef.current && format === "mjml") {
+      if (isInsideQuotedAttributeValue(el.value, start)) {
+        insertion = bareToken;
+      } else {
+        const isImageMarkup = insertion.startsWith("<mj-");
+        if (
+          !isWithinMjmlRoot(el.value, start, end) ||
+          !isInsideMjColumn(el.value, start, end) ||
+          (isImageMarkup && isInsideMjText(el.value, start, end))
+        ) {
+          const fallbackIdx = findMjmlColumnFallbackIndex(el.value);
+          if (fallbackIdx !== -1) {
+            start = fallbackIdx;
+            end = fallbackIdx;
+            insertion = token.startsWith("<mj-") ? token : `<mj-text>${token}</mj-text>`;
+          }
+        }
       }
     }
 
@@ -713,15 +750,16 @@ export function CommunicationPage() {
     // Subjects are plain text (no HTML rendering), so always insert the bare token there. In the
     // body, an image placeholder gets a ready-to-use image element instead of a bare token —
     // {{logo_url}} alone never displays a picture, it needs to be an <img>/<mj-image> src.
+    const bareToken = `{{${name}}}`;
     const token =
       activeField === "body" && imagePlaceholders.includes(name)
         ? imagePlaceholderMarkup(name, format)
-        : `{{${name}}}`;
+        : bareToken;
     if (activeField === "subject") {
-      insertTokenIntoField(subjectRef.current, token, setSubject);
+      insertTokenIntoField(subjectRef.current, token, bareToken, setSubject);
       return;
     }
-    insertTokenIntoField(bodyRef.current, token, setBody);
+    insertTokenIntoField(bodyRef.current, token, bareToken, setBody);
   };
 
   const handlePreview = async () => {
