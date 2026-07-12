@@ -172,8 +172,8 @@ describe("ConfirmDialog", () => {
     );
   });
 
-  it("disables both buttons and shows a working label while loading", () => {
-    render(
+  it("disables both buttons and shows a working label with a spinner while loading", () => {
+    const { container } = render(
       <ConfirmDialog
         open
         title="Permanently delete this event?"
@@ -186,6 +186,10 @@ describe("ConfirmDialog", () => {
     );
     expect((screen.getByRole("button", { name: "Working…" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true);
+    // Regression: a bulk action can take several seconds on a large event (e.g. revoking
+    // thousands of attendees' check-ins) - a static "Working…" label with no motion can look
+    // frozen for that long, so the confirm button also gets a spinning icon while loading.
+    expect(container.querySelector(".at-spinner")).not.toBeNull();
   });
 
   it("shows an error message when provided", () => {

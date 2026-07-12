@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { Button, Input } from "@admitto/ui";
+import { Button, Input, Spinner } from "@admitto/ui";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import "./confirm-dialog.css";
 
@@ -127,6 +127,7 @@ export function ConfirmDialog({
               type="button"
               variant={confirmVariant}
               disabled={confirmDisabled}
+              icon={loading ? <Spinner size="sm" label="Working" /> : undefined}
               title={
                 !armed && confirmDelaySeconds !== undefined
                   ? `Please wait ${confirmDelaySeconds}s before confirming`
