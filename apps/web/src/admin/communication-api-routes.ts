@@ -106,9 +106,11 @@ export type EventDeliveriesListDto = {
   pageSize: number;
 };
 
-const ALLOWED_PLACEHOLDER_LIST = [...ALLOWED_PLACEHOLDERS].sort();
-const REQUIRED_URL_PLACEHOLDER_LIST = [...REQUIRED_URL_PLACEHOLDERS].sort();
-const IMAGE_PLACEHOLDER_LIST = [...IMAGE_PLACEHOLDERS].sort();
+const ALLOWED_PLACEHOLDER_LIST = [...ALLOWED_PLACEHOLDERS].sort((a, b) => a.localeCompare(b));
+const REQUIRED_URL_PLACEHOLDER_LIST = [...REQUIRED_URL_PLACEHOLDERS].sort((a, b) =>
+  a.localeCompare(b),
+);
+const IMAGE_PLACEHOLDER_LIST = [...IMAGE_PLACEHOLDERS].sort((a, b) => a.localeCompare(b));
 const ALLOWED_DELIVERY_STATUSES = new Set<string>(EMAIL_DELIVERY_STATUS);
 const ALLOWED_DELIVERY_PURPOSES = new Set<string>(EMAIL_DELIVERY_PURPOSE);
 
@@ -265,9 +267,13 @@ export async function handleGetEventTemplate(c: Context, db: PrismaClient): Prom
 
   const dto: EventTemplateDto = {
     ...template,
-    allowed_placeholders: [...ALLOWED_PLACEHOLDER_LIST, ...customAssetNames].sort(),
+    allowed_placeholders: [...ALLOWED_PLACEHOLDER_LIST, ...customAssetNames].sort((a, b) =>
+      a.localeCompare(b),
+    ),
     required_url_placeholders: REQUIRED_URL_PLACEHOLDER_LIST,
-    image_placeholders: [...IMAGE_PLACEHOLDER_LIST, ...customAssetNames].sort(),
+    image_placeholders: [...IMAGE_PLACEHOLDER_LIST, ...customAssetNames].sort((a, b) =>
+      a.localeCompare(b),
+    ),
   };
 
   return c.json(dto);
