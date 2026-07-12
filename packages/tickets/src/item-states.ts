@@ -212,9 +212,13 @@ export async function transitionItemState(
  * separate from the operator's forward-only machine. The `state: fromState`
  * filter guards against a concurrent change: if another caller already reset
  * this item to "pending" in the meantime, that's a harmless race and this is
- * a no-op; any other observed state means a *different* concurrent change
- * raced this one, which is surfaced as an error rather than silently
- * dropped (matches transitionItemState's same-shaped race check above).
+ * a no-op (returns false, no audit row written) rather than a duplicate write
+ * masquerading as this call's own doing; any other observed state means a
+ * *different* concurrent change raced this one, which is surfaced as an error
+ * rather than silently dropped (matches transitionItemState's same-shaped
+ * race check above). Returns whether this call actually performed the reset,
+ * so a caller summing multiple resets (resetAllItemStatesForRevoke) can
+ * report only the ones it really made (bot review).
  */
 async function resetItemStateToPending(
   tx: Prisma.TransactionClient,
@@ -226,7 +230,7 @@ async function resetItemStateToPending(
     fromState: string;
     audit: OpsAuditContext;
   },
-): Promise<void> {
+): Promise<boolean> {
   const updated = await tx.attendeeItemState.updateMany({
     where: {
       attendee_id: params.attendeeId,
@@ -241,7 +245,7 @@ async function resetItemStateToPending(
         attendee_id_event_item_id: { attendee_id: params.attendeeId, event_item_id: params.eventItemId },
       },
     });
-    if (reread?.state === "pending") return;
+    if (reread?.state === "pending") return false;
     throw new IllegalItemTransitionError(`Concurrent transition on ${params.itemKey}`);
   }
 
@@ -252,6 +256,7 @@ async function resetItemStateToPending(
     audit: params.audit,
     metadata: { event_item_key: params.itemKey, from_state: params.fromState, to_state: "pending" },
   });
+  return true;
 }
 
 /**
@@ -368,8 +373,14 @@ export async function resetAllItemStatesForRevoke(
   // (schema.prisma) so an orphaned state row can't exist either way.
   const keyById = new Map(items.map((i) => [i.id, i.key]));
 
+  let resetCount = 0;
   for (const s of states) {
-    await resetItemStateToPending(tx, {
+    // A concurrent write (another admin's individual revoke, or a second bulk-revoke request)
+    // can land between this transaction's own findMany above and this specific item's turn in
+    // the loop, racing resetItemStateToPending's guarded updateMany into a silent no-op (already
+    // "pending", nothing to do, no audit row written) - count only the resets this call actually
+    // performed, not every row the earlier scan found (bot review).
+    const reset = await resetItemStateToPending(tx, {
       attendeeId: params.attendeeId,
       eventId: params.eventId,
       eventItemId: s.event_item_id,
@@ -377,8 +388,9 @@ export async function resetAllItemStatesForRevoke(
       fromState: s.state,
       audit: params.audit,
     });
+    if (reset) resetCount++;
   }
-  return states.length;
+  return resetCount;
 }
 
 /** Roll back badge issued during a specific check-in (Lock #1 undo). */

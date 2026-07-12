@@ -333,6 +333,48 @@ describe("revokeAllItemsForEvent", () => {
     expect(stateH?.state).toBe("pending");
   });
 
+  // Regression (bot review): a race landing *inside* a single attendee's own transaction — after
+  // resetAllItemStatesForRevoke's own findMany finds the item still "issued", but before its
+  // per-item updateMany runs, another writer (a second concurrent bulk-revoke, or an individual
+  // "Revoke item") beats it to the same row — is a different, finer-grained case than the
+  // already-covered outer pre-scan race above, and can't be reproduced with a findMany mock: the
+  // transaction-scoped `tx` client Prisma constructs internally for $transaction is a distinct
+  // object from `prisma`, so mocking `prisma.attendeeItemState.findMany` never reaches it. Real
+  // concurrent contention on the same row exercises it for real instead: fire two genuinely
+  // concurrent revokeAllItemsForEvent calls at one attendee with one issued item. Postgres
+  // serializes the two competing UPDATEs via row locking; whichever loses re-evaluates its
+  // guarded WHERE clause against the now-already-"pending" row, matches zero rows, and (with the
+  // fix) is excluded from its own count instead of still being reported as a reset.
+  it("under real concurrent contention on the same item, the two racing calls' counts sum to 1, not 2", async () => {
+    const l = await prisma.attendee.create({
+      data: { event_id: EVENT_ID, email: "items-race-l@example.com", name: "Race L" },
+    });
+    await prisma.attendeeItemState.create({
+      data: { attendee_id: l.id, event_item_id: giftbagItemId, state: "issued" },
+    });
+
+    const [countA, countB] = await Promise.all([
+      revokeAllItemsForEvent(prisma, { eventId: EVENT_ID, audit }),
+      revokeAllItemsForEvent(prisma, { eventId: EVENT_ID, audit }),
+    ]);
+
+    // Whichever call actually performed the update reports 1, the loser reports 0 - never both 1
+    // (which would mean the same real-world hand-out got double-counted as two separate resets).
+    expect(countA + countB).toBe(1);
+
+    const stateL = await prisma.attendeeItemState.findUnique({
+      where: { attendee_id_event_item_id: { attendee_id: l.id, event_item_id: giftbagItemId } },
+    });
+    expect(stateL?.state).toBe("pending");
+
+    // Exactly one item_revoked audit row for L's item - the loser's guarded no-op must not also
+    // write a second, redundant log entry for the same hand-out.
+    const logs = await prisma.attendeeActionLog.count({
+      where: { attendee_id: l.id, action_type: "item_revoked" },
+    });
+    expect(logs).toBe(1);
+  });
+
   it("skips an attendee whose pass is blocked (revoked/cancelled) — item stays issued, other attendees still get processed (same guard as the single-item revokeItemState)", async () => {
     const [j, k] = await Promise.all([
       prisma.attendee.create({
