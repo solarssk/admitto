@@ -77,6 +77,8 @@ import type {
   TestResponse,
   CfAccessUpdateBody,
   CfAccessTestResult,
+  EventImageAssetDto,
+  EventImageAssetsListResponse,
 } from "./types.js";
 
 export type EventFullMeta = {
@@ -323,6 +325,24 @@ export async function deleteEvent(eventId: string): Promise<void> {
   await parseJson(res);
 }
 
+/** Revoke every currently-admitted attendee's check-in for the event (superadmin-only, blocked on archived events). */
+export async function revokeAllCheckIns(eventId: string): Promise<{ revokedCount: number }> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/revoke-all-checkins`,
+    jsonPostInit({}),
+  );
+  return parseJson<{ revokedCount: number }>(res);
+}
+
+/** Reset every issued/returned item hand-out back to pending for the event (superadmin-only, blocked on archived events). */
+export async function revokeAllItemsIssued(eventId: string): Promise<{ revokedCount: number }> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/revoke-all-items`,
+    jsonPostInit({}),
+  );
+  return parseJson<{ revokedCount: number }>(res);
+}
+
 /** Load event settings for the settings page. */
 export async function fetchEventSettings(
   eventId: string,
@@ -362,6 +382,45 @@ export async function uploadEventBrandingFile(
     multipartPostInit(formData),
   );
   return parseJson<{ url: string }>(res);
+}
+
+/** List named branding image assets for an event (the {{token}} asset library). */
+export async function fetchEventImageAssets(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventImageAssetDto[]> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/image-assets`, {
+    credentials: "same-origin",
+    signal,
+  });
+  const data = await parseJson<EventImageAssetsListResponse>(res);
+  return data.items;
+}
+
+/** Upload a new named branding image asset (file + token); throws ApiError on validation/conflict. */
+export async function createEventImageAsset(
+  eventId: string,
+  file: File,
+  token: string,
+): Promise<EventImageAssetDto> {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("token", token);
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/image-assets`,
+    multipartPostInit(fd),
+  );
+  return parseJson<EventImageAssetDto>(res);
+}
+
+/** Delete a named branding image asset. Leaves any saved template referencing its token intact
+ * (it will fail loudly at next save/render if still used - no reference tracking today). */
+export async function deleteEventImageAsset(eventId: string, assetId: string): Promise<void> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/image-assets/${encodeURIComponent(assetId)}`,
+    jsonDeleteInit(),
+  );
+  await parseJson<{ ok: boolean }>(res);
 }
 
 /** Download PII export CSV (superadmin only). Caller handles blob save. */

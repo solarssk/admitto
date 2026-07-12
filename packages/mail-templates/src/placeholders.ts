@@ -39,6 +39,15 @@ export const WALLET_PLACEHOLDERS = new Set([
   "download_page_url",
 ]);
 
+/**
+ * Placeholders meant to be embedded as an image (`<img src>` / `<mj-image src>`), not a link
+ * href or plain text. Used by the admin template editor to insert a ready-to-use image element
+ * instead of a bare `{{name}}` token when a user clicks one of these in the placeholder picker —
+ * without this, clicking e.g. `{{logo_url}}` just drops inert text into the body, which for an
+ * image placeholder never displays anything on its own.
+ */
+export const IMAGE_PLACEHOLDERS = new Set(["logo_url", "header_image_url", "qr_image_url"]);
+
 /** Matches any {{...}} token, including empty {{}} (malformed). */
 const ANY_PLACEHOLDER_RE = /\{\{([^}]*)\}\}/g;
 
@@ -88,20 +97,32 @@ export function extractPlaceholderTokens(text: string): string[] {
   return tokens;
 }
 
-/** Returns whitelisted placeholder names found in the string (exact {{name}} syntax, no padding). */
-export function extractPlaceholderNames(text: string): string[] {
+/**
+ * Returns whitelisted placeholder names found in the string (exact {{name}} syntax, no
+ * padding). `extraAllowed` widens the whitelist per-call — used for an event's custom image
+ * asset tokens (branding asset library), which aren't known ahead of time like the static list.
+ */
+export function extractPlaceholderNames(
+  text: string,
+  extraAllowed?: ReadonlySet<string>,
+): string[] {
   return extractPlaceholderTokens(text).filter(
     (token) =>
       token === token.trim() &&
       VALID_PLACEHOLDER_NAME_RE.test(token) &&
-      ALLOWED_PLACEHOLDERS.has(token),
+      (ALLOWED_PLACEHOLDERS.has(token) || extraAllowed?.has(token) === true),
   );
 }
 
 /**
- * Returns invalid placeholder names: malformed {{...}} tokens and names outside the whitelist.
+ * Returns invalid placeholder names: malformed {{...}} tokens and names outside the whitelist
+ * (static list plus `extraAllowed`, e.g. an event's custom image asset tokens).
  */
-export function findUnknownPlaceholders(subject: string, body: string): string[] {
+export function findUnknownPlaceholders(
+  subject: string,
+  body: string,
+  extraAllowed?: ReadonlySet<string>,
+): string[] {
   const issues = new Set<string>();
   for (const text of [subject, body]) {
     for (const token of extractPlaceholderTokens(text)) {
@@ -111,7 +132,7 @@ export function findUnknownPlaceholders(subject: string, body: string): string[]
       if (
         padded ||
         !VALID_PLACEHOLDER_NAME_RE.test(name) ||
-        !ALLOWED_PLACEHOLDERS.has(name)
+        !(ALLOWED_PLACEHOLDERS.has(name) || extraAllowed?.has(name) === true)
       ) {
         issues.add(name === "" ? "{{}}" : name);
       }

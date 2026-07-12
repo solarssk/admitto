@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { BrandingUrls } from "./types.js";
 import { validateBrandingUrl, InvalidHttpUrlError } from "./escape.js";
 
@@ -89,6 +89,32 @@ export async function setBranding(
     where: { id: scope.scopeId },
     data,
   });
+}
+
+/** An event's custom image asset tokens (branding asset library, v0.4.13 batch 05), resolved
+ * to their stored `/uploads/…` URLs for use as extra TemplateVars, plus the set of token names
+ * for widening the placeholder whitelist (see findUnknownPlaceholders' extraAllowed param and
+ * RenderOptions.customAssetPlaceholders). Empty when the event has no uploaded assets. */
+export interface EventImageAssetPlaceholders {
+  vars: Record<string, string>;
+  names: ReadonlySet<string>;
+}
+
+export async function resolveEventImageAssetVars(
+  eventId: string,
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<EventImageAssetPlaceholders> {
+  const assets = await prisma.eventImageAsset.findMany({
+    where: { event_id: eventId },
+    select: { token: true, url: true },
+  });
+
+  const vars: Record<string, string> = {};
+  for (const asset of assets) {
+    vars[asset.token] = asset.url;
+  }
+
+  return { vars, names: new Set(Object.keys(vars)) };
 }
 
 export { InvalidHttpUrlError };

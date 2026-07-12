@@ -50,6 +50,49 @@ function insertAtCursor(value: string, insertion: string, start: number, end: nu
   return value.slice(0, start) + insertion + value.slice(end);
 }
 
+/** Human-readable alt text for a known image placeholder; custom asset tokens just use their
+ * own name (they have no separate display-name field). */
+function imagePlaceholderAltText(name: string): string {
+  switch (name) {
+    case "logo_url":
+      return "Logo";
+    case "header_image_url":
+      return "Header image";
+    case "qr_image_url":
+      return "Ticket QR code";
+    default:
+      return name;
+  }
+}
+
+/** Markup inserted for an image placeholder — a ready-to-use image element, not a bare
+ * `{{name}}` token. A bare token never displays a picture on its own; it needs to be the `src`
+ * of an actual image element, so the picker inserts one directly. */
+function imagePlaceholderMarkup(name: string, format: TemplateFormat): string {
+  const alt = imagePlaceholderAltText(name);
+  return format === "mjml"
+    ? `<mj-image src="{{${name}}}" alt="${alt}" width="200px" />`
+    : `<img src="{{${name}}}" alt="${alt}" width="200" style="max-width:100%;" />`;
+}
+
+/** True when [start, end] falls inside the `<mjml>...</mjml>` root found in `value` — strictly
+ * after the opening tag's closing `>` and at/before the closing tag's start. Returns true (i.e.
+ * "assume fine, don't second-guess it") when no recognizable `<mjml ...>`/`</mjml>` pair exists,
+ * since we can't reason about a template shape we don't recognize. */
+function isWithinMjmlRoot(value: string, start: number, end: number): boolean {
+  const openMatch = /<mjml[^>]*>/i.exec(value);
+  const closeIdx = value.lastIndexOf("</mjml>");
+  if (!openMatch || closeIdx === -1) return true;
+  const openTagEnd = openMatch.index + openMatch[0].length;
+  return start >= openTagEnd && end <= closeIdx;
+}
+
+/** Last `</mj-column>` position in an MJML body, or -1 if none is found. Used as a safe fallback
+ * insertion point — see `insertPlaceholder` for why this is needed. */
+function findMjmlColumnFallbackIndex(value: string): number {
+  return value.lastIndexOf("</mj-column>");
+}
+
 const DELIVERY_PAGE_SIZE = 25;
 
 type DirtyProtectedAction =
@@ -111,6 +154,7 @@ export function CommunicationPage() {
   const [source, setSource] = useState<EventTemplateDto["source"]>("builtin");
   const [allowedPlaceholders, setAllowedPlaceholders] = useState<string[]>([]);
   const [requiredPlaceholders, setRequiredPlaceholders] = useState<string[]>([]);
+  const [imagePlaceholders, setImagePlaceholders] = useState<string[]>([]);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [format, setFormat] = useState<TemplateFormat>("mjml");
@@ -475,6 +519,7 @@ export function CommunicationPage() {
         setTemplates(items);
         setAllowedPlaceholders(data.allowed_placeholders);
         setRequiredPlaceholders(data.required_url_placeholders);
+        setImagePlaceholders(data.image_placeholders ?? []);
         const ticket = items.find((t) => t.name === "ticket");
         if (ticket) {
           setActiveKey(ticket.id);
@@ -558,31 +603,68 @@ export function CommunicationPage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
 
+  /** Insert a token at a field's cursor, then move the cursor to right after it.
+   *
+   * Reads and writes the actual DOM element's `value`/selection synchronously (not the React
+   * state closure or a `requestAnimationFrame`-deferred selection restore) so that clicking a
+   * placeholder chip multiple times in a row — even faster than React can re-render between
+   * clicks — always appends after the previous insertion instead of silently overwriting it or
+   * splicing into the middle of it. Previously, reading `el.selectionStart` and the `body`/
+   * `subject` state at click time could both be stale if a prior click's state update and
+   * rAF-scheduled cursor move hadn't been committed yet, causing rapid repeated clicks to insert
+   * at the same stale position and produce broken, nested markup (e.g. a second `<mj-image>`
+   * landing inside the first one's `src="..."` attribute). Setting `el.value`/selection directly
+   * keeps every insertion's start position accurate regardless of click timing, since React skips
+   * touching the DOM value/selection of a controlled input when they already match its state.
+   */
+  function insertTokenIntoField(
+    el: HTMLInputElement | HTMLTextAreaElement | null,
+    token: string,
+    setValue: (value: string) => void,
+  ) {
+    if (!el) return;
+    let start = el.selectionStart ?? el.value.length;
+    let end = el.selectionEnd ?? el.value.length;
+    let insertion = token;
+
+    // MJML silently discards any markup outside the `<mjml>...</mjml>` root — no error, no
+    // warning, it just never reaches the compiled output. This happens in practice whenever a
+    // chip is clicked before the textarea has ever been focused (the browser then reports
+    // selectionStart/End as 0, i.e. the very start of the raw text, which sits *before* `<mjml>`
+    // opens). Redirect to a location guaranteed to be inside a valid `<mj-column>` instead, and
+    // wrap bare `{{token}}` text in its own `<mj-text>` — loose text nodes between components are
+    // just as silently dropped as content outside the root, so a bare token needs the same
+    // wrapping a real edit at a normal cursor position would already have from surrounding markup.
+    if (el === bodyRef.current && format === "mjml" && !isWithinMjmlRoot(el.value, start, end)) {
+      const fallbackIdx = findMjmlColumnFallbackIndex(el.value);
+      if (fallbackIdx !== -1) {
+        start = fallbackIdx;
+        end = fallbackIdx;
+        insertion = token.startsWith("<mj-") ? token : `<mj-text>${token}</mj-text>`;
+      }
+    }
+
+    const newValue = insertAtCursor(el.value, insertion, start, end);
+    const newCursorPos = start + insertion.length;
+    el.value = newValue;
+    el.setSelectionRange(newCursorPos, newCursorPos);
+    el.focus();
+    setValue(newValue);
+  }
+
   const insertPlaceholder = (name: string) => {
-    const token = `{{${name}}}`;
+    // Subjects are plain text (no HTML rendering), so always insert the bare token there. In the
+    // body, an image placeholder gets a ready-to-use image element instead of a bare token —
+    // {{logo_url}} alone never displays a picture, it needs to be an <img>/<mj-image> src.
+    const token =
+      activeField === "body" && imagePlaceholders.includes(name)
+        ? imagePlaceholderMarkup(name, format)
+        : `{{${name}}}`;
     if (activeField === "subject") {
-      const el = subjectRef.current;
-      const start = el?.selectionStart ?? subject.length;
-      const end = el?.selectionEnd ?? subject.length;
-      setSubject(insertAtCursor(subject, token, start, end));
-      requestAnimationFrame(() => {
-        if (el) {
-          el.focus();
-          el.setSelectionRange(start + token.length, start + token.length);
-        }
-      });
+      insertTokenIntoField(subjectRef.current, token, setSubject);
       return;
     }
-    const el = bodyRef.current;
-    const start = el?.selectionStart ?? body.length;
-    const end = el?.selectionEnd ?? body.length;
-    setBody(insertAtCursor(body, token, start, end));
-    requestAnimationFrame(() => {
-      if (el) {
-        el.focus();
-        el.setSelectionRange(start + token.length, start + token.length);
-      }
-    });
+    insertTokenIntoField(bodyRef.current, token, setBody);
   };
 
   const handlePreview = async () => {
@@ -854,22 +936,31 @@ export function CommunicationPage() {
               <div className="communication-ph-row">
                 <span className="communication-overline">Insert placeholder</span>
                 <div className="communication-chips">
-                  {allowedPlaceholders.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      className={[
-                        "communication-chip",
-                        requiredPlaceholders.includes(p) && "communication-chip--required",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      onClick={() => insertPlaceholder(p)}
-                      title={requiredPlaceholders.includes(p) ? "Required placeholder" : undefined}
-                    >
-                      {`{{${p}}}`}
-                    </button>
-                  ))}
+                  {allowedPlaceholders.map((p) => {
+                    const isImage = imagePlaceholders.includes(p);
+                    const isRequired = requiredPlaceholders.includes(p);
+                    const titleParts = [
+                      isRequired && "Required placeholder",
+                      isImage && "Inserts a ready-to-use image",
+                    ].filter((part): part is string => Boolean(part));
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        className={[
+                          "communication-chip",
+                          isRequired && "communication-chip--required",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        onClick={() => insertPlaceholder(p)}
+                        title={titleParts.length ? titleParts.join(" · ") : undefined}
+                      >
+                        {isImage && <i className="ti ti-photo" aria-hidden="true" />}
+                        {`{{${p}}}`}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

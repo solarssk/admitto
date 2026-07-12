@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { compileTemplate } from "./compile.js";
 import { getBuiltinTemplate } from "./defaultTemplate.js";
 import { assertRenderableCompiledHtml, assertValidTemplate } from "./validate.js";
+import { resolveEventImageAssetVars } from "./branding.js";
 import type {
   ResolvedTemplate,
   SetMailTemplateInput,
@@ -13,6 +14,17 @@ import { MjmlCompileError, UnknownPlaceholdersError } from "./errors.js";
 export { UnknownPlaceholdersError, MjmlCompileError };
 
 const DEFAULT_TEMPLATE_NAME = "ticket";
+
+/** Custom asset tokens are only meaningful for event-scoped templates (the image library is
+ * per-event) — organization-scoped templates never get a widened placeholder whitelist. */
+async function resolveScopeCustomPlaceholders(
+  scope: TemplateScope,
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<ReadonlySet<string> | undefined> {
+  if (scope.scopeType !== "event") return undefined;
+  const { names } = await resolveEventImageAssetVars(scope.scopeId, prisma);
+  return names;
+}
 
 function scopeNameKey(scope: TemplateScope): {
   scope_type: string;
@@ -150,7 +162,8 @@ export async function createMailTemplate(
   input: SetMailTemplateInput,
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<CreatedMailTemplateRow> {
-  assertValidTemplate({ subject: input.subject, body: input.body });
+  const extraAllowed = await resolveScopeCustomPlaceholders(scope, prisma);
+  assertValidTemplate({ subject: input.subject, body: input.body }, extraAllowed);
 
   const compiledHtml = await compileTemplate(input.body, input.format);
   if (input.format === "mjml") {
@@ -179,7 +192,8 @@ export async function setMailTemplate(
   input: SetMailTemplateInput,
   prisma: PrismaClient | Prisma.TransactionClient,
 ): Promise<void> {
-  assertValidTemplate({ subject: input.subject, body: input.body });
+  const extraAllowed = await resolveScopeCustomPlaceholders(scope, prisma);
+  assertValidTemplate({ subject: input.subject, body: input.body }, extraAllowed);
 
   const compiledHtml = await compileTemplate(input.body, input.format);
   if (input.format === "mjml") {

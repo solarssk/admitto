@@ -20,7 +20,7 @@ const OPERATOR_TRANSITIONS: Record<string, string[]> = {
  * shouldn't silently turn them back into "pending" as if ready to hand out
  * again (bot review, #457).
  */
-const REVOCABLE_ITEM_STATES = ["issued", "returned"];
+export const REVOCABLE_ITEM_STATES = ["issued", "returned"];
 
 export class IllegalItemTransitionError extends Error {
   constructor(message: string) {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
 import { renderWithToast } from "../test-utils.js";
@@ -41,16 +41,25 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     exportEventPii: vi.fn(),
     uploadEventBrandingFile: vi.fn(),
     deleteEvent: vi.fn(),
+    revokeAllCheckIns: vi.fn(),
+    revokeAllItemsIssued: vi.fn(),
+    fetchEventImageAssets: vi.fn(),
+    createEventImageAsset: vi.fn(),
+    deleteEventImageAsset: vi.fn(),
   };
 });
 
 import {
   deleteEvent,
+  fetchEventImageAssets,
   fetchEventSettings,
   patchEvent,
+  revokeAllCheckIns,
+  revokeAllItemsIssued,
   unarchiveEvent,
   uploadEventBrandingFile,
 } from "../../src/api/client.js";
+import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import { formatUtcDateTime } from "../../src/utils/event-dates.js";
 
 const activeEvent = {
@@ -65,6 +74,8 @@ const activeEvent = {
   archived_at: null as string | null,
   created_at: "2026-01-15T00:00:00.000Z",
   is_deletable: false,
+  admitted_count: 0,
+  issued_items_count: 0,
   organization_name: "Org",
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
   logo_url: null,
@@ -81,9 +92,18 @@ const archivedEvent = {
   capacity: null,
 };
 
+beforeEach(() => {
+  // The Branding tab also mounts EventImageAssetLibrary, which fetches its own list on mount.
+  // Default to an empty library so tests that don't care about it never hit a real network
+  // call (jsdom's `fetch` is real, not auto-mocked) or leak an unresolved promise into the
+  // next test.
+  vi.mocked(fetchEventImageAssets).mockResolvedValue([]);
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
   mockAssignments = superadminAssignments;
 });
 
@@ -153,17 +173,20 @@ describe("EventSettingsPage tabs", () => {
     ).toBeTruthy();
   });
 
-  it("switches to the Branding tab and shows event logo + header image upload zones", async () => {
+  it("switches to the Branding tab and shows event logo + image library", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await waitFor(() => {
       expect(screen.getByRole("tab", { name: "Branding" })).toBeTruthy();
     });
     fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    expect(await screen.findByText("Event logo")).toBeTruthy();
-    expect(screen.getByText("Event header image")).toBeTruthy();
+    expect(await screen.findByText("Event branding")).toBeTruthy();
+    expect(screen.getByText("Drop logo here or click to browse")).toBeTruthy();
+    expect(screen.getByText("Upload images")).toBeTruthy();
+    expect(screen.getByText("Your images")).toBeTruthy();
+    expect(await screen.findByText(/No image assets yet/)).toBeTruthy();
     expect(
-      screen.getByText(/Leave a field blank to keep using the organization's branding/),
+      screen.getByText(/leave it blank to use the organization's logo/),
     ).toBeTruthy();
   });
 
@@ -173,52 +196,16 @@ describe("EventSettingsPage tabs", () => {
     renderSettings();
     await waitFor(() => screen.getByRole("tab", { name: "Branding" }));
     fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    await screen.findByText("Event logo");
+    await screen.findByText("Event branding");
 
-    const fileInputs = document.querySelectorAll('input[type="file"]');
-    expect(fileInputs).toHaveLength(2);
+    const fileInputs = document.querySelectorAll('.logo-upload input[type="file"]');
+    expect(fileInputs).toHaveLength(1);
     const file = new File(["x"], "logo.png", { type: "image/png" });
     fireEvent.change(fileInputs[0]!, { target: { files: [file] } });
 
     await waitFor(() => {
       expect(uploadEventBrandingFile).toHaveBeenCalledWith("evt-1", expect.any(FormData));
     });
-  });
-
-  it("keeps both uploads when a logo upload and a header-image upload race each other", async () => {
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    let resolveLogo!: (result: { url: string }) => void;
-    let resolveHeader!: (result: { url: string }) => void;
-    vi.mocked(uploadEventBrandingFile)
-      .mockReturnValueOnce(new Promise((resolve) => (resolveLogo = resolve)))
-      .mockReturnValueOnce(new Promise((resolve) => (resolveHeader = resolve)));
-    renderSettings();
-    await waitFor(() => screen.getByRole("tab", { name: "Branding" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    await screen.findByText("Event logo");
-
-    const [logoInput, headerInput] = document.querySelectorAll('input[type="file"]');
-    // Start both uploads before either resolves — both onChange closures capture the same
-    // pre-upload form snapshot, which is exactly what makes a non-functional setForm racy.
-    fireEvent.change(logoInput!, {
-      target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
-    });
-    fireEvent.change(headerInput!, {
-      target: { files: [new File(["y"], "header.png", { type: "image/png" })] },
-    });
-
-    resolveLogo({ url: "/uploads/default/logo.png" });
-    await waitFor(() => {
-      expect(screen.getByAltText("Event logo preview")).toBeTruthy();
-    });
-
-    resolveHeader({ url: "/uploads/default/header.png" });
-    await waitFor(() => {
-      expect(screen.getByAltText("Event header image preview")).toBeTruthy();
-    });
-
-    // The header upload completing later must not revert the logo that already landed.
-    expect(screen.getByAltText("Event logo preview")).toBeTruthy();
   });
 
   it("disables Save while a branding upload is in flight, even if another field is already dirty", async () => {
@@ -238,8 +225,8 @@ describe("EventSettingsPage tabs", () => {
     );
 
     fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    await screen.findByText("Event logo");
-    const [logoInput] = document.querySelectorAll('input[type="file"]');
+    await screen.findByText("Event branding");
+    const [logoInput] = document.querySelectorAll('.logo-upload input[type="file"]');
     fireEvent.change(logoInput!, {
       target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
     });
@@ -258,32 +245,25 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
-  it("saves both branding fields after uploading, sending the full patch payload", async () => {
+  it("saves the logo field after uploading, sending the patch payload", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    vi.mocked(uploadEventBrandingFile)
-      .mockResolvedValueOnce({ url: "/uploads/default/logo.png" })
-      .mockResolvedValueOnce({ url: "/uploads/default/header.png" });
+    vi.mocked(uploadEventBrandingFile).mockResolvedValueOnce({ url: "/uploads/default/logo.png" });
     vi.mocked(patchEvent).mockResolvedValueOnce({
       event: {
         ...activeEvent,
         logo_url: "/uploads/default/logo.png",
-        header_image_url: "/uploads/default/header.png",
       },
     });
     renderSettings();
     await waitFor(() => screen.getByRole("tab", { name: "Branding" }));
     fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    await screen.findByText("Event logo");
+    await screen.findByText("Event branding");
 
-    const [logoInput, headerInput] = document.querySelectorAll('input[type="file"]');
+    const [logoInput] = document.querySelectorAll('.logo-upload input[type="file"]');
     fireEvent.change(logoInput!, {
       target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
     });
     await waitFor(() => screen.getByAltText("Event logo preview"));
-    fireEvent.change(headerInput!, {
-      target: { files: [new File(["y"], "header.png", { type: "image/png" })] },
-    });
-    await waitFor(() => screen.getByAltText("Event header image preview"));
 
     // The alt-text preview and the Save button's label flip in separate React commits
     // (the button label only updates once LogoUploadZone's onUploadingChange effect fires
@@ -294,7 +274,6 @@ describe("EventSettingsPage tabs", () => {
     await waitFor(() => {
       expect(patchEvent).toHaveBeenCalledWith("evt-1", {
         logo_url: "/uploads/default/logo.png",
-        header_image_url: "/uploads/default/header.png",
       });
     });
   });
@@ -304,14 +283,23 @@ describe("EventSettingsPage tabs", () => {
     renderSettings("/admin/events/evt-2/settings");
     await waitFor(() => screen.getByRole("tab", { name: "Branding" }));
     fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    await screen.findByText("Event logo");
+    await screen.findByText("Event branding");
 
-    const fileInputs = document.querySelectorAll('input[type="file"]');
-    expect(fileInputs).toHaveLength(2);
+    const fileInputs = document.querySelectorAll('.logo-upload input[type="file"]');
+    expect(fileInputs).toHaveLength(1);
     for (const input of fileInputs) {
       expect((input as HTMLInputElement).disabled).toBe(true);
     }
     expect(screen.getByText("This event is archived - branding cannot be changed.")).toBeTruthy();
+
+    await screen.findByText(/No image assets yet/);
+    const assetFileInput = document.querySelector(
+      ".image-asset-library__file-input",
+    ) as HTMLInputElement;
+    expect(assetFileInput.disabled).toBe(true);
+    expect(
+      screen.getByText("This event is archived - the asset library cannot be changed."),
+    ).toBeTruthy();
   });
 
   it("switches to the Wallet tab and shows the roadmap placeholder", async () => {
@@ -605,5 +593,231 @@ describe("EventSettingsPage — delete event (#395)", () => {
     fireEvent.click(screen.getByRole("button", { name: /Delete event/ }));
     dialog = await screen.findByRole("dialog");
     expect(within(dialog).queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone follow-up)", () => {
+  async function openDangerZone() {
+    await waitFor(() => screen.getByRole("tab", { name: "Danger zone" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
+  }
+
+  // The Revoke dialogs' confirm buttons stay disabled for 10s after opening (see
+  // ConfirmDialog's confirmDelaySeconds — an "arm before confirming" pause). Fake-timers a
+  // tightly scoped window around just the open+arm step so tests don't wait 10 real seconds
+  // each, while everything before/after (fetch mocks, toasts) still runs on real timers.
+  async function openAndArmRevokeDialog(triggerName: string) {
+    const triggerButton = await screen.findByRole("button", { name: triggerName });
+    vi.useFakeTimers();
+    fireEvent.click(triggerButton);
+    const dialog = screen.getByRole("dialog");
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    vi.useRealTimers();
+    return dialog;
+  }
+
+  it("disables Revoke all check-ins with a zero-activity message when admitted_count is 0", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 0 });
+    renderSettings();
+    await openDangerZone();
+    const button = (await screen.findByRole("button", {
+      name: "Revoke all check-ins",
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(screen.getByText("No attendees are currently checked in.")).toBeTruthy();
+    const describedBy = button.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe("No check-ins to revoke");
+  });
+
+  it("enables Revoke all check-ins for a superadmin with admitted attendees", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 1 });
+    renderSettings();
+    await openDangerZone();
+    const button = (await screen.findByRole("button", {
+      name: "Revoke all check-ins",
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(
+      screen.getByText(
+        "Reverses check-in for all 1 currently checked-in attendee. They can check in again afterwards.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("disables Revoke all check-ins for a non-superadmin org admin despite admitted attendees", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 3 });
+    renderSettings();
+    await openDangerZone();
+    const button = (await screen.findByRole("button", {
+      name: "Revoke all check-ins",
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    const describedBy = button.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe("Superadmin only");
+  });
+
+  it("disables Revoke all items issued with a zero-activity message when issued_items_count is 0", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, issued_items_count: 0 });
+    renderSettings();
+    await openDangerZone();
+    const button = (await screen.findByRole("button", {
+      name: "Revoke all items issued",
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(screen.getByText("No items have been issued yet.")).toBeTruthy();
+  });
+
+  it("enables Revoke all items issued for a superadmin with issued items", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, issued_items_count: 4 });
+    renderSettings();
+    await openDangerZone();
+    const button = (await screen.findByRole("button", {
+      name: "Revoke all items issued",
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(
+      screen.getByText(
+        "Resets all 4 issued items back to pending, for every attendee. They can be handed out again afterwards.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("disables both revoke rows once the event is archived, even with real counts", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...archivedEvent,
+      admitted_count: 2,
+      issued_items_count: 4,
+    });
+    renderSettings("/admin/events/evt-2/settings");
+    await openDangerZone();
+    const checkinsButton = (await screen.findByRole("button", {
+      name: "Revoke all check-ins",
+    })) as HTMLButtonElement;
+    const itemsButton = screen.getByRole("button", {
+      name: "Revoke all items issued",
+    }) as HTMLButtonElement;
+    expect(checkinsButton.disabled).toBe(true);
+    expect(itemsButton.disabled).toBe(true);
+    for (const button of [checkinsButton, itemsButton]) {
+      const describedBy = button.getAttribute("aria-describedby");
+      expect(document.getElementById(describedBy!)?.textContent).toBe(ARCHIVED_ACTION_TOOLTIP);
+    }
+  });
+
+  it("confirms and revokes all check-ins, showing a pluralized success toast and reloading", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 3 });
+    vi.mocked(revokeAllCheckIns).mockResolvedValueOnce({ revokedCount: 3 });
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 0 });
+    renderSettings();
+    await openDangerZone();
+    const dialog = await openAndArmRevokeDialog("Revoke all check-ins");
+
+    expect(
+      within(dialog).getByText(
+        "This will revoke check-in for 3 attendees. They can check in again afterwards.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all check-ins" }));
+
+    await waitFor(() => {
+      expect(revokeAllCheckIns).toHaveBeenCalledWith("evt-1");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Revoked check-in for 3 attendees/);
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByText("No attendees are currently checked in.")).toBeTruthy();
+    });
+  });
+
+  it("shows a 'No check-ins to revoke' toast when the server resolves a zero count", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 1 });
+    vi.mocked(revokeAllCheckIns).mockResolvedValueOnce({ revokedCount: 0 });
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 0 });
+    renderSettings();
+    await openDangerZone();
+    const dialog = await openAndArmRevokeDialog("Revoke all check-ins");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all check-ins" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/No check-ins to revoke/);
+    });
+  });
+
+  it("keeps the dialog open and shows an error toast when revoking check-ins fails", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 2 });
+    const { ApiError } = await import("../../src/api/client.js");
+    vi.mocked(revokeAllCheckIns).mockRejectedValueOnce(new ApiError(500, "server_error"));
+    renderSettings();
+    await openDangerZone();
+    const dialog = await openAndArmRevokeDialog("Revoke all check-ins");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all check-ins" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke check-ins/);
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("confirms and revokes all issued items, showing a pluralized success toast and reloading", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, issued_items_count: 5 });
+    vi.mocked(revokeAllItemsIssued).mockResolvedValueOnce({ revokedCount: 5 });
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, issued_items_count: 0 });
+    renderSettings();
+    await openDangerZone();
+    const dialog = await openAndArmRevokeDialog("Revoke all items issued");
+
+    expect(
+      within(dialog).getByText(
+        "This will reset 5 issued items back to pending. They can be handed out again afterwards.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all items issued" }));
+
+    await waitFor(() => {
+      expect(revokeAllItemsIssued).toHaveBeenCalledWith("evt-1");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Reset 5 issued items back to pending/,
+      );
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps the dialog open and shows an error toast when revoking items fails", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, issued_items_count: 2 });
+    const { ApiError } = await import("../../src/api/client.js");
+    vi.mocked(revokeAllItemsIssued).mockRejectedValueOnce(new ApiError(500, "server_error"));
+    renderSettings();
+    await openDangerZone();
+    const dialog = await openAndArmRevokeDialog("Revoke all items issued");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke all items issued" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke items/);
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("always shows Revoke all Wallet passes as a disabled roadmap placeholder with no dialog", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      admitted_count: 5,
+      issued_items_count: 5,
+    });
+    renderSettings();
+    await openDangerZone();
+    const button = (await screen.findByRole("button", {
+      name: "Revoke all Wallet passes",
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("Not built yet");
+    fireEvent.click(button);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

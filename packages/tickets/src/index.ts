@@ -12,7 +12,9 @@ export {
   transitionItemState,
   revokeItemState,
   IllegalItemTransitionError,
+  REVOCABLE_ITEM_STATES,
 } from "./item-states.js";
+export { revokeAllCheckInsForEvent, revokeAllItemsForEvent } from "./bulk-revoke.js";
 export { addAttendeeNote, NoteTooLongError, OperatorRequiredError, MAX_ATTENDEE_NOTE_LENGTH } from "./notes.js";
 export {
   undoLastCheckIn,

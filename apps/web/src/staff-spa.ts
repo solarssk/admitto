@@ -32,12 +32,26 @@ export const STAFF_SPA_FONT_SRC = ["'self'", "https:"] as const;
  */
 export const STAFF_SPA_IMG_SRC = ["'self'", "data:", "https:"] as const;
 
-function buildStaffSpaContentSecurityPolicy(): string {
+type EnvLike = Record<string, string | undefined>;
+
+/**
+ * `http://localhost:*` is appended only in development so the Communication editor's MJML
+ * Preview iframe can actually load `{{token}}` branding images resolved via `resolvePublicBaseUrl`'s
+ * own dev-only `http://localhost:3000` fallback (`packages/mail-templates/src/baseUrl.ts`) — that
+ * fallback ignores the real dev server port (e.g. this instance's 3001), and plain `http:` images
+ * are otherwise blocked outright since only `https:` is allowed above. Local-machine-only, so this
+ * doesn't weaken the production policy (which never sets `NODE_ENV=development`).
+ */
+function buildStaffSpaContentSecurityPolicy(env: EnvLike): string {
+  const imgSrc =
+    env["NODE_ENV"] === "development"
+      ? [...STAFF_SPA_IMG_SRC, "http://localhost:*"]
+      : STAFF_SPA_IMG_SRC;
   return [
     "default-src 'self'",
     "script-src 'self'",
     `style-src ${STAFF_SPA_STYLE_SRC.join(" ")}`,
-    `img-src ${STAFF_SPA_IMG_SRC.join(" ")}`,
+    `img-src ${imgSrc.join(" ")}`,
     "connect-src 'self'",
     `font-src ${STAFF_SPA_FONT_SRC.join(" ")}`,
     "object-src 'none'",
@@ -48,10 +62,10 @@ function buildStaffSpaContentSecurityPolicy(): string {
 }
 
 /** Security headers for `/admin` and `/operator` SPA shell (Vite bundle). */
-export function getStaffSpaSecurityHeaders(): Record<string, string> {
+export function getStaffSpaSecurityHeaders(env: EnvLike = process.env): Record<string, string> {
   return {
     "Cache-Control": "no-store",
-    "Content-Security-Policy": buildStaffSpaContentSecurityPolicy(),
+    "Content-Security-Policy": buildStaffSpaContentSecurityPolicy(env),
     // same-origin (not no-referrer) so Safari sends Referer on same-origin form POSTs
     // (e.g. Sign out). no-referrer blocks Referer and Safari omits Origin for same-origin
     // form POST, causing the CSRF guard to reject the request.

@@ -57,6 +57,10 @@ export interface EventSettingsDto {
   created_at: string;
   /** True when the event has zero real activity and can be permanently deleted. */
   is_deletable: boolean;
+  /** Attendees currently checked in — drives the "Revoke all check-ins" Danger Zone row. */
+  admitted_count: number;
+  /** Individual issued/returned item hand-outs across all attendees — drives "Revoke all items issued". */
+  issued_items_count: number;
   organization_name: string;
   active_items: Array<{ id: string; name: string; enabled: boolean }>;
   /** Event's own branding overrides — null means "inherited from organization". */
@@ -337,6 +341,21 @@ export interface EventItemsListResponse {
   items: EventItemDto[];
 }
 
+/** A named branding image asset, usable as `{{token}}` in email templates. */
+export interface EventImageAssetDto {
+  id: string;
+  token: string;
+  filename: string;
+  url: string;
+  size_bytes: number;
+  mime_type: string;
+  created_at: string;
+}
+
+export interface EventImageAssetsListResponse {
+  items: EventImageAssetDto[];
+}
+
 export interface CreateEventItemBody {
   key: string;
   label: string;
@@ -375,6 +394,9 @@ export interface EventTemplateDto {
   source: "event" | "organization" | "builtin";
   allowed_placeholders: string[];
   required_url_placeholders: string[];
+  /** Subset of `allowed_placeholders` that render as an image — the editor inserts a ready
+   * `<img>`/`<mj-image>` element for these instead of a bare `{{name}}` token. */
+  image_placeholders: string[];
 }
 
 export interface SaveTemplateBody {

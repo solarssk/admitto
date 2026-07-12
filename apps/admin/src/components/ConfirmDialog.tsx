@@ -21,6 +21,13 @@ export type ConfirmDialogProps = {
   confirmationValue?: string;
   /** Label for the typed-confirmation input. Defaults to a generic "Type X to confirm" hint. */
   confirmationLabel?: string;
+  /**
+   * When set, the confirm button stays disabled for this many seconds after the dialog opens,
+   * with a thin depleting progress bar shown under its label (button height/size unchanged).
+   * A brief "don't act on reflex" pause for especially impactful bulk actions, on top of the
+   * dialog itself. Restarts every time the dialog re-opens.
+   */
+  confirmDelaySeconds?: number;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -37,6 +44,7 @@ export function ConfirmDialog({
   loading = false,
   confirmationValue,
   confirmationLabel,
+  confirmDelaySeconds,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -44,11 +52,19 @@ export function ConfirmDialog({
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const [typedValue, setTypedValue] = useState("");
+  const [armed, setArmed] = useState(confirmDelaySeconds === undefined);
   useModalFocusTrap(panelRef, open, onCancel);
 
   useEffect(() => {
     if (open) setTypedValue("");
   }, [open]);
+
+  useEffect(() => {
+    if (!open || confirmDelaySeconds === undefined) return;
+    setArmed(false);
+    const timer = window.setTimeout(() => setArmed(true), confirmDelaySeconds * 1000);
+    return () => window.clearTimeout(timer);
+  }, [open, confirmDelaySeconds]);
 
   if (!open) return null;
 
@@ -56,7 +72,9 @@ export function ConfirmDialog({
   // An empty confirmationValue can never be "typed" to confirm — fail closed rather than
   // let the confirm button unlock immediately (typedValue also starts as "").
   const confirmDisabled =
-    loading || (needsTypedConfirmation && (!confirmationValue || typedValue !== confirmationValue));
+    loading ||
+    !armed ||
+    (needsTypedConfirmation && (!confirmationValue || typedValue !== confirmationValue));
 
   return (
     <div
@@ -92,14 +110,29 @@ export function ConfirmDialog({
           <Button type="button" variant="secondary" disabled={loading} onClick={onCancel}>
             {cancelLabel}
           </Button>
-          <Button
-            type="button"
-            variant={confirmVariant}
-            disabled={confirmDisabled}
-            onClick={onConfirm}
-          >
-            {loading ? "Working…" : confirmLabel}
-          </Button>
+          <span className="confirm-dialog__confirm-wrap">
+            <Button
+              type="button"
+              variant={confirmVariant}
+              disabled={confirmDisabled}
+              title={
+                !armed && confirmDelaySeconds !== undefined
+                  ? `Please wait ${confirmDelaySeconds}s before confirming`
+                  : undefined
+              }
+              onClick={onConfirm}
+            >
+              {loading ? "Working…" : confirmLabel}
+            </Button>
+            {!armed && confirmDelaySeconds !== undefined && (
+              <span className="confirm-dialog__arm-track" aria-hidden="true">
+                <span
+                  className="confirm-dialog__arm-bar"
+                  style={{ animationDuration: `${confirmDelaySeconds}s` }}
+                />
+              </span>
+            )}
+          </span>
         </div>
       </div>
     </div>

@@ -50,6 +50,7 @@ model Event {
   action_logs      AttendeeActionLog[]
   contacts         EventContact[]
   resources        EventResource[]
+  image_assets     EventImageAsset[]
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
@@ -84,6 +85,27 @@ model EventResource {
   updated_at  DateTime            @updatedAt
 
   @@index([event_id, sort_order])
+}
+
+// Named image assets uploaded per event (branding "asset library" — v0.4.13 batch 05). Each
+// gets a short {{token}} usable in Communication email templates (see @admitto/mail-templates
+// placeholders.ts), resolved to `url` at render time exactly like the built-in
+// logo_url/header_image_url. Distinct from Event.logo_url/header_image_url, which remain
+// dedicated override fields (resolved event -> organization -> empty) - this table is purely
+// for ad-hoc images referenced by name in emails, no fallback/inheritance semantics.
+model EventImageAsset {
+  id         String   @id @default(cuid())
+  event_id   String
+  event      Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  token      String
+  filename   String
+  url        String
+  size_bytes Int
+  mime_type  String
+  created_at DateTime @default(now())
+
+  @@unique([event_id, token])
+  @@index([event_id])
 }
 
 enum EventResourceType {

@@ -30,6 +30,23 @@
   max-width: 640px;
 }
 
+/* Below ~640px the description column gets squeezed to make room for the
+   button on the same line (as little as ~90px wide with real copy) - stack
+   the button under the text instead, full width for the text so it wraps
+   normally, button at its natural size like everywhere else in the app. */
+@media (max-width: 640px) {
+  .danger-zone__item {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: var(--space-3);
+  }
+
+  .danger-zone__info {
+    width: 100%;
+  }
+}
+
 .event-settings-page .field-hint {
   font-size: var(--fs-sm);
   color: var(--text-muted);
@@ -57,17 +74,9 @@
 }
 
 /* Tab bar + panels ------------------------------------------------------ */
-
-.event-settings-page .at-tabs {
-  margin-bottom: var(--space-4);
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  flex-wrap: nowrap;
-}
-
-.event-settings-page .at-tab {
-  flex-shrink: 0;
-}
+/* Horizontal scroll + edge-fade behavior now lives in the shared
+   ScrollFadeTabs component (apps/admin/src/components/ScrollFadeTabs.tsx),
+   used instead of the plain <Tabs> here. */
 
 .event-settings-tabpanel {
   display: flex;
