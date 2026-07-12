@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,7 +29,10 @@ import {
   verifyBackupRecoveryCode,
   regenerateBackupRecoveryCodes,
 } from "../src/mfa/backup-recovery.js";
-import { generateEmergencyRecoveryCode } from "../src/mfa/emergency-recovery.js";
+import {
+  generateEmergencyRecoveryCode,
+  verifyEmergencyRecoveryCode,
+} from "../src/mfa/emergency-recovery.js";
 import {
   generateRecoveryCodePlaintext,
   normalizeRecoveryCode,
@@ -286,6 +289,119 @@ describe("login MFA flow", () => {
     // Consume happens before promotion so a race cannot leave a promoted session
     // behind with an unconsumed recovery row.
     expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(false);
+  });
+
+  it("completes MFA with a backup recovery code, reports method, and consumes it", async () => {
+    await resetUserMfa(prisma, USER_ADMIN);
+    const { codes } = await regenerateBackupRecoveryCodes(prisma, USER_ADMIN);
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: USER_ADMIN,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const loginResult = await login(prisma, {
+      email: "mfa-admin@example.com",
+      password: PASSWORD,
+    });
+    expect(loginResult.ok).toBe(true);
+    if (!loginResult.ok) return;
+
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const mfa = await completeMfa(prisma, {
+      userId: USER_ADMIN,
+      sessionId: loginResult.sessionId,
+      code: codes[0]!,
+    });
+    const events = infoSpy.mock.calls.map(([line]) => JSON.parse(String(line)));
+    infoSpy.mockRestore();
+
+    expect(mfa.ok).toBe(true);
+    expect(await validateSession(prisma, loginResult.rawToken)).not.toBeNull();
+    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(false);
+
+    expect(events.find((e) => e.event === "auth.mfa.success")?.method).toBe("backup");
+    expect(events.find((e) => e.event === "auth.mfa.recovery_consumed")?.method).toBe("backup");
+  });
+
+  it("completes MFA with an emergency recovery code and reports method", async () => {
+    await resetUserMfa(prisma, USER_ADMIN);
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: USER_ADMIN,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+    const { code: emergencyCode } = await generateEmergencyRecoveryCode(prisma, USER_ADMIN);
+
+    const loginResult = await login(prisma, {
+      email: "mfa-admin@example.com",
+      password: PASSWORD,
+    });
+    expect(loginResult.ok).toBe(true);
+    if (!loginResult.ok) return;
+
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const mfa = await completeMfa(prisma, {
+      userId: USER_ADMIN,
+      sessionId: loginResult.sessionId,
+      code: emergencyCode,
+    });
+    const events = infoSpy.mock.calls.map(([line]) => JSON.parse(String(line)));
+    infoSpy.mockRestore();
+
+    expect(mfa.ok).toBe(true);
+    expect(await validateSession(prisma, loginResult.rawToken)).not.toBeNull();
+    expect(await verifyEmergencyRecoveryCode(prisma, USER_ADMIN, emergencyCode)).toBe(false);
+
+    expect(events.find((e) => e.event === "auth.mfa.success")?.method).toBe("emergency");
+    expect(events.find((e) => e.event === "auth.mfa.recovery_consumed")?.method).toBe("emergency");
+  });
+
+  it("rejects an invalid MFA code without consuming any recovery row or granting access", async () => {
+    await resetUserMfa(prisma, USER_ADMIN);
+    const { codes } = await regenerateBackupRecoveryCodes(prisma, USER_ADMIN);
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: USER_ADMIN,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const loginResult = await login(prisma, {
+      email: "mfa-admin@example.com",
+      password: PASSWORD,
+    });
+    expect(loginResult.ok).toBe(true);
+    if (!loginResult.ok) return;
+
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const mfa = await completeMfa(prisma, {
+      userId: USER_ADMIN,
+      sessionId: loginResult.sessionId,
+      code: "not-a-real-code",
+    });
+    const events = infoSpy.mock.calls.map(([line]) => JSON.parse(String(line)));
+    infoSpy.mockRestore();
+
+    expect(mfa.ok).toBe(false);
+    expect(await validateSession(prisma, loginResult.rawToken)).toBeNull();
+    // Unrelated backup codes remain usable: nothing was consumed on a no-match.
+    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(true);
+
+    expect(events.some((e) => e.event === "auth.mfa.fail")).toBe(true);
+    expect(events.some((e) => e.event === "auth.mfa.success")).toBe(false);
+    expect(events.some((e) => e.event === "auth.mfa.recovery_consumed")).toBe(false);
   });
 });
 
