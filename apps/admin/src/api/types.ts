@@ -752,6 +752,7 @@ export interface PatchAccountPasswordBody {
   current_password: string;
   new_password: string;
   new_password_confirm: string;
+  code?: string;
 }
 
 export interface PatchAccountPasswordResponse {

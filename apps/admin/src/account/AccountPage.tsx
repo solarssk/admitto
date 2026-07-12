@@ -97,6 +97,9 @@ export function AccountPage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordCode, setPasswordCode] = useState("");
+  const [passwordCodeRequired, setPasswordCodeRequired] = useState(false);
+  const [passwordCodeError, setPasswordCodeError] = useState<string | null>(null);
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [enrollData, setEnrollData] = useState<MfaEnrollResponse | null>(null);
   const [totpCode, setTotpCode] = useState("");
@@ -192,7 +195,8 @@ export function AccountPage() {
     currentPassword.length > 0 &&
     newPassword.length >= 12 &&
     confirmPassword.length > 0 &&
-    !passwordMismatch;
+    !passwordMismatch &&
+    (!passwordCodeRequired || passwordCode.length > 0);
 
   return (
     <>
@@ -292,15 +296,19 @@ export function AccountPage() {
                 e.preventDefault();
                 if (passwordSaving || !passwordFormValid) return;
                 setPasswordSaving(true);
+                setPasswordCodeError(null);
                 try {
                   const { sessions_revoked } = await patchAccountPassword({
                     current_password: currentPassword,
                     new_password: newPassword,
                     new_password_confirm: confirmPassword,
+                    code: passwordCode || undefined,
                   });
                   setCurrentPassword("");
                   setNewPassword("");
                   setConfirmPassword("");
+                  setPasswordCode("");
+                  setPasswordCodeRequired(false);
                   addToast(
                     `Password changed.${sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessions_revoked === 1 ? "" : "s"} revoked.` : ""}`,
                     "success",
@@ -308,7 +316,17 @@ export function AccountPage() {
                   await loadAccount();
                   await loadSessions();
                 } catch (err) {
-                  addToast(operatorApiErrorMessage(err, "Failed to change password."), "error");
+                  if (hasApiErrorCode(err, "totp_required")) {
+                    // The field appears right in this same form (no dialog to lose the
+                    // message behind), but toast anyway for consistency with the reset-2FA
+                    // flow and because the field wasn't there a moment ago.
+                    setPasswordCodeRequired(true);
+                    addToast(operatorApiErrorMessage(err, "Failed to change password."), "info");
+                  } else if (hasApiErrorCode(err, "invalid_totp")) {
+                    setPasswordCodeError(operatorApiErrorMessage(err, "Failed to change password."));
+                  } else {
+                    addToast(operatorApiErrorMessage(err, "Failed to change password."), "error");
+                  }
                 } finally {
                   setPasswordSaving(false);
                 }
@@ -377,6 +395,28 @@ export function AccountPage() {
                   </p>
                 )}
               </div>
+              {passwordCodeRequired && (
+                <div className="mail-field-row">
+                  <label className="mail-field-label" htmlFor="account-password-code">Authenticator or backup code</label>
+                  <Input
+                    id="account-password-code"
+                    name="password-code"
+                    type="text"
+                    autoComplete="one-time-code"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    value={passwordCode}
+                    onChange={(e) => setPasswordCode(e.target.value)}
+                    aria-invalid={!!passwordCodeError || undefined}
+                    aria-describedby={passwordCodeError ? "account-password-code-error" : undefined}
+                  />
+                  {passwordCodeError && (
+                    <p id="account-password-code-error" className="text-error" role="alert">
+                      {passwordCodeError}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="mail-transport-footer">
                 <Button type="submit" variant="primary" disabled={passwordSaving || !passwordFormValid}>
                   Change password

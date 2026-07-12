@@ -206,11 +206,21 @@ const passwordSchema = z
     current_password: z.string(),
     new_password: z.string().min(12),
     new_password_confirm: z.string(),
+    code: z.string().optional(),
   })
   .strict();
 
-/** PATCH /api/account/password — re-auth required; revokes other sessions. */
-export async function handlePatchAccountPassword(c: Context, db: PrismaClient): Promise<Response> {
+/**
+ * PATCH /api/account/password — re-auth required; revokes other sessions.
+ * Requires a TOTP/recovery-code step-up (mirroring `handlePostMfaReset`) whenever the user's
+ * role requires MFA and TOTP is confirmed — password alone must not be enough to change the
+ * password (and lock the legitimate owner out) on an MFA-required account.
+ */
+export async function handlePatchAccountPassword(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
   const auth = c.get("auth");
   const userId = auth.userId;
   const currentSessionId = auth.sessionId;
@@ -242,10 +252,49 @@ export async function handlePatchAccountPassword(c: Context, db: PrismaClient): 
   const passwordOk = await verifyPasswordOrDummy(current_password, user.password_hash);
   if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
 
-  const password_hash = await hashPassword(new_password);
+  const code = parsed.data.code?.trim();
+
+  // Advisory pre-check: lets the common case fail fast (400) without opening a transaction.
+  // It is NOT the security gate — `requiresStepUp` is re-read from `tx` below, so this
+  // pre-check can only make a request fail earlier or the same way, never skip the
+  // authoritative check.
+  if (await userRequiresMfaStepUp(db, userId)) {
+    if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
+    if (!code) return c.json({ code: "totp_required" }, 400);
+  }
+
+  // Rate-limit any submitted step-up code before opening a transaction, regardless of the
+  // advisory check above, so the limiter's Redis round-trip never blocks a held Postgres
+  // connection (mirrors handlePostMfaReset's step-up gate).
+  if (code && currentSessionId) {
+    const ip = resolveMfaClientIp(c);
+    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, "account-password"))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
+
+  // Resolved before the transaction opens, not from inside it: a root-client query from
+  // inside an active `tx` callback needs a second pooled connection, which deadlocks on
+  // deployments running Prisma with a single DB connection.
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  const sessions_revoked = await runInTransaction(db, async (tx) => {
+
+  // The step-up requirement is re-read from `tx`, not the pre-check above, so a role change
+  // racing this request can't let a password-only call skip step-up entirely. The new
+  // password is only hashed once step-up has passed (or wasn't required), so a
+  // totp_required/invalid_totp/rate-limited request never pays for the hash.
+  const result = await runInTransaction(db, async (tx) => {
+    const requiresStepUp = await userRequiresMfaStepUp(tx, userId);
+
+    if (requiresStepUp) {
+      if (!currentSessionId) return { ok: false as const, reason: "unauthorized" as const };
+      if (!code) return { ok: false as const, reason: "totp_required" as const };
+      if (!(await verifyTotpOrRecoveryCode(tx, userId, code))) {
+        return { ok: false as const, reason: "invalid_totp" as const };
+      }
+    }
+
+    const password_hash = await hashPassword(new_password);
     await tx.user.update({
       where: { id: userId },
       data: { password_hash, must_change_password: false },
@@ -259,10 +308,20 @@ export async function handlePatchAccountPassword(c: Context, db: PrismaClient): 
       actionType: "account_password_changed",
       metadata: { sessionsRevoked: revokedCount },
     });
-    return revokedCount;
+    return { ok: true as const, revokedCount };
   });
 
-  return c.json({ sessions_revoked });
+  if (!result.ok) {
+    switch (result.reason) {
+      case "unauthorized":
+        return c.json({ error: "unauthorized" }, 401);
+      case "totp_required":
+        return c.json({ code: "totp_required" }, 400);
+      case "invalid_totp":
+        return c.json({ code: "invalid_totp" }, 401);
+    }
+  }
+  return c.json({ sessions_revoked: result.revokedCount });
 }
 
 /** GET /api/account/sessions — own active sessions only. */
