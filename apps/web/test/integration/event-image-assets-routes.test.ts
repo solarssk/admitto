@@ -409,7 +409,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
     // in the DB by the time the transaction's unmocked recheck runs and must catch it for real.
     const countSpy = vi
       .spyOn(prisma.eventImageAsset, "count")
-      .mockImplementationOnce(async () => {
+      .mockImplementationOnce((async () => {
         await prisma.eventImageAsset.create({
           data: {
             event_id: EVENT_IA_LIMIT,
@@ -421,7 +421,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
           },
         });
         return 19;
-      });
+      }) as never);
 
     try {
       const res = await app.request(`/api/admin/events/${EVENT_IA_LIMIT}/image-assets`, {
