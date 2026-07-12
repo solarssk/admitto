@@ -39,6 +39,15 @@ import { formatUtcDateTime } from "../utils/event-dates.js";
 type ActiveField = "subject" | "body";
 type TemplateFormat = "mjml" | "html";
 
+/** Placeholders that stay valid (already-saved templates using them keep rendering) but are no
+ * longer offered as an insertable chip: `header_image_url` has no organisation-level branding
+ * field to fall back to (org branding only manages a logo, see OrganisationBrandingPanel) and
+ * the per-event header image override was intentionally dropped in favour of the general-purpose
+ * image asset library — inserting it would always produce a permanently empty image with no way
+ * to fill it in. Filtered client-side, not removed from the server's ALLOWED_PLACEHOLDERS
+ * whitelist, so it's not a backward-compat break for any already-saved template. */
+const HIDDEN_PLACEHOLDERS = new Set(["header_image_url"]);
+
 /** Format an ISO timestamp for the delivery log table. */
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
@@ -537,7 +546,7 @@ export function CommunicationPage() {
         if (cancelled) return;
         legacyTemplateRef.current = data;
         setTemplates(items);
-        setAllowedPlaceholders(data.allowed_placeholders);
+        setAllowedPlaceholders(data.allowed_placeholders.filter((p) => !HIDDEN_PLACEHOLDERS.has(p)));
         setRequiredPlaceholders(data.required_url_placeholders);
         setImagePlaceholders(data.image_placeholders ?? []);
         const ticket = items.find((t) => t.name === "ticket");

@@ -173,7 +173,7 @@ describe("EventSettingsPage tabs", () => {
     ).toBeTruthy();
   });
 
-  it("switches to the Branding tab and shows event logo + header image + image library", async () => {
+  it("switches to the Branding tab and shows event logo + image library", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await waitFor(() => {
@@ -181,13 +181,12 @@ describe("EventSettingsPage tabs", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
     expect(await screen.findByText("Event branding")).toBeTruthy();
-    expect(screen.getByText("Event logo")).toBeTruthy();
-    expect(screen.getByText("Event header image")).toBeTruthy();
+    expect(screen.getByText("Drop logo here or click to browse")).toBeTruthy();
     expect(screen.getByText("Upload images")).toBeTruthy();
     expect(screen.getByText("Your images")).toBeTruthy();
     expect(await screen.findByText(/No image assets yet/)).toBeTruthy();
     expect(
-      screen.getByText(/leave either blank to use the organization's branding/),
+      screen.getByText(/leave it blank to use the organization's logo/),
     ).toBeTruthy();
   });
 
@@ -200,49 +199,13 @@ describe("EventSettingsPage tabs", () => {
     await screen.findByText("Event branding");
 
     const fileInputs = document.querySelectorAll('.logo-upload input[type="file"]');
-    expect(fileInputs).toHaveLength(2);
+    expect(fileInputs).toHaveLength(1);
     const file = new File(["x"], "logo.png", { type: "image/png" });
     fireEvent.change(fileInputs[0]!, { target: { files: [file] } });
 
     await waitFor(() => {
       expect(uploadEventBrandingFile).toHaveBeenCalledWith("evt-1", expect.any(FormData));
     });
-  });
-
-  it("keeps both uploads when a logo upload and a header-image upload race each other", async () => {
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    let resolveLogo!: (result: { url: string }) => void;
-    let resolveHeader!: (result: { url: string }) => void;
-    vi.mocked(uploadEventBrandingFile)
-      .mockReturnValueOnce(new Promise((resolve) => (resolveLogo = resolve)))
-      .mockReturnValueOnce(new Promise((resolve) => (resolveHeader = resolve)));
-    renderSettings();
-    await waitFor(() => screen.getByRole("tab", { name: "Branding" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    await screen.findByText("Event branding");
-
-    const [logoInput, headerInput] = document.querySelectorAll('.logo-upload input[type="file"]');
-    // Start both uploads before either resolves — both onChange closures capture the same
-    // pre-upload form snapshot, which is exactly what makes a non-functional setForm racy.
-    fireEvent.change(logoInput!, {
-      target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
-    });
-    fireEvent.change(headerInput!, {
-      target: { files: [new File(["y"], "header.png", { type: "image/png" })] },
-    });
-
-    resolveLogo({ url: "/uploads/default/logo.png" });
-    await waitFor(() => {
-      expect(screen.getByAltText("Event logo preview")).toBeTruthy();
-    });
-
-    resolveHeader({ url: "/uploads/default/header.png" });
-    await waitFor(() => {
-      expect(screen.getByAltText("Event header image preview")).toBeTruthy();
-    });
-
-    // The header upload completing later must not revert the logo that already landed.
-    expect(screen.getByAltText("Event logo preview")).toBeTruthy();
   });
 
   it("disables Save while a branding upload is in flight, even if another field is already dirty", async () => {
@@ -282,54 +245,13 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
-  // Regression coverage: the Save button's disabled/loading condition must account for
-  // `headerUploading`, not just `logoUploading` — otherwise Save stays clickable (and shows the
-  // stale "Save changes" label) while a header-image upload is still in flight.
-  it("disables Save while a header image upload is in flight, even if another field is already dirty", async () => {
+  it("saves the logo field after uploading, sending the patch payload", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    let resolveHeader!: (result: { url: string }) => void;
-    vi.mocked(uploadEventBrandingFile).mockReturnValueOnce(
-      new Promise((resolve) => (resolveHeader = resolve)),
-    );
-    renderSettings();
-    await waitFor(() => screen.getByLabelText("Event title"));
-
-    fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2027" } });
-    expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(
-      false,
-    );
-
-    fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
-    await screen.findByText("Event branding");
-    const [, headerInput] = document.querySelectorAll('.logo-upload input[type="file"]');
-    fireEvent.change(headerInput!, {
-      target: { files: [new File(["y"], "header.png", { type: "image/png" })] },
-    });
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Uploading…" }).hasAttribute("disabled")).toBe(
-        true,
-      );
-    });
-
-    resolveHeader({ url: "/uploads/default/header.png" });
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(
-        false,
-      );
-    });
-  });
-
-  it("saves both branding fields after uploading, sending the full patch payload", async () => {
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    vi.mocked(uploadEventBrandingFile)
-      .mockResolvedValueOnce({ url: "/uploads/default/logo.png" })
-      .mockResolvedValueOnce({ url: "/uploads/default/header.png" });
+    vi.mocked(uploadEventBrandingFile).mockResolvedValueOnce({ url: "/uploads/default/logo.png" });
     vi.mocked(patchEvent).mockResolvedValueOnce({
       event: {
         ...activeEvent,
         logo_url: "/uploads/default/logo.png",
-        header_image_url: "/uploads/default/header.png",
       },
     });
     renderSettings();
@@ -337,15 +259,11 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Branding" }));
     await screen.findByText("Event branding");
 
-    const [logoInput, headerInput] = document.querySelectorAll('.logo-upload input[type="file"]');
+    const [logoInput] = document.querySelectorAll('.logo-upload input[type="file"]');
     fireEvent.change(logoInput!, {
       target: { files: [new File(["x"], "logo.png", { type: "image/png" })] },
     });
     await waitFor(() => screen.getByAltText("Event logo preview"));
-    fireEvent.change(headerInput!, {
-      target: { files: [new File(["y"], "header.png", { type: "image/png" })] },
-    });
-    await waitFor(() => screen.getByAltText("Event header image preview"));
 
     // The alt-text preview and the Save button's label flip in separate React commits
     // (the button label only updates once LogoUploadZone's onUploadingChange effect fires
@@ -356,7 +274,6 @@ describe("EventSettingsPage tabs", () => {
     await waitFor(() => {
       expect(patchEvent).toHaveBeenCalledWith("evt-1", {
         logo_url: "/uploads/default/logo.png",
-        header_image_url: "/uploads/default/header.png",
       });
     });
   });
@@ -369,7 +286,7 @@ describe("EventSettingsPage tabs", () => {
     await screen.findByText("Event branding");
 
     const fileInputs = document.querySelectorAll('.logo-upload input[type="file"]');
-    expect(fileInputs).toHaveLength(2);
+    expect(fileInputs).toHaveLength(1);
     for (const input of fileInputs) {
       expect((input as HTMLInputElement).disabled).toBe(true);
     }

@@ -312,3 +312,24 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
     );
   });
 });
+
+// Regression: header_image_url has no organisation-level branding field to fall back to (org
+// branding only manages a logo) and the per-event override was intentionally dropped in favour
+// of the general-purpose image asset library, so it's unreachable through any UI — offering it as
+// an insertable chip would always produce a permanently empty image with no way to fill it in.
+describe("CommunicationPage placeholder chip list", () => {
+  it("never offers header_image_url as an insertable chip even when the server includes it in allowed_placeholders", async () => {
+    fetchEventTemplate.mockResolvedValue({
+      ...legacyTemplate,
+      allowed_placeholders: ["first_name", "logo_url", "header_image_url"],
+      image_placeholders: ["logo_url", "header_image_url"],
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("MJML body")).toBeTruthy();
+    });
+
+    expect(screen.getByRole("button", { name: "{{logo_url}}" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "{{header_image_url}}" })).toBeNull();
+  });
+});
