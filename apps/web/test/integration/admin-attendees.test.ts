@@ -1160,6 +1160,62 @@ describe("POST /api/admin/events/:eventId/attendees/:id/revoke-checkin", () => {
     );
     expect(res.status).toBe(403);
   });
+
+  // Revoke-checkin always cascades into resetItems:true (revokeCheckInTx), which now enforces
+  // the same "pass must be admittable" guard as the single-item revoke path (packages/tickets
+  // item-states.ts isAdmittable check, closed as part of the bulk-revoke danger-zone review).
+  // Regression: that guard throws IllegalItemTransitionError, which this handler must map to a
+  // 409 like its handleRevokeAttendeeItem sibling does, not let fall through to a raw 500.
+  it("returns 409 (not 500) when revoking check-in for an admitted attendee whose pass is blocked", async () => {
+    const attId = "att-admin-revoke-checkin-blocked-pass";
+    await prisma.attendee.upsert({
+      where: { id: attId },
+      create: {
+        id: attId,
+        event_id: EVENT_A,
+        email: "revoke-checkin-blocked@example.com",
+        name: "Blocked Pass Revoke",
+        token_hash: hashToken(generateToken()),
+        status: "cancelled",
+        admitted_at: new Date("2026-10-01T10:00:00Z"),
+      },
+      update: { status: "cancelled", admitted_at: new Date("2026-10-01T10:00:00Z") },
+    });
+    await getAttendeeCard(EVENT_A, attId, prisma);
+    const giftbag = await prisma.eventItem.findFirstOrThrow({
+      where: { event_id: EVENT_A, key: "giftbag" },
+    });
+    await prisma.attendeeItemState.update({
+      where: { attendee_id_event_item_id: { attendee_id: attId, event_item_id: giftbag.id } },
+      data: { state: "issued" },
+    });
+
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/attendees/${attId}/revoke-checkin`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        },
+      );
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("Attendee's pass is not active");
+
+      // Neither the admission nor the issued item should have been touched by the failed attempt.
+      const after = await prisma.attendee.findUniqueOrThrow({ where: { id: attId } });
+      expect(after.admitted_at).not.toBeNull();
+      const item = await prisma.attendeeItemState.findFirst({
+        where: { attendee_id: attId, event_item: { key: "giftbag" } },
+      });
+      expect(item?.state).toBe("issued");
+    } finally {
+      await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: attId } });
+      await prisma.attendeeItemState.deleteMany({ where: { attendee_id: attId } });
+      await prisma.checkIn.deleteMany({ where: { attendee_id: attId } });
+      await prisma.attendee.delete({ where: { id: attId } });
+    }
+  });
 });
 
 describe("POST /api/admin/events/:eventId/attendees/:id/items/:itemKey/revoke", () => {

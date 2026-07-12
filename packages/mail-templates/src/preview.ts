@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { resolvePublicBaseUrl } from "./baseUrl.js";
-import { resolveBrandingFromEvent } from "./branding.js";
+import { resolveBrandingFromEvent, resolveEventImageAssetVars } from "./branding.js";
 import { validateHttpUrl } from "./escape.js";
 import { formatEventDate, resolvePreviewEventTimeZone } from "./formatEventDate.js";
 import { resolveTemplateForEvent } from "./mailTemplate.js";
@@ -56,6 +56,7 @@ export async function previewTemplate(
   });
   const resolved = await resolveTemplateForEvent(event, prisma);
   const branding = resolveBrandingFromEvent(event);
+  const customAssets = await resolveEventImageAssetVars(eventId, prisma);
 
   const vars: TemplateVars = {
     ...DEFAULT_SAMPLE_VARS,
@@ -67,6 +68,7 @@ export async function previewTemplate(
     event_location: event.location ?? "",
     logo_url: branding.logo_url,
     header_image_url: branding.header_image_url,
+    ...customAssets.vars,
     ...sampleVars,
   };
 
@@ -76,6 +78,6 @@ export async function previewTemplate(
       compiledHtml: resolved.compiledHtmlTemplate,
     },
     vars,
-    { baseUrl: resolvePreviewBaseUrl(options) },
+    { baseUrl: resolvePreviewBaseUrl(options), customAssetPlaceholders: customAssets.names },
   );
 }

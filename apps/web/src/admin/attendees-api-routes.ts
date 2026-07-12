@@ -1430,8 +1430,10 @@ export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient):
       // handleCheckinUndo's err.message passthrough for the same error type.
       return c.json({ error: err.message }, 409);
     }
-    console.error("handleRevokeAttendeeCheckIn failed:", err);
-    return c.json({ error: "server error" }, 500);
+    // revokeCheckIn cascades into the same item-reset path as handleRevokeAttendeeItem
+    // (resetItems: true), which can throw IllegalItemTransitionError for a blocked pass —
+    // reuse the same 409 mapping instead of falling through to a raw 500.
+    return itemTransitionErrorResponse(c, err, "handleRevokeAttendeeCheckIn");
   }
 }
 

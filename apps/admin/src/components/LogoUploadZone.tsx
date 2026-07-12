@@ -13,6 +13,10 @@ export interface LogoUploadZoneProps {
   readonly onDirty?: () => void;
   /** Field label above the drop zone. Defaults to "Organisation logo" for the existing usage. */
   readonly label?: string;
+  /** Hides the visible label heading while still using `label` for alt text and the "Remove"
+   * button's accessible name. Use when a parent already establishes context (e.g. a card title
+   * and description right above), so the heading isn't a redundant repeat of "logo". */
+  readonly hideLabel?: boolean;
   /** Format/size hint line under the drop zone. Defaults to the square-logo recommendation. */
   readonly hint?: string;
   /** Custom upload function (e.g. event-scoped upload). Defaults to the org-level upload endpoint. */
@@ -75,6 +79,7 @@ export function LogoUploadZone({
   onChange,
   onDirty,
   label = "Organisation logo",
+  hideLabel = false,
   hint = "PNG, JPG, WebP · max 2 MB · recommended 160×48 px",
   uploadFn = uploadFile,
   disabled = false,
@@ -147,9 +152,9 @@ export function LogoUploadZone({
 
   return (
     <div className="logo-upload">
-      <span className="at-label">{label}</span>
+      {!hideLabel && <span className="at-label">{label}</span>}
       <p className="logo-upload__intro">
-        Upload a file to this server, or use an image hosted elsewhere (HTTPS).
+        Upload an image file below, or use a link to an image that&apos;s already online.
       </p>
       <div
         className={[
@@ -250,13 +255,13 @@ export function LogoUploadZone({
           icon={<i className={showUrlInput ? "ti ti-chevron-up" : "ti ti-link"} aria-hidden="true" />}
           onClick={() => setShowUrlInput((v) => !v)}
         >
-          {showUrlInput ? "Hide external URL" : "Use external HTTPS URL"}
+          {showUrlInput ? "Hide web link" : "Use a web link instead"}
         </Button>
       </div>
       {showUrlInput && (
         <div className="at-field">
           <label className="at-label" htmlFor={urlInputId}>
-            External logo URL (HTTPS)
+            Web link to your logo (must start with https://)
           </label>
           <input
             id={urlInputId}

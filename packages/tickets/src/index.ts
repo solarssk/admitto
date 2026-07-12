@@ -5,6 +5,7 @@ export { generateQrPng, buildQrPayload } from "./qr.js";
 export { resolveTicket } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
 export { checkInScan, getRecentCheckIns, isAdmittable } from "./checkin.js";
+export { ADMITTABLE_STATUS_LIST } from "./admittable.js";
 export { admitAttendee, shouldRequireConfirmOnScan } from "./admit.js";
 export { lookupAttendees, getAttendeeCard, getCheckInStats } from "./attendee-card.js";
 export {
@@ -12,7 +13,9 @@ export {
   transitionItemState,
   revokeItemState,
   IllegalItemTransitionError,
+  REVOCABLE_ITEM_STATES,
 } from "./item-states.js";
+export { revokeAllCheckInsForEvent, revokeAllItemsForEvent } from "./bulk-revoke.js";
 export { addAttendeeNote, NoteTooLongError, OperatorRequiredError, MAX_ATTENDEE_NOTE_LENGTH } from "./notes.js";
 export {
   undoLastCheckIn,

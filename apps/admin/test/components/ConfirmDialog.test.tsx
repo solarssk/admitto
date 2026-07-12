@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConfirmDialog } from "../../src/components/ConfirmDialog.js";
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 describe("ConfirmDialog", () => {
@@ -199,5 +200,130 @@ describe("ConfirmDialog", () => {
       />,
     );
     expect(screen.getByRole("alert").textContent).toBe("Delete failed: event still has attendees");
+  });
+
+  describe("confirmDelaySeconds (arming countdown)", () => {
+    it("without confirmDelaySeconds, the confirm button is immediately enabled and no bar renders", () => {
+      const { container } = render(
+        <ConfirmDialog
+          open
+          title="Revoke all check-ins?"
+          message="..."
+          confirmLabel="Revoke all check-ins"
+          onConfirm={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+      expect(
+        (screen.getByRole("button", { name: "Revoke all check-ins" }) as HTMLButtonElement).disabled,
+      ).toBe(false);
+      expect(container.querySelector(".confirm-dialog__arm-track")).toBeNull();
+    });
+
+    it("disables confirm and shows the depleting bar until the delay elapses, then enables it", () => {
+      vi.useFakeTimers();
+      const onConfirm = vi.fn();
+      const { container } = render(
+        <ConfirmDialog
+          open
+          title="Revoke all check-ins?"
+          message="..."
+          confirmLabel="Revoke all check-ins"
+          confirmVariant="danger"
+          confirmDelaySeconds={10}
+          onConfirm={onConfirm}
+          onCancel={vi.fn()}
+        />,
+      );
+      const confirmButton = screen.getByRole("button", {
+        name: "Revoke all check-ins",
+      }) as HTMLButtonElement;
+      expect(confirmButton.disabled).toBe(true);
+      expect(container.querySelector(".confirm-dialog__arm-track")).toBeTruthy();
+
+      // A native disabled button ignores clicks — confirms the guard actually blocks the action,
+      // not just that the attribute is set.
+      fireEvent.click(confirmButton);
+      expect(onConfirm).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(9999);
+      });
+      expect(confirmButton.disabled).toBe(true);
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(confirmButton.disabled).toBe(false);
+      expect(container.querySelector(".confirm-dialog__arm-track")).toBeNull();
+
+      fireEvent.click(confirmButton);
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+    });
+
+    // Regression: the component stays mounted while closed (`open=false` returns null), so
+    // `armed` must be reset before paint on reopen — otherwise the confirm button is briefly
+    // enabled and a queued double-click/Enter could bypass the safety pause.
+    it("re-arms the countdown every time the dialog reopens", () => {
+      vi.useFakeTimers();
+      const { rerender } = render(
+        <ConfirmDialog
+          open
+          title="Revoke all check-ins?"
+          message="..."
+          confirmLabel="Revoke all check-ins"
+          confirmDelaySeconds={10}
+          onConfirm={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(
+        (screen.getByRole("button", { name: "Revoke all check-ins" }) as HTMLButtonElement).disabled,
+      ).toBe(false);
+
+      rerender(
+        <ConfirmDialog
+          open={false}
+          title="Revoke all check-ins?"
+          message="..."
+          confirmLabel="Revoke all check-ins"
+          confirmDelaySeconds={10}
+          onConfirm={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+      rerender(
+        <ConfirmDialog
+          open
+          title="Revoke all check-ins?"
+          message="..."
+          confirmLabel="Revoke all check-ins"
+          confirmDelaySeconds={10}
+          onConfirm={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+      expect(
+        (screen.getByRole("button", { name: "Revoke all check-ins" }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+
+      // ...and it only re-enables after the full delay elapses again.
+      act(() => {
+        vi.advanceTimersByTime(9999);
+      });
+      expect(
+        (screen.getByRole("button", { name: "Revoke all check-ins" }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(
+        (screen.getByRole("button", { name: "Revoke all check-ins" }) as HTMLButtonElement).disabled,
+      ).toBe(false);
+    });
   });
 });

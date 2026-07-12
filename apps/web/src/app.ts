@@ -96,6 +96,7 @@ import {
   withEventArchiveGuard,
 } from "./admin/event-archiving.js";
 import { handleDeleteEvent } from "./admin/event-deletion.js";
+import { handleRevokeAllCheckIns, handleRevokeAllItems } from "./admin/event-revoke-routes.js";
 import {
   handleGetEventSettings,
   handlePatchEvent,
@@ -135,6 +136,11 @@ import {
   handleDeleteResource,
 } from "./admin/event-context-routes.js";
 import { handlePostEventBrandingUpload, handlePostUpload } from "./admin/uploads-api-routes.js";
+import {
+  handleListEventImageAssets,
+  handleCreateEventImageAsset,
+  handleDeleteEventImageAsset,
+} from "./admin/event-image-assets-routes.js";
 import { resolveUploadDir } from "./admin/branding-upload.js";
 import {
   handleGetEventTemplate,
@@ -507,6 +513,22 @@ export function createApp(options: CreateAppOptions = {}) {
     uploadBodyLimit,
     guardArchivedEvent((c) => handlePostEventBrandingUpload(c, db)),
   );
+  app.get("/api/admin/events/:eventId/image-assets", staffAdminGate, (c) =>
+    handleListEventImageAssets(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/image-assets",
+    jsonPostCsrf,
+    staffAdminGate,
+    uploadBodyLimit,
+    guardArchivedEvent((c) => handleCreateEventImageAsset(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/image-assets/:assetId",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDeleteEventImageAsset(c, db)),
+  );
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),
   );
@@ -718,6 +740,18 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     (c) => handleRevokeAllOperatorSessions(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/revoke-all-checkins",
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handleRevokeAllCheckIns(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/revoke-all-items",
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handleRevokeAllItems(c, db),
   );
   app.get("/api/admin/organizations", staffAdminGate, (c) => handleGetOrganizations(c, db));
   app.get("/api/admin/users", staffAdminGate, (c) => handleGetUsers(c, db));
