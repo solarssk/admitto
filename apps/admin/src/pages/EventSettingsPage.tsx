@@ -61,6 +61,12 @@ const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, branding, and acce
 // own stronger typed-confirmation gate.
 const BULK_REVOKE_CONFIRM_DELAY_SECONDS = 10;
 
+// Danger Zone actions reload this page's data on success (to refresh their own live counts),
+// which silently discards any unsaved edits elsewhere on the page (e.g. a title/date change on
+// the General tab not yet saved) - warn inline in the confirm dialog rather than let it vanish
+// with no trace (bot review).
+const UNSAVED_CHANGES_WARNING = " You also have unsaved changes elsewhere on this page — they'll be lost when this finishes.";
+
 function toForm(data: EventSettingsDto): SettingsForm {
   return {
     title: data.title,
@@ -600,15 +606,23 @@ export function EventSettingsPage() {
                 spreadsheet). Saved in the history log.
               </p>
             </div>
-            <Button
-              variant="secondary"
+            <ArchivedGuard
+              event={null}
+              reasonId="export-pii-reason"
               disabled={!isSa || exporting}
-              title={isSa ? undefined : "Superadmin only"}
-              icon={<i className="ti ti-file-text" aria-hidden="true" />}
-              onClick={() => void handleExportPii()}
+              tooltip={isSa ? undefined : "Superadmin only"}
             >
-              {exporting ? "Exporting…" : "Export personal data"}
-            </Button>
+              {(guard) => (
+                <Button
+                  variant="secondary"
+                  icon={<i className="ti ti-file-text" aria-hidden="true" />}
+                  {...guard}
+                  onClick={() => void handleExportPii()}
+                >
+                  {exporting ? "Exporting…" : "Export personal data"}
+                </Button>
+              )}
+            </ArchivedGuard>
           </div>
 
           <div className="danger-zone__item">
@@ -687,9 +701,17 @@ export function EventSettingsPage() {
                 release.
               </p>
             </div>
-            <Button variant="secondary" disabled title="Not built yet" icon={<i className="ti ti-wallet-off" aria-hidden="true" />}>
-              Revoke all Wallet passes
-            </Button>
+            <ArchivedGuard event={null} reasonId="wallet-revoke-reason" disabled tooltip="Not built yet">
+              {(guard) => (
+                <Button
+                  variant="secondary"
+                  icon={<i className="ti ti-wallet-off" aria-hidden="true" />}
+                  {...guard}
+                >
+                  Revoke all Wallet passes
+                </Button>
+              )}
+            </ArchivedGuard>
           </div>
 
           <div className="danger-zone__item">
@@ -727,14 +749,17 @@ export function EventSettingsPage() {
                 </Button>
               )
             ) : (
-              <Button
-                variant="danger"
-                disabled
-                title="Superadmin only"
-                icon={<i className="ti ti-archive" aria-hidden="true" />}
-              >
-                Archive event
-              </Button>
+              <ArchivedGuard event={null} reasonId="archive-event-reason" disabled tooltip="Superadmin only">
+                {(guard) => (
+                  <Button
+                    variant="danger"
+                    icon={<i className="ti ti-archive" aria-hidden="true" />}
+                    {...guard}
+                  >
+                    Archive event
+                  </Button>
+                )}
+              </ArchivedGuard>
             )}
           </div>
 
@@ -747,24 +772,32 @@ export function EventSettingsPage() {
                   : "Only events with no attendees, custom items, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted."}
               </p>
             </div>
-            <Button
-              variant="danger"
+            <ArchivedGuard
+              event={null}
+              reasonId="delete-event-reason"
               disabled={!isSa || !event.is_deletable || deleting}
-              title={
+              tooltip={
                 !isSa
                   ? "Superadmin only"
                   : event.is_deletable
                     ? undefined
                     : "This event has data and cannot be deleted"
               }
-              icon={<i className="ti ti-trash" aria-hidden="true" />}
-              onClick={() => {
-                setDeleteError(null);
-                setDeleteOpen(true);
-              }}
             >
-              Delete event
-            </Button>
+              {(guard) => (
+                <Button
+                  variant="danger"
+                  icon={<i className="ti ti-trash" aria-hidden="true" />}
+                  {...guard}
+                  onClick={() => {
+                    setDeleteError(null);
+                    setDeleteOpen(true);
+                  }}
+                >
+                  Delete event
+                </Button>
+              )}
+            </ArchivedGuard>
           </div>
         </div>
 
@@ -778,7 +811,10 @@ export function EventSettingsPage() {
       <ConfirmDialog
         open={revokeCheckinsOpen}
         title="Revoke all check-ins?"
-        message={`This will revoke check-in for ${event.admitted_count} attendee${event.admitted_count === 1 ? "" : "s"}. They can check in again afterwards.`}
+        message={
+          `This will revoke check-in for ${event.admitted_count} attendee${event.admitted_count === 1 ? "" : "s"}. They can check in again afterwards.` +
+          (dirty ? UNSAVED_CHANGES_WARNING : "")
+        }
         confirmLabel="Revoke all check-ins"
         confirmVariant="danger"
         confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
@@ -789,7 +825,10 @@ export function EventSettingsPage() {
       <ConfirmDialog
         open={revokeItemsOpen}
         title="Revoke all items issued?"
-        message={`This will reset ${event.issued_items_count} issued item${event.issued_items_count === 1 ? "" : "s"} back to pending. They can be handed out again afterwards.`}
+        message={
+          `This will reset ${event.issued_items_count} issued item${event.issued_items_count === 1 ? "" : "s"} back to pending. They can be handed out again afterwards.` +
+          (dirty ? UNSAVED_CHANGES_WARNING : "")
+        }
         confirmLabel="Revoke all items issued"
         confirmVariant="danger"
         confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
@@ -801,9 +840,10 @@ export function EventSettingsPage() {
         open={archiveOpen}
         title={archiveMode === "archive" ? "Archive this event?" : "Unarchive this event?"}
         message={
-          archiveMode === "archive"
+          (archiveMode === "archive"
             ? "This event will become fully read-only, including check-in. Attendee data is kept. Only a superadmin can undo this."
-            : "This event will become active again and editable in admin."
+            : "This event will become active again and editable in admin.") +
+          (dirty ? UNSAVED_CHANGES_WARNING : "")
         }
         confirmLabel={archiveMode === "archive" ? "Archive event" : "Unarchive event"}
         confirmVariant={archiveMode === "archive" ? "danger" : "primary"}

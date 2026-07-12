@@ -432,7 +432,10 @@ describe("EventSettingsPage — delete event (#395)", () => {
     });
     const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(button.title).toBe("This event has data and cannot be deleted");
+    const describedBy = button.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe(
+      "This event has data and cannot be deleted",
+    );
     expect(
       screen.getByText(
         /Only events with no attendees, custom items, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
@@ -471,7 +474,10 @@ describe("EventSettingsPage — delete event (#395)", () => {
     });
     const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(button.title).toBe("This event has data and cannot be deleted");
+    const describedBy = button.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe(
+      "This event has data and cannot be deleted",
+    );
     expect(
       screen.getByText(
         /Only events with no attendees, custom items, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
@@ -511,7 +517,8 @@ describe("EventSettingsPage — delete event (#395)", () => {
     });
     const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(button.title).toBe("Superadmin only");
+    const describedBy = button.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe("Superadmin only");
   });
 
   it("gates the confirm button on typing the exact event title, then deletes and navigates to /admin", async () => {
@@ -662,6 +669,34 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
         "Reverses check-in for all 1 currently checked-in attendee. They can check in again afterwards.",
       ),
     ).toBeTruthy();
+  });
+
+  // Regression: bulk revoke actions reload this page's data on success (to refresh their own
+  // live counts), which silently discards unsaved edits elsewhere on the page - warn about that
+  // inline in the confirm dialog rather than let it vanish with no trace (bot review; PO: leave
+  // the underlying discard-on-reload behavior as-is, consistent with Archive/Unarchive, but add
+  // the warning so it's not silent).
+  it("warns in the Revoke all check-ins dialog when the page has unsaved changes elsewhere", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 1 });
+    renderSettings();
+    await waitFor(() => screen.getByLabelText("Event title"));
+    fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2027" } });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Revoke all check-ins" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/You also have unsaved changes elsewhere on this page/),
+    ).toBeTruthy();
+  });
+
+  it("does not warn in the Revoke all check-ins dialog when the page has no unsaved changes", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 1 });
+    renderSettings();
+    await openDangerZone();
+    fireEvent.click(await screen.findByRole("button", { name: "Revoke all check-ins" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText(/unsaved changes/)).toBeNull();
   });
 
   it("disables Revoke all check-ins for a non-superadmin org admin despite admitted attendees", async () => {
@@ -834,7 +869,8 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
       name: "Revoke all Wallet passes",
     })) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    expect(button.title).toBe("Not built yet");
+    const describedBy = button.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe("Not built yet");
     fireEvent.click(button);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
