@@ -1,0 +1,57 @@
+/* ScrollFadeTabs — horizontal tab scroll with soft edge fades instead of a
+   visible native scrollbar. See ScrollFadeTabs.tsx for the "why". */
+
+.scroll-fade-tabs {
+  position: relative;
+  margin-bottom: var(--space-4);
+}
+
+.scroll-fade-tabs__scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scroll-fade-tabs__scroll::-webkit-scrollbar {
+  display: none;
+  height: 0;
+}
+
+.scroll-fade-tabs__scroll .at-tabs {
+  flex-wrap: nowrap;
+}
+
+.scroll-fade-tabs__scroll .at-tab {
+  flex-shrink: 0;
+}
+
+.scroll-fade-tabs::before,
+.scroll-fade-tabs::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 28px;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+.scroll-fade-tabs::before {
+  left: 0;
+  background: linear-gradient(to left, transparent, var(--surface-page));
+}
+
+.scroll-fade-tabs::after {
+  right: 0;
+  background: linear-gradient(to right, transparent, var(--surface-page));
+}
+
+.scroll-fade-tabs--at-start::before {
+  opacity: 0;
+}
+
+.scroll-fade-tabs--at-end::after {
+  opacity: 0;
+}
