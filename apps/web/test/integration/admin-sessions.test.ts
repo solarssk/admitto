@@ -271,11 +271,15 @@ describe("POST /api/admin/sessions/:id/revoke", () => {
     expect(body.code).toBe("cannot_revoke_own_session");
   });
 
-  it("is idempotent — already revoked returns 200", async () => {
+  it("is idempotent — already revoked returns 200 and writes no extra audit row", async () => {
     const target = await createSession(prisma, { userId: operatorId, stage: SESSION_STAGE.FULL });
     await prisma.session.update({
       where: { id: target.session.id },
       data: { revoked_at: new Date() },
+    });
+
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_SESSIONS, action_type: "session_revoked" },
     });
 
     const res = await app.request(`/api/admin/sessions/${target.session.id}/revoke`, {
@@ -283,6 +287,11 @@ describe("POST /api/admin/sessions/:id/revoke", () => {
       headers: { Cookie: superCookie, ...sameOrigin },
     });
     expect(res.status).toBe(200);
+
+    const auditCountAfter = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_SESSIONS, action_type: "session_revoked" },
+    });
+    expect(auditCountAfter).toBe(auditCountBefore);
   });
 
   it("rejects missing CSRF header", async () => {

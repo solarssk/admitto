@@ -4,6 +4,7 @@ import {
   canManageInstance,
   revokeSession,
   revokeAllOperatorSessionsForEvent,
+  runInTransaction,
 } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { adminAuditFromContext, assertEventManageAccess } from "./admin-helpers.js";
@@ -83,17 +84,22 @@ export async function handleRevokeSession(c: Context, db: PrismaClient): Promise
   const row = await db.session.findUnique({ where: { id }, select: { user_id: true } });
   if (!row) return c.json({}, 200);
 
-  await revokeSession(db, id);
-
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId: audit.operator ?? c.get("auth").userId,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    actionType: "session_revoked",
-    metadata: { session_id: id, target_user_id: row.user_id },
+  await runInTransaction(db, async (tx) => {
+    // Re-check inside the transaction: two concurrent revoke calls (or a retry after the
+    // first already succeeded) can both reach here before either commits. Only the one that
+    // actually revoked the session gets audited.
+    const revoked = await revokeSession(tx, id);
+    if (!revoked) return;
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? c.get("auth").userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "session_revoked",
+      metadata: { session_id: id, target_user_id: row.user_id },
+    });
   });
 
   return c.json({}, 200);
