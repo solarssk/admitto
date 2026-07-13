@@ -311,17 +311,11 @@ export interface BulkResendResponse {
   failed: number;
 }
 
-/** Admin SPA DTOs for event item configuration (mirror of web API). */
-export interface EventItemContentDto {
-  label: string;
-  source_field: string;
-  type?: "text" | "select" | "boolean";
-  required?: boolean;
-  options?: string[];
-}
-
+/** Admin SPA DTOs for event item configuration (mirror of web API).
+ * `content_fields` references EventCustomField rows by source_field (see below) - it does not
+ * embed field definitions. */
 export interface EventItemConfigDto {
-  contents?: EventItemContentDto[];
+  content_fields?: string[];
   requires_return?: boolean;
   issue_on_checkin?: boolean;
 }
@@ -354,6 +348,42 @@ export interface EventImageAssetDto {
 
 export interface EventImageAssetsListResponse {
   items: EventImageAssetDto[];
+}
+
+export type EventCustomFieldType = "text" | "select" | "boolean";
+
+/** A definition in the event's custom attendee data field registry (dietary, shirt size, ...) -
+ * the single source of truth for a field; EventItem.config.content_fields only references these
+ * by source_field. */
+export interface EventCustomFieldDto {
+  id: string;
+  source_field: string;
+  label: string;
+  type: EventCustomFieldType;
+  required: boolean;
+  options: string[] | null;
+  created_at: string;
+}
+
+export interface EventCustomFieldsListResponse {
+  items: EventCustomFieldDto[];
+}
+
+export interface CreateEventCustomFieldBody {
+  source_field: string;
+  label: string;
+  type?: EventCustomFieldType;
+  required?: boolean;
+  options?: string[];
+}
+
+/** `source_field` is immutable after create - see EventCustomFieldDto. */
+export interface UpdateEventCustomFieldPatch {
+  label?: string;
+  type?: EventCustomFieldType;
+  required?: boolean;
+  /** null clears a previous select's options; omit to leave options untouched. */
+  options?: string[] | null;
 }
 
 export interface CreateEventItemBody {

@@ -141,6 +141,12 @@ import {
   handleCreateEventImageAsset,
   handleDeleteEventImageAsset,
 } from "./admin/event-image-assets-routes.js";
+import {
+  handleListEventCustomFields,
+  handleCreateEventCustomField,
+  handlePatchEventCustomField,
+  handleDeleteEventCustomField,
+} from "./admin/event-custom-fields-routes.js";
 import { resolveUploadDir } from "./admin/branding-upload.js";
 import {
   handleGetEventTemplate,
@@ -528,6 +534,27 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleDeleteEventImageAsset(c, db)),
+  );
+  app.get("/api/admin/events/:eventId/custom-fields", staffAdminGate, (c) =>
+    handleListEventCustomFields(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/custom-fields",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleCreateEventCustomField(c, db)),
+  );
+  app.patch(
+    "/api/admin/events/:eventId/custom-fields/:fieldId",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handlePatchEventCustomField(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/custom-fields/:fieldId",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDeleteEventCustomField(c, db)),
   );
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),

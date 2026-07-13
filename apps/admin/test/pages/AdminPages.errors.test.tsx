@@ -48,6 +48,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchRoleAssignments: vi.fn(),
     revokeUserSessions: vi.fn(),
     fetchEventItems: vi.fn(),
+    fetchEventCustomFields: vi.fn(),
     fetchOpsConfig: vi.fn(),
     createEventItem: vi.fn(),
     updateEventItem: vi.fn(),
@@ -71,6 +72,7 @@ import {
   exportEventReportsCsv,
   fetchAdminEvents,
   fetchAdminUsers,
+  fetchEventCustomFields,
   fetchEventItems,
   fetchEventReports,
   fetchEventSettings,
@@ -276,6 +278,7 @@ describe("RequirementsPage operator errors", () => {
 
   beforeEach(() => {
     vi.mocked(fetchEventItems).mockResolvedValue([sampleItem]);
+    vi.mocked(fetchEventCustomFields).mockResolvedValue([]);
     vi.mocked(fetchOpsConfig).mockResolvedValue(opsConfig);
   });
 

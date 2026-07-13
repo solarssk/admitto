@@ -46,13 +46,16 @@ beforeAll(async () => {
       ops_config: { badge_at_entry: true, require_confirm_on_scan: false },
     },
   });
+  await prisma.eventCustomField.create({
+    data: { event_id: EVENT_ID, source_field: "shirt_size", label: "Shirt size" },
+  });
   await prisma.eventItem.createMany({
     data: [
       {
         event_id: EVENT_ID,
         key: "giftbag",
         label: "Gift bag",
-        config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }], requires_return: false },
+        config: { content_fields: ["shirt_size"], requires_return: false },
       },
       { event_id: EVENT_ID, key: "badge", label: "Badge", config: { issue_on_checkin: true } },
       { event_id: EVENT_ID, key: "headset", label: "Headset", config: { requires_return: true } },
@@ -162,8 +165,8 @@ describe("lookupAttendees — name/email only, never company/department", () => 
   });
 });
 
-describe("getAttendeeCard — item detail from contents", () => {
-  it("shows shirt size on giftbag via contents config", async () => {
+describe("getAttendeeCard — item detail from content_fields", () => {
+  it("shows shirt size on giftbag via content_fields registry lookup", async () => {
     const card = await getAttendeeCard(EVENT_ID, attendeeId, prisma);
     expect(card).not.toBeNull();
     const giftbag = card!.items.find((i) => i.key === "giftbag");
@@ -178,7 +181,7 @@ describe("getAttendeeCard — item detail from contents", () => {
         key: "socks",
         label: "Socks",
         enabled: false,
-        config: { contents: [{ label: "Socks size", source_field: "sock_size" }] },
+        config: { content_fields: ["sock_size"] },
       },
     });
     const card = await getAttendeeCard(EVENT_ID, attendeeId, prisma);

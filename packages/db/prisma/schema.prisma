@@ -51,6 +51,7 @@ model Event {
   contacts         EventContact[]
   resources        EventResource[]
   image_assets     EventImageAsset[]
+  custom_fields    EventCustomField[]
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
@@ -105,6 +106,27 @@ model EventImageAsset {
   created_at DateTime @default(now())
 
   @@unique([event_id, token])
+  @@index([event_id])
+}
+
+// Registry of arbitrary attendee attributes an event wants to collect (dietary, shirt size,
+// parking, ...) - the single source of truth for a field's definition. Replaces the old model
+// where a field only existed as a `contents` row embedded in some EventItem.config (ADR 0025);
+// an EventItem now only holds `content_fields: string[]` referencing rows here, used purely to
+// say "show this field as an operator hint on this item" (packages/tickets/event-item-contents.ts).
+model EventCustomField {
+  id           String   @id @default(cuid())
+  event_id     String
+  event        Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  source_field String
+  label        String
+  type         String   @default("text")
+  options      Json?
+  required     Boolean  @default(false)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@unique([event_id, source_field])
   @@index([event_id])
 }
 

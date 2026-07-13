@@ -6,17 +6,19 @@ import {
   ensureBadgeEventItem,
   isBadgeItemUsable,
   parseEventOpsConfig,
-  resolveEventItemContents,
   writeBulkActionLog,
-  isReservedCustomDataSourceField,
+  loadEventCustomDataFields,
+  resolveEventItemContents,
+  validateContentFieldReferences,
+  UnknownContentFieldError,
   type EventItemConfig,
-  type EventItemContent,
 } from "@admitto/tickets";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
   requireEventId,
 } from "./admin-helpers.js";
+import { acquireEventCustomFieldsLock } from "./event-custom-fields-routes.js";
 
 const slugField = z.string().trim().regex(/^[a-z0-9_]+$/, "invalid slug");
 
@@ -38,37 +40,19 @@ function normalizeEventItemIconForStorage(
   return icon;
 }
 
-const eventItemContentSchema = z
-  .object({
-    label: z.string().trim().min(1).max(60),
-    source_field: slugField.min(1).max(60),
-    type: z.enum(["text", "select", "boolean"]).optional(),
-    required: z.boolean().optional(),
-    options: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
-  })
-  .strict()
-  .refine(
-    (row) => row.type !== "select" || (row.options != null && row.options.length > 0),
-    { message: "select type requires options" },
-  )
-  .refine((row) => !isReservedCustomDataSourceField(row.source_field), {
-    message: "reserved source_field",
-  });
-
 const eventItemConfigSchema = z
   .object({
-    contents: z.array(eventItemContentSchema).max(20).optional(),
+    content_fields: z.array(slugField.min(1).max(60)).max(20).optional(),
     requires_return: z.boolean().optional(),
     issue_on_checkin: z.boolean().optional(),
   })
   .strict()
   .refine(
     (cfg) => {
-      if (!cfg.contents?.length) return true;
-      const slugs = cfg.contents.map((c) => c.source_field);
-      return new Set(slugs).size === slugs.length;
+      if (!cfg.content_fields?.length) return true;
+      return new Set(cfg.content_fields).size === cfg.content_fields.length;
     },
-    { message: "duplicate source_field" },
+    { message: "duplicate content_field" },
   );
 
 const createEventItemSchema = z
@@ -122,52 +106,30 @@ export type EventItemDto = {
   config: EventItemConfig | null;
 };
 
-/** Legacy read path: label + source_field only (no metadata refine). */
-const legacyContentRowSchema = z
-  .object({
-    label: z.string().trim().min(1).max(60),
-    source_field: slugField.min(1).max(60),
-  })
-  .strict();
-
-/** Contents for GET when strict parse failed — resolveEventItemContents first, then loose rows. */
-function legacyContentsFromRaw(o: Record<string, unknown>): EventItemContent[] | undefined {
-  const resolved = resolveEventItemContents(o);
-  if (resolved.length > 0) return resolved;
-  if (!Array.isArray(o.contents)) return undefined;
-  if (o.contents.length === 0) return [];
-  const loose = z.array(legacyContentRowSchema).safeParse(o.contents);
-  return loose.success ? loose.data : undefined;
-}
-
-/** Normalize stored JSON config for API responses (strict fields + legacy contents). */
+/** Normalize stored JSON config for API responses.
+ *
+ * When content_fields is absent (item predates the registry migration, never re-saved since),
+ * this also passes through the legacy config.contents array under its old key - not part of
+ * EventItemConfig's declared shape, so it's added via a weak cast rather than widening the type.
+ * The admin attendee edit/create form (flattenCustomDataFieldsFromItems -> resolveEventItemContents,
+ * unchanged, deferred to a follow-up PR) reads exactly that key from this response to know which
+ * custom fields to render/require; without it, a legacy item's required custom field becomes
+ * invisible in that form while the server-side attendee save (also unchanged, reads the raw DB
+ * config directly) still enforces it - an unfixable-looking validation error for the operator. */
 function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
   const parsed = eventItemConfigSchema.safeParse({
-    contents: o.contents,
+    content_fields: o.content_fields,
     requires_return: o.requires_return,
     issue_on_checkin: o.issue_on_checkin,
   });
-
-  if (parsed.success) {
-    const config: EventItemConfig = { ...parsed.data };
-    if (parsed.data.contents?.length) {
-      config.contents = parsed.data.contents;
-    } else {
-      const resolved = resolveEventItemContents(raw);
-      if (resolved.length > 0) config.contents = resolved;
-    }
-    return Object.keys(config).length > 0 ? config : null;
+  if (!parsed.success) return null;
+  const config: EventItemConfig & { contents?: unknown } = { ...parsed.data };
+  if (o.content_fields === undefined) {
+    const legacyContents = resolveEventItemContents(raw);
+    if (legacyContents.length > 0) config.contents = legacyContents;
   }
-
-  const config: EventItemConfig = {};
-  if (typeof o.requires_return === "boolean") config.requires_return = o.requires_return;
-  if (typeof o.issue_on_checkin === "boolean") config.issue_on_checkin = o.issue_on_checkin;
-
-  const legacyContents = legacyContentsFromRaw(o);
-  if (legacyContents !== undefined) config.contents = legacyContents;
-
   return Object.keys(config).length > 0 ? config : null;
 }
 
@@ -192,6 +154,23 @@ function serializeEventItem(row: {
     icon: row.icon ?? null,
     config: serializeEventItemConfig(row.config),
   };
+}
+
+/** Rejects config.content_fields entries that don't exist in the event's EventCustomField
+ * registry - throws UnknownContentFieldError on an unknown reference, caught by the caller and
+ * mapped to a 400. Takes a transaction client so the caller can run this after
+ * acquireEventCustomFieldsLock, serializing against a concurrent field delete (see
+ * event-custom-fields-routes.ts) - without that, a field could be deleted between this check and
+ * the item's commit, leaving content_fields pointing at a source_field that no longer exists. */
+async function validateConfigContentFields(
+  db: PrismaClient | Prisma.TransactionClient,
+  eventId: string,
+  config: EventItemConfig | undefined,
+): Promise<void> {
+  if (!config?.content_fields?.length) return;
+  const registryFields = await loadEventCustomDataFields(db, eventId);
+  const allowed = new Set(registryFields.map((f) => f.source_field));
+  validateContentFieldReferences(allowed, config.content_fields);
 }
 
 /** Require `:itemId` route param or return 400. */
@@ -326,6 +305,10 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
 
   try {
     const row = await db.$transaction(async (tx) => {
+      if (parsed.data.config?.content_fields?.length) {
+        await acquireEventCustomFieldsLock(tx, eventId);
+        await validateConfigContentFields(tx, eventId, parsed.data.config);
+      }
       const created = await tx.eventItem.create({
         data: {
           event_id: eventId,
@@ -361,6 +344,9 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
 
     return c.json(serializeEventItem(row), 201);
   } catch (err) {
+    if (err instanceof UnknownContentFieldError) {
+      return c.json({ error: "unknown_content_field", field: err.sourceField }, 400);
+    }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return c.json({ error: "key_conflict" }, 409);
     }
@@ -415,7 +401,18 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
     fields.push("enabled");
   }
   if (parsed.data.config !== undefined) {
-    data.config = parsed.data.config as Prisma.InputJsonValue;
+    // Merge onto the existing raw config rather than replacing it outright: a live item saved
+    // before this PR may still carry the pre-registry config.contents shape, which the new
+    // eventItemConfigSchema doesn't know about and would otherwise silently drop. Any admin
+    // save of that item (even one unrelated to content fields) would then permanently erase
+    // contents, since Prisma writes the whole config JSON column in one shot. Spreading the
+    // existing config underneath the newly-parsed fields keeps contents intact until PR3 reads
+    // it into the registry - the new UI just can't show it yet (documented sequencing gap).
+    const rawExisting =
+      existing.config && typeof existing.config === "object" && !Array.isArray(existing.config)
+        ? (existing.config as Record<string, unknown>)
+        : {};
+    data.config = { ...rawExisting, ...parsed.data.config } as Prisma.InputJsonValue;
     fields.push("config");
   }
   if (parsed.data.icon !== undefined && parsed.data.icon !== existing.icon) {
@@ -449,6 +446,16 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
   const result = await runSerializableTransaction(
     db,
     async (tx) => {
+      if (parsed.data.config?.content_fields?.length) {
+        await acquireEventCustomFieldsLock(tx, eventId);
+        const registryFields = await loadEventCustomDataFields(tx, eventId);
+        const allowed = new Set(registryFields.map((f) => f.source_field));
+        const unknownField = parsed.data.config.content_fields.find((f) => !allowed.has(f));
+        if (unknownField) {
+          return { ok: false as const, reason: "unknown_content_field" as const, field: unknownField };
+        }
+      }
+
       if (disabling) {
         const inUse = await countActivelyIssuedStates(tx, itemId);
         if (inUse > 0) return { ok: false as const, reason: "in_use" as const };
@@ -515,6 +522,9 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
   );
 
   if (!result.ok) {
+    if (result.reason === "unknown_content_field") {
+      return c.json({ error: "unknown_content_field", field: result.field }, 400);
+    }
     return c.json({ error: "item_in_use" }, 409);
   }
 
