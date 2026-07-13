@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@admitto/ui";
 import { RequirementsPage } from "../../src/pages/RequirementsPage.js";
 import type { EventItemDto, OpsConfigDto } from "../../src/api/types.js";
 
 const fetchEventItems = vi.fn();
+const fetchEventCustomFields = vi.fn();
 const fetchOpsConfig = vi.fn();
 const updateEventItem = vi.fn();
 const createEventItem = vi.fn();
@@ -23,6 +24,7 @@ vi.mock("../../src/api/client.js", () => ({
     }
   },
   fetchEventItems: (...args: unknown[]) => fetchEventItems(...args),
+  fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
   fetchOpsConfig: (...args: unknown[]) => fetchOpsConfig(...args),
   updateEventItem: (...args: unknown[]) => updateEventItem(...args),
   createEventItem: (...args: unknown[]) => createEventItem(...args),
@@ -83,6 +85,13 @@ function renderPage() {
     </ToastProvider>,
   );
 }
+
+beforeEach(() => {
+  // Most tests here don't care about the custom field registry; give every test a working
+  // default so Promise.all in RequirementsPage's load() doesn't reject for unrelated tests.
+  // Tests that do care override this before calling renderPage().
+  fetchEventCustomFields.mockResolvedValue([]);
+});
 
 afterEach(() => {
   cleanup();

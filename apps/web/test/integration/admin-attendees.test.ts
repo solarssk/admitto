@@ -612,10 +612,23 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
   });
 
   it("writes jacket_size under correct key and check-in card shows parity", async () => {
+    // Both shapes seeded deliberately: `contents` still backs the PATCH allow-list
+    // (attendees-api-routes.ts isn't rewired onto the EventCustomField registry until a later
+    // PR), while `content_fields` + the registry row back the check-in card's operator hint
+    // (attendee-card.ts already reads the registry). This mirrors the documented sequencing
+    // gap between the two - both mechanisms are exercised here, not a contradiction.
+    await prisma.eventCustomField.upsert({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "jacket_size" } },
+      create: { event_id: EVENT_A, source_field: "jacket_size", label: "Jacket size" },
+      update: {},
+    });
     await prisma.eventItem.updateMany({
       where: { event_id: EVENT_A, key: "giftbag" },
       data: {
-        config: { contents: [{ label: "Jacket size", source_field: "jacket_size" }] },
+        config: {
+          contents: [{ label: "Jacket size", source_field: "jacket_size" }],
+          content_fields: ["jacket_size"],
+        },
       },
     });
     await prisma.attendee.update({

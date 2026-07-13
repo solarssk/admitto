@@ -27,6 +27,11 @@ export {
 export { parseCustomData, customDataValue } from "./custom-data.js";
 export { buildItemDetail, resolveEventItemContents, collectEventCustomDataFields, mergeEventItemContentFields } from "./event-item-contents.js";
 export {
+  loadEventCustomDataFields,
+  validateContentFieldReferences,
+  UnknownContentFieldError,
+} from "./event-custom-fields.js";
+export {
   buildCustomDataFromInput,
   normalizeCustomDataFieldValue,
   validateCustomDataPatch,
