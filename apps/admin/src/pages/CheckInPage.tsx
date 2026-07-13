@@ -119,6 +119,13 @@ export function CheckInPage({
   const { state: connectionState, reportApiError } = useConnectionState();
   const { addToast } = useToast();
   const canAct = canMutateCheckin(connectionState);
+  // Mirrors `canAct` for reading inside stale useCallback closures (e.g.
+  // submitScanOrLookupImpl, memoized with `canAct` in its deps) — the
+  // closure's own `canAct` is frozen at whatever render created it, so a
+  // connectivity change while that specific call is still in flight would
+  // otherwise go unseen until the *next* call. The ref stays current always.
+  const canActRef = useRef(canAct);
+  canActRef.current = canAct;
   const [scanSoundMuted, toggleScanSoundMuted] = useScanSoundMuted();
   const isOperatorShell = onUseCameraChange === undefined;
   const isDesktop = useIsDesktop();
@@ -171,6 +178,15 @@ export function CheckInPage({
   const wedgeJustPastedRef = useRef(false);
   const recentAdmits = useRef(new Map<string, number>());
   const historyRef = useRef<CheckInHistoryEntry[]>([]);
+  // Tags whether the current transportError/overlayManualError was likely
+  // caused by a connectivity problem — set alongside the message, at the
+  // moment each is caught, based on whether the heartbeat looked down right
+  // then. Only a message tagged this way is safe to auto-clear on reconnect
+  // (#458); a genuine business-logic error caught while still connected must
+  // survive until the operator retries, not vanish because of an unrelated
+  // later reconnect (bot review).
+  const transportErrorFromConnectivityRef = useRef(false);
+  const overlayManualErrorFromConnectivityRef = useRef(false);
   // Serializes scan/lookup submissions (FIFO) so a wedge scan arriving while
   // the previous one is still in flight is queued, not lost or interleaved.
   const scanChainRef = useRef<Promise<unknown>>(Promise.resolve());
@@ -302,6 +318,27 @@ export function CheckInPage({
       cancelled = true;
     };
   }, [eventId]);
+
+  // A transport error can be set while the connection is down (e.g. a
+  // Recent-scans click that isn't gated on `canAct`, #458) and then sit
+  // stale on screen once the server responds again — clear it the moment
+  // the connection actually recovers, not only on the next retried action.
+  // Gated on the connectivity refs (tagged alongside each message, at the
+  // moment it was caught) so this only ever clears a message that was
+  // plausibly caused by the outage — a genuine business-logic error caught
+  // while still connected is untouched by an unrelated later reconnect
+  // (review finding).
+  useEffect(() => {
+    if (!canAct) return;
+    if (transportErrorFromConnectivityRef.current) {
+      setTransportError(null);
+      transportErrorFromConnectivityRef.current = false;
+    }
+    if (overlayManualErrorFromConnectivityRef.current) {
+      setOverlayManualError(null);
+      overlayManualErrorFromConnectivityRef.current = false;
+    }
+  }, [canAct]);
 
   const focusScan = useCallback(() => {
     if (showMobileOverlay) return;
@@ -500,6 +537,7 @@ export function CheckInPage({
   };
 
   const handleApiFailure = (err: unknown) => {
+    transportErrorFromConnectivityRef.current = !canActRef.current;
     if (err instanceof ApiError) {
       reportApiError(err.status);
       setTransportError(
@@ -676,6 +714,10 @@ export function CheckInPage({
   const openLookupResultImpl = async (attendeeId: string) => {
     if (!eventId) return;
     setBusy(true);
+    // Clear any prior failure banner so a retry that now succeeds doesn't
+    // leave a stale "Request failed" over a successful outcome — every other
+    // mutation handler in this file already does this (review finding).
+    setTransportError(null);
     try {
       const loaded = await fetchAttendeeCard(eventId, attendeeId);
       setCard(loaded);
@@ -719,9 +761,8 @@ export function CheckInPage({
       if (!eventId || !canAct) return false;
 
       if (!allowManualLookup) {
-        const message = LOOKUP_DISABLED_MSG;
-        if (showMobileOverlay) setOverlayManualError(message);
-        else setTransportError(message);
+        if (showMobileOverlay) setOverlayManualError(LOOKUP_DISABLED_MSG);
+        else addToast(LOOKUP_DISABLED_MSG, "warning");
         return false;
       }
 
@@ -749,18 +790,22 @@ export function CheckInPage({
         }
         return false;
       } catch (err) {
+        overlayManualErrorFromConnectivityRef.current = !canActRef.current;
         if (err instanceof ApiError) {
           reportApiError(err.status);
           const message =
             err.status === 401
               ? "Session expired — sign in again."
               : operatorApiErrorMessage(err, "Request failed.");
+          // Desktop routes every outcome of a search submit through a toast
+          // (no-match/disabled above already do) — was inconsistently still
+          // an inline banner for this one outcome (review finding).
           if (showMobileOverlay) setOverlayManualError(message);
-          else setTransportError(message);
+          else addToast(message, "warning");
         } else if (showMobileOverlay) {
           setOverlayManualError("Request failed. Try again.");
         } else {
-          setTransportError("Request failed. Try again.");
+          addToast("Request failed. Try again.", "warning");
         }
         return false;
       } finally {
@@ -1076,20 +1121,23 @@ export function CheckInPage({
       <CheckinConnectionLiveRegion />
       <CheckinConnectionBanner />
 
-      {streamStatus === "auth_error" && (
+      {/* The SSE live-updates feed and the app-wide heartbeat are two
+          independent connections (#458) — when both drop together (the
+          common case, e.g. a backend restart), CheckinConnectionBanner
+          above already covers it, so these only add value when the stream
+          has a problem of its own while the heartbeat is otherwise healthy.
+          `!canAct` used to get its own duplicate "blocked" paragraph here
+          too; canMutateCheckin is driven by the exact same connectionState
+          the banner above already reflects, so it was announcing the same
+          thing twice in different styling. */}
+      {canAct && streamStatus === "auth_error" && (
         <p className="check-in__offline-banner" role="status">
           Live updates unavailable — check access
         </p>
       )}
-      {streamStatus === "reconnecting" && (
+      {canAct && streamStatus === "reconnecting" && (
         <p className="check-in__offline-banner" role="status">
           Reconnecting live updates…
-        </p>
-      )}
-
-      {!canAct && (
-        <p className="checkin-surface__transport-error" role="status">
-          Not connected — new check-ins and actions are blocked until the server responds.
         </p>
       )}
 

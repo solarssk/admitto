@@ -7,15 +7,15 @@ import {
   CheckinConnectionLiveRegion,
   ServerConnectionBadge,
 } from "../../src/checkin/ConnectionBanner.js";
+import { connectionStateValue } from "./connectionStateMock.js";
 
 const useConnectionState = vi.fn();
-
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => useConnectionState(),
 }));
 
 function mockState(state: ConnectionState) {
-  useConnectionState.mockReturnValue({ state, lastCheckedAt: null, reportApiError: vi.fn() });
+  useConnectionState.mockReturnValue(connectionStateValue(state));
 }
 
 afterEach(() => {
