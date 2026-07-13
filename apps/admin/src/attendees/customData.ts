@@ -1,20 +1,7 @@
-import { collectEventCustomDataFields, filterCustomDataAttributeFields } from "@admitto/tickets";
-import type { EventItemDto } from "../api/types.js";
+import type { EventCustomFieldDto } from "../api/types.js";
 
-export type CustomDataFieldDef = {
-  label: string;
-  source_field: string;
-  type?: "text" | "select" | "boolean";
-  required?: boolean;
-  options?: string[];
-};
-
-/** Flatten API-normalized item contents and merge duplicate source_field metadata. */
-export function flattenCustomDataFieldsFromItems(items: EventItemDto[]): CustomDataFieldDef[] {
-  return filterCustomDataAttributeFields(
-    collectEventCustomDataFields(items.map((item) => item.config)),
-  );
-}
+/** The registry row shape is exactly what attendee forms need - no separate flatten/merge step. */
+export type CustomDataFieldDef = EventCustomFieldDto;
 
 /** Read a single custom_data string field (mirrors server customDataValue semantics). */
 export function readCustomDataField(raw: unknown, field: string): string | null {

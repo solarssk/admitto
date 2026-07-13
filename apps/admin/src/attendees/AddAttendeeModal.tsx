@@ -1,11 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input } from "@admitto/ui";
-import { ApiError, createAttendee, fetchEventItems } from "../api/client.js";
+import { ApiError, createAttendee, fetchEventCustomFields } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeDetailDto } from "../api/types.js";
 import { CustomDataFieldInput } from "./CustomDataFieldInput.js";
 import {
-  flattenCustomDataFieldsFromItems,
   initialCustomFieldValues,
   validateCustomFieldsForm,
   type CustomDataFieldDef,
@@ -46,10 +45,9 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
     setAttributeFieldsLoading(true);
     setAttributeFieldsError(null);
     let cancelled = false;
-    fetchEventItems(eventId)
-      .then((items) => {
+    fetchEventCustomFields(eventId)
+      .then((fields) => {
         if (cancelled) return;
-        const fields = flattenCustomDataFieldsFromItems(items);
         setAttributeFields(fields);
         setCustomFields(initialCustomFieldValues(fields));
       })

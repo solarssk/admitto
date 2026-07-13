@@ -219,29 +219,6 @@ describe("GET /api/admin/events/:eventId/items", () => {
     });
     expect(res.status).toBe(403);
   });
-
-  it("passes through legacy config.contents for an item that predates the registry migration", async () => {
-    const legacyItem = await prisma.eventItem.create({
-      data: {
-        id: "ei_legacy_contents_get",
-        event_id: EVENT_EI_A,
-        key: "legacy_contents_get_item",
-        label: "Legacy contents get item",
-        type: "item",
-        config: { contents: [{ label: "Shirt size", source_field: "shirt_size", required: true }] },
-      },
-    });
-
-    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
-      headers: { Cookie: adminCookie },
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { items: { id: string; config: unknown }[] };
-    const item = body.items.find((i) => i.id === legacyItem.id);
-    expect(item?.config).toEqual({
-      contents: [{ label: "Shirt size", source_field: "shirt_size", required: true }],
-    });
-  });
 });
 
 describe("POST /api/admin/events/:eventId/items", () => {
@@ -476,48 +453,6 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
 
     const row = await prisma.eventItem.findUnique({ where: { id: ITEM_SOCKS } });
     expect(row?.config).toMatchObject({ issue_on_checkin: false, requires_return: false });
-  });
-
-  it("preserves a pre-registry legacy config.contents shape across an unrelated save", async () => {
-    // Simulates an item saved before this PR - the new eventItemConfigSchema doesn't know about
-    // "contents", so an admin editing this item today (e.g. just fixing the label) must not
-    // silently wipe it via a full config replace.
-    const legacyItem = await prisma.eventItem.create({
-      data: {
-        id: "ei_legacy_contents",
-        event_id: EVENT_EI_A,
-        key: "legacy_contents_item",
-        label: "Legacy contents item",
-        type: "item",
-        config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
-      },
-    });
-
-    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${legacyItem.id}`, {
-      method: "PATCH",
-      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
-      body: JSON.stringify({ label: "Legacy contents item (renamed)" }),
-    });
-    expect(res.status).toBe(200);
-
-    const row = await prisma.eventItem.findUnique({ where: { id: legacyItem.id } });
-    expect(row?.config).toMatchObject({
-      contents: [{ label: "Shirt size", source_field: "shirt_size" }],
-    });
-
-    // A save that *does* touch config still merges onto the legacy shape rather than replacing
-    // it outright - content_fields is new, contents is untouched leftover state.
-    const configRes = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${legacyItem.id}`, {
-      method: "PATCH",
-      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
-      body: JSON.stringify({ config: { content_fields: [] } }),
-    });
-    expect(configRes.status).toBe(200);
-    const rowAfterConfigSave = await prisma.eventItem.findUnique({ where: { id: legacyItem.id } });
-    expect(rowAfterConfigSave?.config).toMatchObject({
-      contents: [{ label: "Shirt size", source_field: "shirt_size" }],
-      content_fields: [],
-    });
   });
 
   it("clears description when patched with an empty string", async () => {

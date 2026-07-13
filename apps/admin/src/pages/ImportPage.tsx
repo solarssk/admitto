@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { Button, Card, PageHeader, useToast } from "@admitto/ui";
-import { ApiError, commitImport, fetchEventItems, previewImport, type EventFullMeta } from "../api/client.js";
+import { ApiError, commitImport, fetchEventCustomFields, previewImport, type EventFullMeta } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, ImportCommitResponse, ImportPreviewResponse, ImportSampleRow } from "../api/types.js";
-import {
-  flattenCustomDataFieldsFromItems,
-  type CustomDataFieldDef,
-} from "../attendees/customData.js";
+import type { CustomDataFieldDef } from "../attendees/customData.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
@@ -124,9 +121,9 @@ export function ImportPage() {
   useEffect(() => {
     if (!eventId) return;
     let cancelled = false;
-    fetchEventItems(eventId)
-      .then((items) => {
-        if (!cancelled) setAttributeFields(flattenCustomDataFieldsFromItems(items));
+    fetchEventCustomFields(eventId)
+      .then((fields) => {
+        if (!cancelled) setAttributeFields(fields);
       })
       .catch(() => {
         if (!cancelled) setAttributeFields([]);

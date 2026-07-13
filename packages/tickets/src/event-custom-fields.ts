@@ -11,10 +11,9 @@ export class UnknownContentFieldError extends Error {
   }
 }
 
-/** Reads an event's custom-field registry rows, mapped to the shape the check-in operator card
- * (buildItemDetail) consumes. Attendee edit/create, CSV/XLSX import, and export still read
- * custom-data field definitions via their own pre-registry mechanism (EventItem.config.contents)
- * - wiring them onto this registry is a follow-up, not done yet. */
+/** Reads an event's custom-field registry rows - the single source of truth for custom-data
+ * field definitions, consumed by the check-in operator card, attendee edit/create, CSV/XLSX
+ * import, and export alike. */
 export async function loadEventCustomDataFields(
   db: CustomFieldDb,
   eventId: string,

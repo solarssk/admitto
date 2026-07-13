@@ -1,0 +1,164 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { execSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { PrismaClient } from "@prisma/client";
+import { backfillEventCustomFields } from "../src/backfill-event-custom-fields.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DB_ROOT = path.resolve(__dirname, "..");
+
+const ORG_ID = "org-backfill-cf";
+
+let prisma: PrismaClient;
+
+beforeAll(async () => {
+  execSync("npx prisma db push --force-reset --accept-data-loss", {
+    cwd: DB_ROOT,
+    env: { ...process.env },
+    stdio: "pipe",
+  });
+  prisma = new PrismaClient();
+  await prisma.organization.create({
+    data: { id: ORG_ID, name: "Org", slug: "org-backfill-cf" },
+  });
+});
+
+afterAll(async () => {
+  await prisma.$disconnect();
+});
+
+async function makeEvent(id: string) {
+  return prisma.event.create({
+    data: { id, title: id, slug: id, date: new Date("2026-09-01"), organization_id: ORG_ID },
+  });
+}
+
+describe("backfillEventCustomFields", () => {
+  it("creates a registry row from a legacy item and rewrites its config", async () => {
+    const event = await makeEvent("evt-cf-basic");
+    const item = await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "giftbag",
+        label: "Gift bag",
+        config: {
+          requires_return: false,
+          contents: [{ label: "Shirt size", source_field: "shirt_size", required: true }],
+        },
+      },
+    });
+
+    const result = await backfillEventCustomFields(prisma);
+    expect(result.itemsUpdated).toBeGreaterThanOrEqual(1);
+    expect(result.fieldsCreated).toBeGreaterThanOrEqual(1);
+
+    const field = await prisma.eventCustomField.findUnique({
+      where: { event_id_source_field: { event_id: event.id, source_field: "shirt_size" } },
+    });
+    expect(field?.label).toBe("Shirt size");
+    expect(field?.required).toBe(true);
+    expect(field?.type).toBe("text");
+
+    const itemAfter = await prisma.eventItem.findUniqueOrThrow({ where: { id: item.id } });
+    expect(itemAfter.config).toEqual({
+      requires_return: false,
+      content_fields: ["shirt_size"],
+    });
+  });
+
+  it("does not overwrite a source_field that already has a registry row", async () => {
+    const event = await makeEvent("evt-cf-existing");
+    await prisma.eventCustomField.create({
+      data: { event_id: event.id, source_field: "dietary", label: "Dietary (curated)", required: true },
+    });
+    await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "lunch",
+        label: "Lunch",
+        config: { contents: [{ label: "Dietary requirements", source_field: "dietary" }] },
+      },
+    });
+
+    await backfillEventCustomFields(prisma);
+
+    const field = await prisma.eventCustomField.findUnique({
+      where: { event_id_source_field: { event_id: event.id, source_field: "dietary" } },
+    });
+    expect(field?.label).toBe("Dietary (curated)");
+    expect(field?.required).toBe(true);
+  });
+
+  it("first item wins and reports a conflict when two items disagree on the same field", async () => {
+    const event = await makeEvent("evt-cf-conflict");
+    await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "giftbag",
+        label: "Gift bag",
+        config: { contents: [{ label: "Shirt size", source_field: "shirt_size", required: true }] },
+      },
+    });
+    await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "polo",
+        label: "Polo shirt",
+        config: {
+          contents: [{ label: "Shirt size (polo)", source_field: "shirt_size", type: "select", options: ["S", "M"] }],
+        },
+      },
+    });
+
+    const result = await backfillEventCustomFields(prisma);
+
+    const fields = await prisma.eventCustomField.findMany({
+      where: { event_id: event.id, source_field: "shirt_size" },
+    });
+    expect(fields).toHaveLength(1);
+    expect(fields[0]!.label).toBe("Shirt size");
+    expect(result.conflicts.some((c) => c.includes("shirt_size"))).toBe(true);
+  });
+
+  it("leaves an item with no contents untouched", async () => {
+    const event = await makeEvent("evt-cf-untouched");
+    const item = await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "badge",
+        label: "Badge",
+        config: { issue_on_checkin: true },
+      },
+    });
+
+    await backfillEventCustomFields(prisma);
+
+    const itemAfter = await prisma.eventItem.findUniqueOrThrow({ where: { id: item.id } });
+    expect(itemAfter.config).toEqual({ issue_on_checkin: true });
+  });
+
+  it("is idempotent on second run", async () => {
+    const event = await makeEvent("evt-cf-idempotent");
+    await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "giftbag",
+        label: "Gift bag",
+        config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
+      },
+    });
+
+    await backfillEventCustomFields(prisma);
+    const afterFirst = await prisma.eventCustomField.count({ where: { event_id: event.id } });
+
+    const second = await backfillEventCustomFields(prisma);
+    const afterSecond = await prisma.eventCustomField.count({ where: { event_id: event.id } });
+
+    expect(afterSecond).toBe(afterFirst);
+    // Nothing left with a `contents` key anywhere, so the second run touches this event's rows
+    // for zero net new items/fields - it may still process unrelated already-migrated items from
+    // earlier tests, but none of them have `contents` left either.
+    expect(second.itemsUpdated).toBe(0);
+  });
+});

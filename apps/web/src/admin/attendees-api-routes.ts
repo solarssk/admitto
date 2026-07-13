@@ -15,7 +15,7 @@ import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
 import type { AttendeeStatus } from "@admitto/db/status";
 import { formatEventDate, resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
-  collectEventCustomDataFields,
+  loadEventCustomDataFields,
   buildCustomDataFromInput,
   validateCustomDataPatch,
   assertCustomDataMeetsRequirements,
@@ -444,19 +444,6 @@ function cloneCustomData(raw: unknown): Record<string, unknown> {
     return { ...(raw as Record<string, unknown>) };
   }
   return {};
-}
-
-/** Load dynamic custom_data attribute definitions for an event (all items, enabled or not). */
-async function loadEventCustomDataFields(
-  db: PrismaClient,
-  eventId: string,
-): Promise<EventItemContent[]> {
-  const items = await db.eventItem.findMany({
-    where: { event_id: eventId },
-    select: { config: true },
-    orderBy: { key: "asc" },
-  });
-  return collectEventCustomDataFields(items.map((i) => i.config));
 }
 
 /** Require `:id` attendee route param or return 400. */
@@ -935,9 +922,6 @@ function customDataErrorCode(err: unknown): string {
   if (message.startsWith("unknown_custom_data_field:")) return "unknown_custom_data_field";
   if (message.startsWith("required_custom_data_field_missing:")) {
     return "required_custom_data_field_missing";
-  }
-  if (message.startsWith("conflicting_custom_data_field_options:")) {
-    return "conflicting_custom_data_field_options";
   }
   return "validation_failed";
 }

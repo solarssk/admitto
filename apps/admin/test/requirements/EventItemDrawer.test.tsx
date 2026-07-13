@@ -223,30 +223,6 @@ describe("EventItemDrawer", () => {
     });
   });
 
-  it("omits content_fields from an unrelated save on a legacy item that's never had that key", async () => {
-    // giftbagItem's config is null (no content_fields key at all) - the picker sits at its
-    // untouched default. An unrelated save (just the label here) must not send
-    // content_fields: [], which buildItemDetail would read as an explicit clear and silently
-    // drop that item's check-in hint sourced from legacy config.contents.
-    vi.mocked(updateEventItem).mockResolvedValueOnce(giftbagItem);
-    renderDrawer(giftbagItem, [shirtSizeField]);
-
-    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Gift bag renamed" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-
-    await waitFor(() => {
-      expect(updateEventItem).toHaveBeenCalledWith("evt-1", "item-gift", {
-        label: "Gift bag renamed",
-        description: null,
-        enabled: true,
-        icon: null,
-        config: {
-          requires_return: false,
-        },
-      });
-    });
-  });
-
   it("unchecking a hint removes it from the saved content_fields", async () => {
     const itemWithHint: EventItemDto = {
       ...giftbagItem,
