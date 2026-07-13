@@ -278,13 +278,16 @@ describe("backfillEventCustomFields", () => {
       },
     });
 
-    await backfillEventCustomFields(prisma);
+    const result = await backfillEventCustomFields(prisma);
 
     const fields = await prisma.eventCustomField.findMany({ where: { event_id: event.id } });
     expect(fields.map((f) => f.source_field)).toEqual(["shirt_size"]);
 
     const itemAfter = await prisma.eventItem.findUniqueOrThrow({ where: { id: item.id } });
     expect(itemAfter.config).toEqual({ content_fields: ["shirt_size"] });
+
+    expect(result.skipped.some((s) => s.includes(event.id) && s.includes("not a valid slug"))).toBe(true);
+    expect(result.skipped.some((s) => s.includes(event.id) && s.includes("reserved"))).toBe(true);
   });
 
   it("skips malformed legacy content rows (wrong types, empty, or over-length) without crashing", async () => {
@@ -307,10 +310,13 @@ describe("backfillEventCustomFields", () => {
       },
     });
 
-    await backfillEventCustomFields(prisma);
+    const result = await backfillEventCustomFields(prisma);
 
     const fields = await prisma.eventCustomField.findMany({ where: { event_id: event.id } });
     expect(fields.map((f) => f.source_field)).toEqual(["shirt_size"]);
+
+    const eventSkips = result.skipped.filter((s) => s.includes(event.id));
+    expect(eventSkips.length).toBe(5);
   });
 
   it("stops creating new fields once an event reaches the per-event field cap", async () => {
