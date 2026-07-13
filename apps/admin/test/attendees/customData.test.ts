@@ -1,9 +1,29 @@
-import { describe, expect, it } from "vitest";
-import {
+import { describe, expect, it, vi } from "vitest";
+
+const mockFetchEventCustomFields = vi.fn();
+vi.mock("../../src/api/client.js", () => ({
+  fetchEventCustomFields: (...args: unknown[]) => mockFetchEventCustomFields(...args),
+}));
+
+const {
+  fetchAttendeeCustomFields,
   initialCustomFieldValues,
   readCustomDataField,
   validateCustomFieldsForm,
-} from "../../src/attendees/customData.js";
+} = await import("../../src/attendees/customData.js");
+
+describe("fetchAttendeeCustomFields", () => {
+  it("drops registry fields whose source_field collides with a reserved profile column", async () => {
+    mockFetchEventCustomFields.mockResolvedValueOnce([
+      { id: "1", source_field: "email", label: "Email copy", type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
+      { id: "2", source_field: "dietary", label: "Dietary", type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
+    ]);
+
+    const fields = await fetchAttendeeCustomFields("evt-1");
+
+    expect(fields.map((f) => f.source_field)).toEqual(["dietary"]);
+  });
+});
 
 describe("readCustomDataField", () => {
   it("trims string values", () => {

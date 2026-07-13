@@ -960,16 +960,16 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
     ...profilePatch
   } = parsed.data;
 
+  let allowedFields: EventItemContent[] | undefined;
+  async function loadAllowedFieldsOnce(): Promise<EventItemContent[]> {
+    if (!allowedFields) allowedFields = await loadEventCustomDataFields(db, eventId);
+    return allowedFields;
+  }
+
   if (profilePatch.custom_data_fields) {
-    let allowedFields: EventItemContent[];
-    try {
-      allowedFields = await loadEventCustomDataFields(db, eventId);
-    } catch (err) {
-      return c.json({ error: customDataErrorCode(err) }, 400);
-    }
     try {
       profilePatch.custom_data_fields = validateCustomDataPatch(
-        allowedFields,
+        await loadAllowedFieldsOnce(),
         existing.custom_data,
         profilePatch.custom_data_fields,
       );
@@ -989,19 +989,19 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   }
 
   if (profileChanges || rsvpChange) {
-    let allowedFields: EventItemContent[];
+    let fields: EventItemContent[];
     try {
-      allowedFields = await loadEventCustomDataFields(db, eventId);
+      fields = await loadAllowedFieldsOnce();
     } catch (err) {
       return c.json({ error: customDataErrorCode(err) }, 400);
     }
-    if (allowedFields.length > 0) {
+    if (fields.length > 0) {
       try {
         const nextCustomData =
           profileChanges?.data.custom_data !== undefined
             ? profileChanges.data.custom_data
             : existing.custom_data;
-        assertCustomDataMeetsRequirements(allowedFields, nextCustomData);
+        assertCustomDataMeetsRequirements(fields, nextCustomData);
       } catch (err) {
         return c.json({ error: customDataErrorCode(err) }, 400);
       }

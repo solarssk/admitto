@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
@@ -1727,7 +1727,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
 
     await prisma.eventCustomField.update({
       where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
-      data: { required: false },
+      data: { required: false, type: "text", options: Prisma.JsonNull },
     });
   });
 

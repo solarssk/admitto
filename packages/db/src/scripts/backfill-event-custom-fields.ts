@@ -10,6 +10,9 @@ async function main(): Promise<void> {
   for (const conflict of result.conflicts) {
     console.warn(`backfill-event-custom-fields: conflict - ${conflict}`);
   }
+  for (const skip of result.skipped) {
+    console.warn(`backfill-event-custom-fields: skipped - ${skip}`);
+  }
   await prisma.$disconnect();
 }
 

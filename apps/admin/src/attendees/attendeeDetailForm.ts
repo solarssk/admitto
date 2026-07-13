@@ -1,10 +1,8 @@
-import {
-  fetchAttendeeDetail,
-  fetchEventCustomFields,
-} from "../api/client.js";
+import { fetchAttendeeDetail } from "../api/client.js";
 import type { AttendeeDetailDto } from "../api/types.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
 import {
+  fetchAttendeeCustomFields,
   readCustomDataField,
   type CustomDataFieldDef,
 } from "./customData.js";
@@ -88,7 +86,7 @@ export async function loadAttendeeDetailData(
 }> {
   const [detail, fieldsResult] = await Promise.all([
     fetchAttendeeDetail(eventId, attendeeId),
-    fetchEventCustomFields(eventId).then(
+    fetchAttendeeCustomFields(eventId).then(
       (fields) => ({ ok: true as const, fields }),
       () => ({ ok: false as const }),
     ),

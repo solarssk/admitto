@@ -1,7 +1,19 @@
+import { filterCustomDataAttributeFields } from "@admitto/tickets";
+import { fetchEventCustomFields } from "../api/client.js";
 import type { EventCustomFieldDto } from "../api/types.js";
 
 /** The registry row shape is exactly what attendee forms need - no separate flatten/merge step. */
 export type CustomDataFieldDef = EventCustomFieldDto;
+
+/** Registry fields usable on an attendee form. Filters out any field whose source_field collides
+ * with a reserved profile/import column (email, name, ...) - the live create-field API already
+ * rejects these, but a field created before that rule existed, or migrated from legacy item
+ * config, could still exist in the registry, and rendering it as a second editable "Email" input
+ * alongside the real one would be confusing. */
+export async function fetchAttendeeCustomFields(eventId: string, signal?: AbortSignal): Promise<CustomDataFieldDef[]> {
+  const fields = await fetchEventCustomFields(eventId, signal);
+  return filterCustomDataAttributeFields(fields);
+}
 
 /** Read a single custom_data string field (mirrors server customDataValue semantics). */
 export function readCustomDataField(raw: unknown, field: string): string | null {

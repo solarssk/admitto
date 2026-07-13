@@ -115,7 +115,12 @@ function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
     issue_on_checkin: o.issue_on_checkin,
   });
   if (!parsed.success) return null;
-  return Object.keys(parsed.data).length > 0 ? parsed.data : null;
+  // parsed.data always has all 3 keys, even when a value is `undefined` - Object.keys() would
+  // never see it as empty, so filter those out before deciding whether anything is actually set.
+  const defined = Object.fromEntries(
+    Object.entries(parsed.data).filter(([, v]) => v !== undefined),
+  ) as EventItemConfig;
+  return Object.keys(defined).length > 0 ? defined : null;
 }
 
 /** Map a Prisma EventItem row to the admin API DTO. */
