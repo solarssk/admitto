@@ -9,6 +9,30 @@ import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "
  * MAX_IMAGE_ASSETS_PER_EVENT (bounds growth, generous for real use). */
 export const MAX_CUSTOM_FIELDS_PER_EVENT = 20;
 
+/** Thrown when the per-event cap is still exceeded on the transaction-scoped recheck (two
+ * concurrent creates could otherwise both pass the earlier, non-transactional count check before
+ * either insert committed - same failure shape already fixed for event image assets). Caught
+ * below and mapped to the same 422 response. */
+class FieldLimitReachedError extends Error {}
+
+/** Thrown when a delete's in-use recheck (inside the lock) finds an item reference that appeared
+ * after the initial check. Caught below and mapped to the same 409 response. */
+class FieldInUseError extends Error {}
+
+/** Serializes create/delete for one event's custom-field registry against each other, and against
+ * event-items-api-routes.ts's content_fields validation - without this, a concurrent "attach field
+ * X to an item" and "delete field X" could interleave so the delete's in-use scan runs before the
+ * item's write commits, leaving content_fields pointing at a source_field that no longer exists
+ * (same pattern as acquireEventImageAssetsLock in event-image-assets-routes.ts). */
+export async function acquireEventCustomFieldsLock(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+): Promise<void> {
+  await tx.$executeRaw(
+    Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`event-custom-fields:${eventId}`}))`,
+  );
+}
+
 const slugField = z.string().trim().regex(/^[a-z0-9_]+$/, "invalid slug");
 
 const createFieldSchema = z
@@ -124,6 +148,16 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
 
   try {
     const created = await db.$transaction(async (tx) => {
+      // Recheck the cap inside the transaction: the earlier count() above is a fast-path
+      // rejection only and isn't race-safe on its own - two concurrent creates could both read a
+      // count under the cap before either insert commits. The advisory lock serializes concurrent
+      // transactions for the same event so the recount below is accurate (default Postgres
+      // isolation is READ COMMITTED, not Serializable).
+      await acquireEventCustomFieldsLock(tx, eventId);
+      const recount = await tx.eventCustomField.count({ where: { event_id: eventId } });
+      if (recount >= MAX_CUSTOM_FIELDS_PER_EVENT) {
+        throw new FieldLimitReachedError();
+      }
       const row = await tx.eventCustomField.create({
         data: {
           event_id: eventId,
@@ -144,6 +178,12 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
     });
     return c.json(serializeCustomField(created), 201);
   } catch (err) {
+    if (err instanceof FieldLimitReachedError) {
+      return c.json(
+        { error: "field_limit_reached", limit: MAX_CUSTOM_FIELDS_PER_EVENT },
+        422,
+      );
+    }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return c.json({ error: "source_field_conflict" }, 409);
     }
@@ -154,7 +194,7 @@ export async function handleCreateEventCustomField(c: Context, db: PrismaClient)
 /** Load a custom field scoped to event; null when missing or cross-event (caller returns 403). */
 async function loadCustomFieldInEvent(db: PrismaClient, eventId: string, fieldId: string) {
   const row = await db.eventCustomField.findUnique({ where: { id: fieldId } });
-  if (!row || row.event_id !== eventId) return null;
+  if (row?.event_id !== eventId) return null;
   return row;
 }
 
@@ -224,28 +264,41 @@ export async function handleDeleteEventCustomField(c: Context, db: PrismaClient)
   const existing = await loadCustomFieldInEvent(db, eventId, fieldId);
   if (!existing) return c.json({ error: "forbidden" }, 403);
 
-  const items = await db.eventItem.findMany({
-    where: { event_id: eventId },
-    select: { config: true },
-  });
-  const inUse = items.some((item) => {
-    const config = item.config;
-    if (!config || typeof config !== "object" || Array.isArray(config)) return false;
-    const fields = (config as { content_fields?: unknown }).content_fields;
-    return Array.isArray(fields) && fields.includes(existing.source_field);
-  });
-  if (inUse) {
-    return c.json({ error: "field_in_use" }, 409);
-  }
+  try {
+    await db.$transaction(async (tx) => {
+      // The lock serializes against event-items-api-routes.ts's content_fields validation, which
+      // takes the same lock before its own registry check + commit - without it, an item save
+      // could commit a new content_fields reference between this scan and the delete below
+      // (Postgres default isolation is READ COMMITTED, not Serializable).
+      await acquireEventCustomFieldsLock(tx, eventId);
 
-  await db.$transaction(async (tx) => {
-    await tx.eventCustomField.delete({ where: { id: fieldId } });
-    await writeBulkActionLog(tx, {
-      event_id: eventId,
-      action_type: "event_custom_field_deleted",
-      audit: adminAuditFromContext(c),
-      metadata: { source_field: existing.source_field },
+      const items = await tx.eventItem.findMany({
+        where: { event_id: eventId },
+        select: { config: true },
+      });
+      const inUse = items.some((item) => {
+        const config = item.config;
+        if (!config || typeof config !== "object" || Array.isArray(config)) return false;
+        const fields = (config as { content_fields?: unknown }).content_fields;
+        return Array.isArray(fields) && fields.includes(existing.source_field);
+      });
+      if (inUse) {
+        throw new FieldInUseError();
+      }
+
+      await tx.eventCustomField.delete({ where: { id: fieldId } });
+      await writeBulkActionLog(tx, {
+        event_id: eventId,
+        action_type: "event_custom_field_deleted",
+        audit: adminAuditFromContext(c),
+        metadata: { source_field: existing.source_field },
+      });
     });
-  });
-  return c.json({ ok: true });
+    return c.json({ ok: true });
+  } catch (err) {
+    if (err instanceof FieldInUseError) {
+      return c.json({ error: "field_in_use" }, 409);
+    }
+    throw err;
+  }
 }

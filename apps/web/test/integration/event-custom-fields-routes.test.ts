@@ -232,6 +232,51 @@ describe("POST /api/admin/events/:eventId/custom-fields", () => {
     await prisma.event.delete({ where: { id: seedEventId } });
   });
 
+  // Genuinely concurrent requests (no mocking) at the cap boundary - the two transactions'
+  // pg_advisory_xact_lock acquisitions serialize them, so exactly one of the pair must win
+  // regardless of network/Node scheduling (mirrors event-image-assets-routes.test.ts's identical
+  // advisory-lock race test).
+  it("never exceeds the cap under two genuinely concurrent creates at the boundary (advisory lock)", async () => {
+    const seedEventId = "evt-custom-fields-lock-race";
+    await prisma.event.create({
+      data: {
+        id: seedEventId,
+        title: "Lock race event",
+        slug: "custom-fields-lock-race-event",
+        date: new Date("2026-10-06"),
+        organization_id: ORG_CF,
+      },
+    });
+    await prisma.eventCustomField.createMany({
+      data: Array.from({ length: 19 }, (_, i) => ({
+        event_id: seedEventId,
+        source_field: `lockrace_seed_${i}`,
+        label: `Seed ${i}`,
+      })),
+    });
+
+    const [resA, resB] = await Promise.all([
+      app.request(`/api/admin/events/${seedEventId}/custom-fields`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({ source_field: "lockrace_a", label: "Lock race A" }),
+      }),
+      app.request(`/api/admin/events/${seedEventId}/custom-fields`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({ source_field: "lockrace_b", label: "Lock race B" }),
+      }),
+    ]);
+
+    const statuses = [resA.status, resB.status].sort((a, b) => a - b);
+    expect(statuses).toEqual([201, 422]);
+
+    const finalCount = await prisma.eventCustomField.count({ where: { event_id: seedEventId } });
+    expect(finalCount).toBe(20);
+
+    await prisma.event.delete({ where: { id: seedEventId } });
+  });
+
   it("returns 403 for cross-event admin scope", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_CF_OTHER}/custom-fields`, {
       method: "POST",
@@ -360,5 +405,46 @@ describe("DELETE /api/admin/events/:eventId/custom-fields/:fieldId", () => {
       headers: { Cookie: adminCookie, ...sameOrigin },
     });
     expect(res.status).toBe(403);
+  });
+
+  // Genuinely concurrent delete + item-attach race (no mocking) - both handlers take the same
+  // per-event advisory lock before their respective check+commit, so whichever acquires it first
+  // fully commits before the other's check runs. The invariant that must hold regardless of which
+  // one wins: never end up with the field deleted AND an item's content_fields still pointing at
+  // it (the dangling-reference bug this closes; mirrors event-image-assets-routes.test.ts's
+  // delete-vs-template-save race test).
+  it("never leaves an item referencing a deleted custom field when delete and attach race (advisory lock)", async () => {
+    const field = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF, source_field: "race_attach_field", label: "Race attach" },
+    });
+    const item = await prisma.eventItem.create({
+      data: { event_id: EVENT_CF, key: "giftbag_race", label: "Gift bag race" },
+    });
+
+    const [deleteRes, patchRes] = await Promise.all([
+      app.request(`/api/admin/events/${EVENT_CF}/custom-fields/${field.id}`, {
+        method: "DELETE",
+        headers: { Cookie: adminCookie, ...sameOrigin },
+      }),
+      app.request(`/api/admin/events/${EVENT_CF}/items/${item.id}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({ config: { content_fields: ["race_attach_field"] } }),
+      }),
+    ]);
+
+    // Require exactly one winner and one loser - both-succeeded is the invariant this test
+    // guards, but both-failed would trivially satisfy that same check without proving the race
+    // was actually serialized.
+    const statuses = [deleteRes.status, patchRes.status];
+    expect(statuses.filter((status) => status >= 200 && status < 300)).toHaveLength(1);
+    expect(statuses.filter((status) => status >= 400 && status < 500)).toHaveLength(1);
+
+    const fieldStillExists = await prisma.eventCustomField.findUnique({ where: { id: field.id } });
+    const finalItem = await prisma.eventItem.findUnique({ where: { id: item.id } });
+    const finalContentFields =
+      (finalItem?.config as { content_fields?: string[] } | null)?.content_fields ?? [];
+    const danglingReference = fieldStillExists === null && finalContentFields.includes("race_attach_field");
+    expect(danglingReference).toBe(false);
   });
 });

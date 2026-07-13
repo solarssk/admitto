@@ -17,6 +17,7 @@ import {
   assertEventManageAccess,
   requireEventId,
 } from "./admin-helpers.js";
+import { acquireEventCustomFieldsLock } from "./event-custom-fields-routes.js";
 
 const slugField = z.string().trim().regex(/^[a-z0-9_]+$/, "invalid slug");
 
@@ -141,25 +142,20 @@ function serializeEventItem(row: {
 }
 
 /** Rejects config.content_fields entries that don't exist in the event's EventCustomField
- * registry. Returns a 400 response on an unknown reference, or null when valid/nothing to check. */
+ * registry - throws UnknownContentFieldError on an unknown reference, caught by the caller and
+ * mapped to a 400. Takes a transaction client so the caller can run this after
+ * acquireEventCustomFieldsLock, serializing against a concurrent field delete (see
+ * event-custom-fields-routes.ts) - without that, a field could be deleted between this check and
+ * the item's commit, leaving content_fields pointing at a source_field that no longer exists. */
 async function validateConfigContentFields(
-  db: PrismaClient,
-  c: Context,
+  db: PrismaClient | Prisma.TransactionClient,
   eventId: string,
   config: EventItemConfig | undefined,
-): Promise<Response | null> {
-  if (!config?.content_fields?.length) return null;
+): Promise<void> {
+  if (!config?.content_fields?.length) return;
   const registryFields = await loadEventCustomDataFields(db, eventId);
   const allowed = new Set(registryFields.map((f) => f.source_field));
-  try {
-    validateContentFieldReferences(allowed, config.content_fields);
-  } catch (err) {
-    if (err instanceof UnknownContentFieldError) {
-      return c.json({ error: "unknown_content_field", field: err.sourceField }, 400);
-    }
-    throw err;
-  }
-  return null;
+  validateContentFieldReferences(allowed, config.content_fields);
 }
 
 /** Require `:itemId` route param or return 400. */
@@ -292,11 +288,12 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const contentFieldsError = await validateConfigContentFields(db, c, eventId, parsed.data.config);
-  if (contentFieldsError) return contentFieldsError;
-
   try {
     const row = await db.$transaction(async (tx) => {
+      if (parsed.data.config?.content_fields?.length) {
+        await acquireEventCustomFieldsLock(tx, eventId);
+        await validateConfigContentFields(tx, eventId, parsed.data.config);
+      }
       const created = await tx.eventItem.create({
         data: {
           event_id: eventId,
@@ -332,6 +329,9 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
 
     return c.json(serializeEventItem(row), 201);
   } catch (err) {
+    if (err instanceof UnknownContentFieldError) {
+      return c.json({ error: "unknown_content_field", field: err.sourceField }, 400);
+    }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return c.json({ error: "key_conflict" }, 409);
     }
@@ -366,9 +366,6 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
   if (!parsed.success) {
     return c.json({ error: "validation_failed" }, 400);
   }
-
-  const contentFieldsError = await validateConfigContentFields(db, c, eventId, parsed.data.config);
-  if (contentFieldsError) return contentFieldsError;
 
   const fields: string[] = [];
   const data: Prisma.EventItemUpdateInput = {};
@@ -423,6 +420,16 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
   const result = await runSerializableTransaction(
     db,
     async (tx) => {
+      if (parsed.data.config?.content_fields?.length) {
+        await acquireEventCustomFieldsLock(tx, eventId);
+        const registryFields = await loadEventCustomDataFields(tx, eventId);
+        const allowed = new Set(registryFields.map((f) => f.source_field));
+        const unknownField = parsed.data.config.content_fields.find((f) => !allowed.has(f));
+        if (unknownField) {
+          return { ok: false as const, reason: "unknown_content_field" as const, field: unknownField };
+        }
+      }
+
       if (disabling) {
         const inUse = await countActivelyIssuedStates(tx, itemId);
         if (inUse > 0) return { ok: false as const, reason: "in_use" as const };
@@ -489,6 +496,9 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
   );
 
   if (!result.ok) {
+    if (result.reason === "unknown_content_field") {
+      return c.json({ error: "unknown_content_field", field: result.field }, 400);
+    }
     return c.json({ error: "item_in_use" }, 409);
   }
 
