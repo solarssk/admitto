@@ -25,7 +25,7 @@ export {
   UndoNotAllowedError,
 } from "./undo.js";
 export { parseCustomData, customDataValue } from "./custom-data.js";
-export { buildItemDetail, resolveEventItemContents, collectEventCustomDataFields, mergeEventItemContentFields } from "./event-item-contents.js";
+export { buildItemDetail } from "./event-item-contents.js";
 export {
   loadEventCustomDataFields,
   validateContentFieldReferences,

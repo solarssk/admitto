@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { renderWithToast } from "../test-utils.js";
 
-const fetchEventItems = vi.fn();
+const fetchEventCustomFields = vi.fn();
 const previewImport = vi.fn();
 const commitImport = vi.fn();
 
@@ -33,7 +33,7 @@ vi.mock("../../src/api/client.js", () => ({
       this.eventFull = eventFull;
     }
   },
-  fetchEventItems: (...args: unknown[]) => fetchEventItems(...args),
+  fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
   previewImport: (...args: unknown[]) => previewImport(...args),
   commitImport: (...args: unknown[]) => commitImport(...args),
 }));
@@ -94,7 +94,7 @@ afterEach(() => {
 
 describe("ImportPage upload → preview → commit flow", () => {
   it("selects a file, toggles overwrite, previews, and commits", async () => {
-    fetchEventItems.mockResolvedValue([]);
+    fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
     commitImport.mockResolvedValueOnce({
       importId: "imp-1",
@@ -129,7 +129,7 @@ describe("ImportPage upload → preview → commit flow", () => {
 
   it("lets a superadmin override a capacity block and re-commit with force (plural count)", async () => {
     mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
-    fetchEventItems.mockResolvedValue([]);
+    fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview({ summary: { toCreate: 2, toUpdate: 0, toSkip: 0 } }));
     const { ApiError } = await import("../../src/api/client.js");
     commitImport
@@ -166,7 +166,7 @@ describe("ImportPage upload → preview → commit flow", () => {
   });
 
   it("ignores a cancelled file picker and resets to the upload step when a new file is chosen after preview", async () => {
-    fetchEventItems.mockResolvedValue([]);
+    fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
     renderPage();
     await waitFor(() => expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy());

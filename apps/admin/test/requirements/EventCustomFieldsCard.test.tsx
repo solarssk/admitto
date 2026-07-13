@@ -16,7 +16,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
-import { deleteEventCustomField } from "../../src/api/client.js";
+import { createEventCustomField, deleteEventCustomField } from "../../src/api/client.js";
 
 const addToast = vi.fn();
 vi.mock("@admitto/ui", async (importOriginal) => {
@@ -121,6 +121,39 @@ describe("EventCustomFieldsCard", () => {
         expect.stringMatching(/used as a hint on an item/),
         "warning",
       );
+    });
+  });
+
+  it("shows a generic error toast when delete fails for another reason", async () => {
+    vi.mocked(deleteEventCustomField).mockRejectedValueOnce(new ApiError(500, "server error", ""));
+    renderCard([dietaryField]);
+    fireEvent.click(screen.getByRole("button", { name: "Delete field" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(expect.any(String), "error");
+    });
+  });
+
+  it("closes the delete confirmation without deleting on Cancel", () => {
+    renderCard([dietaryField]);
+    fireEvent.click(screen.getByRole("button", { name: "Delete field" }));
+    expect(screen.getByRole("heading", { name: "Delete custom field" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("heading", { name: "Delete custom field" })).toBeNull();
+    expect(deleteEventCustomField).not.toHaveBeenCalled();
+  });
+
+  it("closes the add modal and refreshes after a field is created", async () => {
+    vi.mocked(createEventCustomField).mockResolvedValueOnce(dietaryField);
+    const { onChanged } = renderCard([]);
+    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
+    fireEvent.change(screen.getByLabelText("Display label"), {
+      target: { value: "Dietary requirements" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create field" }));
+    await waitFor(() => {
+      expect(onChanged).toHaveBeenCalled();
+      expect(screen.queryByRole("heading", { name: "Add custom field" })).toBeNull();
     });
   });
 });

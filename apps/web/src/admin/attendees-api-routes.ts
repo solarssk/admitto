@@ -15,7 +15,7 @@ import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
 import type { AttendeeStatus } from "@admitto/db/status";
 import { formatEventDate, resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
-  collectEventCustomDataFields,
+  loadEventCustomDataFields,
   buildCustomDataFromInput,
   validateCustomDataPatch,
   assertCustomDataMeetsRequirements,
@@ -444,19 +444,6 @@ function cloneCustomData(raw: unknown): Record<string, unknown> {
     return { ...(raw as Record<string, unknown>) };
   }
   return {};
-}
-
-/** Load dynamic custom_data attribute definitions for an event (all items, enabled or not). */
-async function loadEventCustomDataFields(
-  db: PrismaClient,
-  eventId: string,
-): Promise<EventItemContent[]> {
-  const items = await db.eventItem.findMany({
-    where: { event_id: eventId },
-    select: { config: true },
-    orderBy: { key: "asc" },
-  });
-  return collectEventCustomDataFields(items.map((i) => i.config));
 }
 
 /** Require `:id` attendee route param or return 400. */
@@ -936,9 +923,6 @@ function customDataErrorCode(err: unknown): string {
   if (message.startsWith("required_custom_data_field_missing:")) {
     return "required_custom_data_field_missing";
   }
-  if (message.startsWith("conflicting_custom_data_field_options:")) {
-    return "conflicting_custom_data_field_options";
-  }
   return "validation_failed";
 }
 
@@ -976,16 +960,16 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
     ...profilePatch
   } = parsed.data;
 
+  let allowedFields: EventItemContent[] | undefined;
+  async function loadAllowedFieldsOnce(): Promise<EventItemContent[]> {
+    if (!allowedFields) allowedFields = await loadEventCustomDataFields(db, eventId);
+    return allowedFields;
+  }
+
   if (profilePatch.custom_data_fields) {
-    let allowedFields: EventItemContent[];
-    try {
-      allowedFields = await loadEventCustomDataFields(db, eventId);
-    } catch (err) {
-      return c.json({ error: customDataErrorCode(err) }, 400);
-    }
     try {
       profilePatch.custom_data_fields = validateCustomDataPatch(
-        allowedFields,
+        await loadAllowedFieldsOnce(),
         existing.custom_data,
         profilePatch.custom_data_fields,
       );
@@ -1005,19 +989,19 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   }
 
   if (profileChanges || rsvpChange) {
-    let allowedFields: EventItemContent[];
+    let fields: EventItemContent[];
     try {
-      allowedFields = await loadEventCustomDataFields(db, eventId);
+      fields = await loadAllowedFieldsOnce();
     } catch (err) {
       return c.json({ error: customDataErrorCode(err) }, 400);
     }
-    if (allowedFields.length > 0) {
+    if (fields.length > 0) {
       try {
         const nextCustomData =
           profileChanges?.data.custom_data !== undefined
             ? profileChanges.data.custom_data
             : existing.custom_data;
-        assertCustomDataMeetsRequirements(allowedFields, nextCustomData);
+        assertCustomDataMeetsRequirements(fields, nextCustomData);
       } catch (err) {
         return c.json({ error: customDataErrorCode(err) }, 400);
       }

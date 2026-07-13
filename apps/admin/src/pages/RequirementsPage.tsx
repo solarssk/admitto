@@ -94,6 +94,10 @@ export function RequirementsPage() {
       hasLoadedRef.current = true;
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
+      // A background refresh (reloadToken) can fail after an earlier load already succeeded -
+      // reset so the next attempt (e.g. clicking Retry below) shows the Loading… state again
+      // instead of silently skipping it forever.
+      hasLoadedRef.current = false;
       setItems([]);
       setCustomFields([]);
       setOpsConfig(null);

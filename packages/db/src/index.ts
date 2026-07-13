@@ -41,3 +41,7 @@ export {
   backfillAgencyPublicRefs,
   isAgencyAttendee,
 } from './backfill-public-ref.js';
+
+export {
+  backfillEventCustomFields,
+} from './backfill-event-custom-fields.js';

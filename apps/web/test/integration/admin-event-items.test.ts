@@ -219,29 +219,6 @@ describe("GET /api/admin/events/:eventId/items", () => {
     });
     expect(res.status).toBe(403);
   });
-
-  it("passes through legacy config.contents for an item that predates the registry migration", async () => {
-    const legacyItem = await prisma.eventItem.create({
-      data: {
-        id: "ei_legacy_contents_get",
-        event_id: EVENT_EI_A,
-        key: "legacy_contents_get_item",
-        label: "Legacy contents get item",
-        type: "item",
-        config: { contents: [{ label: "Shirt size", source_field: "shirt_size", required: true }] },
-      },
-    });
-
-    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
-      headers: { Cookie: adminCookie },
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { items: { id: string; config: unknown }[] };
-    const item = body.items.find((i) => i.id === legacyItem.id);
-    expect(item?.config).toEqual({
-      contents: [{ label: "Shirt size", source_field: "shirt_size", required: true }],
-    });
-  });
 });
 
 describe("POST /api/admin/events/:eventId/items", () => {
@@ -280,6 +257,48 @@ describe("POST /api/admin/events/:eventId/items", () => {
       body: JSON.stringify({ key: "too_many", label: "Too many", config: { content_fields } }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("accepts a content_fields reference that exists in the event's custom field registry", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        key: "new_item_with_hint",
+        label: "New item with hint",
+        config: { content_fields: ["shirt_size"] },
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { config: { content_fields: string[] } };
+    expect(body.config.content_fields).toEqual(["shirt_size"]);
+  });
+
+  it("rejects a content_fields reference that doesn't exist in the event's custom field registry", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        key: "new_item_bad_hint",
+        label: "New item bad hint",
+        config: { content_fields: ["no_such_field"] },
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; field: string };
+    expect(body.error).toBe("unknown_content_field");
+    expect(body.field).toBe("no_such_field");
+  });
+
+  it("rejects malformed JSON body", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: "{not valid json",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid json");
   });
 
   it("creates item with icon", async () => {
@@ -356,6 +375,17 @@ describe("POST /api/admin/events/:eventId/items", () => {
 });
 
 describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
+  it("rejects malformed JSON body", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: "{not valid json",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid json");
+  });
+
   it("updates label and config", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
       method: "PATCH",
@@ -423,48 +453,6 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
 
     const row = await prisma.eventItem.findUnique({ where: { id: ITEM_SOCKS } });
     expect(row?.config).toMatchObject({ issue_on_checkin: false, requires_return: false });
-  });
-
-  it("preserves a pre-registry legacy config.contents shape across an unrelated save", async () => {
-    // Simulates an item saved before this PR - the new eventItemConfigSchema doesn't know about
-    // "contents", so an admin editing this item today (e.g. just fixing the label) must not
-    // silently wipe it via a full config replace.
-    const legacyItem = await prisma.eventItem.create({
-      data: {
-        id: "ei_legacy_contents",
-        event_id: EVENT_EI_A,
-        key: "legacy_contents_item",
-        label: "Legacy contents item",
-        type: "item",
-        config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
-      },
-    });
-
-    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${legacyItem.id}`, {
-      method: "PATCH",
-      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
-      body: JSON.stringify({ label: "Legacy contents item (renamed)" }),
-    });
-    expect(res.status).toBe(200);
-
-    const row = await prisma.eventItem.findUnique({ where: { id: legacyItem.id } });
-    expect(row?.config).toMatchObject({
-      contents: [{ label: "Shirt size", source_field: "shirt_size" }],
-    });
-
-    // A save that *does* touch config still merges onto the legacy shape rather than replacing
-    // it outright - content_fields is new, contents is untouched leftover state.
-    const configRes = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${legacyItem.id}`, {
-      method: "PATCH",
-      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
-      body: JSON.stringify({ config: { content_fields: [] } }),
-    });
-    expect(configRes.status).toBe(200);
-    const rowAfterConfigSave = await prisma.eventItem.findUnique({ where: { id: legacyItem.id } });
-    expect(rowAfterConfigSave?.config).toMatchObject({
-      contents: [{ label: "Shirt size", source_field: "shirt_size" }],
-      content_fields: [],
-    });
   });
 
   it("clears description when patched with an empty string", async () => {

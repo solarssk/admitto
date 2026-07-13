@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { customDataValue, parseCustomData } from "./custom-data.js";
-import { collectEventCustomDataFields } from "./event-item-contents.js";
+import { loadEventCustomDataFields } from "./event-custom-fields.js";
 import type { EventItemContent } from "./types.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
 import {
@@ -79,17 +79,6 @@ function resolveCompanyDepartment(attendee: {
   };
 }
 
-async function loadEventCustomDataFields(
-  db: PrismaClient,
-  eventId: string,
-): Promise<EventItemContent[]> {
-  const items = await db.eventItem.findMany({
-    where: { event_id: eventId },
-    select: { config: true },
-    orderBy: { key: "asc" },
-  });
-  return collectEventCustomDataFields(items.map((i) => i.config));
-}
 
 export function buildSanitizedExportRows(
   rows: ExportAttendeeSqlRow[],

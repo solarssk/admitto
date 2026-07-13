@@ -8,7 +8,6 @@ import {
   parseEventOpsConfig,
   writeBulkActionLog,
   loadEventCustomDataFields,
-  resolveEventItemContents,
   validateContentFieldReferences,
   UnknownContentFieldError,
   type EventItemConfig,
@@ -106,16 +105,7 @@ export type EventItemDto = {
   config: EventItemConfig | null;
 };
 
-/** Normalize stored JSON config for API responses.
- *
- * When content_fields is absent (item predates the registry migration, never re-saved since),
- * this also passes through the legacy config.contents array under its old key - not part of
- * EventItemConfig's declared shape, so it's added via a weak cast rather than widening the type.
- * The admin attendee edit/create form (flattenCustomDataFieldsFromItems -> resolveEventItemContents,
- * unchanged, deferred to a follow-up PR) reads exactly that key from this response to know which
- * custom fields to render/require; without it, a legacy item's required custom field becomes
- * invisible in that form while the server-side attendee save (also unchanged, reads the raw DB
- * config directly) still enforces it - an unfixable-looking validation error for the operator. */
+/** Normalize stored JSON config for API responses. */
 function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
@@ -125,12 +115,12 @@ function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
     issue_on_checkin: o.issue_on_checkin,
   });
   if (!parsed.success) return null;
-  const config: EventItemConfig & { contents?: unknown } = { ...parsed.data };
-  if (o.content_fields === undefined) {
-    const legacyContents = resolveEventItemContents(raw);
-    if (legacyContents.length > 0) config.contents = legacyContents;
-  }
-  return Object.keys(config).length > 0 ? config : null;
+  // parsed.data always has all 3 keys, even when a value is `undefined` - Object.keys() would
+  // never see it as empty, so filter those out before deciding whether anything is actually set.
+  const defined = Object.fromEntries(
+    Object.entries(parsed.data).filter(([, v]) => v !== undefined),
+  ) as EventItemConfig;
+  return Object.keys(defined).length > 0 ? defined : null;
 }
 
 /** Map a Prisma EventItem row to the admin API DTO. */
@@ -401,18 +391,7 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
     fields.push("enabled");
   }
   if (parsed.data.config !== undefined) {
-    // Merge onto the existing raw config rather than replacing it outright: a live item saved
-    // before this PR may still carry the pre-registry config.contents shape, which the new
-    // eventItemConfigSchema doesn't know about and would otherwise silently drop. Any admin
-    // save of that item (even one unrelated to content fields) would then permanently erase
-    // contents, since Prisma writes the whole config JSON column in one shot. Spreading the
-    // existing config underneath the newly-parsed fields keeps contents intact until PR3 reads
-    // it into the registry - the new UI just can't show it yet (documented sequencing gap).
-    const rawExisting =
-      existing.config && typeof existing.config === "object" && !Array.isArray(existing.config)
-        ? (existing.config as Record<string, unknown>)
-        : {};
-    data.config = { ...rawExisting, ...parsed.data.config } as Prisma.InputJsonValue;
+    data.config = parsed.data.config as Prisma.InputJsonValue;
     fields.push("config");
   }
   if (parsed.data.icon !== undefined && parsed.data.icon !== existing.icon) {
