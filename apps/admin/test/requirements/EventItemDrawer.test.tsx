@@ -242,7 +242,7 @@ describe("EventItemDrawer", () => {
       expect(updateEventItem).toHaveBeenCalledWith(
         "evt-1",
         "item-gift",
-        expect.objectContaining({ config: { requires_return: false } }),
+        expect.objectContaining({ config: { requires_return: false, content_fields: [] } }),
       );
     });
   });

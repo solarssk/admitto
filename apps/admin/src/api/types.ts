@@ -382,7 +382,8 @@ export interface UpdateEventCustomFieldPatch {
   label?: string;
   type?: EventCustomFieldType;
   required?: boolean;
-  options?: string[];
+  /** null clears a previous select's options; omit to leave options untouched. */
+  options?: string[] | null;
 }
 
 export interface CreateEventItemBody {

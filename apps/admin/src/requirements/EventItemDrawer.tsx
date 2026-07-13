@@ -47,16 +47,16 @@ function toForm(item: EventItemDto): FormState {
   };
 }
 
-/** Build PATCH payload; `issue_on_checkin` is persisted only for the badge item. */
+/** Build PATCH payload; `issue_on_checkin` is persisted only for the badge item.
+ * content_fields is always included, even empty - omitting it when the operator unchecks
+ * everything would leave the server unable to tell "clear it" apart from "don't touch it". */
 function toConfig(form: FormState, itemKey: string): EventItemConfigDto {
   const config: EventItemConfigDto = {
     requires_return: form.requires_return,
+    content_fields: form.content_fields,
   };
   if (itemKey === "badge") {
     config.issue_on_checkin = form.issue_on_checkin;
-  }
-  if (form.content_fields.length > 0) {
-    config.content_fields = form.content_fields;
   }
   return config;
 }

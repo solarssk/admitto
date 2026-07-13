@@ -58,7 +58,9 @@ const patchFieldSchema = z
     label: z.string().trim().min(1).max(60).optional(),
     type: z.enum(["text", "select", "boolean"]).optional(),
     required: z.boolean().optional(),
-    options: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
+    // null (not just omitted) is how the client asks to clear a previous select's options when
+    // switching to text/boolean - omitting the key means "leave options untouched" for PATCH.
+    options: z.union([z.array(z.string().trim().min(1).max(60)).max(20), z.null()]).optional(),
   })
   .strict()
   .refine((row) => row.type !== "select" || (row.options != null && row.options.length > 0), {
@@ -227,7 +229,7 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
   if (parsed.data.label !== undefined) data.label = parsed.data.label;
   if (parsed.data.type !== undefined) data.type = parsed.data.type;
   if (parsed.data.required !== undefined) data.required = parsed.data.required;
-  if (parsed.data.options !== undefined) data.options = parsed.data.options;
+  if (parsed.data.options !== undefined) data.options = parsed.data.options ?? Prisma.JsonNull;
 
   if (Object.keys(data).length === 0) {
     return c.json(serializeCustomField(existing));

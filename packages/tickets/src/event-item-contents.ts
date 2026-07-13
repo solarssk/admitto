@@ -59,7 +59,8 @@ function labelWithRequired(label: string, required?: boolean): string {
 /** Normalize the legacy embedded-definition `config.contents` shape. `EventItemConfig` no longer
  * declares `contents` (new items use `content_fields`, see buildItemDetail below), so this reads
  * it via a weak cast - still needed by collectEventCustomDataFields()'s callers until they're
- * rewired onto the EventCustomField registry. */
+ * rewired onto the EventCustomField registry, and as buildItemDetail's own fallback for an item
+ * that hasn't been re-saved since the registry migration. */
 export function resolveEventItemContents(config: unknown): EventItemContent[] {
   if (!config || typeof config !== "object" || Array.isArray(config)) return [];
   const contents = (config as { contents?: unknown }).contents;
@@ -77,6 +78,14 @@ function resolveContentFieldKeys(config: unknown): string[] {
   const fields = (config as { content_fields?: unknown }).content_fields;
   if (!Array.isArray(fields)) return [];
   return fields.filter((f): f is string => typeof f === "string");
+}
+
+/** True once an item has been saved via the current UI (even with every hint unchecked) - lets
+ * buildItemDetail tell "operator explicitly cleared every hint" apart from "never touched since
+ * the registry migration", which need different fallback behavior. */
+function hasContentFieldsKey(config: unknown): boolean {
+  if (!config || typeof config !== "object" || Array.isArray(config)) return false;
+  return "content_fields" in config;
 }
 
 /** Collect unique custom_data attribute fields across multiple EventItem configs (merged metadata). */
@@ -156,19 +165,32 @@ export function collectEventCustomDataFields(itemConfigs: unknown[]): EventItemC
 /** Build operator hint detail from item config + attendee custom_data. `registryFieldsByKey` is
  * the event's EventCustomField rows keyed by source_field; a content_fields entry with no match
  * (stale reference, field deleted after the item last pointed at it) is silently skipped, not an
- * error - the item drawer's own picker is what keeps this in sync during normal use. */
+ * error - the item drawer's own picker is what keeps this in sync during normal use.
+ *
+ * An item that predates the registry migration and hasn't been re-saved since has no
+ * content_fields key at all - falls back to the legacy embedded config.contents shape so its
+ * check-in hint doesn't silently disappear on upgrade. An item saved via the current UI with
+ * content_fields explicitly [] (every hint unchecked) is left alone - that's the operator's
+ * deliberate choice, not a gap to paper over. */
 export function buildItemDetail(
   config: unknown,
   customData: unknown,
   registryFieldsByKey: Map<string, EventItemContent>,
 ): string | undefined {
   const keys = resolveContentFieldKeys(config);
-  if (keys.length === 0) return undefined;
+  const fields: EventItemContent[] =
+    keys.length > 0
+      ? keys.flatMap((key) => {
+          const field = registryFieldsByKey.get(key);
+          return field ? [field] : [];
+        })
+      : hasContentFieldsKey(config)
+        ? []
+        : resolveEventItemContents(config);
+  if (fields.length === 0) return undefined;
 
   const parts: string[] = [];
-  for (const key of keys) {
-    const field = registryFieldsByKey.get(key);
-    if (!field) continue;
+  for (const field of fields) {
     const { label, source_field, type, required } = field;
     const value = customDataValue(customData, source_field);
     const displayLabel = labelWithRequired(label, required);

@@ -258,6 +258,29 @@ describe("buildItemDetail", () => {
   it("returns undefined when content_fields is absent", () => {
     expect(buildItemDetail({}, {}, new Map())).toBeUndefined();
   });
+
+  it("falls back to legacy config.contents when content_fields was never set (pre-registry item)", () => {
+    const detail = buildItemDetail(
+      { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
+      { shirt_size: "L" },
+      new Map(),
+    );
+    expect(detail).toBe("Shirt size: L");
+  });
+
+  it("does not fall back to legacy contents once content_fields is explicitly empty", () => {
+    // The operator unchecked every hint via the current UI - content_fields: [] is a deliberate
+    // choice, not a gap to paper over, even if stale legacy contents is still sitting in config.
+    const detail = buildItemDetail(
+      {
+        content_fields: [],
+        contents: [{ label: "Shirt size", source_field: "shirt_size" }],
+      },
+      { shirt_size: "L" },
+      new Map(),
+    );
+    expect(detail).toBeUndefined();
+  });
 });
 
 describe("customDataValue", () => {

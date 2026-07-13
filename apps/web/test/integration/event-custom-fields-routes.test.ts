@@ -328,6 +328,31 @@ describe("PATCH /api/admin/events/:eventId/custom-fields/:fieldId", () => {
     expect(log?.metadata).toEqual({ source_field: "parking" });
   });
 
+  it("clears stored options when switching away from select (explicit null)", async () => {
+    const created = await prisma.eventCustomField.create({
+      data: {
+        event_id: EVENT_CF,
+        source_field: "shirt_size_patch",
+        label: "Shirt size",
+        type: "select",
+        options: ["S", "M", "L"],
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ type: "text", options: null }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { type: string; options: string[] | null };
+    expect(body.type).toBe("text");
+    expect(body.options).toBeNull();
+
+    const row = await prisma.eventCustomField.findUnique({ where: { id: created.id } });
+    expect(row?.options).toBeNull();
+  });
+
   it("rejects source_field in the PATCH body (unknown key, strict schema)", async () => {
     const created = await prisma.eventCustomField.create({
       data: { event_id: EVENT_CF, source_field: "license_plate", label: "License plate" },

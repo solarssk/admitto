@@ -155,7 +155,30 @@ describe("EventCustomFieldModal — edit", () => {
         label: "Dietary needs",
         type: "text",
         required: true,
-        options: undefined,
+        options: null,
+      });
+    });
+  });
+
+  it("clears a previous select field's options when switching to text", async () => {
+    const shirtField: EventCustomFieldDto = {
+      ...dietaryField,
+      id: "field-shirt",
+      source_field: "shirt_size",
+      label: "Shirt size",
+      type: "select",
+      options: ["S", "M", "L"],
+    };
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, type: "text", options: null });
+    renderModal(shirtField);
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
+        label: "Shirt size",
+        type: "text",
+        required: false,
+        options: null,
       });
     });
   });

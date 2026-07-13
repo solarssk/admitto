@@ -85,7 +85,9 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
           label,
           type: form.type,
           required: form.required,
-          options: form.type === "select" ? options : undefined,
+          // null (not undefined) so the server can tell "clear the previous select's options"
+          // apart from "leave options untouched" - PATCH only updates keys it actually receives.
+          options: form.type === "select" ? options : null,
         });
       } else {
         await createEventCustomField(eventId, {
