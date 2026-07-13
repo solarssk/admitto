@@ -79,6 +79,10 @@ import type {
   CfAccessTestResult,
   EventImageAssetDto,
   EventImageAssetsListResponse,
+  EventCustomFieldDto,
+  EventCustomFieldsListResponse,
+  CreateEventCustomFieldBody,
+  UpdateEventCustomFieldPatch,
 } from "./types.js";
 
 export type EventFullMeta = {
@@ -418,6 +422,54 @@ export async function createEventImageAsset(
 export async function deleteEventImageAsset(eventId: string, assetId: string): Promise<void> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/image-assets/${encodeURIComponent(assetId)}`,
+    jsonDeleteInit(),
+  );
+  await parseJson<{ ok: boolean }>(res);
+}
+
+/** List an event's custom attendee data field registry (dietary, shirt size, ...). */
+export async function fetchEventCustomFields(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventCustomFieldDto[]> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/custom-fields`, {
+    credentials: "same-origin",
+    signal,
+  });
+  const data = await parseJson<EventCustomFieldsListResponse>(res);
+  return data.items;
+}
+
+/** Define a new custom attendee data field for an event; throws ApiError on validation/conflict. */
+export async function createEventCustomField(
+  eventId: string,
+  body: CreateEventCustomFieldBody,
+): Promise<EventCustomFieldDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/custom-fields`,
+    jsonPostInit(body),
+  );
+  return parseJson<EventCustomFieldDto>(res);
+}
+
+/** Update a custom field's label/type/required/options. source_field is immutable after create. */
+export async function updateEventCustomField(
+  eventId: string,
+  fieldId: string,
+  patch: UpdateEventCustomFieldPatch,
+): Promise<EventCustomFieldDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/custom-fields/${encodeURIComponent(fieldId)}`,
+    jsonPatchInit(patch),
+  );
+  return parseJson<EventCustomFieldDto>(res);
+}
+
+/** Delete a custom field. Rejected with 409 field_in_use while an event item still shows it as an
+ * operator hint — remove it from the item first. */
+export async function deleteEventCustomField(eventId: string, fieldId: string): Promise<void> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/custom-fields/${encodeURIComponent(fieldId)}`,
     jsonDeleteInit(),
   );
   await parseJson<{ ok: boolean }>(res);

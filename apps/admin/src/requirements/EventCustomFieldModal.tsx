@@ -1,0 +1,219 @@
+import { useRef, useState } from "react";
+import { Button, IconButton, useToast } from "@admitto/ui";
+import { ApiError, createEventCustomField, updateEventCustomField } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import type { EventCustomFieldDto } from "../api/types.js";
+import { CUSTOM_FIELD_TYPES } from "./customFieldType.js";
+import { slugifyItemKey } from "./itemKey.js";
+import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import "./requirements.css";
+
+export interface EventCustomFieldModalProps {
+  eventId: string;
+  /** null = create a new field; a field row = edit it (source_field becomes read-only). */
+  field: EventCustomFieldDto | null;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+type FormState = {
+  label: string;
+  source_field: string;
+  type: "text" | "select" | "boolean";
+  required: boolean;
+  options: string;
+};
+
+function emptyForm(): FormState {
+  return { label: "", source_field: "", type: "text", required: false, options: "" };
+}
+
+function formFromField(field: EventCustomFieldDto): FormState {
+  return {
+    label: field.label,
+    source_field: field.source_field,
+    type: field.type,
+    required: field.required,
+    options: field.options?.join("\n") ?? "",
+  };
+}
+
+/** Add/edit modal for one EventCustomField registry row (dietary, shirt size, ...). */
+export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: EventCustomFieldModalProps) {
+  const { addToast } = useToast();
+  const isEdit = field !== null;
+  const [form, setForm] = useState<FormState>(() => (field ? formFromField(field) : emptyForm()));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(panelRef, true, onClose);
+
+  function updateLabel(value: string) {
+    setError(null);
+    setForm((f) => ({
+      ...f,
+      label: value,
+      source_field: isEdit ? f.source_field : slugifyItemKey(value),
+    }));
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    const label = form.label.trim();
+    const source_field = form.source_field;
+    if (!label || !source_field) {
+      setError("Enter a display label using letters or numbers.");
+      return;
+    }
+    const options = form.options
+      .split(/[,\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (form.type === "select" && options.length === 0) {
+      setError("Select fields need at least one option.");
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    try {
+      if (isEdit) {
+        await updateEventCustomField(eventId, field.id, {
+          label,
+          type: form.type,
+          required: form.required,
+          options: form.type === "select" ? options : undefined,
+        });
+      } else {
+        await createEventCustomField(eventId, {
+          source_field,
+          label,
+          type: form.type,
+          required: form.required,
+          options: form.type === "select" ? options : undefined,
+        });
+      }
+      onSaved();
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err as ApiError, "Failed to save field."), "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="event-item-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="custom-field-modal-title"
+    >
+      <div className="event-item-modal__backdrop" role="presentation" onClick={onClose} />
+      <div ref={panelRef} className="event-item-modal__panel">
+        <div className="event-item-modal__header">
+          <div>
+            <h2 id="custom-field-modal-title" className="event-item-modal__title">
+              {isEdit ? "Edit custom field" : "Add custom field"}
+            </h2>
+          </div>
+          <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
+        </div>
+        <form id="custom-field-form" className="event-item-modal__body" onSubmit={(e) => void handleSave(e)}>
+          {error && (
+            <p className="text-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="at-field">
+            <div className="add-item-label-row">
+              <label className="at-label" htmlFor="cf-label">
+                Display label
+              </label>
+              {form.source_field && (
+                <span className="at-hint">
+                  ID: <code>{form.source_field}</code>
+                </span>
+              )}
+            </div>
+            <div className="contents-row__key-row">
+              <input
+                id="cf-label"
+                className="at-input"
+                value={form.label}
+                onChange={(e) => updateLabel(e.target.value)}
+                placeholder="Dietary requirements"
+                autoFocus
+              />
+              <div className="contents-row__type-picker">
+                <button
+                  type="button"
+                  className={`contents-row__type-btn${form.required ? " contents-row__type-btn--active" : ""}`}
+                  onClick={() => setForm((f) => ({ ...f, required: !f.required }))}
+                  data-tooltip="Required"
+                  aria-pressed={form.required}
+                  aria-label="Required"
+                >
+                  <i className="ti ti-asterisk" />
+                </button>
+              </div>
+            </div>
+            <span className="at-hint">
+              Used as the import/export column, and to match this field elsewhere. Can't be
+              changed after creation.
+            </span>
+          </div>
+          <div className="at-field">
+            <span className="at-label" id="cf-type-label">
+              Field type
+            </span>
+            <div
+              className="contents-row__type-picker contents-row__type-picker--block"
+              role="group"
+              aria-labelledby="cf-type-label"
+            >
+              {CUSTOM_FIELD_TYPES.map(({ value, icon, label: btnLabel }) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`contents-row__type-btn${form.type === value ? " contents-row__type-btn--active" : ""}`}
+                  onClick={() => {
+                    setError(null);
+                    setForm((f) => ({ ...f, type: value, options: value === "select" ? f.options : "" }));
+                  }}
+                  data-tooltip={btnLabel}
+                  aria-pressed={form.type === value}
+                  aria-label={btnLabel}
+                >
+                  <i className={`ti ${icon}`} />
+                </button>
+              ))}
+            </div>
+          </div>
+          {form.type === "select" && (
+            <div className="at-field">
+              <label className="at-label" htmlFor="cf-options">
+                Options (one per line)
+              </label>
+              <textarea
+                id="cf-options"
+                className="at-textarea"
+                rows={3}
+                value={form.options}
+                onChange={(e) => setForm((f) => ({ ...f, options: e.target.value }))}
+                placeholder={"Vegetarian\nVegan\nGluten-free"}
+                aria-label="Select options"
+              />
+            </div>
+          )}
+        </form>
+        <div className="event-item-modal__footer">
+          <Button type="submit" form="custom-field-form" variant="primary" disabled={saving}>
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Create field"}
+          </Button>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -6,22 +6,18 @@ import {
   updateEventItem,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventItemConfigDto, EventItemContentDto, EventItemDto } from "../api/types.js";
-import {
-  type ContentRow,
-  contentRowFromDto,
-  isValidSourceFieldSlug,
-  validateContentsRows,
-} from "./eventItemContentsForm.js";
-import { IconPicker, normalizeEventItemIconForForm } from "./IconPicker.js";
-import { slugifyItemKey } from "./itemKey.js";
+import type { EventCustomFieldDto, EventItemConfigDto, EventItemDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { customFieldTypeIcon } from "./customFieldType.js";
+import { IconPicker, normalizeEventItemIconForForm } from "./IconPicker.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import "./requirements.css";
 
 export interface EventItemDrawerProps {
   eventId: string;
   item: EventItemDto;
+  /** The event's full custom field registry, for the "show as hint here" picker. */
+  customFields: EventCustomFieldDto[];
   onClose: () => void;
   onUpdated: () => void;
 }
@@ -33,28 +29,8 @@ type FormState = {
   requires_return: boolean;
   issue_on_checkin: boolean;
   icon: string | null;
-  contents: ContentRow[];
+  content_fields: string[];
 };
-
-function emptyContentRow(): ContentRow {
-  return { label: "", source_field: "", type: "text", required: false, options: "" };
-}
-
-/** Resolve contents rows from API config, including legacy `size_field`. */
-function contentsFromConfig(cfg: EventItemConfigDto | null): ContentRow[] {
-  if (!cfg) return [];
-  if (cfg.contents?.length) {
-    return cfg.contents.map(contentRowFromDto);
-  }
-  const legacy = cfg as EventItemConfigDto & { size_field?: string };
-  if (typeof legacy.size_field === "string" && legacy.size_field.trim()) {
-    const source_field = legacy.size_field.trim();
-    if (isValidSourceFieldSlug(source_field)) {
-      return [{ label: "Shirt size", source_field, type: "text", required: false, options: "" }];
-    }
-  }
-  return [];
-}
 
 /** Map API item row to editable drawer form state. */
 function toForm(item: EventItemDto): FormState {
@@ -67,36 +43,31 @@ function toForm(item: EventItemDto): FormState {
     // Match check-in runtime: only explicit false disables auto-issue.
     issue_on_checkin: cfg?.issue_on_checkin !== false,
     icon: normalizeEventItemIconForForm(item.icon),
-    contents: contentsFromConfig(cfg),
+    content_fields: cfg?.content_fields ?? [],
   };
 }
 
 /** Build PATCH payload; `issue_on_checkin` is persisted only for the badge item. */
-function toConfig(
-  form: FormState,
-  itemKey: string,
-  contents: EventItemContentDto[],
-): EventItemConfigDto {
+function toConfig(form: FormState, itemKey: string): EventItemConfigDto {
   const config: EventItemConfigDto = {
     requires_return: form.requires_return,
   };
   if (itemKey === "badge") {
     config.issue_on_checkin = form.issue_on_checkin;
   }
-  if (contents.length > 0) {
-    config.contents = contents;
+  if (form.content_fields.length > 0) {
+    config.content_fields = form.content_fields;
   }
   return config;
 }
 
 /** Centered modal to edit or delete a single event item. */
-export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItemDrawerProps) {
+export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdated }: EventItemDrawerProps) {
   const { addToast } = useToast();
   const [form, setForm] = useState<FormState>(() => toForm(item));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [contentsError, setContentsError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, !deleteConfirmOpen, onClose);
   // "badge" is auto-recreated by the server (ensureBadgeEventItem) — deleting it
@@ -110,22 +81,13 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-
-    const contentsResult = validateContentsRows(form.contents);
-    if (!contentsResult.ok) {
-      setContentsError(contentsResult.message);
-      setSaving(false);
-      return;
-    }
-    setContentsError(null);
-
     try {
       await updateEventItem(eventId, item.id, {
         label: form.label.trim(),
         description: form.description.trim() || null,
         enabled: form.enabled,
         icon: form.icon,
-        config: toConfig(form, item.key, contentsResult.contents),
+        config: toConfig(form, item.key),
       });
       onUpdated();
       onClose();
@@ -157,7 +119,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
         );
       } else if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "default_item")) {
         addToast(
-          "\u201cBadge\u201d is a default item and can't be deleted — turn off Active instead.",
+          "“Badge” is a default item and can't be deleted — turn off Active instead.",
           "warning",
         );
       } else {
@@ -169,38 +131,13 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
     }
   }
 
-  function updateContent(index: number, field: "label" | "source_field", value: string) {
-    setContentsError(null);
-    setForm((f) => {
-      const contents = [...f.contents];
-      const row = { ...contents[index], [field]: value };
-      if (field === "label") {
-        const prevSlug = slugifyItemKey(contents[index].label);
-        const currentField = contents[index].source_field.trim();
-        if (!currentField || currentField === prevSlug) {
-          row.source_field = slugifyItemKey(value);
-        }
-      }
-      contents[index] = row;
-      return { ...f, contents };
-    });
-  }
-
-  function updateContentMeta(
-    index: number,
-    field: "type" | "required" | "options",
-    value: string | boolean,
-  ) {
-    setContentsError(null);
-    setForm((f) => {
-      const contents = [...f.contents];
-      const row = { ...contents[index], [field]: value };
-      if (field === "type" && value !== "select") {
-        row.options = "";
-      }
-      contents[index] = row;
-      return { ...f, contents };
-    });
+  function toggleContentField(sourceField: string, checked: boolean) {
+    setForm((f) => ({
+      ...f,
+      content_fields: checked
+        ? [...f.content_fields, sourceField]
+        : f.content_fields.filter((sf) => sf !== sourceField),
+    }));
   }
 
   return (
@@ -266,133 +203,35 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
             <div>
               <h3 className="event-item-modal__section-title">Attendee data field</h3>
               <p className="requirements-section-hint">
-                Display an attendee data field (e.g. shirt size) next to this item at check-in — useful
-                when the item varies per person.
+                Show one or more custom attendee fields next to this item at check-in — useful when
+                the item varies per person (e.g. shirt size on a gift bag). Manage the fields
+                themselves in the "Custom attendee fields" card above.
               </p>
-              {contentsError && (
-                <p id="contents-error" className="text-error" role="alert">
-                  {contentsError}
+              {customFields.length === 0 ? (
+                <p className="requirements-section-hint">
+                  No custom fields defined for this event yet.
                 </p>
-              )}
-              <div className="requirements-field-stack">
-                {form.contents.map((row, i) => (
-                  <div key={i} className="requirements-contents-row">
-                    <div className="contents-row__label-group">
-                      <div className="contents-row__label-line">
-                        <label className="at-label" htmlFor={`hint-label-${i}`}>
-                          Display label
-                        </label>
-                        <div className="contents-row__label-line-actions">
-                          <label className="contents-row__required">
-                            <input
-                              type="checkbox"
-                              checked={row.required}
-                              onChange={(e) => updateContentMeta(i, "required", e.target.checked)}
-                            />
-                            Required
-                          </label>
-                          <IconButton
-                            label="Remove row"
-                            type="button"
-                            size="sm"
-                            onClick={() => {
-                              setContentsError(null);
-                              setForm((f) => ({
-                                ...f,
-                                contents: f.contents.filter((_, j) => j !== i),
-                              }));
-                            }}
-                            icon={<i className="ti ti-trash" />}
-                          />
-                        </div>
-                      </div>
+              ) : (
+                <div className="requirements-field-stack">
+                  {customFields.map((field) => (
+                    <label
+                      key={field.id}
+                      className="requirements-item-cell requirements-field-picker-row"
+                    >
                       <input
-                        id={`hint-label-${i}`}
-                        className="at-input"
-                        value={row.label}
-                        onChange={(e) => updateContent(i, "label", e.target.value)}
-                        placeholder="Shirt size"
+                        type="checkbox"
+                        checked={form.content_fields.includes(field.source_field)}
+                        onChange={(e) => toggleContentField(field.source_field, e.target.checked)}
                       />
-                    </div>
-
-                    <div className="contents-row__key-row">
-                      <div className="at-field" style={{ flex: 1 }}>
-                        <label className="at-label" htmlFor={`hint-key-${i}`}>
-                          Import key
-                        </label>
-                        <input
-                          id={`hint-key-${i}`}
-                          className="at-input"
-                          value={row.source_field}
-                          onChange={(e) => updateContent(i, "source_field", e.target.value)}
-                          placeholder="shirt_size"
-                          pattern="[a-z0-9_]+"
-                          title="Lowercase letters, numbers, and underscores only"
-                        />
+                      <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
+                      <div className="requirements-item-info">
+                        <div className="requirements-item-name">{field.label}</div>
+                        <div className="requirements-item-id">{field.source_field}</div>
                       </div>
-                      <div
-                        className="contents-row__type-picker"
-                        role="group"
-                        aria-label="Field type"
-                      >
-                        {(
-                          [
-                            { value: "text", icon: "ti-letter-case", label: "Text" },
-                            { value: "select", icon: "ti-list", label: "Select" },
-                            { value: "boolean", icon: "ti-checkbox", label: "Boolean" },
-                          ] as const
-                        ).map(({ value, icon, label: btnLabel }) => (
-                          <button
-                            key={value}
-                            type="button"
-                            className={`contents-row__type-btn${row.type === value ? " contents-row__type-btn--active" : ""}`}
-                            onClick={() => updateContentMeta(i, "type", value)}
-                            data-tooltip={btnLabel}
-                            aria-pressed={row.type === value}
-                            aria-label={btnLabel}
-                          >
-                            <i className={`ti ${icon}`} />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {row.type === "select" && (
-                      <div className="at-field">
-                        <label className="at-label" htmlFor={`hint-opts-${i}`}>
-                          Options (one per line)
-                        </label>
-                        <textarea
-                          id={`hint-opts-${i}`}
-                          className="at-textarea"
-                          rows={3}
-                          value={row.options}
-                          onChange={(e) =>
-                            updateContentMeta(i, "options", e.target.value)
-                          }
-                          placeholder={"XL\nL\nM\nS"}
-                          aria-label="Select options"
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  icon={<i className="ti ti-plus" />}
-                  onClick={() => {
-                    setContentsError(null);
-                    setForm((f) => ({
-                      ...f,
-                      contents: [...f.contents, emptyContentRow()],
-                    }));
-                  }}
-                >
-                  Add field hint
-                </Button>
-              </div>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>
@@ -443,7 +282,7 @@ export function EventItemDrawer({ eventId, item, onClose, onUpdated }: EventItem
               className={isDefaultItem ? "at-tooltip" : undefined}
               data-tooltip={
                 isDefaultItem
-                  ? "Default item — required for \u201cIssue badge at entry\u201d. Turn off Active instead."
+                  ? "Default item — required for “Issue badge at entry”. Turn off Active instead."
                   : undefined
               }
             >
