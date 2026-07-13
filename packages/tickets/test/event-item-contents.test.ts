@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildItemDetail, collectEventCustomDataFields, resolveEventItemContents } from "../src/event-item-contents.js";
 import { customDataValue } from "../src/custom-data.js";
+import type { EventItemContent } from "../src/types.js";
 
 describe("resolveEventItemContents", () => {
   it("preserves content metadata from config", () => {
@@ -41,24 +42,13 @@ describe("resolveEventItemContents", () => {
     ]);
   });
 
-  it("falls back to legacy size_field", () => {
-    expect(resolveEventItemContents({ size_field: "shirt_size" })).toEqual([
-      { label: "Shirt size", source_field: "shirt_size" },
-    ]);
-  });
-
-  it("prefers contents over size_field", () => {
-    expect(
-      resolveEventItemContents({
-        size_field: "shirt_size",
-        contents: [{ label: "Sock size", source_field: "sock_size" }],
-      }),
-    ).toEqual([{ label: "Sock size", source_field: "sock_size" }]);
-  });
-
   it("returns empty for missing config", () => {
     expect(resolveEventItemContents(null)).toEqual([]);
     expect(resolveEventItemContents({})).toEqual([]);
+  });
+
+  it("returns empty for the new content_fields shape (nothing left to resolve)", () => {
+    expect(resolveEventItemContents({ content_fields: ["shirt_size"] })).toEqual([]);
   });
 
   it("trims labels and source fields", () => {
@@ -196,12 +186,6 @@ describe("collectEventCustomDataFields", () => {
     ]);
   });
 
-  it("resolves legacy size_field per config", () => {
-    expect(collectEventCustomDataFields([{ size_field: "shirt_size" }, {}])).toEqual([
-      { label: "Shirt size", source_field: "shirt_size" },
-    ]);
-  });
-
   it("returns empty for no configs", () => {
     expect(collectEventCustomDataFields([])).toEqual([]);
   });
@@ -209,66 +193,70 @@ describe("collectEventCustomDataFields", () => {
 
 describe("buildItemDetail", () => {
   it("formats boolean values and required markers", () => {
+    const registry = new Map<string, EventItemContent>([
+      ["lunch", { label: "Lunch", source_field: "lunch", type: "boolean", required: true }],
+      [
+        "size",
+        { label: "Size", source_field: "size", type: "select", required: true, options: ["S", "M"] },
+      ],
+    ]);
     expect(
-      buildItemDetail(
-        {
-          contents: [
-            { label: "Lunch", source_field: "lunch", type: "boolean", required: true },
-            { label: "Size", source_field: "size", type: "select", required: true, options: ["S", "M"] },
-          ],
-        },
-        { lunch: "true", size: "M" },
-      ),
+      buildItemDetail({ content_fields: ["lunch", "size"] }, { lunch: "true", size: "M" }, registry),
     ).toBe("Lunch*: Yes · Size*: M");
 
-    expect(
-      buildItemDetail(
-        { contents: [{ label: "Lunch", source_field: "lunch", type: "boolean" }] },
-        { lunch: "yes" },
-      ),
-    ).toBe("Lunch: Yes");
+    const lunchOnly = new Map<string, EventItemContent>([
+      ["lunch", { label: "Lunch", source_field: "lunch", type: "boolean" }],
+    ]);
+    expect(buildItemDetail({ content_fields: ["lunch"] }, { lunch: "yes" }, lunchOnly)).toBe(
+      "Lunch: Yes",
+    );
 
-    expect(
-      buildItemDetail(
-        { contents: [{ label: "Size", source_field: "size", required: true }] },
-        {},
-      ),
-    ).toBe("Size*: —");
+    const sizeRequired = new Map<string, EventItemContent>([
+      ["size", { label: "Size", source_field: "size", required: true }],
+    ]);
+    expect(buildItemDetail({ content_fields: ["size"] }, {}, sizeRequired)).toBe("Size*: —");
   });
 
   it("joins multiple attributes with middle dot", () => {
+    const registry = new Map<string, EventItemContent>([
+      ["shirt_size", { label: "Shirt size", source_field: "shirt_size" }],
+      ["sock_size", { label: "Socks size", source_field: "sock_size" }],
+    ]);
     const detail = buildItemDetail(
-      {
-        contents: [
-          { label: "Shirt size", source_field: "shirt_size" },
-          { label: "Socks size", source_field: "sock_size" },
-        ],
-      },
+      { content_fields: ["shirt_size", "sock_size"] },
       { shirt_size: "L", sock_size: "42" },
+      registry,
     );
     expect(detail).toBe("Shirt size: L · Socks size: 42");
   });
 
   it("skips attributes missing from custom_data", () => {
+    const registry = new Map<string, EventItemContent>([
+      ["shirt_size", { label: "Shirt size", source_field: "shirt_size" }],
+    ]);
+    const detail = buildItemDetail({ content_fields: ["shirt_size"] }, { sock_size: "42" }, registry);
+    expect(detail).toBeUndefined();
+  });
+
+  it("builds detail for any item key via content_fields (not giftbag-specific)", () => {
+    const registry = new Map<string, EventItemContent>([
+      ["sock_size", { label: "Socks size", source_field: "sock_size" }],
+    ]);
+    const detail = buildItemDetail({ content_fields: ["sock_size"] }, { sock_size: "M" }, registry);
+    expect(detail).toBe("Socks size: M");
+  });
+
+  it("silently skips a content_fields entry missing from the registry (stale reference)", () => {
     const detail = buildItemDetail(
-      { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
-      { sock_size: "42" },
+      { content_fields: ["deleted_field"] },
+      { deleted_field: "X" },
+      new Map(),
     );
     expect(detail).toBeUndefined();
   });
 
-  it("builds detail for any item key via contents (not giftbag-specific)", () => {
-    const detail = buildItemDetail(
-      { contents: [{ label: "Socks size", source_field: "sock_size" }] },
-      { sock_size: "M" },
-    );
-    expect(detail).toBe("Socks size: M");
-  });
-
-  it("uses legacy size_field when contents absent", () => {
-    expect(buildItemDetail({ size_field: "shirt_size" }, { shirt_size: "XL" })).toBe(
-      "Shirt size: XL",
-    );
+  it("returns undefined when content_fields is absent", () => {
+    expect(buildItemDetail({}, {}, new Map())).toBeUndefined();
   });
 });
 
