@@ -1168,29 +1168,29 @@ describe("POST /api/admin/events/:eventId/attendees/:id/revoke-checkin", () => {
   // 409 like its handleRevokeAttendeeItem sibling does, not let fall through to a raw 500.
   it("returns 409 (not 500) when revoking check-in for an admitted attendee whose pass is blocked", async () => {
     const attId = "att-admin-revoke-checkin-blocked-pass";
-    await prisma.attendee.upsert({
-      where: { id: attId },
-      create: {
-        id: attId,
-        event_id: EVENT_A,
-        email: "revoke-checkin-blocked@example.com",
-        name: "Blocked Pass Revoke",
-        token_hash: hashToken(generateToken()),
-        status: "cancelled",
-        admitted_at: new Date("2026-10-01T10:00:00Z"),
-      },
-      update: { status: "cancelled", admitted_at: new Date("2026-10-01T10:00:00Z") },
-    });
-    await getAttendeeCard(EVENT_A, attId, prisma);
-    const giftbag = await prisma.eventItem.findFirstOrThrow({
-      where: { event_id: EVENT_A, key: "giftbag" },
-    });
-    await prisma.attendeeItemState.update({
-      where: { attendee_id_event_item_id: { attendee_id: attId, event_item_id: giftbag.id } },
-      data: { state: "issued" },
-    });
-
     try {
+      await prisma.attendee.upsert({
+        where: { id: attId },
+        create: {
+          id: attId,
+          event_id: EVENT_A,
+          email: "revoke-checkin-blocked@example.com",
+          name: "Blocked Pass Revoke",
+          token_hash: hashToken(generateToken()),
+          status: "cancelled",
+          admitted_at: new Date("2026-10-01T10:00:00Z"),
+        },
+        update: { status: "cancelled", admitted_at: new Date("2026-10-01T10:00:00Z") },
+      });
+      await getAttendeeCard(EVENT_A, attId, prisma);
+      const giftbag = await prisma.eventItem.findFirstOrThrow({
+        where: { event_id: EVENT_A, key: "giftbag" },
+      });
+      await prisma.attendeeItemState.update({
+        where: { attendee_id_event_item_id: { attendee_id: attId, event_item_id: giftbag.id } },
+        data: { state: "issued" },
+      });
+
       const res = await app.request(
         `/api/admin/events/${EVENT_A}/attendees/${attId}/revoke-checkin`,
         {

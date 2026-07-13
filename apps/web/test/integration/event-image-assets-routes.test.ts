@@ -18,6 +18,7 @@ const EVENT_IA = "evt-img-assets";
 const EVENT_IA_OTHER_ORG = "evt-img-assets-other-org";
 const EVENT_IA_ARCHIVED = "evt-img-assets-archived";
 const EVENT_IA_LIMIT = "evt-img-assets-limit";
+const EVENT_IA_LOCK_RACE = "evt-img-assets-lock-race";
 
 const EMAIL_SUPER = "img-assets-super@example.com";
 const EMAIL_ADMIN = "img-assets-admin@example.com";
@@ -62,14 +63,14 @@ beforeAll(async () => {
   const password_hash = await hashPassword(PASSWORD);
   await prisma.eventImageAsset.deleteMany({
     where: {
-      event_id: { in: [EVENT_IA, EVENT_IA_OTHER_ORG, EVENT_IA_ARCHIVED, EVENT_IA_LIMIT] },
+      event_id: { in: [EVENT_IA, EVENT_IA_OTHER_ORG, EVENT_IA_ARCHIVED, EVENT_IA_LIMIT, EVENT_IA_LOCK_RACE] },
     },
   });
   // MailTemplate has no FK to Event, so event deleteMany below does not cascade these rows.
   await prisma.mailTemplate.deleteMany({
     where: {
       scope_type: "event",
-      scope_id: { in: [EVENT_IA, EVENT_IA_OTHER_ORG, EVENT_IA_ARCHIVED, EVENT_IA_LIMIT] },
+      scope_id: { in: [EVENT_IA, EVENT_IA_OTHER_ORG, EVENT_IA_ARCHIVED, EVENT_IA_LIMIT, EVENT_IA_LOCK_RACE] },
     },
   });
   await prisma.roleAssignment.deleteMany({
@@ -85,7 +86,7 @@ beforeAll(async () => {
     where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN, EMAIL_ADMIN_OTHER, EMAIL_OP] } },
   });
   await prisma.event.deleteMany({
-    where: { id: { in: [EVENT_IA, EVENT_IA_OTHER_ORG, EVENT_IA_ARCHIVED, EVENT_IA_LIMIT] } },
+    where: { id: { in: [EVENT_IA, EVENT_IA_OTHER_ORG, EVENT_IA_ARCHIVED, EVENT_IA_LIMIT, EVENT_IA_LOCK_RACE] } },
   });
   await prisma.organization.deleteMany({ where: { id: { in: [ORG_IA, ORG_IA_OTHER] } } });
 
@@ -124,6 +125,13 @@ beforeAll(async () => {
         title: "Img Assets Limit Event",
         slug: "img-assets-limit-event",
         date: new Date("2026-10-04T12:00:00.000Z"),
+        organization_id: ORG_IA,
+      },
+      {
+        id: EVENT_IA_LOCK_RACE,
+        title: "Img Assets Lock Race Event",
+        slug: "img-assets-lock-race-event",
+        date: new Date("2026-10-05T12:00:00.000Z"),
         organization_id: ORG_IA,
       },
     ],
@@ -441,6 +449,44 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
       countSpy.mockRestore();
     }
   });
+
+  // Genuinely concurrent requests (no mocking) at the cap boundary - the two transactions'
+  // pg_advisory_xact_lock acquisitions serialize them, so exactly one of the pair must win
+  // regardless of network/Node scheduling, unlike the mocked test above which only proves the
+  // in-transaction recount catches an already-committed row.
+  it("never exceeds the cap under two genuinely concurrent uploads at the boundary (advisory lock)", async () => {
+    await prisma.eventImageAsset.createMany({
+      data: Array.from({ length: 19 }, (_, i) => ({
+        event_id: EVENT_IA_LOCK_RACE,
+        token: `lockrace_seed_${i}`,
+        filename: "seed.png",
+        url: `/uploads/default/events/${EVENT_IA_LOCK_RACE}/lockrace-seed-${i}.png`,
+        size_bytes: 12,
+        mime_type: "image/png",
+      })),
+    });
+
+    const [resA, resB] = await Promise.all([
+      app.request(`/api/admin/events/${EVENT_IA_LOCK_RACE}/image-assets`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin },
+        body: uploadForm("lockrace_a"),
+      }),
+      app.request(`/api/admin/events/${EVENT_IA_LOCK_RACE}/image-assets`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin },
+        body: uploadForm("lockrace_b"),
+      }),
+    ]);
+
+    const statuses = [resA.status, resB.status].sort((a, b) => a - b);
+    expect(statuses).toEqual([201, 422]);
+
+    const finalCount = await prisma.eventImageAsset.count({
+      where: { event_id: EVENT_IA_LOCK_RACE },
+    });
+    expect(finalCount).toBe(20);
+  });
 });
 
 describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
@@ -514,6 +560,65 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
       { method: "DELETE", headers: { Cookie: superCookie, ...sameOrigin } },
     );
     expect(delRes.status).toBe(200);
+  });
+
+  // Genuinely concurrent delete + template-save referencing the same token (no mocking) -
+  // both handlers take the same per-event advisory lock before their respective check+commit,
+  // so whichever acquires it first fully commits before the other's check runs. The invariant
+  // that must hold regardless of which one wins the race: never end up with the asset deleted
+  // AND a saved template still pointing at its token (the dangling-reference bug this closes).
+  it("never leaves a template referencing a deleted image asset when delete and save race (advisory lock)", async () => {
+    // Reset EVENT_IA_LOCK_RACE's library - the preceding cap-boundary test leaves it at 20/20.
+    await prisma.eventImageAsset.deleteMany({ where: { event_id: EVENT_IA_LOCK_RACE } });
+
+    const createRes = await app.request(`/api/admin/events/${EVENT_IA_LOCK_RACE}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm("race_ref_logo"),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string };
+
+    const [deleteRes, saveRes] = await Promise.all([
+      app.request(`/api/admin/events/${EVENT_IA_LOCK_RACE}/image-assets/${created.id}`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      }),
+      app.request(`/api/admin/events/${EVENT_IA_LOCK_RACE}/template`, {
+        method: "PUT",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject_template: "Subject",
+          // Required placeholders (REQUIRED_URL_PLACEHOLDERS) must be present or
+          // collectTemplateSourceErrors rejects the request before it ever reaches the
+          // locked transaction, and the test would pass without exercising the race at all.
+          body_template:
+            '<p><a href="{{ticket_url}}">Ticket</a><img src="{{qr_image_url}}" alt="" />' +
+            '<img src="{{race_ref_logo}}" alt="" /></p>',
+          template_format: "html",
+        }),
+      }),
+    ]);
+
+    // Require exactly one winner and one loser - both-succeeded is the invariant this test
+    // guards, but both-failed (e.g. both 500) would trivially satisfy that same check without
+    // proving the race was actually serialized.
+    const statuses = [deleteRes.status, saveRes.status];
+    expect(statuses.filter((status) => status >= 200 && status < 300)).toHaveLength(1);
+    expect(statuses.filter((status) => status >= 400 && status < 500)).toHaveLength(1);
+
+    const assetStillExists = await prisma.eventImageAsset.findUnique({ where: { id: created.id } });
+    const referencingTemplate = await prisma.mailTemplate.findFirst({
+      where: {
+        scope_type: "event",
+        scope_id: EVENT_IA_LOCK_RACE,
+        OR: [
+          { subject_template: { contains: "{{race_ref_logo}}" } },
+          { body_template: { contains: "{{race_ref_logo}}" } },
+        ],
+      },
+    });
+    expect(assetStillExists === null && referencingTemplate !== null).toBe(false);
   });
 
   it("returns 403 for an asset belonging to a different event", async () => {

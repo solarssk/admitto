@@ -48,6 +48,7 @@ import {
   requireEventId,
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
+import { acquireEventImageAssetsLock } from "./event-image-assets-routes.js";
 
 /** Max character length for `body_template` (schema); shared with wire byte cap below. */
 export const TEMPLATE_BODY_CHAR_LIMIT = 200_000;
@@ -301,6 +302,10 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
 
   try {
     await db.$transaction(async (tx) => {
+      // Serializes against event-image-assets-routes.ts's delete handler, which takes the same
+      // lock before its asset_in_use recheck - without it, a delete could commit between that
+      // handler's check and this save (Postgres default isolation is READ COMMITTED).
+      await acquireEventImageAssetsLock(tx, eventId);
       await setMailTemplate(
         { scopeType: "event", scopeId: eventId },
         {
@@ -799,6 +804,10 @@ export async function handlePutEventTemplateById(
 
   try {
     await db.$transaction(async (tx) => {
+      // Serializes against event-image-assets-routes.ts's delete handler, which takes the same
+      // lock before its asset_in_use recheck - without it, a delete could commit between that
+      // handler's check and this save (Postgres default isolation is READ COMMITTED).
+      await acquireEventImageAssetsLock(tx, eventId);
       await setMailTemplate(
         { scopeType: "event", scopeId: eventId, name: existing.name },
         {
@@ -881,6 +890,11 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
   for (let attempt = 0; attempt < CREATE_TEMPLATE_MAX_ATTEMPTS; attempt++) {
     try {
       const created = await db.$transaction(async (tx) => {
+        // Serializes against event-image-assets-routes.ts's delete handler, which takes the
+        // same lock before its asset_in_use recheck - without it, a delete could commit between
+        // that handler's check and this create (Postgres default isolation is READ COMMITTED).
+        await acquireEventImageAssetsLock(tx, eventId);
+
         const eventCount = await tx.mailTemplate.count({
           where: { scope_type: "event", scope_id: eventId },
         });
