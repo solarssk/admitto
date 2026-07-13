@@ -98,6 +98,28 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+describe("RequirementsPage load failure", () => {
+  it("shows a retry EmptyState on a failed load, and recovers when Retry succeeds", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventItems
+      .mockRejectedValueOnce(new ApiError(500, "server error"))
+      .mockResolvedValueOnce([badgeItem]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+
+    renderPage();
+
+    await screen.findByText("Could not load requirements");
+    expect(screen.getByText("Failed to load requirements.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Could not load requirements")).toBeNull();
+    });
+    expect(await screen.findByRole("switch", { name: "Issue badge at entry" })).toBeTruthy();
+  });
+});
+
 describe("RequirementsPage badge/ops-config sync", () => {
   it("refreshes ops config after disabling the badge item, so the toggle doesn't show stale ON", async () => {
     fetchEventItems.mockResolvedValue([badgeItem]);

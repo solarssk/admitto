@@ -129,6 +129,17 @@ describe("GET /api/admin/events/:eventId/custom-fields", () => {
 });
 
 describe("POST /api/admin/events/:eventId/custom-fields", () => {
+  it("rejects malformed JSON body", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: "{not valid json",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid json");
+  });
+
   it("creates a field and audits without PII", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields`, {
       method: "POST",
@@ -295,6 +306,20 @@ describe("POST /api/admin/events/:eventId/custom-fields", () => {
 });
 
 describe("PATCH /api/admin/events/:eventId/custom-fields/:fieldId", () => {
+  it("rejects malformed JSON body", async () => {
+    const created = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF, source_field: "bad_json_patch", label: "Bad json patch" },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: "{not valid json",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid json");
+  });
+
   it("updates label, type, required, and options - source_field is immutable", async () => {
     const created = await prisma.eventCustomField.create({
       data: { event_id: EVENT_CF, source_field: "parking", label: "Parking" },

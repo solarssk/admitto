@@ -282,6 +282,48 @@ describe("POST /api/admin/events/:eventId/items", () => {
     expect(res.status).toBe(400);
   });
 
+  it("accepts a content_fields reference that exists in the event's custom field registry", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        key: "new_item_with_hint",
+        label: "New item with hint",
+        config: { content_fields: ["shirt_size"] },
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { config: { content_fields: string[] } };
+    expect(body.config.content_fields).toEqual(["shirt_size"]);
+  });
+
+  it("rejects a content_fields reference that doesn't exist in the event's custom field registry", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        key: "new_item_bad_hint",
+        label: "New item bad hint",
+        config: { content_fields: ["no_such_field"] },
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; field: string };
+    expect(body.error).toBe("unknown_content_field");
+    expect(body.field).toBe("no_such_field");
+  });
+
+  it("rejects malformed JSON body", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: "{not valid json",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid json");
+  });
+
   it("creates item with icon", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
       method: "POST",
@@ -356,6 +398,17 @@ describe("POST /api/admin/events/:eventId/items", () => {
 });
 
 describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
+  it("rejects malformed JSON body", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: "{not valid json",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid json");
+  });
+
   it("updates label and config", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
       method: "PATCH",
