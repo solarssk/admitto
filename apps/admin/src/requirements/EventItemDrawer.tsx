@@ -30,6 +30,12 @@ type FormState = {
   issue_on_checkin: boolean;
   icon: string | null;
   content_fields: string[];
+  // True when the loaded item's config already had a content_fields key (even an empty array) -
+  // an item that predates the registry migration and has never been re-saved has none. Tracked
+  // separately from content_fields itself so toConfig can tell "operator explicitly cleared
+  // every hint" apart from "this item never had the new shape, don't touch it" on an unrelated
+  // save (e.g. just editing the label) - see toConfig below.
+  hadContentFieldsKey: boolean;
 };
 
 /** Map API item row to editable drawer form state. */
@@ -44,19 +50,26 @@ function toForm(item: EventItemDto): FormState {
     issue_on_checkin: cfg?.issue_on_checkin !== false,
     icon: normalizeEventItemIconForForm(item.icon),
     content_fields: cfg?.content_fields ?? [],
+    hadContentFieldsKey: cfg?.content_fields !== undefined,
   };
 }
 
 /** Build PATCH payload; `issue_on_checkin` is persisted only for the badge item.
- * content_fields is always included, even empty - omitting it when the operator unchecks
- * everything would leave the server unable to tell "clear it" apart from "don't touch it". */
+ * content_fields is included whenever the item already had this key (even empty - so the
+ * operator explicitly clearing every hint is correctly persisted as a clear, not silently
+ * dropped) or the operator has actually checked something. A legacy item that's never had
+ * content_fields and whose picker sits at its default empty state is left untouched, so saving
+ * an unrelated change (label, active flag, ...) can't silently clobber its check-in hint, which
+ * for such an item still comes from the legacy config.contents fallback (buildItemDetail). */
 function toConfig(form: FormState, itemKey: string): EventItemConfigDto {
   const config: EventItemConfigDto = {
     requires_return: form.requires_return,
-    content_fields: form.content_fields,
   };
   if (itemKey === "badge") {
     config.issue_on_checkin = form.issue_on_checkin;
+  }
+  if (form.hadContentFieldsKey || form.content_fields.length > 0) {
+    config.content_fields = form.content_fields;
   }
   return config;
 }

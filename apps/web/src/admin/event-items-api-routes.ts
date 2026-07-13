@@ -8,6 +8,7 @@ import {
   parseEventOpsConfig,
   writeBulkActionLog,
   loadEventCustomDataFields,
+  resolveEventItemContents,
   validateContentFieldReferences,
   UnknownContentFieldError,
   type EventItemConfig,
@@ -105,7 +106,16 @@ export type EventItemDto = {
   config: EventItemConfig | null;
 };
 
-/** Normalize stored JSON config for API responses. */
+/** Normalize stored JSON config for API responses.
+ *
+ * When content_fields is absent (item predates the registry migration, never re-saved since),
+ * this also passes through the legacy config.contents array under its old key - not part of
+ * EventItemConfig's declared shape, so it's added via a weak cast rather than widening the type.
+ * The admin attendee edit/create form (flattenCustomDataFieldsFromItems -> resolveEventItemContents,
+ * unchanged, deferred to a follow-up PR) reads exactly that key from this response to know which
+ * custom fields to render/require; without it, a legacy item's required custom field becomes
+ * invisible in that form while the server-side attendee save (also unchanged, reads the raw DB
+ * config directly) still enforces it - an unfixable-looking validation error for the operator. */
 function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
@@ -115,7 +125,12 @@ function serializeEventItemConfig(raw: unknown): EventItemConfig | null {
     issue_on_checkin: o.issue_on_checkin,
   });
   if (!parsed.success) return null;
-  return Object.keys(parsed.data).length > 0 ? parsed.data : null;
+  const config: EventItemConfig & { contents?: unknown } = { ...parsed.data };
+  if (o.content_fields === undefined) {
+    const legacyContents = resolveEventItemContents(raw);
+    if (legacyContents.length > 0) config.contents = legacyContents;
+  }
+  return Object.keys(config).length > 0 ? config : null;
 }
 
 /** Map a Prisma EventItem row to the admin API DTO. */

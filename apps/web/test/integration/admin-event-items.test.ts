@@ -219,6 +219,29 @@ describe("GET /api/admin/events/:eventId/items", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("passes through legacy config.contents for an item that predates the registry migration", async () => {
+    const legacyItem = await prisma.eventItem.create({
+      data: {
+        id: "ei_legacy_contents_get",
+        event_id: EVENT_EI_A,
+        key: "legacy_contents_get_item",
+        label: "Legacy contents get item",
+        type: "item",
+        config: { contents: [{ label: "Shirt size", source_field: "shirt_size", required: true }] },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { id: string; config: unknown }[] };
+    const item = body.items.find((i) => i.id === legacyItem.id);
+    expect(item?.config).toEqual({
+      contents: [{ label: "Shirt size", source_field: "shirt_size", required: true }],
+    });
+  });
 });
 
 describe("POST /api/admin/events/:eventId/items", () => {
