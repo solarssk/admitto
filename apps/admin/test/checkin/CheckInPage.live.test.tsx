@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
@@ -26,8 +26,9 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ deviceLabel: "desk-1", assignments: [] }),
 }));
 
+const useConnectionState = vi.fn();
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ state: "connected", reportApiError: vi.fn() }),
+  useConnectionState: () => useConnectionState(),
 }));
 
 vi.mock("../../src/hooks/useIsDesktop.js", () => ({
@@ -91,6 +92,10 @@ function renderPage() {
     </ToastProvider>,
   );
 }
+
+beforeEach(() => {
+  useConnectionState.mockReturnValue({ state: "connected", reportApiError: vi.fn() });
+});
 
 afterEach(() => {
   cleanup();
@@ -210,6 +215,21 @@ describe("CheckInPage live feed", () => {
     await waitFor(() => {
       expect(screen.getByText(/Live updates unavailable — check access/i)).toBeTruthy();
     });
+  });
+
+  it("suppresses the SSE-specific banner when the heartbeat is also down, showing only the connection banner (#458)", async () => {
+    streamStatus = "reconnecting";
+    useConnectionState.mockReturnValue({ state: "server_unavailable", reportApiError: vi.fn() });
+    mockPageBootstrap([], 0);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.querySelector(".ck-connection--degraded")?.textContent).toContain(
+        "Connection error — check network",
+      );
+    });
+    expect(screen.queryByText(/Reconnecting live updates/i)).toBeNull();
   });
 
   it("sidebar refresh replaces optimistic count with authoritative server stats", async () => {

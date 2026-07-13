@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
@@ -26,8 +26,9 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ deviceLabel: "desk-1", assignments: [] }),
 }));
 
+const useConnectionState = vi.fn();
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ state: "connected", reportApiError: vi.fn() }),
+  useConnectionState: () => useConnectionState(),
 }));
 
 // Mutable viewport so a single file can exercise both the desktop card path
@@ -119,6 +120,10 @@ const cardWithItem = {
   blocked: false,
 };
 
+beforeEach(() => {
+  useConnectionState.mockReturnValue({ state: "connected", reportApiError: vi.fn() });
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -189,5 +194,50 @@ describe("CheckInPage — transport error banner lifecycle", () => {
       .filter((el) => el.textContent === "Request failed. Try again.");
     expect(alerts).toHaveLength(1);
     expect(document.querySelector(".checkin-surface__transport-error")).toBeNull();
+  });
+
+  it("clears a stale transport-error once the connection recovers, without a retry (#458)", async () => {
+    // openLookupResultImpl (Recent-scans row click) isn't gated on canAct
+    // — unlike the scan bar's suggestion fetch — so it can fail while
+    // disconnected, reproducing the #458 repro (backend restart, then click
+    // a Recent-scans row before the connection recovers).
+    useConnectionState.mockReturnValue({ state: "server_unavailable", reportApiError: vi.fn() });
+    mockPageBootstrap();
+    fetchCheckInHistory.mockResolvedValue([
+      {
+        id: "hist-1",
+        event_id: "evt-live",
+        attendee_id: "att-1",
+        status: "admitted",
+        checked_in_at: "2026-06-01T10:00:00.000Z",
+        checked_in_by: null,
+        device_id: null,
+        source: null,
+        attendee: { name: "Anna Alpha", ticket_type: "vip" },
+      },
+    ]);
+    fetchAttendeeCard.mockRejectedValueOnce(new Error("boom"));
+
+    const { rerender } = renderPage();
+    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    fireEvent.click(screen.getByText("Anna Alpha"));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toBe("Request failed. Try again."),
+    );
+
+    // Connection recovers in the background — no retry click from the operator.
+    useConnectionState.mockReturnValue({ state: "connected", reportApiError: vi.fn() });
+    rerender(
+      <ToastProvider>
+        <MemoryRouter initialEntries={["/admin/events/evt-live/checkin"]}>
+          <Routes>
+            <Route path="/admin/events/:eventId/checkin" element={<CheckInPage />} />
+          </Routes>
+        </MemoryRouter>
+      </ToastProvider>,
+    );
+
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 });

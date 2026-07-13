@@ -303,6 +303,14 @@ export function CheckInPage({
     };
   }, [eventId]);
 
+  // A transport error can be set while the connection is down (e.g. a
+  // Recent-scans click that isn't gated on `canAct`, #458) and then sit
+  // stale on screen once the server responds again — clear it the moment
+  // the connection actually recovers, not only on the next retried action.
+  useEffect(() => {
+    if (connectionState === "connected") setTransportError(null);
+  }, [connectionState]);
+
   const focusScan = useCallback(() => {
     if (showMobileOverlay) return;
     requestAnimationFrame(() => inputRef.current?.focus());
@@ -719,9 +727,8 @@ export function CheckInPage({
       if (!eventId || !canAct) return false;
 
       if (!allowManualLookup) {
-        const message = LOOKUP_DISABLED_MSG;
-        if (showMobileOverlay) setOverlayManualError(message);
-        else setTransportError(message);
+        if (showMobileOverlay) setOverlayManualError(LOOKUP_DISABLED_MSG);
+        else addToast(LOOKUP_DISABLED_MSG, "warning");
         return false;
       }
 
@@ -1076,20 +1083,23 @@ export function CheckInPage({
       <CheckinConnectionLiveRegion />
       <CheckinConnectionBanner />
 
-      {streamStatus === "auth_error" && (
+      {/* The SSE live-updates feed and the app-wide heartbeat are two
+          independent connections (#458) — when both drop together (the
+          common case, e.g. a backend restart), CheckinConnectionBanner
+          above already covers it, so these only add value when the stream
+          has a problem of its own while the heartbeat is otherwise healthy.
+          `!canAct` used to get its own duplicate "blocked" paragraph here
+          too; canMutateCheckin is driven by the exact same connectionState
+          the banner above already reflects, so it was announcing the same
+          thing twice in different styling. */}
+      {connectionState === "connected" && streamStatus === "auth_error" && (
         <p className="check-in__offline-banner" role="status">
           Live updates unavailable — check access
         </p>
       )}
-      {streamStatus === "reconnecting" && (
+      {connectionState === "connected" && streamStatus === "reconnecting" && (
         <p className="check-in__offline-banner" role="status">
           Reconnecting live updates…
-        </p>
-      )}
-
-      {!canAct && (
-        <p className="checkin-surface__transport-error" role="status">
-          Not connected — new check-ins and actions are blocked until the server responds.
         </p>
       )}
 
