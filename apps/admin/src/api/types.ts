@@ -350,6 +350,8 @@ export interface EventImageAssetsListResponse {
   items: EventImageAssetDto[];
 }
 
+export type EventCustomFieldType = "text" | "select" | "boolean";
+
 /** A definition in the event's custom attendee data field registry (dietary, shirt size, ...) -
  * the single source of truth for a field; EventItem.config.content_fields only references these
  * by source_field. */
@@ -357,7 +359,7 @@ export interface EventCustomFieldDto {
   id: string;
   source_field: string;
   label: string;
-  type: "text" | "select" | "boolean";
+  type: EventCustomFieldType;
   required: boolean;
   options: string[] | null;
   created_at: string;
@@ -370,7 +372,7 @@ export interface EventCustomFieldsListResponse {
 export interface CreateEventCustomFieldBody {
   source_field: string;
   label: string;
-  type?: "text" | "select" | "boolean";
+  type?: EventCustomFieldType;
   required?: boolean;
   options?: string[];
 }
@@ -378,7 +380,7 @@ export interface CreateEventCustomFieldBody {
 /** `source_field` is immutable after create - see EventCustomFieldDto. */
 export interface UpdateEventCustomFieldPatch {
   label?: string;
-  type?: "text" | "select" | "boolean";
+  type?: EventCustomFieldType;
   required?: boolean;
   options?: string[];
 }

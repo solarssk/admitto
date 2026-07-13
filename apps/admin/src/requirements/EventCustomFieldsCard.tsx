@@ -51,6 +51,69 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, onChang
     }
   }
 
+  function renderRows() {
+    if (loading) {
+      return (
+        <tr>
+          <td colSpan={4} className="attendees-empty">
+            Loading…
+          </td>
+        </tr>
+      );
+    }
+    if (fields.length === 0) {
+      return (
+        <tr>
+          <td colSpan={4} className="attendees-empty">
+            No custom fields yet. Add one to collect extra attendee data, like dietary
+            requirements.
+          </td>
+        </tr>
+      );
+    }
+    return fields.map((field) => (
+      <tr key={field.id}>
+        <td>
+          <div className="requirements-item-cell">
+            <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
+            <div className="requirements-item-info">
+              <div className="requirements-item-name">{field.label}</div>
+              <div className="requirements-item-id">{field.source_field}</div>
+            </div>
+          </div>
+        </td>
+        <td className="requirements-type-col">{field.type}</td>
+        <td>{field.required ? "Yes" : "No"}</td>
+        <td className="requirements-item-actions">
+          <div className="requirements-item-actions__wrap">
+            <ArchivedGuard event={event} reasonId={`edit-custom-field-reason-${field.id}`}>
+              {(guard) => (
+                <IconButton
+                  label="Edit field"
+                  size="sm"
+                  icon={<i className="ti ti-pencil" aria-hidden="true" />}
+                  onClick={() => setEditField(field)}
+                  {...guard}
+                />
+              )}
+            </ArchivedGuard>
+            <ArchivedGuard event={event} reasonId={`delete-custom-field-reason-${field.id}`}>
+              {(guard) => (
+                <IconButton
+                  label="Delete field"
+                  size="sm"
+                  icon={<i className="ti ti-trash" aria-hidden="true" />}
+                  onClick={() => setDeleteTarget(field)}
+                  {...guard}
+                />
+              )}
+            </ArchivedGuard>
+          </div>
+        </td>
+      </tr>
+    ));
+  }
+
   return (
     <section className="requirements-section">
       <Card
@@ -82,64 +145,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, onChang
                 <th aria-label="Actions" />
               </tr>
             </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={4} className="attendees-empty">
-                    Loading…
-                  </td>
-                </tr>
-              ) : fields.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="attendees-empty">
-                    No custom fields yet. Add one to collect extra attendee data, like dietary
-                    requirements.
-                  </td>
-                </tr>
-              ) : (
-                fields.map((field) => (
-                  <tr key={field.id}>
-                    <td>
-                      <div className="requirements-item-cell">
-                        <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
-                        <div className="requirements-item-info">
-                          <div className="requirements-item-name">{field.label}</div>
-                          <div className="requirements-item-id">{field.source_field}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="requirements-type-col">{field.type}</td>
-                    <td>{field.required ? "Yes" : "No"}</td>
-                    <td className="requirements-item-actions">
-                      <div className="requirements-item-actions__wrap">
-                        <ArchivedGuard event={event} reasonId={`edit-custom-field-reason-${field.id}`}>
-                          {(guard) => (
-                            <IconButton
-                              label="Edit field"
-                              size="sm"
-                              icon={<i className="ti ti-pencil" aria-hidden="true" />}
-                              onClick={() => setEditField(field)}
-                              {...guard}
-                            />
-                          )}
-                        </ArchivedGuard>
-                        <ArchivedGuard event={event} reasonId={`delete-custom-field-reason-${field.id}`}>
-                          {(guard) => (
-                            <IconButton
-                              label="Delete field"
-                              size="sm"
-                              icon={<i className="ti ti-trash" aria-hidden="true" />}
-                              onClick={() => setDeleteTarget(field)}
-                              {...guard}
-                            />
-                          )}
-                        </ArchivedGuard>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
+            <tbody>{renderRows()}</tbody>
           </table>
         </div>
       </Card>

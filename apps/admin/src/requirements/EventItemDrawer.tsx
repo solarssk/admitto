@@ -220,6 +220,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                     >
                       <input
                         type="checkbox"
+                        aria-label={field.label}
                         checked={form.content_fields.includes(field.source_field)}
                         onChange={(e) => toggleContentField(field.source_field, e.target.checked)}
                       />

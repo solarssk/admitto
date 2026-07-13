@@ -48,6 +48,10 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, true, onClose);
 
+  let submitLabel = "Create field";
+  if (saving) submitLabel = "Saving…";
+  else if (isEdit) submitLabel = "Save changes";
+
   function updateLabel(value: string) {
     setError(null);
     setForm((f) => ({
@@ -207,7 +211,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
         </form>
         <div className="event-item-modal__footer">
           <Button type="submit" form="custom-field-form" variant="primary" disabled={saving}>
-            {saving ? "Saving…" : isEdit ? "Save changes" : "Create field"}
+            {submitLabel}
           </Button>
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
