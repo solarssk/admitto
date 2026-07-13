@@ -190,7 +190,10 @@ describe("CheckInPage scan-bar lookup", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
-      expect(screen.getByText(/Manual lookup is disabled for this event/)).toBeTruthy();
+      expect(addToast).toHaveBeenCalledWith(
+        "Manual lookup is disabled for this event — use QR scan only.",
+        "warning",
+      );
     });
     expect(screen.queryByText(/do not have access/i)).toBeNull();
   });

@@ -5,6 +5,8 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
+import type { ConnectionState } from "../../src/connection/types.js";
+import { connectionStateValue } from "./connectionStateMock.js";
 
 const fetchCheckInHistory = vi.fn();
 const fetchCheckInStats = vi.fn();
@@ -30,6 +32,10 @@ const useConnectionState = vi.fn();
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => useConnectionState(),
 }));
+
+function mockConnectionState(state: ConnectionState) {
+  useConnectionState.mockReturnValue(connectionStateValue(state));
+}
 
 vi.mock("../../src/hooks/useIsDesktop.js", () => ({
   useIsDesktop: () => true,
@@ -94,7 +100,7 @@ function renderPage() {
 }
 
 beforeEach(() => {
-  useConnectionState.mockReturnValue({ state: "connected", reportApiError: vi.fn() });
+  mockConnectionState("connected");
 });
 
 afterEach(() => {
@@ -219,7 +225,7 @@ describe("CheckInPage live feed", () => {
 
   it("suppresses the SSE-specific banner when the heartbeat is also down, showing only the connection banner (#458)", async () => {
     streamStatus = "reconnecting";
-    useConnectionState.mockReturnValue({ state: "server_unavailable", reportApiError: vi.fn() });
+    mockConnectionState("server_unavailable");
     mockPageBootstrap([], 0);
 
     renderPage();
@@ -230,6 +236,30 @@ describe("CheckInPage live feed", () => {
       );
     });
     expect(screen.queryByText(/Reconnecting live updates/i)).toBeNull();
+  });
+
+  it("shows the reconnecting banner when only the live-updates stream is affected and the heartbeat is healthy", async () => {
+    streamStatus = "reconnecting";
+    mockPageBootstrap([], 0);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Reconnecting live updates/i)).toBeTruthy();
+    });
+  });
+
+  it("suppresses the auth_error banner when the heartbeat is also down", async () => {
+    streamStatus = "auth_error";
+    mockConnectionState("server_unavailable");
+    mockPageBootstrap([], 0);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.querySelector(".ck-connection--degraded")).not.toBeNull();
+    });
+    expect(screen.queryByText(/Live updates unavailable — check access/i)).toBeNull();
   });
 
   it("sidebar refresh replaces optimistic count with authoritative server stats", async () => {
