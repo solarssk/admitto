@@ -589,14 +589,23 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
         headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
         body: JSON.stringify({
           subject_template: "Subject",
-          body_template: '<p><img src="{{race_ref_logo}}" alt="" /></p>',
+          // Required placeholders (REQUIRED_URL_PLACEHOLDERS) must be present or
+          // collectTemplateSourceErrors rejects the request before it ever reaches the
+          // locked transaction, and the test would pass without exercising the race at all.
+          body_template:
+            '<p><a href="{{ticket_url}}">Ticket</a><img src="{{qr_image_url}}" alt="" />' +
+            '<img src="{{race_ref_logo}}" alt="" /></p>',
           template_format: "html",
         }),
       }),
     ]);
 
-    const bothSucceeded = deleteRes.status < 300 && saveRes.status < 300;
-    expect(bothSucceeded).toBe(false);
+    // Require exactly one winner and one loser - both-succeeded is the invariant this test
+    // guards, but both-failed (e.g. both 500) would trivially satisfy that same check without
+    // proving the race was actually serialized.
+    const statuses = [deleteRes.status, saveRes.status];
+    expect(statuses.filter((status) => status >= 200 && status < 300)).toHaveLength(1);
+    expect(statuses.filter((status) => status >= 400 && status < 500)).toHaveLength(1);
 
     const assetStillExists = await prisma.eventImageAsset.findUnique({ where: { id: created.id } });
     const referencingTemplate = await prisma.mailTemplate.findFirst({
