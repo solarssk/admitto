@@ -247,6 +247,27 @@ describe("CheckInPage — transport error banner lifecycle", () => {
     await waitFor(() => expect(document.querySelector("#ck-overlay-manual-error")).toBeNull());
   });
 
+  it("shows the mapped API error message in the mobile overlay when a search submit is rejected by the server", async () => {
+    viewport.desktop = false;
+    mockPageBootstrap();
+    const { ApiError } = await import("../../src/api/client.js");
+    lookupCheckInAttendees.mockRejectedValueOnce(new ApiError(409, "not_admitted", "not_admitted"));
+
+    renderPage();
+    await waitFor(() => expect(document.querySelector(".ck-overlay")).not.toBeNull());
+
+    fireEvent.click(screen.getByText("Manual search"));
+    const input = screen.getByLabelText("Search by name or email");
+    fireEvent.change(input, { target: { value: "anna" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(document.querySelector("#ck-overlay-manual-error")?.textContent).toBe(
+        "This attendee isn't currently checked in.",
+      ),
+    );
+  });
+
   it("clears a stale transport-error once the connection recovers, without a retry (#458)", async () => {
     // openLookupResultImpl (Recent-scans row click) isn't gated on canAct
     // — unlike the scan bar's suggestion fetch — so it can fail while

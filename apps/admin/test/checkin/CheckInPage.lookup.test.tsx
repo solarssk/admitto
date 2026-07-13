@@ -198,6 +198,21 @@ describe("CheckInPage scan-bar lookup", () => {
     expect(screen.queryByText(/do not have access/i)).toBeNull();
   });
 
+  it("shows a warning toast, not an inline banner, when a search submit fails with a non-API error", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockRejectedValueOnce(new Error("Failed to fetch"));
+
+    renderPage();
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "filip" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Request failed. Try again.", "warning");
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("suppresses lookup entirely when ops config disables it", async () => {
     mockPageBootstrap({ allow_manual_lookup: false });
 
