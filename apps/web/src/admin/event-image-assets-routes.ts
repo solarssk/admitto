@@ -23,6 +23,24 @@ export const MAX_IMAGE_ASSETS_PER_EVENT = 20;
  * check before either insert committed). Caught below and mapped to the same 422 response. */
 class AssetLimitReachedError extends Error {}
 
+/** Thrown when a delete's in-use recheck (inside the lock) finds a template reference that
+ * appeared after the initial check. Caught below and mapped to the same 409 response. */
+class AssetInUseError extends Error {}
+
+/** Serializes create/delete for one event's image asset library (same pattern as
+ * event-capacity.ts's acquireEventCapacityLock): a transaction-scoped count/recheck is not
+ * race-safe on its own since two concurrent transactions can both read the pre-write state
+ * before either commits. Also used by communication-api-routes.ts's template-save handlers so a
+ * delete can't slip between a template save's placeholder check and its commit. */
+export async function acquireEventImageAssetsLock(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+): Promise<void> {
+  await tx.$executeRaw(
+    Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`event-image-assets:${eventId}`}))`,
+  );
+}
+
 /** Same {{snake_case}} shape as the mail-templates placeholder whitelist - an asset's token
  * becomes usable as {{token}} in email templates, so it must be a valid placeholder name. */
 const tokenSchema = z
@@ -190,7 +208,10 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
       // Recheck the cap inside the transaction: the earlier count() above is a fast-path
       // rejection only (avoids writing a file to disk when the library is obviously already
       // full) and isn't race-safe on its own - two concurrent uploads could both read a count
-      // under the cap before either insert commits.
+      // under the cap before either insert commits. The advisory lock serializes concurrent
+      // transactions for the same event so the recount below is accurate (default Postgres
+      // isolation is READ COMMITTED, not Serializable).
+      await acquireEventImageAssetsLock(tx, eventId);
       const recount = await tx.eventImageAsset.count({ where: { event_id: eventId } });
       if (recount >= MAX_IMAGE_ASSETS_PER_EVENT) {
         throw new AssetLimitReachedError();
@@ -278,34 +299,47 @@ export async function handleDeleteEventImageAsset(c: Context, db: PrismaClient):
   const existing = await loadImageAssetInEvent(db, eventId, assetId);
   if (!existing) return c.json({ error: "forbidden" }, 403);
 
-  // Only saved event-scoped templates count: org-scoped templates never get the widened
-  // placeholder whitelist (resolveScopeCustomPlaceholders), so they cannot reference custom
-  // tokens, and the builtin default has none. Placeholders are exact {{name}} with no padding
-  // (VALID_PLACEHOLDER_RE), so a literal substring match is sufficient.
-  const placeholder = `{{${existing.token}}}`;
-  const referencing = await db.mailTemplate.findFirst({
-    where: {
-      scope_type: "event",
-      scope_id: eventId,
-      OR: [
-        { subject_template: { contains: placeholder } },
-        { body_template: { contains: placeholder } },
-      ],
-    },
-    select: { id: true },
-  });
-  if (referencing) {
-    return c.json({ error: "asset_in_use" }, 409);
-  }
+  try {
+    await db.$transaction(async (tx) => {
+      // The lock serializes against communication-api-routes.ts's template-save handlers,
+      // which take the same lock before their own placeholder check + commit - without it, a
+      // save could commit a new {{token}} reference between this check and the delete below
+      // (Postgres default isolation is READ COMMITTED, not Serializable).
+      await acquireEventImageAssetsLock(tx, eventId);
 
-  await db.$transaction(async (tx) => {
-    await tx.eventImageAsset.delete({ where: { id: assetId } });
-    await writeBulkActionLog(tx, {
-      event_id: eventId,
-      action_type: "event_image_asset_deleted",
-      audit: adminAuditFromContext(c),
-      metadata: { token: existing.token },
+      // Only saved event-scoped templates count: org-scoped templates never get the widened
+      // placeholder whitelist (resolveScopeCustomPlaceholders), so they cannot reference custom
+      // tokens, and the builtin default has none. Placeholders are exact {{name}} with no
+      // padding (VALID_PLACEHOLDER_RE), so a literal substring match is sufficient.
+      const placeholder = `{{${existing.token}}}`;
+      const referencing = await tx.mailTemplate.findFirst({
+        where: {
+          scope_type: "event",
+          scope_id: eventId,
+          OR: [
+            { subject_template: { contains: placeholder } },
+            { body_template: { contains: placeholder } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (referencing) {
+        throw new AssetInUseError();
+      }
+
+      await tx.eventImageAsset.delete({ where: { id: assetId } });
+      await writeBulkActionLog(tx, {
+        event_id: eventId,
+        action_type: "event_image_asset_deleted",
+        audit: adminAuditFromContext(c),
+        metadata: { token: existing.token },
+      });
     });
-  });
+  } catch (err) {
+    if (err instanceof AssetInUseError) {
+      return c.json({ error: "asset_in_use" }, 409);
+    }
+    throw err;
+  }
   return c.json({ ok: true });
 }
