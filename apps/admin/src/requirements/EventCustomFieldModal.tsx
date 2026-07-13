@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Button, IconButton, useToast } from "@admitto/ui";
-import { ApiError, createEventCustomField, updateEventCustomField } from "../api/client.js";
+import { createEventCustomField, updateEventCustomField } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto } from "../api/types.js";
 import { CUSTOM_FIELD_TYPES } from "./customFieldType.js";
@@ -98,7 +98,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
       }
       onSaved();
     } catch (err) {
-      addToast(operatorApiErrorMessage(err as ApiError, "Failed to save field."), "error");
+      addToast(operatorApiErrorMessage(err, "Failed to save field."), "error");
     } finally {
       setSaving(false);
     }
@@ -161,7 +161,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               </div>
             </div>
             <span className="at-hint">
-              Used as the import/export column, and to match this field elsewhere. Can't be
+              Used to reference this field from items and to match it elsewhere. Can't be
               changed after creation.
             </span>
           </div>

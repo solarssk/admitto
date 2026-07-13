@@ -386,7 +386,18 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
     fields.push("enabled");
   }
   if (parsed.data.config !== undefined) {
-    data.config = parsed.data.config as Prisma.InputJsonValue;
+    // Merge onto the existing raw config rather than replacing it outright: a live item saved
+    // before this PR may still carry the pre-registry config.contents shape, which the new
+    // eventItemConfigSchema doesn't know about and would otherwise silently drop. Any admin
+    // save of that item (even one unrelated to content fields) would then permanently erase
+    // contents, since Prisma writes the whole config JSON column in one shot. Spreading the
+    // existing config underneath the newly-parsed fields keeps contents intact until PR3 reads
+    // it into the registry - the new UI just can't show it yet (documented sequencing gap).
+    const rawExisting =
+      existing.config && typeof existing.config === "object" && !Array.isArray(existing.config)
+        ? (existing.config as Record<string, unknown>)
+        : {};
+    data.config = { ...rawExisting, ...parsed.data.config } as Prisma.InputJsonValue;
     fields.push("config");
   }
   if (parsed.data.icon !== undefined && parsed.data.icon !== existing.icon) {

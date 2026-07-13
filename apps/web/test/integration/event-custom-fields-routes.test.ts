@@ -25,14 +25,21 @@ let opId: string;
 let adminCookie = "";
 let opCookie = "";
 
+// The 422/lock-race tests each create their own event with a fixed id rather than reusing
+// EVENT_CF/EVENT_CF_OTHER, and delete it at the end of the test - include those ids here too so
+// an aborted run (which skips that cleanup) doesn't leave orphaned rows breaking the next run's
+// prisma.event.create with a unique-constraint error.
+const EXTRA_FIXTURE_EVENT_IDS = ["evt-custom-fields-limit", "evt-custom-fields-lock-race"];
+
 async function seed(client: PrismaClient) {
-  await client.eventItem.deleteMany({ where: { event_id: { in: [EVENT_CF, EVENT_CF_OTHER] } } });
-  await client.eventCustomField.deleteMany({ where: { event_id: { in: [EVENT_CF, EVENT_CF_OTHER] } } });
+  const fixtureEventIds = [EVENT_CF, EVENT_CF_OTHER, ...EXTRA_FIXTURE_EVENT_IDS];
+  await client.eventItem.deleteMany({ where: { event_id: { in: fixtureEventIds } } });
+  await client.eventCustomField.deleteMany({ where: { event_id: { in: fixtureEventIds } } });
   await client.roleAssignment.deleteMany({ where: { scope_id: { in: [ORG_CF, EVENT_CF, EVENT_CF_OTHER] } } });
   await client.session.deleteMany({ where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_OP] } } } });
   await client.userMfaMethod.deleteMany({ where: { user: { email: EMAIL_ADMIN } } });
   await client.user.deleteMany({ where: { email: { in: [EMAIL_ADMIN, EMAIL_OP] } } });
-  await client.event.deleteMany({ where: { id: { in: [EVENT_CF, EVENT_CF_OTHER] } } });
+  await client.event.deleteMany({ where: { id: { in: fixtureEventIds } } });
   await client.organization.deleteMany({ where: { id: ORG_CF } });
 
   const password_hash = await hashPassword(PASSWORD);

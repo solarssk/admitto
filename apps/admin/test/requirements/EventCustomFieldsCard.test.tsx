@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { EventCustomFieldDto, EventDto } from "../../src/api/types.js";
@@ -62,10 +62,27 @@ describe("EventCustomFieldsCard", () => {
   });
 
   it("lists fields with their type and required status", () => {
-    renderCard([dietaryField, { ...dietaryField, id: "f2", source_field: "shirt_size", label: "Shirt size", required: true }]);
-    expect(screen.getByText("Dietary requirements")).toBeTruthy();
-    expect(screen.getByText("dietary")).toBeTruthy();
-    expect(screen.getByText("Shirt size")).toBeTruthy();
+    const shirtField: EventCustomFieldDto = {
+      ...dietaryField,
+      id: "f2",
+      source_field: "shirt_size",
+      label: "Shirt size",
+      type: "select",
+      required: true,
+    };
+    renderCard([dietaryField, shirtField]);
+
+    const dietaryRow = screen.getByText("Dietary requirements").closest("tr");
+    const shirtRow = screen.getByText("Shirt size").closest("tr");
+    expect(dietaryRow).not.toBeNull();
+    expect(shirtRow).not.toBeNull();
+
+    expect(within(dietaryRow!).getByText("dietary")).toBeTruthy();
+    expect(within(dietaryRow!).getByText("text")).toBeTruthy();
+    expect(within(dietaryRow!).getByText("No")).toBeTruthy();
+
+    expect(within(shirtRow!).getByText("select")).toBeTruthy();
+    expect(within(shirtRow!).getByText("Yes")).toBeTruthy();
   });
 
   it("opens the add-field modal", () => {

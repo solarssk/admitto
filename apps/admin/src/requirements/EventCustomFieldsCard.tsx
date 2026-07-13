@@ -90,7 +90,6 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, onChang
     setDeleting(true);
     try {
       await deleteEventCustomField(eventId, deleteTarget.id);
-      addToast("Field deleted", "success");
       setDeleteTarget(null);
       onChanged();
     } catch (err) {
