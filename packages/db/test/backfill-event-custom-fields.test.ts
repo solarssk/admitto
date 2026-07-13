@@ -124,6 +124,115 @@ describe("backfillEventCustomFields", () => {
     expect(result.conflicts.some((c) => c.includes("shirt_size"))).toBe(false);
   });
 
+  it("intersects overlapping options from two select fields instead of picking one side", async () => {
+    const event = await makeEvent("evt-cf-overlap");
+    await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "giftbag",
+        label: "Gift bag",
+        config: { contents: [{ label: "Size", source_field: "size", type: "select", options: ["S", "M", "L"] }] },
+      },
+    });
+    await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "polo",
+        label: "Polo shirt",
+        config: { contents: [{ label: "Size (polo)", source_field: "size", type: "select", options: ["M", "L", "XL"] }] },
+      },
+    });
+
+    const result = await backfillEventCustomFields(prisma);
+
+    const field = await prisma.eventCustomField.findUnique({
+      where: { event_id_source_field: { event_id: event.id, source_field: "size" } },
+    });
+    expect(field?.options).toEqual(["M", "L"]);
+    expect(result.conflicts.some((c) => c.includes("size"))).toBe(false);
+  });
+
+  it("keeps the first item's select options when a later item redefines the field as plain text", async () => {
+    const event = await makeEvent("evt-cf-select-then-text");
+    await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "giftbag",
+        label: "Gift bag",
+        config: { contents: [{ label: "Size", source_field: "size", type: "select", options: ["S", "M"] }] },
+      },
+    });
+    await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "note",
+        label: "Note",
+        config: { contents: [{ label: "Size note", source_field: "size" }] },
+      },
+    });
+
+    const result = await backfillEventCustomFields(prisma);
+
+    const field = await prisma.eventCustomField.findUnique({
+      where: { event_id_source_field: { event_id: event.id, source_field: "size" } },
+    });
+    expect(field?.type).toBe("select");
+    expect(field?.options).toEqual(["S", "M"]);
+    expect(result.conflicts.some((c) => c.includes("size"))).toBe(false);
+  });
+
+  it("upgrades a plain-text field to boolean when a later item declares it boolean", async () => {
+    const event = await makeEvent("evt-cf-boolean");
+    await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "giftbag",
+        label: "Gift bag",
+        config: { contents: [{ label: "Lunch", source_field: "lunch" }] },
+      },
+    });
+    await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "rsvp",
+        label: "RSVP",
+        config: { contents: [{ label: "Lunch?", source_field: "lunch", type: "boolean" }] },
+      },
+    });
+
+    const result = await backfillEventCustomFields(prisma);
+
+    const field = await prisma.eventCustomField.findUnique({
+      where: { event_id_source_field: { event_id: event.id, source_field: "lunch" } },
+    });
+    expect(field?.type).toBe("boolean");
+    expect(result.conflicts.some((c) => c.includes("lunch"))).toBe(false);
+  });
+
+  it("reports a conflict when a boolean and a select definition of the same field can't be reconciled", async () => {
+    const event = await makeEvent("evt-cf-boolean-select-clash");
+    await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "rsvp",
+        label: "RSVP",
+        config: { contents: [{ label: "Lunch?", source_field: "lunch", type: "boolean" }] },
+      },
+    });
+    await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "giftbag",
+        label: "Gift bag",
+        config: { contents: [{ label: "Lunch option", source_field: "lunch", type: "select", options: ["Veg", "Meat"] }] },
+      },
+    });
+
+    const result = await backfillEventCustomFields(prisma);
+
+    expect(result.conflicts.some((c) => c.includes("lunch"))).toBe(true);
+  });
+
   it("reports a conflict and keeps the first item's options when two select fields share no options", async () => {
     const event = await makeEvent("evt-cf-irreconcilable");
     await prisma.eventItem.create({
@@ -176,6 +285,32 @@ describe("backfillEventCustomFields", () => {
 
     const itemAfter = await prisma.eventItem.findUniqueOrThrow({ where: { id: item.id } });
     expect(itemAfter.config).toEqual({ content_fields: ["shirt_size"] });
+  });
+
+  it("skips malformed legacy content rows (wrong types, empty, or over-length) without crashing", async () => {
+    const event = await makeEvent("evt-cf-malformed");
+    await prisma.eventItem.create({
+      data: {
+        event_id: event.id,
+        key: "giftbag",
+        label: "Gift bag",
+        config: {
+          contents: [
+            "not an object",
+            { label: 123, source_field: "x" },
+            { label: "  ", source_field: "y" },
+            { label: "Long", source_field: "a".repeat(61) },
+            { label: "Long label".repeat(10), source_field: "z" },
+            { label: "Shirt size", source_field: "shirt_size" },
+          ],
+        },
+      },
+    });
+
+    await backfillEventCustomFields(prisma);
+
+    const fields = await prisma.eventCustomField.findMany({ where: { event_id: event.id } });
+    expect(fields.map((f) => f.source_field)).toEqual(["shirt_size"]);
   });
 
   it("stops creating new fields once an event reaches the per-event field cap", async () => {
