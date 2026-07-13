@@ -28,9 +28,8 @@ export async function acquireEventCustomFieldsLock(
   tx: Prisma.TransactionClient,
   eventId: string,
 ): Promise<void> {
-  await tx.$executeRaw(
-    Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`event-custom-fields:${eventId}`}))`,
-  );
+  const lockKey = `event-custom-fields:${eventId}`;
+  await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 }
 
 const slugField = z.string().trim().regex(/^[a-z0-9_]+$/, "invalid slug");
