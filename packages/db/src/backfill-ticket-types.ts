@@ -1,7 +1,15 @@
+import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 
 const TICKET_TYPE_KEY_MAX_LENGTH = 60;
 const TICKET_TYPE_LABEL_MAX_LENGTH = 60;
+
+/** Per-event transaction budget - the advisory-lock wait (if blocked behind a concurrent replica
+ * on a rolling deploy) and the attendee updateMany both count against this, same rationale/naming
+ * as apps/web/src/admin/import-api-routes.ts's IMPORT_TX_TIMEOUT_MS/IMPORT_TX_MAX_WAIT_MS. Kept
+ * well under the deploy entrypoint's `timeout 120` so multiple events can each get a turn. */
+const BACKFILL_TX_TIMEOUT_MS = 60_000;
+const BACKFILL_TX_MAX_WAIT_MS = 10_000;
 
 /** Mirrors apps/admin/src/requirements/itemKey.ts's slugifyItemKey - duplicated rather than
  * imported because packages/db can't depend on apps/admin. Keep in sync by hand if that changes. */
@@ -17,15 +25,20 @@ function slugifyTicketTypeKey(label: string): string {
     .slice(0, TICKET_TYPE_KEY_MAX_LENGTH);
 }
 
-function uniqueTicketTypeKey(label: string, usedKeys: Set<string>, fallbackIndex: number): string {
-  const base = slugifyTicketTypeKey(label) || `type_${fallbackIndex}`;
+/** Mirrors packages/tickets/src/ticket-types.ts's uniqueTicketTypeKey fallback behavior (constant
+ * "type" base, Date.now()-suffixed final collision fallback) so the same conceptually-empty label
+ * produces the same key whether it's migrated here or created later via the admin UI. Per-event
+ * uniqueness is tracked via `usedKeys` instead of that file's `existingKeys` array, since this
+ * loop processes one event's groups at a time. */
+function uniqueTicketTypeKey(label: string, usedKeys: Set<string>): string {
+  const base = slugifyTicketTypeKey(label) || "type";
   if (!usedKeys.has(base)) return base;
   for (let n = 2; n < 100; n++) {
     const suffix = `_${n}`;
     const candidate = `${base.slice(0, Math.max(1, TICKET_TYPE_KEY_MAX_LENGTH - suffix.length))}${suffix}`;
     if (!usedKeys.has(candidate)) return candidate;
   }
-  return `${base}_${fallbackIndex}`;
+  return `${base}_${Date.now()}`;
 }
 
 /**
@@ -70,10 +83,17 @@ export async function backfillTicketTypes(prisma: PrismaClient): Promise<{
     });
 
     // Group case-insensitively; first-seen casing within the event wins as the display label.
+    // Whitespace-only values (e.g. "   ") never join a group - blank isn't a real ticket type -
+    // but are collected separately so they can be normalized to actual `null` below, matching how
+    // packages/import/src/parser.ts treats an empty/whitespace CSV cell for this same column.
     const groups = new Map<string, { label: string; attendeeIds: string[] }>();
+    const blankIds: string[] = [];
     for (const attendee of attendees) {
       const raw = (attendee.ticket_type ?? "").trim();
-      if (!raw) continue;
+      if (!raw) {
+        blankIds.push(attendee.id);
+        continue;
+      }
       const norm = raw.toLowerCase();
       let group = groups.get(norm);
       if (!group) {
@@ -86,35 +106,60 @@ export async function backfillTicketTypes(prisma: PrismaClient): Promise<{
     // Wrapped in a transaction so a mid-event crash can't leave a partially migrated event
     // behind - the idempotency check above (`ticket_types: { none: {} } `) would then skip it
     // forever on re-run, since it already has at least one TicketType row (CodeRabbit review).
-    await prisma.$transaction(async (tx) => {
-      if (groups.size === 0) {
-        await tx.ticketType.create({
-          data: { event_id: event.id, key: "standard", label: "Standard", color: "gray", sort_order: 0 },
-        });
-        typesCreated += 1;
-        return;
-      }
+    await prisma.$transaction(
+      async (tx) => {
+        // Serialize against any other process touching this event's ticket-type catalog - a
+        // concurrent replica of this same script on a rolling deploy, or an API route - same lock
+        // key/format as apps/web/src/admin/ticket-types-routes.ts's acquireEventTicketTypesLock,
+        // inlined here since packages/db can't import from apps/web. Transaction-scoped, so it
+        // auto-releases on commit/rollback.
+        const lockKey = `ticket-types:${event.id}`;
+        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 
-      const usedKeys = new Set<string>();
-      let sortOrder = 0;
-      for (const [norm, group] of groups) {
-        const key = uniqueTicketTypeKey(norm, usedKeys, sortOrder + 1);
-        usedKeys.add(key);
-        const label = group.label.slice(0, TICKET_TYPE_LABEL_MAX_LENGTH);
-        const color = norm === "vip" ? "purple" : "gray";
-        await tx.ticketType.create({
-          data: { event_id: event.id, key, label, color, sort_order: sortOrder },
-        });
-        typesCreated += 1;
-        sortOrder += 1;
+        // `groups`/`blankIds` were computed from a read done *before* this lock was acquired, so
+        // a process that was blocked here (another replica won the race and already committed)
+        // must re-check idempotency now, under the lock, before writing anything - otherwise it
+        // would still try to create the same (event_id, key) rows and hit the unique constraint.
+        const alreadyMigrated = await tx.ticketType.count({ where: { event_id: event.id } });
+        if (alreadyMigrated > 0) return;
 
-        const { count } = await tx.attendee.updateMany({
-          where: { id: { in: group.attendeeIds }, ticket_type: { not: key } },
-          data: { ticket_type: key },
-        });
-        attendeesNormalized += count;
-      }
-    });
+        if (groups.size === 0) {
+          await tx.ticketType.create({
+            data: { event_id: event.id, key: "standard", label: "Standard", color: "gray", sort_order: 0 },
+          });
+          typesCreated += 1;
+        } else {
+          const usedKeys = new Set<string>();
+          let sortOrder = 0;
+          for (const [norm, group] of groups) {
+            const key = uniqueTicketTypeKey(norm, usedKeys);
+            usedKeys.add(key);
+            const label = group.label.slice(0, TICKET_TYPE_LABEL_MAX_LENGTH);
+            const color = norm === "vip" ? "purple" : "gray";
+            await tx.ticketType.create({
+              data: { event_id: event.id, key, label, color, sort_order: sortOrder },
+            });
+            typesCreated += 1;
+            sortOrder += 1;
+
+            const { count } = await tx.attendee.updateMany({
+              where: { id: { in: group.attendeeIds }, ticket_type: { not: key } },
+              data: { ticket_type: key },
+            });
+            attendeesNormalized += count;
+          }
+        }
+
+        if (blankIds.length > 0) {
+          const { count } = await tx.attendee.updateMany({
+            where: { id: { in: blankIds } },
+            data: { ticket_type: null },
+          });
+          attendeesNormalized += count;
+        }
+      },
+      { timeout: BACKFILL_TX_TIMEOUT_MS, maxWait: BACKFILL_TX_MAX_WAIT_MS },
+    );
     eventsSeeded += 1;
   }
 

@@ -16,6 +16,14 @@ class TypeLimitReachedError extends Error {}
  * appeared after the initial check. Caught below and mapped to the same 409 response. */
 class TypeInUseError extends Error {}
 
+/** Thrown when a create or rename's label-uniqueness recheck (inside the lock) finds a sibling
+ * type in this event with the same label (case/whitespace-insensitive). Caught below, mapped to
+ * 409. Without this, two catalog entries can share a label - visually indistinguishable in every
+ * <Select> across the app, and resolveImportTicketType (CSV import's catalog matcher) already
+ * deliberately refuses to resolve an ambiguous label match, so a conflicting label created here
+ * would silently break import later with no explanation. */
+class LabelConflictError extends Error {}
+
 /** Serializes create/delete for one event's ticket-type catalog against each other, closing the
  * same concurrent-create-vs-cap race as acquireEventCustomFieldsLock. Exported so every writer
  * that assigns Attendee.ticket_type (attendees-api-routes.ts, import-api-routes.ts) can take the
@@ -146,6 +154,16 @@ export async function handleCreateEventTicketType(c: Context, db: PrismaClient):
       if (recount >= MAX_TICKET_TYPES_PER_EVENT) {
         throw new TypeLimitReachedError();
       }
+      // Same per-event, case-insensitive uniqueness check as handleCreateEventAttendee's email
+      // check (attendees-api-routes.ts) - `key` already dedupes itself via uniqueTicketTypeKey,
+      // but `label` had no such guard.
+      const labelConflict = await tx.ticketType.findFirst({
+        where: { event_id: eventId, label: { equals: parsed.data.label, mode: "insensitive" } },
+        select: { id: true },
+      });
+      if (labelConflict) {
+        throw new LabelConflictError();
+      }
       const existing = await tx.ticketType.findMany({
         where: { event_id: eventId },
         select: { key: true, sort_order: true },
@@ -172,6 +190,9 @@ export async function handleCreateEventTicketType(c: Context, db: PrismaClient):
   } catch (err) {
     if (err instanceof TypeLimitReachedError) {
       return c.json({ error: "type_limit_reached", limit: MAX_TICKET_TYPES_PER_EVENT }, 422);
+    }
+    if (err instanceof LabelConflictError) {
+      return c.json({ error: "label_conflict" }, 409);
     }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return c.json({ error: "key_conflict" }, 409);
@@ -222,21 +243,46 @@ export async function handlePatchEventTicketType(c: Context, db: PrismaClient): 
     return c.json(serializeTicketType(existing, counts));
   }
 
-  const { updated, counts } = await db.$transaction(async (tx) => {
-    const row = await tx.ticketType.update({ where: { id: typeId }, data });
-    await writeBulkActionLog(tx, {
-      event_id: eventId,
-      action_type: "ticket_type_updated",
-      audit: adminAuditFromContext(c),
-      metadata: { key: row.key },
+  try {
+    const { updated, counts } = await db.$transaction(async (tx) => {
+      // Only recheck the label against siblings when it's actually changing - a color-only
+      // PATCH, or a label PATCH that just restates the current value (case-identical), never
+      // needs the lock (same "only taken when actually needed" rationale as
+      // handleCreateEventAttendee's ticket_type lock).
+      if (parsed.data.label !== undefined && parsed.data.label !== existing.label) {
+        await acquireEventTicketTypesLock(tx, eventId);
+        const labelConflict = await tx.ticketType.findFirst({
+          where: {
+            event_id: eventId,
+            id: { not: typeId },
+            label: { equals: parsed.data.label, mode: "insensitive" },
+          },
+          select: { id: true },
+        });
+        if (labelConflict) {
+          throw new LabelConflictError();
+        }
+      }
+      const row = await tx.ticketType.update({ where: { id: typeId }, data });
+      await writeBulkActionLog(tx, {
+        event_id: eventId,
+        action_type: "ticket_type_updated",
+        audit: adminAuditFromContext(c),
+        metadata: { key: row.key },
+      });
+      // Counted inside the same transaction, not after commit - otherwise an attendee
+      // create/delete landing in that window would make the response's attendee_count stale
+      // relative to the update it's reporting on (PR-Agent review).
+      const attendeeCount = await tx.attendee.count({ where: { event_id: eventId, ticket_type: row.key } });
+      return { updated: row, counts: attendeeCount };
     });
-    // Counted inside the same transaction, not after commit - otherwise an attendee
-    // create/delete landing in that window would make the response's attendee_count stale
-    // relative to the update it's reporting on (PR-Agent review).
-    const attendeeCount = await tx.attendee.count({ where: { event_id: eventId, ticket_type: row.key } });
-    return { updated: row, counts: attendeeCount };
-  });
-  return c.json(serializeTicketType(updated, counts));
+    return c.json(serializeTicketType(updated, counts));
+  } catch (err) {
+    if (err instanceof LabelConflictError) {
+      return c.json({ error: "label_conflict" }, 409);
+    }
+    throw err;
+  }
 }
 
 /** DELETE /api/admin/events/:eventId/ticket-types/:typeId - blocked (409 type_in_use) while any

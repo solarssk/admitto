@@ -69,6 +69,7 @@ export function CommunicationSendDialog({
   const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
   useEffect(() => {
     if (!open) return;
+    setTicketTypes([]);
     let cancelled = false;
     setTicketTypesError(null);
     fetchTicketTypes(eventId)
@@ -134,7 +135,7 @@ export function CommunicationSendDialog({
 
   const runDryRun = async () => {
     if (!filterReady) {
-      setError("Enter a ticket type.");
+      setError("Choose a ticket type.");
       return;
     }
     const runId = runIdRef.current;
@@ -163,7 +164,7 @@ export function CommunicationSendDialog({
 
   const runSend = async () => {
     if (!filterReady) {
-      setError("Enter a ticket type.");
+      setError("Choose a ticket type.");
       return;
     }
     const runId = runIdRef.current;
@@ -289,7 +290,7 @@ export function CommunicationSendDialog({
               </p>
             )}
             {filterType === "ticket_type" && !filterReady && (
-              <p className="mail-field-hint">Enter a ticket type to count or send.</p>
+              <p className="mail-field-hint">Choose a ticket type to count or send.</p>
             )}
             {recipientCount != null && (
               <p className="mail-field-hint" role="status">

@@ -7,9 +7,12 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { prisma } from "@admitto/db";
+import { loadEventTicketTypes } from "@admitto/tickets";
 import { parseAttendees } from "./parser.js";
 import { commitImport } from "./importer.js";
 import { formatSkippedImportRow } from "./cli-output.js";
+import type { ImportTicketType } from "./types.js";
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -18,6 +21,11 @@ function arg(name: string): string | undefined {
 
 function flag(name: string): boolean {
   return process.argv.includes(`--${name}`);
+}
+
+async function loadImportTicketTypes(eventId: string): Promise<ImportTicketType[]> {
+  const types = await loadEventTicketTypes(prisma, eventId);
+  return types.map((t) => ({ key: t.key, label: t.label }));
 }
 
 async function main() {
@@ -34,7 +42,8 @@ async function main() {
   const filePath = path.isAbsolute(file) ? file : path.join(process.cwd(), file);
   const csv = fs.readFileSync(filePath, "utf8");
 
-  const parsed = parseAttendees(csv);
+  const ticketTypes = await loadImportTicketTypes(eventId);
+  const parsed = parseAttendees(csv, { ticketTypes });
 
   if (parsed.warnings.length > 0) {
     for (const w of parsed.warnings) console.warn(`⚠  ${w}`);
@@ -50,13 +59,15 @@ async function main() {
 
   if (parsed.validRows.length === 0) {
     console.log("Nothing to import.");
-    process.exit(0);
+    return;
   }
 
-  const summary = await commitImport(eventId, parsed.validRows, {
-    overwrite,
-    dryRun: !commit,
-  });
+  const summary = await commitImport(
+    eventId,
+    parsed.validRows,
+    { overwrite, dryRun: !commit, ticketTypes },
+    prisma,
+  );
 
   const mode = commit ? "COMMIT" : "DRY-RUN";
   console.log(`\n[${mode}] event=${eventId} overwrite=${overwrite}`);
@@ -79,7 +90,11 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(e instanceof Error ? e.message : String(e));
-  process.exit(1);
-});
+main()
+  .catch((e) => {
+    console.error(e instanceof Error ? e.message : String(e));
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

@@ -135,6 +135,7 @@ function TicketTypeRow({
       />
       <Input
         ref={inputRef}
+        aria-label={`Ticket type label for ${type.label}`}
         value={label}
         disabled={disabled}
         style={{ flex: 1, minWidth: 140 }}
@@ -196,7 +197,11 @@ export function TicketTypesCard({
         onChanged();
         return true;
       } catch (err) {
-        addToast(operatorApiErrorMessage(err, "Failed to update ticket type."), "error");
+        if (err instanceof ApiError && hasApiErrorCode(err, "label_conflict")) {
+          addToast(`"${patch.label}" is already used by another ticket type in this event.`, "warning");
+        } else {
+          addToast(operatorApiErrorMessage(err, "Failed to update ticket type."), "error");
+        }
         return false;
       }
     });
@@ -213,6 +218,8 @@ export function TicketTypesCard({
     } catch (err) {
       if (err instanceof ApiError && hasApiErrorCode(err, "type_limit_reached")) {
         addToast("Ticket type limit reached for this event.", "warning");
+      } else if (err instanceof ApiError && hasApiErrorCode(err, "label_conflict")) {
+        addToast('A ticket type named "New type" already exists for this event.', "warning");
       } else {
         addToast(operatorApiErrorMessage(err, "Failed to add ticket type."), "error");
       }

@@ -195,10 +195,13 @@ describe("POST /api/admin/events/:eventId/ticket-types", () => {
   });
 
   it("dedupes the generated key when the label slugifies to an existing one", async () => {
+    // A distinct label ("Press-Pass" vs "Press Pass") that slugifies to the same key - the
+    // labels themselves must stay different, otherwise this hits the new label-uniqueness check
+    // instead of exercising the key auto-suffix.
     const res = await app.request(`/api/admin/events/${EVENT_TT}/ticket-types`, {
       method: "POST",
       headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
-      body: JSON.stringify({ label: "Press Pass" }),
+      body: JSON.stringify({ label: "Press-Pass" }),
     });
     expect(res.status).toBe(201);
     const row = (await res.json()) as { key: string };
@@ -221,6 +224,39 @@ describe("POST /api/admin/events/:eventId/ticket-types", () => {
       body: JSON.stringify({ label: "" }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("rejects a label that collides with an existing type in the same event (case/whitespace-insensitive)", async () => {
+    await prisma.ticketType.create({
+      data: { event_id: EVENT_TT, key: "conflict_seed", label: "Conflict Seed", sort_order: 97 },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_TT}/ticket-types`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ label: "  conflict seed  " }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("label_conflict");
+
+    const created = await prisma.ticketType.count({ where: { event_id: EVENT_TT, key: "conflict_seed_2" } });
+    expect(created).toBe(0);
+  });
+
+  it("allows the same label on a different event (uniqueness is per-event, not global)", async () => {
+    await prisma.ticketType.create({
+      data: { event_id: EVENT_TT, key: "cross_event_label_seed", label: "Cross Event Label", sort_order: 98 },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_TT_OTHER}/ticket-types`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ label: "Cross Event Label" }),
+    });
+    expect(res.status).toBe(201);
+    const row = (await res.json()) as { label: string };
+    expect(row.label).toBe("Cross Event Label");
   });
 
   it("returns 422 once the per-event type limit is reached", async () => {
@@ -395,6 +431,43 @@ describe("PATCH /api/admin/events/:eventId/ticket-types/:typeId", () => {
     expect(body.key).toBe("noop_patch");
     expect(body.label).toBe("No-op patch");
     expect(body.attendee_count).toBe(1);
+  });
+
+  it("rejects a rename that collides with a sibling's label in the same event", async () => {
+    const created = await prisma.ticketType.create({
+      data: { event_id: EVENT_TT, key: "patch_conflict_target", label: "Patch Conflict Target", sort_order: 99 },
+    });
+    await prisma.ticketType.create({
+      data: { event_id: EVENT_TT, key: "patch_conflict_sibling", label: "Patch Conflict Sibling", sort_order: 100 },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_TT}/ticket-types/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ label: "  patch conflict sibling  " }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("label_conflict");
+
+    const stillOriginal = await prisma.ticketType.findUnique({ where: { id: created.id } });
+    expect(stillOriginal?.label).toBe("Patch Conflict Target");
+  });
+
+  it("does not reject a rename to the type's own current label (case-identical, no-op-ish)", async () => {
+    const created = await prisma.ticketType.create({
+      data: { event_id: EVENT_TT, key: "self_rename_noop", label: "Self Rename Noop", sort_order: 101 },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_TT}/ticket-types/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ label: "Self Rename Noop", color: "blue" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { label: string; color: string };
+    expect(body.label).toBe("Self Rename Noop");
+    expect(body.color).toBe("blue");
   });
 });
 

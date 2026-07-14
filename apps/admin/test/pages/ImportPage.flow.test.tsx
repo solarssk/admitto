@@ -104,6 +104,7 @@ describe("ImportPage upload → preview → commit flow", () => {
       created: 1,
       updated: 0,
       skipped: [],
+      invalidRows: [],
     });
     renderPage();
     await waitFor(() => expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy());
@@ -127,6 +128,33 @@ describe("ImportPage upload → preview → commit flow", () => {
     });
   });
 
+  it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    commitImport.mockResolvedValueOnce({
+      importId: "imp-1",
+      toCreate: 0,
+      toUpdate: 0,
+      toSkip: 0,
+      created: 0,
+      updated: 0,
+      skipped: [],
+      invalidRows: [{ rowIndex: 1, reason: 'Unknown ticket type: "vip"' }],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy());
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(screen.getByText("To create")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: /^Import 1 attendee$/ }));
+    await waitFor(() => expect(commitImport).toHaveBeenCalled());
+
+    expect(await screen.findByText("Invalid rows")).toBeTruthy();
+    expect(screen.getByText('Unknown ticket type: "vip"')).toBeTruthy();
+  });
+
   it("lets a superadmin override a capacity block and re-commit with force (plural count)", async () => {
     mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
     fetchEventCustomFields.mockResolvedValue([]);
@@ -144,6 +172,7 @@ describe("ImportPage upload → preview → commit flow", () => {
         created: 2,
         updated: 0,
         skipped: [],
+        invalidRows: [],
       });
     renderPage();
     await waitFor(() => expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy());
