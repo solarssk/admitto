@@ -2,7 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CameraOverlayManualSearch } from "../../src/checkin/CameraOverlayManualSearch.js";
-import type { LookupAttendeeResult, TicketTypeDto } from "../../src/api/types.js";
+import type { LookupAttendeeResult } from "../../src/api/types.js";
+import { makeTicketType } from "../test-utils.js";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -15,18 +16,6 @@ function hit(overrides: Partial<LookupAttendeeResult> = {}): LookupAttendeeResul
     department: null,
     check_in_status: "not_admitted",
     ...overrides,
-  };
-}
-
-function makeTicketType(key: string, label: string): TicketTypeDto {
-  return {
-    id: `tt-${key}`,
-    key,
-    label,
-    color: "purple",
-    sort_order: 0,
-    attendee_count: 0,
-    created_at: "2026-01-01T00:00:00.000Z",
   };
 }
 

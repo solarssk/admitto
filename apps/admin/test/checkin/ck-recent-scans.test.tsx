@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CheckInHistoryEntry, TicketTypeDto } from "../../src/api/types.js";
+import type { CheckInHistoryEntry } from "../../src/api/types.js";
 import { CkRecentScans } from "../../src/checkin/CkRecentScans.js";
 import {
   CK_RECENT_SCANS_SIDEBAR_LIMIT,
   ScanHistoryList,
 } from "../../src/checkin/ScanHistoryList.js";
 import { setPreferredLocale } from "../../src/utils/locale-store.js";
+import { makeTicketType } from "../test-utils.js";
 
 afterEach(() => {
   cleanup();
@@ -34,17 +35,6 @@ function makeEntry(
   };
 }
 
-function makeTicketType(key: string, label: string): TicketTypeDto {
-  return {
-    id: `tt-${key}`,
-    key,
-    label,
-    color: "purple",
-    sort_order: 0,
-    attendee_count: 0,
-    created_at: "2026-01-01T00:00:00.000Z",
-  };
-}
 
 describe("CkRecentScans", () => {
   it("caps sidebar rows at CK_RECENT_SCANS_SIDEBAR_LIMIT via ScanHistoryList", () => {

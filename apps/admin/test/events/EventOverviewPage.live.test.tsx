@@ -3,9 +3,9 @@ import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EventOverviewPage } from "../../src/pages/EventOverviewPage.js";
-import type { EventOverviewDto, TicketTypeDto } from "../../src/api/types.js";
+import type { EventOverviewDto } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
-import { renderWithToast } from "../test-utils.js";
+import { makeTicketType, renderWithToast } from "../test-utils.js";
 
 const fetchEventOverview = vi.fn();
 const fetchTicketTypes = vi.fn();
@@ -99,18 +99,6 @@ const liveEvent: StreamCheckinEvent = {
   operatorId: null,
   deviceLabel: null,
 };
-
-function makeTicketType(key: string, label: string): TicketTypeDto {
-  return {
-    id: `tt-${key}`,
-    key,
-    label,
-    color: "purple",
-    sort_order: 0,
-    attendee_count: 0,
-    created_at: "2026-01-01T00:00:00.000Z",
-  };
-}
 
 function renderPage() {
   return renderWithToast(
