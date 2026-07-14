@@ -2,7 +2,12 @@ import type { Context } from "hono";
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { TICKET_TYPE_COLOR_KEYS, uniqueTicketTypeKey, writeBulkActionLog } from "@admitto/tickets";
+import {
+  TICKET_TYPE_COLOR_KEYS,
+  acquireEventTicketTypesLock,
+  uniqueTicketTypeKey,
+  writeBulkActionLog,
+} from "@admitto/tickets";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 
 /** Per-event cap on ticket types - same placement/rationale as MAX_CUSTOM_FIELDS_PER_EVENT. */
@@ -23,17 +28,6 @@ class TypeInUseError extends Error {}
  * deliberately refuses to resolve an ambiguous label match, so a conflicting label created here
  * would silently break import later with no explanation. */
 class LabelConflictError extends Error {}
-
-/** Serializes create/delete for one event's ticket-type catalog against each other, closing the
- * same concurrent-create-vs-cap race as acquireEventCustomFieldsLock. Exported so every writer
- * that assigns Attendee.ticket_type (attendees-api-routes.ts, import-api-routes.ts) can take the
- * same lock and fully serialize against a concurrent delete of the type it's about to reference
- * (TOCTOU fix, code review) - a bare per-file wrapper, not a new shared helper, matching this
- * codebase's existing pattern of one advisory-lock helper per resource (event-capacity.ts). */
-export async function acquireEventTicketTypesLock(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
-  const lockKey = `ticket-types:${eventId}`;
-  await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
-}
 
 const colorField = z.enum(TICKET_TYPE_COLOR_KEYS);
 
