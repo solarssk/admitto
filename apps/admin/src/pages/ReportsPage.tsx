@@ -90,6 +90,18 @@ function HourlyChart({ byHour }: { byHour: EventReportsResponse["by_hour"] }) {
   );
 }
 
+/** Sentinel select/key value for the "(none)" bucket - <select> options (and React list keys) are
+ * always strings, but a row's ticket_type (and its matching by_ticket_type entry) can genuinely
+ * be null. Real keys are always rendered/matched with a "type:" prefix (below) so this sentinel
+ * can never collide with an actual stored ticket_type value - including an unmatched/legacy one,
+ * which (unlike a catalog-created key) isn't constrained to the slugified key format and could in
+ * principle be any string, e.g. literally "__none__" or "none" (Codex review). */
+const NONE_TYPE_KEY = "__none__";
+
+function encodeTypeFilterValue(key: string | null): string {
+  return key === null ? NONE_TYPE_KEY : `type:${key}`;
+}
+
 function ByTicketType({ rows }: { rows: EventReportsResponse["by_ticket_type"] }) {
   if (rows.length === 0) {
     return <p className="reports-muted">No attendees registered yet.</p>;
@@ -100,7 +112,7 @@ function ByTicketType({ rows }: { rows: EventReportsResponse["by_ticket_type"] }
       {rows.map((row) => {
         const swatch = TICKET_TYPE_COLORS[row.color] ?? TICKET_TYPE_COLORS.gray;
         return (
-          <div key={row.key ?? "none"} className="reports-bytype__row">
+          <div key={encodeTypeFilterValue(row.key)} className="reports-bytype__row">
             <div className="reports-bytype__label">
               <span className="reports-bytype__name">
                 <span className="reports-bytype__dot" style={{ background: swatch.solid }} aria-hidden="true" />
@@ -123,25 +135,13 @@ function ByTicketType({ rows }: { rows: EventReportsResponse["by_ticket_type"] }
   );
 }
 
-/** Sentinel select value for the "(none)" bucket - <select> options are always strings, but a
- * row's ticket_type (and its matching by_ticket_type entry) can genuinely be null. Real keys are
- * always rendered/matched with a "type:" prefix (below) so this sentinel can never collide with
- * an actual stored ticket_type value - including an unmatched/legacy one, which (unlike a
- * catalog-created key) isn't constrained to the slugified key format and could in principle be
- * any string, e.g. literally "__none__" (Codex review). */
-const NONE_TYPE_KEY = "__none__";
-
-function encodeTypeFilterValue(key: string | null): string {
-  return key === null ? NONE_TYPE_KEY : `type:${key}`;
-}
-
 interface AdmissionLogProps {
-  log: EventReportsResponse["admission_log"];
-  byTicketType: EventReportsResponse["by_ticket_type"];
-  ticketTypes: TicketTypeDto[];
-  timeZone: string;
-  truncated: boolean;
-  totalAdmitted: number;
+  readonly log: EventReportsResponse["admission_log"];
+  readonly byTicketType: EventReportsResponse["by_ticket_type"];
+  readonly ticketTypes: TicketTypeDto[];
+  readonly timeZone: string;
+  readonly truncated: boolean;
+  readonly totalAdmitted: number;
 }
 
 function AdmissionLog({
@@ -160,12 +160,12 @@ function AdmissionLog({
     [log, timeZone],
   );
 
-  const filtered =
-    typeFilter === "all"
-      ? log
-      : typeFilter === NONE_TYPE_KEY
-        ? log.filter((row) => row.ticket_type === null)
-        : log.filter((row) => encodeTypeFilterValue(row.ticket_type) === typeFilter);
+  let filtered = log;
+  if (typeFilter === NONE_TYPE_KEY) {
+    filtered = log.filter((row) => row.ticket_type === null);
+  } else if (typeFilter !== "all") {
+    filtered = log.filter((row) => encodeTypeFilterValue(row.ticket_type) === typeFilter);
+  }
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / LOG_PAGE_SIZE));
   const paged = filtered.slice((page - 1) * LOG_PAGE_SIZE, page * LOG_PAGE_SIZE);
@@ -191,7 +191,7 @@ function AdmissionLog({
           >
             <option value="all">All ticket types</option>
             {byTicketType.map((row) => (
-              <option key={row.key ?? NONE_TYPE_KEY} value={encodeTypeFilterValue(row.key)}>
+              <option key={encodeTypeFilterValue(row.key)} value={encodeTypeFilterValue(row.key)}>
                 {row.type}
               </option>
             ))}

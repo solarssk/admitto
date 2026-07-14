@@ -434,6 +434,62 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     }
   });
 
+  it("folds a literal empty-string ticket_type into the (none) bucket instead of a confusing separate entry (CodeRabbit review)", async () => {
+    const EVENT_BLANK = "evt-reports-blank";
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_BLANK } });
+    await prisma.ticketType.deleteMany({ where: { event_id: EVENT_BLANK } });
+    await prisma.event.deleteMany({ where: { id: EVENT_BLANK } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_BLANK,
+        title: "Blank Reports Event",
+        slug: "reports-event-blank",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-rep-blank-null",
+          event_id: EVENT_BLANK,
+          email: "blank-null@example.com",
+          name: "Null Type",
+          admitted_at: new Date("2026-10-01T09:00:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          // Every app write path normalizes a blank submission to null before persisting - this
+          // simulates data written outside those paths (e.g. raw SQL), which the DB column itself
+          // doesn't forbid.
+          id: "att-rep-blank-empty",
+          event_id: EVENT_BLANK,
+          email: "blank-empty@example.com",
+          name: "Empty String Type",
+          ticket_type: "",
+          admitted_at: new Date("2026-10-01T09:05:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_BLANK}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        by_ticket_type: Array<{ key: string | null; type: string; total: number }>;
+      };
+      expect(body.by_ticket_type).toHaveLength(1);
+      expect(body.by_ticket_type[0]).toMatchObject({ key: null, type: "(none)", total: 2 });
+    } finally {
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_BLANK } });
+      await prisma.ticketType.deleteMany({ where: { event_id: EVENT_BLANK } });
+      await prisma.event.deleteMany({ where: { id: EVENT_BLANK } });
+    }
+  });
+
   it("still shows an attendee whose stored ticket_type has no matching catalog row, instead of dropping it from the breakdown (Codex review)", async () => {
     const EVENT_ORPHAN = "evt-reports-orphan";
     await prisma.attendee.deleteMany({ where: { event_id: EVENT_ORPHAN } });
