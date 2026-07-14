@@ -447,7 +447,14 @@ describe("POST /api/admin/users/:id/revoke-sessions", () => {
   it("preserves last_login_at while clearing active session count", async () => {
     await createSession(prisma, { userId: targetId, stage: SESSION_STAGE.FULL });
 
-    const listBefore = await app.request("/api/admin/users", { headers: { Cookie: superCookie } });
+    // Scoped with ?q= to this test's own user - the list endpoint is paginated (25/page, sorted
+    // by email) across the whole shared test database, so an unscoped request can silently return
+    // a page that doesn't include targetId depending on how many other users other test files
+    // have created by the time this one runs.
+    const listBefore = await app.request(
+      `/api/admin/users?q=${encodeURIComponent(EMAIL_TARGET)}`,
+      { headers: { Cookie: superCookie } },
+    );
     const beforeBody = (await listBefore.json()) as {
       users: Array<{ id: string; last_login_at: string | null; active_sessions_count: number }>;
     };
@@ -461,7 +468,10 @@ describe("POST /api/admin/users/:id/revoke-sessions", () => {
     });
     expect(revokeRes.status).toBe(200);
 
-    const listAfter = await app.request("/api/admin/users", { headers: { Cookie: superCookie } });
+    const listAfter = await app.request(
+      `/api/admin/users?q=${encodeURIComponent(EMAIL_TARGET)}`,
+      { headers: { Cookie: superCookie } },
+    );
     const afterBody = (await listAfter.json()) as {
       users: Array<{ id: string; last_login_at: string | null; active_sessions_count: number }>;
     };
