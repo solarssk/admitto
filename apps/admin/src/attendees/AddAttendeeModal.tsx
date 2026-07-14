@@ -111,15 +111,18 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
 
   useModalFocusTrap(panelRef, open, handleClose);
 
+  // Unlike attribute fields (which can include required fields the form can't validate without
+  // their defs), ticket_type is always optional - a loading/failed catalog only means the
+  // dropdown can't offer a real choice yet (it shows just the blank option), not that submitting
+  // with no type selected is invalid. Blocking the whole form here would stop an admin from
+  // adding a typeless attendee during a brief load or a transient fetch failure.
   const canSubmit =
     email.trim() &&
     name.trim() &&
     isValidEmail(email.trim()) &&
     !submitting &&
     !attributeFieldsLoading &&
-    !attributeFieldsError &&
-    !ticketTypesLoading &&
-    !ticketTypesError;
+    !attributeFieldsError;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;

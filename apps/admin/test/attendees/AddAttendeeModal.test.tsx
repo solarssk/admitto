@@ -116,7 +116,7 @@ describe("AddAttendeeModal", () => {
     });
   });
 
-  it("blocks submit while the ticket-type catalog failed to load, matching the attribute-fields error", async () => {
+  it("still allows submitting a typeless attendee while the ticket-type catalog failed to load (PO follow-up)", async () => {
     vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
     render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
 
@@ -125,14 +125,16 @@ describe("AddAttendeeModal", () => {
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jan Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jan@example.com" } });
 
-    // Would otherwise be ready to submit (name + valid email) - the ticket-type load failure
-    // alone must keep it blocked, same as attributeFieldsError already does.
-    expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    // ticket_type is optional - a broken catalog fetch must not block adding an attendee with no
+    // type, even though the dropdown itself has nothing but the blank option to offer right now.
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      );
+    });
   });
 
-  it("blocks submit while the ticket-type catalog is still loading, not just after it fails", async () => {
+  it("still allows submitting a typeless attendee while the ticket-type catalog is still loading (PO follow-up)", async () => {
     let resolveTicketTypes!: (types: unknown[]) => void;
     vi.mocked(fetchTicketTypes).mockReturnValueOnce(
       new Promise((resolve) => {
@@ -145,10 +147,10 @@ describe("AddAttendeeModal", () => {
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jan Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jan@example.com" } });
 
-    // Otherwise ready to submit - clicking before the fetch settles must not be able to create
-    // an attendee before the admin has even seen what ticket types are available to pick from.
+    // Same reasoning as the load-failure case above - loading is a transient state, not a reason
+    // to block adding a typeless attendee.
     expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
-      true,
+      false,
     );
 
     resolveTicketTypes([]);
