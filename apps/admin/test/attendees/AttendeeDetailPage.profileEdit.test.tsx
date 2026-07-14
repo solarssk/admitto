@@ -191,4 +191,32 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Status updated/);
     });
   });
+
+  it("surfaces an orphaned ticket_type (not in the current catalog) instead of silently blanking the select", async () => {
+    // This attendee's stored ticket_type ("vintage") has no matching entry in the fetched
+    // catalog (e.g. the type was deleted after being assigned) — the mocked fetchTicketTypes
+    // in this file's module mock only ever returns "vip" and "standard".
+    mockLoad(baseDetail({ ticket_type: "vintage" }));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    const select = (await screen.findByLabelText("Ticket type")) as HTMLSelectElement;
+    await waitFor(() => {
+      expect(select.value).toBe("vintage");
+    });
+    expect(screen.getByText("vintage (not in catalog)")).toBeTruthy();
+
+    // Reassigning to a real catalog entry still works and submits normally.
+    updateAttendee.mockResolvedValueOnce(baseDetail({ ticket_type: "standard" }));
+    fireEvent.change(select, { target: { value: "standard" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(updateAttendee).toHaveBeenCalledWith(
+        "evt-1",
+        "att-1",
+        expect.objectContaining({ ticket_type: "standard" }),
+      );
+    });
+  });
 });
