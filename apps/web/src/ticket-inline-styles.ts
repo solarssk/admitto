@@ -8,6 +8,7 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
 .ticket__top small { margin-left: auto; color: var(--text-muted, #64748b); font-size: 12px; white-space: nowrap; }
 .ticket__brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; }
 .ticket__brand-mark { width: 26px; height: 26px; border-radius: 8px; background: var(--primary); display: inline-block; }
+.ticket__brand-logo { max-height: 32px; max-width: 160px; object-fit: contain; display: block; }
 .ticket__body { padding: 22px 24px 18px; text-align: center; }
 .ticket__event-name { font-size: 1.25rem; font-weight: 700; margin: 0; }
 .ticket__meta { color: var(--text-secondary, #475569); font-size: 0.875rem; margin-top: 6px; }

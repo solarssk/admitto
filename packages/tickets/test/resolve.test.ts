@@ -14,8 +14,13 @@ const DB_ROOT = path.resolve(__dirname, "../../db");
 let prisma: PrismaClient;
 const EVENT_ID = "test-event-tickets-001";
 const EVENT_ID_2 = "test-event-tickets-002";
+const ORG_ID_LOGO = "org-tickets-logo";
+const EVENT_ID_ORG_LOGO = "test-event-tickets-org-logo";
+const EVENT_ID_EVENT_LOGO = "test-event-tickets-event-logo";
 let tokenA: string;
 let tokenB: string;
+let tokenOrgLogo: string;
+let tokenEventLogo: string;
 
 beforeAll(async () => {
   execSync("npx prisma db push --force-reset --accept-data-loss", {
@@ -96,11 +101,61 @@ beforeAll(async () => {
       qr_payload: "AGENCY-QR-001",
     },
   });
+
+  // Logo resolution fixtures (#419): a dedicated org with its own logo, plus one event that
+  // relies on the org's logo and one that sets its own (should win over the org's).
+  await prisma.organization.create({
+    data: { id: ORG_ID_LOGO, name: "Logo Org", slug: "logo-org", logo_url: "https://cdn.example.com/org-logo.png" },
+  });
+
+  await prisma.event.create({
+    data: {
+      id: EVENT_ID_ORG_LOGO,
+      title: "Org Logo Event",
+      slug: EVENT_ID_ORG_LOGO,
+      date: new Date("2026-09-03T09:00:00Z"),
+      organization_id: ORG_ID_LOGO,
+    },
+  });
+  tokenOrgLogo = generateToken();
+  await prisma.attendee.create({
+    data: {
+      event_id: EVENT_ID_ORG_LOGO,
+      email: "org-logo@example.com",
+      name: "Org Logo User",
+      token_hash: hashToken(tokenOrgLogo),
+    },
+  });
+
+  await prisma.event.create({
+    data: {
+      id: EVENT_ID_EVENT_LOGO,
+      title: "Event Logo Event",
+      slug: EVENT_ID_EVENT_LOGO,
+      date: new Date("2026-09-04T09:00:00Z"),
+      organization_id: ORG_ID_LOGO,
+      logo_url: "https://cdn.example.com/event-logo.png",
+    },
+  });
+  tokenEventLogo = generateToken();
+  await prisma.attendee.create({
+    data: {
+      event_id: EVENT_ID_EVENT_LOGO,
+      email: "event-logo@example.com",
+      name: "Event Logo User",
+      token_hash: hashToken(tokenEventLogo),
+    },
+  });
 });
 
 afterAll(async () => {
-  await prisma.attendee.deleteMany({ where: { event_id: { in: [EVENT_ID, EVENT_ID_2] } } });
-  await prisma.event.deleteMany({ where: { id: { in: [EVENT_ID, EVENT_ID_2] } } });
+  await prisma.attendee.deleteMany({
+    where: { event_id: { in: [EVENT_ID, EVENT_ID_2, EVENT_ID_ORG_LOGO, EVENT_ID_EVENT_LOGO] } },
+  });
+  await prisma.event.deleteMany({
+    where: { id: { in: [EVENT_ID, EVENT_ID_2, EVENT_ID_ORG_LOGO, EVENT_ID_EVENT_LOGO] } },
+  });
+  await prisma.organization.deleteMany({ where: { id: ORG_ID_LOGO } });
   await prisma.$disconnect();
 });
 
@@ -198,5 +253,22 @@ describe("resolveTicket — not found", () => {
   it("returns null for full URL with unknown token", async () => {
     const url = buildTicketUrl("https://example.com", generateToken());
     expect(await resolveTicket(url, prisma)).toBeNull();
+  });
+});
+
+describe("resolveTicket — logo resolution (#419)", () => {
+  it("resolves null when neither the event nor its organization has a logo configured", async () => {
+    const result = await resolveTicket(tokenA, prisma);
+    expect(result?.event.logoUrl).toBeNull();
+  });
+
+  it("falls back to the organization's logo when the event has none of its own", async () => {
+    const result = await resolveTicket(tokenOrgLogo, prisma);
+    expect(result?.event.logoUrl).toBe("https://cdn.example.com/org-logo.png");
+  });
+
+  it("prefers the event's own logo over the organization's", async () => {
+    const result = await resolveTicket(tokenEventLogo, prisma);
+    expect(result?.event.logoUrl).toBe("https://cdn.example.com/event-logo.png");
   });
 });

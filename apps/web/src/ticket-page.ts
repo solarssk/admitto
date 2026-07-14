@@ -11,29 +11,55 @@ function formatDate(d: Date): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
+/** Origin of `url` when it's a safe (https, no embedded credentials) absolute URL - null for
+ * anything empty, relative, unparseable, or unsafe. Shared by buildTicketFontSrc/buildTicketImgSrc
+ * below (CodeRabbit review: same parse/protocol/credential check was duplicated in both). */
+function safeHttpsOrigin(url?: string | null): string | null {
+  const trimmed = url?.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === "https:" && !parsed.username && !parsed.password) {
+      return parsed.origin;
+    }
+  } catch {
+    // ignore invalid URLs
+  }
+  return null;
+}
+
 /** Build CSP font-src allowlist for ticket page custom branding fonts. */
 export function buildTicketFontSrc(theme?: BrandingTheme | null): string {
   const parts = ["'self'"];
-  const fontUrl = theme?.font_family_url?.trim();
-  if (fontUrl) {
-    try {
-      const parsed = new URL(fontUrl);
-      if (parsed.protocol === "https:" && !parsed.username && !parsed.password) {
-        parts.push(parsed.origin);
-      }
-    } catch {
-      // ignore invalid URLs
-    }
+  const origin = safeHttpsOrigin(theme?.font_family_url);
+  if (origin) parts.push(origin);
+  return parts.join(" ");
+}
+
+/** Build CSP img-src allowlist for the QR code (data: URI) plus, when a logo is configured, its
+ * host - a relative /uploads/... logo is already covered by 'self' and adds nothing here, so it's
+ * excluded before reaching safeHttpsOrigin (which only ever recognizes absolute https origins
+ * anyway, but never even attempting to parse a same-origin path keeps the intent explicit here). */
+export function buildTicketImgSrc(logoUrl?: string | null): string {
+  const parts = ["'self'", "data:"];
+  const url = logoUrl?.trim();
+  if (url && !url.startsWith("/")) {
+    const origin = safeHttpsOrigin(url);
+    if (origin) parts.push(origin);
   }
   return parts.join(" ");
 }
 
-export function getTicketPageSecurityHeaders(theme?: BrandingTheme | null): Record<string, string> {
+export function getTicketPageSecurityHeaders(
+  theme?: BrandingTheme | null,
+  logoUrl?: string | null,
+): Record<string, string> {
   const fontSrc = buildTicketFontSrc(theme);
+  const imgSrc = buildTicketImgSrc(logoUrl);
   return {
     "Cache-Control": "private, no-store, max-age=0",
     "Content-Security-Policy":
-      `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'none'; connect-src 'none'; font-src ${fontSrc}; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      `default-src 'none'; style-src 'unsafe-inline'; img-src ${imgSrc}; script-src 'none'; connect-src 'none'; font-src ${fontSrc}; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
   };
@@ -61,8 +87,11 @@ export function renderTicket(
   <article class="ticket">
     <header class="ticket__top">
       <div class="ticket__brand">
-        <span class="ticket__brand-mark" aria-hidden="true"></span>
-        <span>Admitto</span>
+        ${
+          event.logoUrl
+            ? `<img class="ticket__brand-logo" src="${esc(event.logoUrl)}" alt="${esc(event.title)}">`
+            : `<span class="ticket__brand-mark" aria-hidden="true"></span><span>Admitto</span>`
+        }
       </div>
       <small>Event ticket</small>
     </header>
