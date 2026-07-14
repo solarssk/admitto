@@ -1,4 +1,5 @@
-import type { PrismaClient, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 
 type TicketTypeDb = PrismaClient | Prisma.TransactionClient;
 
@@ -90,6 +91,19 @@ export async function loadEventTicketTypes(db: TicketTypeDb, eventId: string): P
     where: { event_id: eventId },
     orderBy: { sort_order: "asc" },
   });
+}
+
+/** Serializes create/delete for one event's ticket-type catalog against each other, closing the
+ * same concurrent-create-vs-cap race as apps/web's acquireEventCustomFieldsLock. Exported so every
+ * writer that assigns Attendee.ticket_type - apps/web's attendees-api-routes.ts and
+ * import-api-routes.ts, and packages/import's cli.ts - can take the same lock and fully serialize
+ * against a concurrent delete of the type it's about to reference (TOCTOU fix, code review). Lives
+ * here rather than in apps/web because packages/import (the standalone CLI importer) needs it too
+ * and cannot depend on apps/web (dependency direction is the other way) - packages/tickets is the
+ * shared package both already depend on. */
+export async function acquireEventTicketTypesLock(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
+  const lockKey = `ticket-types:${eventId}`;
+  await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 }
 
 /** Thrown when a `ticket_type` value doesn't match any entry in the event's catalog. */

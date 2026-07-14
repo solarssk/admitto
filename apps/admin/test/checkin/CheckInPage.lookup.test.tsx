@@ -14,6 +14,7 @@ const fetchCheckInStats = vi.fn();
 const fetchCheckInOpsConfig = vi.fn();
 const fetchCheckInEvents = vi.fn();
 const fetchAttendeeCard = vi.fn();
+const fetchTicketTypes = vi.fn();
 const lookupCheckInAttendees = vi.fn();
 const submitCheckInAdmit = vi.fn();
 const submitCheckInScan = vi.fn();
@@ -45,7 +46,7 @@ vi.mock("@admitto/ui", async (importOriginal) => {
 });
 
 vi.mock("../../src/api/client.js", () => ({
-  fetchTicketTypes: vi.fn().mockResolvedValue([]),
+  fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
   ApiError: class ApiError extends Error {
     status: number;
     code?: string;
@@ -79,6 +80,7 @@ function mockPageBootstrap(overrides: { allow_manual_lookup?: boolean } = {}) {
   fetchCheckInEvents.mockResolvedValue([{ id: "evt-live", timezone: "UTC" }]);
   fetchCheckInHistory.mockResolvedValue([]);
   fetchCheckInStats.mockResolvedValue({ admitted_count: 0, total_count: 1 });
+  fetchTicketTypes.mockResolvedValue([]);
 }
 
 function renderPage() {
@@ -250,6 +252,23 @@ describe("CheckInPage scan-bar lookup", () => {
     expect(lookupCheckInAttendees).toHaveBeenCalledWith("evt-live", "anna");
     // Already-admitted hit is flagged in the dropdown.
     expect(screen.getByText(/checked in/)).toBeTruthy();
+  });
+
+  it("resolves a suggestion's raw ticket_type key to the catalog's current label (batch 04 / #351)", async () => {
+    mockPageBootstrap();
+    fetchTicketTypes.mockResolvedValue([
+      { id: "tt-vip", key: "vip", label: "VIP Guest", color: "purple", sort_order: 0, attendee_count: 0, created_at: "2026-01-01T00:00:00.000Z" },
+    ]);
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
+
+    renderPage();
+    const input = await scanInput();
+    fireEvent.change(input, { target: { value: "anna" } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/VIP Guest/)).toBeTruthy();
+    });
+    expect(screen.queryByText(/Acme · vip/)).toBeNull();
   });
 
   it("does not fetch suggestions for token-length input", async () => {

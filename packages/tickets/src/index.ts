@@ -46,6 +46,7 @@ export { BADGE_ITEM_KEY, ensureBadgeEventItem, isBadgeItemUsable } from "./event
 export {
   ensureStandardTicketType,
   loadEventTicketTypes,
+  acquireEventTicketTypesLock,
   assertTicketTypeInCatalog,
   UnknownTicketTypeError,
   TICKET_TYPE_COLOR_KEYS,

@@ -13,6 +13,7 @@ import {
   filterCustomDataAttributeFields,
   loadEventTicketTypes,
   writeBulkActionLog,
+  acquireEventTicketTypesLock,
 } from "@admitto/tickets";
 import { xlsxBufferToCsv, ImportRowLimitError, ImportZipBombError, MAX_CSV_CHARS, MAX_IMPORT_ROWS } from "./xlsx-to-csv.js";
 import { logger } from "../logger.js";
@@ -22,7 +23,6 @@ import {
   requireEventId,
 } from "./admin-helpers.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock } from "./event-capacity.js";
-import { acquireEventTicketTypesLock } from "./ticket-types-routes.js";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 /** Multipart framing overhead allowed on top of the file cap (body-limit middleware). */

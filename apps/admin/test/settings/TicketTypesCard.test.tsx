@@ -35,10 +35,20 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderCard(types: TicketTypeDto[]) {
+function renderCard(
+  types: TicketTypeDto[],
+  overrides: { error?: string | null; onRetry?: () => void } = {},
+) {
   const onChanged = vi.fn();
   renderWithToast(
-    <TicketTypesCard eventId="evt-1" event={event} types={types} loading={false} onChanged={onChanged} />,
+    <TicketTypesCard
+      eventId="evt-1"
+      event={event}
+      types={types}
+      loading={false}
+      onChanged={onChanged}
+      {...overrides}
+    />,
   );
   return { onChanged };
 }
@@ -109,6 +119,17 @@ describe("TicketTypesCard", () => {
     );
     // The dialog itself (not just a toast) is still open, with the same target and a Cancel path.
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+  });
+
+  it("renders an inline error with Retry instead of the list when the catalog failed to load (CodeRabbit review)", () => {
+    const onRetry = vi.fn();
+    renderCard([], { error: "Failed to load ticket types.", onRetry });
+
+    expect(screen.getByText("Failed to load ticket types.")).toBeTruthy();
+    expect(screen.queryByText("No ticket types yet. Add at least one before sending tickets.")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
   it("commits an actual label change and calls onChanged", async () => {

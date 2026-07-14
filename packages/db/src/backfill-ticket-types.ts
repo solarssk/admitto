@@ -106,13 +106,13 @@ export async function backfillTicketTypes(prisma: PrismaClient): Promise<{
     // Wrapped in a transaction so a mid-event crash can't leave a partially migrated event
     // behind - the idempotency check above (`ticket_types: { none: {} } `) would then skip it
     // forever on re-run, since it already has at least one TicketType row (CodeRabbit review).
-    await prisma.$transaction(
+    const migrated = await prisma.$transaction(
       async (tx) => {
         // Serialize against any other process touching this event's ticket-type catalog - a
         // concurrent replica of this same script on a rolling deploy, or an API route - same lock
-        // key/format as apps/web/src/admin/ticket-types-routes.ts's acquireEventTicketTypesLock,
-        // inlined here since packages/db can't import from apps/web. Transaction-scoped, so it
-        // auto-releases on commit/rollback.
+        // key/format as packages/tickets/src/ticket-types.ts's acquireEventTicketTypesLock,
+        // inlined here since packages/db can't import from packages/tickets. Transaction-scoped,
+        // so it auto-releases on commit/rollback.
         const lockKey = `ticket-types:${event.id}`;
         await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 
@@ -120,8 +120,9 @@ export async function backfillTicketTypes(prisma: PrismaClient): Promise<{
         // a process that was blocked here (another replica won the race and already committed)
         // must re-check idempotency now, under the lock, before writing anything - otherwise it
         // would still try to create the same (event_id, key) rows and hit the unique constraint.
+        // Returns false in that case so the caller doesn't count this event as seeded twice.
         const alreadyMigrated = await tx.ticketType.count({ where: { event_id: event.id } });
-        if (alreadyMigrated > 0) return;
+        if (alreadyMigrated > 0) return false;
 
         if (groups.size === 0) {
           await tx.ticketType.create({
@@ -157,10 +158,12 @@ export async function backfillTicketTypes(prisma: PrismaClient): Promise<{
           });
           attendeesNormalized += count;
         }
+
+        return true;
       },
       { timeout: BACKFILL_TX_TIMEOUT_MS, maxWait: BACKFILL_TX_MAX_WAIT_MS },
     );
-    eventsSeeded += 1;
+    if (migrated) eventsSeeded += 1;
   }
 
   return { eventsSeeded, typesCreated, attendeesNormalized };

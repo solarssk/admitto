@@ -112,7 +112,8 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
     isValidEmail(email.trim()) &&
     !submitting &&
     !attributeFieldsLoading &&
-    !attributeFieldsError;
+    !attributeFieldsError &&
+    !ticketTypesError;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
