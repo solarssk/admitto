@@ -414,6 +414,25 @@ export function createApp(options: CreateAppOptions = {}) {
     return c.html(html, status);
   }
 
+  // ticket_type stores the catalog key (e.g. "press_pass"), not the human label ("Press Pass") -
+  // resolve it for attendee-facing display; fail open to the raw key on any lookup error, same as
+  // ticketTypeBadge.tsx's resolver (Codex review, batch 04 / #351).
+  async function resolveTicketPageDisplay(
+    resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
+  ): Promise<NonNullable<Awaited<ReturnType<typeof resolveTicket>>>> {
+    const { attendee, event } = resolved;
+    if (!attendee.ticket_type) return resolved;
+    try {
+      const catalog = await loadEventTicketTypes(db, event.id);
+      const found = catalog.find((t) => t.key === attendee.ticket_type);
+      if (!found) return resolved;
+      return { ...resolved, attendee: { ...attendee, ticket_type: found.label } };
+    } catch (err) {
+      console.error("loadEventTicketTypes failed for ticket page:", err);
+      return resolved;
+    }
+  }
+
   async function renderTicketPage(
     c: Context,
     resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
@@ -465,23 +484,7 @@ export function createApp(options: CreateAppOptions = {}) {
       theme = null;
     }
 
-    // ticket_type stores the catalog key (e.g. "press_pass"), not the human label ("Press Pass")
-    // - resolve it for attendee-facing display; fail open to the raw key on any lookup error, same
-    // as ticketTypeBadge.tsx's resolver (Codex review, batch 04 / #351).
-    let ticketTypeLabel = attendee.ticket_type;
-    if (ticketTypeLabel) {
-      try {
-        const catalog = await loadEventTicketTypes(db, event.id);
-        const found = catalog.find((t) => t.key === ticketTypeLabel);
-        if (found) ticketTypeLabel = found.label;
-      } catch (err) {
-        console.error("loadEventTicketTypes failed for ticket page:", err);
-      }
-    }
-    const resolvedForDisplay =
-      ticketTypeLabel === attendee.ticket_type
-        ? resolved
-        : { ...resolved, attendee: { ...attendee, ticket_type: ticketTypeLabel } };
+    const resolvedForDisplay = await resolveTicketPageDisplay(resolved);
 
     return htmlWithSecurityHeaders(c, renderTicket(resolvedForDisplay, qrDataUrl, theme), 200, theme);
   }
