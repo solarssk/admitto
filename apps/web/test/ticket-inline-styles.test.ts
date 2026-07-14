@@ -14,4 +14,13 @@ describe("buildTicketPageStyles", () => {
     expect(css).toContain(".ticket__brand-mark");
     expect(css).toContain("background: #066fd1");
   });
+
+  it("gives every custom property a literal fallback, since the ticket page loads no external stylesheet", () => {
+    // resolveThemeVars() only ever emits --primary(-hover/-active/-tint) and optionally
+    // --font-sans; surface/text/border tokens live in packages/ui's colors.css, which this
+    // standalone page never loads. Any var(--x) without a fallback resolves to nothing.
+    const css = buildTicketPageStyles();
+    const bareVarRefs = [...css.matchAll(/var\((--[a-z-]+)\)/g)].map((m) => m[1]);
+    expect(bareVarRefs).toEqual(["--primary"]);
+  });
 });
