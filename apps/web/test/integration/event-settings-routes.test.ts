@@ -239,6 +239,8 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       header_image_url: string | null;
       resolved_logo_url: string | null;
       resolved_header_image_url: string | null;
+      admitted_count: number;
+      issued_items_count: number;
     };
     expect(body.id).toBe(EVENT_SET);
     expect(body.title).toBe("Settings Event");
@@ -256,6 +258,94 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.header_image_url).toBeNull();
     expect(body.resolved_logo_url).toBeNull();
     expect(body.resolved_header_image_url).toBeNull();
+    expect(body.admitted_count).toBe(0);
+    expect(body.issued_items_count).toBe(0);
+  });
+
+  it("returns admitted_count and issued_items_count reflecting real activity", async () => {
+    const admittedAttendee = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_SET,
+        email: "admitted-guest@example.com",
+        name: "Admitted Guest",
+        status: "registered",
+        admitted_at: new Date(),
+      },
+    });
+    await prisma.attendeeItemState.create({
+      data: { attendee_id: admittedAttendee.id, event_item_id: ITEM_SET, state: "issued" },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { admitted_count: number; issued_items_count: number };
+      expect(body.admitted_count).toBe(1);
+      expect(body.issued_items_count).toBe(1);
+    } finally {
+      await prisma.attendeeItemState.deleteMany({ where: { attendee_id: admittedAttendee.id } });
+      await prisma.attendee.delete({ where: { id: admittedAttendee.id } });
+    }
+  });
+
+  // Regression (bot review): revokeAllItemsForEvent skips a blocked-pass attendee's items via
+  // the isAdmittable guard, so counting their items here would show/enable "Revoke all items
+  // issued" for items the bulk action can never actually revoke, leaving the count stuck nonzero.
+  it("excludes items belonging to a blocked-pass (cancelled/revoked) attendee from issued_items_count", async () => {
+    const blockedAttendee = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_SET,
+        email: "blocked-pass-guest@example.com",
+        name: "Blocked Pass Guest",
+        status: "cancelled",
+      },
+    });
+    await prisma.attendeeItemState.create({
+      data: { attendee_id: blockedAttendee.id, event_item_id: ITEM_SET, state: "issued" },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { issued_items_count: number };
+      expect(body.issued_items_count).toBe(0);
+    } finally {
+      await prisma.attendeeItemState.deleteMany({ where: { attendee_id: blockedAttendee.id } });
+      await prisma.attendee.delete({ where: { id: blockedAttendee.id } });
+    }
+  });
+
+  // Regression (CodeRabbit review): same gap as issued_items_count above, for the sibling
+  // count. revokeAllCheckInsForEvent's resetItems:true cascade rolls back the whole per-attendee
+  // transaction (including the admitted_at clear) when it hits a blocked pass, so an
+  // admitted-but-blocked attendee's check-in is never actually revoked by the bulk action even
+  // though admitted_at is still set - counting them here would show/enable "Revoke all
+  // check-ins" for an attendee the bulk action can never actually revoke.
+  it("excludes an admitted attendee whose pass is blocked (cancelled/revoked) from admitted_count", async () => {
+    const blockedAdmitted = await prisma.attendee.create({
+      data: {
+        event_id: EVENT_SET,
+        email: "blocked-admitted-guest@example.com",
+        name: "Blocked Admitted Guest",
+        status: "cancelled",
+        admitted_at: new Date(),
+      },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { admitted_count: number };
+      expect(body.admitted_count).toBe(0);
+    } finally {
+      await prisma.attendee.delete({ where: { id: blockedAdmitted.id } });
+    }
   });
 
   it("returns archived_at for an archived event", async () => {
@@ -412,11 +502,19 @@ describe("PATCH /api/admin/events/:eventId", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      event: { title: string; slug: string; is_deletable: boolean };
+      event: {
+        title: string;
+        slug: string;
+        is_deletable: boolean;
+        admitted_count: number;
+        issued_items_count: number;
+      };
     };
     expect(body.event.title).toBe("Renamed Event");
     expect(body.event.slug).toBe("event-settings");
     expect(body.event.is_deletable).toBe(false);
+    expect(body.event.admitted_count).toBe(0);
+    expect(body.event.issued_items_count).toBe(0);
 
     const audit = await prisma.adminAuditLog.findFirst({
       where: { organization_id: ORG_SET, action_type: "event_updated" },

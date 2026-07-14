@@ -39,6 +39,15 @@ import { formatUtcDateTime } from "../utils/event-dates.js";
 type ActiveField = "subject" | "body";
 type TemplateFormat = "mjml" | "html";
 
+/** Placeholders that stay valid (already-saved templates using them keep rendering) but are no
+ * longer offered as an insertable chip: `header_image_url` has no organisation-level branding
+ * field to fall back to (org branding only manages a logo, see OrganisationBrandingPanel) and
+ * the per-event header image override was intentionally dropped in favour of the general-purpose
+ * image asset library — inserting it would always produce a permanently empty image with no way
+ * to fill it in. Filtered client-side, not removed from the server's ALLOWED_PLACEHOLDERS
+ * whitelist, so it's not a backward-compat break for any already-saved template. */
+const HIDDEN_PLACEHOLDERS = new Set(["header_image_url"]);
+
 /** Format an ISO timestamp for the delivery log table. */
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—";
@@ -48,6 +57,113 @@ function formatDateTime(iso: string | null): string {
 /** Insert placeholder text at the textarea cursor selection. */
 function insertAtCursor(value: string, insertion: string, start: number, end: number): string {
   return value.slice(0, start) + insertion + value.slice(end);
+}
+
+/** Human-readable alt text for a known image placeholder; custom asset tokens just use their
+ * own name (they have no separate display-name field). */
+function imagePlaceholderAltText(name: string): string {
+  switch (name) {
+    case "logo_url":
+      return "Logo";
+    case "header_image_url":
+      return "Header image";
+    case "qr_image_url":
+      return "Ticket QR code";
+    default:
+      return name;
+  }
+}
+
+/** Markup inserted for an image placeholder — a ready-to-use image element, not a bare
+ * `{{name}}` token. A bare token never displays a picture on its own; it needs to be the `src`
+ * of an actual image element, so the picker inserts one directly. */
+function imagePlaceholderMarkup(name: string, format: TemplateFormat): string {
+  const alt = imagePlaceholderAltText(name);
+  return format === "mjml"
+    ? `<mj-image src="{{${name}}}" alt="${alt}" width="200px" />`
+    : `<img src="{{${name}}}" alt="${alt}" width="200" style="max-width:100%;" />`;
+}
+
+/** True when [start, end] falls inside the `<mjml>...</mjml>` root found in `value` — strictly
+ * after the opening tag's closing `>` and at/before the closing tag's start. Returns true (i.e.
+ * "assume fine, don't second-guess it") when no recognizable `<mjml ...>`/`</mjml>` pair exists,
+ * since we can't reason about a template shape we don't recognize. */
+function isWithinMjmlRoot(value: string, start: number, end: number): boolean {
+  const openMatch = /<mjml[^>]*>/i.exec(value);
+  const closeIdx = value.lastIndexOf("</mjml>");
+  if (!openMatch || closeIdx === -1) return true;
+  const openTagEnd = openMatch.index + openMatch[0].length;
+  return start >= openTagEnd && end <= closeIdx;
+}
+
+/** Last `</mj-column>` position in an MJML body, or -1 if none is found. Used as a safe fallback
+ * insertion point — see `insertPlaceholder` for why this is needed. */
+function findMjmlColumnFallbackIndex(value: string): number {
+  return value.lastIndexOf("</mj-column>");
+}
+
+/** True when [start, end] falls inside some `<mj-column ...>...</mj-column>` pair in `value`.
+ * Being "within the `<mjml>` root" isn't enough on its own — a cursor can sit inside the root
+ * but between components (e.g. right after `</mj-section>` and before `</mj-body>`, or between
+ * two sibling `<mj-section>` blocks), which is just as much a loose-text-drop hazard as being
+ * outside the root entirely (see the comment in `insertTokenIntoField`). `<mj-column>` is the
+ * innermost element every real template's text content actually lives inside (see
+ * DEFAULT_BODY_MJML in packages/mail-templates), and MJML doesn't nest one `<mj-column>` inside
+ * another, so a simple sequential tag scan — matching the pragmatic style of
+ * `findMjmlColumnFallbackIndex` above — is enough without a full XML parser. */
+function isInsideMjColumn(value: string, start: number, end: number): boolean {
+  const openTagPattern = /<mj-column[^>]*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = openTagPattern.exec(value))) {
+    const openEnd = match.index + match[0].length;
+    const closeIdx = value.indexOf("</mj-column>", openEnd);
+    if (closeIdx !== -1 && start >= openEnd && end <= closeIdx) return true;
+  }
+  return false;
+}
+
+/** True when [start, end] falls inside some `<mj-text ...>...</mj-text>` pair in `value`. A
+ * bare `{{token}}` inserted there is fine (that's exactly what mj-text is for), but an image
+ * element (`<mj-image>`) is not a valid child of mj-text — MJML rejects the nested markup at
+ * compile time (bot review). Same sequential-scan approach as `isInsideMjColumn`. */
+function isInsideMjText(value: string, start: number, end: number): boolean {
+  const openTagPattern = /<mj-text[^>]*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = openTagPattern.exec(value))) {
+    const openEnd = match.index + match[0].length;
+    const closeIdx = value.indexOf("</mj-text>", openEnd);
+    if (closeIdx !== -1 && start >= openEnd && end <= closeIdx) return true;
+  }
+  return false;
+}
+
+/** True when `index` sits inside a quoted HTML attribute value, e.g. between the quotes of an
+ * existing `<mj-image src="|">` an admin is editing. Splicing a full element there (instead of a
+ * bare token) produces markup nested inside an attribute value, which fails to compile (bot
+ * review) — `insertTokenIntoField` uses this to always fall back to the bare token in that one
+ * spot, regardless of placeholder type. Ported from `isInsideQuotedAttribute` in
+ * `packages/mail-templates/src/htmlContext.ts` (kept in sync manually, same pattern as
+ * `apps/admin/src/utils/safeBrandingLogoHref.ts`) — not imported directly, since that package
+ * pulls in the MJML compiler and DB access, neither of which belong in this client bundle. */
+function isInsideQuotedAttributeValue(value: string, index: number): boolean {
+  const tagStart = value.lastIndexOf("<", index);
+  if (tagStart === -1) return false;
+  if (value[tagStart + 1] === "/" || value[tagStart + 1] === "!") return false;
+
+  let inQuote: '"' | "'" | null = null;
+  for (let i = tagStart + 1; i < index; i++) {
+    const ch = value[i]!;
+    if (inQuote) {
+      if (ch === inQuote) inQuote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inQuote = ch;
+      continue;
+    }
+    if (ch === ">" || (ch === "/" && value[i + 1] === ">")) return false;
+  }
+  return inQuote !== null;
 }
 
 const DELIVERY_PAGE_SIZE = 25;
@@ -111,6 +227,7 @@ export function CommunicationPage() {
   const [source, setSource] = useState<EventTemplateDto["source"]>("builtin");
   const [allowedPlaceholders, setAllowedPlaceholders] = useState<string[]>([]);
   const [requiredPlaceholders, setRequiredPlaceholders] = useState<string[]>([]);
+  const [imagePlaceholders, setImagePlaceholders] = useState<string[]>([]);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [format, setFormat] = useState<TemplateFormat>("mjml");
@@ -473,8 +590,9 @@ export function CommunicationPage() {
         if (cancelled) return;
         legacyTemplateRef.current = data;
         setTemplates(items);
-        setAllowedPlaceholders(data.allowed_placeholders);
+        setAllowedPlaceholders(data.allowed_placeholders.filter((p) => !HIDDEN_PLACEHOLDERS.has(p)));
         setRequiredPlaceholders(data.required_url_placeholders);
+        setImagePlaceholders(data.image_placeholders ?? []);
         const ticket = items.find((t) => t.name === "ticket");
         if (ticket) {
           setActiveKey(ticket.id);
@@ -558,31 +676,90 @@ export function CommunicationPage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
 
-  const insertPlaceholder = (name: string) => {
-    const token = `{{${name}}}`;
-    if (activeField === "subject") {
-      const el = subjectRef.current;
-      const start = el?.selectionStart ?? subject.length;
-      const end = el?.selectionEnd ?? subject.length;
-      setSubject(insertAtCursor(subject, token, start, end));
-      requestAnimationFrame(() => {
-        if (el) {
-          el.focus();
-          el.setSelectionRange(start + token.length, start + token.length);
+  /** Insert a token at a field's cursor, then move the cursor to right after it.
+   *
+   * Reads and writes the actual DOM element's `value`/selection synchronously (not the React
+   * state closure or a `requestAnimationFrame`-deferred selection restore) so that clicking a
+   * placeholder chip multiple times in a row — even faster than React can re-render between
+   * clicks — always appends after the previous insertion instead of silently overwriting it or
+   * splicing into the middle of it. Previously, reading `el.selectionStart` and the `body`/
+   * `subject` state at click time could both be stale if a prior click's state update and
+   * rAF-scheduled cursor move hadn't been committed yet, causing rapid repeated clicks to insert
+   * at the same stale position and produce broken, nested markup (e.g. a second `<mj-image>`
+   * landing inside the first one's `src="..."` attribute). Setting `el.value`/selection directly
+   * keeps every insertion's start position accurate regardless of click timing, since React skips
+   * touching the DOM value/selection of a controlled input when they already match its state.
+   */
+  /**
+   * Inserts `token` (the caller's preferred markup — possibly a full `<mj-image>`/`<img>`
+   * element) at the field's cursor, falling back to `bareToken` (always just `{{name}}`) instead
+   * when the preferred markup can't safely go where the cursor actually is. Three MJML-specific
+   * hazards this guards against, in order — each one found by bot review on a previous edit:
+   *
+   * 1. Cursor inside an existing quoted attribute value (e.g. filling in `<mj-image src="">`):
+   *    always the bare token, right there, never a full element — an element spliced inside an
+   *    attribute value is nested-inside-a-string markup that fails to compile.
+   * 2. Cursor outside the `<mjml>...</mjml>` root, or inside the root but between components
+   *    (not inside any `<mj-column>`): MJML silently drops content there with no error — redirect
+   *    into the template's last `<mj-column>` instead, wrapping a bare token in its own
+   *    `<mj-text>` so it isn't itself dropped as loose text between components.
+   * 3. Image markup specifically landing inside an existing `<mj-text>`: not silently dropped,
+   *    outright invalid (`<mj-image>` can't nest inside `<mj-text>`) — redirect the same way as
+   *    (2). A bare token inside `<mj-text>` is fine as-is and skips this case.
+   */
+  function insertTokenIntoField(
+    el: HTMLInputElement | HTMLTextAreaElement | null,
+    token: string,
+    bareToken: string,
+    setValue: (value: string) => void,
+  ) {
+    if (!el) return;
+    let start = el.selectionStart ?? el.value.length;
+    let end = el.selectionEnd ?? el.value.length;
+    let insertion = token;
+
+    if (el === bodyRef.current && format === "mjml") {
+      if (isInsideQuotedAttributeValue(el.value, start)) {
+        insertion = bareToken;
+      } else {
+        const isImageMarkup = insertion.startsWith("<mj-");
+        if (
+          !isWithinMjmlRoot(el.value, start, end) ||
+          !isInsideMjColumn(el.value, start, end) ||
+          (isImageMarkup && isInsideMjText(el.value, start, end))
+        ) {
+          const fallbackIdx = findMjmlColumnFallbackIndex(el.value);
+          if (fallbackIdx !== -1) {
+            start = fallbackIdx;
+            end = fallbackIdx;
+            insertion = token.startsWith("<mj-") ? token : `<mj-text>${token}</mj-text>`;
+          }
         }
-      });
+      }
+    }
+
+    const newValue = insertAtCursor(el.value, insertion, start, end);
+    const newCursorPos = start + insertion.length;
+    el.value = newValue;
+    el.setSelectionRange(newCursorPos, newCursorPos);
+    el.focus();
+    setValue(newValue);
+  }
+
+  const insertPlaceholder = (name: string) => {
+    // Subjects are plain text (no HTML rendering), so always insert the bare token there. In the
+    // body, an image placeholder gets a ready-to-use image element instead of a bare token —
+    // {{logo_url}} alone never displays a picture, it needs to be an <img>/<mj-image> src.
+    const bareToken = `{{${name}}}`;
+    const token =
+      activeField === "body" && imagePlaceholders.includes(name)
+        ? imagePlaceholderMarkup(name, format)
+        : bareToken;
+    if (activeField === "subject") {
+      insertTokenIntoField(subjectRef.current, token, bareToken, setSubject);
       return;
     }
-    const el = bodyRef.current;
-    const start = el?.selectionStart ?? body.length;
-    const end = el?.selectionEnd ?? body.length;
-    setBody(insertAtCursor(body, token, start, end));
-    requestAnimationFrame(() => {
-      if (el) {
-        el.focus();
-        el.setSelectionRange(start + token.length, start + token.length);
-      }
-    });
+    insertTokenIntoField(bodyRef.current, token, bareToken, setBody);
   };
 
   const handlePreview = async () => {
@@ -854,22 +1031,31 @@ export function CommunicationPage() {
               <div className="communication-ph-row">
                 <span className="communication-overline">Insert placeholder</span>
                 <div className="communication-chips">
-                  {allowedPlaceholders.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      className={[
-                        "communication-chip",
-                        requiredPlaceholders.includes(p) && "communication-chip--required",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      onClick={() => insertPlaceholder(p)}
-                      title={requiredPlaceholders.includes(p) ? "Required placeholder" : undefined}
-                    >
-                      {`{{${p}}}`}
-                    </button>
-                  ))}
+                  {allowedPlaceholders.map((p) => {
+                    const isImage = imagePlaceholders.includes(p);
+                    const isRequired = requiredPlaceholders.includes(p);
+                    const titleParts = [
+                      isRequired && "Required placeholder",
+                      isImage && "Inserts a ready-to-use image",
+                    ].filter((part): part is string => Boolean(part));
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        className={[
+                          "communication-chip",
+                          isRequired && "communication-chip--required",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        onClick={() => insertPlaceholder(p)}
+                        title={titleParts.length ? titleParts.join(" · ") : undefined}
+                      >
+                        {isImage && <i className="ti ti-photo" aria-hidden="true" />}
+                        {`{{${p}}}`}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

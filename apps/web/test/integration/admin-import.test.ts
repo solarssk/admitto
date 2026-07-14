@@ -149,17 +149,19 @@ async function seed(client: PrismaClient) {
   });
 
   await client.eventItem.create({
-    data: {
-      event_id: EVENT_A,
-      key: "swag",
-      label: "Swag pack",
-      config: {
-        contents: [
-          { label: "Sock size", source_field: "sock_size", type: "text" },
-          { label: "Cap size", source_field: "cap_size", type: "select", options: ["S", "M", "L"] },
-        ],
+    data: { event_id: EVENT_A, key: "swag", label: "Swag pack" },
+  });
+  await client.eventCustomField.createMany({
+    data: [
+      { event_id: EVENT_A, source_field: "sock_size", label: "Sock size" },
+      {
+        event_id: EVENT_A,
+        source_field: "cap_size",
+        label: "Cap size",
+        type: "select",
+        options: ["S", "M", "L"],
       },
-    },
+    ],
   });
 }
 
@@ -725,15 +727,9 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       where: { id: EXISTING_ATT },
       data: { custom_data: { cap_size: "M" } },
     });
-    await prisma.eventItem.update({
-      where: { event_id_key: { event_id: EVENT_A, key: "swag" } },
-      data: {
-        config: {
-          contents: [
-            { label: "Cap size", source_field: "cap_size", type: "select", required: true, options: ["S", "M", "L"] },
-          ],
-        },
-      },
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "cap_size" } },
+      data: { required: true },
     });
 
     const csv = [
@@ -753,60 +749,13 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     expect(row.company).toBe("Updated Co");
     expect(row.custom_data).toEqual({ cap_size: "M" });
 
-    await prisma.eventItem.update({
-      where: { event_id_key: { event_id: EVENT_A, key: "swag" } },
-      data: {
-        config: {
-          contents: [
-            { label: "Sock size", source_field: "sock_size", type: "text" },
-            { label: "Cap size", source_field: "cap_size", type: "select", options: ["S", "M", "L"] },
-          ],
-        },
-      },
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "cap_size" } },
+      data: { required: false },
     });
     await prisma.attendee.update({
       where: { id: EXISTING_ATT },
       data: { custom_data: {} },
-    });
-  });
-
-  it("returns 400 when event attribute config has conflicting select options", async () => {
-    await prisma.eventItem.create({
-      data: {
-        event_id: EVENT_A,
-        key: "merch",
-        label: "Merch",
-        config: {
-          contents: [
-            { label: "Size A", source_field: "size", type: "select", options: ["S"] },
-          ],
-        },
-      },
-    });
-    await prisma.eventItem.create({
-      data: {
-        event_id: EVENT_A,
-        key: "gear",
-        label: "Gear",
-        config: {
-          contents: [
-            { label: "Size B", source_field: "size", type: "select", options: ["XL"] },
-          ],
-        },
-      },
-    });
-
-    const res = await app.request(
-      `/api/admin/events/${EVENT_A}/import/template`,
-      { headers: { Cookie: adminCookie } },
-    );
-    expect(res.status).toBe(400);
-    expect((await res.json()) as { error: string }).toEqual({
-      error: "conflicting_custom_data_field_options",
-    });
-
-    await prisma.eventItem.deleteMany({
-      where: { event_id: EVENT_A, key: { in: ["merch", "gear"] } },
     });
   });
 
@@ -922,17 +871,9 @@ describe("GET /api/admin/events/:eventId/import/template", () => {
     expect(res.status).toBe(403);
   });
 
-  it("ignores legacy reserved source_field slugs when building attribute columns", async () => {
-    await prisma.eventItem.update({
-      where: { event_id_key: { event_id: EVENT_A, key: "swag" } },
-      data: {
-        config: {
-          contents: [
-            { label: "Email copy", source_field: "email", type: "text" },
-            { label: "Sock size", source_field: "sock_size", type: "text" },
-          ],
-        },
-      },
+  it("ignores reserved source_field slugs when building attribute columns", async () => {
+    await prisma.eventCustomField.create({
+      data: { event_id: EVENT_A, source_field: "email", label: "Email copy" },
     });
 
     const res = await app.request(
@@ -942,20 +883,12 @@ describe("GET /api/admin/events/:eventId/import/template", () => {
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body).toBe(
-      "first_name,last_name,email,ticket_type,company,department,external_uuid,qr_payload,sock_size\n",
+      "first_name,last_name,email,ticket_type,company,department,external_uuid,qr_payload,sock_size,cap_size\n",
     );
     expect(body.match(/email/g)?.length).toBe(1);
 
-    await prisma.eventItem.update({
-      where: { event_id_key: { event_id: EVENT_A, key: "swag" } },
-      data: {
-        config: {
-          contents: [
-            { label: "Sock size", source_field: "sock_size", type: "text" },
-            { label: "Cap size", source_field: "cap_size", type: "select", options: ["S", "M", "L"] },
-          ],
-        },
-      },
+    await prisma.eventCustomField.delete({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "email" } },
     });
   });
 });

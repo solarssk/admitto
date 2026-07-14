@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { useEffect, useId, useRef, useState } from "react";
-import { Button, Input } from "@admitto/ui";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { Button, Input, Spinner } from "@admitto/ui";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import "./confirm-dialog.css";
 
@@ -22,6 +22,13 @@ export type ConfirmDialogProps = {
   confirmationValue?: string;
   /** Label for the typed-confirmation input. Defaults to a generic "Type X to confirm" hint. */
   confirmationLabel?: string;
+  /**
+   * When set, the confirm button stays disabled for this many seconds after the dialog opens,
+   * with a thin depleting progress bar shown under its label (button height/size unchanged).
+   * A brief "don't act on reflex" pause for especially impactful bulk actions, on top of the
+   * dialog itself. Restarts every time the dialog re-opens.
+   */
+  confirmDelaySeconds?: number;
   /** Extra fields rendered between the error message and the action buttons (e.g. a step-up code input). */
   children?: ReactNode;
   /** External confirm-disabled condition (e.g. a required field in `children` is still empty), ORed with the built-in checks. */
@@ -42,6 +49,7 @@ export function ConfirmDialog({
   loading = false,
   confirmationValue,
   confirmationLabel,
+  confirmDelaySeconds,
   children,
   disableConfirm = false,
   onConfirm,
@@ -51,11 +59,22 @@ export function ConfirmDialog({
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const [typedValue, setTypedValue] = useState("");
+  const [armed, setArmed] = useState(confirmDelaySeconds === undefined);
   useModalFocusTrap(panelRef, open, onCancel);
 
   useEffect(() => {
     if (open) setTypedValue("");
   }, [open]);
+
+  // Layout effect: the component stays mounted while closed, so `armed` can still be true from
+  // the previous open. Resetting before paint means a reopen never shows an enabled confirm
+  // button for a frame (where a queued double-click/Enter could bypass the safety pause).
+  useLayoutEffect(() => {
+    if (!open || confirmDelaySeconds === undefined) return;
+    setArmed(false);
+    const timer = window.setTimeout(() => setArmed(true), confirmDelaySeconds * 1000);
+    return () => window.clearTimeout(timer);
+  }, [open, confirmDelaySeconds]);
 
   if (!open) return null;
 
@@ -64,6 +83,7 @@ export function ConfirmDialog({
   // let the confirm button unlock immediately (typedValue also starts as "").
   const confirmDisabled =
     loading ||
+    !armed ||
     disableConfirm ||
     (needsTypedConfirmation && (!confirmationValue || typedValue !== confirmationValue));
 
@@ -102,14 +122,30 @@ export function ConfirmDialog({
           <Button type="button" variant="secondary" disabled={loading} onClick={onCancel}>
             {cancelLabel}
           </Button>
-          <Button
-            type="button"
-            variant={confirmVariant}
-            disabled={confirmDisabled}
-            onClick={onConfirm}
-          >
-            {loading ? "Working…" : confirmLabel}
-          </Button>
+          <span className="confirm-dialog__confirm-wrap">
+            <Button
+              type="button"
+              variant={confirmVariant}
+              disabled={confirmDisabled}
+              icon={loading ? <Spinner size="sm" label="Working" /> : undefined}
+              title={
+                !armed && confirmDelaySeconds !== undefined
+                  ? `Please wait ${confirmDelaySeconds}s before confirming`
+                  : undefined
+              }
+              onClick={onConfirm}
+            >
+              {loading ? "Working…" : confirmLabel}
+            </Button>
+            {!armed && confirmDelaySeconds !== undefined && (
+              <span className="confirm-dialog__arm-track" aria-hidden="true">
+                <span
+                  className="confirm-dialog__arm-bar"
+                  style={{ animationDuration: `${confirmDelaySeconds}s` }}
+                />
+              </span>
+            )}
+          </span>
         </div>
       </div>
     </div>

@@ -50,3 +50,55 @@
   justify-content: flex-end;
   gap: var(--space-2);
 }
+
+/* Countdown-arm bar — sits inside the confirm button's own bottom edge (clipped to its
+   rounded corners) so the timer is visible without changing the button's height. The wrap
+   itself must stay `overflow: visible` (no clip, no radius) — `.at-btn:focus-visible` renders
+   its ring as a box-shadow entirely outside the button's box (see --ring in
+   packages/ui/src/styles/tokens/elevation.css), so clipping the wrap would clip that ring on
+   every dialog in the app, not just these countdown ones. The rounded-corner clip only needs to
+   apply to the thin track strip, so it lives there instead. */
+.confirm-dialog__confirm-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.confirm-dialog__arm-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  border-radius: 0 0 var(--radius) var(--radius);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.confirm-dialog__arm-bar {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.9);
+  transform-origin: left;
+  animation-name: confirm-dialog-arm-deplete;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes confirm-dialog-arm-deplete {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm-dialog__arm-bar {
+    /* Skip the shrinking motion; the bar just shows full while disabled, then disappears
+       once armed, so the wait itself is still communicated without unnecessary motion. */
+    animation: none;
+  }
+}

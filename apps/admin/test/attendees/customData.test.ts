@@ -1,145 +1,27 @@
-import { describe, expect, it } from "vitest";
-import {
-  flattenCustomDataFieldsFromItems,
+import { describe, expect, it, vi } from "vitest";
+
+const mockFetchEventCustomFields = vi.fn();
+vi.mock("../../src/api/client.js", () => ({
+  fetchEventCustomFields: (...args: unknown[]) => mockFetchEventCustomFields(...args),
+}));
+
+const {
+  fetchAttendeeCustomFields,
   initialCustomFieldValues,
   readCustomDataField,
   validateCustomFieldsForm,
-} from "../../src/attendees/customData.js";
-import type { EventItemDto } from "../../src/api/types.js";
+} = await import("../../src/attendees/customData.js");
 
-function item(
-  partial: Partial<EventItemDto> & Pick<EventItemDto, "id" | "key" | "label">,
-): EventItemDto {
-  return {
-    type: "physical",
-    enabled: true,
-    icon: null,
-    config: null,
-    ...partial,
-  };
-}
-
-describe("flattenCustomDataFieldsFromItems", () => {
-  it("returns empty for no items", () => {
-    expect(flattenCustomDataFieldsFromItems([])).toEqual([]);
-  });
-
-  it("skips items without contents", () => {
-    expect(
-      flattenCustomDataFieldsFromItems([
-        item({ id: "1", key: "badge", label: "Badge", config: {} }),
-      ]),
-    ).toEqual([]);
-  });
-
-  it("deduplicates source_field across items (first label wins)", () => {
-    expect(
-      flattenCustomDataFieldsFromItems([
-        item({
-          id: "1",
-          key: "giftbag",
-          label: "Gift bag",
-          config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
-        }),
-        item({
-          id: "2",
-          key: "socks",
-          label: "Socks",
-          config: { contents: [{ label: "Shirt (dup)", source_field: "shirt_size" }] },
-        }),
-      ]),
-    ).toEqual([{ label: "Shirt size", source_field: "shirt_size" }]);
-  });
-
-  it("merges stricter metadata when source_field is shared across items", () => {
-    expect(
-      flattenCustomDataFieldsFromItems([
-        item({
-          id: "1",
-          key: "giftbag",
-          label: "Gift bag",
-          config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
-        }),
-        item({
-          id: "2",
-          key: "socks",
-          label: "Socks",
-          config: {
-            contents: [
-              {
-                label: "Shirt (dup)",
-                source_field: "shirt_size",
-                type: "select",
-                required: true,
-                options: ["S", "M", "L"],
-              },
-            ],
-          },
-        }),
-      ]),
-    ).toEqual([
-      {
-        label: "Shirt size",
-        source_field: "shirt_size",
-        type: "select",
-        required: true,
-        options: ["S", "M", "L"],
-      },
+describe("fetchAttendeeCustomFields", () => {
+  it("drops registry fields whose source_field collides with a reserved profile column", async () => {
+    mockFetchEventCustomFields.mockResolvedValueOnce([
+      { id: "1", source_field: "email", label: "Email copy", type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
+      { id: "2", source_field: "dietary", label: "Dietary", type: "text", required: false, options: null, created_at: "2026-01-01T00:00:00.000Z" },
     ]);
-  });
 
-  it("preserves content metadata from event items", () => {
-    expect(
-      flattenCustomDataFieldsFromItems([
-        item({
-          id: "1",
-          key: "giftbag",
-          label: "Gift bag",
-          config: {
-            contents: [
-              {
-                label: "Size",
-                source_field: "size",
-                type: "select",
-                required: true,
-                options: ["S", "M", "L"],
-              },
-            ],
-          },
-        }),
-      ]),
-    ).toEqual([
-      {
-        label: "Size",
-        source_field: "size",
-        type: "select",
-        required: true,
-        options: ["S", "M", "L"],
-      },
-    ]);
-  });
+    const fields = await fetchAttendeeCustomFields("evt-1");
 
-  it("merges fields from multiple items", () => {
-    expect(
-      flattenCustomDataFieldsFromItems([
-        item({
-          id: "1",
-          key: "giftbag",
-          label: "Gift bag",
-          config: { contents: [{ label: "Jacket size", source_field: "jacket_size" }] },
-        }),
-        item({
-          id: "2",
-          key: "socks",
-          label: "Socks",
-          enabled: false,
-          config: { contents: [{ label: "Socks size", source_field: "sock_size" }] },
-        }),
-      ]),
-    ).toEqual([
-      { label: "Jacket size", source_field: "jacket_size" },
-      { label: "Socks size", source_field: "sock_size" },
-    ]);
+    expect(fields.map((f) => f.source_field)).toEqual(["dietary"]);
   });
 });
 

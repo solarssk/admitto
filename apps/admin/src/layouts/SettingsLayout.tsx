@@ -1,7 +1,8 @@
 import { useCallback, useEffect } from "react";
 import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { PageHeader, Tabs } from "@admitto/ui";
+import { PageHeader } from "@admitto/ui";
 import { IDENTITY_PROVIDERS_ROUTE } from "../identity/routes.js";
+import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import {
   SETTINGS_INDEX_PATH,
   SETTINGS_TABS,
@@ -51,7 +52,7 @@ export function SettingsLayout() {
         title="Settings"
         subtitle="Instance configuration, security policies, and identity providers."
       />
-      <Tabs value={activeTab} onChange={handleTabChange} tabs={[...SETTINGS_TABS]} />
+      <ScrollFadeTabs value={activeTab} onChange={handleTabChange} tabs={[...SETTINGS_TABS]} />
       <Outlet />
     </div>
   );

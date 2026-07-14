@@ -8,7 +8,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...actual,
     createAttendee: vi.fn(),
-    fetchEventItems: vi.fn().mockResolvedValue([]),
+    fetchEventCustomFields: vi.fn().mockResolvedValue([]),
   };
 });
 

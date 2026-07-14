@@ -92,8 +92,8 @@ describe("OrganisationBrandingPanel", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Organisation name")).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Use external HTTPS URL" }));
-    fireEvent.change(screen.getByLabelText("External logo URL (HTTPS)"), {
+    fireEvent.click(screen.getByRole("button", { name: "Use a web link instead" }));
+    fireEvent.change(screen.getByLabelText("Web link to your logo (must start with https://)"), {
       target: { value: "https://cdn.example.com/logo.png" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save branding" }));
@@ -111,8 +111,8 @@ describe("OrganisationBrandingPanel", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Organisation name")).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Use external HTTPS URL" }));
-    fireEvent.change(screen.getByLabelText("External logo URL (HTTPS)"), {
+    fireEvent.click(screen.getByRole("button", { name: "Use a web link instead" }));
+    fireEvent.change(screen.getByLabelText("Web link to your logo (must start with https://)"), {
       target: { value: "http://insecure.example.com/logo.png" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save branding" }));

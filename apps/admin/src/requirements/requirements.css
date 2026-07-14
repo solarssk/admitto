@@ -2,6 +2,25 @@
   margin-bottom: var(--space-5);
 }
 
+/* These two tables are short on columns and short on content per cell —
+   opt out of the wide-table min-width meant for the (much denser) attendees
+   table, so they can shrink to fit tablet/mobile widths instead of forcing
+   horizontal scroll. */
+.requirements-section .attendees-table-wrap .table {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .requirements-item-desc-col {
+    display: none;
+  }
+
+  /* Redundant at this width — the row's own icon already shows the type. */
+  .requirements-type-col {
+    display: none;
+  }
+}
+
 /* Normalise card header height across all Requirements sections so cards with
    and without action buttons appear the same height. */
 .requirements-section .at-card__header {
@@ -100,6 +119,21 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.requirements-field-picker-row {
+  cursor: pointer;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: background 0.1s;
+}
+
+.requirements-field-picker-row:hover {
+  background: var(--surface-sunken);
+}
+
+.requirements-field-picker-row input[type="checkbox"] {
+  flex-shrink: 0;
 }
 
 .requirements-toggle-row {
@@ -234,10 +268,15 @@
 
 .contents-row__type-picker {
   display: flex;
+  height: var(--control-h);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   flex-shrink: 0;
   align-self: flex-end;
+}
+
+.contents-row__type-picker--block {
+  align-self: flex-start;
 }
 
 .contents-row__type-btn {
@@ -245,7 +284,7 @@
   border: none;
   border-right: 1px solid var(--border);
   padding: 0 var(--space-2);
-  height: var(--control-h, 2rem);
+  height: 100%;
   cursor: pointer;
   color: var(--text-secondary);
   display: flex;
@@ -289,6 +328,20 @@
   opacity: 1;
 }
 
+/* Anchor edge buttons' tooltips to their own edge instead of centering, so
+   they can't be clipped by the modal's overflow-x: hidden when the picker
+   sits near the panel boundary. */
+.contents-row__type-btn:first-child::after {
+  left: 0;
+  transform: none;
+}
+
+.contents-row__type-btn:last-child::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
 /* .at-tooltip moved to staff.css (global stylesheet) so it can be reused
    outside Requirements — see staff.css for the rule. */
 
@@ -300,6 +353,10 @@
 .contents-row__type-btn--active {
   background: var(--primary);
   color: var(--text-on-primary, #fff);
+}
+
+#cf-options {
+  min-height: 4.5rem;
 }
 
 .contents-row__required {
@@ -377,9 +434,10 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 .event-item-modal__section-title {

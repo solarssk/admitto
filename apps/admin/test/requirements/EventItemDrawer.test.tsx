@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
-import type { EventItemDto } from "../../src/api/types.js";
+import type { EventCustomFieldDto, EventItemDto } from "../../src/api/types.js";
 import { EventItemDrawer } from "../../src/requirements/EventItemDrawer.js";
 import { renderWithToast } from "../test-utils.js";
 
@@ -43,16 +43,27 @@ const giftbagItem: EventItemDto = {
   config: null,
 };
 
+const shirtSizeField: EventCustomFieldDto = {
+  id: "field-shirt",
+  source_field: "shirt_size",
+  label: "Shirt size",
+  type: "text",
+  required: false,
+  options: null,
+  created_at: "2026-01-01T00:00:00.000Z",
+};
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
 
-function renderDrawer(item: EventItemDto) {
+function renderDrawer(item: EventItemDto, customFields: EventCustomFieldDto[] = []) {
   renderWithToast(
     <EventItemDrawer
       eventId="evt-1"
       item={item}
+      customFields={customFields}
       onClose={vi.fn()}
       onUpdated={vi.fn()}
     />,
@@ -177,43 +188,14 @@ describe("EventItemDrawer", () => {
     expect(screen.queryByText(/Failed to delete item/)).toBeNull();
   });
 
-  it("blocks save and shows an inline error when a contents row has a source field but no label", async () => {
-    renderDrawer(giftbagItem);
-    fireEvent.click(screen.getByRole("button", { name: "Add field hint" }));
-    fireEvent.change(screen.getByLabelText("Import key"), { target: { value: "shirt_size" } });
-
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-
-    await waitFor(() => {
-      expect(
-        screen.getByText("Each contents row needs both a label and a source field."),
-      ).toBeTruthy();
-    });
-    expect(addToast).not.toHaveBeenCalled();
-    expect(updateEventItem).not.toHaveBeenCalled();
+  it("shows a hint instead of a picker when the event has no custom fields yet", () => {
+    renderDrawer(giftbagItem, []);
+    expect(screen.getByText("No custom fields defined for this event yet.")).toBeTruthy();
   });
 
-  it("clears the contents validation error once the user fills in the missing label", async () => {
-    renderDrawer(giftbagItem);
-    fireEvent.click(screen.getByRole("button", { name: "Add field hint" }));
-    fireEvent.change(screen.getByLabelText("Import key"), { target: { value: "shirt_size" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => {
-      expect(
-        screen.getByText("Each contents row needs both a label and a source field."),
-      ).toBeTruthy();
-    });
-
-    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Shirt size" } });
-
-    expect(
-      screen.queryByText("Each contents row needs both a label and a source field."),
-    ).toBeNull();
-  });
-
-  it("edits details, icon, and a full contents row, then saves the assembled payload", async () => {
+  it("edits details and icon, checks a custom field hint, then saves the assembled payload", async () => {
     vi.mocked(updateEventItem).mockResolvedValueOnce(giftbagItem);
-    renderDrawer(giftbagItem);
+    renderDrawer(giftbagItem, [shirtSizeField]);
 
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Gift bag (large)" } });
     fireEvent.change(screen.getByLabelText("Description (shown to operators)"), {
@@ -223,12 +205,7 @@ describe("EventItemDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Gift" }));
     fireEvent.click(screen.getByRole("switch", { name: "Requires return" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Add field hint" }));
-    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Shirt size" } });
-    fireEvent.change(screen.getByLabelText("Import key"), { target: { value: "shirt_size" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: "Required" }));
-    fireEvent.click(screen.getByRole("button", { name: "Select" }));
-    fireEvent.change(screen.getByLabelText("Select options"), { target: { value: "S\nM\nL" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Shirt size/ }));
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -240,34 +217,24 @@ describe("EventItemDrawer", () => {
         icon: "gift",
         config: {
           requires_return: true,
-          contents: [
-            {
-              label: "Shirt size",
-              source_field: "shirt_size",
-              type: "select",
-              required: true,
-              options: ["S", "M", "L"],
-            },
-          ],
+          content_fields: ["shirt_size"],
         },
       });
     });
   });
 
-  it("removes a contents row so it's no longer saved", async () => {
-    const itemWithRow: EventItemDto = {
+  it("unchecking a hint removes it from the saved content_fields", async () => {
+    const itemWithHint: EventItemDto = {
       ...giftbagItem,
-      config: {
-        requires_return: false,
-        contents: [{ label: "Shirt size", source_field: "shirt_size" }],
-      },
+      config: { requires_return: false, content_fields: ["shirt_size"] },
     };
-    vi.mocked(updateEventItem).mockResolvedValueOnce(itemWithRow);
-    renderDrawer(itemWithRow);
+    vi.mocked(updateEventItem).mockResolvedValueOnce(itemWithHint);
+    renderDrawer(itemWithHint, [shirtSizeField]);
 
-    expect(screen.getByLabelText("Display label")).toHaveProperty("value", "Shirt size");
-    fireEvent.click(screen.getByRole("button", { name: "Remove row" }));
-    expect(screen.queryByLabelText("Display label")).toBeNull();
+    const checkbox = screen.getByRole("checkbox", { name: /Shirt size/ });
+    expect(checkbox).toHaveProperty("checked", true);
+    fireEvent.click(checkbox);
+    expect(checkbox).toHaveProperty("checked", false);
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -275,7 +242,7 @@ describe("EventItemDrawer", () => {
       expect(updateEventItem).toHaveBeenCalledWith(
         "evt-1",
         "item-gift",
-        expect.objectContaining({ config: { requires_return: false } }),
+        expect.objectContaining({ config: { requires_return: false, content_fields: [] } }),
       );
     });
   });

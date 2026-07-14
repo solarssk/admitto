@@ -4318,16 +4318,9 @@
   color: var(--brand-600, #0559b0);
 }
 
-/* Settings — horizontal tab scroll on narrow viewports */
-.settings-page .at-tabs {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  flex-wrap: nowrap;
-}
-
-.settings-page .at-tab {
-  flex-shrink: 0;
-}
+/* Settings tab bar's horizontal scroll + edge-fade behavior now lives in the
+   shared ScrollFadeTabs component (apps/admin/src/components/ScrollFadeTabs.tsx),
+   used instead of the plain <Tabs> in SettingsLayout.tsx. */
 
 /* Generic hover tooltip via data-tooltip attribute — works on any element,
    including disabled buttons (disabled only suppresses click, not :hover).

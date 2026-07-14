@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
@@ -122,8 +122,10 @@ async function seed(client: PrismaClient) {
       event_id: EVENT_A,
       key: "giftbag",
       label: "Gift bag",
-      config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
     },
+  });
+  await client.eventCustomField.create({
+    data: { event_id: EVENT_A, source_field: "shirt_size", label: "Shirt size" },
   });
 
   const token = generateToken();
@@ -612,10 +614,15 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
   });
 
   it("writes jacket_size under correct key and check-in card shows parity", async () => {
+    await prisma.eventCustomField.upsert({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "jacket_size" } },
+      create: { event_id: EVENT_A, source_field: "jacket_size", label: "Jacket size" },
+      update: {},
+    });
     await prisma.eventItem.updateMany({
       where: { event_id: EVENT_A, key: "giftbag" },
       data: {
-        config: { contents: [{ label: "Jacket size", source_field: "jacket_size" }] },
+        config: { content_fields: ["jacket_size"] },
       },
     });
     await prisma.attendee.update({
@@ -658,21 +665,9 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
   });
 
   it("rejects invalid select option and missing required field", async () => {
-    await prisma.eventItem.updateMany({
-      where: { event_id: EVENT_A, key: "giftbag" },
-      data: {
-        config: {
-          contents: [
-            {
-              label: "Size",
-              source_field: "shirt_size",
-              type: "select",
-              required: true,
-              options: ["S", "M", "L"],
-            },
-          ],
-        },
-      },
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
+      data: { label: "Size", type: "select", required: true, options: ["S", "M", "L"] },
     });
 
     const invalidOption = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
@@ -701,21 +696,9 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
   });
 
   it("rejects profile-only PATCH when required custom_data is missing", async () => {
-    await prisma.eventItem.updateMany({
-      where: { event_id: EVENT_A, key: "giftbag" },
-      data: {
-        config: {
-          contents: [
-            {
-              label: "Size",
-              source_field: "shirt_size",
-              type: "select",
-              required: true,
-              options: ["S", "M", "L"],
-            },
-          ],
-        },
-      },
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
+      data: { label: "Size", type: "select", required: true, options: ["S", "M", "L"] },
     });
     await prisma.attendee.update({
       where: { id: ATT_A2 },
@@ -737,21 +720,9 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
   });
 
   it("rejects RSVP-only PATCH when required custom_data is missing", async () => {
-    await prisma.eventItem.updateMany({
-      where: { event_id: EVENT_A, key: "giftbag" },
-      data: {
-        config: {
-          contents: [
-            {
-              label: "Size",
-              source_field: "shirt_size",
-              type: "select",
-              required: true,
-              options: ["S", "M", "L"],
-            },
-          ],
-        },
-      },
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
+      data: { label: "Size", type: "select", required: true, options: ["S", "M", "L"] },
     });
     await prisma.attendee.update({
       where: { id: ATT_A2 },
@@ -773,21 +744,9 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
   });
 
   it("rejects profile-only PATCH when stored custom_data is invalid for config", async () => {
-    await prisma.eventItem.updateMany({
-      where: { event_id: EVENT_A, key: "giftbag" },
-      data: {
-        config: {
-          contents: [
-            {
-              label: "Size",
-              source_field: "shirt_size",
-              type: "select",
-              required: true,
-              options: ["S", "M", "L"],
-            },
-          ],
-        },
-      },
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
+      data: { label: "Size", type: "select", required: true, options: ["S", "M", "L"] },
     });
     await prisma.attendee.update({
       where: { id: ATT_A2 },
@@ -804,22 +763,19 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     });
     expect(res.status).toBe(400);
     expect((await res.json()) as { error: string }).toEqual({ error: "validation_failed" });
+
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
+      data: { required: false },
+    });
+    await prisma.attendee.update({ where: { id: ATT_A2 }, data: { custom_data: {} } });
   });
 
   it("PATCH normalizes boolean custom_data aliases to true/false", async () => {
-    await prisma.eventItem.updateMany({
-      where: { event_id: EVENT_A, key: "giftbag" },
-      data: {
-        config: {
-          contents: [
-            {
-              label: "Lunch",
-              source_field: "lunch",
-              type: "boolean",
-            },
-          ],
-        },
-      },
+    await prisma.eventCustomField.upsert({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "lunch" } },
+      create: { event_id: EVENT_A, source_field: "lunch", label: "Lunch", type: "boolean" },
+      update: {},
     });
     await prisma.attendee.update({
       where: { id: ATT_A1 },
@@ -840,13 +796,6 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
   });
 
   it("audits custom_data field names without PII values", async () => {
-    await prisma.eventItem.updateMany({
-      where: { event_id: EVENT_A, key: "giftbag" },
-      data: {
-        config: { contents: [{ label: "Jacket size", source_field: "jacket_size" }] },
-      },
-    });
-
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
@@ -866,15 +815,9 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(JSON.stringify(meta)).not.toContain("SecretSize");
   });
 
-  it("includes disabled item contents in allowed custom_data_fields", async () => {
-    await prisma.eventItem.create({
-      data: {
-        event_id: EVENT_A,
-        key: "socks",
-        label: "Socks",
-        enabled: false,
-        config: { contents: [{ label: "Socks size", source_field: "sock_size" }] },
-      },
+  it("includes registry fields not referenced by any item's content_fields", async () => {
+    await prisma.eventCustomField.create({
+      data: { event_id: EVENT_A, source_field: "sock_size", label: "Socks size" },
     });
 
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
@@ -890,9 +833,6 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
     const cd = row.custom_data as { sock_size?: string };
     expect(cd.sock_size).toBe("42");
-
-    const card = await getAttendeeCard(EVENT_A, ATT_A2, prisma);
-    expect(card!.items.some((i) => i.key === "socks")).toBe(false);
   });
 
   it("syncs company edits into custom_data for operator parity", async () => {
@@ -1159,6 +1099,62 @@ describe("POST /api/admin/events/:eventId/attendees/:id/revoke-checkin", () => {
       },
     );
     expect(res.status).toBe(403);
+  });
+
+  // Revoke-checkin always cascades into resetItems:true (revokeCheckInTx), which now enforces
+  // the same "pass must be admittable" guard as the single-item revoke path (packages/tickets
+  // item-states.ts isAdmittable check, closed as part of the bulk-revoke danger-zone review).
+  // Regression: that guard throws IllegalItemTransitionError, which this handler must map to a
+  // 409 like its handleRevokeAttendeeItem sibling does, not let fall through to a raw 500.
+  it("returns 409 (not 500) when revoking check-in for an admitted attendee whose pass is blocked", async () => {
+    const attId = "att-admin-revoke-checkin-blocked-pass";
+    try {
+      await prisma.attendee.upsert({
+        where: { id: attId },
+        create: {
+          id: attId,
+          event_id: EVENT_A,
+          email: "revoke-checkin-blocked@example.com",
+          name: "Blocked Pass Revoke",
+          token_hash: hashToken(generateToken()),
+          status: "cancelled",
+          admitted_at: new Date("2026-10-01T10:00:00Z"),
+        },
+        update: { status: "cancelled", admitted_at: new Date("2026-10-01T10:00:00Z") },
+      });
+      await getAttendeeCard(EVENT_A, attId, prisma);
+      const giftbag = await prisma.eventItem.findFirstOrThrow({
+        where: { event_id: EVENT_A, key: "giftbag" },
+      });
+      await prisma.attendeeItemState.update({
+        where: { attendee_id_event_item_id: { attendee_id: attId, event_item_id: giftbag.id } },
+        data: { state: "issued" },
+      });
+
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/attendees/${attId}/revoke-checkin`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        },
+      );
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("Attendee's pass is not active");
+
+      // Neither the admission nor the issued item should have been touched by the failed attempt.
+      const after = await prisma.attendee.findUniqueOrThrow({ where: { id: attId } });
+      expect(after.admitted_at).not.toBeNull();
+      const item = await prisma.attendeeItemState.findFirst({
+        where: { attendee_id: attId, event_item: { key: "giftbag" } },
+      });
+      expect(item?.state).toBe("issued");
+    } finally {
+      await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: attId } });
+      await prisma.attendeeItemState.deleteMany({ where: { attendee_id: attId } });
+      await prisma.checkIn.deleteMany({ where: { attendee_id: attId } });
+      await prisma.attendee.delete({ where: { id: attId } });
+    }
   });
 });
 
@@ -1521,11 +1517,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
   }
 
   async function resetEventACustomFields(): Promise<void> {
-    await prisma.eventItem.deleteMany({ where: { event_id: EVENT_A, key: "merch" } });
-    await prisma.eventItem.updateMany({
-      where: { event_id: EVENT_A, key: "giftbag" },
-      data: { config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] } },
-    });
+    await prisma.eventCustomField.deleteMany({ where: { event_id: EVENT_A } });
   }
 
   async function countActiveEventAAttendees(): Promise<number> {
@@ -1666,21 +1658,9 @@ describe("Attendees v2 — RSVP and manual create", () => {
   });
 
   it("POST create rejects invalid custom_data select option", async () => {
-    await prisma.eventItem.updateMany({
-      where: { event_id: EVENT_A, key: "giftbag" },
-      data: {
-        config: {
-          contents: [
-            {
-              label: "Shirt size",
-              source_field: "shirt_size",
-              type: "select",
-              required: true,
-              options: ["S", "M", "L"],
-            },
-          ],
-        },
-      },
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
+      data: { type: "select", required: true, options: ["S", "M", "L"] },
     });
 
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
@@ -1695,16 +1675,18 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("validation_failed");
+
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
+      data: { required: false },
+    });
   });
 
   it("POST create ignores null custom_data values", async () => {
-    await prisma.eventItem.updateMany({
-      where: { event_id: EVENT_A, key: "giftbag" },
-      data: {
-        config: {
-          contents: [{ label: "Lunch", source_field: "lunch", type: "boolean" }],
-        },
-      },
+    await prisma.eventCustomField.upsert({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "lunch" } },
+      create: { event_id: EVENT_A, source_field: "lunch", label: "Lunch", type: "boolean" },
+      update: {},
     });
 
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
@@ -1724,44 +1706,10 @@ describe("Attendees v2 — RSVP and manual create", () => {
     await prisma.attendee.delete({ where: { id: body.id } });
   });
 
-  it("POST create merges duplicate source_field metadata across items", async () => {
-    await prisma.eventItem.updateMany({
-      where: { event_id: EVENT_A, key: "giftbag" },
-      data: {
-        config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
-      },
-    });
-    await prisma.eventItem.upsert({
-      where: { event_id_key: { event_id: EVENT_A, key: "merch" } },
-      create: {
-        event_id: EVENT_A,
-        key: "merch",
-        label: "Merch",
-        config: {
-          contents: [
-            {
-              label: "Shirt size (merch)",
-              source_field: "shirt_size",
-              type: "select",
-              required: true,
-              options: ["S", "M", "L"],
-            },
-          ],
-        },
-      },
-      update: {
-        config: {
-          contents: [
-            {
-              label: "Shirt size (merch)",
-              source_field: "shirt_size",
-              type: "select",
-              required: true,
-              options: ["S", "M", "L"],
-            },
-          ],
-        },
-      },
+  it("POST create rejects when a required custom field is missing", async () => {
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
+      data: { type: "select", required: true, options: ["S", "M", "L"] },
     });
 
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
@@ -1776,18 +1724,14 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect((await res.json()) as { error: string }).toEqual({
       error: "required_custom_data_field_missing",
     });
+
+    await prisma.eventCustomField.update({
+      where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
+      data: { required: false, type: "text", options: Prisma.JsonNull },
+    });
   });
 
   it("POST create rejects custom_data values over 100 characters", async () => {
-    await prisma.eventItem.updateMany({
-      where: { event_id: EVENT_A, key: "giftbag" },
-      data: {
-        config: {
-          contents: [{ label: "Shirt size", source_field: "shirt_size", type: "text" }],
-        },
-      },
-    });
-
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
