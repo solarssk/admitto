@@ -68,6 +68,35 @@ describe("TicketTypesCard", () => {
     expect(onChanged).not.toHaveBeenCalled();
   });
 
+  it("shows a clear warning toast (not the generic error) on a label conflict while renaming", async () => {
+    vi.mocked(updateTicketType).mockRejectedValueOnce(new ApiError(409, "label_conflict", "label_conflict"));
+    renderCard([vipType]);
+
+    const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Staff" } });
+    fireEvent.blur(input);
+
+    expect(await screen.findByText('"Staff" is already used by another ticket type in this event.')).toBeTruthy();
+    // Same revert-on-failure behavior as any other update failure.
+    await waitFor(() => expect(input.value).toBe("VIP"));
+  });
+
+  it("shows a clear warning toast (not the generic error) on a label conflict while adding", async () => {
+    vi.mocked(createTicketType).mockRejectedValueOnce(new ApiError(409, "label_conflict", "label_conflict"));
+    renderCard([vipType]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add ticket type" }));
+
+    expect(
+      await screen.findByText('A ticket type named "New type" already exists for this event.'),
+    ).toBeTruthy();
+  });
+
+  it("exposes an accessible label for each row's label input", () => {
+    renderCard([vipType]);
+    expect(screen.getByLabelText("Ticket type label for VIP")).toBeTruthy();
+  });
+
   it("keeps the confirm dialog open with an inline error when delete fails (type_in_use)", async () => {
     vi.mocked(deleteTicketType).mockRejectedValueOnce(new ApiError(409, "type_in_use", "type_in_use"));
     renderCard([vipType]);
