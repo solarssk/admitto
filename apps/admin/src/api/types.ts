@@ -925,8 +925,12 @@ export interface EventReportsResponse {
     peak_hour_count: number;
   };
   by_hour: Array<{ hour: string; count: number }>;
+  /** One row per configured ticket type (catalog order), plus a trailing `key: null` "(none)"
+   * row when any attendee has no type set (batch 04 / #387). */
   by_ticket_type: Array<{
+    key: string | null;
     type: string;
+    color: TicketTypeColor;
     total: number;
     admitted: number;
     admission_pct: number;
@@ -935,7 +939,7 @@ export interface EventReportsResponse {
     attendee_id: string;
     name: string;
     email: string;
-    ticket_type: string;
+    ticket_type: string | null;
     admitted_at: string;
     device_id: string | null;
   }>;

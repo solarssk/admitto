@@ -52,6 +52,7 @@ async function seed(client: PrismaClient) {
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
+  await client.ticketType.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.roleAssignment.deleteMany({
     where: { OR: [{ scope_id: { in: [ORG_REP, ORG_REP_B, ...eventIds] } }] },
   });
@@ -98,6 +99,13 @@ async function seed(client: PrismaClient) {
         date: new Date("2026-12-01T12:00:00.000Z"),
         organization_id: ORG_REP,
       },
+    ],
+  });
+
+  await client.ticketType.createMany({
+    data: [
+      { event_id: EVENT_REP, key: "Standard", label: "Standard", sort_order: 0 },
+      { event_id: EVENT_REP, key: "VIP", label: "VIP", color: "purple", sort_order: 1 },
     ],
   });
 
@@ -360,6 +368,70 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     expect(body.admission_log[0]!.attendee_id).toBe(ATT_VIP_1);
     expect(body.admission_log[0]!.device_id).toBe("scanner-01");
     expect(body.admission_log[1]!.device_id).toBe("desk-01");
+    expect(body.by_ticket_type[0]).toMatchObject({ key: "Standard", color: "gray" });
+    expect(body.by_ticket_type[1]).toMatchObject({ key: "VIP", color: "purple" });
+  });
+
+  it("shows a catalog type with zero attendees, and a trailing (none) bucket for untyped attendees (batch 04 / #387)", async () => {
+    const EVENT_CAT = "evt-reports-catalog";
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_CAT } });
+    await prisma.ticketType.deleteMany({ where: { event_id: EVENT_CAT } });
+    await prisma.event.deleteMany({ where: { id: EVENT_CAT } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_CAT,
+        title: "Catalog Reports Event",
+        slug: "reports-event-catalog",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    await prisma.ticketType.createMany({
+      data: [
+        { event_id: EVENT_CAT, key: "standard", label: "Standard", sort_order: 0 },
+        { event_id: EVENT_CAT, key: "press", label: "Press", color: "teal", sort_order: 1 },
+      ],
+    });
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-rep-cat-1",
+          event_id: EVENT_CAT,
+          email: "cat1@example.com",
+          name: "Typed",
+          ticket_type: "standard",
+          admitted_at: new Date("2026-10-01T09:00:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          id: "att-rep-cat-2",
+          event_id: EVENT_CAT,
+          email: "cat2@example.com",
+          name: "Untyped",
+          admitted_at: new Date("2026-10-01T09:05:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_CAT}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        by_ticket_type: Array<{ key: string | null; type: string; color: string; total: number }>;
+      };
+      // "press" has 0 attendees but still appears (catalog-driven, not grouped from raw data).
+      expect(body.by_ticket_type).toHaveLength(3);
+      expect(body.by_ticket_type[0]).toMatchObject({ key: "standard", type: "Standard", total: 1 });
+      expect(body.by_ticket_type[1]).toMatchObject({ key: "press", type: "Press", total: 0 });
+      expect(body.by_ticket_type[2]).toMatchObject({ key: null, type: "(none)", total: 1 });
+    } finally {
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_CAT } });
+      await prisma.ticketType.deleteMany({ where: { event_id: EVENT_CAT } });
+      await prisma.event.deleteMany({ where: { id: EVENT_CAT } });
+    }
   });
 
   it("buckets hourly admissions in the event timezone, not raw UTC (#268)", async () => {
