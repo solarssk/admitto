@@ -255,6 +255,7 @@ export function CameraOverlay({
             eventDate={eventDate}
             compact
             limit={6}
+            ticketTypes={ticketTypes}
             onSelectAttendee={onSelectAttendee}
           />
         </aside>
@@ -280,6 +281,7 @@ export function CameraOverlay({
             setManualMode(false);
             onClearManualError?.();
           }}
+          ticketTypes={ticketTypes}
         />
       )}
     </div>

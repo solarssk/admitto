@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CheckInHistoryEntry } from "../../src/api/types.js";
+import type { CheckInHistoryEntry, TicketTypeDto } from "../../src/api/types.js";
 import { CkRecentScans } from "../../src/checkin/CkRecentScans.js";
 import {
   CK_RECENT_SCANS_SIDEBAR_LIMIT,
@@ -19,6 +19,7 @@ function makeEntry(
   name: string,
   status = "admitted",
   source: string | null = null,
+  ticket_type: string | null = null,
 ): CheckInHistoryEntry {
   return {
     id,
@@ -29,7 +30,19 @@ function makeEntry(
     checked_in_by: null,
     device_id: null,
     source,
-    attendee: { name, ticket_type: null },
+    attendee: { name, ticket_type },
+  };
+}
+
+function makeTicketType(key: string, label: string): TicketTypeDto {
+  return {
+    id: `tt-${key}`,
+    key,
+    label,
+    color: "purple",
+    sort_order: 0,
+    attendee_count: 0,
+    created_at: "2026-01-01T00:00:00.000Z",
   };
 }
 
@@ -116,5 +129,30 @@ describe("CkRecentScans", () => {
     expect(container.querySelector(".ck-recent__info-btn")).toBeNull();
     expect(container.querySelector("button")).toBeNull();
     expect(screen.getByText("Guest One")).toBeTruthy();
+  });
+
+  it("resolves a row's raw ticket_type key to the catalog's current label instead of the key (batch 04 / #351)", () => {
+    render(
+      <CkRecentScans
+        history={[makeEntry("1", "Guest One", "admitted", null, "vip")]}
+        eventTimezone="UTC"
+        limit={8}
+        ticketTypes={[makeTicketType("vip", "VIP Guest")]}
+      />,
+    );
+    expect(screen.getByText("VIP Guest")).toBeTruthy();
+    expect(screen.queryByText("vip")).toBeNull();
+  });
+
+  it("still shows an orphaned/unmatched ticket_type key rather than hiding it (fail-open)", () => {
+    render(
+      <CkRecentScans
+        history={[makeEntry("1", "Guest One", "admitted", null, "staff_2")]}
+        eventTimezone="UTC"
+        limit={8}
+        ticketTypes={[makeTicketType("vip", "VIP Guest")]}
+      />,
+    );
+    expect(screen.getByText("staff_2")).toBeTruthy();
   });
 });
