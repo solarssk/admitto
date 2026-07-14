@@ -33,6 +33,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
   const [department, setDepartment] = useState("");
   const [ticketType, setTicketType] = useState("");
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
+  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
   const [customFields, setCustomFields] = useState<Record<string, string>>({});
   const [attributeFieldsLoading, setAttributeFieldsLoading] = useState(false);
@@ -70,13 +71,17 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
   useEffect(() => {
     if (!open) return;
     setTicketTypes([]);
+    setTicketTypesError(null);
     let cancelled = false;
     fetchTicketTypes(eventId)
       .then((types) => {
         if (!cancelled) setTicketTypes(types);
       })
-      .catch(() => {
-        if (!cancelled) setTicketTypes([]);
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setTicketTypes([]);
+          setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
+        }
       });
     return () => {
       cancelled = true;
@@ -170,6 +175,11 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
         {attributeFieldsError && (
           <p className="add-attendee-modal__error" role="alert">
             {attributeFieldsError}
+          </p>
+        )}
+        {ticketTypesError && (
+          <p className="add-attendee-modal__error" role="alert">
+            {ticketTypesError}
           </p>
         )}
         {attributeFieldsLoading && (
