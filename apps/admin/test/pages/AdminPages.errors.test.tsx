@@ -495,6 +495,52 @@ describe("ReportsPage operator errors", () => {
   });
 });
 
+describe("ReportsPage admission log", () => {
+  it("labels an untyped admission as (none), matching the breakdown/filter instead of the Attendees table's dash", async () => {
+    // mockResolvedValue (not ...Once): the mocked useConnectionState() below returns a fresh
+    // object every render, so ReportsPage's load effect can legitimately fire more than once -
+    // every call must see the same response, not just the first.
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 1, admitted: 1, admission_rate_pct: 100 },
+      by_ticket_type: [
+        { key: null, type: "(none)", color: "gray", total: 1, admitted: 1, admission_pct: 100 },
+      ],
+      admission_log: [
+        {
+          attendee_id: "att-1",
+          name: "Jan Kowalski",
+          email: "jan@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:00:00.000Z",
+          device_id: null,
+        },
+      ],
+      admission_log_total: 1,
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Jan Kowalski")).toBeTruthy();
+    });
+    const row = screen.getByText("Jan Kowalski").closest("tr");
+    if (!row) throw new Error("admission log row not found");
+    // Second <td> is "Ticket type" (Attendee, Ticket type, Admitted at, Device) - scoped past the
+    // Device cell, which legitimately shows "-" for this row's own null device_id.
+    const typeCell = row.querySelectorAll("td")[1];
+    if (!typeCell) throw new Error("ticket-type cell not found");
+    // The Attendees table's shared badge renders "-" for a null ticket_type - this cell must show
+    // the same "(none)" label the breakdown/filter above it already use instead.
+    expect(within(typeCell).getByText("(none)")).toBeTruthy();
+    expect(within(typeCell).queryByText("—")).toBeNull();
+  });
+});
+
 describe("EventsPickerPage archived event navigation", () => {
   it("renders an active event card with the Active badge and no archived styling", async () => {
     const activeEvent = {
