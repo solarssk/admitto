@@ -35,7 +35,7 @@
     "@types/node": "^24.0.0",
     "@types/qrcode": "^1.5.5",
     "prisma": "^5.17.0",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "4.1.9"
   }
 }
