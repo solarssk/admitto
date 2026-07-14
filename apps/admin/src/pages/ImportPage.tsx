@@ -98,6 +98,31 @@ function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSam
   );
 }
 
+/** Row/Reason table shared by the preview step's parse.invalidRows and the done step's
+ * commit-time invalidRows - same shape, same rendering, different source. */
+function InvalidRowsTable({ rows }: { rows: { rowIndex: number; reason: string }[] }) {
+  return (
+    <div className="attendees-table-wrap">
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Row</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.rowIndex}>
+              <td>{row.rowIndex}</td>
+              <td>{row.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** Admin flow: upload CSV/XLSX → preview counts → commit import. */
 export function ImportPage() {
   const { eventId } = useParams();
@@ -388,24 +413,7 @@ export function ImportPage() {
           {preview.parse.invalidRows.length > 0 && (
             <div className="import-invalid">
               <h3 className="import-subtitle">Invalid rows</h3>
-              <div className="attendees-table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Row</th>
-                      <th>Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {preview.parse.invalidRows.map((row) => (
-                      <tr key={row.rowIndex}>
-                        <td>{row.rowIndex}</td>
-                        <td>{row.reason}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <InvalidRowsTable rows={preview.parse.invalidRows} />
             </div>
           )}
 
@@ -518,24 +526,7 @@ export function ImportPage() {
                 Something about the event changed between preview and commit (e.g. a ticket type
                 was removed) - these rows were not imported.
               </p>
-              <div className="attendees-table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Row</th>
-                      <th>Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.invalidRows.map((row) => (
-                      <tr key={row.rowIndex}>
-                        <td>{row.rowIndex}</td>
-                        <td>{row.reason}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <InvalidRowsTable rows={result.invalidRows} />
             </div>
           )}
 
