@@ -234,7 +234,7 @@ async function loadReportsAggregates(
   const catalogKeys = new Set(catalog.map((t) => t.key));
   const unmatchedKeys = [...totalByType.keys()]
     .filter((key): key is string => key !== null && !catalogKeys.has(key))
-    .sort();
+    .sort((a, b) => a.localeCompare(b));
   for (const key of unmatchedKeys) {
     const total = totalByType.get(key) ?? 0;
     const admitted = admittedByType.get(key) ?? 0;
