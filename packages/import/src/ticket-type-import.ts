@@ -1,4 +1,17 @@
+import type { Prisma, PrismaClient } from "@prisma/client";
+import { loadEventTicketTypes } from "@admitto/tickets";
 import type { ImportTicketType } from "./types.js";
+
+/** Shared by the CLI importer and the admin import API routes - both need the event's catalog
+ * narrowed to just the fields import matching actually uses (CodeRabbit review: these were two
+ * independently maintained copies of the same three lines). */
+export async function loadImportTicketTypes(
+  db: PrismaClient | Prisma.TransactionClient,
+  eventId: string,
+): Promise<ImportTicketType[]> {
+  const types = await loadEventTicketTypes(db, eventId);
+  return types.map((t) => ({ key: t.key, label: t.label }));
+}
 
 /** Case-insensitive match against a catalog entry's `key` OR `label` - CSV values are
  * human-typed ("VIP"/"vip"/"Vip"), not submitted through a controlled `<Select>` like the admin

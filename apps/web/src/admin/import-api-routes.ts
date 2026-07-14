@@ -1,17 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
-import { Prisma, type PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import {
   parseAttendees,
   commitImport,
+  loadImportTicketTypes,
   type AttendeeRow,
   type ImportAttributeField,
-  type ImportTicketType,
 } from "@admitto/import";
 import {
   loadEventCustomDataFields,
   filterCustomDataAttributeFields,
-  loadEventTicketTypes,
   writeBulkActionLog,
   acquireEventTicketTypesLock,
 } from "@admitto/tickets";
@@ -636,14 +635,6 @@ async function loadImportAttributeFields(
 ): Promise<ImportAttributeField[]> {
   const fields = await loadEventCustomDataFields(db, eventId);
   return filterCustomDataAttributeFields(fields);
-}
-
-async function loadImportTicketTypes(
-  db: PrismaClient | Prisma.TransactionClient,
-  eventId: string,
-): Promise<ImportTicketType[]> {
-  const types = await loadEventTicketTypes(db, eventId);
-  return types.map((t) => ({ key: t.key, label: t.label }));
 }
 
 function buildImportTemplateCsv(attributeFields: ImportAttributeField[]): string {

@@ -469,6 +469,15 @@ describe("PATCH /api/admin/events/:eventId/ticket-types/:typeId", () => {
     expect(body.label).toBe("Self Rename Noop");
     expect(body.color).toBe("blue");
   });
+
+  // The TOCTOU fix itself (a same-label PATCH must never re-include label in its update payload,
+  // so it can't revert a concurrent rename) is unit tested directly against
+  // computeTicketTypePatchData in ticket-types-patch-data.test.ts - a Promise.all race at the
+  // HTTP level was tried here first and empirically confirmed unreliable (0/8 repros against a
+  // deliberately reverted buggy handler): the rename request's transaction does strictly more
+  // work (lock + uniqueness query) than the same-label request's (straight to update), so under
+  // real Postgres round-trip timing the same-label request's write almost always commits first,
+  // which never triggers the bug regardless of whether the fix is present.
 });
 
 describe("DELETE /api/admin/events/:eventId/ticket-types/:typeId", () => {
