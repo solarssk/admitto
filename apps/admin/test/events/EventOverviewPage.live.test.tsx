@@ -3,11 +3,12 @@ import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { EventOverviewPage } from "../../src/pages/EventOverviewPage.js";
-import type { EventOverviewDto } from "../../src/api/types.js";
+import type { EventOverviewDto, TicketTypeDto } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
 import { renderWithToast } from "../test-utils.js";
 
 const fetchEventOverview = vi.fn();
+const fetchTicketTypes = vi.fn();
 const reportApiError = vi.fn();
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
@@ -53,6 +54,7 @@ vi.mock("../../src/api/client.js", () => ({
     }
   },
   fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
+  fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
   patchEventNote: vi.fn(),
   createEventContact: vi.fn(),
   updateEventContact: vi.fn(),
@@ -98,6 +100,18 @@ const liveEvent: StreamCheckinEvent = {
   deviceLabel: null,
 };
 
+function makeTicketType(key: string, label: string): TicketTypeDto {
+  return {
+    id: `tt-${key}`,
+    key,
+    label,
+    color: "purple",
+    sort_order: 0,
+    attendee_count: 0,
+    created_at: "2026-01-01T00:00:00.000Z",
+  };
+}
+
 function renderPage() {
   return renderWithToast(
     <MemoryRouter initialEntries={["/admin/events/evt-1/overview"]}>
@@ -117,6 +131,8 @@ afterEach(() => {
 describe("EventOverviewPage live stats", () => {
   beforeEach(() => {
     fetchEventOverview.mockReset();
+    fetchTicketTypes.mockReset();
+    fetchTicketTypes.mockResolvedValue([]);
   });
 
   it("refetches admitted count after a new SSE check-in", async () => {
@@ -272,5 +288,46 @@ describe("EventOverviewPage live stats", () => {
       { timeout: 5000 },
     );
     expect(screen.getByText("6")).toBeTruthy();
+  });
+
+  it("resolves a live check-in's ticket_type key to the catalog's current label instead of the key (batch 04 / #351)", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    fetchTicketTypes.mockResolvedValue([makeTicketType("vip", "VIP Guest")]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("5")).toBeTruthy();
+    });
+
+    act(() => {
+      streamHandler?.({ ...liveEvent, attendeeName: "Vip Guest", ticketType: "vip" });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Vip Guest")).toBeTruthy();
+      expect(screen.getByText("VIP Guest")).toBeTruthy();
+    });
+    expect(screen.queryByText("vip")).toBeNull();
+  });
+
+  it("still shows an orphaned/unmatched ticket_type key in the live feed rather than hiding it (fail-open)", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    fetchTicketTypes.mockResolvedValue([makeTicketType("vip", "VIP Guest")]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("5")).toBeTruthy();
+    });
+
+    act(() => {
+      streamHandler?.({ ...liveEvent, attendeeName: "Orphan Guest", ticketType: "staff_2" });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Orphan Guest")).toBeTruthy();
+      expect(screen.getByText("staff_2")).toBeTruthy();
+    });
   });
 });

@@ -240,7 +240,7 @@ export function ImportPage() {
                       <Link to={`/admin/events/${eventId}/settings?tab=ticket-types`}>
                         ticket type configured for this event
                       </Link>
-                      ; unmatched values are skipped on import
+                      ; the whole row is skipped if this doesn&apos;t match
                     </td>
                   </tr>
                   <tr><td><code>company</code></td><td>No</td><td>Attendee&apos;s company</td></tr>

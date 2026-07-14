@@ -1362,6 +1362,7 @@ export function CheckInPage({
               history={history}
               eventTimezone={eventTimezone}
               eventDate={eventDate}
+              ticketTypes={ticketTypes}
               onSelectAttendee={openLookupResult}
             />
           </Card>

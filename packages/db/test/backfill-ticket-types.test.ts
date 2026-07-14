@@ -85,6 +85,42 @@ describe("backfillTicketTypes", () => {
     expect(aaa?.color).toBe("gray");
   });
 
+  it("orders by created_at (not insertion or scan order) to decide which casing is first-seen", async () => {
+    const event = await makeEvent("evt-tt-order");
+    // Insertion order is deliberately the reverse of created_at order, and the row that was
+    // actually created first also sorts *last* alphabetically by email. Without an explicit
+    // orderBy on the backfill's query, an unordered scan (or a query plan keyed off one of
+    // Attendee's event_id-leading unique indexes) could return these rows in insertion or email
+    // order instead of created_at order, letting the wrong casing win the canonical label - the
+    // bug this test guards against.
+    await prisma.attendee.create({
+      data: {
+        event_id: event.id,
+        email: "aaa-inserted-first@example.com",
+        name: "Inserted First",
+        ticket_type: "vip",
+        created_at: new Date("2026-01-01T00:00:05.000Z"),
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        event_id: event.id,
+        email: "zzz-inserted-second@example.com",
+        name: "Inserted Second",
+        ticket_type: "VIP",
+        created_at: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    });
+
+    await backfillTicketTypes(prisma);
+
+    const types = await prisma.ticketType.findMany({ where: { event_id: event.id } });
+    expect(types).toHaveLength(1);
+    // "VIP" belongs to the attendee with the earliest created_at, even though it was inserted
+    // second and sorts last alphabetically by email.
+    expect(types[0]?.label).toBe("VIP");
+  });
+
   it("seeds a default Standard type for an event with no non-null ticket_type values", async () => {
     const event = await makeEvent("evt-tt-empty");
     await prisma.attendee.create({

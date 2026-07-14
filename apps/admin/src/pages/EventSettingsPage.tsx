@@ -838,7 +838,7 @@ export function EventSettingsPage() {
               <p className="danger-zone__desc">
                 {event.is_deletable
                   ? "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log."
-                  : "Only events with no attendees, custom items, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted."}
+                  : "Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted."}
               </p>
             </div>
             <ArchivedGuard

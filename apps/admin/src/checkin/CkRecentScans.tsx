@@ -1,4 +1,4 @@
-import type { CheckInHistoryEntry } from "../api/types.js";
+import type { CheckInHistoryEntry, TicketTypeDto } from "../api/types.js";
 import { formatRelativeAdmissionDisplay } from "../utils/event-dates.js";
 
 // A CheckIn row with status UNDO is a reversal, not an admission — source
@@ -24,12 +24,24 @@ function dotClass(status: string, source: string | null): string {
   return "rec-dot--invalid";
 }
 
+// row.attendee.ticket_type is the catalog `key` (batch 04 / #351), not the display label -
+// resolve it the same fail-open way ticketTypeBadge.tsx's TicketTypeBadge does (unmatched/legacy
+// key still shows, as-is), but as plain text since this row joins ticket type with device_id
+// into one compact "·"-separated line rather than a badge chip.
+function resolveTicketTypeLabel(ticketType: string | null, ticketTypes: TicketTypeDto[]): string | null {
+  if (!ticketType) return ticketType;
+  return ticketTypes.find((t) => t.key === ticketType)?.label ?? ticketType;
+}
+
 type CkRecentScansProps = {
   history: CheckInHistoryEntry[];
   eventTimezone: string;
   eventDate?: string | null;
   compact?: boolean;
   limit?: number;
+  /** Event's ticket-type catalog, for resolving each row's raw ticket_type key to its current
+   * label. Defaults to [] so an unresolved key still renders (fail-open) instead of disappearing. */
+  ticketTypes?: TicketTypeDto[];
   /** When set, a row's name+ticket area becomes a button that reopens that
    * attendee's card — lets an operator revisit a recent scan (e.g. to hand
    * out a missed item) without re-scanning the QR (PO review). */
@@ -42,6 +54,7 @@ export function CkRecentScans({
   eventDate = null,
   compact = false,
   limit,
+  ticketTypes = [],
   onSelectAttendee,
 }: CkRecentScansProps) {
   const rows = limit != null ? history.slice(0, limit) : history;
@@ -62,6 +75,7 @@ export function CkRecentScans({
       ) : (
         <ul className="ck-recent__list">
           {rows.map((row) => {
+            const ticketTypeLabel = resolveTicketTypeLabel(row.attendee.ticket_type, ticketTypes);
             const info = (
               <>
                 <strong className="ck-recent__name">{row.attendee.name}</strong>
@@ -72,9 +86,9 @@ export function CkRecentScans({
                     once (PO review). Shares the ticket line instead of
                     adding a third row, since it's often absent (device
                     labeling is optional at login). */}
-                {(row.attendee.ticket_type || row.device_id) && (
+                {(ticketTypeLabel || row.device_id) && (
                   <span className="ck-recent__ticket">
-                    {[row.attendee.ticket_type, row.device_id].filter(Boolean).join(" · ")}
+                    {[ticketTypeLabel, row.device_id].filter(Boolean).join(" · ")}
                   </span>
                 )}
               </>

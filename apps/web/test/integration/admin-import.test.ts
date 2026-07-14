@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -267,6 +267,41 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     expect(body.parse.invalidRows[0]!.reason).toBe("Duplicate email in file");
     expect(body.parse.invalidRows[0]!.reason).not.toContain("dup@example.com");
     expect(body.parse.invalidRows[0]!.reason).not.toMatch(/@/);
+  });
+
+  // PII/log-leak fix (code review): "Unknown ticket type: <value>" had no sanitizePreviewReason
+  // case, so groupInvalidByType derived its structured-log key straight from the raw CSV cell
+  // value. The client-facing reason must keep showing that value (it's the admin's own upload,
+  // not a log-leak concern) while the aggregated log key must not.
+  it("redacts unknown-ticket-type values from the aggregated log key but not the client-facing reason", async () => {
+    const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const csv = [
+        "first_name,last_name,email,ticket_type",
+        "Sec,Ret,secret-value@example.com,TotallyBogusType",
+      ].join("\n");
+      const res = await postImport(
+        `/api/admin/events/${EVENT_A}/import/preview`,
+        csvFormData(csv),
+        adminCookie,
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        parse: { invalidRows: { reason: string }[] };
+      };
+      expect(body.parse.invalidRows).toHaveLength(1);
+      expect(body.parse.invalidRows[0]!.reason).toBe('Unknown ticket type: "TotallyBogusType"');
+
+      const logEntries = spy.mock.calls
+        .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+        .filter((entry) => entry.msg === "Import preview complete");
+      expect(logEntries).toHaveLength(1);
+      const invalidByType = logEntries[0]!.invalidByType as Record<string, number>;
+      expect(invalidByType.unknown_ticket_type).toBe(1);
+      expect(JSON.stringify(invalidByType)).not.toMatch(/bogus/i);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("sanitizes unknown-column warnings that could contain email addresses", async () => {
