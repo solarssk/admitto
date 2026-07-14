@@ -34,7 +34,7 @@
     "exceljs": "^4.4.0",
     "hono": "^4.12.28",
     "pdfkit": "^0.19.1",
-    "redis": "^6.0.1",
+    "redis": "^6.1.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -43,7 +43,7 @@
     "@types/pdfkit": "^0.17.6",
     "jose": "^6.0.11",
     "tsx": "^4.19.2",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "4.1.9"
   }
 }
