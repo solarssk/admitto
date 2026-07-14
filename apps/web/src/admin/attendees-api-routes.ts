@@ -38,6 +38,7 @@ import {
   loadEventTicketTypes,
   assertTicketTypeInCatalog,
   UnknownTicketTypeError,
+  acquireEventTicketTypesLock,
 } from "@admitto/tickets";
 import {
   EXPORT_BASE_COLUMNS,
@@ -55,7 +56,6 @@ import {
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
-import { acquireEventTicketTypesLock } from "./ticket-types-routes.js";
 import { randomUUID } from "node:crypto";
 import { decryptFromString } from "@admitto/crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";

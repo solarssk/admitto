@@ -19,6 +19,7 @@ import {
   revokeItemState,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { resolveTicketTypeLabel } from "../attendees/ticketTypeBadge.js";
 import type {
   AttendeeCardDto,
   CheckInHistoryEntry,
@@ -1248,7 +1249,9 @@ export function CheckInPage({
                       <span className="ck-suggest__info">
                         <strong className="ck-suggest__name">{r.name}</strong>
                         <span className="ck-suggest__meta">
-                          {[r.company, r.ticket_type].filter(Boolean).join(" · ") || "—"}
+                          {[r.company, resolveTicketTypeLabel(r.ticket_type, ticketTypes)]
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
                         </span>
                       </span>
                       {r.check_in_status === "admitted" && (

@@ -115,4 +115,20 @@ describe("AddAttendeeModal", () => {
       expect(screen.queryByText("Failed to load ticket types.")).toBeNull();
     });
   });
+
+  it("blocks submit while the ticket-type catalog failed to load, matching the attribute-fields error", async () => {
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+
+    await screen.findByText("Failed to load ticket types.");
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jan@example.com" } });
+
+    // Would otherwise be ready to submit (name + valid email) - the ticket-type load failure
+    // alone must keep it blocked, same as attributeFieldsError already does.
+    expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
 });
