@@ -2,7 +2,7 @@
  * Superadmin permanent event deletion (#395).
  *
  * Delete does not require the event to be archived first — it is reachable for any
- * event (active or archived) that shows zero real activity across six independent
+ * event (active or archived) that shows zero real activity across seven independent
  * signals plus no pinned note. Archiving is a separate, independently useful action
  * (marks an event read-only/done) but is no longer a delete prerequisite: an event
  * that never had any real activity is equally safe to delete whether or not it has
@@ -15,8 +15,8 @@
  * FK graph note: Attendee.event_id has no cascade, so 0 attendees transitively means 0
  * CheckIn/EmailDelivery/WalletPass rows (those all require an Attendee row first, and the
  * existing attendee-delete route already cleans them up transactionally — see
- * attendees-api-routes.ts). EventItem/EventContact/EventResource cascade on event delete.
- * MailTemplate has no FK to Event (matched by scope_id string) so it can't block the
+ * attendees-api-routes.ts). EventItem/EventContact/EventResource/TicketType cascade on event
+ * delete. MailTemplate has no FK to Event (matched by scope_id string) so it can't block the
  * delete at the DB level — the guard checks it explicitly, and the transaction below
  * defensively removes any event-scoped template so nothing is left orphaned.
  * AttendeeActionLog.event_id cascades on event delete too, but — unlike the other
@@ -27,7 +27,7 @@
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { BADGE_ITEM_KEY, writeAdminAuditLog } from "@admitto/tickets";
+import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, writeAdminAuditLog } from "@admitto/tickets";
 import { requireAuditActor, requireEventId, requireSuperadmin } from "./admin-helpers.js";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
@@ -36,13 +36,14 @@ type DbClient = PrismaClient | Prisma.TransactionClient;
 export type EventActivitySignals = {
   attendeeCount: number;
   nonBadgeItemCount: number;
+  nonStandardTicketTypeCount: number;
   contactCount: number;
   resourceCount: number;
   eventMailTemplateCount: number;
   actionLogCount: number;
 };
 
-/** Count the six activity signals for one event. Cheap, indexed, single round-trip. */
+/** Count the seven activity signals for one event. Cheap, indexed, single round-trip. */
 export async function countEventActivitySignals(
   db: DbClient,
   eventId: string,
@@ -50,6 +51,7 @@ export async function countEventActivitySignals(
   const [
     attendeeCount,
     nonBadgeItemCount,
+    nonStandardTicketTypeCount,
     contactCount,
     resourceCount,
     eventMailTemplateCount,
@@ -57,6 +59,7 @@ export async function countEventActivitySignals(
   ] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
     db.eventItem.count({ where: { event_id: eventId, key: { not: BADGE_ITEM_KEY } } }),
+    db.ticketType.count({ where: { event_id: eventId, key: { not: STANDARD_TICKET_TYPE_KEY } } }),
     db.eventContact.count({ where: { event_id: eventId } }),
     db.eventResource.count({ where: { event_id: eventId } }),
     db.mailTemplate.count({ where: { scope_type: "event", scope_id: eventId } }),
@@ -65,6 +68,7 @@ export async function countEventActivitySignals(
   return {
     attendeeCount,
     nonBadgeItemCount,
+    nonStandardTicketTypeCount,
     contactCount,
     resourceCount,
     eventMailTemplateCount,
@@ -73,7 +77,7 @@ export async function countEventActivitySignals(
 }
 
 /**
- * All 7 conditions must hold: no pinned note, and all 6 activity signals at zero.
+ * All 8 conditions must hold: no pinned note, and all 7 activity signals at zero.
  * Deliberately does NOT require `archived_at` — see the file-level comment above.
  * Pure/sync so it is trivially unit-testable and can never diverge between the DTO
  * computation and the actual delete route — both call this against the same signals.
@@ -86,6 +90,7 @@ export function isEventDeletable(
     event.pinned_note === null &&
     signals.attendeeCount === 0 &&
     signals.nonBadgeItemCount === 0 &&
+    signals.nonStandardTicketTypeCount === 0 &&
     signals.contactCount === 0 &&
     signals.resourceCount === 0 &&
     signals.eventMailTemplateCount === 0 &&

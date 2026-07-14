@@ -439,7 +439,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     );
     expect(
       screen.getByText(
-        /Only events with no attendees, custom items, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
+        /Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
       ),
     ).toBeTruthy();
   });
@@ -481,7 +481,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     );
     expect(
       screen.getByText(
-        /Only events with no attendees, custom items, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
+        /Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
       ),
     ).toBeTruthy();
   });
