@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Avatar } from "@admitto/ui";
 import type { LookupAttendeeResult, TicketTypeDto } from "../api/types.js";
+import { resolveTicketTypeLabel } from "../attendees/ticketTypeBadge.js";
 import { checkinSearchFieldAttrs } from "./searchFieldAttrs.js";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -9,15 +10,6 @@ const MIN_QUERY_LEN = 2;
 // the scan bar's WEDGE_AUTO_SUBMIT_LEN so both entry points agree on where
 // "name search" ends and "raw token" begins.
 const TOKEN_LEN_THRESHOLD = 20;
-
-// a.ticket_type is the catalog `key` (batch 04 / #351), not the display label - resolve it the
-// same fail-open way ticketTypeBadge.tsx's TicketTypeBadge does (unmatched/legacy key still
-// shows, as-is), but as plain text since this row joins ticket type with company into one
-// compact "·"-separated line rather than a badge chip.
-function resolveTicketTypeLabel(ticketType: string | null, ticketTypes: TicketTypeDto[]): string | null {
-  if (!ticketType) return ticketType;
-  return ticketTypes.find((t) => t.key === ticketType)?.label ?? ticketType;
-}
 
 type CameraOverlayManualSearchProps = Readonly<{
   allowManualLookup: boolean;

@@ -1,4 +1,5 @@
 import type { CheckInHistoryEntry, TicketTypeDto } from "../api/types.js";
+import { resolveTicketTypeLabel } from "../attendees/ticketTypeBadge.js";
 import { formatRelativeAdmissionDisplay } from "../utils/event-dates.js";
 
 // A CheckIn row with status UNDO is a reversal, not an admission — source
@@ -24,14 +25,6 @@ function dotClass(status: string, source: string | null): string {
   return "rec-dot--invalid";
 }
 
-// row.attendee.ticket_type is the catalog `key` (batch 04 / #351), not the display label -
-// resolve it the same fail-open way ticketTypeBadge.tsx's TicketTypeBadge does (unmatched/legacy
-// key still shows, as-is), but as plain text since this row joins ticket type with device_id
-// into one compact "·"-separated line rather than a badge chip.
-function resolveTicketTypeLabel(ticketType: string | null, ticketTypes: TicketTypeDto[]): string | null {
-  if (!ticketType) return ticketType;
-  return ticketTypes.find((t) => t.key === ticketType)?.label ?? ticketType;
-}
 
 type CkRecentScansProps = {
   history: CheckInHistoryEntry[];
