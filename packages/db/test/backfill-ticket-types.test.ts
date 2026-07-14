@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { backfillTicketTypes } from "../src/backfill-ticket-types.js";
 
 const ORG_ID = "org-backfill-tt";
@@ -30,16 +30,31 @@ async function makeEvent(id: string) {
   });
 }
 
+/** Simulates legacy pre-catalog attendee data: a free-text ticket_type with no matching
+ * TicketType row yet - the exact scenario this backfill script exists to migrate. Every real
+ * write path enforces the (event_id, ticket_type) FK added in migration
+ * 20260714210009_add_attendee_ticket_type_fk, so a plain attendee.create/createMany would reject
+ * this the same way a NOT VALID constraint still would for a genuinely new row - only rows that
+ * predate the constraint are grandfathered in. session_replication_role = replica is Postgres's
+ * standard mechanism for exactly this (bulk-loading/migrating data that doesn't go through normal
+ * constraint checks yet), scoped to one session via an interactive transaction so it can't leak
+ * into any other connection or test. */
+async function createLegacyAttendees(data: Prisma.AttendeeCreateManyInput[]): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`SET session_replication_role = replica`);
+    await tx.attendee.createMany({ data });
+    await tx.$executeRawUnsafe(`SET session_replication_role = DEFAULT`);
+  });
+}
+
 describe("backfillTicketTypes", () => {
   it("groups case-insensitive variants into one canonical type and normalizes attendee rows", async () => {
     const event = await makeEvent("evt-tt-basic");
-    await prisma.attendee.createMany({
-      data: [
-        { event_id: event.id, email: "a@example.com", name: "A", ticket_type: "Standard" },
-        { event_id: event.id, email: "b@example.com", name: "B", ticket_type: "standard" },
-        { event_id: event.id, email: "c@example.com", name: "C", ticket_type: "STANDARD" },
-      ],
-    });
+    await createLegacyAttendees([
+      { event_id: event.id, email: "a@example.com", name: "A", ticket_type: "Standard" },
+      { event_id: event.id, email: "b@example.com", name: "B", ticket_type: "standard" },
+      { event_id: event.id, email: "c@example.com", name: "C", ticket_type: "STANDARD" },
+    ]);
 
     const result = await backfillTicketTypes(prisma);
     expect(result.eventsSeeded).toBeGreaterThanOrEqual(1);
@@ -60,13 +75,11 @@ describe("backfillTicketTypes", () => {
 
   it("colors a vip group purple, preserving today's only special-cased color", async () => {
     const event = await makeEvent("evt-tt-vip");
-    await prisma.attendee.createMany({
-      data: [
-        { event_id: event.id, email: "vip-a@example.com", name: "VA", ticket_type: "VIP" },
-        { event_id: event.id, email: "vip-b@example.com", name: "VB", ticket_type: "vip" },
-        { event_id: event.id, email: "std@example.com", name: "S", ticket_type: "aaa" },
-      ],
-    });
+    await createLegacyAttendees([
+      { event_id: event.id, email: "vip-a@example.com", name: "VA", ticket_type: "VIP" },
+      { event_id: event.id, email: "vip-b@example.com", name: "VB", ticket_type: "vip" },
+      { event_id: event.id, email: "std@example.com", name: "S", ticket_type: "aaa" },
+    ]);
 
     await backfillTicketTypes(prisma);
 
@@ -89,24 +102,24 @@ describe("backfillTicketTypes", () => {
     // Attendee's event_id-leading unique indexes) could return these rows in insertion or email
     // order instead of created_at order, letting the wrong casing win the canonical label - the
     // bug this test guards against.
-    await prisma.attendee.create({
-      data: {
+    await createLegacyAttendees([
+      {
         event_id: event.id,
         email: "aaa-inserted-first@example.com",
         name: "Inserted First",
         ticket_type: "vip",
         created_at: new Date("2026-01-01T00:00:05.000Z"),
       },
-    });
-    await prisma.attendee.create({
-      data: {
+    ]);
+    await createLegacyAttendees([
+      {
         event_id: event.id,
         email: "zzz-inserted-second@example.com",
         name: "Inserted Second",
         ticket_type: "VIP",
         created_at: new Date("2026-01-01T00:00:00.000Z"),
       },
-    });
+    ]);
 
     await backfillTicketTypes(prisma);
 
@@ -137,9 +150,9 @@ describe("backfillTicketTypes", () => {
     await prisma.ticketType.create({
       data: { event_id: event.id, key: "custom", label: "Custom (hand-edited)", color: "azure" },
     });
-    await prisma.attendee.create({
-      data: { event_id: event.id, email: "x@example.com", name: "X", ticket_type: "something_else" },
-    });
+    await createLegacyAttendees([
+      { event_id: event.id, email: "x@example.com", name: "X", ticket_type: "something_else" },
+    ]);
 
     await backfillTicketTypes(prisma);
 
@@ -156,12 +169,10 @@ describe("backfillTicketTypes", () => {
 
   it("dedupes keys that would collide after slugification within the same event", async () => {
     const event = await makeEvent("evt-tt-collision");
-    await prisma.attendee.createMany({
-      data: [
-        { event_id: event.id, email: "d1@example.com", name: "D1", ticket_type: "A B" },
-        { event_id: event.id, email: "d2@example.com", name: "D2", ticket_type: "A-B" },
-      ],
-    });
+    await createLegacyAttendees([
+      { event_id: event.id, email: "d1@example.com", name: "D1", ticket_type: "A B" },
+      { event_id: event.id, email: "d2@example.com", name: "D2", ticket_type: "A-B" },
+    ]);
 
     await backfillTicketTypes(prisma);
 
@@ -173,9 +184,9 @@ describe("backfillTicketTypes", () => {
 
   it("falls back to the constant 'type' key for an unsluggable label, matching packages/tickets/src/ticket-types.ts's uniqueTicketTypeKey", async () => {
     const event = await makeEvent("evt-tt-unsluggable");
-    await prisma.attendee.create({
-      data: { event_id: event.id, email: "u@example.com", name: "U", ticket_type: "###" },
-    });
+    await createLegacyAttendees([
+      { event_id: event.id, email: "u@example.com", name: "U", ticket_type: "###" },
+    ]);
 
     await backfillTicketTypes(prisma);
 
@@ -189,12 +200,10 @@ describe("backfillTicketTypes", () => {
 
   it("normalizes a whitespace-only ticket_type to null instead of leaving the literal whitespace forever", async () => {
     const event = await makeEvent("evt-tt-blank");
-    await prisma.attendee.createMany({
-      data: [
-        { event_id: event.id, email: "blank@example.com", name: "Blank", ticket_type: "   " },
-        { event_id: event.id, email: "general@example.com", name: "General", ticket_type: "General" },
-      ],
-    });
+    await createLegacyAttendees([
+      { event_id: event.id, email: "blank@example.com", name: "Blank", ticket_type: "   " },
+      { event_id: event.id, email: "general@example.com", name: "General", ticket_type: "General" },
+    ]);
 
     const result = await backfillTicketTypes(prisma);
     // Both the blank-to-null normalization and the real "General" group's normalization count.
@@ -210,12 +219,10 @@ describe("backfillTicketTypes", () => {
 
   it("a second call is a safe no-op once the event is fully migrated (simulates a blocked replica's transaction resuming under the lock and finding the event already done)", async () => {
     const event = await makeEvent("evt-tt-second-call");
-    await prisma.attendee.createMany({
-      data: [
-        { event_id: event.id, email: "sc-a@example.com", name: "SA", ticket_type: "Gold" },
-        { event_id: event.id, email: "sc-b@example.com", name: "SB", ticket_type: "gold" },
-      ],
-    });
+    await createLegacyAttendees([
+      { event_id: event.id, email: "sc-a@example.com", name: "SA", ticket_type: "Gold" },
+      { event_id: event.id, email: "sc-b@example.com", name: "SB", ticket_type: "gold" },
+    ]);
 
     const first = await backfillTicketTypes(prisma);
     expect(first.eventsSeeded).toBeGreaterThanOrEqual(1);
@@ -233,12 +240,10 @@ describe("backfillTicketTypes", () => {
 
   it("two concurrent calls racing the same event don't crash or duplicate TicketType rows (advisory lock + re-check under lock)", async () => {
     const event = await makeEvent("evt-tt-concurrent");
-    await prisma.attendee.createMany({
-      data: [
-        { event_id: event.id, email: "cc-a@example.com", name: "CA", ticket_type: "Platinum" },
-        { event_id: event.id, email: "cc-b@example.com", name: "CB", ticket_type: "platinum" },
-      ],
-    });
+    await createLegacyAttendees([
+      { event_id: event.id, email: "cc-a@example.com", name: "CA", ticket_type: "Platinum" },
+      { event_id: event.id, email: "cc-b@example.com", name: "CB", ticket_type: "platinum" },
+    ]);
 
     // Both calls independently see this event with zero TicketType rows in their own outer query
     // and race to migrate it - the per-event advisory lock (`ticket-types:<eventId>`) must

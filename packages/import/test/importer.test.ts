@@ -59,6 +59,18 @@ beforeAll(async () => {
       organization_id: "org_default",
     },
   });
+
+  // Real TicketType rows for every value this file's fixtures write - the (event_id, ticket_type)
+  // FK (migration 20260714210009_add_attendee_ticket_type_fk) now enforces this at the DB level
+  // regardless of whether a given commitImport call passes its own in-memory ticketTypes option
+  // for app-level validation; "staff" is deliberately left unmatched since every test using it
+  // expects the row to be skipped by app-level validation before it ever reaches the DB.
+  await prisma.ticketType.createMany({
+    data: [
+      { event_id: EVENT_ID, key: "standard", label: "Standard" },
+      { event_id: EVENT_ID, key: "vip", label: "VIP" },
+    ],
+  });
 });
 
 afterAll(async () => {
@@ -205,18 +217,36 @@ describe("commitImport — ticket type catalog validation (batch 04 / #351)", ()
     expect(att?.ticket_type).toBe("vip");
   });
 
-  it("does not validate ticket_type when the caller opts out (ticketTypes undefined - today's free-text behavior)", async () => {
-    const summary = await commitImport(
+  it("skips app-level catalog validation when the caller opts out, but a value with no matching TicketType row still can't be written (the (event_id, ticket_type) FK backstops it)", async () => {
+    // No caller in this codebase actually opts out today (both the HTTP and CLI importers always
+    // pass a real, freshly-loaded catalog) - this documents that the opt-out was only ever an
+    // app-level skip, never a way to bypass data integrity. "vip" (seeded in beforeAll, matching
+    // the catalog) still writes cleanly without validation running; "whatever" (matching nothing)
+    // now rejects at the DB level instead of silently writing a value nothing can ever resolve.
+    const okSummary = await commitImport(
       EVENT_ID,
-      [{ rowIndex: 1, first_name: "Free", last_name: "Text", email: "free-text-type@example.com", ticket_type: "whatever" }],
+      [{ rowIndex: 1, first_name: "Free", last_name: "Text", email: "free-text-type@example.com", ticket_type: "vip" }],
       {},
       prisma,
     );
-    expect(summary.created).toBe(1);
+    expect(okSummary.created).toBe(1);
     const att = await prisma.attendee.findUnique({
       where: { event_id_email: { event_id: EVENT_ID, email: "free-text-type@example.com" } },
     });
-    expect(att?.ticket_type).toBe("whatever");
+    expect(att?.ticket_type).toBe("vip");
+
+    await expect(
+      commitImport(
+        EVENT_ID,
+        [{ rowIndex: 1, first_name: "Bad", last_name: "Text", email: "unresolvable-type@example.com", ticket_type: "whatever" }],
+        {},
+        prisma,
+      ),
+    ).rejects.toMatchObject({ code: "P2003" });
+    const rejected = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "unresolvable-type@example.com" } },
+    });
+    expect(rejected).toBeNull();
   });
 });
 
