@@ -121,6 +121,21 @@ async function seed(client: PrismaClient) {
     ],
   });
 
+  // Real TicketType rows for every (event, key) pair the attendee fixtures below write - the
+  // (event_id, ticket_type) FK (migration 20260714210009_add_attendee_ticket_type_fk) now
+  // requires this for every insert. Cascade-deleted with their event in cleanup above, so no
+  // separate teardown is needed here.
+  await client.ticketType.createMany({
+    data: [
+      { event_id: EVENT_EX, key: "vip", label: "VIP" },
+      { event_id: EVENT_EX, key: "standard", label: "Standard" },
+      { event_id: EVENT_EX_B, key: "vip", label: "VIP" },
+      { event_id: EVENT_EX_JACKET, key: "vip", label: "VIP" },
+      { event_id: EVENT_EX_SHIRT, key: "standard", label: "Standard" },
+      { event_id: EVENT_EX_INJ_HEADER, key: "standard", label: "Standard" },
+    ],
+  });
+
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN_EX, password_hash } });
   const opUser = await client.user.create({ data: { email: EMAIL_OP_EX, password_hash } });
   adminId = adminUser.id;
@@ -593,7 +608,10 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     const rows = await parseXlsxRows(await res.arrayBuffer());
     expect(rows.length).toBe(5);
     const dataRows = rows.slice(1);
-    expect(dataRows.every((r) => r[5] === "vip")).toBe(true);
+    // The export resolves a row's raw ticket_type key through the catalog to its display label
+    // (packages/tickets/src/attendees-export.ts's resolveTicketTypeLabel) - "vip" is stored, but
+    // "VIP" (the seeded catalog label) is what actually renders.
+    expect(dataRows.every((r) => r[5] === "VIP")).toBe(true);
     expect(dataRows.some((r) => r[1] === "Standard Guest")).toBe(false);
   });
 

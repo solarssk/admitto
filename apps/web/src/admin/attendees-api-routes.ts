@@ -822,9 +822,13 @@ function computePatchChanges(
     custom_data: unknown;
   },
   patch: PatchInput,
-): { data: Prisma.AttendeeUpdateInput; fields: string[] } | null {
+): { data: Prisma.AttendeeUncheckedUpdateInput; fields: string[] } | null {
   const fields: string[] = [];
-  const data: Prisma.AttendeeUpdateInput = {};
+  // Unchecked: ticket_type is now also a scalar FK column for the (event_id, ticket_type)
+  // relation to TicketType, so Prisma's relation-aware AttendeeUpdateInput no longer exposes it
+  // as a plain settable field - this function only ever sets raw scalar columns directly (never
+  // touches the relation object itself), matching the Unchecked variant's intended use.
+  const data: Prisma.AttendeeUncheckedUpdateInput = {};
   const resolved = resolveCompanyDepartment(existing);
   let customData: Record<string, unknown> | null = null;
 

@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
@@ -45,6 +45,22 @@ function mkAttendeeToken() {
     token_hash: hashToken(token),
     token_enc: encryptToString(token),
   };
+}
+
+/** Simulates an attendee row whose ticket_type doesn't (or won't) match any TicketType row - data
+ * written outside the app's normal write paths, which the (event_id, ticket_type) FK (migration
+ * 20260714210009_add_attendee_ticket_type_fk) now enforces for every real insert. Bypassed here
+ * with Postgres's standard session_replication_role mechanism (same technique used in
+ * packages/db/test/backfill-ticket-types.test.ts), scoped to one transaction so it can't leak. */
+async function createUnvalidatedAttendees(
+  client: PrismaClient,
+  data: Prisma.AttendeeCreateManyInput[],
+): Promise<void> {
+  await client.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`SET session_replication_role = replica`);
+    await tx.attendee.createMany({ data });
+    await tx.$executeRawUnsafe(`SET session_replication_role = DEFAULT`);
+  });
 }
 
 async function seed(client: PrismaClient) {
@@ -448,30 +464,30 @@ describe("GET /api/admin/events/:eventId/reports", () => {
         organization_id: ORG_REP,
       },
     });
-    await prisma.attendee.createMany({
-      data: [
-        {
-          id: "att-rep-blank-null",
-          event_id: EVENT_BLANK,
-          email: "blank-null@example.com",
-          name: "Null Type",
-          admitted_at: new Date("2026-10-01T09:00:00.000Z"),
-          ...mkAttendeeToken(),
-        },
-        {
-          // Every app write path normalizes a blank submission to null before persisting - this
-          // simulates data written outside those paths (e.g. raw SQL), which the DB column itself
-          // doesn't forbid.
-          id: "att-rep-blank-empty",
-          event_id: EVENT_BLANK,
-          email: "blank-empty@example.com",
-          name: "Empty String Type",
-          ticket_type: "",
-          admitted_at: new Date("2026-10-01T09:05:00.000Z"),
-          ...mkAttendeeToken(),
-        },
-      ],
+    await prisma.attendee.create({
+      data: {
+        id: "att-rep-blank-null",
+        event_id: EVENT_BLANK,
+        email: "blank-null@example.com",
+        name: "Null Type",
+        admitted_at: new Date("2026-10-01T09:00:00.000Z"),
+        ...mkAttendeeToken(),
+      },
     });
+    // Every app write path normalizes a blank submission to null before persisting - this
+    // simulates data written outside those paths (e.g. raw SQL), which the DB column itself
+    // doesn't forbid.
+    await createUnvalidatedAttendees(prisma, [
+      {
+        id: "att-rep-blank-empty",
+        event_id: EVENT_BLANK,
+        email: "blank-empty@example.com",
+        name: "Empty String Type",
+        ticket_type: "",
+        admitted_at: new Date("2026-10-01T09:05:00.000Z"),
+        ...mkAttendeeToken(),
+      },
+    ]);
 
     try {
       const res = await app.request(`/api/admin/events/${EVENT_BLANK}/reports`, {
@@ -507,31 +523,31 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     await prisma.ticketType.create({
       data: { event_id: EVENT_ORPHAN, key: "standard", label: "Standard", sort_order: 0 },
     });
-    await prisma.attendee.createMany({
-      data: [
-        {
-          id: "att-rep-orphan-1",
-          event_id: EVENT_ORPHAN,
-          email: "orphan1@example.com",
-          name: "Typed",
-          ticket_type: "standard",
-          admitted_at: new Date("2026-10-01T09:00:00.000Z"),
-          ...mkAttendeeToken(),
-        },
-        {
-          // Simulates a type deleted after assignment, or data seeded outside the app's normal
-          // write paths - the same scenario AttendeeDetailPage.tsx already shows as
-          // "(not in catalog)" instead of silently dropping.
-          id: "att-rep-orphan-2",
-          event_id: EVENT_ORPHAN,
-          email: "orphan2@example.com",
-          name: "Stray",
-          ticket_type: "deleted_type",
-          admitted_at: new Date("2026-10-01T09:05:00.000Z"),
-          ...mkAttendeeToken(),
-        },
-      ],
+    await prisma.attendee.create({
+      data: {
+        id: "att-rep-orphan-1",
+        event_id: EVENT_ORPHAN,
+        email: "orphan1@example.com",
+        name: "Typed",
+        ticket_type: "standard",
+        admitted_at: new Date("2026-10-01T09:00:00.000Z"),
+        ...mkAttendeeToken(),
+      },
     });
+    // Simulates a type deleted after assignment, or data seeded outside the app's normal write
+    // paths - the same scenario AttendeeDetailPage.tsx already shows as "(not in catalog)"
+    // instead of silently dropping.
+    await createUnvalidatedAttendees(prisma, [
+      {
+        id: "att-rep-orphan-2",
+        event_id: EVENT_ORPHAN,
+        email: "orphan2@example.com",
+        name: "Stray",
+        ticket_type: "deleted_type",
+        admitted_at: new Date("2026-10-01T09:05:00.000Z"),
+        ...mkAttendeeToken(),
+      },
+    ]);
 
     try {
       const res = await app.request(`/api/admin/events/${EVENT_ORPHAN}/reports`, {
@@ -579,7 +595,6 @@ describe("GET /api/admin/events/:eventId/reports", () => {
           event_id: EVENT_TZ,
           email: "tz1@example.com",
           name: "Afternoon Warsaw",
-          ticket_type: "Standard",
           // 14:05Z = 16:05 in Europe/Warsaw (CEST, +02:00)
           admitted_at: new Date("2026-10-01T14:05:00.000Z"),
           ...mkAttendeeToken(),
@@ -589,7 +604,6 @@ describe("GET /api/admin/events/:eventId/reports", () => {
           event_id: EVENT_TZ,
           email: "tz2@example.com",
           name: "Midnight Warsaw",
-          ticket_type: "Standard",
           // 22:30Z = 00:30 next day in Europe/Warsaw — crosses local midnight
           admitted_at: new Date("2026-10-01T22:30:00.000Z"),
           ...mkAttendeeToken(),
