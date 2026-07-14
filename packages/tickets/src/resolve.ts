@@ -86,7 +86,10 @@ export async function resolveTicket(
   return null;
 }
 
-function toResolved(
+/** Exported so apps/web's public_ref-based findAttendeeForEventRoute (a second ResolvedTicket
+ * producer, outside this module) can build the exact same shape instead of maintaining its own
+ * copy of this mapping (CodeRabbit review). */
+export function toResolved(
   row: {
     id: string; event_id: string; email: string; name: string; status: string;
     token_hash: string | null; qr_payload: string | null; external_uuid: string | null;

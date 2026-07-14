@@ -2,7 +2,7 @@ export { generateToken } from "./token.js";
 export { hashToken } from "./hash.js";
 export { buildTicketUrl, extractTokenFromUrl, looksLikeInternalToken } from "./url.js";
 export { generateQrPng, buildQrPayload } from "./qr.js";
-export { resolveTicket, resolveTicketLogoUrl } from "./resolve.js";
+export { resolveTicket, resolveTicketLogoUrl, toResolved } from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
 export { checkInScan, getRecentCheckIns, isAdmittable } from "./checkin.js";
 export { ADMITTABLE_STATUS_LIST } from "./admittable.js";
