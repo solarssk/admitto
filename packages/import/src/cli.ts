@@ -7,13 +7,20 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@admitto/db";
-import { loadEventTicketTypes, acquireEventTicketTypesLock } from "@admitto/tickets";
+import { acquireEventTicketTypesLock } from "@admitto/tickets";
 import { parseAttendees } from "./parser.js";
 import { commitImport } from "./importer.js";
 import { formatSkippedImportRow } from "./cli-output.js";
-import type { AttendeeRow, ImportSummary, ImportTicketType } from "./types.js";
+import { loadImportTicketTypes } from "./ticket-type-import.js";
+import type { AttendeeRow, ImportSummary } from "./types.js";
+
+/** Lock wait + row writes share this budget - same values as import-api-routes.ts's
+ * handleImportCommit (queued concurrent commits), duplicated here since this package can't
+ * depend on apps/web (CodeRabbit review: the default $transaction timeout is 5s, too short for a
+ * large CSV competing with other imports for the per-event lock). */
+const IMPORT_TX_TIMEOUT_MS = 120_000;
+const IMPORT_TX_MAX_WAIT_MS = 30_000;
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -22,14 +29,6 @@ function arg(name: string): string | undefined {
 
 function flag(name: string): boolean {
   return process.argv.includes(`--${name}`);
-}
-
-async function loadImportTicketTypes(
-  eventId: string,
-  db: PrismaClient | Prisma.TransactionClient = prisma,
-): Promise<ImportTicketType[]> {
-  const types = await loadEventTicketTypes(db, eventId);
-  return types.map((t) => ({ key: t.key, label: t.label }));
 }
 
 /** Args for one import run, split out from the `process.argv`/`process.exit` shell below so tests
@@ -74,7 +73,7 @@ export async function runImport(options: RunImportOptions): Promise<RunImportRes
   if (!event) throw new Error(`Event not found: "${eventId}"`);
 
   const csv = fs.readFileSync(filePath, "utf8");
-  const ticketTypes = await loadImportTicketTypes(eventId);
+  const ticketTypes = await loadImportTicketTypes(prisma, eventId);
   const parsed = parseAttendees(csv, { ticketTypes });
 
   if (parsed.validRows.length === 0) {
@@ -86,40 +85,43 @@ export async function runImport(options: RunImportOptions): Promise<RunImportRes
     };
   }
 
-  const { summary, rowsCommitted, lockInvalidatedRows } = await prisma.$transaction(async (tx) => {
-    let rowsToCommit = parsed.validRows;
-    let freshTicketTypes = ticketTypes;
-    const lockInvalidated: { rowIndex: number; reason: string }[] = [];
+  const { summary, rowsCommitted, lockInvalidatedRows } = await prisma.$transaction(
+    async (tx) => {
+      let rowsToCommit = parsed.validRows;
+      let freshTicketTypes = ticketTypes;
+      const lockInvalidated: { rowIndex: number; reason: string }[] = [];
 
-    // Only taken when the import actually validates against a catalog - guarded the same way
-    // import-api-routes.ts's handleImportCommit guards it, in case a future caller opts out.
-    if (ticketTypes) {
-      await acquireEventTicketTypesLock(tx, eventId);
+      // Only taken when the import actually validates against a catalog - guarded the same way
+      // import-api-routes.ts's handleImportCommit guards it, in case a future caller opts out.
+      if (ticketTypes) {
+        await acquireEventTicketTypesLock(tx, eventId);
 
-      freshTicketTypes = await loadImportTicketTypes(eventId, tx);
-      const freshKeys = new Set(freshTicketTypes.map((t) => t.key));
-      const stillValid: AttendeeRow[] = [];
-      for (const row of parsed.validRows) {
-        if (row.ticket_type !== undefined && !freshKeys.has(row.ticket_type)) {
-          lockInvalidated.push({
-            rowIndex: row.rowIndex,
-            reason: `Unknown ticket type: "${row.ticket_type}"`,
-          });
-        } else {
-          stillValid.push(row);
+        freshTicketTypes = await loadImportTicketTypes(tx, eventId);
+        const freshKeys = new Set(freshTicketTypes.map((t) => t.key));
+        const stillValid: AttendeeRow[] = [];
+        for (const row of parsed.validRows) {
+          if (row.ticket_type !== undefined && !freshKeys.has(row.ticket_type)) {
+            lockInvalidated.push({
+              rowIndex: row.rowIndex,
+              reason: `Unknown ticket type: "${row.ticket_type}"`,
+            });
+          } else {
+            stillValid.push(row);
+          }
         }
+        rowsToCommit = stillValid;
       }
-      rowsToCommit = stillValid;
-    }
 
-    const result = await commitImport(
-      eventId,
-      rowsToCommit,
-      { overwrite, dryRun: !commit, ownedTransaction: true, ticketTypes: freshTicketTypes },
-      tx,
-    );
-    return { summary: result, rowsCommitted: rowsToCommit.length, lockInvalidatedRows: lockInvalidated };
-  });
+      const result = await commitImport(
+        eventId,
+        rowsToCommit,
+        { overwrite, dryRun: !commit, ownedTransaction: true, ticketTypes: freshTicketTypes },
+        tx,
+      );
+      return { summary: result, rowsCommitted: rowsToCommit.length, lockInvalidatedRows: lockInvalidated };
+    },
+    { timeout: IMPORT_TX_TIMEOUT_MS, maxWait: IMPORT_TX_MAX_WAIT_MS },
+  );
 
   return {
     warnings: parsed.warnings,
@@ -187,12 +189,12 @@ async function main() {
 // exercising runImport directly - same NODE_ENV=test guard used for this exact reason in
 // apps/web/src/index.ts and ops/migrations-check.ts.
 if (process.env.NODE_ENV !== "test") {
-  main()
-    .catch((e) => {
-      console.error(e instanceof Error ? e.message : String(e));
-      process.exitCode = 1;
-    })
-    .finally(async () => {
-      await prisma.$disconnect();
-    });
+  try {
+    await main();
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    process.exitCode = 1;
+  } finally {
+    await prisma.$disconnect();
+  }
 }

@@ -100,7 +100,7 @@ function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSam
 
 /** Row/Reason table shared by the preview step's parse.invalidRows and the done step's
  * commit-time invalidRows - same shape, same rendering, different source. */
-function InvalidRowsTable({ rows }: { rows: { rowIndex: number; reason: string }[] }) {
+function InvalidRowsTable({ rows }: { rows: readonly { rowIndex: number; reason: string }[] }) {
   return (
     <div className="attendees-table-wrap">
       <table className="table">
