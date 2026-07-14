@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Button, Card, EmptyState, PageHeader, Skeleton, Stat, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, PageHeader, Skeleton, Stat, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
 import {
   ApiError,
   eventReportsPrintUrl,
   exportEventReportsCsv,
   fetchEventReports,
+  fetchTicketTypes,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventReportsResponse } from "../api/types.js";
+import type { EventReportsResponse, TicketTypeDto } from "../api/types.js";
+import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import {
   calendarDateInZone,
@@ -88,6 +90,18 @@ function HourlyChart({ byHour }: { byHour: EventReportsResponse["by_hour"] }) {
   );
 }
 
+/** Sentinel select/key value for the "(none)" bucket - <select> options (and React list keys) are
+ * always strings, but a row's ticket_type (and its matching by_ticket_type entry) can genuinely
+ * be null. Real keys are always rendered/matched with a "type:" prefix (below) so this sentinel
+ * can never collide with an actual stored ticket_type value - including an unmatched/legacy one,
+ * which (unlike a catalog-created key) isn't constrained to the slugified key format and could in
+ * principle be any string, e.g. literally "__none__" or "none" (Codex review). */
+const NONE_TYPE_KEY = "__none__";
+
+function encodeTypeFilterValue(key: string | null): string {
+  return key === null ? NONE_TYPE_KEY : `type:${key}`;
+}
+
 function ByTicketType({ rows }: { rows: EventReportsResponse["by_ticket_type"] }) {
   if (rows.length === 0) {
     return <p className="reports-muted">No attendees registered yet.</p>;
@@ -95,35 +109,49 @@ function ByTicketType({ rows }: { rows: EventReportsResponse["by_ticket_type"] }
 
   return (
     <div className="reports-bytype">
-      {rows.map((row) => (
-        <div key={row.type} className="reports-bytype__row">
-          <div className="reports-bytype__label">
-            <span>{row.type}</span>
-            <span className="reports-muted">
-              {row.admitted}/{row.total} ({row.admission_pct}%)
-            </span>
+      {rows.map((row) => {
+        const swatch = TICKET_TYPE_COLORS[row.color] ?? TICKET_TYPE_COLORS.gray;
+        return (
+          <div key={encodeTypeFilterValue(row.key)} className="reports-bytype__row">
+            <div className="reports-bytype__label">
+              <span className="reports-bytype__name">
+                <span className="reports-bytype__dot" style={{ background: swatch.solid }} aria-hidden="true" />
+                {row.type}
+              </span>
+              <span className="reports-muted">
+                {row.admitted}/{row.total} ({row.admission_pct}%)
+              </span>
+            </div>
+            <div className="reports-bytype__track">
+              <div
+                className="reports-bytype__fill"
+                style={{ width: `${row.admission_pct}%`, background: swatch.solid }}
+              />
+            </div>
           </div>
-          <div className="reports-bytype__track">
-            <div
-              className="reports-bytype__fill"
-              style={{ width: `${row.admission_pct}%` }}
-            />
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
 interface AdmissionLogProps {
-  log: EventReportsResponse["admission_log"];
-  byTicketType: EventReportsResponse["by_ticket_type"];
-  timeZone: string;
-  truncated: boolean;
-  totalAdmitted: number;
+  readonly log: EventReportsResponse["admission_log"];
+  readonly byTicketType: EventReportsResponse["by_ticket_type"];
+  readonly ticketTypes: TicketTypeDto[];
+  readonly timeZone: string;
+  readonly truncated: boolean;
+  readonly totalAdmitted: number;
 }
 
-function AdmissionLog({ log, byTicketType, timeZone, truncated, totalAdmitted }: AdmissionLogProps) {
+function AdmissionLog({
+  log,
+  byTicketType,
+  ticketTypes,
+  timeZone,
+  truncated,
+  totalAdmitted,
+}: AdmissionLogProps) {
   const [typeFilter, setTypeFilter] = useState("all");
   const [page, setPage] = useState(1);
 
@@ -132,7 +160,12 @@ function AdmissionLog({ log, byTicketType, timeZone, truncated, totalAdmitted }:
     [log, timeZone],
   );
 
-  const filtered = typeFilter === "all" ? log : log.filter((row) => row.ticket_type === typeFilter);
+  let filtered = log;
+  if (typeFilter === NONE_TYPE_KEY) {
+    filtered = log.filter((row) => row.ticket_type === null);
+  } else if (typeFilter !== "all") {
+    filtered = log.filter((row) => encodeTypeFilterValue(row.ticket_type) === typeFilter);
+  }
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / LOG_PAGE_SIZE));
   const paged = filtered.slice((page - 1) * LOG_PAGE_SIZE, page * LOG_PAGE_SIZE);
@@ -158,7 +191,7 @@ function AdmissionLog({ log, byTicketType, timeZone, truncated, totalAdmitted }:
           >
             <option value="all">All ticket types</option>
             {byTicketType.map((row) => (
-              <option key={row.type} value={row.type}>
+              <option key={encodeTypeFilterValue(row.key)} value={encodeTypeFilterValue(row.key)}>
                 {row.type}
               </option>
             ))}
@@ -187,7 +220,13 @@ function AdmissionLog({ log, byTicketType, timeZone, truncated, totalAdmitted }:
                     <span className="reports-mono reports-muted">{row.email}</span>
                   </div>
                 </td>
-                <td>{row.ticket_type}</td>
+                <td>
+                  {row.ticket_type === null ? (
+                    <Badge variant="neutral">(none)</Badge>
+                  ) : (
+                    <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
+                  )}
+                </td>
                 <td className="reports-mono">
                   {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
                 </td>
@@ -242,6 +281,27 @@ export function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    // Cleared immediately, not just on settle - otherwise an admission log row whose key exists
+    // in both the old and new event's catalogs could briefly resolve against the previous event's
+    // label/color while this fetch is still in flight (Codex review), same fix already applied to
+    // CommunicationSendDialog/EventSettingsPage for the same stale-catalog-on-switch pattern.
+    setTicketTypes([]);
+    let cancelled = false;
+    fetchTicketTypes(eventId)
+      .then((types) => {
+        if (!cancelled) setTicketTypes(types);
+      })
+      .catch(() => {
+        if (!cancelled) setTicketTypes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId]);
 
   const loadData = useCallback(async () => {
     if (!eventId) return;
@@ -437,6 +497,7 @@ export function ReportsPage() {
             key={data.event.id}
             log={data.admission_log}
             byTicketType={data.by_ticket_type}
+            ticketTypes={ticketTypes}
             timeZone={data.timezone}
             truncated={data.admission_log_truncated}
             totalAdmitted={data.admission_log_total}

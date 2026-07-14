@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, createMemoryRouter, RouterProvider } from "react-router-dom";
 import { ApiError } from "../../src/api/client.js";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
 import { UsersPage } from "../../src/pages/UsersPage.js";
@@ -21,9 +21,13 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ assignments: superadminAssignments }),
 }));
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError: vi.fn() }),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js", () => {
+  // Stable across renders, matching the real provider's own useMemo/useCallback (a fresh object
+  // here would make any hook depending on reportApiError's identity re-run its effect on every
+  // render, which can starve a fetch that never gets a chance to resolve before being re-aborted).
+  const connectionState = { reportApiError: vi.fn() };
+  return { useConnectionState: () => connectionState };
+});
 
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
@@ -79,6 +83,7 @@ import {
   fetchEventSettings,
   fetchOpsConfig,
   fetchRoleAssignments,
+  fetchTicketTypes,
   previewImport,
   revokeUserSessions,
   patchEvent,
@@ -492,6 +497,234 @@ describe("ReportsPage operator errors", () => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+});
+
+describe("ReportsPage ticket type breakdown", () => {
+  it("renders both the (none) bucket and a real catalog type literally keyed 'none' as distinct rows, with no React key collision (CodeRabbit review)", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 2, admitted: 2, admission_rate_pct: 100 },
+      by_ticket_type: [
+        { key: "none", type: "None", color: "gray", total: 1, admitted: 1, admission_pct: 100 },
+        { key: null, type: "(none)", color: "gray", total: 1, admitted: 1, admission_pct: 100 },
+      ],
+    });
+    const { container } = renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(container.querySelector(".reports-bytype")).toBeTruthy();
+    });
+    // "None" also legitimately appears in the admission-log filter's <option> below, so this is
+    // scoped to the breakdown panel - a React key collision would drop or misrender one of these.
+    const breakdown = container.querySelector(".reports-bytype");
+    if (!breakdown) throw new Error("breakdown panel not found");
+    expect(within(breakdown as HTMLElement).getByText("None")).toBeTruthy();
+    expect(within(breakdown as HTMLElement).getByText("(none)")).toBeTruthy();
+    // React logs an error when two elements in the same list share a key - the null bucket and a
+    // catalog type literally keyed "none" must not collide, in the breakdown or the filter below it.
+    const keyCollisionWarning = consoleError.mock.calls.some((args) =>
+      String(args[0]).includes("same key"),
+    );
+    expect(keyCollisionWarning).toBe(false);
+    consoleError.mockRestore();
+  });
+});
+
+describe("ReportsPage admission log", () => {
+  it("labels an untyped admission as (none), matching the breakdown/filter instead of the Attendees table's dash", async () => {
+    // mockResolvedValue (not ...Once): the mocked useConnectionState() below returns a fresh
+    // object every render, so ReportsPage's load effect can legitimately fire more than once -
+    // every call must see the same response, not just the first.
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 1, admitted: 1, admission_rate_pct: 100 },
+      by_ticket_type: [
+        { key: null, type: "(none)", color: "gray", total: 1, admitted: 1, admission_pct: 100 },
+      ],
+      admission_log: [
+        {
+          attendee_id: "att-1",
+          name: "Jan Kowalski",
+          email: "jan@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:00:00.000Z",
+          device_id: null,
+        },
+      ],
+      admission_log_total: 1,
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Jan Kowalski")).toBeTruthy();
+    });
+    const row = screen.getByText("Jan Kowalski").closest("tr");
+    if (!row) throw new Error("admission log row not found");
+    // Second <td> is "Ticket type" (Attendee, Ticket type, Admitted at, Device) - scoped past the
+    // Device cell, which legitimately shows "-" for this row's own null device_id.
+    const typeCell = row.querySelectorAll("td")[1];
+    if (!typeCell) throw new Error("ticket-type cell not found");
+    // The Attendees table's shared badge renders "-" for a null ticket_type - this cell must show
+    // the same "(none)" label the breakdown/filter above it already use instead.
+    expect(within(typeCell).getByText("(none)")).toBeTruthy();
+    expect(within(typeCell).queryByText("—")).toBeNull();
+  });
+
+  it("does not conflate a genuinely untyped admission with one whose raw ticket_type is literally the filter's internal sentinel string (Codex review)", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 2, admitted: 2, admission_rate_pct: 100 },
+      by_ticket_type: [
+        { key: null, type: "(none)", color: "gray", total: 1, admitted: 1, admission_pct: 100 },
+        {
+          key: "__none__",
+          type: "__none__ (not in catalog)",
+          color: "gray",
+          total: 1,
+          admitted: 1,
+          admission_pct: 100,
+        },
+      ],
+      admission_log: [
+        {
+          attendee_id: "att-null",
+          name: "Null Guest",
+          email: "null-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:00:00.000Z",
+          device_id: null,
+        },
+        {
+          attendee_id: "att-literal",
+          name: "Literal Guest",
+          email: "literal-guest@example.com",
+          // Legacy/orphaned data seeded outside the app's normal write paths isn't constrained to
+          // the slugified key format - it could coincidentally match the filter's own internal
+          // sentinel string for "no type".
+          ticket_type: "__none__",
+          admitted_at: "2026-06-01T10:05:00.000Z",
+          device_id: null,
+        },
+      ],
+      admission_log_total: 2,
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Null Guest")).toBeTruthy();
+    });
+    expect(screen.getByText("Literal Guest")).toBeTruthy();
+
+    const select = screen.getByLabelText("Ticket type") as HTMLSelectElement;
+    const options = Array.from(select.options).map((o) => o.value);
+    // The two buckets must not share a select option value.
+    expect(new Set(options).size).toBe(options.length);
+
+    fireEvent.change(select, { target: { value: "__none__" } });
+    await waitFor(() => {
+      expect(screen.getByText("Null Guest")).toBeTruthy();
+    });
+    expect(screen.queryByText("Literal Guest")).toBeNull();
+
+    const literalOption = Array.from(select.options).find((o) => o.textContent === "__none__ (not in catalog)");
+    if (!literalOption) throw new Error("option for the literal __none__ bucket not found");
+    fireEvent.change(select, { target: { value: literalOption.value } });
+    await waitFor(() => {
+      expect(screen.getByText("Literal Guest")).toBeTruthy();
+    });
+    expect(screen.queryByText("Null Guest")).toBeNull();
+  });
+});
+
+describe("ReportsPage — ticket type catalog cross-event staleness", () => {
+  // createMemoryRouter + RouterProvider (not the plain <MemoryRouter> the rest of this file uses)
+  // so router.navigate() can change the :eventId param in place, the same way a real in-app
+  // navigation from one event's reports to another's does - matches
+  // EventSettingsPage.test.tsx's equivalent staleness suite.
+  function renderReportsRouter(entry: string) {
+    return createMemoryRouter(
+      [{ path: "/admin/events/:eventId/reports", element: <ReportsPage /> }],
+      { initialEntries: [entry] },
+    );
+  }
+
+  it("does not resolve a badge against the previous event's catalog while navigating to a new event (Codex review)", async () => {
+    const reportFor = (eventId: string) => ({
+      ...emptyReport,
+      event: { ...emptyReport.event, id: eventId },
+      summary: { ...emptyReport.summary, total_attendees: 1, admitted: 1, admission_rate_pct: 100 },
+      admission_log: [
+        {
+          attendee_id: `att-${eventId}`,
+          name: "Shared Key Guest",
+          email: "guest@example.com",
+          ticket_type: "vip",
+          admitted_at: "2026-06-01T10:00:00.000Z",
+          device_id: null,
+        },
+      ],
+    });
+    vi.mocked(fetchEventReports).mockImplementation(async (eventId: string) => reportFor(eventId));
+
+    let resolveEventBTypes!: (types: unknown[]) => void;
+    const eventBTypes = new Promise((resolve) => {
+      resolveEventBTypes = resolve;
+    });
+    vi.mocked(fetchTicketTypes).mockImplementation((eventId: string) =>
+      eventId === "evt-a"
+        ? Promise.resolve([
+            { id: "tt-a", key: "vip", label: "VIP (Event A)", color: "purple", sort_order: 0, attendee_count: 1, created_at: "2026-01-01T00:00:00.000Z" },
+          ])
+        : (eventBTypes as Promise<unknown[]>),
+    );
+
+    const router = renderReportsRouter("/admin/events/evt-a/reports");
+    renderWithToast(<RouterProvider router={router} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("VIP (Event A)")).toBeTruthy();
+    });
+
+    await router.navigate("/admin/events/evt-b/reports");
+
+    // Both events render the same guest name, and the unstable mocked useConnectionState() below
+    // can trigger more than one load/loading-skeleton cycle for event B - the row lookup and its
+    // assertions are polled together as one unit, not split across a separate waitFor, so a
+    // transiently-stale match from event A's still-mounted row can't slip through.
+    await waitFor(() => {
+      const row = screen.getByText("Shared Key Guest").closest("tr");
+      if (!row) throw new Error("admission log row not found");
+      const typeCell = row.querySelectorAll("td")[1];
+      if (!typeCell) throw new Error("ticket-type cell not found");
+      // Event A's label/color must not still resolve for the "vip" key on event B while event B's
+      // own catalog fetch is still in flight - the badge should fall back to the raw key instead.
+      expect(within(typeCell).queryByText("VIP (Event A)")).toBeNull();
+      expect(within(typeCell).getByText("vip")).toBeTruthy();
+    });
+
+    resolveEventBTypes([
+      { id: "tt-b", key: "vip", label: "VIP (Event B)", color: "blue", sort_order: 0, attendee_count: 1, created_at: "2026-01-01T00:00:00.000Z" },
+    ]);
+    await waitFor(() => {
+      expect(screen.getByText("VIP (Event B)")).toBeTruthy();
+    });
   });
 });
 

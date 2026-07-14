@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
-import { writeBulkActionLog } from "@admitto/tickets";
+import { loadEventTicketTypes, writeBulkActionLog, type TicketTypeInfo } from "@admitto/tickets";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
 
@@ -27,8 +27,18 @@ export interface EventReportsResponse {
     peak_hour_count: number;
   };
   by_hour: Array<{ hour: string; count: number }>;
+  /** Iterates the event's live TicketType catalog (batch 04 / #351) - a configured type with 0
+   * attendees still appears, ordered same as the Event Settings tab. A trailing entry with
+   * `key: null` covers attendees with no type set. A stored `ticket_type` can still reference no
+   * live catalog row - the type was deleted after being assigned (same case AttendeeDetailPage.tsx
+   * already surfaces as "(not in catalog)"), or an event's data was seeded/restored outside the
+   * write paths that enforce catalog membership - so any remaining unmatched keys get their own
+   * trailing entries too (Codex review, batch 04 / #387), instead of silently vanishing from the
+   * breakdown while still counting in `summary` and the admission log. */
   by_ticket_type: Array<{
+    key: string | null;
     type: string;
+    color: string;
     total: number;
     admitted: number;
     admission_pct: number;
@@ -37,7 +47,7 @@ export interface EventReportsResponse {
     attendee_id: string;
     name: string;
     email: string;
-    ticket_type: string;
+    ticket_type: string | null;
     admitted_at: string;
     device_id: string | null;
   }>;
@@ -45,8 +55,11 @@ export interface EventReportsResponse {
   admission_log_total: number;
 }
 
-function ticketTypeLabel(raw: string | null): string {
-  return raw?.trim() ? raw.trim() : "(none)";
+/** Display label for a raw ticket_type key/null in server-rendered CSV/PDF exports (the admin
+ * SPA instead renders a colored TicketTypeBadge via the catalog it already has). */
+function resolveTicketTypeLabel(catalog: TicketTypeInfo[], key: string | null): string {
+  if (!key) return "(none)";
+  return catalog.find((t) => t.key === key)?.label ?? key;
 }
 
 function oneDecimalPct(numerator: number, denominator: number): number {
@@ -54,13 +67,14 @@ function oneDecimalPct(numerator: number, denominator: number): number {
   return Math.round((numerator / denominator) * 1000) / 10;
 }
 
+/** Keyed by the raw ticket_type column value (catalog key, or null for "no type set") - not a
+ * display label, so the caller can match counts against catalog entries in order. */
 function mergeTicketTypeCounts(
   rows: Array<{ ticket_type: string | null; _count: { _all: number } }>,
-): Map<string, number> {
-  const map = new Map<string, number>();
+): Map<string | null, number> {
+  const map = new Map<string | null, number>();
   for (const row of rows) {
-    const type = ticketTypeLabel(row.ticket_type);
-    map.set(type, (map.get(type) ?? 0) + row._count._all);
+    map.set(row.ticket_type, (map.get(row.ticket_type) ?? 0) + row._count._all);
   }
   return map;
 }
@@ -131,7 +145,7 @@ function mapAdmissionLogRow(
     attendee_id: row.id,
     name: row.name,
     email: row.email,
-    ticket_type: ticketTypeLabel(row.ticket_type),
+    ticket_type: row.ticket_type,
     admitted_at: row.admitted_at.toISOString(),
     device_id: deviceByAttendee.get(row.id) ?? null,
   };
@@ -150,8 +164,9 @@ async function loadReportsAggregates(
   admission_log: EventReportsResponse["admission_log"];
   peak_hour: string | null;
   peak_hour_count: number;
+  ticketTypeCatalog: TicketTypeInfo[];
 }> {
-  const [totalAttendees, admittedCount, byHourRaw, byTypeTotal, byTypeAdmitted, logRows] =
+  const [totalAttendees, admittedCount, byHourRaw, byTypeTotal, byTypeAdmitted, logRows, catalog] =
     await Promise.all([
       db.attendee.count({ where: { event_id: eventId } }),
       db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
@@ -189,6 +204,7 @@ async function loadReportsAggregates(
           admitted_at: true,
         },
       }),
+      loadEventTicketTypes(db, eventId),
     ]);
 
   const byHour = buildByHour(byHourRaw);
@@ -197,17 +213,45 @@ async function loadReportsAggregates(
   const totalByType = mergeTicketTypeCounts(byTypeTotal);
   const admittedByType = mergeTicketTypeCounts(byTypeAdmitted);
 
-  const by_ticket_type: EventReportsResponse["by_ticket_type"] = [...totalByType.entries()]
-    .map(([type, total]) => {
-      const admitted = admittedByType.get(type) ?? 0;
-      return {
-        type,
-        total,
-        admitted,
-        admission_pct: oneDecimalPct(admitted, total),
-      };
-    })
-    .sort((a, b) => b.total - a.total);
+  const by_ticket_type: EventReportsResponse["by_ticket_type"] = catalog.map((t) => {
+    const total = totalByType.get(t.key) ?? 0;
+    const admitted = admittedByType.get(t.key) ?? 0;
+    return { key: t.key, type: t.label, color: t.color, total, admitted, admission_pct: oneDecimalPct(admitted, total) };
+  });
+  // Every write path that sets ticket_type (create, patch, import, the backfill's blank-value
+  // cleanup) normalizes an empty/whitespace submission to null before persisting - resolveTicketTypeLabel
+  // (used by CSV/PDF export, above) already treats both the same way. A literal "" could still
+  // reach here from data written outside those paths, so it's folded into the same (none) bucket
+  // here too, instead of becoming its own confusing "" (not in catalog) entry below.
+  const noneTotal = (totalByType.get(null) ?? 0) + (totalByType.get("") ?? 0);
+  if (noneTotal > 0) {
+    const noneAdmitted = (admittedByType.get(null) ?? 0) + (admittedByType.get("") ?? 0);
+    by_ticket_type.push({
+      key: null,
+      type: "(none)",
+      color: "gray",
+      total: noneTotal,
+      admitted: noneAdmitted,
+      admission_pct: oneDecimalPct(noneAdmitted, noneTotal),
+    });
+  }
+
+  const catalogKeys = new Set(catalog.map((t) => t.key));
+  const unmatchedKeys = [...totalByType.keys()]
+    .filter((key): key is string => key !== null && key !== "" && !catalogKeys.has(key))
+    .sort((a, b) => a.localeCompare(b));
+  for (const key of unmatchedKeys) {
+    const total = totalByType.get(key) ?? 0;
+    const admitted = admittedByType.get(key) ?? 0;
+    by_ticket_type.push({
+      key,
+      type: `${key} (not in catalog)`,
+      color: "gray",
+      total,
+      admitted,
+      admission_pct: oneDecimalPct(admitted, total),
+    });
+  }
 
   const deviceByAttendee = await loadDeviceIdsByAttendee(
     db,
@@ -225,6 +269,7 @@ async function loadReportsAggregates(
     byHour,
     by_ticket_type,
     admission_log,
+    ticketTypeCatalog: catalog,
     peak_hour,
     peak_hour_count,
   };
@@ -362,7 +407,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
   if (formatRaw === "csv") {
-    const [totalAdmitted, rows] = await Promise.all([
+    const [totalAdmitted, rows, catalog] = await Promise.all([
       db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
       db.attendee.findMany({
         where: { event_id: eventId, admitted_at: { not: null } },
@@ -376,6 +421,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
           admitted_at: true,
         },
       }),
+      loadEventTicketTypes(db, eventId),
     ]);
 
     const truncated = totalAdmitted > CSV_EXPORT_MAX;
@@ -394,7 +440,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
       [
         row.name,
         row.email,
-        ticketTypeLabel(row.ticket_type),
+        resolveTicketTypeLabel(catalog, row.ticket_type),
         formatAdmittedAtExport(row.admitted_at!, timeZone),
         deviceByAttendee.get(row.id) ?? "",
       ]
@@ -451,7 +497,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   const logRows = aggregates.admission_log
     .map(
       (r) =>
-        `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(r.ticket_type)}</td><td>${escapeHtml(formatAdmittedAtExport(new Date(r.admitted_at), timeZone))}</td><td>${escapeHtml(r.device_id ?? "—")}</td></tr>`,
+        `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.email)}</td><td>${escapeHtml(resolveTicketTypeLabel(aggregates.ticketTypeCatalog, r.ticket_type))}</td><td>${escapeHtml(formatAdmittedAtExport(new Date(r.admitted_at), timeZone))}</td><td>${escapeHtml(r.device_id ?? "—")}</td></tr>`,
     )
     .join("");
 
