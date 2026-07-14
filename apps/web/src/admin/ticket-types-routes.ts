@@ -218,7 +218,7 @@ export async function handlePatchEventTicketType(c: Context, db: PrismaClient): 
     return c.json(serializeTicketType(existing, counts));
   }
 
-  const updated = await db.$transaction(async (tx) => {
+  const { updated, counts } = await db.$transaction(async (tx) => {
     const row = await tx.ticketType.update({ where: { id: typeId }, data });
     await writeBulkActionLog(tx, {
       event_id: eventId,
@@ -226,9 +226,12 @@ export async function handlePatchEventTicketType(c: Context, db: PrismaClient): 
       audit: adminAuditFromContext(c),
       metadata: { key: row.key },
     });
-    return row;
+    // Counted inside the same transaction, not after commit - otherwise an attendee
+    // create/delete landing in that window would make the response's attendee_count stale
+    // relative to the update it's reporting on (PR-Agent review).
+    const attendeeCount = await tx.attendee.count({ where: { event_id: eventId, ticket_type: row.key } });
+    return { updated: row, counts: attendeeCount };
   });
-  const counts = await db.attendee.count({ where: { event_id: eventId, ticket_type: updated.key } });
   return c.json(serializeTicketType(updated, counts));
 }
 
