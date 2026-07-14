@@ -130,6 +130,8 @@ export function AttendeesPage() {
   const [rsvpStatusFilter, setRsvpStatusFilter] = useState<"" | RsvpStatus>("");
   const [ticketTypeFilter, setTicketTypeFilter] = useState("");
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
+  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
+  const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
   const [exportingFormat, setExportingFormat] = useState<"xlsx" | "csv" | "pdf" | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -162,17 +164,20 @@ export function AttendeesPage() {
     if (!eventId) return;
     setTicketTypeFilter("");
     setTicketTypes([]);
+    setTicketTypesError(null);
     const ac = new AbortController();
     fetchTicketTypes(eventId, ac.signal)
       .then((types) => {
         if (ac.signal.aborted) return;
         setTicketTypes(types);
       })
-      .catch(() => {
-        if (!ac.signal.aborted) setTicketTypes([]);
+      .catch((err: unknown) => {
+        if (ac.signal.aborted) return;
+        setTicketTypes([]);
+        setTicketTypesError(operatorApiErrorMessage(err, "Couldn't load types."));
       });
     return () => ac.abort();
-  }, [eventId]);
+  }, [eventId, ticketTypesRetryToken]);
 
   const loadList = useCallback(async () => {
     if (!eventId) return;
@@ -495,6 +500,8 @@ export function AttendeesPage() {
         ticketTypeFilter={ticketTypeFilter}
         rsvpStatusFilter={rsvpStatusFilter}
         ticketTypes={ticketTypes}
+        ticketTypesError={ticketTypesError}
+        onRetryTicketTypes={() => setTicketTypesRetryToken((n) => n + 1)}
         onSearchChange={setSearchInput}
         onStatusFilterChange={(v) => {
           setStatusFilter(v);

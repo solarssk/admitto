@@ -46,10 +46,11 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     updateAttendee: vi.fn(),
     resendTicket: vi.fn(),
     fetchAttendeeDetail: vi.fn(),
+    fetchTicketTypes: vi.fn().mockResolvedValue([]),
   };
 });
 
-import { updateAttendee } from "../../src/api/client.js";
+import { fetchTicketTypes, updateAttendee } from "../../src/api/client.js";
 
 const detail = {
   id: "att-1",
@@ -94,5 +95,21 @@ describe("AttendeeDetailPage operator errors", () => {
     await waitFor(() => {
       expect(screen.getByText(/Failed to load attendee/)).toBeTruthy();
     });
+  });
+
+  it("shows an inline retryable error next to the Ticket type field when the catalog fails to load (CodeRabbit review)", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({ detail, attributeFields: [], itemsWarning: null });
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+    renderPage();
+
+    await waitFor(() => screen.getByRole("heading", { name: "Anna" }));
+    expect(await screen.findByText("Failed to load ticket types.")).toBeTruthy();
+
+    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([
+      { id: "tt-1", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 1, created_at: "2026-01-01T00:00:00.000Z" },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(screen.queryByText("Failed to load ticket types.")).toBeNull());
   });
 });

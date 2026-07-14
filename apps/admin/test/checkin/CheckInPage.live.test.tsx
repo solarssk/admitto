@@ -302,4 +302,24 @@ describe("CheckInPage live feed", () => {
       expect(screen.getByText("2")).toBeTruthy();
     });
   });
+
+  it("a failed ticket-type catalog fetch stays non-blocking - no visible error, scan input still works (PO review)", async () => {
+    const { fetchTicketTypes } = await import("../../src/api/client.js");
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockPageBootstrap();
+
+    renderPage();
+
+    const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
+    await waitFor(() => expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "fetchTicketTypes failed:",
+      expect.any(Error),
+    ));
+    // The check-in surface itself is unaffected - no inline/toast error, input still usable.
+    expect(input.disabled).toBe(false);
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    consoleErrorSpy.mockRestore();
+  });
 });

@@ -614,6 +614,31 @@ describe("CommunicationPage templates", () => {
     });
   });
 
+  it("shows an inline retryable error under the ticket-type filter when the catalog fails to load (CodeRabbit review)", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    fetchTicketTypes.mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send email" }));
+    const dialog = await screen.findByRole("dialog", { name: "Send email" });
+
+    fireEvent.change(within(dialog).getByLabelText("Recipients"), {
+      target: { value: "ticket_type" },
+    });
+
+    expect(await within(dialog).findByText("Failed to load ticket types.")).toBeTruthy();
+
+    fetchTicketTypes.mockResolvedValueOnce([{ key: "vip", label: "VIP", color: "purple" }]);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(within(dialog).queryByText("Failed to load ticket types.")).toBeNull());
+    expect(within(dialog).getByText("VIP")).toBeTruthy();
+  });
+
   it("sends by ticket type, populating the Select from the catalog and using the picked key as the filter value (batch 04 / #351)", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow]);
     fetchTicketTypes.mockResolvedValue([{ key: "vip", label: "VIP", color: "purple" }]);

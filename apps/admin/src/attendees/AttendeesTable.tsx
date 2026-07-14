@@ -27,6 +27,11 @@ export interface AttendeesTableProps {
   ticketTypeFilter: string;
   rsvpStatusFilter: "" | RsvpStatus;
   ticketTypes?: TicketTypeDto[];
+  /** Set when the ticket-type filter's own catalog failed to load - the rest of the table (and
+   * the other filters) still work, so this renders as a small inline notice next to the Type
+   * filter, not a page-level error (CodeRabbit review, batch 04 / #351). */
+  ticketTypesError?: string | null;
+  onRetryTicketTypes?: () => void;
   onSearchChange: (value: string) => void;
   onStatusFilterChange: (value: "all" | "admitted" | "not_admitted") => void;
   onTicketTypeFilterChange: (value: string) => void;
@@ -53,6 +58,8 @@ export function AttendeesTable({
   ticketTypeFilter,
   rsvpStatusFilter,
   ticketTypes = [],
+  ticketTypesError,
+  onRetryTicketTypes,
   onSearchChange,
   onStatusFilterChange,
   onTicketTypeFilterChange,
@@ -122,6 +129,16 @@ export function AttendeesTable({
               </option>
             ))}
           </Select>
+          {ticketTypesError && (
+            <p className="mail-field-hint" role="alert">
+              {ticketTypesError}{" "}
+              {onRetryTicketTypes && (
+                <button type="button" className="link-btn" onClick={onRetryTicketTypes}>
+                  Retry
+                </button>
+              )}
+            </p>
+          )}
         </div>
       </div>
       {loading && items.length === 0 ? (
