@@ -14,6 +14,7 @@ export {
   URL_PLACEHOLDERS,
   REQUIRED_URL_PLACEHOLDERS,
   WALLET_PLACEHOLDERS,
+  IMAGE_PLACEHOLDERS,
   extractPlaceholderNames,
   extractPlaceholderTokens,
   findUnknownPlaceholders,
@@ -56,7 +57,7 @@ export {
   TemplateNotFoundError,
 } from "./mailTemplate.js";
 export type { CreatedMailTemplateRow } from "./mailTemplate.js";
-export { resolveBranding, resolveBrandingFromEvent, setBranding } from "./branding.js";
+export { resolveBranding, resolveBrandingFromEvent, setBranding, resolveEventImageAssetVars } from "./branding.js";
 export {
   previewTemplate,
   DEFAULT_SAMPLE_VARS,
@@ -74,6 +75,6 @@ export type {
   BrandingUrls,
   SetMailTemplateInput,
 } from "./types.js";
-export type { SetBrandingInput } from "./branding.js";
+export type { SetBrandingInput, EventImageAssetPlaceholders } from "./branding.js";
 export type { RenderTemplateInput, RenderOptions } from "./render.js";
 export type { TemplateSourceInput } from "./validate.js";

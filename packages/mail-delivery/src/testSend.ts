@@ -5,6 +5,7 @@ import {
   previewTemplate,
   renderTemplate,
   resolveBrandingFromEvent,
+  resolveEventImageAssetVars,
   resolvePreviewEventTimeZone,
   resolveTemplateById,
 } from "@admitto/mail-templates";
@@ -50,6 +51,7 @@ export async function sendTestEmail(
       });
       const resolved = await resolveTemplateById(params.templateId, params.eventId, prisma);
       const branding = resolveBrandingFromEvent(event);
+      const customAssets = await resolveEventImageAssetVars(params.eventId, prisma);
       const vars = {
         ...DEFAULT_SAMPLE_VARS,
         event_name: event.title,
@@ -57,6 +59,7 @@ export async function sendTestEmail(
         event_location: event.location ?? "",
         logo_url: branding.logo_url,
         header_image_url: branding.header_image_url,
+        ...customAssets.vars,
       };
       rendered = renderTemplate(
         {
@@ -64,7 +67,7 @@ export async function sendTestEmail(
           compiledHtml: resolved.compiledHtmlTemplate,
         },
         vars,
-        { baseUrl },
+        { baseUrl, customAssetPlaceholders: customAssets.names },
       );
     } else {
       rendered = await previewTemplate(params.eventId, prisma, undefined, {

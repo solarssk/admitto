@@ -57,6 +57,10 @@ export interface EventSettingsDto {
   created_at: string;
   /** True when the event has zero real activity and can be permanently deleted. */
   is_deletable: boolean;
+  /** Attendees currently checked in — drives the "Revoke all check-ins" Danger Zone row. */
+  admitted_count: number;
+  /** Individual issued/returned item hand-outs across all attendees — drives "Revoke all items issued". */
+  issued_items_count: number;
   organization_name: string;
   active_items: Array<{ id: string; name: string; enabled: boolean }>;
   /** Event's own branding overrides — null means "inherited from organization". */
@@ -307,17 +311,11 @@ export interface BulkResendResponse {
   failed: number;
 }
 
-/** Admin SPA DTOs for event item configuration (mirror of web API). */
-export interface EventItemContentDto {
-  label: string;
-  source_field: string;
-  type?: "text" | "select" | "boolean";
-  required?: boolean;
-  options?: string[];
-}
-
+/** Admin SPA DTOs for event item configuration (mirror of web API).
+ * `content_fields` references EventCustomField rows by source_field (see below) - it does not
+ * embed field definitions. */
 export interface EventItemConfigDto {
-  contents?: EventItemContentDto[];
+  content_fields?: string[];
   requires_return?: boolean;
   issue_on_checkin?: boolean;
 }
@@ -335,6 +333,57 @@ export interface EventItemDto {
 
 export interface EventItemsListResponse {
   items: EventItemDto[];
+}
+
+/** A named branding image asset, usable as `{{token}}` in email templates. */
+export interface EventImageAssetDto {
+  id: string;
+  token: string;
+  filename: string;
+  url: string;
+  size_bytes: number;
+  mime_type: string;
+  created_at: string;
+}
+
+export interface EventImageAssetsListResponse {
+  items: EventImageAssetDto[];
+}
+
+export type EventCustomFieldType = "text" | "select" | "boolean";
+
+/** A definition in the event's custom attendee data field registry (dietary, shirt size, ...) -
+ * the single source of truth for a field; EventItem.config.content_fields only references these
+ * by source_field. */
+export interface EventCustomFieldDto {
+  id: string;
+  source_field: string;
+  label: string;
+  type: EventCustomFieldType;
+  required: boolean;
+  options: string[] | null;
+  created_at: string;
+}
+
+export interface EventCustomFieldsListResponse {
+  items: EventCustomFieldDto[];
+}
+
+export interface CreateEventCustomFieldBody {
+  source_field: string;
+  label: string;
+  type?: EventCustomFieldType;
+  required?: boolean;
+  options?: string[];
+}
+
+/** `source_field` is immutable after create - see EventCustomFieldDto. */
+export interface UpdateEventCustomFieldPatch {
+  label?: string;
+  type?: EventCustomFieldType;
+  required?: boolean;
+  /** null clears a previous select's options; omit to leave options untouched. */
+  options?: string[] | null;
 }
 
 export interface CreateEventItemBody {
@@ -375,6 +424,9 @@ export interface EventTemplateDto {
   source: "event" | "organization" | "builtin";
   allowed_placeholders: string[];
   required_url_placeholders: string[];
+  /** Subset of `allowed_placeholders` that render as an image — the editor inserts a ready
+   * `<img>`/`<mj-image>` element for these instead of a bare `{{name}}` token. */
+  image_placeholders: string[];
 }
 
 export interface SaveTemplateBody {

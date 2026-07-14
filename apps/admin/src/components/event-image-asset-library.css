@@ -1,0 +1,210 @@
+/* Upload images card ------------------------------------------------- */
+
+.image-asset-library__dropzone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 140px;
+  margin-top: var(--space-4);
+  padding: var(--space-6) var(--space-4);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: center;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.image-asset-library__dropzone:hover {
+  border-color: var(--primary);
+  background: var(--primary-tint);
+}
+
+.image-asset-library__dropzone:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.image-asset-library__dropzone--dragging {
+  border-color: var(--primary);
+  background: var(--primary-tint);
+}
+
+.image-asset-library__dropzone--busy,
+.image-asset-library__dropzone--disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.image-asset-library__dropzone i {
+  font-size: 2rem;
+  color: var(--text-muted);
+}
+
+.image-asset-library__dropzone-title {
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 90%;
+}
+
+.image-asset-library__dropzone-hint {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.image-asset-library__file-input {
+  display: none;
+}
+
+.image-asset-library__add-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.image-asset-library__token-field {
+  flex: 1;
+  min-width: 220px;
+}
+
+/* Mirrors .at-field's label + control stack so the button lines up with the
+   Name input itself, not with the bottom of its hint/error line below. */
+.image-asset-library__add-btn-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.image-asset-library__add-btn-spacer {
+  visibility: hidden;
+}
+
+/* Your images card ------------------------------------------------- */
+
+/* Fixed column counts per breakpoint (same 4 -> 2 -> 1 pattern as
+   .overview-stats) rather than auto-fill/auto-fit + 1fr: with few images,
+   letting a track's 1fr stretch to fill the row makes a single card sprawl
+   across the whole page width. A defined column count keeps card size
+   sane regardless of how many images exist. */
+.image-asset-library__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+@media (max-width: 900px) {
+  .image-asset-library__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .image-asset-library__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.image-asset-library__card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  overflow: hidden;
+}
+
+.image-asset-library__card-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 140px;
+  padding: var(--space-2);
+  background: var(--surface-sunken);
+  color: var(--text-disabled);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.image-asset-library__card-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.image-asset-library__card-thumb i {
+  font-size: 1.75rem;
+}
+
+.image-asset-library__card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+}
+
+.image-asset-library__card-name {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-asset-library__card-size {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-top: -2px;
+}
+
+.image-asset-library__token {
+  display: block;
+  margin-top: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  padding: var(--pad-control-y) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--primary-active);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-asset-library__card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.image-asset-library__copy-btn {
+  flex: 1;
+}
+
+.image-asset-library__delete-btn {
+  flex: none;
+  width: var(--control-h-sm);
+  padding: 0;
+}
+
+.image-asset-library__delete-btn:hover:not(:disabled) {
+  border-color: var(--status-error);
+  color: var(--status-error);
+  background: var(--status-error-tint);
+}

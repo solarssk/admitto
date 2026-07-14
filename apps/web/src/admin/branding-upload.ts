@@ -106,7 +106,11 @@ export async function saveBrandingUpload(file: File, orgId: string): Promise<{ u
   return { url: `/uploads/${orgId}/${filename}` };
 }
 
-/** Event-scoped branding upload — same validation as org logo; no HTTP caller yet. */
+/**
+ * Event-scoped image upload — same validation as org logo. Used both by
+ * handlePostEventBrandingUpload (event logo/header) and handleCreateEventImageAsset (named
+ * branding assets referenced as {{token}} in email templates).
+ */
 export async function saveEventUpload(
   file: File,
   orgId: string,

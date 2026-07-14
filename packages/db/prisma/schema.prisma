@@ -50,6 +50,8 @@ model Event {
   action_logs      AttendeeActionLog[]
   contacts         EventContact[]
   resources        EventResource[]
+  image_assets     EventImageAsset[]
+  custom_fields    EventCustomField[]
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
@@ -84,6 +86,48 @@ model EventResource {
   updated_at  DateTime            @updatedAt
 
   @@index([event_id, sort_order])
+}
+
+// Named image assets uploaded per event (branding "asset library" — v0.4.13 batch 05). Each
+// gets a short {{token}} usable in Communication email templates (see @admitto/mail-templates
+// placeholders.ts), resolved to `url` at render time exactly like the built-in
+// logo_url/header_image_url. Distinct from Event.logo_url/header_image_url, which remain
+// dedicated override fields (resolved event -> organization -> empty) - this table is purely
+// for ad-hoc images referenced by name in emails, no fallback/inheritance semantics.
+model EventImageAsset {
+  id         String   @id @default(cuid())
+  event_id   String
+  event      Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  token      String
+  filename   String
+  url        String
+  size_bytes Int
+  mime_type  String
+  created_at DateTime @default(now())
+
+  @@unique([event_id, token])
+  @@index([event_id])
+}
+
+// Registry of arbitrary attendee attributes an event wants to collect (dietary, shirt size,
+// parking, ...) - the single source of truth for a field's definition. Replaces the old model
+// where a field only existed as a `contents` row embedded in some EventItem.config (ADR 0025);
+// an EventItem now only holds `content_fields: string[]` referencing rows here, used purely to
+// say "show this field as an operator hint on this item" (packages/tickets/event-item-contents.ts).
+model EventCustomField {
+  id           String   @id @default(cuid())
+  event_id     String
+  event        Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  source_field String
+  label        String
+  type         String   @default("text")
+  options      Json?
+  required     Boolean  @default(false)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@unique([event_id, source_field])
+  @@index([event_id])
 }
 
 enum EventResourceType {
@@ -247,6 +291,7 @@ model AttendeeItemState {
 
   @@unique([attendee_id, event_item_id])
   @@index([attendee_id])
+  @@index([event_item_id, state])
 }
 
 // Append-only operator notes — author + timestamp preserved — ADR 0010.

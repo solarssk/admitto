@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   ALLOWED_PLACEHOLDERS,
   REQUIRED_URL_PLACEHOLDERS,
+  IMAGE_PLACEHOLDERS,
   DEFAULT_BODY_MJML,
   DEFAULT_SUBJECT_TEMPLATE,
   DEFAULT_SAMPLE_VARS,
@@ -17,6 +18,7 @@ import {
   formatEventDate,
   renderTemplate,
   resolveBrandingFromEvent,
+  resolveEventImageAssetVars,
   createMailTemplate,
   setMailTemplate,
   validateTemplate,
@@ -46,6 +48,7 @@ import {
   requireEventId,
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
+import { acquireEventImageAssetsLock } from "./event-image-assets-routes.js";
 
 /** Max character length for `body_template` (schema); shared with wire byte cap below. */
 export const TEMPLATE_BODY_CHAR_LIMIT = 200_000;
@@ -91,6 +94,9 @@ export type EventTemplateDto = {
   source: TemplateSource;
   allowed_placeholders: string[];
   required_url_placeholders: string[];
+  /** Subset of `allowed_placeholders` that render as an image — the editor inserts a ready
+   * `<img>`/`<mj-image>` element for these instead of a bare `{{name}}` token. */
+  image_placeholders: string[];
 };
 
 /** Paginated delivery log response for GET /deliveries. */
@@ -101,16 +107,26 @@ export type EventDeliveriesListDto = {
   pageSize: number;
 };
 
-const ALLOWED_PLACEHOLDER_LIST = [...ALLOWED_PLACEHOLDERS].sort();
-const REQUIRED_URL_PLACEHOLDER_LIST = [...REQUIRED_URL_PLACEHOLDERS].sort();
+const ALLOWED_PLACEHOLDER_LIST = [...ALLOWED_PLACEHOLDERS].sort((a, b) => a.localeCompare(b));
+const REQUIRED_URL_PLACEHOLDER_LIST = [...REQUIRED_URL_PLACEHOLDERS].sort((a, b) =>
+  a.localeCompare(b),
+);
+const IMAGE_PLACEHOLDER_LIST = [...IMAGE_PLACEHOLDERS].sort((a, b) => a.localeCompare(b));
 const ALLOWED_DELIVERY_STATUSES = new Set<string>(EMAIL_DELIVERY_STATUS);
 const ALLOWED_DELIVERY_PURPOSES = new Set<string>(EMAIL_DELIVERY_PURPOSE);
 
-/** Collect template source validation errors for API 400 responses. */
-function collectTemplateSourceErrors(subject: string, body: string): string[] {
+/** Collect template source validation errors for API 400 responses. Fetches the event's custom
+ * image asset tokens (branding asset library) so a saved {{token}} isn't falsely flagged unknown. */
+async function collectTemplateSourceErrors(
+  db: PrismaClient,
+  eventId: string,
+  subject: string,
+  body: string,
+): Promise<string[]> {
   const errors: string[] = [];
+  const { names: extraAllowed } = await resolveEventImageAssetVars(eventId, db);
 
-  for (const unknown of validateTemplate({ subject, body })) {
+  for (const unknown of validateTemplate({ subject, body }, extraAllowed)) {
     errors.push(`Unknown placeholder: ${unknown}`);
   }
   for (const missing of findMissingRequiredPlaceholders(subject, body)) {
@@ -118,7 +134,7 @@ function collectTemplateSourceErrors(subject: string, body: string): string[] {
   }
 
   try {
-    assertValidTemplate({ subject, body });
+    assertValidTemplate({ subject, body }, extraAllowed);
   } catch (err) {
     if (err instanceof UnknownPlaceholdersError) {
       // already reported via validateTemplate
@@ -220,6 +236,7 @@ async function renderDraftPreview(
     include: { organization: true },
   });
   const branding = resolveBrandingFromEvent(event);
+  const customAssets = await resolveEventImageAssetVars(eventId, db);
 
   const vars = {
     ...DEFAULT_SAMPLE_VARS,
@@ -228,9 +245,14 @@ async function renderDraftPreview(
     event_location: event.location ?? "",
     logo_url: branding.logo_url,
     header_image_url: branding.header_image_url,
+    ...customAssets.vars,
   };
 
-  return renderTemplate({ subject, compiledHtml }, vars, { baseUrl });
+  return renderTemplate(
+    { subject, compiledHtml },
+    vars,
+    { baseUrl, customAssetPlaceholders: customAssets.names },
+  );
 }
 
 /** GET /api/admin/events/:eventId/template */
@@ -242,11 +264,17 @@ export async function handleGetEventTemplate(c: Context, db: PrismaClient): Prom
   if (forbidden) return forbidden;
 
   const template = await resolveEventTemplateForEditor(db, eventId);
+  const { names: customAssetNames } = await resolveEventImageAssetVars(eventId, db);
 
   const dto: EventTemplateDto = {
     ...template,
-    allowed_placeholders: ALLOWED_PLACEHOLDER_LIST,
+    allowed_placeholders: [...ALLOWED_PLACEHOLDER_LIST, ...customAssetNames].sort((a, b) =>
+      a.localeCompare(b),
+    ),
     required_url_placeholders: REQUIRED_URL_PLACEHOLDER_LIST,
+    image_placeholders: [...IMAGE_PLACEHOLDER_LIST, ...customAssetNames].sort((a, b) =>
+      a.localeCompare(b),
+    ),
   };
 
   return c.json(dto);
@@ -267,13 +295,17 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const sourceErrors = collectTemplateSourceErrors(body.subject_template, body.body_template);
+  const sourceErrors = await collectTemplateSourceErrors(db, eventId, body.subject_template, body.body_template);
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
   }
 
   try {
     await db.$transaction(async (tx) => {
+      // Serializes against event-image-assets-routes.ts's delete handler, which takes the same
+      // lock before its asset_in_use recheck - without it, a delete could commit between that
+      // handler's check and this save (Postgres default isolation is READ COMMITTED).
+      await acquireEventImageAssetsLock(tx, eventId);
       await setMailTemplate(
         { scopeType: "event", scopeId: eventId },
         {
@@ -337,7 +369,7 @@ export async function handlePreviewEventTemplate(
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const sourceErrors = collectTemplateSourceErrors(body.subject_template, body.body_template);
+  const sourceErrors = await collectTemplateSourceErrors(db, eventId, body.subject_template, body.body_template);
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
   }
@@ -765,13 +797,17 @@ export async function handlePutEventTemplateById(
   const templateBody = body.body_template ?? existing.body_template;
   const format = (body.template_format ?? existing.template_format) as TemplateFormat;
 
-  const sourceErrors = collectTemplateSourceErrors(subject, templateBody);
+  const sourceErrors = await collectTemplateSourceErrors(db, eventId, subject, templateBody);
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
   }
 
   try {
     await db.$transaction(async (tx) => {
+      // Serializes against event-image-assets-routes.ts's delete handler, which takes the same
+      // lock before its asset_in_use recheck - without it, a delete could commit between that
+      // handler's check and this save (Postgres default isolation is READ COMMITTED).
+      await acquireEventImageAssetsLock(tx, eventId);
       await setMailTemplate(
         { scopeType: "event", scopeId: eventId, name: existing.name },
         {
@@ -846,7 +882,7 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
     body.body_template ??
     (format === "mjml" ? EMPTY_TEMPLATE_BODY_MJML : EMPTY_TEMPLATE_BODY_HTML);
 
-  const sourceErrors = collectTemplateSourceErrors(subject, templateBody);
+  const sourceErrors = await collectTemplateSourceErrors(db, eventId, subject, templateBody);
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
   }
@@ -854,6 +890,11 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
   for (let attempt = 0; attempt < CREATE_TEMPLATE_MAX_ATTEMPTS; attempt++) {
     try {
       const created = await db.$transaction(async (tx) => {
+        // Serializes against event-image-assets-routes.ts's delete handler, which takes the
+        // same lock before its asset_in_use recheck - without it, a delete could commit between
+        // that handler's check and this create (Postgres default isolation is READ COMMITTED).
+        await acquireEventImageAssetsLock(tx, eventId);
+
         const eventCount = await tx.mailTemplate.count({
           where: { scope_type: "event", scope_id: eventId },
         });
@@ -970,7 +1011,7 @@ export async function handlePreviewEventTemplateById(
   const templateBody = body.body_template ?? existing.body_template;
   const format = (body.template_format ?? existing.template_format) as TemplateFormat;
 
-  const sourceErrors = collectTemplateSourceErrors(subject, templateBody);
+  const sourceErrors = await collectTemplateSourceErrors(db, eventId, subject, templateBody);
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
   }

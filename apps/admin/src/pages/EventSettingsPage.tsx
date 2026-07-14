@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useBlocker, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
-import { Badge, Button, Card, EmptyState, Input, PageHeader, Tabs, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, Input, PageHeader, useToast } from "@admitto/ui";
 import {
   ApiError,
   archiveEvent,
@@ -8,6 +8,8 @@ import {
   exportEventPii,
   fetchEventSettings,
   patchEvent,
+  revokeAllCheckIns,
+  revokeAllItemsIssued,
   unarchiveEvent,
   uploadEventBrandingFile,
 } from "../api/client.js";
@@ -15,8 +17,11 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { EventSettingsDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
+import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { EventImageAssetLibrary } from "../components/EventImageAssetLibrary.js";
 import { LogoUploadZone } from "../components/LogoUploadZone.js";
+import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
@@ -36,7 +41,6 @@ type SettingsForm = {
   location: string;
   capacity: string;
   logoUrl: string;
-  headerImageUrl: string;
 };
 
 type SettingsPatch = Partial<{
@@ -46,10 +50,27 @@ type SettingsPatch = Partial<{
   location: string | null;
   capacity: number | null;
   logo_url: string | null;
-  header_image_url: string | null;
 }>;
 
 const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, branding, and access controls.";
+
+// Extra "don't act on reflex" pause before the confirm button on the bulk revoke dialogs
+// unlocks — these affect every attendee on the event at once, so they get a brief arming
+// delay (visualised as a depleting bar under the button) on top of the confirmation dialog
+// itself. Archive/Unarchive stay a plain Yes/No (already reversible); Delete already has its
+// own stronger typed-confirmation gate.
+const BULK_REVOKE_CONFIRM_DELAY_SECONDS = 10;
+
+// Danger Zone actions reload this page's data on success (to refresh their own live counts),
+// which silently discards any unsaved edits elsewhere on the page (e.g. a title/date change on
+// the General tab not yet saved) - warn inline in the confirm dialog rather than let it vanish
+// with no trace (bot review).
+const UNSAVED_CHANGES_WARNING = " You also have unsaved changes elsewhere on this page — they'll be lost when this finishes.";
+
+/** English plural suffix for a count — used by the Danger Zone's toasts and row descriptions. */
+function pluralSuffix(count: number): string {
+  return count === 1 ? "" : "s";
+}
 
 function toForm(data: EventSettingsDto): SettingsForm {
   return {
@@ -59,7 +80,6 @@ function toForm(data: EventSettingsDto): SettingsForm {
     location: data.location ?? "",
     capacity: data.capacity?.toString() ?? "",
     logoUrl: data.logo_url ?? "",
-    headerImageUrl: data.header_image_url ?? "",
   };
 }
 
@@ -87,9 +107,6 @@ function buildSettingsPatch(form: SettingsForm, original: SettingsForm): Setting
     patch.capacity = parseCapacityInput(form.capacity);
   }
   if (form.logoUrl !== original.logoUrl) patch.logo_url = form.logoUrl.trim() || null;
-  if (form.headerImageUrl !== original.headerImageUrl) {
-    patch.header_image_url = form.headerImageUrl.trim() || null;
-  }
   return patch;
 }
 
@@ -137,10 +154,13 @@ export function EventSettingsPage() {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveMode, setArchiveMode] = useState<"archive" | "unarchive">("archive");
   const [logoUploading, setLogoUploading] = useState(false);
-  const [headerUploading, setHeaderUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [revokingCheckins, setRevokingCheckins] = useState(false);
+  const [revokeCheckinsOpen, setRevokeCheckinsOpen] = useState(false);
+  const [revokingItems, setRevokingItems] = useState(false);
+  const [revokeItemsOpen, setRevokeItemsOpen] = useState(false);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
   const [tab, setTab] = useState<EventSettingsTab>(initialTab);
@@ -168,6 +188,9 @@ export function EventSettingsPage() {
 
   const dirty =
     form !== null && original !== null && JSON.stringify(form) !== JSON.stringify(original);
+  let saveButtonLabel = "Save changes";
+  if (saving) saveButtonLabel = "Saving…";
+  else if (logoUploading) saveButtonLabel = "Uploading…";
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       dirty && currentLocation.pathname !== nextLocation.pathname,
@@ -309,6 +332,48 @@ export function EventSettingsPage() {
     }
   }
 
+  async function handleRevokeCheckinsConfirm() {
+    if (!eventId) return;
+    setRevokingCheckins(true);
+    try {
+      const { revokedCount } = await revokeAllCheckIns(eventId);
+      addToast(
+        revokedCount > 0
+          ? `Revoked check-in for ${revokedCount} attendee${pluralSuffix(revokedCount)}`
+          : "No check-ins to revoke",
+        "success",
+      );
+      setRevokeCheckinsOpen(false);
+      await load();
+      await refreshLayoutEvent?.();
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Failed to revoke check-ins"), "error");
+    } finally {
+      setRevokingCheckins(false);
+    }
+  }
+
+  async function handleRevokeItemsConfirm() {
+    if (!eventId) return;
+    setRevokingItems(true);
+    try {
+      const { revokedCount } = await revokeAllItemsIssued(eventId);
+      addToast(
+        revokedCount > 0
+          ? `Reset ${revokedCount} issued item${pluralSuffix(revokedCount)} back to pending`
+          : "No items to revoke",
+        "success",
+      );
+      setRevokeItemsOpen(false);
+      await load();
+      await refreshLayoutEvent?.();
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Failed to revoke items"), "error");
+    } finally {
+      setRevokingItems(false);
+    }
+  }
+
   if (!eventId) return <p>Missing event.</p>;
 
   if (loading && !event) {
@@ -338,6 +403,18 @@ export function EventSettingsPage() {
 
   if (!event || !form) return null;
 
+  let revokeCheckinsTooltip: string | undefined;
+  if (!isSa) revokeCheckinsTooltip = "Superadmin only";
+  else if (event.admitted_count === 0) revokeCheckinsTooltip = "No check-ins to revoke";
+
+  let revokeItemsTooltip: string | undefined;
+  if (!isSa) revokeItemsTooltip = "Superadmin only";
+  else if (event.issued_items_count === 0) revokeItemsTooltip = "No items to revoke";
+
+  let deleteEventTooltip: string | undefined;
+  if (!isSa) deleteEventTooltip = "Superadmin only";
+  else if (!event.is_deletable) deleteEventTooltip = "This event has data and cannot be deleted";
+
   return (
     <div className={`event-settings-page screen${isArchived ? " event-settings--archived" : ""}`}>
       <PageHeader
@@ -348,17 +425,17 @@ export function EventSettingsPage() {
             <span className="save-actions">
               <Button
                 variant="primary"
-                disabled={!dirty || saving || logoUploading || headerUploading}
+                disabled={!dirty || saving || logoUploading}
                 onClick={() => void handleSave()}
               >
-                {saving ? "Saving…" : logoUploading || headerUploading ? "Uploading…" : "Save changes"}
+                {saveButtonLabel}
               </Button>
             </span>
           ) : undefined
         }
       />
 
-      <Tabs
+      <ScrollFadeTabs
         value={tab}
         onChange={handleTabChange}
         tabs={EVENT_SETTINGS_TABS.filter((t) => isSa || !SUPERADMIN_ONLY_TABS.has(t.id))}
@@ -479,39 +556,37 @@ export function EventSettingsPage() {
       <EventSettingsTabPanel tab="branding" activeTab={tab} visited={visitedTabs} label="Branding">
         <Card title="Event branding" className="event-settings-card">
           <p className="field-hint">
-            Replace the organization&apos;s logo and header image just for this event. Leave a
-            field blank to keep using the organization&apos;s branding.
+            Use a different logo just for this event, or leave it blank to use the
+            organization&apos;s logo.
           </p>
-          <div className="settings-field-stack">
-            <div className="settings-field-group">
-              <LogoUploadZone
-                label="Event logo"
-                hint="PNG, JPG, WebP · max 2 MB · leave blank to inherit the organization logo"
-                value={form.logoUrl}
-                disabled={isArchived || saving}
-                onChange={(url) => setForm((prev) => prev && { ...prev, logoUrl: url })}
-                uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
-                onUploadingChange={setLogoUploading}
-              />
-            </div>
-            <div className="settings-field-group">
-              <LogoUploadZone
-                label="Event header image"
-                hint="PNG, JPG, WebP · max 2 MB · wide banner, recommended 1200×300 px"
-                value={form.headerImageUrl}
-                disabled={isArchived || saving}
-                onChange={(url) => setForm((prev) => prev && { ...prev, headerImageUrl: url })}
-                uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
-                onUploadingChange={setHeaderUploading}
-              />
-            </div>
-          </div>
+          <LogoUploadZone
+            label="Event logo"
+            hideLabel
+            hint="PNG, JPG, WebP · max 2 MB · leave blank to use the organization's logo"
+            value={form.logoUrl}
+            disabled={isArchived || saving}
+            onChange={(url) => setForm((prev) => prev && { ...prev, logoUrl: url })}
+            uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
+            onUploadingChange={setLogoUploading}
+          />
           {isArchived && (
             <p className="field-hint event-settings-archived-note">
               This event is archived - branding cannot be changed.
             </p>
           )}
         </Card>
+
+        {isSa ? (
+          <EventImageAssetLibrary eventId={eventId} disabled={isArchived} />
+        ) : (
+          <Card title="Image assets" className="event-settings-card">
+            <EmptyState
+              icon={<i className="ti ti-photo" aria-hidden="true" />}
+              title="Superadmin only"
+              description="Uploading and managing named branding images for this event's email templates is restricted to superadmins."
+            />
+          </Card>
+        )}
       </EventSettingsTabPanel>
 
       <EventSettingsTabPanel tab="wallet" activeTab={tab} visited={visitedTabs} label="Wallet">
@@ -541,6 +616,110 @@ export function EventSettingsPage() {
         <div className="at-card danger-zone-panel">
           <div className="at-card__header danger-zone-panel__header">
             <div className="at-card__title">Danger zone</div>
+          </div>
+
+          <div className="danger-zone__item">
+            <div className="danger-zone__info">
+              <div className="danger-zone__title">Export personal data</div>
+              <p className="danger-zone__desc">
+                Downloads every attendee&apos;s personal data as a CSV file (a simple
+                spreadsheet). Saved in the history log.
+              </p>
+            </div>
+            <ArchivedGuard
+              event={null}
+              reasonId="export-pii-reason"
+              disabled={!isSa || exporting}
+              tooltip={isSa ? undefined : "Superadmin only"}
+            >
+              {(guard) => (
+                <Button
+                  variant="secondary"
+                  icon={<i className="ti ti-file-text" aria-hidden="true" />}
+                  {...guard}
+                  onClick={() => void handleExportPii()}
+                >
+                  {exporting ? "Exporting…" : "Export personal data"}
+                </Button>
+              )}
+            </ArchivedGuard>
+          </div>
+
+          <div className="danger-zone__item">
+            <div className="danger-zone__info">
+              <div className="danger-zone__title">Revoke all check-ins</div>
+              <p className="danger-zone__desc">
+                {event.admitted_count > 0
+                  ? `Reverses check-in for all ${event.admitted_count} currently checked-in attendee${pluralSuffix(event.admitted_count)}. They can check in again afterwards.`
+                  : "No attendees are currently checked in."}
+              </p>
+            </div>
+            <ArchivedGuard
+              event={event}
+              reasonId="revoke-checkins-reason"
+              disabled={!isSa || event.admitted_count === 0 || revokingCheckins}
+              tooltip={revokeCheckinsTooltip}
+            >
+              {(guard) => (
+                <Button
+                  variant="danger"
+                  icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
+                  {...guard}
+                  onClick={() => setRevokeCheckinsOpen(true)}
+                >
+                  Revoke all check-ins
+                </Button>
+              )}
+            </ArchivedGuard>
+          </div>
+
+          <div className="danger-zone__item">
+            <div className="danger-zone__info">
+              <div className="danger-zone__title">Revoke all items issued</div>
+              <p className="danger-zone__desc">
+                {event.issued_items_count > 0
+                  ? `Resets all ${event.issued_items_count} issued item${pluralSuffix(event.issued_items_count)} back to pending, for every attendee. They can be handed out again afterwards.`
+                  : "No items have been issued yet."}
+              </p>
+            </div>
+            <ArchivedGuard
+              event={event}
+              reasonId="revoke-items-reason"
+              disabled={!isSa || event.issued_items_count === 0 || revokingItems}
+              tooltip={revokeItemsTooltip}
+            >
+              {(guard) => (
+                <Button
+                  variant="danger"
+                  icon={<i className="ti ti-package-off" aria-hidden="true" />}
+                  {...guard}
+                  onClick={() => setRevokeItemsOpen(true)}
+                >
+                  Revoke all items issued
+                </Button>
+              )}
+            </ArchivedGuard>
+          </div>
+
+          <div className="danger-zone__item">
+            <div className="danger-zone__info">
+              <div className="danger-zone__title">Revoke all Wallet passes</div>
+              <p className="danger-zone__desc">
+                Apple and Google Wallet passes aren&apos;t built yet - planned for a future
+                release.
+              </p>
+            </div>
+            <ArchivedGuard event={null} reasonId="wallet-revoke-reason" disabled tooltip="Not built yet">
+              {(guard) => (
+                <Button
+                  variant="secondary"
+                  icon={<i className="ti ti-wallet-off" aria-hidden="true" />}
+                  {...guard}
+                >
+                  Revoke all Wallet passes
+                </Button>
+              )}
+            </ArchivedGuard>
           </div>
 
           <div className="danger-zone__item">
@@ -578,34 +757,18 @@ export function EventSettingsPage() {
                 </Button>
               )
             ) : (
-              <Button
-                variant="danger"
-                disabled
-                title="Superadmin only"
-                icon={<i className="ti ti-archive" aria-hidden="true" />}
-              >
-                Archive event
-              </Button>
+              <ArchivedGuard event={null} reasonId="archive-event-reason" disabled tooltip="Superadmin only">
+                {(guard) => (
+                  <Button
+                    variant="danger"
+                    icon={<i className="ti ti-archive" aria-hidden="true" />}
+                    {...guard}
+                  >
+                    Archive event
+                  </Button>
+                )}
+              </ArchivedGuard>
             )}
-          </div>
-
-          <div className="danger-zone__item">
-            <div className="danger-zone__info">
-              <div className="danger-zone__title">Export personal data</div>
-              <p className="danger-zone__desc">
-                Downloads every attendee&apos;s personal data as a CSV file (a simple
-                spreadsheet). Saved in the history log.
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              disabled={!isSa || exporting}
-              title={isSa ? undefined : "Superadmin only"}
-              icon={<i className="ti ti-file-text" aria-hidden="true" />}
-              onClick={() => void handleExportPii()}
-            >
-              {exporting ? "Exporting…" : "Export personal data"}
-            </Button>
           </div>
 
           <div className="danger-zone__item">
@@ -617,24 +780,26 @@ export function EventSettingsPage() {
                   : "Only events with no attendees, custom items, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted."}
               </p>
             </div>
-            <Button
-              variant="danger"
+            <ArchivedGuard
+              event={null}
+              reasonId="delete-event-reason"
               disabled={!isSa || !event.is_deletable || deleting}
-              title={
-                !isSa
-                  ? "Superadmin only"
-                  : event.is_deletable
-                    ? undefined
-                    : "This event has data and cannot be deleted"
-              }
-              icon={<i className="ti ti-trash" aria-hidden="true" />}
-              onClick={() => {
-                setDeleteError(null);
-                setDeleteOpen(true);
-              }}
+              tooltip={deleteEventTooltip}
             >
-              Delete event
-            </Button>
+              {(guard) => (
+                <Button
+                  variant="danger"
+                  icon={<i className="ti ti-trash" aria-hidden="true" />}
+                  {...guard}
+                  onClick={() => {
+                    setDeleteError(null);
+                    setDeleteOpen(true);
+                  }}
+                >
+                  Delete event
+                </Button>
+              )}
+            </ArchivedGuard>
           </div>
         </div>
 
@@ -646,12 +811,41 @@ export function EventSettingsPage() {
       </EventSettingsTabPanel>
 
       <ConfirmDialog
+        open={revokeCheckinsOpen}
+        title="Revoke all check-ins?"
+        message={
+          `This will revoke check-in for ${event.admitted_count} attendee${pluralSuffix(event.admitted_count)}. They can check in again afterwards.` +
+          (dirty ? UNSAVED_CHANGES_WARNING : "")
+        }
+        confirmLabel="Revoke all check-ins"
+        confirmVariant="danger"
+        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
+        loading={revokingCheckins}
+        onConfirm={() => void handleRevokeCheckinsConfirm()}
+        onCancel={() => setRevokeCheckinsOpen(false)}
+      />
+      <ConfirmDialog
+        open={revokeItemsOpen}
+        title="Revoke all items issued?"
+        message={
+          `This will reset ${event.issued_items_count} issued item${pluralSuffix(event.issued_items_count)} back to pending. They can be handed out again afterwards.` +
+          (dirty ? UNSAVED_CHANGES_WARNING : "")
+        }
+        confirmLabel="Revoke all items issued"
+        confirmVariant="danger"
+        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
+        loading={revokingItems}
+        onConfirm={() => void handleRevokeItemsConfirm()}
+        onCancel={() => setRevokeItemsOpen(false)}
+      />
+      <ConfirmDialog
         open={archiveOpen}
         title={archiveMode === "archive" ? "Archive this event?" : "Unarchive this event?"}
         message={
-          archiveMode === "archive"
+          (archiveMode === "archive"
             ? "This event will become fully read-only, including check-in. Attendee data is kept. Only a superadmin can undo this."
-            : "This event will become active again and editable in admin."
+            : "This event will become active again and editable in admin.") +
+          (dirty ? UNSAVED_CHANGES_WARNING : "")
         }
         confirmLabel={archiveMode === "archive" ? "Archive event" : "Unarchive event"}
         confirmVariant={archiveMode === "archive" ? "danger" : "primary"}

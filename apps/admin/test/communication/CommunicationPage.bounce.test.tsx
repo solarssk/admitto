@@ -55,6 +55,7 @@ const templatePayload = {
   source: "event" as const,
   allowed_placeholders: ["first_name"],
   required_url_placeholders: [],
+  image_placeholders: [],
   subject_template: "Hello",
   body_template: "<p>Hi</p>",
   template_format: "html" as const,

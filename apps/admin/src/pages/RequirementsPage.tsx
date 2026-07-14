@@ -4,6 +4,7 @@ import { Button, Card, EmptyState, IconButton, PageHeader, Switch, useToast } fr
 import {
   ApiError,
   createEventItem,
+  fetchEventCustomFields,
   fetchEventItems,
   fetchOpsConfig,
   updateEventItem,
@@ -11,11 +12,12 @@ import {
 } from "../api/client.js";
 import { isBadgeItemUsable } from "@admitto/tickets";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventDto, EventItemDto, OpsConfigDto } from "../api/types.js";
+import type { EventCustomFieldDto, EventDto, EventItemDto, OpsConfigDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
+import { EventCustomFieldsCard } from "../requirements/EventCustomFieldsCard.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
 import { DEFAULT_EVENT_ITEM_ICON } from "../requirements/IconPicker.js";
 import { slugifyItemKey, uniqueItemKey } from "../requirements/itemKey.js";
@@ -30,6 +32,7 @@ export function RequirementsPage() {
   const listAbortRef = useRef<AbortController | null>(null);
 
   const [items, setItems] = useState<EventItemDto[]>([]);
+  const [customFields, setCustomFields] = useState<EventCustomFieldDto[]>([]);
   const [opsConfig, setOpsConfig] = useState<OpsConfigDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -44,8 +47,8 @@ export function RequirementsPage() {
 
   const addKeyPreview = uniqueItemKey(addLabel, items.map((i) => i.key));
 
-  const [opsSaving, setOpsSaving] = useState(false);
   const { ids: togglingIds, start: startToggling, finish: finishToggling } = useInFlightIds();
+  const { ids: opsTogglingIds, start: startOpsToggle, finish: finishOpsToggle } = useInFlightIds();
 
   function closeAddModal() {
     setAddOpen(false);
@@ -55,10 +58,14 @@ export function RequirementsPage() {
 
   useModalFocusTrap(addPanelRef, addOpen, closeAddModal);
 
+  const hasLoadedRef = useRef(false);
+
   useEffect(() => {
     setItems([]);
+    setCustomFields([]);
     setOpsConfig(null);
     setSelectedItem(null);
+    hasLoadedRef.current = false;
   }, [eventId]);
 
   const load = useCallback(async () => {
@@ -68,19 +75,31 @@ export function RequirementsPage() {
     const ac = new AbortController();
     listAbortRef.current = ac;
 
-    setLoading(true);
+    // Only show the Loading… placeholder on the true first load for this
+    // event — a reloadToken-triggered refresh after add/edit/delete already
+    // has valid rows on screen, so blanking them out for the refetch just
+    // reads as a flash/jump instead of a smooth in-place update.
+    if (!hasLoadedRef.current) setLoading(true);
     try {
-      const [itemRows, ops] = await Promise.all([
+      const [itemRows, fields, ops] = await Promise.all([
         fetchEventItems(eventId, ac.signal),
+        fetchEventCustomFields(eventId, ac.signal),
         fetchOpsConfig(eventId, ac.signal),
       ]);
       if (ac.signal.aborted) return;
       setItems(itemRows);
+      setCustomFields(fields);
       setOpsConfig(ops);
       setLoadError(null);
+      hasLoadedRef.current = true;
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
+      // A background refresh (reloadToken) can fail after an earlier load already succeeded -
+      // reset so the next attempt (e.g. clicking Retry below) shows the Loading… state again
+      // instead of silently skipping it forever.
+      hasLoadedRef.current = false;
       setItems([]);
+      setCustomFields([]);
       setOpsConfig(null);
       setSelectedItem(null);
       if (err instanceof ApiError) {
@@ -185,8 +204,7 @@ export function RequirementsPage() {
     field: keyof OpsConfigDto,
     value: boolean,
   ) {
-    if (!eventId || !opsConfig) return;
-    setOpsSaving(true);
+    if (!eventId || !opsConfig || !startOpsToggle(field)) return;
     const prev = opsConfig;
     setOpsConfig({ ...opsConfig, [field]: value });
     try {
@@ -204,7 +222,7 @@ export function RequirementsPage() {
         addToast(operatorApiErrorMessage(err, "Failed to save event behaviour."), "error");
       }
     } finally {
-      setOpsSaving(false);
+      finishOpsToggle(field);
     }
   }
 
@@ -256,7 +274,7 @@ export function RequirementsPage() {
               <thead>
                 <tr>
                   <th>Item</th>
-                  <th>Description</th>
+                  <th className="requirements-item-desc-col">Description</th>
                   <th>Active</th>
                 </tr>
               </thead>
@@ -312,6 +330,7 @@ export function RequirementsPage() {
                             {(guard) => (
                               <IconButton
                                 label="Edit item"
+                                size="sm"
                                 icon={<i className="ti ti-pencil" aria-hidden="true" />}
                                 onClick={() => setSelectedItem(item)}
                                 {...guard}
@@ -328,6 +347,14 @@ export function RequirementsPage() {
           </div>
         </Card>
       </section>
+
+      <EventCustomFieldsCard
+        eventId={eventId}
+        event={event}
+        fields={customFields}
+        loading={loading}
+        onChanged={() => setReloadToken((n) => n + 1)}
+      />
 
       <section className="requirements-section">
         <Card title="Event behaviour" padded={false}>
@@ -346,7 +373,7 @@ export function RequirementsPage() {
                 <ArchivedGuard
                   event={event}
                   reasonId="badge-at-entry-reason"
-                  disabled={opsSaving || badgeInactive}
+                  disabled={opsTogglingIds.has("badge_at_entry") || badgeInactive}
                   tooltip={
                     badgeInactive
                       ? "Can't enable this — the badge item is disabled or has \"Issue on check-in\" turned off."
@@ -356,6 +383,7 @@ export function RequirementsPage() {
                   {(guard) => (
                     <Switch
                       checked={opsConfig.badge_at_entry}
+                      aria-busy={opsTogglingIds.has("badge_at_entry")}
                       onChange={(e) => void handleOpsToggle("badge_at_entry", e.target.checked)}
                       aria-label="Issue badge at entry"
                       {...guard}
@@ -368,10 +396,15 @@ export function RequirementsPage() {
                   <strong>Require confirmation on scan</strong>
                   <p>Scan shows a preview; operator must confirm before check-in is recorded.</p>
                 </div>
-                <ArchivedGuard event={event} reasonId="confirm-on-scan-reason" disabled={opsSaving}>
+                <ArchivedGuard
+                  event={event}
+                  reasonId="confirm-on-scan-reason"
+                  disabled={opsTogglingIds.has("require_confirm_on_scan")}
+                >
                   {(guard) => (
                     <Switch
                       checked={opsConfig.require_confirm_on_scan}
+                      aria-busy={opsTogglingIds.has("require_confirm_on_scan")}
                       onChange={(e) =>
                         void handleOpsToggle("require_confirm_on_scan", e.target.checked)
                       }
@@ -390,10 +423,15 @@ export function RequirementsPage() {
                     page.
                   </p>
                 </div>
-                <ArchivedGuard event={event} reasonId="manual-lookup-reason" disabled={opsSaving}>
+                <ArchivedGuard
+                  event={event}
+                  reasonId="manual-lookup-reason"
+                  disabled={opsTogglingIds.has("allow_manual_lookup")}
+                >
                   {(guard) => (
                     <Switch
                       checked={opsConfig.allow_manual_lookup}
+                      aria-busy={opsTogglingIds.has("allow_manual_lookup")}
                       onChange={(e) => void handleOpsToggle("allow_manual_lookup", e.target.checked)}
                       aria-label="Allow manual lookup"
                       {...guard}
@@ -409,10 +447,15 @@ export function RequirementsPage() {
                     attendee — without tapping Next.
                   </p>
                 </div>
-                <ArchivedGuard event={event} reasonId="auto-advance-reason" disabled={opsSaving}>
+                <ArchivedGuard
+                  event={event}
+                  reasonId="auto-advance-reason"
+                  disabled={opsTogglingIds.has("auto_advance_on_valid")}
+                >
                   {(guard) => (
                     <Switch
                       checked={opsConfig.auto_advance_on_valid}
+                      aria-busy={opsTogglingIds.has("auto_advance_on_valid")}
                       onChange={(e) =>
                         void handleOpsToggle("auto_advance_on_valid", e.target.checked)
                       }
@@ -508,6 +551,7 @@ export function RequirementsPage() {
         <EventItemDrawer
           eventId={eventId}
           item={selectedItem}
+          customFields={customFields}
           onClose={() => setSelectedItem(null)}
           onUpdated={() => {
             setReloadToken((n) => n + 1);
