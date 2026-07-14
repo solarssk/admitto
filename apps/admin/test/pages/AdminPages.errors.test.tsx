@@ -495,6 +495,43 @@ describe("ReportsPage operator errors", () => {
   });
 });
 
+describe("ReportsPage ticket type breakdown", () => {
+  it("renders both the (none) bucket and a real catalog type literally keyed 'none' as distinct rows, with no React key collision (CodeRabbit review)", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 2, admitted: 2, admission_rate_pct: 100 },
+      by_ticket_type: [
+        { key: "none", type: "None", color: "gray", total: 1, admitted: 1, admission_pct: 100 },
+        { key: null, type: "(none)", color: "gray", total: 1, admitted: 1, admission_pct: 100 },
+      ],
+    });
+    const { container } = renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(container.querySelector(".reports-bytype")).toBeTruthy();
+    });
+    // "None" also legitimately appears in the admission-log filter's <option> below, so this is
+    // scoped to the breakdown panel - a React key collision would drop or misrender one of these.
+    const breakdown = container.querySelector(".reports-bytype");
+    if (!breakdown) throw new Error("breakdown panel not found");
+    expect(within(breakdown as HTMLElement).getByText("None")).toBeTruthy();
+    expect(within(breakdown as HTMLElement).getByText("(none)")).toBeTruthy();
+    // React logs an error when two elements in the same list share a key - the null bucket and a
+    // catalog type literally keyed "none" must not collide, in the breakdown or the filter below it.
+    const keyCollisionWarning = consoleError.mock.calls.some((args) =>
+      String(args[0]).includes("same key"),
+    );
+    expect(keyCollisionWarning).toBe(false);
+    consoleError.mockRestore();
+  });
+});
+
 describe("ReportsPage admission log", () => {
   it("labels an untyped admission as (none), matching the breakdown/filter instead of the Attendees table's dash", async () => {
     // mockResolvedValue (not ...Once): the mocked useConnectionState() below returns a fresh

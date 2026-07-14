@@ -218,9 +218,14 @@ async function loadReportsAggregates(
     const admitted = admittedByType.get(t.key) ?? 0;
     return { key: t.key, type: t.label, color: t.color, total, admitted, admission_pct: oneDecimalPct(admitted, total) };
   });
-  const noneTotal = totalByType.get(null) ?? 0;
+  // Every write path that sets ticket_type (create, patch, import, the backfill's blank-value
+  // cleanup) normalizes an empty/whitespace submission to null before persisting - resolveTicketTypeLabel
+  // (used by CSV/PDF export, above) already treats both the same way. A literal "" could still
+  // reach here from data written outside those paths, so it's folded into the same (none) bucket
+  // here too, instead of becoming its own confusing "" (not in catalog) entry below.
+  const noneTotal = (totalByType.get(null) ?? 0) + (totalByType.get("") ?? 0);
   if (noneTotal > 0) {
-    const noneAdmitted = admittedByType.get(null) ?? 0;
+    const noneAdmitted = (admittedByType.get(null) ?? 0) + (admittedByType.get("") ?? 0);
     by_ticket_type.push({
       key: null,
       type: "(none)",
@@ -233,7 +238,7 @@ async function loadReportsAggregates(
 
   const catalogKeys = new Set(catalog.map((t) => t.key));
   const unmatchedKeys = [...totalByType.keys()]
-    .filter((key): key is string => key !== null && !catalogKeys.has(key))
+    .filter((key): key is string => key !== null && key !== "" && !catalogKeys.has(key))
     .sort((a, b) => a.localeCompare(b));
   for (const key of unmatchedKeys) {
     const total = totalByType.get(key) ?? 0;
