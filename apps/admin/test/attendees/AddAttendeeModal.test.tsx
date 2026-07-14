@@ -126,4 +126,32 @@ describe("AddAttendeeModal", () => {
       true,
     );
   });
+
+  it("blocks submit while the ticket-type catalog is still loading, not just after it fails", async () => {
+    let resolveTicketTypes!: (types: unknown[]) => void;
+    vi.mocked(fetchTicketTypes).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveTicketTypes = resolve;
+      }),
+    );
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+
+    await screen.findByText("Loading ticket types…");
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jan@example.com" } });
+
+    // Otherwise ready to submit - clicking before the fetch settles must not be able to create
+    // an attendee before the admin has even seen what ticket types are available to pick from.
+    expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+
+    resolveTicketTypes([]);
+    await waitFor(() => {
+      expect(screen.queryByText("Loading ticket types…")).toBeNull();
+    });
+    expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
 });
