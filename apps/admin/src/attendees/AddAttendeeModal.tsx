@@ -33,6 +33,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
   const [department, setDepartment] = useState("");
   const [ticketType, setTicketType] = useState("");
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
+  const [ticketTypesLoading, setTicketTypesLoading] = useState(false);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
   const [customFields, setCustomFields] = useState<Record<string, string>>({});
@@ -72,6 +73,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
     if (!open) return;
     setTicketTypes([]);
     setTicketTypesError(null);
+    setTicketTypesLoading(true);
     let cancelled = false;
     fetchTicketTypes(eventId)
       .then((types) => {
@@ -82,6 +84,9 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
           setTicketTypes([]);
           setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
         }
+      })
+      .finally(() => {
+        if (!cancelled) setTicketTypesLoading(false);
       });
     return () => {
       cancelled = true;
@@ -113,6 +118,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
     !submitting &&
     !attributeFieldsLoading &&
     !attributeFieldsError &&
+    !ticketTypesLoading &&
     !ticketTypesError;
 
   const handleSubmit = async () => {
@@ -185,6 +191,9 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
         )}
         {attributeFieldsLoading && (
           <p className="add-attendee-modal__hint">Loading attribute fields…</p>
+        )}
+        {ticketTypesLoading && (
+          <p className="add-attendee-modal__hint">Loading ticket types…</p>
         )}
         <div className="add-attendee-modal__fields">
           <Input
