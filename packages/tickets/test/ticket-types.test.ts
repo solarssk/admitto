@@ -150,7 +150,7 @@ describe("slugifyTicketTypeKey", () => {
 
   it("truncates to 60 characters", () => {
     const long = "a".repeat(100);
-    expect(slugifyTicketTypeKey(long).length).toBe(60);
+    expect(slugifyTicketTypeKey(long)).toHaveLength(60);
   });
 });
 

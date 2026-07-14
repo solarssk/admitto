@@ -36,6 +36,9 @@ async function seedPublicRefFixture(client: PrismaClient): Promise<void> {
       organization_id: ORG_ID,
     },
   });
+  await client.ticketType.createMany({
+    data: [{ event_id: EVENT_ID, key: "vip", label: "VIP Guest", color: "purple" }],
+  });
   await client.attendee.create({
     data: {
       id: ATTENDEE_ID,
@@ -44,6 +47,7 @@ async function seedPublicRefFixture(client: PrismaClient): Promise<void> {
       name: "Agency Guest",
       qr_payload: "AGENCY-QR-PAYLOAD-001",
       public_ref: PUBLIC_REF,
+      ticket_type: "vip",
     },
   });
   await client.attendee.create({
@@ -82,6 +86,14 @@ describe("Mode B public routes — public_ref", () => {
     const html = await res.text();
     expect(html).toContain("Agency Guest");
     expect(html).toContain("Summer Gala");
+  });
+
+  it("renders the catalog label, not the raw key, for ticket_type (Codex review, batch 04 / #351)", async () => {
+    const res = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("VIP Guest");
+    expect(html).not.toMatch(/>vip</);
   });
 
   it("GET /q/:slug/a/:public_ref.png returns PNG with short private cache", async () => {

@@ -76,34 +76,38 @@ export async function backfillTicketTypes(prisma: PrismaClient): Promise<{
       group.attendeeIds.push(attendee.id);
     }
 
-    if (groups.size === 0) {
-      await prisma.ticketType.create({
-        data: { event_id: event.id, key: "standard", label: "Standard", color: "gray", sort_order: 0 },
-      });
-      typesCreated += 1;
-      eventsSeeded += 1;
-      continue;
-    }
+    // Wrapped in a transaction so a mid-event crash can't leave a partially migrated event
+    // behind - the idempotency check above (`ticket_types: { none: {} } `) would then skip it
+    // forever on re-run, since it already has at least one TicketType row (CodeRabbit review).
+    await prisma.$transaction(async (tx) => {
+      if (groups.size === 0) {
+        await tx.ticketType.create({
+          data: { event_id: event.id, key: "standard", label: "Standard", color: "gray", sort_order: 0 },
+        });
+        typesCreated += 1;
+        return;
+      }
 
-    const usedKeys = new Set<string>();
-    let sortOrder = 0;
-    for (const [norm, group] of groups) {
-      const key = uniqueTicketTypeKey(norm, usedKeys, sortOrder + 1);
-      usedKeys.add(key);
-      const label = group.label.slice(0, TICKET_TYPE_LABEL_MAX_LENGTH);
-      const color = norm === "vip" ? "purple" : "gray";
-      await prisma.ticketType.create({
-        data: { event_id: event.id, key, label, color, sort_order: sortOrder },
-      });
-      typesCreated += 1;
-      sortOrder += 1;
+      const usedKeys = new Set<string>();
+      let sortOrder = 0;
+      for (const [norm, group] of groups) {
+        const key = uniqueTicketTypeKey(norm, usedKeys, sortOrder + 1);
+        usedKeys.add(key);
+        const label = group.label.slice(0, TICKET_TYPE_LABEL_MAX_LENGTH);
+        const color = norm === "vip" ? "purple" : "gray";
+        await tx.ticketType.create({
+          data: { event_id: event.id, key, label, color, sort_order: sortOrder },
+        });
+        typesCreated += 1;
+        sortOrder += 1;
 
-      const { count } = await prisma.attendee.updateMany({
-        where: { id: { in: group.attendeeIds }, ticket_type: { not: key } },
-        data: { ticket_type: key },
-      });
-      attendeesNormalized += count;
-    }
+        const { count } = await tx.attendee.updateMany({
+          where: { id: { in: group.attendeeIds }, ticket_type: { not: key } },
+          data: { ticket_type: key },
+        });
+        attendeesNormalized += count;
+      }
+    });
     eventsSeeded += 1;
   }
 

@@ -46,6 +46,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchEventImageAssets: vi.fn(),
     createEventImageAsset: vi.fn(),
     deleteEventImageAsset: vi.fn(),
+    fetchTicketTypes: vi.fn().mockResolvedValue([]),
   };
 });
 

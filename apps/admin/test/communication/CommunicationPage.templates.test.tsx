@@ -17,6 +17,7 @@ const previewEventTemplate = vi.fn();
 const previewEventTemplateById = vi.fn();
 const saveEventTemplateById = vi.fn();
 const testSendEventTemplateById = vi.fn();
+const fetchTicketTypes = vi.fn();
 
 const reportApiError = vi.fn();
 
@@ -50,6 +51,7 @@ vi.mock("../../src/api/client.js", () => ({
   testSendEventTemplateById: (...args: unknown[]) => testSendEventTemplateById(...args),
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
   fetchBulkSendStatus: vi.fn(),
+  fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
 }));
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -145,6 +147,7 @@ beforeEach(() => {
     email_queued: 0,
   });
   fetchEventTemplate.mockResolvedValue(legacyTemplate);
+  fetchTicketTypes.mockResolvedValue([]);
   fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) => {
     if (id === "tpl-ticket") {
       return {

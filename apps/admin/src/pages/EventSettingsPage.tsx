@@ -244,7 +244,7 @@ export function EventSettingsPage() {
   }, [eventId, addToast]);
 
   useEffect(() => {
-    void loadTicketTypes();
+    loadTicketTypes().catch(() => {});
   }, [loadTicketTypes]);
 
   useEffect(() => {
@@ -584,7 +584,7 @@ export function EventSettingsPage() {
           event={event}
           types={ticketTypes}
           loading={ticketTypesLoading}
-          onChanged={() => void loadTicketTypes()}
+          onChanged={() => loadTicketTypes().catch(() => {})}
         />
       </EventSettingsTabPanel>
 

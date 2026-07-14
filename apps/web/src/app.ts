@@ -15,6 +15,7 @@ import {
   buildQrPayload,
   isAdmittable,
   hashToken,
+  loadEventTicketTypes,
 } from "@admitto/tickets";
 import {
   getTicketPageSecurityHeaders,
@@ -151,6 +152,7 @@ import {
   handleCreateEventTicketType,
   handlePatchEventTicketType,
   handleDeleteEventTicketType,
+  handleCheckinTicketTypes,
 } from "./admin/ticket-types-routes.js";
 import { resolveUploadDir } from "./admin/branding-upload.js";
 import {
@@ -463,7 +465,25 @@ export function createApp(options: CreateAppOptions = {}) {
       theme = null;
     }
 
-    return htmlWithSecurityHeaders(c, renderTicket(resolved, qrDataUrl, theme), 200, theme);
+    // ticket_type stores the catalog key (e.g. "press_pass"), not the human label ("Press Pass")
+    // - resolve it for attendee-facing display; fail open to the raw key on any lookup error, same
+    // as ticketTypeBadge.tsx's resolver (Codex review, batch 04 / #351).
+    let ticketTypeLabel = attendee.ticket_type;
+    if (ticketTypeLabel) {
+      try {
+        const catalog = await loadEventTicketTypes(db, event.id);
+        const found = catalog.find((t) => t.key === ticketTypeLabel);
+        if (found) ticketTypeLabel = found.label;
+      } catch (err) {
+        console.error("loadEventTicketTypes failed for ticket page:", err);
+      }
+    }
+    const resolvedForDisplay =
+      ticketTypeLabel === attendee.ticket_type
+        ? resolved
+        : { ...resolved, attendee: { ...attendee, ticket_type: ticketTypeLabel } };
+
+    return htmlWithSecurityHeaders(c, renderTicket(resolvedForDisplay, qrDataUrl, theme), 200, theme);
   }
 
   app.get("/healthz", healthzRateLimit, (c) => handleHealthz(c, db));
@@ -1204,6 +1224,14 @@ export function createApp(options: CreateAppOptions = {}) {
     checkinHistoryRateLimit,
     createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
     (c) => handleCheckinStats(c, db),
+  );
+
+  app.get(
+    "/api/checkin/ticket-types",
+    createCheckinPreAuth(checkinAuthDeps),
+    checkinHistoryRateLimit,
+    createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
+    (c) => handleCheckinTicketTypes(c, db),
   );
 
   app.get(

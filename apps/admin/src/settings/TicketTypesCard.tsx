@@ -99,7 +99,7 @@ function TicketTypeRow({
   type: TicketTypeDto;
   disabled: boolean;
   autoFocus: boolean;
-  onUpdate: (id: string, patch: { label?: string; color?: TicketTypeColor }) => void;
+  onUpdate: (id: string, patch: { label?: string; color?: TicketTypeColor }) => Promise<boolean>;
   onRemove: () => void;
 }) {
   const [label, setLabel] = useState(type.label);
@@ -109,13 +109,17 @@ function TicketTypeRow({
     if (autoFocus) inputRef.current?.select();
   }, [autoFocus]);
 
-  function commitLabel() {
+  async function commitLabel() {
     const trimmed = label.trim();
     if (!trimmed || trimmed === type.label) {
       setLabel(type.label);
       return;
     }
-    onUpdate(type.id, { label: trimmed });
+    // Revert the optimistically-typed value on failure - otherwise the field keeps showing an
+    // edit that was never actually saved, with only a transient toast as a clue (CodeRabbit
+    // review).
+    const ok = await onUpdate(type.id, { label: trimmed });
+    if (!ok) setLabel(type.label);
   }
 
   return (
@@ -156,23 +160,36 @@ function TicketTypeRow({
  * this catalog through TicketTypeBadge's resolver instead of accepting free text. */
 export function TicketTypesCard({ eventId, event, types, loading, onChanged }: TicketTypesCardProps) {
   const { addToast } = useToast();
-  const [mutatingId, setMutatingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [justAddedId, setJustAddedId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TicketTypeDto | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const disabled = event.status === "archived";
 
   // No per-row "mutating" disabled state here on purpose: PATCH (color/label) is idempotent and
   // safe to fire again before the previous one lands, and briefly disabling the row's own input/
   // icon for the ~10-20ms round trip read as a visible flicker on every click (PO review).
-  async function handleUpdate(id: string, patch: { label?: string; color?: TicketTypeColor }) {
-    try {
-      await updateTicketType(eventId, id, patch);
-      onChanged();
-    } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Failed to update ticket type."), "error");
-    }
+  //
+  // Requests for the SAME id are still serialized through this per-id chain, though — rapid edits
+  // (e.g. clicking through colors quickly) fire concurrent PATCHes that could land out of order
+  // over the network and leave an older value as the last write. Different rows stay fully
+  // independent (CodeRabbit review).
+  const pendingByIdRef = useRef(new Map<string, Promise<boolean>>());
+  function handleUpdate(id: string, patch: { label?: string; color?: TicketTypeColor }): Promise<boolean> {
+    const prior = pendingByIdRef.current.get(id) ?? Promise.resolve(true);
+    const run = prior.then(async () => {
+      try {
+        await updateTicketType(eventId, id, patch);
+        onChanged();
+        return true;
+      } catch (err) {
+        addToast(operatorApiErrorMessage(err, "Failed to update ticket type."), "error");
+        return false;
+      }
+    });
+    pendingByIdRef.current.set(id, run);
+    return run;
   }
 
   async function handleAdd() {
@@ -195,20 +212,20 @@ export function TicketTypesCard({ eventId, event, types, loading, onChanged }: T
   async function handleDelete() {
     if (!deleteTarget) return;
     setDeleting(true);
+    setDeleteError(null);
     try {
       await deleteTicketType(eventId, deleteTarget.id);
       setDeleteTarget(null);
       onChanged();
     } catch (err) {
+      // Keep the dialog open on failure instead of closing it out from under the user - the
+      // "in use" case in particular is retryable once attendees are reassigned, without having to
+      // find and re-click the same row's delete button again (CodeRabbit review).
       if (err instanceof ApiError && hasApiErrorCode(err, "type_in_use")) {
-        addToast(
-          `Can't remove "${deleteTarget.label}" — attendees still have this type.`,
-          "warning",
-        );
+        setDeleteError(`Can't remove "${deleteTarget.label}" — attendees still have this type.`);
       } else {
-        addToast(operatorApiErrorMessage(err, "Failed to remove ticket type."), "error");
+        setDeleteError(operatorApiErrorMessage(err, "Failed to remove ticket type."));
       }
-      setDeleteTarget(null);
     } finally {
       setDeleting(false);
     }
@@ -269,7 +286,11 @@ export function TicketTypesCard({ eventId, event, types, loading, onChanged }: T
         confirmLabel="Remove"
         confirmVariant="danger"
         loading={deleting}
-        onCancel={() => setDeleteTarget(null)}
+        errorMessage={deleteError}
+        onCancel={() => {
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
         onConfirm={() => void handleDelete()}
       />
     </>

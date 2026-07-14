@@ -37,7 +37,7 @@ type CameraOverlayProps = {
   onClearManualError?: () => void;
   scanResult: CheckInScanResponse | null;
   card: AttendeeCardDto | null;
-  ticketTypes: TicketTypeDto[];
+  ticketTypes?: TicketTypeDto[];
   pending: boolean;
   canAct: boolean;
   /** handleApiFailure's message — rendered inside the overlay (see
@@ -72,7 +72,7 @@ export function CameraOverlay({
   onClearManualError,
   scanResult,
   card,
-  ticketTypes,
+  ticketTypes = [],
   pending,
   canAct,
   onConfirm,

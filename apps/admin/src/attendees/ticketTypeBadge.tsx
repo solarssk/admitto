@@ -7,10 +7,10 @@ import type { TicketTypeDto } from "../api/types.js";
  * renders, in neutral gray with the raw string, instead of silently disappearing. */
 export function TicketTypeBadge({
   ticketType,
-  catalog,
+  catalog = [],
 }: {
   ticketType: string | null;
-  catalog: TicketTypeDto[];
+  catalog?: TicketTypeDto[];
 }) {
   if (!ticketType) {
     return <Badge variant="neutral">—</Badge>;

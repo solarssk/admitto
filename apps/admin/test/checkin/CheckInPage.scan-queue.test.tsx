@@ -13,6 +13,7 @@ const submitCheckInScan = vi.fn();
 const submitCheckInAdmit = vi.fn();
 const undoLastCheckIn = vi.fn();
 const lookupCheckInAttendees = vi.fn();
+const fetchTicketTypes = vi.fn();
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
   useEventStream: () => ({ connected: true, status: "connected" }),
@@ -32,6 +33,7 @@ vi.mock("../../src/hooks/useIsDesktop.js", () => ({
 }));
 
 vi.mock("../../src/api/client.js", () => ({
+  fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
   ApiError: class ApiError extends Error {
     status: number;
     constructor(status: number, message: string) {
@@ -136,6 +138,7 @@ function mockPageBootstrap() {
   fetchCheckInEvents.mockResolvedValue([{ id: "evt-live", timezone: "UTC" }]);
   fetchCheckInHistory.mockResolvedValue([]);
   fetchCheckInStats.mockResolvedValue({ admitted_count: 0, total_count: 10 });
+  fetchTicketTypes.mockResolvedValue([]);
 }
 
 function renderPage() {

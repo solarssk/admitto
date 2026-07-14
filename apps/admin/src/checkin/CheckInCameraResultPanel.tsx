@@ -65,7 +65,7 @@ function statusMeta(status: CheckInStatus): {
 type CheckInCameraResultPanelProps = {
   scanResult: CheckInScanResponse;
   card: AttendeeCardDto | null;
-  ticketTypes: TicketTypeDto[];
+  ticketTypes?: TicketTypeDto[];
   pending: boolean;
   canAct: boolean;
   eventTimezone: string;
@@ -83,7 +83,7 @@ type CheckInCameraResultPanelProps = {
 export function CheckInCameraResultPanel({
   scanResult,
   card,
-  ticketTypes,
+  ticketTypes = [],
   pending,
   canAct,
   eventTimezone,

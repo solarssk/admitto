@@ -907,6 +907,24 @@ function customDataErrorCode(err: unknown): string {
   return "validation_failed";
 }
 
+/** Validates ticket_type against the event's live catalog (batch 04 / #351) - shared by create
+ * and patch. An empty/falsy value (including "" once normalized by the caller) is treated as "no
+ * type" rather than an invalid catalog value. */
+async function validateTicketTypeCatalog(
+  db: PrismaClient,
+  eventId: string,
+  ticketType: string | null | undefined,
+): Promise<{ error: string } | null> {
+  if (!ticketType) return null;
+  try {
+    assertTicketTypeInCatalog(await loadEventTicketTypes(db, eventId), ticketType);
+    return null;
+  } catch (err) {
+    if (err instanceof UnknownTicketTypeError) return { error: "unknown_ticket_type" };
+    throw err;
+  }
+}
+
 /** PATCH /api/admin/events/:eventId/attendees/:id */
 export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -961,17 +979,14 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
 
   // Catalog membership check (batch 04 / #351) — the PATCH schema only validates shape
   // (string, max length), same as create; this is the semantic check against the event's live
-  // TicketType rows, mirroring how custom_data_fields is validated above.
-  if (profilePatch.ticket_type) {
-    try {
-      assertTicketTypeInCatalog(await loadEventTicketTypes(db, eventId), profilePatch.ticket_type);
-    } catch (err) {
-      if (err instanceof UnknownTicketTypeError) {
-        return c.json({ error: "unknown_ticket_type" }, 400);
-      }
-      throw err;
-    }
+  // TicketType rows, mirroring how custom_data_fields is validated above. "" is normalized to
+  // null first so it clears the type instead of silently bypassing validation and persisting an
+  // empty string (CodeRabbit review).
+  if (profilePatch.ticket_type === "") {
+    profilePatch.ticket_type = null;
   }
+  const ticketTypeError = await validateTicketTypeCatalog(db, eventId, profilePatch.ticket_type);
+  if (ticketTypeError) return c.json(ticketTypeError, 400);
 
   const profileChanges = computePatchChanges(existing, profilePatch);
   const rsvpChange = computeRsvpChange(existing.rsvp_status, patchRsvp);
@@ -1232,16 +1247,8 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
     return c.json({ error: customDataErrorCode(err) }, 400);
   }
 
-  if (ticket_type) {
-    try {
-      assertTicketTypeInCatalog(await loadEventTicketTypes(db, eventId), ticket_type);
-    } catch (err) {
-      if (err instanceof UnknownTicketTypeError) {
-        return c.json({ error: "unknown_ticket_type" }, 400);
-      }
-      throw err;
-    }
-  }
+  const ticketTypeError = await validateTicketTypeCatalog(db, eventId, ticket_type);
+  if (ticketTypeError) return c.json(ticketTypeError, 400);
 
   try {
     const created = await db.$transaction(async (tx) => {
