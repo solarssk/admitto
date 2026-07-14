@@ -91,6 +91,27 @@ export async function handleListEventTicketTypes(c: Context, db: PrismaClient): 
   return c.json({ items: rows.map((row) => serializeTicketType(row, countByKey.get(row.key) ?? 0)) });
 }
 
+/** GET /api/checkin/ticket-types - the same catalog as the admin route above, but reachable by
+ * check-in operators, who often don't hold admin-panel access and would otherwise 403 on
+ * assertEventManageAccess; the check-in card and scan result panel need this to resolve badge
+ * label/color instead of falling back to a raw key in gray (Codex review, batch 04 / #351). */
+export async function handleCheckinTicketTypes(c: Context, db: PrismaClient): Promise<Response> {
+  const eventId = c.req.query("eventId");
+  if (!eventId) return c.json({ error: "eventId required" }, 400);
+
+  const [rows, counts] = await Promise.all([
+    db.ticketType.findMany({ where: { event_id: eventId }, orderBy: { sort_order: "asc" } }),
+    db.attendee.groupBy({
+      by: ["ticket_type"],
+      where: { event_id: eventId, ticket_type: { not: null } },
+      _count: { _all: true },
+    }),
+  ]);
+  const countByKey = new Map(counts.map((row) => [row.ticket_type, row._count._all]));
+
+  return c.json({ items: rows.map((row) => serializeTicketType(row, countByKey.get(row.key) ?? 0)) });
+}
+
 /** POST /api/admin/events/:eventId/ticket-types - server derives `key` from `label` (dedupe with
  * a numeric suffix within the event, same as uniqueItemKey for EventItem keys). */
 export async function handleCreateEventTicketType(c: Context, db: PrismaClient): Promise<Response> {

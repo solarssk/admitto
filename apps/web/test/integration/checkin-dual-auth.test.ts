@@ -12,6 +12,7 @@ import {
   eventIdFromHistoryQuery,
 } from "../../src/checkin-gate.js";
 import { handleCheckinStats } from "../../src/admin/checkin-api-routes.js";
+import { handleCheckinTicketTypes } from "../../src/admin/ticket-types-routes.js";
 import { rateLimit } from "../../src/rate-limit/policies.js";
 import { InMemoryRateLimitStore, type RateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -439,5 +440,42 @@ describe("GET /api/checkin/stats", () => {
     const after = await fetchStats();
     expect(after.total_count).toBe(before.total_count);
     expect(after.admitted_count).toBe(before.admitted_count);
+  });
+});
+
+function buildTicketTypesApp() {
+  const deps = gateDeps(false);
+  const app = new Hono();
+  app.get(
+    "/api/checkin/ticket-types",
+    createCheckinPreAuth(deps),
+    createCheckinEventScope(deps, eventIdFromHistoryQuery),
+    (c) => handleCheckinTicketTypes(c, prisma),
+  );
+  return app;
+}
+
+describe("GET /api/checkin/ticket-types", () => {
+  it("an event-scoped operator without admin-panel access can read the catalog (Codex review, batch 04 / #351)", async () => {
+    await prisma.ticketType.createMany({
+      data: [{ event_id: EVENT_A, key: "vip", label: "VIP", color: "purple" }],
+    });
+    const cookie = await sessionCookieFor(USER_OP_A);
+    const res = await buildTicketTypesApp().request(`/api/checkin/ticket-types?eventId=${EVENT_A}`, {
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { key: string; label: string; color: string }[] };
+    expect(body.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "vip", label: "VIP", color: "purple" })]),
+    );
+  });
+
+  it("rejects an operator scoped to a different event", async () => {
+    const cookie = await sessionCookieFor(USER_OP_A);
+    const res = await buildTicketTypesApp().request(`/api/checkin/ticket-types?eventId=${EVENT_B}`, {
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(403);
   });
 });

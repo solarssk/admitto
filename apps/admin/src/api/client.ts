@@ -1031,14 +1031,18 @@ export async function fetchEventDeliveries(
 /** List an event's ticket-type catalog (label/color, each with a live attendee count) — the
  * single source of truth consumed by the add/edit attendee form, filters, bulk-send, import,
  * and Reports alike (batch 04 / #351). */
+/** Reads the admin route under `/admin` (staffAdminGate), the check-in route everywhere else
+ * (`/operator`) - check-in operators often lack admin-panel access and would 403 on the admin
+ * route, leaving every ticket-type badge on the check-in surface stuck in gray (Codex review,
+ * batch 04 / #351). Same branch shape as fetchStaffTheme/saveStaffTheme above. */
 export async function fetchTicketTypes(
   eventId: string,
   signal?: AbortSignal,
 ): Promise<TicketTypeDto[]> {
-  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/ticket-types`, {
-    credentials: "same-origin",
-    signal,
-  });
+  const url = isAdminAppPath()
+    ? `/api/admin/events/${encodeURIComponent(eventId)}/ticket-types`
+    : `/api/checkin/ticket-types?eventId=${encodeURIComponent(eventId)}`;
+  const res = await fetch(url, { credentials: "same-origin", signal });
   const data = await parseJson<TicketTypesListResponse>(res);
   return data.items;
 }

@@ -127,6 +127,12 @@ async function seed(client: PrismaClient) {
   await client.eventCustomField.create({
     data: { event_id: EVENT_A, source_field: "shirt_size", label: "Shirt size" },
   });
+  await client.ticketType.createMany({
+    data: [
+      { event_id: EVENT_A, key: "vip", label: "VIP", color: "purple" },
+      { event_id: EVENT_A, key: "standard", label: "Standard", color: "gray", sort_order: 1 },
+    ],
+  });
 
   const token = generateToken();
   const tokenEnc = encryptToString(token);
@@ -540,6 +546,40 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("email_conflict");
+  });
+
+  it("rejects a ticket_type not in the event's catalog (batch 04 / #351)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticket_type: "bogus-type",
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("unknown_ticket_type");
+
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
+    expect(row.ticket_type).toBe("standard");
+  });
+
+  it("clears ticket_type to null instead of persisting an empty string (CodeRabbit review)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticket_type: "",
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ticket_type: string | null };
+    expect(body.ticket_type).toBeNull();
+
+    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
+    expect(row.ticket_type).toBeNull();
   });
 
   it("preserves extra custom_data keys when custom attribute is edited", async () => {
@@ -1744,6 +1784,24 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("validation_failed");
+  });
+
+  it("POST create rejects a ticket_type not in the event's catalog (batch 04 / #351)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "unknown-type@example.com",
+        name: "Unknown Type",
+        ticket_type: "bogus-type",
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("unknown_ticket_type");
+
+    const row = await prisma.attendee.findFirst({ where: { email: "unknown-type@example.com" } });
+    expect(row).toBeNull();
   });
 
   it("POST create duplicate email returns 409 email_taken", async () => {
