@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
@@ -75,5 +75,29 @@ describe("AttendeesPage load errors", () => {
     expect(screen.getByText("You do not have access to this event.")).toBeTruthy();
     expect(screen.queryByText(/No attendees yet/i)).toBeNull();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("shows a small inline retryable error next to the Type filter when only the ticket-type catalog fails, without blocking the attendee list (CodeRabbit review)", async () => {
+    const { fetchTicketTypes } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 25,
+    });
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText("Couldn't load types.")).toBeTruthy());
+    // The list itself isn't replaced by an error - only the Type filter is affected.
+    expect(screen.queryByText("Could not load attendees")).toBeNull();
+
+    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([
+      { id: "tt-1", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 0, created_at: "2026-01-01T00:00:00.000Z" },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(screen.queryByText("Couldn't load types.")).toBeNull());
   });
 });

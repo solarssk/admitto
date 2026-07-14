@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Card, IconButton, Input, TICKET_TYPE_COLORS, TicketTypeBadge, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, IconButton, Input, TICKET_TYPE_COLORS, TicketTypeBadge, useToast } from "@admitto/ui";
 import type { TicketTypeColor } from "@admitto/ui";
 import { ApiError, createTicketType, deleteTicketType, updateTicketType } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -13,6 +13,10 @@ export interface TicketTypesCardProps {
   event: EventSettingsDto;
   types: TicketTypeDto[];
   loading: boolean;
+  /** Set when the catalog failed to load (initial load or a background refresh) - renders in
+   * place of the list, with a Retry button (CodeRabbit review, batch 04 / #351). */
+  error?: string | null;
+  onRetry?: () => void;
   onChanged: () => void;
 }
 
@@ -158,7 +162,15 @@ function TicketTypeRow({
 /** Event Settings tab: the only place a ticket type's name and color are set (batch 04 / #351).
  * Every other screen (add/edit attendee, import, filters, bulk-send, check-in, Reports) reads
  * this catalog through TicketTypeBadge's resolver instead of accepting free text. */
-export function TicketTypesCard({ eventId, event, types, loading, onChanged }: TicketTypesCardProps) {
+export function TicketTypesCard({
+  eventId,
+  event,
+  types,
+  loading,
+  error,
+  onRetry,
+  onChanged,
+}: TicketTypesCardProps) {
   const { addToast } = useToast();
   const [adding, setAdding] = useState(false);
   const [justAddedId, setJustAddedId] = useState<string | null>(null);
@@ -242,41 +254,57 @@ export function TicketTypesCard({ eventId, event, types, loading, onChanged }: T
           </span>
         }
       >
-        <p className="field-hint">
-          The only place a ticket type's name and color are set. Every screen below reads this
-          list, so you never type it in twice.
-        </p>
-        {loading ? (
-          <p className="field-hint">Loading…</p>
+        {error && !loading ? (
+          <EmptyState
+            title="Could not load ticket types"
+            description={error}
+            action={
+              onRetry && (
+                <Button type="button" variant="secondary" onClick={onRetry}>
+                  Retry
+                </Button>
+              )
+            }
+          />
         ) : (
-          <div className="tt-list">
-            {types.map((type) => (
-              <TicketTypeRow
-                key={type.id}
-                type={type}
-                disabled={disabled}
-                autoFocus={justAddedId === type.id}
-                onUpdate={handleUpdate}
-                onRemove={() => setDeleteTarget(type)}
-              />
-            ))}
-            {types.length === 0 && (
-              <p className="field-hint">No ticket types yet. Add at least one before sending tickets.</p>
+          <>
+            <p className="field-hint">
+              The only place a ticket type's name and color are set. Every screen below reads this
+              list, so you never type it in twice.
+            </p>
+            {loading ? (
+              <p className="field-hint">Loading…</p>
+            ) : (
+              <div className="tt-list">
+                {types.map((type) => (
+                  <TicketTypeRow
+                    key={type.id}
+                    type={type}
+                    disabled={disabled}
+                    autoFocus={justAddedId === type.id}
+                    onUpdate={handleUpdate}
+                    onRemove={() => setDeleteTarget(type)}
+                  />
+                ))}
+                {types.length === 0 && (
+                  <p className="field-hint">No ticket types yet. Add at least one before sending tickets.</p>
+                )}
+              </div>
             )}
-          </div>
+
+            <ArchivedGuard event={event} reasonId="add-ticket-type-reason" disabled={adding}>
+              {(guard) => (
+                <button type="button" className="tt-add-row" {...guard} onClick={() => void handleAdd()}>
+                  <i className="ti ti-plus" aria-hidden="true" /> {adding ? "Adding…" : "Add ticket type"}
+                </button>
+              )}
+            </ArchivedGuard>
+
+            <p className="field-hint">
+              Used in the add attendee form, CSV import, the attendees list, check-in, and reports.
+            </p>
+          </>
         )}
-
-        <ArchivedGuard event={event} reasonId="add-ticket-type-reason" disabled={adding}>
-          {(guard) => (
-            <button type="button" className="tt-add-row" {...guard} onClick={() => void handleAdd()}>
-              <i className="ti ti-plus" aria-hidden="true" /> {adding ? "Adding…" : "Add ticket type"}
-            </button>
-          )}
-        </ArchivedGuard>
-
-        <p className="field-hint">
-          Used in the add attendee form, CSV import, the attendees list, check-in, and reports.
-        </p>
       </Card>
 
       <ConfirmDialog

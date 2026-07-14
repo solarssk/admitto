@@ -327,15 +327,28 @@ export function CheckInPage({
     };
   }, [eventId]);
 
+  const ticketTypesMountedRef = useRef(false);
   useEffect(() => {
     if (!eventId) return;
     let cancelled = false;
+    // Cleared eagerly on an eventId change (not the first mount, which is already `[]`, and not
+    // on failure alone) so a stale event's catalog can't be briefly misapplied to badges while
+    // this event's own fetch is still in flight (CodeRabbit review). Skipping the redundant clear
+    // on first mount avoids an extra render this page's fake-timer burst-detection tests are
+    // sensitive to.
+    if (ticketTypesMountedRef.current) setTicketTypes([]);
+    ticketTypesMountedRef.current = true;
+    // Failures stay non-blocking here on purpose (PO review) - the badge resolver already fails
+    // open to a raw key in gray, and the check-in surface shouldn't interrupt operators over a
+    // catalog fetch, unlike admin pages where this is now a visible inline retry.
     fetchTicketTypes(eventId)
       .then((types) => {
         if (!cancelled) setTicketTypes(types);
       })
-      .catch(() => {
-        if (!cancelled) setTicketTypes([]);
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.error("fetchTicketTypes failed:", err);
+        setTicketTypes([]);
       });
     return () => {
       cancelled = true;

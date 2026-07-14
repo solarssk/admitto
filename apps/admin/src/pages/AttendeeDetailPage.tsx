@@ -148,6 +148,7 @@ export function AttendeeDetailPage() {
   const [detail, setDetail] = useState<AttendeeDetailDto | null>(null);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
+  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [form, setForm] = useState<AttendeeFormState | null>(null);
   const [initialEmail, setInitialEmail] = useState("");
   const [loading, setLoading] = useState(true);
@@ -219,20 +220,25 @@ export function AttendeeDetailPage() {
     void loadDetail();
   }, [loadDetail]);
 
-  useEffect(() => {
-    if (!eventId) return;
-    let cancelled = false;
+  const loadTicketTypes = useCallback(() => {
+    if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
+    setTicketTypes([]);
+    setTicketTypesError(null);
     fetchTicketTypes(eventId)
       .then((types) => {
-        if (!cancelled) setTicketTypes(types);
+        if (!isStillSelected(target)) return;
+        setTicketTypes(types);
       })
-      .catch(() => {
-        if (!cancelled) setTicketTypes([]);
+      .catch((err: unknown) => {
+        if (!isStillSelected(target)) return;
+        setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [eventId]);
+  }, [eventId, attendeeId]);
+
+  useEffect(() => {
+    loadTicketTypes();
+  }, [loadTicketTypes]);
 
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
   const isDirty =
@@ -665,6 +671,14 @@ export function AttendeeDetailPage() {
                     </option>
                   ))}
                 </Select>
+                {ticketTypesError && (
+                  <p className="attendee-form__error">
+                    {ticketTypesError}{" "}
+                    <button type="button" className="link-btn" onClick={loadTicketTypes}>
+                      Retry
+                    </button>
+                  </p>
+                )}
                 {attributeFields.map((field) => (
                   <CustomDataFieldInput
                     key={field.source_field}

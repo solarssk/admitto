@@ -30,6 +30,7 @@ export function CommunicationSendDialog({
   const [filterType, setFilterType] = useState<BulkSendFilter["type"]>("all");
   const [ticketType, setTicketType] = useState("");
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
+  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [rsvpStatus, setRsvpStatus] = useState<RsvpStatus>("confirmed");
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [phase, setPhase] = useState<DialogPhase>("form");
@@ -53,6 +54,8 @@ export function CommunicationSendDialog({
     runIdRef.current += 1;
     setFilterType("all");
     setTicketType("");
+    setTicketTypes([]);
+    setTicketTypesError(null);
     setRsvpStatus("confirmed");
     setRecipientCount(null);
     setPhase("form");
@@ -63,20 +66,24 @@ export function CommunicationSendDialog({
     setBatchStatus(null);
   }, [open]);
 
+  const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    setTicketTypesError(null);
     fetchTicketTypes(eventId)
       .then((types) => {
         if (!cancelled) setTicketTypes(types);
       })
-      .catch(() => {
-        if (!cancelled) setTicketTypes([]);
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setTicketTypes([]);
+        setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
       });
     return () => {
       cancelled = true;
     };
-  }, [open, eventId]);
+  }, [open, eventId, ticketTypesRetryToken]);
 
   useEffect(() => {
     if (!open || phase !== "polling" || !batchId) return;
@@ -268,6 +275,18 @@ export function CommunicationSendDialog({
                   </option>
                 ))}
               </Select>
+            )}
+            {filterType === "ticket_type" && ticketTypesError && (
+              <p className="mail-field-hint" role="alert">
+                {ticketTypesError}{" "}
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => setTicketTypesRetryToken((n) => n + 1)}
+                >
+                  Retry
+                </button>
+              </p>
             )}
             {filterType === "ticket_type" && !filterReady && (
               <p className="mail-field-hint">Enter a ticket type to count or send.</p>

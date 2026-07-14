@@ -54,6 +54,7 @@ import {
   deleteEvent,
   fetchEventImageAssets,
   fetchEventSettings,
+  fetchTicketTypes,
   patchEvent,
   revokeAllCheckIns,
   revokeAllItemsIssued,
@@ -189,6 +190,32 @@ describe("EventSettingsPage tabs", () => {
     expect(
       screen.getByText(/leave it blank to use the organization's logo/),
     ).toBeTruthy();
+  });
+
+  it("shows an inline error with Retry on the Ticket types tab when the catalog fails to load, and Retry recovers (CodeRabbit review)", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+    renderSettings();
+    await waitFor(() => screen.getByRole("tab", { name: "Ticket types" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Ticket types" }));
+
+    expect(await screen.findByText("Could not load ticket types")).toBeTruthy();
+
+    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([
+      {
+        id: "tt-1",
+        key: "vip",
+        label: "VIP",
+        color: "purple",
+        sort_order: 0,
+        attendee_count: 0,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("VIP")).toBeTruthy();
+    expect(screen.queryByText("Could not load ticket types")).toBeNull();
   });
 
   it("shows a superadmin-only notice instead of the image asset library for a non-superadmin org admin", async () => {
