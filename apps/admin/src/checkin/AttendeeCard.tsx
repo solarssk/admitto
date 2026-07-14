@@ -12,7 +12,7 @@ import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 
 type Props = {
   card: AttendeeCardDto;
-  ticketTypes: TicketTypeDto[];
+  ticketTypes?: TicketTypeDto[];
   eventTimezone: string;
   scanStatus?: CheckInStatus;
   confirmed?: boolean;
@@ -130,7 +130,7 @@ function isBlockedStatus(status: CheckInStatus): boolean {
 
 export function AttendeeCard({
   card,
-  ticketTypes,
+  ticketTypes = [],
   eventTimezone,
   scanStatus,
   confirmed,

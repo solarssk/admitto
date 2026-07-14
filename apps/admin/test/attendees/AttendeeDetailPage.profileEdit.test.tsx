@@ -48,6 +48,10 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     resendTicket: vi.fn(),
     fetchAttendeeDetail: vi.fn(),
     revokeAttendeeCheckIn: vi.fn(),
+    fetchTicketTypes: vi.fn().mockResolvedValue([
+      { id: "tt-1", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 1, created_at: "2026-01-01T00:00:00.000Z" },
+      { id: "tt-2", key: "standard", label: "Standard", color: "gray", sort_order: 1, attendee_count: 0, created_at: "2026-01-01T00:00:00.000Z" },
+    ]),
   };
 });
 

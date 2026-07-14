@@ -26,7 +26,7 @@ export interface AttendeesTableProps {
   statusFilter: "all" | "admitted" | "not_admitted";
   ticketTypeFilter: string;
   rsvpStatusFilter: "" | RsvpStatus;
-  ticketTypes: TicketTypeDto[];
+  ticketTypes?: TicketTypeDto[];
   onSearchChange: (value: string) => void;
   onStatusFilterChange: (value: "all" | "admitted" | "not_admitted") => void;
   onTicketTypeFilterChange: (value: string) => void;
@@ -52,7 +52,7 @@ export function AttendeesTable({
   statusFilter,
   ticketTypeFilter,
   rsvpStatusFilter,
-  ticketTypes,
+  ticketTypes = [],
   onSearchChange,
   onStatusFilterChange,
   onTicketTypeFilterChange,

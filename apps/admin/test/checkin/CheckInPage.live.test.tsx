@@ -43,6 +43,7 @@ vi.mock("../../src/hooks/useIsDesktop.js", () => ({
 }));
 
 vi.mock("../../src/api/client.js", () => ({
+  fetchTicketTypes: vi.fn().mockResolvedValue([]),
   ApiError: class ApiError extends Error {
     status: number;
     constructor(status: number, message: string) {

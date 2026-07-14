@@ -49,6 +49,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     revokeUserSessions: vi.fn(),
     fetchEventItems: vi.fn(),
     fetchEventCustomFields: vi.fn(),
+    fetchTicketTypes: vi.fn().mockResolvedValue([]),
     fetchOpsConfig: vi.fn(),
     createEventItem: vi.fn(),
     updateEventItem: vi.fn(),
