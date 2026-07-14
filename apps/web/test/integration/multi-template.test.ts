@@ -17,11 +17,16 @@ const ORG_A = "org-multi-tpl-a";
 const EVENT_A = "evt-multi-tpl-a";
 const EVENT_B = "evt-multi-tpl-b";
 const EMAIL_ADMIN = "multi-tpl-admin@example.com";
+// A second admin user, used only by the ticket_type filter tests below - the shared adminCookie
+// user already spends 2 of its 3 allotted admin:resend-bulk requests (600s window) on the
+// pre-existing dryRun tests in this file, and a 4th call for the same user would 429.
+const EMAIL_ADMIN_2 = "multi-tpl-admin-2@example.com";
 const PASSWORD = "multi-tpl-pass-123";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let adminCookie = "";
+let admin2Cookie = "";
 const exported: ExportPayload[] = [];
 
 const validTemplate = {
@@ -37,9 +42,9 @@ async function seed(client: PrismaClient) {
   });
   await client.attendee.deleteMany({ where: { event_id: EVENT_A } });
   await client.roleAssignment.deleteMany({ where: { scope_id: { in: [ORG_A, EVENT_A] } } });
-  await client.session.deleteMany({ where: { user: { email: EMAIL_ADMIN } } });
-  await client.userMfaMethod.deleteMany({ where: { user: { email: EMAIL_ADMIN } } });
-  await client.user.deleteMany({ where: { email: EMAIL_ADMIN } });
+  await client.session.deleteMany({ where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_2] } } } });
+  await client.userMfaMethod.deleteMany({ where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_2] } } } });
+  await client.user.deleteMany({ where: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_2] } } });
   await client.event.deleteMany({ where: { id: { in: [EVENT_A, EVENT_B] } } });
   await client.organization.deleteMany({ where: { id: ORG_A } });
 
@@ -63,6 +68,10 @@ async function seed(client: PrismaClient) {
     },
   });
 
+  await client.ticketType.createMany({
+    data: [{ event_id: EVENT_A, key: "vip", label: "VIP", color: "purple" }],
+  });
+
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
   await client.roleAssignment.create({
     data: { user_id: adminUser.id, role: "admin", scope_type: "organization", scope_id: ORG_A },
@@ -78,6 +87,21 @@ async function seed(client: PrismaClient) {
 
   const { rawToken } = await createSession(client, { userId: adminUser.id, stage: SESSION_STAGE.FULL });
   adminCookie = `admitto_session=${rawToken}`;
+
+  const admin2 = await client.user.create({ data: { email: EMAIL_ADMIN_2, password_hash } });
+  await client.roleAssignment.create({
+    data: { user_id: admin2.id, role: "admin", scope_type: "organization", scope_id: ORG_A },
+  });
+  await client.userMfaMethod.create({
+    data: {
+      user_id: admin2.id,
+      type: "totp",
+      secret_enc: encryptTotpSecret(generateTotpSecret()),
+      confirmed_at: new Date(),
+    },
+  });
+  const admin2Session = await createSession(client, { userId: admin2.id, stage: SESSION_STAGE.FULL });
+  admin2Cookie = `admitto_session=${admin2Session.rawToken}`;
 }
 
 async function resetEventAState(client: PrismaClient) {
@@ -439,6 +463,67 @@ describe("multi-template API", () => {
       body: JSON.stringify({
         templateId: ticket.id,
         filter: { type: "attendee_ids", ids: ["att-multi-local", "att-foreign-other-event"] },
+        dryRun: true,
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { recipientCount: number };
+    expect(body.recipientCount).toBe(1);
+  });
+
+  it("POST /send rejects a ticket_type filter value not in the event's catalog (batch 04 / #351)", async () => {
+    await putTicketTemplate(app);
+    const ticket = await prisma.mailTemplate.findUniqueOrThrow({
+      where: {
+        scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+      method: "POST",
+      headers: {
+        Cookie: admin2Cookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        templateId: ticket.id,
+        filter: { type: "ticket_type", value: "bogus-type" },
+        dryRun: true,
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("unknown_ticket_type");
+  });
+
+  it("POST /send dryRun accepts a ticket_type filter value in the event's catalog", async () => {
+    await putTicketTemplate(app);
+    const ticket = await prisma.mailTemplate.findUniqueOrThrow({
+      where: {
+        scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: "att-multi-vip",
+        event_id: EVENT_A,
+        email: "vip@example.com",
+        name: "VIP Guest",
+        ticket_type: "vip",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+      method: "POST",
+      headers: {
+        Cookie: admin2Cookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        templateId: ticket.id,
+        filter: { type: "ticket_type", value: "vip" },
         dryRun: true,
       }),
     });
