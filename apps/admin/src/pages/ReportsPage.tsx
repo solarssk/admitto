@@ -285,6 +285,11 @@ export function ReportsPage() {
 
   useEffect(() => {
     if (!eventId) return;
+    // Cleared immediately, not just on settle - otherwise an admission log row whose key exists
+    // in both the old and new event's catalogs could briefly resolve against the previous event's
+    // label/color while this fetch is still in flight (Codex review), same fix already applied to
+    // CommunicationSendDialog/EventSettingsPage for the same stale-catalog-on-switch pattern.
+    setTicketTypes([]);
     let cancelled = false;
     fetchTicketTypes(eventId)
       .then((types) => {
