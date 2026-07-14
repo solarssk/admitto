@@ -539,6 +539,76 @@ describe("ReportsPage admission log", () => {
     expect(within(typeCell).getByText("(none)")).toBeTruthy();
     expect(within(typeCell).queryByText("—")).toBeNull();
   });
+
+  it("does not conflate a genuinely untyped admission with one whose raw ticket_type is literally the filter's internal sentinel string (Codex review)", async () => {
+    vi.mocked(fetchEventReports).mockResolvedValue({
+      ...emptyReport,
+      summary: { ...emptyReport.summary, total_attendees: 2, admitted: 2, admission_rate_pct: 100 },
+      by_ticket_type: [
+        { key: null, type: "(none)", color: "gray", total: 1, admitted: 1, admission_pct: 100 },
+        {
+          key: "__none__",
+          type: "__none__ (not in catalog)",
+          color: "gray",
+          total: 1,
+          admitted: 1,
+          admission_pct: 100,
+        },
+      ],
+      admission_log: [
+        {
+          attendee_id: "att-null",
+          name: "Null Guest",
+          email: "null-guest@example.com",
+          ticket_type: null,
+          admitted_at: "2026-06-01T10:00:00.000Z",
+          device_id: null,
+        },
+        {
+          attendee_id: "att-literal",
+          name: "Literal Guest",
+          email: "literal-guest@example.com",
+          // Legacy/orphaned data seeded outside the app's normal write paths isn't constrained to
+          // the slugified key format - it could coincidentally match the filter's own internal
+          // sentinel string for "no type".
+          ticket_type: "__none__",
+          admitted_at: "2026-06-01T10:05:00.000Z",
+          device_id: null,
+        },
+      ],
+      admission_log_total: 2,
+    });
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Null Guest")).toBeTruthy();
+    });
+    expect(screen.getByText("Literal Guest")).toBeTruthy();
+
+    const select = screen.getByLabelText("Ticket type") as HTMLSelectElement;
+    const options = Array.from(select.options).map((o) => o.value);
+    // The two buckets must not share a select option value.
+    expect(new Set(options).size).toBe(options.length);
+
+    fireEvent.change(select, { target: { value: "__none__" } });
+    await waitFor(() => {
+      expect(screen.getByText("Null Guest")).toBeTruthy();
+    });
+    expect(screen.queryByText("Literal Guest")).toBeNull();
+
+    const literalOption = Array.from(select.options).find((o) => o.textContent === "__none__ (not in catalog)");
+    if (!literalOption) throw new Error("option for the literal __none__ bucket not found");
+    fireEvent.change(select, { target: { value: literalOption.value } });
+    await waitFor(() => {
+      expect(screen.getByText("Literal Guest")).toBeTruthy();
+    });
+    expect(screen.queryByText("Null Guest")).toBeNull();
+  });
 });
 
 describe("EventsPickerPage archived event navigation", () => {
