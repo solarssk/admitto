@@ -90,6 +90,19 @@
   font-size: var(--fs-sm);
 }
 
+.reports-bytype__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reports-bytype__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
 .reports-bytype__track {
   height: 8px;
   background: var(--surface-sunken);
