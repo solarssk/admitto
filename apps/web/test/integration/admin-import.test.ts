@@ -163,6 +163,12 @@ async function seed(client: PrismaClient) {
       },
     ],
   });
+  await client.ticketType.createMany({
+    data: [
+      { event_id: EVENT_A, key: "standard", label: "Standard", sort_order: 0 },
+      { event_id: EVENT_A, key: "vip", label: "VIP", color: "purple", sort_order: 1 },
+    ],
+  });
 }
 
 /** Create a full-session cookie string for the given user id. */

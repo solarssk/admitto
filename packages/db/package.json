@@ -25,13 +25,14 @@
     "coverage": "vitest run --coverage",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate deploy && tsx src/scripts/backfill-public-ref.ts && tsx src/scripts/backfill-event-custom-fields.ts",
+    "db:migrate": "prisma migrate deploy && tsx src/scripts/backfill-public-ref.ts && tsx src/scripts/backfill-event-custom-fields.ts && tsx src/scripts/backfill-ticket-types.ts",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:status": "prisma migrate status",
     "predb:seed": "npm run build --workspace=@admitto/crypto",
     "db:seed": "prisma db seed",
     "db:backfill-public-ref": "tsx src/scripts/backfill-public-ref.ts",
-    "db:backfill-event-custom-fields": "tsx src/scripts/backfill-event-custom-fields.ts"
+    "db:backfill-event-custom-fields": "tsx src/scripts/backfill-event-custom-fields.ts",
+    "db:backfill-ticket-types": "tsx src/scripts/backfill-ticket-types.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

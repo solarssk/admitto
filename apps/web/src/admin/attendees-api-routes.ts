@@ -35,6 +35,9 @@ import {
   revokeItemState,
   getAttendeeCard,
   UndoNotAllowedError,
+  loadEventTicketTypes,
+  assertTicketTypeInCatalog,
+  UnknownTicketTypeError,
 } from "@admitto/tickets";
 import {
   EXPORT_BASE_COLUMNS,
@@ -697,28 +700,6 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   });
 }
 
-/** GET /api/admin/events/:eventId/attendees/ticket-types — distinct non-empty ticket_type labels. */
-export async function handleListTicketTypes(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  const rows = await db.attendee.findMany({
-    where: { event_id: eventId, ticket_type: { not: null } },
-    select: { ticket_type: true },
-    distinct: ["ticket_type"],
-    orderBy: { ticket_type: "asc" },
-  });
-
-  const types = rows
-    .map((r) => r.ticket_type)
-    .filter((t): t is string => t !== null && t.trim() !== "");
-
-  return c.json({ types });
-}
-
 /** GET /api/admin/events/:eventId/attendees/export — filtered subset as XLSX, CSV, or PDF (no tokens). */
 export async function handleExportAttendees(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -975,6 +956,20 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
       );
     } catch (err) {
       return c.json({ error: customDataErrorCode(err) }, 400);
+    }
+  }
+
+  // Catalog membership check (batch 04 / #351) — the PATCH schema only validates shape
+  // (string, max length), same as create; this is the semantic check against the event's live
+  // TicketType rows, mirroring how custom_data_fields is validated above.
+  if (profilePatch.ticket_type) {
+    try {
+      assertTicketTypeInCatalog(await loadEventTicketTypes(db, eventId), profilePatch.ticket_type);
+    } catch (err) {
+      if (err instanceof UnknownTicketTypeError) {
+        return c.json({ error: "unknown_ticket_type" }, 400);
+      }
+      throw err;
     }
   }
 
@@ -1235,6 +1230,17 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
     customData = built as Prisma.InputJsonValue | undefined;
   } catch (err) {
     return c.json({ error: customDataErrorCode(err) }, 400);
+  }
+
+  if (ticket_type) {
+    try {
+      assertTicketTypeInCatalog(await loadEventTicketTypes(db, eventId), ticket_type);
+    } catch (err) {
+      if (err instanceof UnknownTicketTypeError) {
+        return c.json({ error: "unknown_ticket_type" }, 400);
+      }
+      throw err;
+    }
   }
 
   try {

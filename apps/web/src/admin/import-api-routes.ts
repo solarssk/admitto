@@ -1,8 +1,19 @@
 import { randomUUID } from "node:crypto";
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { parseAttendees, commitImport, type AttendeeRow, type ImportAttributeField } from "@admitto/import";
-import { loadEventCustomDataFields, filterCustomDataAttributeFields, writeBulkActionLog } from "@admitto/tickets";
+import {
+  parseAttendees,
+  commitImport,
+  type AttendeeRow,
+  type ImportAttributeField,
+  type ImportTicketType,
+} from "@admitto/import";
+import {
+  loadEventCustomDataFields,
+  filterCustomDataAttributeFields,
+  loadEventTicketTypes,
+  writeBulkActionLog,
+} from "@admitto/tickets";
 import { xlsxBufferToCsv, ImportRowLimitError, ImportZipBombError, MAX_CSV_CHARS, MAX_IMPORT_ROWS } from "./xlsx-to-csv.js";
 import { logger } from "../logger.js";
 import {
@@ -348,11 +359,12 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
     if (upload instanceof Response) return upload;
 
     const attributeFields = await loadImportAttributeFields(db, eventId);
-    const parsed = parseAttendees(upload.csv, { attributeFields });
+    const ticketTypes = await loadImportTicketTypes(db, eventId);
+    const parsed = parseAttendees(upload.csv, { attributeFields, ticketTypes });
     const summary = await commitImport(
       eventId,
       parsed.validRows,
-      { dryRun: true, overwrite: upload.overwrite, attributeFields },
+      { dryRun: true, overwrite: upload.overwrite, attributeFields, ticketTypes },
       db,
     );
 
@@ -432,7 +444,8 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
     if (upload instanceof Response) return upload;
 
     const attributeFields = await loadImportAttributeFields(db, eventId);
-    const parsed = parseAttendees(upload.csv, { attributeFields });
+    const ticketTypes = await loadImportTicketTypes(db, eventId);
+    const parsed = parseAttendees(upload.csv, { attributeFields, ticketTypes });
 
     const summary = await db.$transaction(
       async (tx) => {
@@ -446,6 +459,7 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
             overwrite: upload.overwrite,
             ownedTransaction: true,
             attributeFields,
+            ticketTypes,
           },
           tx,
         );
@@ -465,7 +479,13 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
         const result = await commitImport(
           eventId,
           parsed.validRows,
-          { dryRun: false, overwrite: upload.overwrite, ownedTransaction: true, attributeFields },
+          {
+            dryRun: false,
+            overwrite: upload.overwrite,
+            ownedTransaction: true,
+            attributeFields,
+            ticketTypes,
+          },
           tx,
         );
 
@@ -542,6 +562,11 @@ async function loadImportAttributeFields(
 ): Promise<ImportAttributeField[]> {
   const fields = await loadEventCustomDataFields(db, eventId);
   return filterCustomDataAttributeFields(fields);
+}
+
+async function loadImportTicketTypes(db: PrismaClient, eventId: string): Promise<ImportTicketType[]> {
+  const types = await loadEventTicketTypes(db, eventId);
+  return types.map((t) => ({ key: t.key, label: t.label }));
 }
 
 function buildImportTemplateCsv(attributeFields: ImportAttributeField[]): string {

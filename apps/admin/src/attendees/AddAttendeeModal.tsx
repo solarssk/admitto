@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Input } from "@admitto/ui";
-import { ApiError, createAttendee } from "../api/client.js";
+import { Button, Input, Select } from "@admitto/ui";
+import { ApiError, createAttendee, fetchTicketTypes } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeDetailDto } from "../api/types.js";
+import type { AttendeeDetailDto, TicketTypeDto } from "../api/types.js";
 import { CustomDataFieldInput } from "./CustomDataFieldInput.js";
 import {
   fetchAttendeeCustomFields,
@@ -32,6 +32,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
   const [company, setCompany] = useState("");
   const [department, setDepartment] = useState("");
   const [ticketType, setTicketType] = useState("");
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
   const [customFields, setCustomFields] = useState<Record<string, string>>({});
   const [attributeFieldsLoading, setAttributeFieldsLoading] = useState(false);
@@ -60,6 +61,22 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
       })
       .finally(() => {
         if (!cancelled) setAttributeFieldsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setTicketTypes([]);
+    let cancelled = false;
+    fetchTicketTypes(eventId)
+      .then((types) => {
+        if (!cancelled) setTicketTypes(types);
+      })
+      .catch(() => {
+        if (!cancelled) setTicketTypes([]);
       });
     return () => {
       cancelled = true;
@@ -198,7 +215,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
               setError(null);
             }}
           />
-          <Input
+          <Select
             label="Ticket type"
             value={ticketType}
             disabled={submitting}
@@ -206,7 +223,14 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
               setTicketType(e.target.value);
               setError(null);
             }}
-          />
+          >
+            <option value="">—</option>
+            {ticketTypes.map((type) => (
+              <option key={type.key} value={type.key}>
+                {type.label}
+              </option>
+            ))}
+          </Select>
           {attributeFields.map((field) => (
             <CustomDataFieldInput
               key={field.source_field}

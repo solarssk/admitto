@@ -83,6 +83,10 @@ import type {
   EventCustomFieldsListResponse,
   CreateEventCustomFieldBody,
   UpdateEventCustomFieldPatch,
+  TicketTypeDto,
+  TicketTypesListResponse,
+  CreateTicketTypeBody,
+  UpdateTicketTypePatch,
 } from "./types.js";
 
 export type EventFullMeta = {
@@ -1024,16 +1028,53 @@ export async function fetchEventDeliveries(
 }
 
 /** Fetch distinct ticket types for an event (for the filter dropdown). */
+/** List an event's ticket-type catalog (label/color, each with a live attendee count) — the
+ * single source of truth consumed by the add/edit attendee form, filters, bulk-send, import,
+ * and Reports alike (batch 04 / #351). */
 export async function fetchTicketTypes(
   eventId: string,
   signal?: AbortSignal,
-): Promise<string[]> {
+): Promise<TicketTypeDto[]> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/ticket-types`, {
+    credentials: "same-origin",
+    signal,
+  });
+  const data = await parseJson<TicketTypesListResponse>(res);
+  return data.items;
+}
+
+/** Define a new ticket type for an event; throws ApiError on validation/limit. */
+export async function createTicketType(
+  eventId: string,
+  body: CreateTicketTypeBody,
+): Promise<TicketTypeDto> {
   const res = await fetch(
-    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/ticket-types`,
-    { credentials: "same-origin", signal },
+    `/api/admin/events/${encodeURIComponent(eventId)}/ticket-types`,
+    jsonPostInit(body),
   );
-  const data = await parseJson<{ types: string[] }>(res);
-  return data.types;
+  return parseJson<TicketTypeDto>(res);
+}
+
+/** Update a ticket type's label/color. `key` is immutable after create. */
+export async function updateTicketType(
+  eventId: string,
+  typeId: string,
+  patch: UpdateTicketTypePatch,
+): Promise<TicketTypeDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/ticket-types/${encodeURIComponent(typeId)}`,
+    jsonPatchInit(patch),
+  );
+  return parseJson<TicketTypeDto>(res);
+}
+
+/** Delete a ticket type. Rejected with 409 type_in_use while an attendee still has this type. */
+export async function deleteTicketType(eventId: string, typeId: string): Promise<void> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/ticket-types/${encodeURIComponent(typeId)}`,
+    jsonDeleteInit(),
+  );
+  await parseJson<{ ok: boolean }>(res);
 }
 
 /** Download a filtered attendee export and trigger browser save. */

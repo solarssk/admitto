@@ -1,5 +1,5 @@
 import { Button } from "@admitto/ui";
-import type { AttendeeCardDto, CheckInScanResponse, CheckInStatus } from "../api/types.js";
+import type { AttendeeCardDto, CheckInScanResponse, CheckInStatus, TicketTypeDto } from "../api/types.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 
@@ -65,6 +65,7 @@ function statusMeta(status: CheckInStatus): {
 type CheckInCameraResultPanelProps = {
   scanResult: CheckInScanResponse;
   card: AttendeeCardDto | null;
+  ticketTypes: TicketTypeDto[];
   pending: boolean;
   canAct: boolean;
   eventTimezone: string;
@@ -82,6 +83,7 @@ type CheckInCameraResultPanelProps = {
 export function CheckInCameraResultPanel({
   scanResult,
   card,
+  ticketTypes,
   pending,
   canAct,
   eventTimezone,
@@ -110,7 +112,9 @@ export function CheckInCameraResultPanel({
           {/* Same TicketTypeBadge AttendeeCard.tsx uses on desktop, not a
               plain <span> — ticket-type coloring (e.g. VIP) is sourced from
               one place, not redefined per surface (PO review). */}
-          {card.ticket_type && <TicketTypeBadge ticketType={card.ticket_type} />}
+          {card.ticket_type && (
+            <TicketTypeBadge ticketType={card.ticket_type} catalog={ticketTypes} />
+          )}
         </div>
       )}
       <div className="ck-overlay__result-actions">

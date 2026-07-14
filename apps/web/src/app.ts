@@ -110,7 +110,6 @@ import {
   handleDeleteEventAttendee,
   handleResendEventAttendeeTicket,
   handleBulkResendTickets,
-  handleListTicketTypes,
   handleExportAttendees,
   handleRevokeAttendeeCheckIn,
   handleRevokeAttendeeItem,
@@ -147,6 +146,12 @@ import {
   handlePatchEventCustomField,
   handleDeleteEventCustomField,
 } from "./admin/event-custom-fields-routes.js";
+import {
+  handleListEventTicketTypes,
+  handleCreateEventTicketType,
+  handlePatchEventTicketType,
+  handleDeleteEventTicketType,
+} from "./admin/ticket-types-routes.js";
 import { resolveUploadDir } from "./admin/branding-upload.js";
 import {
   handleGetEventTemplate,
@@ -559,8 +564,26 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),
   );
-  app.get("/api/admin/events/:eventId/attendees/ticket-types", staffAdminGate, (c) =>
-    handleListTicketTypes(c, db),
+  app.get("/api/admin/events/:eventId/ticket-types", staffAdminGate, (c) =>
+    handleListEventTicketTypes(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/ticket-types",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleCreateEventTicketType(c, db)),
+  );
+  app.patch(
+    "/api/admin/events/:eventId/ticket-types/:typeId",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handlePatchEventTicketType(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/ticket-types/:typeId",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDeleteEventTicketType(c, db)),
   );
   app.get("/api/admin/events/:eventId/attendees/export", staffAdminGate, adminExportRateLimit, (c) =>
     handleExportAttendees(c, db),

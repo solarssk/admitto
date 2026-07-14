@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useBlocker, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { Badge, Button, Card, EmptyState, Input, PageHeader, useToast } from "@admitto/ui";
 import {
@@ -7,6 +7,7 @@ import {
   deleteEvent,
   exportEventPii,
   fetchEventSettings,
+  fetchTicketTypes,
   patchEvent,
   revokeAllCheckIns,
   revokeAllItemsIssued,
@@ -14,7 +15,8 @@ import {
   uploadEventBrandingFile,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventSettingsDto } from "../api/types.js";
+import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
+import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -161,6 +163,8 @@ export function EventSettingsPage() {
   const [revokeCheckinsOpen, setRevokeCheckinsOpen] = useState(false);
   const [revokingItems, setRevokingItems] = useState(false);
   const [revokeItemsOpen, setRevokeItemsOpen] = useState(false);
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
+  const [ticketTypesLoading, setTicketTypesLoading] = useState(true);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
   const [tab, setTab] = useState<EventSettingsTab>(initialTab);
@@ -221,6 +225,27 @@ export function EventSettingsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Only the very first load shows the card's "Loading…" placeholder - a background refresh
+  // after a color/label edit (TicketTypesCard's onChanged) must not swap the whole list out and
+  // back in, which read as a full-card flicker (PO review).
+  const ticketTypesLoadedRef = useRef(false);
+  const loadTicketTypes = useCallback(async () => {
+    if (!eventId) return;
+    if (!ticketTypesLoadedRef.current) setTicketTypesLoading(true);
+    try {
+      setTicketTypes(await fetchTicketTypes(eventId));
+      ticketTypesLoadedRef.current = true;
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Failed to load ticket types"), "error");
+    } finally {
+      setTicketTypesLoading(false);
+    }
+  }, [eventId, addToast]);
+
+  useEffect(() => {
+    void loadTicketTypes();
+  }, [loadTicketTypes]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -551,6 +576,16 @@ export function EventSettingsPage() {
             </div>
           </div>
         </Card>
+      </EventSettingsTabPanel>
+
+      <EventSettingsTabPanel tab="ticket-types" activeTab={tab} visited={visitedTabs} label="Ticket types">
+        <TicketTypesCard
+          eventId={eventId}
+          event={event}
+          types={ticketTypes}
+          loading={ticketTypesLoading}
+          onChanged={() => void loadTicketTypes()}
+        />
       </EventSettingsTabPanel>
 
       <EventSettingsTabPanel tab="branding" activeTab={tab} visited={visitedTabs} label="Branding">

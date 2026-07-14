@@ -5,8 +5,9 @@ import {
   filterCustomDataAttributeFields,
   type EventItemContent,
 } from "@admitto/tickets";
-import type { AttendeeRow, ImportOptions, ImportSummary, SkippedRow } from "./types.js";
+import type { AttendeeRow, ImportOptions, ImportSummary, ImportTicketType, SkippedRow } from "./types.js";
 import { importCustomDataSkipReason } from "./custom-data-import.js";
+import { resolveImportTicketType } from "./ticket-type-import.js";
 import { generateToken } from "@admitto/crypto";
 
 /** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token_hash. */
@@ -70,6 +71,20 @@ function validateImportCustomData(
   } catch (err) {
     return importCustomDataSkipReason(err, fields);
   }
+}
+
+/** Re-validates a row's ticket_type against the event's catalog at commit time — the catalog can
+ * change between preview and commit (e.g. a type deleted after the CSV was previewed), so
+ * parse-time normalization alone isn't a sufficient guarantee. Same opt-in semantics as
+ * parseAttendees: `catalog` undefined skips validation entirely (today's free-text behavior). */
+function validateImportTicketType(
+  raw: string | undefined,
+  catalog: ImportTicketType[] | undefined,
+): { value: string | undefined; skipReason: string | null } {
+  if (raw === undefined || catalog === undefined) return { value: raw, skipReason: null };
+  const found = resolveImportTicketType(raw, catalog);
+  if (!found) return { value: undefined, skipReason: `Unknown ticket type: "${raw}"` };
+  return { value: found.key, skipReason: null };
 }
 
 type ImportDb = PrismaClient | Prisma.TransactionClient;
@@ -233,6 +248,11 @@ export async function commitImport(
         skipped.push({ email: row.email, reason: customDataError });
         continue;
       }
+      const ticketTypeResult = validateImportTicketType(row.ticket_type, options.ticketTypes);
+      if (ticketTypeResult.skipReason) {
+        skipped.push({ email: row.email, reason: ticketTypeResult.skipReason });
+        continue;
+      }
       const customDataTouched =
         row.custom_data !== undefined || pendingUpdate?.data.custom_data !== undefined;
       // overwrite=true — update presentation/profile fields only.
@@ -242,7 +262,7 @@ export async function commitImport(
         data: {
           ...(pendingUpdate?.data ?? {}),
           name,
-          ...(row.ticket_type !== undefined && { ticket_type: row.ticket_type }),
+          ...(ticketTypeResult.value !== undefined && { ticket_type: ticketTypeResult.value }),
           ...(row.company !== undefined && { company: row.company }),
           ...(row.department !== undefined && { department: row.department }),
           ...(customDataTouched && {
@@ -256,13 +276,18 @@ export async function commitImport(
         skipped.push({ email: row.email, reason: customDataError });
         continue;
       }
+      const ticketTypeResult = validateImportTicketType(row.ticket_type, options.ticketTypes);
+      if (ticketTypeResult.skipReason) {
+        skipped.push({ email: row.email, reason: ticketTypeResult.skipReason });
+        continue;
+      }
       const isAgency = row.external_uuid !== undefined || row.qr_payload !== undefined;
       creates.push({
         id: randomUUID(),
         event_id: eventId,
         email: row.email,
         name,
-        ...(row.ticket_type !== undefined && { ticket_type: row.ticket_type }),
+        ...(ticketTypeResult.value !== undefined && { ticket_type: ticketTypeResult.value }),
         ...(row.external_uuid !== undefined && { external_uuid: row.external_uuid }),
         ...(row.qr_payload !== undefined && { qr_payload: row.qr_payload }),
         ...(isAgency && { public_ref: generateToken() }),

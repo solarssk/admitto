@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { canManageInstance, listAdminEvents } from "@admitto/auth";
-import { ensureBadgeEventItem, writeAdminAuditLog } from "@admitto/tickets";
+import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { timezoneField } from "./timezone.js";
@@ -171,6 +171,9 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
       // otherwise a no-op with no matching item (#367, #368 keep all other
       // items empty by default; badge is the one exception, see event-items.ts).
       await ensureBadgeEventItem(created.id, tx);
+      // Seed the default "Standard" ticket type so the catalog isn't empty from the start
+      // (batch 04 / #351) — admins add VIP/others via Event Settings -> Ticket types.
+      await ensureStandardTicketType(created.id, tx);
 
       await writeAdminAuditLog(tx, {
         organizationId: orgId,

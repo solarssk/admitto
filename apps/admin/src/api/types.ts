@@ -386,6 +386,38 @@ export interface UpdateEventCustomFieldPatch {
   options?: string[] | null;
 }
 
+/** The 8 curated colors a ticket type may use - kept in sync by hand with
+ * packages/tickets/src/ticket-types.ts's TICKET_TYPE_COLOR_KEYS and
+ * packages/ui/src/components/TicketTypeBadge.tsx's TICKET_TYPE_COLORS. */
+export type TicketTypeColor = "gray" | "blue" | "green" | "yellow" | "red" | "azure" | "teal" | "purple";
+
+/** A per-event ticket type (batch 04 / #351) - the single source of truth for a type's label and
+ * color; `key` is immutable after create. */
+export interface TicketTypeDto {
+  id: string;
+  key: string;
+  label: string;
+  color: TicketTypeColor;
+  sort_order: number;
+  attendee_count: number;
+  created_at: string;
+}
+
+export interface TicketTypesListResponse {
+  items: TicketTypeDto[];
+}
+
+export interface CreateTicketTypeBody {
+  label: string;
+  color?: TicketTypeColor;
+}
+
+/** `key` is immutable after create - see TicketTypeDto. */
+export interface UpdateTicketTypePatch {
+  label?: string;
+  color?: TicketTypeColor;
+}
+
 export interface CreateEventItemBody {
   key: string;
   label: string;
@@ -893,8 +925,12 @@ export interface EventReportsResponse {
     peak_hour_count: number;
   };
   by_hour: Array<{ hour: string; count: number }>;
+  /** One row per configured ticket type (catalog order), plus a trailing `key: null` "(none)"
+   * row when any attendee has no type set (batch 04 / #387). */
   by_ticket_type: Array<{
+    key: string | null;
     type: string;
+    color: TicketTypeColor;
     total: number;
     admitted: number;
     admission_pct: number;
@@ -903,7 +939,7 @@ export interface EventReportsResponse {
     attendee_id: string;
     name: string;
     email: string;
-    ticket_type: string;
+    ticket_type: string | null;
     admitted_at: string;
     device_id: string | null;
   }>;

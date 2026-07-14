@@ -1,5 +1,5 @@
 import { Badge, Button, Card, IconButton, Input, Select } from "@admitto/ui";
-import type { AttendeeRowDto, RsvpStatus } from "../api/types.js";
+import type { AttendeeRowDto, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { RsvpStatusBadge } from "./rsvpStatusBadge.js";
@@ -26,7 +26,7 @@ export interface AttendeesTableProps {
   statusFilter: "all" | "admitted" | "not_admitted";
   ticketTypeFilter: string;
   rsvpStatusFilter: "" | RsvpStatus;
-  availableTypes: string[];
+  ticketTypes: TicketTypeDto[];
   onSearchChange: (value: string) => void;
   onStatusFilterChange: (value: "all" | "admitted" | "not_admitted") => void;
   onTicketTypeFilterChange: (value: string) => void;
@@ -52,7 +52,7 @@ export function AttendeesTable({
   statusFilter,
   ticketTypeFilter,
   rsvpStatusFilter,
-  availableTypes,
+  ticketTypes,
   onSearchChange,
   onStatusFilterChange,
   onTicketTypeFilterChange,
@@ -116,9 +116,9 @@ export function AttendeesTable({
             onChange={(e) => onTicketTypeFilterChange(e.target.value)}
           >
             <option value="">All types</option>
-            {availableTypes.map((t) => (
-              <option key={t} value={t}>
-                {t}
+            {ticketTypes.map((t) => (
+              <option key={t.key} value={t.key}>
+                {t.label}
               </option>
             ))}
           </Select>
@@ -160,7 +160,7 @@ export function AttendeesTable({
                     </button>
                   </td>
                   <td>
-                    <TicketTypeBadge ticketType={row.ticket_type} />
+                    <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
                   </td>
                   <td>
                     <div className="attendees-table-v2__company">

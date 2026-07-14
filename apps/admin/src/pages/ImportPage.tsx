@@ -232,7 +232,17 @@ export function ImportPage() {
                   <tr><td><code>first_name</code></td><td>Yes</td><td>Attendee&apos;s first name</td></tr>
                   <tr><td><code>last_name</code></td><td>Yes</td><td>Attendee&apos;s last name</td></tr>
                   <tr><td><code>email</code></td><td>Yes</td><td>Valid email address (used as unique key)</td></tr>
-                  <tr><td><code>ticket_type</code></td><td>No</td><td>Ticket category (free text)</td></tr>
+                  <tr>
+                    <td><code>ticket_type</code></td>
+                    <td>No</td>
+                    <td>
+                      Must match a{" "}
+                      <Link to={`/admin/events/${eventId}/settings?tab=ticket-types`}>
+                        ticket type configured for this event
+                      </Link>
+                      ; unmatched values are skipped on import
+                    </td>
+                  </tr>
                   <tr><td><code>company</code></td><td>No</td><td>Attendee&apos;s company</td></tr>
                   <tr><td><code>department</code></td><td>No</td><td>Department or team</td></tr>
                   <tr><td><code>external_uuid</code></td><td>No</td><td>External ID for deduplication</td></tr>

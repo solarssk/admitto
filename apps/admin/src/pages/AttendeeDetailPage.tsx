@@ -16,13 +16,14 @@ import {
 import {
   ApiError,
   fetchAttendeeDetail,
+  fetchTicketTypes,
   resendTicket,
   revokeAttendeeCheckIn,
   updateAttendee,
   type EventFullMeta,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeDetailDto, EventDto, RsvpStatus, UpdateAttendeePatch } from "../api/types.js";
+import type { AttendeeDetailDto, EventDto, RsvpStatus, TicketTypeDto, UpdateAttendeePatch } from "../api/types.js";
 import {
   formatDateTime,
   loadAttendeeDetailData,
@@ -146,6 +147,7 @@ export function AttendeeDetailPage() {
   const [tab, setTab] = useState<TabId>("overview");
   const [detail, setDetail] = useState<AttendeeDetailDto | null>(null);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [form, setForm] = useState<AttendeeFormState | null>(null);
   const [initialEmail, setInitialEmail] = useState("");
   const [loading, setLoading] = useState(true);
@@ -216,6 +218,21 @@ export function AttendeeDetailPage() {
   useEffect(() => {
     void loadDetail();
   }, [loadDetail]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    let cancelled = false;
+    fetchTicketTypes(eventId)
+      .then((types) => {
+        if (!cancelled) setTicketTypes(types);
+      })
+      .catch(() => {
+        if (!cancelled) setTicketTypes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId]);
 
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
   const isDirty =
@@ -636,7 +653,18 @@ export function AttendeeDetailPage() {
                 <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
                 <Input label="Company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
                 <Input label="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
-                <Input label="Ticket type" value={form.ticket_type} onChange={(e) => setForm({ ...form, ticket_type: e.target.value })} />
+                <Select
+                  label="Ticket type"
+                  value={form.ticket_type}
+                  onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
+                >
+                  <option value="">—</option>
+                  {ticketTypes.map((type) => (
+                    <option key={type.key} value={type.key}>
+                      {type.label}
+                    </option>
+                  ))}
+                </Select>
                 {attributeFields.map((field) => (
                   <CustomDataFieldInput
                     key={field.source_field}

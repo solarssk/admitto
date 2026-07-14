@@ -25,23 +25,23 @@ model Organization {
 }
 
 model Event {
-  id               String          @id @default(cuid())
+  id               String              @id @default(cuid())
   organization_id  String
-  organization     Organization    @relation(fields: [organization_id], references: [id], onDelete: Restrict)
+  organization     Organization        @relation(fields: [organization_id], references: [id], onDelete: Restrict)
   title            String
-  slug             String          @unique
+  slug             String              @unique
   date             DateTime
-  timezone         String          @default("UTC")
+  timezone         String              @default("UTC")
   location         String?
   capacity         Int?
   logo_url         String?
   header_image_url String?
-  created_at       DateTime        @default(now())
+  created_at       DateTime            @default(now())
   archived_at      DateTime?
   // Event-day ops (ADR 0010): require_confirm_on_scan, badge_at_entry, etc.
   ops_config       Json?
   // Single operational sticky note shown on the overview page to all staff.
-  pinned_note      String?           @db.Text
+  pinned_note      String?             @db.Text
   attendees        Attendee[]
   check_ins        CheckIn[]
   email_deliveries EmailDelivery[]
@@ -52,6 +52,7 @@ model Event {
   resources        EventResource[]
   image_assets     EventImageAsset[]
   custom_fields    EventCustomField[]
+  ticket_types     TicketType[]
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
@@ -74,16 +75,16 @@ model EventContact {
 }
 
 model EventResource {
-  id          String              @id @default(cuid())
+  id          String            @id @default(cuid())
   event_id    String
-  event       Event               @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  event       Event             @relation(fields: [event_id], references: [id], onDelete: Cascade)
   title       String
-  type        EventResourceType   @default(link)
+  type        EventResourceType @default(link)
   url         String
   description String?
-  sort_order  Int                 @default(0)
-  created_at  DateTime            @default(now())
-  updated_at  DateTime            @updatedAt
+  sort_order  Int               @default(0)
+  created_at  DateTime          @default(now())
+  updated_at  DateTime          @updatedAt
 
   @@index([event_id, sort_order])
 }
@@ -130,20 +131,39 @@ model EventCustomField {
   @@index([event_id])
 }
 
+// Per-event catalog of ticket types (batch 04 / #351) - replaces free-text Attendee.ticket_type.
+// `key` is immutable after create (slugified from `label`) since it's what Attendee.ticket_type
+// stores; renaming it would desync every attendee row already tagged with it. `color` is one of
+// the curated palette keys in TICKET_TYPE_COLORS (packages/ui) - admin-assignable, not a fixed enum.
+model TicketType {
+  id         String   @id @default(cuid())
+  event_id   String
+  event      Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  key        String
+  label      String
+  color      String   @default("gray")
+  sort_order Int      @default(0)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([event_id, key])
+  @@index([event_id])
+}
+
 enum EventResourceType {
   link
   file
 }
 
 model Attendee {
-  id               String          @id @default(cuid())
+  id               String              @id @default(cuid())
   event_id         String
-  event            Event           @relation(fields: [event_id], references: [id])
+  event            Event               @relation(fields: [event_id], references: [id])
   email            String
   name             String
   // SHA-256(raw_token) for Mode A tickets; null for Mode B (agency) attendees.
   // Raw token never stored — exists only in the ticket URL / QR handed to the attendee.
-  token_hash       String?         @unique
+  token_hash       String?             @unique
   // AES-256-GCM encrypted raw ticket token (for same-link resend — ADR 0006).
   // Null for Mode B (agency) attendees; null for unissued Mode A attendees.
   token_enc        String?
@@ -151,23 +171,23 @@ model Attendee {
   qr_payload       String?
   external_uuid    String?
   // Non-guessable public URL key for Mode B ticket/QR pages (/t/:slug/a/:ref) — not Attendee.id.
-  public_ref       String?         @unique
+  public_ref       String?             @unique
   ticket_type      String?
   company          String?
   department       String?
   // Descriptive import/form fields (company, department, shirt_size) — ADR 0010.
   custom_data      Json?
-  status           String          @default("registered")
+  status           String              @default("registered")
   // RSVP lifecycle (ADR 0033) — distinct from check-in and Attendee.status.
-  rsvp_status      String          @default("none")
+  rsvp_status      String              @default("none")
   rsvp_updated_at  DateTime?
   rsvp_source      String?
   // Set atomically on first VALID check-in (CAS WHERE admitted_at IS NULL).
   // Null = not yet admitted. Reset only by explicit admin revert action.
   admitted_at      DateTime?
   admitted_by      String?
-  created_at       DateTime        @default(now())
-  updated_at       DateTime        @default(now()) @updatedAt
+  created_at       DateTime            @default(now())
+  updated_at       DateTime            @default(now()) @updatedAt
   email_deliveries EmailDelivery[]
   wallet_pass      WalletPass?
   check_ins        CheckIn[]
@@ -201,38 +221,38 @@ model WalletPass {
 }
 
 model EmailDelivery {
-  id                   String       @id @default(cuid())
-  organization_id      String
-  organization         Organization @relation(fields: [organization_id], references: [id], onDelete: Restrict)
-  event_id             String
-  event                Event        @relation(fields: [event_id], references: [id], onDelete: Restrict)
-  attendee_id          String
-  attendee             Attendee     @relation(fields: [attendee_id], references: [id])
-  purpose              String       @default("initial") // "initial" | "resend"
-  batch_id             String?
-  template_id          String?
-  template             MailTemplate? @relation(fields: [template_id], references: [id], onDelete: SetNull)
-  provider             String
-  provider_message_id  String?
-  status               String       @default("queued")
-  error_code           String?
-  error                String?
-  retryable            Boolean?
-  attempts             Int          @default(1)
-  recipient_email      String?
-  rendered_subject     String?
-  rendered_html        String?      @db.Text
-  queued_at            DateTime     @default(now())
-  attempted_at         DateTime?
-  accepted_at          DateTime?
-  sent_at              DateTime?
-  delivered_at         DateTime?
-  failed_at            DateTime?
-  viewed_at            DateTime?
-  opened_at            DateTime?
-  clicked_at           DateTime?
-  created_at           DateTime     @default(now())
-  updated_at           DateTime     @updatedAt
+  id                  String        @id @default(cuid())
+  organization_id     String
+  organization        Organization  @relation(fields: [organization_id], references: [id], onDelete: Restrict)
+  event_id            String
+  event               Event         @relation(fields: [event_id], references: [id], onDelete: Restrict)
+  attendee_id         String
+  attendee            Attendee      @relation(fields: [attendee_id], references: [id])
+  purpose             String        @default("initial") // "initial" | "resend"
+  batch_id            String?
+  template_id         String?
+  template            MailTemplate? @relation(fields: [template_id], references: [id], onDelete: SetNull)
+  provider            String
+  provider_message_id String?
+  status              String        @default("queued")
+  error_code          String?
+  error               String?
+  retryable           Boolean?
+  attempts            Int           @default(1)
+  recipient_email     String?
+  rendered_subject    String?
+  rendered_html       String?       @db.Text
+  queued_at           DateTime      @default(now())
+  attempted_at        DateTime?
+  accepted_at         DateTime?
+  sent_at             DateTime?
+  delivered_at        DateTime?
+  failed_at           DateTime?
+  viewed_at           DateTime?
+  opened_at           DateTime?
+  clicked_at          DateTime?
+  created_at          DateTime      @default(now())
+  updated_at          DateTime      @updatedAt
 
   @@index([organization_id])
   @@index([event_id, created_at(sort: Desc)])
@@ -259,18 +279,18 @@ model CheckIn {
 
 // Operational items configured per event (giftbag, badge, headset) — ADR 0010.
 model EventItem {
-  id         String   @id @default(cuid())
-  event_id   String
-  event      Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
-  key        String
-  label      String
+  id          String   @id @default(cuid())
+  event_id    String
+  event       Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  key         String
+  label       String
   description String?
-  type       String   @default("item")
-  enabled    Boolean  @default(true)
-  icon       String?  @db.VarChar(64)
-  config     Json?
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  type        String   @default("item")
+  enabled     Boolean  @default(true)
+  icon        String?  @db.VarChar(64)
+  config      Json?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
 
   item_states AttendeeItemState[]
 
@@ -322,7 +342,7 @@ model AttendeeActionLog {
   device_id     String?
   ip            String?
   metadata      Json?
-  created_at    DateTime @default(now())
+  created_at    DateTime  @default(now())
 
   @@index([event_id, created_at(sort: Desc)])
   @@index([attendee_id, created_at(sort: Desc)])
@@ -345,8 +365,8 @@ model AdminAuditLog {
 // Per-scope mailer configuration (ADR 0005, ADR 0006).
 // scope_type = "organization" | "event". Secrets stored encrypted via @admitto/crypto.
 model MailSettings {
-  id         String   @id @default(cuid())
-  scope_type String   // "organization" | "event"
+  id         String @id @default(cuid())
+  scope_type String // "organization" | "event"
   scope_id   String
 
   // Provider (plain)
@@ -396,13 +416,13 @@ model MailSettings {
 // Per-scope mail template storage (plain text — not encrypted).
 model MailTemplate {
   id                     String          @id @default(cuid())
-  scope_type             String          // "organization" | "event"
+  scope_type             String // "organization" | "event"
   scope_id               String
   name                   String          @default("ticket")
   label                  String          @default("Ticket email")
   subject_template       String
   body_template          String          @db.Text
-  template_format        String          // "mjml" | "html"
+  template_format        String // "mjml" | "html"
   compiled_html_template String          @db.Text
   created_at             DateTime        @default(now())
   updated_at             DateTime        @updatedAt
@@ -412,21 +432,21 @@ model MailTemplate {
 }
 
 model User {
-  id                   String              @id @default(cuid())
-  email                String              @unique
+  id                   String             @id @default(cuid())
+  email                String             @unique
   password_hash        String?
   display_name         String?
-  preferred_locale     String?              // IETF BCP 47 tag, e.g. "pl-PL"; null = browser default
-  is_active            Boolean             @default(true)
-  must_change_password Boolean             @default(false)
-  created_at           DateTime            @default(now())
-  updated_at           DateTime            @updatedAt
-  sessions            Session[]
-  role_assignments    RoleAssignment[]
-  oidc_role_grants    OidcRoleGrant[]
-  mfa_methods         UserMfaMethod[]
-  trusted_devices     TrustedDevice[]
-  external_identities ExternalIdentity[]
+  preferred_locale     String? // IETF BCP 47 tag, e.g. "pl-PL"; null = browser default
+  is_active            Boolean            @default(true)
+  must_change_password Boolean            @default(false)
+  created_at           DateTime           @default(now())
+  updated_at           DateTime           @updatedAt
+  sessions             Session[]
+  role_assignments     RoleAssignment[]
+  oidc_role_grants     OidcRoleGrant[]
+  mfa_methods          UserMfaMethod[]
+  trusted_devices      TrustedDevice[]
+  external_identities  ExternalIdentity[]
 }
 
 model Session {
@@ -454,23 +474,23 @@ model Session {
 
 // MFA methods per user — seam for totp, webauthn (future), recovery codes (ADR 0011).
 model UserMfaMethod {
-  id              String    @id @default(cuid())
-  user_id         String
-  user            User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  type            String    // "totp" | "webauthn" | "recovery"
-  secret_enc      String?   // AES-256-GCM encrypted TOTP secret
-  credential_hash String?   // argon2id hash for recovery codes
-  label           String?   // e.g. "emergency" for break-glass one-time codes
-  confirmed_at    DateTime?
-  last_used_at    DateTime?
+  id                           String    @id @default(cuid())
+  user_id                      String
+  user                         User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  type                         String // "totp" | "webauthn" | "recovery"
+  secret_enc                   String? // AES-256-GCM encrypted TOTP secret
+  credential_hash              String? // argon2id hash for recovery codes
+  label                        String? // e.g. "emergency" for break-glass one-time codes
+  confirmed_at                 DateTime?
+  last_used_at                 DateTime?
   /// When the user acknowledged the backup recovery codes for this TOTP method.
   /// Defaults to row-creation time; the live enrollment flow explicitly clears it at
   /// TOTP confirmation so the user must pass the backup-codes step before a full
   /// session is granted (IAM-002). Re-set when the codes are acknowledged.
   backup_codes_acknowledged_at DateTime? @default(now())
   /// Last accepted TOTP time step (RFC 6238) — replay protection via otplib `afterTimeStep`.
-  last_totp_time_step Int?
-  created_at      DateTime  @default(now())
+  last_totp_time_step          Int?
+  created_at                   DateTime  @default(now())
 
   @@index([user_id, type])
 }
@@ -504,37 +524,37 @@ model RoleAssignment {
   id         String   @id @default(cuid())
   user_id    String
   user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  role       String   // "superadmin" | "admin" | "operator"
-  scope_type String   // "instance" | "organization" | "event"
-  scope_id   String?  // null for instance scope
+  role       String // "superadmin" | "admin" | "operator"
+  scope_type String // "instance" | "organization" | "event"
+  scope_id   String? // null for instance scope
   created_at DateTime @default(now())
 
   oidc_role_grants OidcRoleGrant[]
+  // Partial UNIQUE indexes (scoped + instance NULL) live in migration SQL — not expressible via @@unique.
 
   @@index([user_id])
   @@index([scope_type, scope_id])
-  // Partial UNIQUE indexes (scoped + instance NULL) live in migration SQL — not expressible via @@unique.
 }
 
 // OIDC / external identity providers (prompt 16b; cloudflare_access reserved for 16c).
 model IdentityProvider {
-  id                    String   @id @default(cuid())
-  provider_type         String   @default("oidc") // "oidc" | "cloudflare_access"
-  issuer                String
-  client_id             String
-  client_secret_enc     String?
+  id                     String   @id @default(cuid())
+  provider_type          String   @default("oidc") // "oidc" | "cloudflare_access"
+  issuer                 String
+  client_id              String
+  client_secret_enc      String?
   authorization_endpoint String
-  token_endpoint        String
-  jwks_uri              String
-  userinfo_endpoint     String?
-  claim_email           String   @default("email")
-  claim_name            String   @default("name")
-  claim_groups          String   @default("groups")
-  enabled               Boolean  @default(false)
-  display_name          String
-  login_button_label    String?
-  created_at            DateTime @default(now())
-  updated_at            DateTime @updatedAt
+  token_endpoint         String
+  jwks_uri               String
+  userinfo_endpoint      String?
+  claim_email            String   @default("email")
+  claim_name             String   @default("name")
+  claim_groups           String   @default("groups")
+  enabled                Boolean  @default(false)
+  display_name           String
+  login_button_label     String?
+  created_at             DateTime @default(now())
+  updated_at             DateTime @updatedAt
 
   external_identities ExternalIdentity[]
   group_role_mappings OidcGroupRoleMapping[]
@@ -546,16 +566,16 @@ model IdentityProvider {
 
 // Linked external subject → local User (JIT or explicit link).
 model ExternalIdentity {
-  id            String   @id @default(cuid())
+  id            String           @id @default(cuid())
   provider_id   String
   provider      IdentityProvider @relation(fields: [provider_id], references: [id], onDelete: Cascade)
   subject       String
   user_id       String
-  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user          User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
   email         String?
   name          String?
-  groups        String[] @default([])
-  linked_at     DateTime @default(now())
+  groups        String[]         @default([])
+  linked_at     DateTime         @default(now())
   last_login_at DateTime?
 
   @@unique([provider_id, subject])
@@ -564,14 +584,14 @@ model ExternalIdentity {
 
 // Grafana-style group → role rules (default empty; superadmin-configured).
 model OidcGroupRoleMapping {
-  id          String   @id @default(cuid())
+  id          String           @id @default(cuid())
   provider_id String
   provider    IdentityProvider @relation(fields: [provider_id], references: [id], onDelete: Cascade)
   group       String
   role        String
   scope_type  String
-  scope_id    String   @default("")
-  created_at  DateTime @default(now())
+  scope_id    String           @default("")
+  created_at  DateTime         @default(now())
 
   @@unique([provider_id, group, role, scope_type, scope_id])
   @@index([provider_id])
@@ -590,26 +610,26 @@ model OidcRoleGrant {
   role_assignment_id String
   role_assignment    RoleAssignment   @relation(fields: [role_assignment_id], references: [id], onDelete: Cascade)
   created_at         DateTime         @default(now())
+  // Partial UNIQUE indexes (scoped + instance NULL) live in migration SQL — not expressible via @@unique.
 
   @@index([provider_id, user_id])
   @@index([role_assignment_id])
-  // Partial UNIQUE indexes (scoped + instance NULL) live in migration SQL — not expressible via @@unique.
 }
 
 // Short-lived OAuth state (PKCE, CSRF, nonce) — single-use.
 model OidcAuthState {
-  id             String    @id @default(cuid())
-  provider_id    String
-  provider       IdentityProvider @relation(fields: [provider_id], references: [id], onDelete: Cascade)
-  state          String    @unique
-  nonce          String
-  code_verifier  String
-  redirect_next    String?
-  link_user_id     String?
-  link_step_up_at  DateTime?
-  expires_at       DateTime
-  consumed_at    DateTime?
-  created_at     DateTime  @default(now())
+  id              String           @id @default(cuid())
+  provider_id     String
+  provider        IdentityProvider @relation(fields: [provider_id], references: [id], onDelete: Cascade)
+  state           String           @unique
+  nonce           String
+  code_verifier   String
+  redirect_next   String?
+  link_user_id    String?
+  link_step_up_at DateTime?
+  expires_at      DateTime
+  consumed_at     DateTime?
+  created_at      DateTime         @default(now())
 
   @@index([expires_at])
   @@index([provider_id])

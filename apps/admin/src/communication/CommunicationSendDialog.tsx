@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Select } from "@admitto/ui";
-import { ApiError, fetchBulkSendStatus, sendEventBulk } from "../api/client.js";
+import { ApiError, fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { BulkSendFilter, RsvpStatus } from "../api/types.js";
+import type { BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 
 interface CommunicationSendDialogProps {
@@ -29,6 +29,7 @@ export function CommunicationSendDialog({
 
   const [filterType, setFilterType] = useState<BulkSendFilter["type"]>("all");
   const [ticketType, setTicketType] = useState("");
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [rsvpStatus, setRsvpStatus] = useState<RsvpStatus>("confirmed");
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [phase, setPhase] = useState<DialogPhase>("form");
@@ -61,6 +62,21 @@ export function CommunicationSendDialog({
     setBatchId(null);
     setBatchStatus(null);
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetchTicketTypes(eventId)
+      .then((types) => {
+        if (!cancelled) setTicketTypes(types);
+      })
+      .catch(() => {
+        if (!cancelled) setTicketTypes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, eventId]);
 
   useEffect(() => {
     if (!open || phase !== "polling" || !batchId) return;
@@ -236,19 +252,22 @@ export function CommunicationSendDialog({
               </Select>
             )}
             {filterType === "ticket_type" && (
-              <label className="mail-field-row">
-                <span className="mail-field-label">Ticket type</span>
-                <input
-                  className="mail-field-input"
-                  value={ticketType}
-                  onChange={(e) => {
-                    setTicketType(e.target.value);
-                    setRecipientCount(null);
-                    setError(null);
-                  }}
-                  placeholder="e.g. VIP"
-                />
-              </label>
+              <Select
+                label="Ticket type"
+                value={ticketType}
+                onChange={(e) => {
+                  setTicketType(e.target.value);
+                  setRecipientCount(null);
+                  setError(null);
+                }}
+              >
+                <option value="">Choose…</option>
+                {ticketTypes.map((type) => (
+                  <option key={type.key} value={type.key}>
+                    {type.label}
+                  </option>
+                ))}
+              </Select>
             )}
             {filterType === "ticket_type" && !filterReady && (
               <p className="mail-field-hint">Enter a ticket type to count or send.</p>

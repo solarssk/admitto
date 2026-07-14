@@ -334,33 +334,6 @@ afterAll(async () => {
   await prisma?.$disconnect();
 });
 
-describe("GET /api/admin/events/:eventId/attendees/ticket-types", () => {
-  it("returns distinct ticket types for event", async () => {
-    const res = await app.request(`/api/admin/events/${EVENT_EX}/attendees/ticket-types`, {
-      headers: { Cookie: adminCookie },
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { types: string[] };
-    expect(body.types).toEqual(["standard", "vip"]);
-  });
-
-  it("returns empty array when no ticket_type set", async () => {
-    const res = await app.request(`/api/admin/events/${EVENT_EMPTY}/attendees/ticket-types`, {
-      headers: { Cookie: adminCookie },
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { types: string[] };
-    expect(body.types).toEqual([]);
-  });
-
-  it("operator → 403", async () => {
-    const res = await app.request(`/api/admin/events/${EVENT_EX}/attendees/ticket-types`, {
-      headers: { Cookie: opCookie },
-    });
-    expect(res.status).toBe(403);
-  });
-});
-
 describe("GET /api/admin/events/:eventId/attendees — ticket_type filter", () => {
   it("filter ticket_type=vip returns only vip attendees", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_EX}/attendees?ticket_type=vip`, {

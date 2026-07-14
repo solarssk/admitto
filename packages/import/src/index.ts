@@ -3,6 +3,7 @@ export { commitImport } from "./importer.js";
 export type {
   AttendeeRow,
   ImportAttributeField,
+  ImportTicketType,
   InvalidRow,
   ParseAttendeesOptions,
   ParseResult,

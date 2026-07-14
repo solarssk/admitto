@@ -10,6 +10,12 @@ export { Checkbox, type CheckboxProps } from "./components/Checkbox.js";
 export { Switch, type SwitchProps } from "./components/Switch.js";
 export { Badge, type BadgeProps } from "./components/Badge.js";
 export { StatusBadge, type StatusBadgeProps } from "./components/StatusBadge.js";
+export {
+  TicketTypeBadge,
+  TICKET_TYPE_COLORS,
+  type TicketTypeBadgeProps,
+  type TicketTypeColor,
+} from "./components/TicketTypeBadge.js";
 export { Avatar, type AvatarProps } from "./components/Avatar.js";
 export { Card, type CardProps } from "./components/Card.js";
 export { PageHeader, type PageHeaderProps } from "./components/PageHeader.js";

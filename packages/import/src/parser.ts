@@ -5,6 +5,7 @@ import {
   buildAttributeHeaderKeys,
   extractCustomDataFromRow,
 } from "./custom-data-import.js";
+import { resolveImportTicketType } from "./ticket-type-import.js";
 import type { AttendeeRow, InvalidRow, ParseAttendeesOptions, ParseResult } from "./types.js";
 
 const CANONICAL_COLUMNS = RESERVED_CUSTOM_DATA_SOURCE_FIELDS;
@@ -29,6 +30,7 @@ function buildRow(
 
 export function parseAttendees(csvString: string, options: ParseAttendeesOptions = {}): ParseResult {
   const attributeFields = options.attributeFields ?? [];
+  const ticketTypes = options.ticketTypes;
   const { allowedHeaders: attributeHeaderKeys, duplicateLabels } =
     buildAttributeHeaderKeys(attributeFields);
 
@@ -74,7 +76,7 @@ export function parseAttendees(csvString: string, options: ParseAttendeesOptions
     const email = (raw["email"] ?? "").trim().toLowerCase();
     const externalUUID = (raw["external_uuid"] ?? "").trim() || undefined;
     const qrPayload = (raw["qr_payload"] ?? "").trim() || undefined;
-    const ticketType = (raw["ticket_type"] ?? "").trim() || undefined;
+    const rawTicketType = (raw["ticket_type"] ?? "").trim() || undefined;
     const company = (raw["company"] ?? "").trim() || undefined;
     const department = (raw["department"] ?? "").trim() || undefined;
 
@@ -149,6 +151,24 @@ export function parseAttendees(csvString: string, options: ParseAttendeesOptions
     if (!customResult.ok) {
       invalidRows.push({ rowIndex: rowIdx, raw, reason: customResult.reason });
       continue;
+    }
+
+    // Catalog membership (batch 04 / #351) — only enforced when the caller opted in by passing
+    // ticketTypes; undefined means "not validating" (today's free-text behavior), preserved for
+    // callers that don't yet pass a catalog. A matched value is normalized to the canonical key
+    // so a human-typed "VIP"/"vip"/"Vip" all converge on the one entry everywhere downstream.
+    let ticketType = rawTicketType;
+    if (rawTicketType !== undefined && ticketTypes !== undefined) {
+      const found = resolveImportTicketType(rawTicketType, ticketTypes);
+      if (!found) {
+        invalidRows.push({
+          rowIndex: rowIdx,
+          raw,
+          reason: `Unknown ticket type: "${rawTicketType}"`,
+        });
+        continue;
+      }
+      ticketType = found.key;
     }
 
     seenEmails.add(email);

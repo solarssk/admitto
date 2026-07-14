@@ -4,7 +4,12 @@ import { z } from "zod";
 import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
 import { sendTicketEmails, type MailDeliveryDeps } from "@admitto/mail-delivery";
 import { resolveTemplateById, TemplateNotFoundError } from "@admitto/mail-templates";
-import { writeBulkActionLog } from "@admitto/tickets";
+import {
+  assertTicketTypeInCatalog,
+  loadEventTicketTypes,
+  UnknownTicketTypeError,
+  writeBulkActionLog,
+} from "@admitto/tickets";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId, resolveMailInstanceBaseUrl } from "./admin-helpers.js";
 
 export const BULK_SEND_LIMIT = 500;
@@ -228,6 +233,17 @@ export async function handleBulkSend(
 
   const templateError = await assertTemplateForEvent(db, eventId, body.templateId);
   if (templateError) return templateError;
+
+  if (body.filter.type === "ticket_type") {
+    try {
+      assertTicketTypeInCatalog(await loadEventTicketTypes(db, eventId), body.filter.value);
+    } catch (err) {
+      if (err instanceof UnknownTicketTypeError) {
+        return c.json({ error: "unknown_ticket_type" }, 400);
+      }
+      throw err;
+    }
+  }
 
   let noDeliveryScope: BulkSendNoDeliveryScope | undefined;
   let purpose: "initial" | "resend" = "resend";

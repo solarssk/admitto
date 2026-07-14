@@ -8,6 +8,7 @@ import {
   fetchCheckInHistory,
   fetchCheckInOpsConfig,
   fetchCheckInStats,
+  fetchTicketTypes,
   lookupCheckInAttendees,
   submitAttendeeNote,
   submitCheckInAdmit,
@@ -18,7 +19,13 @@ import {
   revokeItemState,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeCardDto, CheckInHistoryEntry, CheckInScanResponse, OpsConfigDto } from "../api/types.js";
+import type {
+  AttendeeCardDto,
+  CheckInHistoryEntry,
+  CheckInScanResponse,
+  OpsConfigDto,
+  TicketTypeDto,
+} from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isOrgAdmin } from "../auth/capabilities.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
@@ -269,6 +276,7 @@ export function CheckInPage({
   const [admitOrigin, setAdmitOrigin] = useState<"scan" | "manual">("manual");
   const [overlayManualError, setOverlayManualError] = useState<string | null>(null);
   const [opsConfig, setOpsConfig] = useState<OpsConfigDto>(DEFAULT_OPS_CONFIG);
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
 
   const deviceId = deviceLabel ?? undefined;
   const allowManualLookup = opsConfig.allow_manual_lookup;
@@ -313,6 +321,21 @@ export function CheckInPage({
       })
       .catch(() => {
         if (!cancelled) setOpsConfig(DEFAULT_OPS_CONFIG);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    let cancelled = false;
+    fetchTicketTypes(eventId)
+      .then((types) => {
+        if (!cancelled) setTicketTypes(types);
+      })
+      .catch(() => {
+        if (!cancelled) setTicketTypes([]);
       });
     return () => {
       cancelled = true;
@@ -1257,6 +1280,7 @@ export function CheckInPage({
                 <AttendeeCard
                   key={card.id}
                   card={card}
+                  ticketTypes={ticketTypes}
                   eventTimezone={eventTimezone}
                   scanStatus={scanResult?.status}
                   confirmed={scanResult?.confirmed}
@@ -1289,6 +1313,7 @@ export function CheckInPage({
                 <AttendeeCard
                   key={card.id}
                   card={card}
+                  ticketTypes={ticketTypes}
                   eventTimezone={eventTimezone}
                   scanStatus={scanResult?.status}
                   confirmed={scanResult?.confirmed}
@@ -1333,6 +1358,7 @@ export function CheckInPage({
       {showMobileOverlay && (
         <CameraOverlay
           open
+          ticketTypes={ticketTypes}
           eventTimezone={eventTimezone}
           eventDate={eventDate}
           admittedCount={admittedCount}
