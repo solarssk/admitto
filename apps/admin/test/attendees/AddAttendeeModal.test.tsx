@@ -92,4 +92,22 @@ describe("AddAttendeeModal", () => {
       ),
     );
   });
+
+  it("shows an inline alert when the ticket-type catalog fails to load, and clears it on reopen", async () => {
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    const { rerender } = render(
+      <AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />,
+    );
+
+    const alert = await screen.findByText("Failed to load ticket types.");
+    expect(alert.getAttribute("role")).toBe("alert");
+
+    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([]);
+    rerender(<AddAttendeeModal eventId="evt-1" open={false} onClose={() => {}} onCreated={() => {}} />);
+    rerender(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+
+    await waitFor(() => {
+      expect(screen.queryByText("Failed to load ticket types.")).toBeNull();
+    });
+  });
 });
