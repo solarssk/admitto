@@ -65,6 +65,13 @@ export function CommunicationSendDialog({
 
   useEffect(() => {
     if (!open) return;
+    // Clears the selected value along with the stale options list below - not just cosmetic:
+    // leaving a previous event's ticket_type key selected would keep filterReady true (it only
+    // checks the string is non-empty) and could send/count against a key that means nothing, or
+    // something different, on the new event (review). Only the value resets, not filterType -
+    // silently reverting the admin's chosen filter *strategy* back to "all recipients" would be
+    // a bigger, more surprising behavior change than asking them to re-pick a value.
+    setTicketType("");
     setTicketTypes([]);
     let cancelled = false;
     fetchTicketTypes(eventId)
