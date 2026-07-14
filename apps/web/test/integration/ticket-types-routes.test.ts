@@ -371,6 +371,31 @@ describe("PATCH /api/admin/events/:eventId/ticket-types/:typeId", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("returns the current row and a live attendee count for a no-op PATCH ({})", async () => {
+    const created = await prisma.ticketType.create({
+      data: { event_id: EVENT_TT, key: "noop_patch", label: "No-op patch", sort_order: 95 },
+    });
+    await prisma.attendee.create({
+      data: {
+        event_id: EVENT_TT,
+        email: "noop-patch@example.com",
+        name: "Noop Patch",
+        ticket_type: "noop_patch",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_TT}/ticket-types/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { key: string; label: string; attendee_count: number };
+    expect(body.key).toBe("noop_patch");
+    expect(body.label).toBe("No-op patch");
+    expect(body.attendee_count).toBe(1);
+  });
 });
 
 describe("DELETE /api/admin/events/:eventId/ticket-types/:typeId", () => {
