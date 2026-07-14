@@ -72,6 +72,12 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
   useEffect(() => {
     if (!open) return;
     setTicketTypes([]);
+    // Clears the *selected* value, not just the options list - leaving a previous event's key
+    // selected would let it through, since submit is no longer blocked while this fetch is in
+    // flight or has failed (review): the key could mean something else on the new event, or not
+    // exist there at all, either way not what the admin intended when they picked it. Same fix
+    // already applied to CommunicationSendDialog for the same stale-selection-on-switch pattern.
+    setTicketType("");
     setTicketTypesError(null);
     setTicketTypesLoading(true);
     let cancelled = false;

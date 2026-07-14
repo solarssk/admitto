@@ -161,4 +161,37 @@ describe("AddAttendeeModal", () => {
       false,
     );
   });
+
+  it("does not submit event A's selected ticket type after switching to event B while the modal stays open (audit review)", async () => {
+    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([
+      { id: "tt-a", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 0, created_at: "2026-01-01T00:00:00.000Z" },
+    ]);
+    const { rerender } = render(
+      <AddAttendeeModal eventId="evt-a" open onClose={() => {}} onCreated={() => {}} />,
+    );
+
+    const select = await screen.findByLabelText<HTMLSelectElement>("Ticket type");
+    await waitFor(() => expect(screen.getByRole("option", { name: "VIP" })).toBeTruthy());
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jan@example.com" } });
+    fireEvent.change(select, { target: { value: "vip" } });
+    expect(select.value).toBe("vip");
+
+    // Event B's own catalog fetch never settles in this test - submitting must still be allowed
+    // (ticket_type is optional), but the "vip" selection from event A must not leak through to it.
+    vi.mocked(fetchTicketTypes).mockReturnValueOnce(new Promise(() => {}));
+    mockCreateAttendee.mockResolvedValueOnce({} as never);
+    rerender(<AddAttendeeModal eventId="evt-b" open onClose={() => {}} onCreated={() => {}} />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText<HTMLSelectElement>("Ticket type").value).toBe("");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add attendee" }));
+
+    await waitFor(() => expect(mockCreateAttendee).toHaveBeenCalled());
+    expect(mockCreateAttendee).toHaveBeenCalledWith(
+      "evt-b",
+      expect.objectContaining({ ticket_type: undefined }),
+    );
+  });
 });
