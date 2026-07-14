@@ -64,9 +64,12 @@ export type EventItemContent = {
   options?: string[];
 };
 
-/** Per-item JSON config: operator hints and issuance behaviour flags (ADR 0025). */
+/** Per-item JSON config: operator hints and issuance behaviour flags (ADR 0025).
+ * `content_fields` references EventCustomField rows by source_field - it does not embed field
+ * definitions (that would let two items independently redeclare the same field with conflicting
+ * metadata, which is exactly the bug class the registry exists to prevent). */
 export type EventItemConfig = {
-  contents?: EventItemContent[];
+  content_fields?: string[];
   requires_return?: boolean;
   issue_on_checkin?: boolean;
 };

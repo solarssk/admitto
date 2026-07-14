@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
+import type { ConnectionState } from "../../src/connection/types.js";
+import { connectionStateValue } from "./connectionStateMock.js";
 
 vi.mock("../../src/checkin/CameraScanner.js", () => ({
   CameraScanner: () => <div data-testid="camera-scanner" />,
@@ -26,9 +28,14 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ deviceLabel: "desk-1", assignments: [] }),
 }));
 
+const useConnectionState = vi.fn();
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ state: "connected", reportApiError: vi.fn() }),
+  useConnectionState: () => useConnectionState(),
 }));
+
+function mockConnectionState(state: ConnectionState) {
+  useConnectionState.mockReturnValue(connectionStateValue(state));
+}
 
 // Mutable viewport so a single file can exercise both the desktop card path
 // (B2) and the mobile overlay path (B3).
@@ -85,16 +92,20 @@ function mockPageBootstrap() {
   fetchCheckInStats.mockResolvedValue({ admitted_count: 0, total_count: 1 });
 }
 
-function renderPage() {
-  return render(
+function pageTree() {
+  return (
     <ToastProvider>
       <MemoryRouter initialEntries={["/admin/events/evt-live/checkin"]}>
         <Routes>
           <Route path="/admin/events/:eventId/checkin" element={<CheckInPage />} />
         </Routes>
       </MemoryRouter>
-    </ToastProvider>,
+    </ToastProvider>
   );
+}
+
+function renderPage() {
+  return render(pageTree());
 }
 
 const annaHit = {
@@ -119,6 +130,10 @@ const cardWithItem = {
   blocked: false,
 };
 
+beforeEach(() => {
+  mockConnectionState("connected");
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -131,12 +146,13 @@ describe("CheckInPage — transport error banner lifecycle", () => {
     lookupCheckInAttendees.mockResolvedValue([annaHit]);
     fetchAttendeeCard.mockResolvedValue(cardWithItem);
 
-    renderPage();
+    const rendered = renderPage();
     const input = await screen.findByLabelText<HTMLInputElement>("QR scan or search");
     fireEvent.change(input, { target: { value: "anna" } });
     await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
     fireEvent.click(screen.getByText("Anna Alpha"));
     await waitFor(() => expect(screen.getByRole("button", { name: "Mark badge issued" })).toBeTruthy());
+    return rendered;
   }
 
   it("clears a stale 'Request failed' banner once a retried item action succeeds (B2)", async () => {
@@ -189,5 +205,157 @@ describe("CheckInPage — transport error banner lifecycle", () => {
       .filter((el) => el.textContent === "Request failed. Try again.");
     expect(alerts).toHaveLength(1);
     expect(document.querySelector(".checkin-surface__transport-error")).toBeNull();
+  });
+
+  it("clears a stale mobile-overlay manual-search error once the connection recovers (review finding)", async () => {
+    viewport.desktop = false;
+    mockPageBootstrap();
+    // A deferred promise: the request is sent while connected (so it isn't
+    // blocked by canAct), then the connection drops before it settles —
+    // canActRef (not the frozen useCallback closure) is what lets the catch
+    // block see that drop.
+    let rejectLookup!: (err: unknown) => void;
+    lookupCheckInAttendees.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectLookup = reject;
+      }),
+    );
+
+    const { rerender } = renderPage();
+    await waitFor(() => expect(document.querySelector(".ck-overlay")).not.toBeNull());
+
+    fireEvent.click(screen.getByText("Manual search"));
+    const input = screen.getByLabelText("Search by name or email");
+    fireEvent.change(input, { target: { value: "anna" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    mockConnectionState("server_unavailable");
+    rerender(pageTree());
+    await act(async () => {
+      rejectLookup(new Error("boom"));
+    });
+
+    await waitFor(() =>
+      expect(document.querySelector("#ck-overlay-manual-error")?.textContent).toBe(
+        "Request failed. Try again.",
+      ),
+    );
+
+    mockConnectionState("connected");
+    rerender(pageTree());
+
+    await waitFor(() => expect(document.querySelector("#ck-overlay-manual-error")).toBeNull());
+  });
+
+  it("shows the mapped API error message in the mobile overlay when a search submit is rejected by the server", async () => {
+    viewport.desktop = false;
+    mockPageBootstrap();
+    const { ApiError } = await import("../../src/api/client.js");
+    lookupCheckInAttendees.mockRejectedValueOnce(new ApiError(409, "not_admitted", "not_admitted"));
+
+    renderPage();
+    await waitFor(() => expect(document.querySelector(".ck-overlay")).not.toBeNull());
+
+    fireEvent.click(screen.getByText("Manual search"));
+    const input = screen.getByLabelText("Search by name or email");
+    fireEvent.change(input, { target: { value: "anna" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(document.querySelector("#ck-overlay-manual-error")?.textContent).toBe(
+        "This attendee isn't currently checked in.",
+      ),
+    );
+  });
+
+  it("clears a stale transport-error once the connection recovers, without a retry (#458)", async () => {
+    // openLookupResultImpl (Recent-scans row click) isn't gated on canAct
+    // — unlike the scan bar's suggestion fetch — so it can fail while
+    // disconnected, reproducing the #458 repro (backend restart, then click
+    // a Recent-scans row before the connection recovers).
+    mockConnectionState("server_unavailable");
+    mockPageBootstrap();
+    fetchCheckInHistory.mockResolvedValue([
+      {
+        id: "hist-1",
+        event_id: "evt-live",
+        attendee_id: "att-1",
+        status: "admitted",
+        checked_in_at: "2026-06-01T10:00:00.000Z",
+        checked_in_by: null,
+        device_id: null,
+        source: null,
+        attendee: { name: "Anna Alpha", ticket_type: "vip" },
+      },
+    ]);
+    fetchAttendeeCard.mockRejectedValueOnce(new Error("boom"));
+
+    const { rerender } = renderPage();
+    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    fireEvent.click(screen.getByText("Anna Alpha"));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toBe("Request failed. Try again."),
+    );
+
+    // Connection recovers in the background — no retry click from the operator.
+    mockConnectionState("connected");
+    rerender(pageTree());
+
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("does not clear a business-logic transport-error through an unrelated reconnect blip (review finding)", async () => {
+    // The reconnect-clear effect only fires for a message caught while the
+    // heartbeat looked down; an error caught while genuinely connected must
+    // survive a later, unrelated connectivity hiccup — only the operator's
+    // own retry should dismiss it.
+    const { rerender } = await openCardWithItem();
+    submitItemAction.mockRejectedValueOnce(new Error("boom"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark badge issued" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toBe("Request failed. Try again."),
+    );
+
+    mockConnectionState("reconnecting");
+    rerender(pageTree());
+    mockConnectionState("connected");
+    rerender(pageTree());
+
+    expect(screen.getByRole("alert").textContent).toBe("Request failed. Try again.");
+  });
+
+  it("clears a stale transport-error once a different lookup succeeds, not just on reconnect (review finding)", async () => {
+    mockPageBootstrap();
+    lookupCheckInAttendees.mockResolvedValue([annaHit]);
+    fetchAttendeeCard.mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce(cardWithItem);
+    fetchCheckInHistory.mockResolvedValue([
+      {
+        id: "hist-1",
+        event_id: "evt-live",
+        attendee_id: "att-1",
+        status: "admitted",
+        checked_in_at: "2026-09-01T09:44:00.000Z",
+        checked_in_by: null,
+        device_id: null,
+        source: null,
+        attendee: { name: "Anna Alpha", ticket_type: "vip" },
+      },
+    ]);
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Anna Alpha")).toBeTruthy());
+    fireEvent.click(screen.getByText("Anna Alpha"));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toBe("Request failed. Try again."),
+    );
+
+    // A second, successful lookup (not a retry of the same one) must also
+    // clear the stale banner — openLookupResultImpl didn't clear it at the
+    // start of its own attempt, unlike every other mutation handler.
+    fireEvent.click(screen.getByText("Anna Alpha"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Mark badge issued" })).toBeTruthy());
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

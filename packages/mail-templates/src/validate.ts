@@ -16,9 +16,13 @@ export interface TemplateSourceInput {
   body: string;
 }
 
-/** Returns unknown placeholder names without throwing. */
-export function validateTemplate(input: TemplateSourceInput): string[] {
-  return findUnknownPlaceholders(input.subject, input.body);
+/** Returns unknown placeholder names without throwing. `extraAllowed` widens the whitelist
+ * per-call (an event's custom image asset tokens). */
+export function validateTemplate(
+  input: TemplateSourceInput,
+  extraAllowed?: ReadonlySet<string>,
+): string[] {
+  return findUnknownPlaceholders(input.subject, input.body, extraAllowed);
 }
 
 /** Reject placeholders inside HTML comments or unquoted attributes. */
@@ -47,9 +51,13 @@ export function findMissingRequiredPlaceholders(subject: string, body: string): 
   return [...REQUIRED_URL_PLACEHOLDERS].filter((p) => !found.has(p)).sort();
 }
 
-/** Throws when the source contains unknown placeholders or unsafe HTML markup. */
-export function assertValidTemplate(input: TemplateSourceInput): void {
-  const unknown = validateTemplate(input);
+/** Throws when the source contains unknown placeholders or unsafe HTML markup. `extraAllowed`
+ * widens the whitelist per-call (an event's custom image asset tokens). */
+export function assertValidTemplate(
+  input: TemplateSourceInput,
+  extraAllowed?: ReadonlySet<string>,
+): void {
+  const unknown = validateTemplate(input, extraAllowed);
   if (unknown.length > 0) {
     throw new UnknownPlaceholdersError(unknown);
   }

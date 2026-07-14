@@ -217,10 +217,15 @@ describe("GET /api/admin/events/:eventId/template", () => {
       source: string;
       body_template: string;
       allowed_placeholders: string[];
+      image_placeholders: string[];
     };
     expect(body.source).toBe("builtin");
     expect(body.body_template).toContain("mjml");
     expect(body.allowed_placeholders).toContain("ticket_url");
+    expect(body.image_placeholders).toEqual(
+      expect.arrayContaining(["logo_url", "header_image_url", "qr_image_url"]),
+    );
+    expect(body.image_placeholders).not.toContain("ticket_url");
   });
 
   it("rejects operator", async () => {

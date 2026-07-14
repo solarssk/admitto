@@ -6,6 +6,7 @@ import {
   materializeStoredDeliveryMessage,
   renderTemplateTrustedForStorage,
   resolveBrandingFromEvent,
+  resolveEventImageAssetVars,
   resolveTemplateForEvent,
   resolveTemplateById,
   TemplateNotFoundError,
@@ -124,6 +125,7 @@ export async function sendTicketEmails(
     resolvedTemplate = await resolveTemplateForEvent(event, prisma);
   }
   const branding = resolveBrandingFromEvent(event);
+  const customAssets = await resolveEventImageAssetVars(eventId, prisma);
 
   const attendees = await prisma.attendee.findMany({
     where: {
@@ -188,8 +190,9 @@ export async function sendTicketEmails(
           apple_wallet_url: "",
           google_wallet_url: "",
           download_page_url: "",
+          ...customAssets.vars,
         },
-        { baseUrl },
+        { baseUrl, customAssetPlaceholders: customAssets.names },
       );
 
       const claimInput = {

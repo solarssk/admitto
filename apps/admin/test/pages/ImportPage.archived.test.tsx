@@ -6,7 +6,7 @@ import { ImportPage } from "../../src/pages/ImportPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import { renderWithToast } from "../test-utils.js";
 
-const fetchEventItems = vi.fn();
+const fetchEventCustomFields = vi.fn();
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => ({ reportApiError: vi.fn() }),
@@ -26,7 +26,7 @@ vi.mock("../../src/api/client.js", () => ({
       this.code = code;
     }
   },
-  fetchEventItems: (...args: unknown[]) => fetchEventItems(...args),
+  fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
   previewImport: vi.fn(),
   commitImport: vi.fn(),
 }));
@@ -58,7 +58,7 @@ afterEach(() => {
 
 describe("ImportPage archived lockdown", () => {
   it("disables the upload fieldset and Preview, blocking the import flow at its entry point", async () => {
-    fetchEventItems.mockResolvedValue([]);
+    fetchEventCustomFields.mockResolvedValue([]);
 
     renderPage();
 

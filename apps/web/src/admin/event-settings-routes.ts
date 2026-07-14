@@ -4,7 +4,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@prisma/client";
 import { canManageInstance } from "@admitto/auth";
-import { writeAdminAuditLog } from "@admitto/tickets";
+import { ADMITTABLE_STATUS_LIST, REVOCABLE_ITEM_STATES, writeAdminAuditLog } from "@admitto/tickets";
 import { InvalidHttpUrlError, resolveBrandingFromEvent, validateBrandingUrl } from "@admitto/mail-templates";
 import { z } from "zod";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
@@ -50,6 +50,10 @@ export type EventSettingsDto = {
   created_at: string;
   /** True when the event has zero real activity and can be permanently deleted. */
   is_deletable: boolean;
+  /** Attendees currently checked in — drives the "Revoke all check-ins" Danger Zone row. */
+  admitted_count: number;
+  /** Individual issued/returned item hand-outs across all attendees — drives "Revoke all items issued". */
+  issued_items_count: number;
   organization_name: string;
   active_items: Array<{ id: string; name: string; enabled: boolean }>;
   /** Event's own branding overrides — null means "inherited from organization". */
@@ -96,6 +100,7 @@ function parseEventDateInput(date: string): Date {
 function serializeEventSettings(
   event: EventSettingsRow,
   deletability: { isDeletable: boolean },
+  revokeCounts: { admittedCount: number; issuedItemsCount: number },
 ): EventSettingsDto {
   const resolved = resolveBrandingFromEvent(event);
   return {
@@ -110,6 +115,8 @@ function serializeEventSettings(
     archived_at: event.archived_at ? event.archived_at.toISOString() : null,
     created_at: event.created_at.toISOString(),
     is_deletable: deletability.isDeletable,
+    admitted_count: revokeCounts.admittedCount,
+    issued_items_count: revokeCounts.issuedItemsCount,
     organization_name: event.organization.name,
     active_items: event.event_items.map((item) => ({
       id: item.id,
@@ -154,6 +161,36 @@ async function loadDeletability(
   return { isDeletable: isEventDeletable(event, signals) };
 }
 
+/** Live counts backing the Danger Zone's "Revoke all check-ins" / "Revoke all items issued" rows.
+ * Both are scoped to attendees whose pass is still admittable: revokeAllCheckInsForEvent's
+ * resetItems:true cascade and revokeAllItemsForEvent both skip a blocked (revoked/cancelled)
+ * attendee via the same isAdmittable guard the single-item actions enforce (bot review) - an
+ * admitted-but-blocked attendee's check-in revoke rolls back entirely rather than clearing, so
+ * counting them here would show/enable a Danger Zone row for attendees/items the bulk action can
+ * never actually revoke. */
+async function loadRevokeCounts(
+  db: PrismaClient,
+  eventId: string,
+): Promise<{ admittedCount: number; issuedItemsCount: number }> {
+  const [admittedCount, issuedItemsCount] = await Promise.all([
+    db.attendee.count({
+      where: {
+        event_id: eventId,
+        admitted_at: { not: null },
+        status: { in: ADMITTABLE_STATUS_LIST },
+      },
+    }),
+    db.attendeeItemState.count({
+      where: {
+        state: { in: REVOCABLE_ITEM_STATES },
+        event_item: { event_id: eventId },
+        attendee: { status: { in: ADMITTABLE_STATUS_LIST } },
+      },
+    }),
+  ]);
+  return { admittedCount, issuedItemsCount };
+}
+
 async function loadEventSettingsRow(
   db: PrismaClient,
   eventId: string,
@@ -176,8 +213,11 @@ export async function handleGetEventSettings(c: Context, db: PrismaClient): Prom
   const event = await loadEventSettingsRow(db, eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const deletability = await loadDeletability(db, eventId, event);
-  return c.json(serializeEventSettings(event, deletability));
+  const [deletability, revokeCounts] = await Promise.all([
+    loadDeletability(db, eventId, event),
+    loadRevokeCounts(db, eventId),
+  ]);
+  return c.json(serializeEventSettings(event, deletability, revokeCounts));
 }
 
 type PatchEventBody = z.infer<typeof patchEventSchema>;
@@ -293,7 +333,8 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     });
 
     const deletability = await loadDeletability(db, eventId, updated);
-    return c.json({ event: serializeEventSettings(updated, deletability) });
+    const revokeCounts = await loadRevokeCounts(db, eventId);
+    return c.json({ event: serializeEventSettings(updated, deletability, revokeCounts) });
   } catch (err) {
     console.error("[audit] event_updated transaction failed", err);
     return c.json({ error: "audit_failed" }, 500);

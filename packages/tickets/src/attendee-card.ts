@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import { CAPACITY_EXCLUDED_STATUSES } from "@admitto/db";
 import { parseCustomData } from "./custom-data.js";
 import { buildItemDetail } from "./event-item-contents.js";
+import { loadEventCustomDataFields } from "./event-custom-fields.js";
 import { ensureAttendeeItemStates, operatorItemActions } from "./item-states.js";
 import { isAdmittable } from "./admittable.js";
 import type { AttendeeCardDto, EventItemConfig, LookupAttendeeResult } from "./types.js";
@@ -106,6 +107,9 @@ export async function getAttendeeCard(
     orderBy: { key: "asc" },
   });
 
+  const customFields = await loadEventCustomDataFields(prisma, eventId);
+  const customFieldsByKey = new Map(customFields.map((f) => [f.source_field, f]));
+
   const states = await prisma.attendeeItemState.findMany({
     where: { attendee_id: attendeeId, event_item_id: { in: eventItems.map((i) => i.id) } },
   });
@@ -149,7 +153,7 @@ export async function getAttendeeCard(
         icon: item.icon ?? null,
         state,
         actions: operatorItemActions(state, item.config as EventItemConfig | null),
-        detail: buildItemDetail(item.config, attendee.custom_data),
+        detail: buildItemDetail(item.config, attendee.custom_data, customFieldsByKey),
       };
     }),
     notes: notes.map((n) => ({

@@ -257,25 +257,20 @@ async function seed(client: PrismaClient) {
 
   await client.eventItem.createMany({
     data: [
-      {
-        event_id: EVENT_EX_JACKET,
-        key: "giftbag",
-        label: "Gift bag",
-        config: { contents: [{ label: "Jacket size", source_field: "jacket_size" }] },
-      },
-      {
-        event_id: EVENT_EX_SHIRT,
-        key: "giftbag",
-        label: "Gift bag",
-        config: { contents: [{ label: "Shirt size", source_field: "shirt_size" }] },
-      },
+      { event_id: EVENT_EX_JACKET, key: "giftbag", label: "Gift bag" },
+      { event_id: EVENT_EX_SHIRT, key: "giftbag", label: "Gift bag" },
+      { event_id: EVENT_EX_INJ_HEADER, key: "giftbag", label: "Gift bag" },
+    ],
+  });
+
+  await client.eventCustomField.createMany({
+    data: [
+      { event_id: EVENT_EX_JACKET, source_field: "jacket_size", label: "Jacket size" },
+      { event_id: EVENT_EX_SHIRT, source_field: "shirt_size", label: "Shirt size" },
       {
         event_id: EVENT_EX_INJ_HEADER,
-        key: "giftbag",
-        label: "Gift bag",
-        config: {
-          contents: [{ label: '=HYPERLINK("https://evil.com","click")', source_field: "evil_field" }],
-        },
+        source_field: "evil_field",
+        label: '=HYPERLINK("https://evil.com","click")',
       },
     ],
   });
@@ -547,7 +542,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     expect(header).not.toContain("Jacket size");
   });
 
-  it("export includes dynamic Jacket size column from event item contents", async () => {
+  it("export includes dynamic Jacket size column from the custom-field registry", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_EX_JACKET}/attendees/export?format=csv&status=admitted`,
       { headers: { Cookie: adminCookie } },
@@ -561,7 +556,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     expect(jacketRow).toContain('"L"');
   });
 
-  it("export includes Shirt size column for dedicated event contents", async () => {
+  it("export includes Shirt size column for a dedicated custom field", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_EX_SHIRT}/attendees/export?format=xlsx`,
       { headers: { Cookie: adminCookie } },

@@ -29,6 +29,25 @@ describe("LogoUploadZone", () => {
     expect(screen.getByRole("button", { name: /drop logo here/i })).toBeTruthy();
   });
 
+  it("shows the label heading by default", () => {
+    renderWithToast(<LogoUploadZone value="" onChange={() => {}} label="Event logo" />);
+    expect(screen.getByText("Event logo")).toBeTruthy();
+  });
+
+  it("hides the label heading when hideLabel is set, but keeps it for alt text and aria-label", () => {
+    renderWithToast(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        onChange={() => {}}
+        label="Event logo"
+        hideLabel
+      />,
+    );
+    expect(screen.queryByText("Event logo")).toBeNull();
+    expect(screen.getByAltText("Event logo preview")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove event logo" })).toBeTruthy();
+  });
+
   it("shows preview and clear button for uploaded path", () => {
     renderWithToast(
       <LogoUploadZone
@@ -88,9 +107,9 @@ describe("LogoUploadZone", () => {
 
   it("shows external URL toggle as a button", () => {
     renderWithToast(<LogoUploadZone value="" onChange={() => {}} />);
-    fireEvent.click(screen.getByRole("button", { name: "Use external HTTPS URL" }));
-    expect(screen.getByLabelText("External logo URL (HTTPS)")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Hide external URL" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Use a web link instead" }));
+    expect(screen.getByLabelText("Web link to your logo (must start with https://)")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Hide web link" })).toBeTruthy();
   });
 
   it("hides broken external URL preview after load failure", () => {

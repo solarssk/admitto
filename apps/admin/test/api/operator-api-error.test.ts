@@ -141,6 +141,9 @@ describe("operatorApiErrorMessage", () => {
         "Request failed.",
       ),
     ).toBe("Manual lookup is disabled for this event — use QR scan only.");
+    expect(
+      operatorApiErrorMessage(new ApiError(409, "asset_in_use", "asset_in_use"), "Failed."),
+    ).toBe("This image is still used in this event's email template. Remove it from the template first.");
   });
 
   it("maps identity provider and Cloudflare Access validation codes", () => {

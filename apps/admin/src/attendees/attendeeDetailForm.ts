@@ -1,11 +1,8 @@
-import {
-  fetchAttendeeDetail,
-  fetchEventItems,
-} from "../api/client.js";
+import { fetchAttendeeDetail } from "../api/client.js";
 import type { AttendeeDetailDto } from "../api/types.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
 import {
-  flattenCustomDataFieldsFromItems,
+  fetchAttendeeCustomFields,
   readCustomDataField,
   type CustomDataFieldDef,
 } from "./customData.js";
@@ -87,19 +84,17 @@ export async function loadAttendeeDetailData(
   attributeFields: CustomDataFieldDef[];
   itemsWarning: string | null;
 }> {
-  const [detail, itemsResult] = await Promise.all([
+  const [detail, fieldsResult] = await Promise.all([
     fetchAttendeeDetail(eventId, attendeeId),
-    fetchEventItems(eventId).then(
-      (items) => ({ ok: true as const, items }),
+    fetchAttendeeCustomFields(eventId).then(
+      (fields) => ({ ok: true as const, fields }),
       () => ({ ok: false as const }),
     ),
   ]);
   return {
     detail,
-    attributeFields: itemsResult.ok
-      ? flattenCustomDataFieldsFromItems(itemsResult.items)
-      : [],
-    itemsWarning: itemsResult.ok ? null : ITEMS_LOAD_WARNING,
+    attributeFields: fieldsResult.ok ? fieldsResult.fields : [],
+    itemsWarning: fieldsResult.ok ? null : ITEMS_LOAD_WARNING,
   };
 }
 

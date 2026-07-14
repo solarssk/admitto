@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@admitto/ui";
 import { RequirementsPage } from "../../src/pages/RequirementsPage.js";
@@ -8,6 +8,7 @@ import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import type { EventItemDto, OpsConfigDto } from "../../src/api/types.js";
 
 const fetchEventItems = vi.fn();
+const fetchEventCustomFields = vi.fn();
 const fetchOpsConfig = vi.fn();
 
 vi.mock("../../src/api/client.js", () => ({
@@ -21,6 +22,7 @@ vi.mock("../../src/api/client.js", () => ({
     }
   },
   fetchEventItems: (...args: unknown[]) => fetchEventItems(...args),
+  fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
   fetchOpsConfig: (...args: unknown[]) => fetchOpsConfig(...args),
   updateEventItem: vi.fn(),
   createEventItem: vi.fn(),
@@ -74,6 +76,10 @@ function renderPage() {
     </ToastProvider>,
   );
 }
+
+beforeEach(() => {
+  fetchEventCustomFields.mockResolvedValue([]);
+});
 
 afterEach(() => {
   cleanup();
