@@ -55,6 +55,7 @@ import {
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
+import { acquireEventTicketTypesLock } from "./ticket-types-routes.js";
 import { randomUUID } from "node:crypto";
 import { decryptFromString } from "@admitto/crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
@@ -734,9 +735,10 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
     return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
   }
 
-  const [rows, attributeFieldsResult] = await Promise.all([
+  const [rows, attributeFieldsResult, ticketTypes] = await Promise.all([
     findFilteredAttendeesForExport(db, eventId, filterParams),
     loadEventCustomDataFields(db, eventId).catch((err) => err),
+    loadEventTicketTypes(db, eventId),
   ]);
   if (attributeFieldsResult instanceof Error) {
     return c.json({ error: customDataErrorCode(attributeFieldsResult) }, 400);
@@ -744,7 +746,7 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   const attributeFields = attributeFieldsResult;
 
   const exportColumns = buildExportColumns(attributeFields);
-  const exportRows = buildSanitizedExportRows(rows, attributeFields, timeZone);
+  const exportRows = buildSanitizedExportRows(rows, attributeFields, timeZone, ticketTypes);
 
   const timestamp = new Date().toISOString().slice(0, 10);
   const filename = `attendees-${eventId}-${timestamp}.${format}`;
@@ -909,9 +911,13 @@ function customDataErrorCode(err: unknown): string {
 
 /** Validates ticket_type against the event's live catalog (batch 04 / #351) - shared by create
  * and patch. An empty/falsy value (including "" once normalized by the caller) is treated as "no
- * type" rather than an invalid catalog value. */
+ * type" rather than an invalid catalog value. Accepts `tx` as well as the bare client so callers
+ * can run this inside the same transaction that holds acquireEventTicketTypesLock (TOCTOU fix,
+ * code review) - validating on the bare `db` before a transaction opened let a concurrent
+ * ticket-type DELETE's in-use recheck pass (it couldn't see this write yet) and remove the type
+ * this row was about to reference. */
 async function validateTicketTypeCatalog(
-  db: PrismaClient,
+  db: PrismaClient | Prisma.TransactionClient,
   eventId: string,
   ticketType: string | null | undefined,
 ): Promise<{ error: string } | null> {
@@ -977,16 +983,13 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
     }
   }
 
-  // Catalog membership check (batch 04 / #351) — the PATCH schema only validates shape
-  // (string, max length), same as create; this is the semantic check against the event's live
-  // TicketType rows, mirroring how custom_data_fields is validated above. "" is normalized to
-  // null first so it clears the type instead of silently bypassing validation and persisting an
-  // empty string (CodeRabbit review).
+  // "" is normalized to null first so it clears the type instead of silently bypassing
+  // validation and persisting an empty string (CodeRabbit review). The actual catalog-membership
+  // check (batch 04 / #351) now happens inside the transaction below, under the same advisory
+  // lock ticket-type DELETE uses (TOCTOU fix, code review) - see the comment there.
   if (profilePatch.ticket_type === "") {
     profilePatch.ticket_type = null;
   }
-  const ticketTypeError = await validateTicketTypeCatalog(db, eventId, profilePatch.ticket_type);
-  if (ticketTypeError) return c.json(ticketTypeError, 400);
 
   const profileChanges = computePatchChanges(existing, profilePatch);
   const rsvpChange = computeRsvpChange(existing.rsvp_status, patchRsvp);
@@ -1035,6 +1038,18 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
 
   try {
     const updated = await db.$transaction(async (tx) => {
+      // Catalog membership check (batch 04 / #351), re-validated here (not on the bare `db`
+      // before the transaction opened) and locked against a concurrent ticket-type DELETE
+      // (TOCTOU fix, code review) - same rationale as handleCreateEventAttendee. Only taken when
+      // ticket_type is actually changing to a new, non-empty value: computePatchChanges already
+      // excludes it from `fields` when the patch leaves it untouched or resubmits the same
+      // value, and clearing it to null can't orphan a reference, so neither case needs the lock.
+      if (profileChanges?.fields.includes("ticket_type") && profilePatch.ticket_type) {
+        await acquireEventTicketTypesLock(tx, eventId);
+        const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, profilePatch.ticket_type);
+        if (ticketTypeError) throw c.json(ticketTypeError, 400);
+      }
+
       const isRestore = isCapacityReactivation(existing.status, statusChange);
       let restoreCapacityForced: { forced: true; capacity: number; current: number } | undefined;
 
@@ -1247,11 +1262,20 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
     return c.json({ error: customDataErrorCode(err) }, 400);
   }
 
-  const ticketTypeError = await validateTicketTypeCatalog(db, eventId, ticket_type);
-  if (ticketTypeError) return c.json(ticketTypeError, 400);
-
   try {
     const created = await db.$transaction(async (tx) => {
+      // Catalog membership check (batch 04 / #351) - moved inside the transaction and locked
+      // against a concurrent ticket-type DELETE (TOCTOU fix, code review): validating on the bare
+      // `db` before this transaction opened let a concurrent delete's in-use recheck pass (it
+      // couldn't see this uncommitted row) and remove the type this attendee is about to
+      // reference. Only taken when a type is actually being set, so attendees that don't
+      // reference one at all never pay for the lock.
+      if (ticket_type) {
+        await acquireEventTicketTypesLock(tx, eventId);
+        const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, ticket_type);
+        if (ticketTypeError) throw c.json(ticketTypeError, 400);
+      }
+
       await acquireEventCapacityLock(tx, eventId);
       const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);
       if (capacityResult instanceof Response) throw capacityResult;

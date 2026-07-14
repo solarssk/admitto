@@ -17,8 +17,12 @@ class TypeLimitReachedError extends Error {}
 class TypeInUseError extends Error {}
 
 /** Serializes create/delete for one event's ticket-type catalog against each other, closing the
- * same concurrent-create-vs-cap race as acquireEventCustomFieldsLock. */
-async function acquireEventTicketTypesLock(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
+ * same concurrent-create-vs-cap race as acquireEventCustomFieldsLock. Exported so every writer
+ * that assigns Attendee.ticket_type (attendees-api-routes.ts, import-api-routes.ts) can take the
+ * same lock and fully serialize against a concurrent delete of the type it's about to reference
+ * (TOCTOU fix, code review) - a bare per-file wrapper, not a new shared helper, matching this
+ * codebase's existing pattern of one advisory-lock helper per resource (event-capacity.ts). */
+export async function acquireEventTicketTypesLock(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
   const lockKey = `ticket-types:${eventId}`;
   await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 }

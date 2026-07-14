@@ -529,6 +529,15 @@ export function AttendeeDetailPage() {
   const lastMail = detail.deliveries[0]?.status ?? null;
   const emailChanged = form.email !== initialEmail;
   const isRevoked = detail.status === "revoked";
+  // A stored ticket_type with no matching catalog entry (type deleted after assignment, or
+  // legacy pre-catalog data) has no <option> to bind to — the native <select> would otherwise
+  // silently fall back to the blank "—" option while form.ticket_type still holds the orphaned
+  // value, hiding it from the admin. Surface it as its own option instead (fail-open, same
+  // philosophy as ticketTypeBadge.tsx's catalog resolver).
+  const orphanedTicketType =
+    form.ticket_type && !ticketTypes.some((type) => type.key === form.ticket_type)
+      ? form.ticket_type
+      : null;
 
   return (
     <div className="attendee-detail-page">
@@ -659,6 +668,14 @@ export function AttendeeDetailPage() {
                   onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
                 >
                   <option value="">—</option>
+                  {orphanedTicketType && (
+                    <option
+                      value={orphanedTicketType}
+                      title="Not in this event's ticket-type catalog — it may have been deleted after being assigned. Picking another option here replaces it."
+                    >
+                      {orphanedTicketType} (not in catalog)
+                    </option>
+                  )}
                   {ticketTypes.map((type) => (
                     <option key={type.key} value={type.key}>
                       {type.label}

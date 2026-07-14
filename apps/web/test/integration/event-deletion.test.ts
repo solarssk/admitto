@@ -221,6 +221,32 @@ describe("DELETE /api/admin/events/:eventId", () => {
     expect(event).toBeNull();
   });
 
+  it("returns 409 when archived but has a custom ticket type", async () => {
+    const eventId = await createEvent({ archived: true });
+    await prisma.ticketType.create({
+      data: { event_id: eventId, key: "vip", label: "VIP", color: "purple" },
+    });
+
+    const res = await deleteEventRequest(eventId, superCookie);
+    expect(res.status).toBe(409);
+
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    expect(event).not.toBeNull();
+  });
+
+  it("allows delete when the only ticket type is the auto-seeded standard one", async () => {
+    const eventId = await createEvent({ archived: true });
+    await prisma.ticketType.create({
+      data: { event_id: eventId, key: "standard", label: "Standard", color: "gray" },
+    });
+
+    const res = await deleteEventRequest(eventId, superCookie);
+    expect(res.status).toBe(200);
+
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    expect(event).toBeNull();
+  });
+
   it("returns 409 when archived but has an event contact", async () => {
     const eventId = await createEvent({ archived: true });
     await prisma.eventContact.create({ data: { event_id: eventId, name: "Jane Doe" } });

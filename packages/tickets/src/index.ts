@@ -49,6 +49,7 @@ export {
   assertTicketTypeInCatalog,
   UnknownTicketTypeError,
   TICKET_TYPE_COLOR_KEYS,
+  STANDARD_TICKET_TYPE_KEY,
   slugifyTicketTypeKey,
   uniqueTicketTypeKey,
 } from "./ticket-types.js";

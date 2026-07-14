@@ -60,6 +60,13 @@ export async function backfillTicketTypes(prisma: PrismaClient): Promise<{
     const attendees = await prisma.attendee.findMany({
       where: { event_id: event.id, ticket_type: { not: null } },
       select: { id: true, ticket_type: true },
+      // Explicit order so "first-seen" (below) is well-defined: without one, SQL row order is
+      // unspecified, and Postgres could satisfy this event_id predicate via one of Attendee's
+      // event_id-leading unique indexes (email/external_uuid/qr_payload) instead of a table scan,
+      // silently reordering rows. `id` breaks ties when multiple attendees share a created_at -
+      // e.g. a same-transaction bulk import (packages/import) via createMany, which lets every
+      // row fall back to the same DB-side CURRENT_TIMESTAMP default.
+      orderBy: [{ created_at: "asc" }, { id: "asc" }],
     });
 
     // Group case-insensitively; first-seen casing within the event wins as the display label.

@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { customDataValue, parseCustomData } from "./custom-data.js";
 import { loadEventCustomDataFields } from "./event-custom-fields.js";
+import { loadEventTicketTypes, type TicketTypeInfo } from "./ticket-types.js";
 import type { EventItemContent } from "./types.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
 import {
@@ -30,6 +31,9 @@ export type SanitizedExportRow = {
   email: string;
   company: string;
   department: string;
+  /** Resolved to the catalog's current display label (fail-open to the raw stored key when it
+   * doesn't match any live entry), matching what admins see on-screen everywhere else - not the
+   * internal key (batch 04 / #351 follow-up). */
   ticket_type: string;
   check_in_status: string;
   admitted_at: string;
@@ -79,11 +83,19 @@ function resolveCompanyDepartment(attendee: {
   };
 }
 
+/** Resolves ticket_type's raw catalog `key` to its current display `label` - same fail-open
+ * lookup as apps/admin's ticketTypeBadge.tsx (an unmatched/legacy key, or no catalog supplied,
+ * still exports as the raw stored string instead of disappearing). */
+function resolveTicketTypeLabel(raw: string | null, ticketTypes: TicketTypeInfo[]): string | null {
+  if (!raw) return raw;
+  return ticketTypes.find((t) => t.key === raw)?.label ?? raw;
+}
 
 export function buildSanitizedExportRows(
   rows: ExportAttendeeSqlRow[],
   attributeFields: EventItemContent[],
   timeZone: string,
+  ticketTypes: TicketTypeInfo[] = [],
 ): SanitizedExportRow[] {
   return rows.map((row) => {
     const { company, department } = resolveCompanyDepartment(row);
@@ -93,7 +105,7 @@ export function buildSanitizedExportRows(
       email: sanitizeCsvCell(row.email),
       company: sanitizeCsvCell(company),
       department: sanitizeCsvCell(department),
-      ticket_type: sanitizeCsvCell(row.ticket_type),
+      ticket_type: sanitizeCsvCell(resolveTicketTypeLabel(row.ticket_type, ticketTypes)),
       check_in_status: row.admitted_at ? "admitted" : "not_admitted",
       admitted_at: row.admitted_at ? formatAdmittedAtLocal(row.admitted_at, timeZone) : "",
       attribute_values: attributeFields.map((field) =>
@@ -170,16 +182,17 @@ export async function exportAttendeesCsv(
     throw new AttendeeExportTooLargeError(total);
   }
 
-  const [rows, attributeFieldsResult] = await Promise.all([
+  const [rows, attributeFieldsResult, ticketTypes] = await Promise.all([
     findFilteredAttendeesForExport(db, eventId, filters),
     loadEventCustomDataFields(db, eventId).catch((err) => err),
+    loadEventTicketTypes(db, eventId),
   ]);
   if (attributeFieldsResult instanceof Error) {
     throw attributeFieldsResult;
   }
 
   const exportColumns = buildExportColumns(attributeFieldsResult);
-  const exportRows = buildSanitizedExportRows(rows, attributeFieldsResult, timeZone);
+  const exportRows = buildSanitizedExportRows(rows, attributeFieldsResult, timeZone, ticketTypes);
   const csv = buildExportCsv(exportRows, exportColumns);
 
   return {

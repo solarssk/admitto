@@ -22,6 +22,7 @@ import {
   requireEventId,
 } from "./admin-helpers.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock } from "./event-capacity.js";
+import { acquireEventTicketTypesLock } from "./ticket-types-routes.js";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 /** Multipart framing overhead allowed on top of the file cap (body-limit middleware). */
@@ -163,6 +164,7 @@ function sanitizePreviewReason(reason: string): string {
   if (reason.startsWith("Agency identifier collides")) {
     return "Agency identifier collides across columns";
   }
+  if (reason.startsWith("Unknown ticket type:")) return "Unknown ticket type";
   return reason;
 }
 
@@ -399,7 +401,12 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
         validCount: parsed.validRows.length,
         invalidRows: parsed.invalidRows.map(({ rowIndex, reason }) => ({
           rowIndex,
-          reason: sanitizePreviewReason(reason),
+          // "Unknown ticket type: ..." keeps its raw value here - the admin currently fixing
+          // this import needs to see which catalog value didn't match, same as before this
+          // reason gained a sanitizePreviewReason case. That case exists only to keep the raw
+          // value out of the aggregated log key in groupInvalidByType below (PII/log-leak fix,
+          // code review); this per-row response to the uploading admin isn't a log-leak concern.
+          reason: reason.startsWith("Unknown ticket type:") ? reason : sanitizePreviewReason(reason),
         })),
         warnings: parsed.warnings.map(sanitizePreviewWarning),
       },
@@ -449,6 +456,19 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
 
     const summary = await db.$transaction(
       async (tx) => {
+        // Locked against a concurrent ticket-type DELETE for the whole commit (TOCTOU fix, code
+        // review): the `ticketTypes` catalog snapshot loaded above, before this transaction
+        // opened, stays valid once this lock is held, since a delete's own in-use recheck can no
+        // longer slip in and remove a type this batch is about to write - closing the same gap
+        // as attendees-api-routes.ts's create/patch handlers, which take this lock for the same
+        // reason. Acquired before the capacity lock so every writer that needs both locks takes
+        // them in the same order. Only taken when the import actually validates against a
+        // catalog (ticketTypes is always defined here, but guarded the same way the option
+        // itself is documented, in case a future caller opts out).
+        if (ticketTypes) {
+          await acquireEventTicketTypesLock(tx, eventId);
+        }
+
         await acquireEventCapacityLock(tx, eventId);
 
         const dry = await commitImport(

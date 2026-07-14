@@ -12,6 +12,9 @@ export interface TicketTypeInfo {
 
 const DEFAULT_TICKET_TYPE = { key: "standard", label: "Standard", color: "gray" } as const;
 
+/** Public constant for the auto-seeded "standard" ticket-type key — reuse instead of the literal. */
+export const STANDARD_TICKET_TYPE_KEY = DEFAULT_TICKET_TYPE.key;
+
 /** The 8 curated colors a ticket type may use - kept in sync by hand with
  * packages/ui/src/components/TicketTypeBadge.tsx's TICKET_TYPE_COLORS (this list is just the
  * valid keys, for server-side validation; the UI package owns the actual solid/tint CSS values

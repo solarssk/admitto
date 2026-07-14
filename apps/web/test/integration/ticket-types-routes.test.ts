@@ -442,6 +442,55 @@ describe("DELETE /api/admin/events/:eventId/ticket-types/:typeId", () => {
     await prisma.attendee.delete({ where: { id: attendee.id } });
   });
 
+  // Regression test for the TOCTOU fix (code review): DELETE's in-use recheck and attendee
+  // create now share the same ticket-types:${eventId} advisory lock (acquireEventTicketTypesLock),
+  // so a genuinely concurrent create referencing this type and a delete of it must fully
+  // serialize - whichever request's transaction acquires the lock first wins, and the other must
+  // fail. Before the fix, create validated against the catalog on the bare `db` before its own
+  // transaction opened, so it could race past a delete's in-use recheck and leave the attendee
+  // referencing a ticket_type row that no longer exists.
+  it("never orphans an attendee's ticket_type under a concurrent delete + create (advisory lock)", async () => {
+    const created = await prisma.ticketType.create({
+      data: { event_id: EVENT_TT, key: "race_delete_create", label: "Race delete create", sort_order: 96 },
+    });
+    const email = "race-delete-create@example.com";
+
+    const [delRes, createRes] = await Promise.all([
+      app.request(`/api/admin/events/${EVENT_TT}/ticket-types/${created.id}`, {
+        method: "DELETE",
+        headers: { Cookie: adminCookie, ...sameOrigin },
+      }),
+      app.request(`/api/admin/events/${EVENT_TT}/attendees`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({
+          email,
+          name: "Race Guest",
+          ticket_type: "race_delete_create",
+        }),
+      }),
+    ]);
+
+    const stillExists = await prisma.ticketType.findUnique({ where: { id: created.id } });
+    const attendee = await prisma.attendee.findFirst({ where: { event_id: EVENT_TT, email } });
+
+    if (stillExists) {
+      // Create won the race: delete must have been blocked as type_in_use, and the attendee
+      // correctly references the still-existing type - never both succeeding.
+      expect(delRes.status).toBe(409);
+      expect(createRes.status).toBe(201);
+      expect(attendee?.ticket_type).toBe("race_delete_create");
+      await prisma.attendee.delete({ where: { id: attendee!.id } });
+      await prisma.ticketType.delete({ where: { id: created.id } });
+    } else {
+      // Delete won the race: create's in-transaction catalog re-check must have rejected the
+      // now-gone type instead of writing an orphaned reference.
+      expect(delRes.status).toBe(200);
+      expect(createRes.status).toBe(400);
+      expect(attendee).toBeNull();
+    }
+  });
+
   it("returns 403 for a type belonging to a different event", async () => {
     const created = await prisma.ticketType.create({
       data: { event_id: EVENT_TT_OTHER, key: "cross_event_delete", label: "Cross event", sort_order: 1 },

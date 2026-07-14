@@ -1,4 +1,4 @@
-import type { CheckInHistoryEntry } from "../api/types.js";
+import type { CheckInHistoryEntry, TicketTypeDto } from "../api/types.js";
 import { CkRecentScans } from "./CkRecentScans.js";
 import { CkStats } from "./CkStats.js";
 
@@ -12,6 +12,7 @@ type ScanHistoryListProps = {
   eventTimezone: string;
   eventDate?: string | null;
   compact?: boolean;
+  ticketTypes?: TicketTypeDto[];
   onSelectAttendee?: (attendeeId: string) => void;
 };
 
@@ -22,6 +23,7 @@ export function ScanHistoryList({
   eventTimezone,
   eventDate = null,
   compact = false,
+  ticketTypes = [],
   onSelectAttendee,
 }: ScanHistoryListProps) {
   return (
@@ -33,6 +35,7 @@ export function ScanHistoryList({
         eventDate={eventDate}
         compact={compact}
         limit={compact ? 3 : CK_RECENT_SCANS_SIDEBAR_LIMIT}
+        ticketTypes={ticketTypes}
         onSelectAttendee={onSelectAttendee}
       />
     </>
