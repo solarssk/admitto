@@ -165,6 +165,7 @@ export function EventSettingsPage() {
   const [revokeItemsOpen, setRevokeItemsOpen] = useState(false);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [ticketTypesLoading, setTicketTypesLoading] = useState(true);
+  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
   const [tab, setTab] = useState<EventSettingsTab>(initialTab);
@@ -232,38 +233,38 @@ export function EventSettingsPage() {
   const ticketTypesLoadedRef = useRef(false);
   const ticketTypesAbortRef = useRef<AbortController | null>(null);
 
-  // A navigation to a different event must reset the ticket-types card back to its first-load
-  // state (loading placeholder, no stale rows from the previous event) - this effect only fires
-  // on an actual event switch, not on the same-event background refresh triggered by
-  // TicketTypesCard's onChanged, which keeps the no-flicker behavior above unchanged.
+  // A stale in-flight request from a previous eventId (e.g. navigating between two events'
+  // settings before the first request lands) must not overwrite this event's state once it
+  // resolves - reset and discard it the same way RequirementsPage's own load effect does
+  // (CodeRabbit review).
   useEffect(() => {
+    ticketTypesAbortRef.current?.abort();
     setTicketTypes([]);
-    setTicketTypesLoading(true);
+    setTicketTypesError(null);
     ticketTypesLoadedRef.current = false;
   }, [eventId]);
 
   const loadTicketTypes = useCallback(async () => {
     if (!eventId) return;
-
     ticketTypesAbortRef.current?.abort();
     const ac = new AbortController();
     ticketTypesAbortRef.current = ac;
-
-    const isFirstLoadForEvent = !ticketTypesLoadedRef.current;
-    if (isFirstLoadForEvent) setTicketTypesLoading(true);
+    if (!ticketTypesLoadedRef.current) setTicketTypesLoading(true);
     try {
       const types = await fetchTicketTypes(eventId, ac.signal);
       if (ac.signal.aborted) return;
       setTicketTypes(types);
+      setTicketTypesError(null);
       ticketTypesLoadedRef.current = true;
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
-      if (isFirstLoadForEvent) setTicketTypes([]);
-      addToast(operatorApiErrorMessage(err, "Failed to load ticket types"), "error");
+      ticketTypesLoadedRef.current = false;
+      setTicketTypes([]);
+      setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
     } finally {
       if (!ac.signal.aborted) setTicketTypesLoading(false);
     }
-  }, [eventId, addToast]);
+  }, [eventId]);
 
   useEffect(() => {
     loadTicketTypes().catch(() => {});
@@ -607,6 +608,8 @@ export function EventSettingsPage() {
           event={event}
           types={ticketTypes}
           loading={ticketTypesLoading}
+          error={ticketTypesError}
+          onRetry={() => loadTicketTypes().catch(() => {})}
           onChanged={() => loadTicketTypes().catch(() => {})}
         />
       </EventSettingsTabPanel>
