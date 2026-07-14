@@ -1,5 +1,10 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { resolveBrandingFromEvent } from "@admitto/mail-templates";
+// Subpath import, not the package root - the root barrel also re-exports compileTemplate, which
+// pulls in the full `mjml` compiler (and its own large dependency tree). @admitto/tickets is
+// bundled into the admin SPA, so importing from the root here would ship all of that unused MJML
+// code to the browser - confirmed by an actual build: the admin bundle went from ~828 kB (234 kB
+// gzip) to 5.5 MB (1.6 MB gzip) before this fix (audytor review, #503).
+import { resolveBrandingFromEvent } from "@admitto/mail-templates/branding";
 import { hashToken } from "./hash.js";
 import { extractTokenFromUrl, looksLikeInternalToken } from "./url.js";
 import type { ResolveTicketContext, ResolvedTicket } from "./types.js";
