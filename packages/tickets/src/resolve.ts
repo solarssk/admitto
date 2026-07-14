@@ -1,9 +1,24 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { resolveBrandingFromEvent } from "@admitto/mail-templates";
 import { hashToken } from "./hash.js";
 import { extractTokenFromUrl, looksLikeInternalToken } from "./url.js";
 import type { ResolveTicketContext, ResolvedTicket } from "./types.js";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
+
+type TicketLogoSource = {
+  logo_url: string | null;
+  header_image_url: string | null;
+  organization: { logo_url: string | null; header_image_url: string | null };
+};
+
+/** Event logo, falling back to the organization's when the event has none set - null when
+ * neither is configured (#419). Shared by both public ticket page resolvers (token-based
+ * resolveTicket below, and apps/web's public_ref-based findAttendeeForEventRoute) so they can't
+ * independently drift on the fallback order. */
+export function resolveTicketLogoUrl(event: TicketLogoSource): string | null {
+  return resolveBrandingFromEvent(event).logo_url || null;
+}
 
 /**
  * Resolve a scanned value to an attendee + event record.
@@ -30,11 +45,11 @@ export async function resolveTicket(
     const row = context.eventId
       ? await prisma.attendee.findFirst({
           where: { token_hash: hash, event_id: context.eventId },
-          include: { event: true },
+          include: { event: { include: { organization: true } } },
         })
       : await prisma.attendee.findUnique({
           where: { token_hash: hash },
-          include: { event: true },
+          include: { event: { include: { organization: true } } },
         });
     if (row) return toResolved(row, "internal");
   }
@@ -45,7 +60,7 @@ export async function resolveTicket(
   // Mode B — agency qr_payload. Ambiguous matches are treated as unresolved.
   const byQr = await prisma.attendee.findMany({
     where: { event_id: context.eventId, qr_payload: scanned },
-    include: { event: true },
+    include: { event: { include: { organization: true } } },
     take: 2,
   });
   if (byQr.length > 1) return null;
@@ -53,7 +68,7 @@ export async function resolveTicket(
   // Mode B — agency external_uuid
   const byUuid = await prisma.attendee.findFirst({
     where: { event_id: context.eventId, external_uuid: scanned },
-    include: { event: true },
+    include: { event: { include: { organization: true } } },
   });
 
   if (byQr[0] && byUuid && byQr[0].id !== byUuid.id) {
@@ -71,7 +86,11 @@ function toResolved(
     id: string; event_id: string; email: string; name: string; status: string;
     token_hash: string | null; qr_payload: string | null; external_uuid: string | null;
     ticket_type: string | null;
-    event: { id: string; title: string; date: Date; location: string | null };
+    event: {
+      id: string; title: string; date: Date; location: string | null;
+      logo_url: string | null; header_image_url: string | null;
+      organization: { logo_url: string | null; header_image_url: string | null };
+    };
   },
   mode: ResolvedTicket["mode"],
 ): ResolvedTicket {
@@ -88,6 +107,12 @@ function toResolved(
       external_uuid: row.external_uuid,
       ticket_type: row.ticket_type,
     },
-    event: row.event,
+    event: {
+      id: row.event.id,
+      title: row.event.title,
+      date: row.event.date,
+      location: row.event.location,
+      logoUrl: resolveTicketLogoUrl(row.event),
+    },
   };
 }

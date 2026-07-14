@@ -407,8 +407,9 @@ export function createApp(options: CreateAppOptions = {}) {
     html: string,
     status: 200 | 404 | 410 | 500,
     theme?: Awaited<ReturnType<typeof getBrandingTheme>> | null,
+    logoUrl?: string | null,
   ) {
-    for (const [name, value] of Object.entries(getTicketPageSecurityHeaders(theme))) {
+    for (const [name, value] of Object.entries(getTicketPageSecurityHeaders(theme, logoUrl))) {
       c.header(name, value);
     }
     return c.html(html, status);
@@ -486,7 +487,13 @@ export function createApp(options: CreateAppOptions = {}) {
 
     const resolvedForDisplay = await resolveTicketPageDisplay(resolved);
 
-    return htmlWithSecurityHeaders(c, renderTicket(resolvedForDisplay, qrDataUrl, theme), 200, theme);
+    return htmlWithSecurityHeaders(
+      c,
+      renderTicket(resolvedForDisplay, qrDataUrl, theme),
+      200,
+      theme,
+      resolvedForDisplay.event.logoUrl,
+    );
   }
 
   app.get("/healthz", healthzRateLimit, (c) => handleHealthz(c, db));

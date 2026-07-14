@@ -122,6 +122,20 @@ describe("Mode B public routes — public_ref", () => {
     expect(res.status).toBe(404);
   });
 
+  it("renders the event's configured logo and widens the CSP img-src to match (#419)", async () => {
+    const logoUrl = "https://cdn.example.com/summer-gala-logo.png";
+    await prisma.event.update({ where: { id: EVENT_ID }, data: { logo_url: logoUrl } });
+    try {
+      const res = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}`);
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain(`<img class="ticket__brand-logo" src="${logoUrl}"`);
+      expect(res.headers.get("Content-Security-Policy")).toContain(`img-src 'self' data: https://cdn.example.com`);
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { logo_url: null } });
+    }
+  });
+
   it("agency row without public_ref returns 404 after lookup switch", async () => {
     const noRef = await prisma.attendee.create({
       data: {

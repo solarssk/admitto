@@ -28,12 +28,35 @@ export function buildTicketFontSrc(theme?: BrandingTheme | null): string {
   return parts.join(" ");
 }
 
-export function getTicketPageSecurityHeaders(theme?: BrandingTheme | null): Record<string, string> {
+/** Build CSP img-src allowlist for the QR code (data: URI) plus, when a logo is configured, its
+ * host - a relative /uploads/... logo is already covered by 'self' and adds nothing here. Same
+ * fail-open-to-'self'-only shape as buildTicketFontSrc above for an unparseable/unsafe URL. */
+export function buildTicketImgSrc(logoUrl?: string | null): string {
+  const parts = ["'self'", "data:"];
+  const url = logoUrl?.trim();
+  if (url && !url.startsWith("/")) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "https:" && !parsed.username && !parsed.password) {
+        parts.push(parsed.origin);
+      }
+    } catch {
+      // ignore invalid URLs
+    }
+  }
+  return parts.join(" ");
+}
+
+export function getTicketPageSecurityHeaders(
+  theme?: BrandingTheme | null,
+  logoUrl?: string | null,
+): Record<string, string> {
   const fontSrc = buildTicketFontSrc(theme);
+  const imgSrc = buildTicketImgSrc(logoUrl);
   return {
     "Cache-Control": "private, no-store, max-age=0",
     "Content-Security-Policy":
-      `default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'none'; connect-src 'none'; font-src ${fontSrc}; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      `default-src 'none'; style-src 'unsafe-inline'; img-src ${imgSrc}; script-src 'none'; connect-src 'none'; font-src ${fontSrc}; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
   };
@@ -61,8 +84,11 @@ export function renderTicket(
   <article class="ticket">
     <header class="ticket__top">
       <div class="ticket__brand">
-        <span class="ticket__brand-mark" aria-hidden="true"></span>
-        <span>Admitto</span>
+        ${
+          event.logoUrl
+            ? `<img class="ticket__brand-logo" src="${esc(event.logoUrl)}" alt="${esc(event.title)}">`
+            : `<span class="ticket__brand-mark" aria-hidden="true"></span><span>Admitto</span>`
+        }
       </div>
       <small>Event ticket</small>
     </header>

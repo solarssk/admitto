@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import type { ResolvedTicket } from "@admitto/tickets";
+import { resolveTicketLogoUrl, type ResolvedTicket } from "@admitto/tickets";
 
 /** Event-scoped attendee lookup for Mode B public routes (by public_ref, not Attendee.id). */
 export async function findAttendeeForEventRoute(
@@ -14,7 +14,7 @@ export async function findAttendeeForEventRoute(
 
   const attendee = await prisma.attendee.findFirst({
     where: { public_ref: publicRef, event_id: event.id },
-    include: { event: true },
+    include: { event: { include: { organization: true } } },
   });
   if (!attendee) return null;
 
@@ -39,6 +39,7 @@ export async function findAttendeeForEventRoute(
       title: attendee.event.title,
       date: attendee.event.date,
       location: attendee.event.location,
+      logoUrl: resolveTicketLogoUrl(attendee.event),
     },
   };
 }

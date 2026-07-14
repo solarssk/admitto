@@ -176,5 +176,6 @@ export type ResolvedTicket = {
     title: string;
     date: Date;
     location: string | null;
+    logoUrl: string | null;
   };
 };
