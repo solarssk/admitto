@@ -67,17 +67,9 @@ function serializeTicketType(
   };
 }
 
-/** GET /api/admin/events/:eventId/ticket-types - includes a live attendee count per type in the
- * same round trip (one groupBy, same shape as reports-routes.ts's by-ticket-type aggregate) so the
- * Event Settings tab doesn't need a second request. */
-export async function handleListEventTicketTypes(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
+/** Shared by the admin and check-in GET routes below - one groupBy for a live attendee count per
+ * type, same shape as reports-routes.ts's by-ticket-type aggregate. */
+async function loadTicketTypesWithCounts(db: PrismaClient, eventId: string): Promise<TicketTypeDto[]> {
   const [rows, counts] = await Promise.all([
     db.ticketType.findMany({ where: { event_id: eventId }, orderBy: { sort_order: "asc" } }),
     db.attendee.groupBy({
@@ -87,8 +79,19 @@ export async function handleListEventTicketTypes(c: Context, db: PrismaClient): 
     }),
   ]);
   const countByKey = new Map(counts.map((row) => [row.ticket_type, row._count._all]));
+  return rows.map((row) => serializeTicketType(row, countByKey.get(row.key) ?? 0));
+}
 
-  return c.json({ items: rows.map((row) => serializeTicketType(row, countByKey.get(row.key) ?? 0)) });
+/** GET /api/admin/events/:eventId/ticket-types - the Event Settings tab's own round trip. */
+export async function handleListEventTicketTypes(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  return c.json({ items: await loadTicketTypesWithCounts(db, eventId) });
 }
 
 /** GET /api/checkin/ticket-types - the same catalog as the admin route above, but reachable by
@@ -99,17 +102,7 @@ export async function handleCheckinTicketTypes(c: Context, db: PrismaClient): Pr
   const eventId = c.req.query("eventId");
   if (!eventId) return c.json({ error: "eventId required" }, 400);
 
-  const [rows, counts] = await Promise.all([
-    db.ticketType.findMany({ where: { event_id: eventId }, orderBy: { sort_order: "asc" } }),
-    db.attendee.groupBy({
-      by: ["ticket_type"],
-      where: { event_id: eventId, ticket_type: { not: null } },
-      _count: { _all: true },
-    }),
-  ]);
-  const countByKey = new Map(counts.map((row) => [row.ticket_type, row._count._all]));
-
-  return c.json({ items: rows.map((row) => serializeTicketType(row, countByKey.get(row.key) ?? 0)) });
+  return c.json({ items: await loadTicketTypesWithCounts(db, eventId) });
 }
 
 /** POST /api/admin/events/:eventId/ticket-types - server derives `key` from `label` (dedupe with
