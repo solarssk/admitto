@@ -47,6 +47,24 @@ const patchTypeSchema = z
   })
   .strict();
 
+/** Builds the PATCH update payload from the parsed body and the pre-transaction `existing` read.
+ * Label is only included when it actually differs from `existingLabel` - a same-as-read label is
+ * omitted (not just skipped-if-unchanged), so a client that only meant to change color can never
+ * silently overwrite a label a concurrent request renamed in between this read and the write
+ * (CodeRabbit review). Exported so this exact decision can be unit tested without needing to win
+ * a real concurrency race - see ticket-types-patch-data.test.ts. */
+export function computeTicketTypePatchData(
+  parsedData: { label?: string; color?: string },
+  existingLabel: string,
+): Prisma.TicketTypeUpdateInput {
+  const data: Prisma.TicketTypeUpdateInput = {};
+  if (parsedData.label !== undefined && parsedData.label !== existingLabel) {
+    data.label = parsedData.label;
+  }
+  if (parsedData.color !== undefined) data.color = parsedData.color;
+  return data;
+}
+
 /** Admin API shape for a single event ticket type. */
 export type TicketTypeDto = {
   id: string;
@@ -228,9 +246,7 @@ export async function handlePatchEventTicketType(c: Context, db: PrismaClient): 
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const data: Prisma.TicketTypeUpdateInput = {};
-  if (parsed.data.label !== undefined) data.label = parsed.data.label;
-  if (parsed.data.color !== undefined) data.color = parsed.data.color;
+  const data = computeTicketTypePatchData(parsed.data, existing.label);
 
   if (Object.keys(data).length === 0) {
     const counts = await db.attendee.count({ where: { event_id: eventId, ticket_type: existing.key } });
@@ -239,11 +255,13 @@ export async function handlePatchEventTicketType(c: Context, db: PrismaClient): 
 
   try {
     const { updated, counts } = await db.$transaction(async (tx) => {
-      // Only recheck the label against siblings when it's actually changing - a color-only
-      // PATCH, or a label PATCH that just restates the current value (case-identical), never
-      // needs the lock (same "only taken when actually needed" rationale as
-      // handleCreateEventAttendee's ticket_type lock).
-      if (parsed.data.label !== undefined && parsed.data.label !== existing.label) {
+      // Only recheck the label against siblings when it's actually changing - a color-only PATCH,
+      // or a label PATCH that just restates the current value, never needs the lock (same
+      // "only taken when actually needed" rationale as handleCreateEventAttendee's ticket_type
+      // lock). Reads from `data.label` (already filtered by computeTicketTypePatchData above),
+      // not parsed.data.label directly, so this can't drift out of sync with what's actually
+      // about to be written.
+      if (data.label !== undefined) {
         await acquireEventTicketTypesLock(tx, eventId);
         const labelConflict = await tx.ticketType.findFirst({
           where: {
