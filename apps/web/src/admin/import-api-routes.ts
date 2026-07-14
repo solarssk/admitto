@@ -472,6 +472,12 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
     const ticketTypes = await loadImportTicketTypes(db, eventId);
     const parsed = parseAttendees(upload.csv, { attributeFields, ticketTypes });
 
+    // Rows the transaction's lock-time catalog recheck below drops (a type deleted in the
+    // narrow window between the pre-transaction snapshot above and the lock actually being
+    // held) - merged into the same invalidRows reporting as the commit-time parse's own
+    // invalid rows once the transaction returns.
+    let lockInvalidatedRows: { rowIndex: number; reason: string }[] = [];
+
     const summary = await db.$transaction(
       async (tx) => {
         // Locked against a concurrent ticket-type DELETE for the whole commit (TOCTOU fix, code
@@ -487,11 +493,31 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
           await acquireEventTicketTypesLock(tx, eventId);
         }
 
-        await acquireEventCapacityLock(tx, eventId);
+        // The pre-transaction snapshot above can still be stale for the handful of rows whose
+        // type was deleted in the window between that read and this lock actually being held -
+        // reread the catalog now, under the lock, and drop any row whose (already-canonicalized)
+        // key no longer exists instead of writing an attendee that references a gone type (Codex
+        // review). Rows dry-run/committed below use this rechecked set, not parsed.validRows.
+        let rowsToCommit = parsed.validRows;
+        if (ticketTypes) {
+          const freshKeys = new Set((await loadImportTicketTypes(tx, eventId)).map((t) => t.key));
+          const stillValid: AttendeeRow[] = [];
+          for (const row of parsed.validRows) {
+            if (row.ticket_type !== undefined && !freshKeys.has(row.ticket_type)) {
+              lockInvalidatedRows.push({
+                rowIndex: row.rowIndex,
+                reason: `Unknown ticket type: "${row.ticket_type}"`,
+              });
+            } else {
+              stillValid.push(row);
+            }
+          }
+          rowsToCommit = stillValid;
+        }
 
         const dry = await commitImport(
           eventId,
-          parsed.validRows,
+          rowsToCommit,
           {
             dryRun: true,
             overwrite: upload.overwrite,
@@ -516,7 +542,7 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
 
         const result = await commitImport(
           eventId,
-          parsed.validRows,
+          rowsToCommit,
           {
             dryRun: false,
             overwrite: upload.overwrite,
@@ -551,6 +577,8 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
       { timeout: IMPORT_TX_TIMEOUT_MS, maxWait: IMPORT_TX_MAX_WAIT_MS },
     );
 
+    const allInvalidRows = [...parsed.invalidRows, ...lockInvalidatedRows];
+
     logger.info("Import commit complete", {
       importId,
       eventId,
@@ -561,12 +589,13 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
       created: summary.created,
       updated: summary.updated,
       skipped: summary.skipped.length,
-      // Rows the commit-time re-parse dropped before they ever reached commitImport (e.g. a
-      // ticket type deleted from the catalog between preview and commit) - same aggregation
-      // shape as the preview endpoint's logging above, for observability.
-      invalidCount: parsed.invalidRows.length,
-      invalidRows: parsed.invalidRows.map((r) => r.rowIndex),
-      invalidByType: groupInvalidByType(parsed.invalidRows),
+      // Rows the commit-time re-parse, or the lock-time catalog recheck, dropped before they
+      // ever reached commitImport (e.g. a ticket type deleted from the catalog between preview
+      // and commit) - same aggregation shape as the preview endpoint's logging above, for
+      // observability.
+      invalidCount: allInvalidRows.length,
+      invalidRows: allInvalidRows.map((r) => r.rowIndex),
+      invalidByType: groupInvalidByType(allInvalidRows),
       overwrite: upload.overwrite,
       durationMs: Date.now() - startTime,
     });
@@ -579,7 +608,7 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
       created: summary.created,
       updated: summary.updated,
       skipped: summary.skipped,
-      invalidRows: invalidRowsForResponse(parsed.invalidRows),
+      invalidRows: invalidRowsForResponse(allInvalidRows),
     };
 
     return c.json(body);
@@ -609,7 +638,10 @@ async function loadImportAttributeFields(
   return filterCustomDataAttributeFields(fields);
 }
 
-async function loadImportTicketTypes(db: PrismaClient, eventId: string): Promise<ImportTicketType[]> {
+async function loadImportTicketTypes(
+  db: PrismaClient | Prisma.TransactionClient,
+  eventId: string,
+): Promise<ImportTicketType[]> {
   const types = await loadEventTicketTypes(db, eventId);
   return types.map((t) => ({ key: t.key, label: t.label }));
 }

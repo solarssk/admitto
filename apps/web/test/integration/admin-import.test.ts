@@ -899,6 +899,65 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     }
   });
 
+  // Closes a narrower window than the test above: here the type still exists when commit loads
+  // its pre-transaction catalog snapshot, and is deleted by a genuinely concurrent request while
+  // commit's own transaction is already in flight - the transaction's lock-protected recheck
+  // (not the outer re-parse, which never sees this delete at all) must be what excludes the row
+  // (Codex review).
+  it("never orphans an attendee when a ticket type is deleted concurrently with an import commit", async () => {
+    const raceType = await prisma.ticketType.create({
+      data: { event_id: EVENT_A, key: "concurrent-vip", label: "Concurrent VIP", sort_order: 98 },
+    });
+    const csv = [
+      "first_name,last_name,email,ticket_type",
+      "Concurrent,Race,concurrent-vip@example.com,concurrent-vip",
+    ].join("\n");
+
+    try {
+      const [commitRes, deleteRes] = await Promise.all([
+        postImport(
+          `/api/admin/events/${EVENT_A}/import/commit`,
+          csvFormData(csv, "concurrent.csv"),
+          adminCookie,
+        ),
+        app.request(`/api/admin/events/${EVENT_A}/ticket-types/${raceType.id}`, {
+          method: "DELETE",
+          headers: { Cookie: adminCookie, ...sameOrigin },
+        }),
+      ]);
+
+      expect(commitRes.status).toBe(200);
+      const body = (await commitRes.json()) as {
+        created: number;
+        invalidRows: { rowIndex: number; reason: string }[];
+      };
+
+      const attendee = await prisma.attendee.findFirst({
+        where: { event_id: EVENT_A, email: "concurrent-vip@example.com" },
+      });
+
+      // Whichever side of the race won the advisory lock first, the outcome must be consistent:
+      // either the delete lost (409, blocked by the newly-created attendee) and the import
+      // created it normally, or the delete won and the import excluded the row - never both an
+      // attendee referencing the now-gone type AND a successful delete.
+      if (deleteRes.status === 200) {
+        expect(body.created).toBe(0);
+        expect(body.invalidRows).toHaveLength(1);
+        expect(body.invalidRows[0]!.reason).toBe('Unknown ticket type: "concurrent-vip"');
+        expect(attendee).toBeNull();
+      } else {
+        expect(deleteRes.status).toBe(409);
+        expect(body.created).toBe(1);
+        expect(attendee?.ticket_type).toBe("concurrent-vip");
+      }
+    } finally {
+      await prisma.attendee.deleteMany({
+        where: { event_id: EVENT_A, email: "concurrent-vip@example.com" },
+      });
+      await prisma.ticketType.deleteMany({ where: { id: raceType.id } });
+    }
+  });
+
   it("returns 409 event_full when import would exceed capacity", async () => {
     const current = await prisma.attendee.count({
       where: { event_id: EVENT_A, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
