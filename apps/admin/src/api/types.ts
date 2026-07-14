@@ -300,6 +300,9 @@ export interface ImportCommitResponse {
   created: number;
   updated: number;
   skipped: ImportSkippedRow[];
+  /** Rows dropped by the commit-time re-parse before ever reaching the write step (e.g. a ticket
+   * type deleted from the catalog between preview and commit) - absent from created/updated/skipped. */
+  invalidRows: ImportInvalidRow[];
 }
 
 /** Bulk ticket send queue summary from POST .../attendees/bulk-resend. */

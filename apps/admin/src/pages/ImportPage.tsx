@@ -511,6 +511,34 @@ export function ImportPage() {
             </div>
           )}
 
+          {result.invalidRows.length > 0 && (
+            <div className="import-invalid">
+              <h3 className="import-subtitle">Invalid rows</h3>
+              <p className="import-hint">
+                Something about the event changed between preview and commit (e.g. a ticket type
+                was removed) - these rows were not imported.
+              </p>
+              <div className="attendees-table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Row</th>
+                      <th>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.invalidRows.map((row) => (
+                      <tr key={row.rowIndex}>
+                        <td>{row.rowIndex}</td>
+                        <td>{row.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <div className="import-actions">
             <Link to={`/admin/events/${eventId}/attendees`}>
               <Button variant="primary">Back to attendees</Button>
