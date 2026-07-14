@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Input } from "@admitto/ui";
-import { ApiError, createAttendee } from "../api/client.js";
+import { Button, Input, Select } from "@admitto/ui";
+import { ApiError, createAttendee, fetchTicketTypes } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeDetailDto } from "../api/types.js";
+import type { AttendeeDetailDto, TicketTypeDto } from "../api/types.js";
 import { CustomDataFieldInput } from "./CustomDataFieldInput.js";
 import {
   fetchAttendeeCustomFields,
@@ -32,6 +32,9 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
   const [company, setCompany] = useState("");
   const [department, setDepartment] = useState("");
   const [ticketType, setTicketType] = useState("");
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
+  const [ticketTypesLoading, setTicketTypesLoading] = useState(false);
+  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
   const [customFields, setCustomFields] = useState<Record<string, string>>({});
   const [attributeFieldsLoading, setAttributeFieldsLoading] = useState(false);
@@ -66,6 +69,30 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
     };
   }, [eventId, open]);
 
+  useEffect(() => {
+    if (!open) return;
+    setTicketTypes([]);
+    setTicketTypesError(null);
+    setTicketTypesLoading(true);
+    let cancelled = false;
+    fetchTicketTypes(eventId)
+      .then((types) => {
+        if (!cancelled) setTicketTypes(types);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setTicketTypes([]);
+          setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTicketTypesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, open]);
+
   const resetForm = () => {
     setEmail("");
     setName("");
@@ -90,7 +117,9 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
     isValidEmail(email.trim()) &&
     !submitting &&
     !attributeFieldsLoading &&
-    !attributeFieldsError;
+    !attributeFieldsError &&
+    !ticketTypesLoading &&
+    !ticketTypesError;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -155,8 +184,16 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
             {attributeFieldsError}
           </p>
         )}
+        {ticketTypesError && (
+          <p className="add-attendee-modal__error" role="alert">
+            {ticketTypesError}
+          </p>
+        )}
         {attributeFieldsLoading && (
           <p className="add-attendee-modal__hint">Loading attribute fields…</p>
+        )}
+        {ticketTypesLoading && (
+          <p className="add-attendee-modal__hint">Loading ticket types…</p>
         )}
         <div className="add-attendee-modal__fields">
           <Input
@@ -198,7 +235,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
               setError(null);
             }}
           />
-          <Input
+          <Select
             label="Ticket type"
             value={ticketType}
             disabled={submitting}
@@ -206,7 +243,14 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
               setTicketType(e.target.value);
               setError(null);
             }}
-          />
+          >
+            <option value="">—</option>
+            {ticketTypes.map((type) => (
+              <option key={type.key} value={type.key}>
+                {type.label}
+              </option>
+            ))}
+          </Select>
           {attributeFields.map((field) => (
             <CustomDataFieldInput
               key={field.source_field}

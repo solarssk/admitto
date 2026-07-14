@@ -228,6 +228,8 @@ log "running agency public_ref backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-public-ref.js
 log "running event custom-field registry backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-event-custom-fields.js
+log "running ticket-type catalog backfill with 120s timeout"
+run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-ticket-types.js
 log "purging expired/revoked auth sessions and trusted devices with 120s timeout"
 if ! run_as_node_cmd timeout 120 node packages/auth/dist/cli.js purge-auth-retention; then
   log "warning: auth retention purge failed or timed out; continuing startup"

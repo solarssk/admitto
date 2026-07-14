@@ -300,6 +300,9 @@ export interface ImportCommitResponse {
   created: number;
   updated: number;
   skipped: ImportSkippedRow[];
+  /** Rows dropped by the commit-time re-parse before ever reaching the write step (e.g. a ticket
+   * type deleted from the catalog between preview and commit) - absent from created/updated/skipped. */
+  invalidRows: ImportInvalidRow[];
 }
 
 /** Bulk ticket send queue summary from POST .../attendees/bulk-resend. */
@@ -384,6 +387,38 @@ export interface UpdateEventCustomFieldPatch {
   required?: boolean;
   /** null clears a previous select's options; omit to leave options untouched. */
   options?: string[] | null;
+}
+
+/** The 8 curated colors a ticket type may use - kept in sync by hand with
+ * packages/tickets/src/ticket-types.ts's TICKET_TYPE_COLOR_KEYS and
+ * packages/ui/src/components/TicketTypeBadge.tsx's TICKET_TYPE_COLORS. */
+export type TicketTypeColor = "gray" | "blue" | "green" | "yellow" | "red" | "azure" | "teal" | "purple";
+
+/** A per-event ticket type (batch 04 / #351) - the single source of truth for a type's label and
+ * color; `key` is immutable after create. */
+export interface TicketTypeDto {
+  id: string;
+  key: string;
+  label: string;
+  color: TicketTypeColor;
+  sort_order: number;
+  attendee_count: number;
+  created_at: string;
+}
+
+export interface TicketTypesListResponse {
+  items: TicketTypeDto[];
+}
+
+export interface CreateTicketTypeBody {
+  label: string;
+  color?: TicketTypeColor;
+}
+
+/** `key` is immutable after create - see TicketTypeDto. */
+export interface UpdateTicketTypePatch {
+  label?: string;
+  color?: TicketTypeColor;
 }
 
 export interface CreateEventItemBody {

@@ -143,6 +143,83 @@ describe("commitImport — create", () => {
   });
 });
 
+describe("commitImport — ticket type catalog validation (batch 04 / #351)", () => {
+  const catalog = [{ key: "vip", label: "VIP" }];
+
+  it("skips a create row whose ticket_type doesn't match the catalog", async () => {
+    const summary = await commitImport(
+      EVENT_ID,
+      [{ rowIndex: 1, first_name: "Bad", last_name: "Type", email: "bad-type@example.com", ticket_type: "staff" }],
+      { ticketTypes: catalog },
+      prisma,
+    );
+    expect(summary.toSkip).toBe(1);
+    expect(summary.skipped[0]?.reason).toMatch(/unknown ticket type/i);
+
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "bad-type@example.com" } },
+    });
+    expect(att).toBeNull();
+  });
+
+  it("normalizes a create row's ticket_type to the catalog key (case-insensitive match)", async () => {
+    const summary = await commitImport(
+      EVENT_ID,
+      [{ rowIndex: 1, first_name: "Good", last_name: "Type", email: "good-type@example.com", ticket_type: "VIP" }],
+      { ticketTypes: catalog },
+      prisma,
+    );
+    expect(summary.created).toBe(1);
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "good-type@example.com" } },
+    });
+    expect(att?.ticket_type).toBe("vip");
+  });
+
+  it("skips an overwrite update row whose ticket_type doesn't match the catalog, leaving the existing row untouched", async () => {
+    await prisma.attendee.create({
+      data: { event_id: EVENT_ID, email: "update-bad-type@example.com", name: "Original Name", ticket_type: "vip" },
+    });
+
+    const summary = await commitImport(
+      EVENT_ID,
+      [
+        {
+          rowIndex: 1,
+          first_name: "Updated",
+          last_name: "Name",
+          email: "update-bad-type@example.com",
+          ticket_type: "staff",
+        },
+      ],
+      { overwrite: true, ticketTypes: catalog },
+      prisma,
+    );
+    expect(summary.toSkip).toBe(1);
+    expect(summary.skipped[0]?.reason).toMatch(/unknown ticket type/i);
+
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "update-bad-type@example.com" } },
+    });
+    expect(att?.name).toBe("Original Name");
+    expect(att?.ticket_type).toBe("vip");
+  });
+
+  it("does not validate ticket_type when the caller opts out (ticketTypes undefined - today's free-text behavior)", async () => {
+    const summary = await commitImport(
+      EVENT_ID,
+      [{ rowIndex: 1, first_name: "Free", last_name: "Text", email: "free-text-type@example.com", ticket_type: "whatever" }],
+      {},
+      prisma,
+    );
+    expect(summary.created).toBe(1);
+    const att = await prisma.attendee.findUnique({
+      where: { event_id_email: { event_id: EVENT_ID, email: "free-text-type@example.com" } },
+    });
+    expect(att?.ticket_type).toBe("whatever");
+  });
+});
+
 describe("commitImport — overwrite=false (re-import)", () => {
   it("skips existing attendees, never updates them", async () => {
     const summary = await commitImport(EVENT_ID, [rowA], { overwrite: false }, prisma);

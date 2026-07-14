@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { createMemoryRouter, MemoryRouter, RouterProvider, Route, Routes } from "react-router-dom";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
 import { renderWithToast } from "../test-utils.js";
-import type { RoleAssignment } from "../../src/api/types.js";
+import type { RoleAssignment, TicketTypeDto } from "../../src/api/types.js";
 
 const superadminAssignments: RoleAssignment[] = [
   { role: "superadmin", scope_type: "instance", scope_id: null },
@@ -46,6 +46,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchEventImageAssets: vi.fn(),
     createEventImageAsset: vi.fn(),
     deleteEventImageAsset: vi.fn(),
+    fetchTicketTypes: vi.fn().mockResolvedValue([]),
+    updateTicketType: vi.fn(),
   };
 });
 
@@ -53,10 +55,12 @@ import {
   deleteEvent,
   fetchEventImageAssets,
   fetchEventSettings,
+  fetchTicketTypes,
   patchEvent,
   revokeAllCheckIns,
   revokeAllItemsIssued,
   unarchiveEvent,
+  updateTicketType,
   uploadEventBrandingFile,
 } from "../../src/api/client.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
@@ -188,6 +192,32 @@ describe("EventSettingsPage tabs", () => {
     expect(
       screen.getByText(/leave it blank to use the organization's logo/),
     ).toBeTruthy();
+  });
+
+  it("shows an inline error with Retry on the Ticket types tab when the catalog fails to load, and Retry recovers (CodeRabbit review)", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+    renderSettings();
+    await waitFor(() => screen.getByRole("tab", { name: "Ticket types" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Ticket types" }));
+
+    expect(await screen.findByText("Could not load ticket types")).toBeTruthy();
+
+    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([
+      {
+        id: "tt-1",
+        key: "vip",
+        label: "VIP",
+        color: "purple",
+        sort_order: 0,
+        attendee_count: 0,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("VIP")).toBeTruthy();
+    expect(screen.queryByText("Could not load ticket types")).toBeNull();
   });
 
   it("shows a superadmin-only notice instead of the image asset library for a non-superadmin org admin", async () => {
@@ -438,7 +468,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     );
     expect(
       screen.getByText(
-        /Only events with no attendees, custom items, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
+        /Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
       ),
     ).toBeTruthy();
   });
@@ -480,7 +510,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     );
     expect(
       screen.getByText(
-        /Only events with no attendees, custom items, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
+        /Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
       ),
     ).toBeTruthy();
   });
@@ -873,5 +903,137 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     expect(document.getElementById(describedBy!)?.textContent).toBe("Not built yet");
     fireEvent.click(button);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("EventSettingsPage — ticket types cross-event staleness", () => {
+  const eventB = { ...activeEvent, id: "evt-2", title: "Gala Dinner" };
+
+  const vipType: TicketTypeDto = {
+    id: "tt-vip",
+    key: "vip",
+    label: "VIP",
+    color: "purple",
+    sort_order: 0,
+    attendee_count: 2,
+    created_at: "2026-01-01T00:00:00.000Z",
+  };
+  const staffType: TicketTypeDto = {
+    id: "tt-staff",
+    key: "staff",
+    label: "Staff",
+    color: "blue",
+    sort_order: 0,
+    attendee_count: 1,
+    created_at: "2026-01-01T00:00:00.000Z",
+  };
+
+  // createMemoryRouter + RouterProvider (not the plain <MemoryRouter> the rest of this file
+  // uses) so router.navigate() can change the :eventId param in place, the same way a real
+  // in-app navigation from one event's settings to another's does.
+  function renderSettingsRouter(entry: string) {
+    return createMemoryRouter(
+      [
+        { path: "/admin", element: <div>events picker</div> },
+        { path: "/admin/events/:eventId/settings", element: <EventSettingsPage /> },
+      ],
+      { initialEntries: [entry] },
+    );
+  }
+
+  it("shows the loading placeholder and drops event A's ticket types while navigating to event B", async () => {
+    vi.mocked(fetchEventSettings).mockImplementation((eventId: string) =>
+      Promise.resolve(eventId === "evt-1" ? activeEvent : eventB),
+    );
+    let resolveEventBTypes!: (types: TicketTypeDto[]) => void;
+    const eventBTypes = new Promise<TicketTypeDto[]>((resolve) => {
+      resolveEventBTypes = resolve;
+    });
+    vi.mocked(fetchTicketTypes).mockImplementation((eventId: string) =>
+      eventId === "evt-1" ? Promise.resolve([vipType]) : eventBTypes,
+    );
+
+    const router = renderSettingsRouter("/admin/events/evt-1/settings?tab=ticket-types");
+    renderWithToast(<RouterProvider router={router} />);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("VIP")).toBeTruthy();
+    });
+
+    await router.navigate("/admin/events/evt-2/settings?tab=ticket-types");
+
+    // The card must fall back to its first-load "Loading…" placeholder and drop event A's
+    // stale row immediately on navigation, before event B's fetch has resolved.
+    await waitFor(() => {
+      expect(screen.getByText("Loading…")).toBeTruthy();
+    });
+    expect(screen.queryByDisplayValue("VIP")).toBeNull();
+
+    resolveEventBTypes([staffType]);
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Staff")).toBeTruthy();
+    });
+    expect(screen.queryByText("Loading…")).toBeNull();
+  });
+
+  it("does not show the loading placeholder or hide existing rows during a same-event background refresh (no flicker)", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([vipType]);
+    vi.mocked(updateTicketType).mockResolvedValueOnce({ ...vipType, label: "VIP Gold" });
+    let resolveRefresh!: (types: TicketTypeDto[]) => void;
+    const refreshPromise = new Promise<TicketTypeDto[]>((resolve) => {
+      resolveRefresh = resolve;
+    });
+
+    renderSettings("/admin/events/evt-1/settings?tab=ticket-types");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("VIP")).toBeTruthy();
+    });
+
+    // A background refresh only ever follows a successful color/label edit (TicketTypesCard's
+    // onChanged) — queue it as the next fetchTicketTypes resolution before triggering that edit.
+    vi.mocked(fetchTicketTypes).mockImplementationOnce(() => refreshPromise);
+
+    const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "VIP Gold" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => {
+      expect(updateTicketType).toHaveBeenCalledWith("evt-1", "tt-vip", { label: "VIP Gold" });
+    });
+    await waitFor(() => {
+      expect(vi.mocked(fetchTicketTypes).mock.calls.length).toBe(2);
+    });
+
+    // The background refresh must not blank the card out while it's in flight.
+    expect(screen.queryByText("Loading…")).toBeNull();
+    expect(screen.getByDisplayValue("VIP Gold")).toBeTruthy();
+
+    resolveRefresh([{ ...vipType, label: "VIP Gold" }]);
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("VIP Gold")).toBeTruthy();
+    });
+    expect(screen.queryByText("Loading…")).toBeNull();
+  });
+
+  it("clears the previous event's stale ticket types when the new event's fetch fails", async () => {
+    vi.mocked(fetchEventSettings).mockImplementation((eventId: string) =>
+      Promise.resolve(eventId === "evt-1" ? activeEvent : eventB),
+    );
+    vi.mocked(fetchTicketTypes).mockImplementation((eventId: string) =>
+      eventId === "evt-1" ? Promise.resolve([vipType]) : Promise.reject(new Error("network error")),
+    );
+
+    const router = renderSettingsRouter("/admin/events/evt-1/settings?tab=ticket-types");
+    renderWithToast(<RouterProvider router={router} />);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("VIP")).toBeTruthy();
+    });
+
+    await router.navigate("/admin/events/evt-2/settings?tab=ticket-types");
+
+    expect(await screen.findByText("Could not load ticket types")).toBeTruthy();
+    expect(screen.queryByDisplayValue("VIP")).toBeNull();
   });
 });

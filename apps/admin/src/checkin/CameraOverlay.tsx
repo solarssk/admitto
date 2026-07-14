@@ -5,6 +5,7 @@ import type {
   CheckInHistoryEntry,
   CheckInScanResponse,
   LookupAttendeeResult,
+  TicketTypeDto,
 } from "../api/types.js";
 import { CameraScanner } from "./CameraScanner.js";
 import { CheckInCameraResultPanel } from "./CheckInCameraResultPanel.js";
@@ -36,6 +37,7 @@ type CameraOverlayProps = {
   onClearManualError?: () => void;
   scanResult: CheckInScanResponse | null;
   card: AttendeeCardDto | null;
+  ticketTypes?: TicketTypeDto[];
   pending: boolean;
   canAct: boolean;
   /** handleApiFailure's message — rendered inside the overlay (see
@@ -70,6 +72,7 @@ export function CameraOverlay({
   onClearManualError,
   scanResult,
   card,
+  ticketTypes = [],
   pending,
   canAct,
   onConfirm,
@@ -153,6 +156,7 @@ export function CameraOverlay({
         <CheckInCameraResultPanel
           scanResult={scanResult}
           card={card}
+          ticketTypes={ticketTypes}
           pending={pending}
           canAct={canAct}
           eventTimezone={eventTimezone}
@@ -251,6 +255,7 @@ export function CameraOverlay({
             eventDate={eventDate}
             compact
             limit={6}
+            ticketTypes={ticketTypes}
             onSelectAttendee={onSelectAttendee}
           />
         </aside>
@@ -276,6 +281,7 @@ export function CameraOverlay({
             setManualMode(false);
             onClearManualError?.();
           }}
+          ticketTypes={ticketTypes}
         />
       )}
     </div>

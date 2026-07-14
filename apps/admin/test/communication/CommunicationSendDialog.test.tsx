@@ -5,6 +5,7 @@ import { CommunicationSendDialog } from "../../src/communication/CommunicationSe
 
 const sendEventBulk = vi.fn();
 const fetchBulkSendStatus = vi.fn();
+const fetchTicketTypes = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -12,8 +13,11 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     ...actual,
     sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
     fetchBulkSendStatus: (...args: unknown[]) => fetchBulkSendStatus(...args),
+    fetchTicketTypes: (...args: [string]) => fetchTicketTypes(...args),
   };
 });
+
+fetchTicketTypes.mockResolvedValue([]);
 
 afterEach(() => {
   cleanup();
@@ -38,7 +42,7 @@ describe("CommunicationSendDialog", () => {
     const countBtn = screen.getByRole("button", { name: "Count recipients" });
     expect((sendBtn as HTMLButtonElement).disabled).toBe(true);
     expect((countBtn as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/Enter a ticket type/i)).toBeTruthy();
+    expect(screen.getByText(/Choose a ticket type/i)).toBeTruthy();
   });
 
   it("ignores late runSend results after close", async () => {
@@ -263,5 +267,120 @@ describe("CommunicationSendDialog", () => {
       expect(screen.getByText(/Instance URL/)).toBeTruthy();
     });
     expect(screen.queryByText(/Send failed/)).toBeNull();
+  });
+
+  it("clears stale ticket types when eventId changes while the dialog stays open", async () => {
+    let resolveEventB: ((value: unknown) => void) | undefined;
+    fetchTicketTypes.mockImplementationOnce(async () => [
+      {
+        id: "tt-a",
+        key: "vip",
+        label: "VIP (Event A)",
+        color: "purple",
+        sort_order: 0,
+        attendee_count: 0,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    fetchTicketTypes.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveEventB = resolve;
+        }),
+    );
+
+    const { rerender } = render(
+      <CommunicationSendDialog open eventId="evt-a" templateId="tpl-1" onClose={vi.fn()} />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Recipients"), { target: { value: "ticket_type" } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "VIP (Event A)" })).toBeTruthy();
+    });
+
+    rerender(
+      <CommunicationSendDialog open eventId="evt-b" templateId="tpl-1" onClose={vi.fn()} />,
+    );
+
+    await waitFor(() => {
+      expect(fetchTicketTypes).toHaveBeenCalledWith("evt-b");
+    });
+
+    // Event A's ticket type must not be selectable while Event B's fetch is still in flight.
+    expect(screen.queryByRole("option", { name: "VIP (Event A)" })).toBeNull();
+
+    await act(async () => {
+      resolveEventB?.([
+        {
+          id: "tt-b",
+          key: "ga",
+          label: "General (Event B)",
+          color: "blue",
+          sort_order: 0,
+          attendee_count: 0,
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ]);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("option", { name: "General (Event B)" })).toBeTruthy();
+  });
+
+  it("clears the selected ticket type (not just the options list) when eventId changes while open", async () => {
+    fetchTicketTypes.mockImplementationOnce(async () => [
+      {
+        id: "tt-a",
+        key: "vip",
+        label: "VIP (Event A)",
+        color: "purple",
+        sort_order: 0,
+        attendee_count: 0,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    fetchTicketTypes.mockImplementationOnce(async () => [
+      {
+        id: "tt-b",
+        key: "ga",
+        label: "General (Event B)",
+        color: "blue",
+        sort_order: 0,
+        attendee_count: 0,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+
+    const { rerender } = render(
+      <CommunicationSendDialog open eventId="evt-a" templateId="tpl-1" onClose={vi.fn()} />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Recipients"), { target: { value: "ticket_type" } });
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "VIP (Event A)" })).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Ticket type"), { target: { value: "vip" } });
+
+    // Selecting a value makes Count/Send actionable.
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      );
+    });
+
+    rerender(<CommunicationSendDialog open eventId="evt-b" templateId="tpl-1" onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "General (Event B)" })).toBeTruthy();
+    });
+
+    // The stale "vip" selection from event A must not still be silently active on event B -
+    // the select reverts to its placeholder and Count/Send disable again until re-chosen.
+    expect((screen.getByLabelText("Ticket type") as HTMLSelectElement).value).toBe("");
+    expect(screen.getByText("Choose a ticket type to count or send.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
   });
 });

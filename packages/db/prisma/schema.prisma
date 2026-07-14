@@ -52,6 +52,7 @@ model Event {
   resources        EventResource[]
   image_assets     EventImageAsset[]
   custom_fields    EventCustomField[]
+  ticket_types     TicketType[]
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
@@ -127,6 +128,25 @@ model EventCustomField {
   updated_at   DateTime @updatedAt
 
   @@unique([event_id, source_field])
+  @@index([event_id])
+}
+
+// Per-event catalog of ticket types (batch 04 / #351) - replaces free-text Attendee.ticket_type.
+// `key` is immutable after create (slugified from `label`) since it's what Attendee.ticket_type
+// stores; renaming it would desync every attendee row already tagged with it. `color` is one of
+// the curated palette keys in TICKET_TYPE_COLORS (packages/ui) - admin-assignable, not a fixed enum.
+model TicketType {
+  id         String   @id @default(cuid())
+  event_id   String
+  event      Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  key        String
+  label      String
+  color      String   @default("gray")
+  sort_order Int      @default(0)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([event_id, key])
   @@index([event_id])
 }
 

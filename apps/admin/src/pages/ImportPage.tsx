@@ -98,6 +98,31 @@ function ImportSampleTable({ rows, totalValid, attributeFieldLabels }: ImportSam
   );
 }
 
+/** Row/Reason table shared by the preview step's parse.invalidRows and the done step's
+ * commit-time invalidRows - same shape, same rendering, different source. */
+function InvalidRowsTable({ rows }: { rows: { rowIndex: number; reason: string }[] }) {
+  return (
+    <div className="attendees-table-wrap">
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Row</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.rowIndex}>
+              <td>{row.rowIndex}</td>
+              <td>{row.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** Admin flow: upload CSV/XLSX → preview counts → commit import. */
 export function ImportPage() {
   const { eventId } = useParams();
@@ -232,7 +257,17 @@ export function ImportPage() {
                   <tr><td><code>first_name</code></td><td>Yes</td><td>Attendee&apos;s first name</td></tr>
                   <tr><td><code>last_name</code></td><td>Yes</td><td>Attendee&apos;s last name</td></tr>
                   <tr><td><code>email</code></td><td>Yes</td><td>Valid email address (used as unique key)</td></tr>
-                  <tr><td><code>ticket_type</code></td><td>No</td><td>Ticket category (free text)</td></tr>
+                  <tr>
+                    <td><code>ticket_type</code></td>
+                    <td>No</td>
+                    <td>
+                      Must match a{" "}
+                      <Link to={`/admin/events/${eventId}/settings?tab=ticket-types`}>
+                        ticket type configured for this event
+                      </Link>
+                      ; the whole row is skipped if this doesn&apos;t match
+                    </td>
+                  </tr>
                   <tr><td><code>company</code></td><td>No</td><td>Attendee&apos;s company</td></tr>
                   <tr><td><code>department</code></td><td>No</td><td>Department or team</td></tr>
                   <tr><td><code>external_uuid</code></td><td>No</td><td>External ID for deduplication</td></tr>
@@ -378,24 +413,7 @@ export function ImportPage() {
           {preview.parse.invalidRows.length > 0 && (
             <div className="import-invalid">
               <h3 className="import-subtitle">Invalid rows</h3>
-              <div className="attendees-table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Row</th>
-                      <th>Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {preview.parse.invalidRows.map((row) => (
-                      <tr key={row.rowIndex}>
-                        <td>{row.rowIndex}</td>
-                        <td>{row.reason}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <InvalidRowsTable rows={preview.parse.invalidRows} />
             </div>
           )}
 
@@ -498,6 +516,17 @@ export function ImportPage() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {result.invalidRows.length > 0 && (
+            <div className="import-invalid">
+              <h3 className="import-subtitle">Invalid rows</h3>
+              <p className="import-hint">
+                Something about the event changed between preview and commit (e.g. a ticket type
+                was removed) - these rows were not imported.
+              </p>
+              <InvalidRowsTable rows={result.invalidRows} />
             </div>
           )}
 

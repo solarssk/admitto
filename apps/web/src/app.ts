@@ -15,6 +15,7 @@ import {
   buildQrPayload,
   isAdmittable,
   hashToken,
+  loadEventTicketTypes,
 } from "@admitto/tickets";
 import {
   getTicketPageSecurityHeaders,
@@ -110,7 +111,6 @@ import {
   handleDeleteEventAttendee,
   handleResendEventAttendeeTicket,
   handleBulkResendTickets,
-  handleListTicketTypes,
   handleExportAttendees,
   handleRevokeAttendeeCheckIn,
   handleRevokeAttendeeItem,
@@ -147,6 +147,13 @@ import {
   handlePatchEventCustomField,
   handleDeleteEventCustomField,
 } from "./admin/event-custom-fields-routes.js";
+import {
+  handleListEventTicketTypes,
+  handleCreateEventTicketType,
+  handlePatchEventTicketType,
+  handleDeleteEventTicketType,
+  handleCheckinTicketTypes,
+} from "./admin/ticket-types-routes.js";
 import { resolveUploadDir } from "./admin/branding-upload.js";
 import {
   handleGetEventTemplate,
@@ -407,6 +414,25 @@ export function createApp(options: CreateAppOptions = {}) {
     return c.html(html, status);
   }
 
+  // ticket_type stores the catalog key (e.g. "press_pass"), not the human label ("Press Pass") -
+  // resolve it for attendee-facing display; fail open to the raw key on any lookup error, same as
+  // ticketTypeBadge.tsx's resolver (Codex review, batch 04 / #351).
+  async function resolveTicketPageDisplay(
+    resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
+  ): Promise<NonNullable<Awaited<ReturnType<typeof resolveTicket>>>> {
+    const { attendee, event } = resolved;
+    if (!attendee.ticket_type) return resolved;
+    try {
+      const catalog = await loadEventTicketTypes(db, event.id);
+      const found = catalog.find((t) => t.key === attendee.ticket_type);
+      if (!found) return resolved;
+      return { ...resolved, attendee: { ...attendee, ticket_type: found.label } };
+    } catch (err) {
+      console.error("loadEventTicketTypes failed for ticket page:", err);
+      return resolved;
+    }
+  }
+
   async function renderTicketPage(
     c: Context,
     resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
@@ -458,7 +484,9 @@ export function createApp(options: CreateAppOptions = {}) {
       theme = null;
     }
 
-    return htmlWithSecurityHeaders(c, renderTicket(resolved, qrDataUrl, theme), 200, theme);
+    const resolvedForDisplay = await resolveTicketPageDisplay(resolved);
+
+    return htmlWithSecurityHeaders(c, renderTicket(resolvedForDisplay, qrDataUrl, theme), 200, theme);
   }
 
   app.get("/healthz", healthzRateLimit, (c) => handleHealthz(c, db));
@@ -559,8 +587,26 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/export-pii", staffAdminGate, adminPiiExportRateLimit, (c) =>
     handleExportEventPii(c, db),
   );
-  app.get("/api/admin/events/:eventId/attendees/ticket-types", staffAdminGate, (c) =>
-    handleListTicketTypes(c, db),
+  app.get("/api/admin/events/:eventId/ticket-types", staffAdminGate, (c) =>
+    handleListEventTicketTypes(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/ticket-types",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleCreateEventTicketType(c, db)),
+  );
+  app.patch(
+    "/api/admin/events/:eventId/ticket-types/:typeId",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handlePatchEventTicketType(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/ticket-types/:typeId",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDeleteEventTicketType(c, db)),
   );
   app.get("/api/admin/events/:eventId/attendees/export", staffAdminGate, adminExportRateLimit, (c) =>
     handleExportAttendees(c, db),
@@ -1181,6 +1227,14 @@ export function createApp(options: CreateAppOptions = {}) {
     checkinHistoryRateLimit,
     createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
     (c) => handleCheckinStats(c, db),
+  );
+
+  app.get(
+    "/api/checkin/ticket-types",
+    createCheckinPreAuth(checkinAuthDeps),
+    checkinHistoryRateLimit,
+    createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
+    (c) => handleCheckinTicketTypes(c, db),
   );
 
   app.get(

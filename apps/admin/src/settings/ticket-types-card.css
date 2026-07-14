@@ -1,0 +1,133 @@
+/* Event Settings — Ticket types tab (batch 04 / #351) */
+.tt-count-pill {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+}
+
+.tt-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.tt-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 6px;
+  border-bottom: 1px solid var(--at-gray-100);
+  border-radius: var(--radius);
+  transition: background var(--dur-fast);
+  flex-wrap: wrap;
+}
+
+.tt-row:last-child {
+  border-bottom: 0;
+}
+
+.tt-row:hover {
+  background: var(--surface-hover);
+}
+
+.tt-row__count {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex: none;
+  min-width: 78px;
+  text-align: right;
+}
+
+.tt-color-wrap {
+  position: relative;
+  flex: none;
+}
+
+.tt-color-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+  transition: transform var(--dur-fast);
+}
+
+.tt-color-btn:hover {
+  transform: scale(1.07);
+}
+
+.tt-color-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+}
+
+.tt-color-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 60;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.16);
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.tt-color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.tt-color-swatch:hover {
+  transform: scale(1.08);
+}
+
+.tt-color-swatch--active {
+  border-color: var(--text-primary);
+}
+
+.tt-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px 14px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: none;
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--dur-fast);
+  justify-content: center;
+}
+
+.tt-add-row:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-tint);
+}
+
+.tt-add-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

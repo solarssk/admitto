@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Select } from "@admitto/ui";
-import { ApiError, fetchBulkSendStatus, sendEventBulk } from "../api/client.js";
+import { ApiError, fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { BulkSendFilter, RsvpStatus } from "../api/types.js";
+import type { BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 
 interface CommunicationSendDialogProps {
@@ -29,6 +29,7 @@ export function CommunicationSendDialog({
 
   const [filterType, setFilterType] = useState<BulkSendFilter["type"]>("all");
   const [ticketType, setTicketType] = useState("");
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [rsvpStatus, setRsvpStatus] = useState<RsvpStatus>("confirmed");
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [phase, setPhase] = useState<DialogPhase>("form");
@@ -61,6 +62,29 @@ export function CommunicationSendDialog({
     setBatchId(null);
     setBatchStatus(null);
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    // Clears the selected value along with the stale options list below - not just cosmetic:
+    // leaving a previous event's ticket_type key selected would keep filterReady true (it only
+    // checks the string is non-empty) and could send/count against a key that means nothing, or
+    // something different, on the new event (review). Only the value resets, not filterType -
+    // silently reverting the admin's chosen filter *strategy* back to "all recipients" would be
+    // a bigger, more surprising behavior change than asking them to re-pick a value.
+    setTicketType("");
+    setTicketTypes([]);
+    let cancelled = false;
+    fetchTicketTypes(eventId)
+      .then((types) => {
+        if (!cancelled) setTicketTypes(types);
+      })
+      .catch(() => {
+        if (!cancelled) setTicketTypes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, eventId]);
 
   useEffect(() => {
     if (!open || phase !== "polling" || !batchId) return;
@@ -111,7 +135,7 @@ export function CommunicationSendDialog({
 
   const runDryRun = async () => {
     if (!filterReady) {
-      setError("Enter a ticket type.");
+      setError("Choose a ticket type.");
       return;
     }
     const runId = runIdRef.current;
@@ -140,7 +164,7 @@ export function CommunicationSendDialog({
 
   const runSend = async () => {
     if (!filterReady) {
-      setError("Enter a ticket type.");
+      setError("Choose a ticket type.");
       return;
     }
     const runId = runIdRef.current;
@@ -236,22 +260,25 @@ export function CommunicationSendDialog({
               </Select>
             )}
             {filterType === "ticket_type" && (
-              <label className="mail-field-row">
-                <span className="mail-field-label">Ticket type</span>
-                <input
-                  className="mail-field-input"
-                  value={ticketType}
-                  onChange={(e) => {
-                    setTicketType(e.target.value);
-                    setRecipientCount(null);
-                    setError(null);
-                  }}
-                  placeholder="e.g. VIP"
-                />
-              </label>
+              <Select
+                label="Ticket type"
+                value={ticketType}
+                onChange={(e) => {
+                  setTicketType(e.target.value);
+                  setRecipientCount(null);
+                  setError(null);
+                }}
+              >
+                <option value="">Choose…</option>
+                {ticketTypes.map((type) => (
+                  <option key={type.key} value={type.key}>
+                    {type.label}
+                  </option>
+                ))}
+              </Select>
             )}
             {filterType === "ticket_type" && !filterReady && (
-              <p className="mail-field-hint">Enter a ticket type to count or send.</p>
+              <p className="mail-field-hint">Choose a ticket type to count or send.</p>
             )}
             {recipientCount != null && (
               <p className="mail-field-hint" role="status">

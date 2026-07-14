@@ -17,6 +17,7 @@ const previewEventTemplate = vi.fn();
 const previewEventTemplateById = vi.fn();
 const saveEventTemplateById = vi.fn();
 const testSendEventTemplateById = vi.fn();
+const fetchTicketTypes = vi.fn();
 
 const reportApiError = vi.fn();
 
@@ -50,6 +51,7 @@ vi.mock("../../src/api/client.js", () => ({
   testSendEventTemplateById: (...args: unknown[]) => testSendEventTemplateById(...args),
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
   fetchBulkSendStatus: vi.fn(),
+  fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
 }));
 
 vi.mock("react-router-dom", async (importOriginal) => {
@@ -145,6 +147,7 @@ beforeEach(() => {
     email_queued: 0,
   });
   fetchEventTemplate.mockResolvedValue(legacyTemplate);
+  fetchTicketTypes.mockResolvedValue([]);
   fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) => {
     if (id === "tpl-ticket") {
       return {
@@ -608,6 +611,39 @@ describe("CommunicationPage templates", () => {
         expect.objectContaining({ templateId: "tpl-ticket" }),
       );
       expect(screen.getByText(/No recipients matched/i)).toBeTruthy();
+    });
+  });
+
+  it("sends by ticket type, populating the Select from the catalog and using the picked key as the filter value (batch 04 / #351)", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    fetchTicketTypes.mockResolvedValue([{ key: "vip", label: "VIP", color: "purple" }]);
+    sendEventBulk.mockResolvedValue({ batchId: "batch-vip", queued: 1, skipped: 0, failed: 0 });
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send email" }));
+    const dialog = await screen.findByRole("dialog", { name: "Send email" });
+
+    fireEvent.change(within(dialog).getByLabelText("Recipients"), {
+      target: { value: "ticket_type" },
+    });
+    expect(await within(dialog).findByRole("option", { name: "VIP" })).toBeTruthy();
+    fireEvent.change(within(dialog).getByLabelText("Ticket type"), { target: { value: "vip" } });
+
+    fireEvent.click(
+      Array.from(dialog.querySelectorAll("button")).find((b) => b.textContent === "Send")!,
+    );
+
+    await waitFor(() => {
+      expect(sendEventBulk).toHaveBeenCalledWith(
+        "evt-comm",
+        expect.objectContaining({
+          templateId: "tpl-ticket",
+          filter: { type: "ticket_type", value: "vip" },
+        }),
+      );
     });
   });
 

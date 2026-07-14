@@ -4,6 +4,7 @@ import { Avatar, Badge, Card, PageHeader, Stat, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchEventOverview,
+  fetchTicketTypes,
   patchEventNote,
   createEventContact,
   updateEventContact,
@@ -12,7 +13,13 @@ import {
   updateEventResource,
   deleteEventResource,
 } from "../api/client.js";
-import type { EventDto, EventOverviewDto, EventContactDto, EventResourceDto } from "../api/types.js";
+import type {
+  EventDto,
+  EventOverviewDto,
+  EventContactDto,
+  EventResourceDto,
+  TicketTypeDto,
+} from "../api/types.js";
 import {
   formatAdmissionDisplay,
   formatEventCalendarDate,
@@ -28,6 +35,7 @@ import {
 } from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
 const RECENT_CHECKINS_MAX = 8;
@@ -237,11 +245,13 @@ function RecentCheckinsCard({
   timezone,
   eventDate,
   connected,
+  ticketTypes,
 }: {
   checkins: StreamCheckinEvent[];
   timezone: string;
   eventDate: string | null;
   connected: boolean;
+  ticketTypes: TicketTypeDto[];
 }) {
   return (
     <Card
@@ -266,7 +276,10 @@ function RecentCheckinsCard({
               <Avatar name={c.attendeeName} size="sm" />
               <div className="overview-activity__info">
                 <strong>{c.attendeeName}</strong>
-                <span>{c.ticketType ?? "—"}</span>
+                {/* ticketType off the SSE payload is the catalog `key` (batch 04 / #351), not the
+                    display label — same resolver AttendeeCard.tsx uses for the checkin card's
+                    identity block, so a renamed/recolored type shows correctly here too. */}
+                <TicketTypeBadge ticketType={c.ticketType} catalog={ticketTypes} />
               </div>
               <time className="overview-activity__time">
                 {formatAdmissionDisplay(c.admittedAt, eventDate, timezone)}
@@ -774,6 +787,23 @@ export function EventOverviewPage() {
   const [contacts, setContacts] = useState<EventContactDto[]>([]);
   const [resources, setResources] = useState<EventResourceDto[]>([]);
   const [pinnedNote, setPinnedNote] = useState<string | null>(null);
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
+
+  // Independent of the overview polling below — the "Recent check-ins" feed's live SSE payload
+  // only carries the ticket_type catalog key (see checkin-sse-publish.ts), so the page needs its
+  // own catalog fetch to resolve it to a label/color, same convention as CheckInPage/AttendeesPage.
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchTicketTypes(event.id, ac.signal)
+      .then((types) => {
+        if (ac.signal.aborted) return;
+        setTicketTypes(types);
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setTicketTypes([]);
+      });
+    return () => ac.abort();
+  }, [event.id]);
 
   const currentOverview = overview?.event.id === event.id ? overview : null;
   const eventTimezone = currentOverview?.event.timezone ?? event.timezone;
@@ -1058,6 +1088,7 @@ export function EventOverviewPage() {
             timezone={eventTimezone}
             eventDate={eventDateIso}
             connected={streamConnected}
+            ticketTypes={ticketTypes}
           />
           <KeyContactsCard
             contacts={contacts}

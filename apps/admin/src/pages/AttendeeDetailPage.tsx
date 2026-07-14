@@ -16,13 +16,14 @@ import {
 import {
   ApiError,
   fetchAttendeeDetail,
+  fetchTicketTypes,
   resendTicket,
   revokeAttendeeCheckIn,
   updateAttendee,
   type EventFullMeta,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeDetailDto, EventDto, RsvpStatus, UpdateAttendeePatch } from "../api/types.js";
+import type { AttendeeDetailDto, EventDto, RsvpStatus, TicketTypeDto, UpdateAttendeePatch } from "../api/types.js";
 import {
   formatDateTime,
   loadAttendeeDetailData,
@@ -146,6 +147,7 @@ export function AttendeeDetailPage() {
   const [tab, setTab] = useState<TabId>("overview");
   const [detail, setDetail] = useState<AttendeeDetailDto | null>(null);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [form, setForm] = useState<AttendeeFormState | null>(null);
   const [initialEmail, setInitialEmail] = useState("");
   const [loading, setLoading] = useState(true);
@@ -216,6 +218,21 @@ export function AttendeeDetailPage() {
   useEffect(() => {
     void loadDetail();
   }, [loadDetail]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    let cancelled = false;
+    fetchTicketTypes(eventId)
+      .then((types) => {
+        if (!cancelled) setTicketTypes(types);
+      })
+      .catch(() => {
+        if (!cancelled) setTicketTypes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId]);
 
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
   const isDirty =
@@ -512,6 +529,15 @@ export function AttendeeDetailPage() {
   const lastMail = detail.deliveries[0]?.status ?? null;
   const emailChanged = form.email !== initialEmail;
   const isRevoked = detail.status === "revoked";
+  // A stored ticket_type with no matching catalog entry (type deleted after assignment, or
+  // legacy pre-catalog data) has no <option> to bind to — the native <select> would otherwise
+  // silently fall back to the blank "—" option while form.ticket_type still holds the orphaned
+  // value, hiding it from the admin. Surface it as its own option instead (fail-open, same
+  // philosophy as ticketTypeBadge.tsx's catalog resolver).
+  const orphanedTicketType =
+    form.ticket_type && !ticketTypes.some((type) => type.key === form.ticket_type)
+      ? form.ticket_type
+      : null;
 
   return (
     <div className="attendee-detail-page">
@@ -636,7 +662,26 @@ export function AttendeeDetailPage() {
                 <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
                 <Input label="Company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
                 <Input label="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
-                <Input label="Ticket type" value={form.ticket_type} onChange={(e) => setForm({ ...form, ticket_type: e.target.value })} />
+                <Select
+                  label="Ticket type"
+                  value={form.ticket_type}
+                  onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
+                >
+                  <option value="">—</option>
+                  {orphanedTicketType && (
+                    <option
+                      value={orphanedTicketType}
+                      title="Not in this event's ticket-type catalog — it may have been deleted after being assigned. Picking another option here replaces it."
+                    >
+                      {orphanedTicketType} (not in catalog)
+                    </option>
+                  )}
+                  {ticketTypes.map((type) => (
+                    <option key={type.key} value={type.key}>
+                      {type.label}
+                    </option>
+                  ))}
+                </Select>
                 {attributeFields.map((field) => (
                   <CustomDataFieldInput
                     key={field.source_field}

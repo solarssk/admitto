@@ -3,7 +3,7 @@ import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom
 import { Button, EmptyState, PageHeader, useToast } from "@admitto/ui";
 import { ApiError, bulkResendTickets, exportAttendees, fetchEventAttendees, fetchTicketTypes, updateAttendee } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeDetailDto, AttendeeRowDto, EventDto, RsvpStatus } from "../api/types.js";
+import type { AttendeeDetailDto, AttendeeRowDto, EventDto, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
 import { ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
@@ -129,7 +129,7 @@ export function AttendeesPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "admitted" | "not_admitted">("all");
   const [rsvpStatusFilter, setRsvpStatusFilter] = useState<"" | RsvpStatus>("");
   const [ticketTypeFilter, setTicketTypeFilter] = useState("");
-  const [availableTypes, setAvailableTypes] = useState<string[]>([]);
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [exportingFormat, setExportingFormat] = useState<"xlsx" | "csv" | "pdf" | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -161,15 +161,15 @@ export function AttendeesPage() {
   useEffect(() => {
     if (!eventId) return;
     setTicketTypeFilter("");
-    setAvailableTypes([]);
+    setTicketTypes([]);
     const ac = new AbortController();
     fetchTicketTypes(eventId, ac.signal)
       .then((types) => {
         if (ac.signal.aborted) return;
-        setAvailableTypes(types);
+        setTicketTypes(types);
       })
       .catch(() => {
-        if (!ac.signal.aborted) setAvailableTypes([]);
+        if (!ac.signal.aborted) setTicketTypes([]);
       });
     return () => ac.abort();
   }, [eventId]);
@@ -494,7 +494,7 @@ export function AttendeesPage() {
         statusFilter={statusFilter}
         ticketTypeFilter={ticketTypeFilter}
         rsvpStatusFilter={rsvpStatusFilter}
-        availableTypes={availableTypes}
+        ticketTypes={ticketTypes}
         onSearchChange={setSearchInput}
         onStatusFilterChange={(v) => {
           setStatusFilter(v);

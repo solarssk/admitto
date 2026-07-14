@@ -43,6 +43,18 @@ export {
   filterCustomDataAttributeFields,
 } from "./custom-data-reserved.js";
 export { BADGE_ITEM_KEY, ensureBadgeEventItem, isBadgeItemUsable } from "./event-items.js";
+export {
+  ensureStandardTicketType,
+  loadEventTicketTypes,
+  acquireEventTicketTypesLock,
+  assertTicketTypeInCatalog,
+  UnknownTicketTypeError,
+  TICKET_TYPE_COLOR_KEYS,
+  STANDARD_TICKET_TYPE_KEY,
+  slugifyTicketTypeKey,
+  uniqueTicketTypeKey,
+} from "./ticket-types.js";
+export type { TicketTypeInfo, TicketTypeColor } from "./ticket-types.js";
 export { parseEventOpsConfig, loadEventOpsConfig } from "./ops-config.js";
 export { writeActionLog, writeBulkActionLog } from "./ops-audit.js";
 export { writeAdminAuditLog } from "./admin-audit.js";

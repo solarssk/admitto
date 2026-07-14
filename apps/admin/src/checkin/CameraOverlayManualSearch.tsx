@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Avatar } from "@admitto/ui";
-import type { LookupAttendeeResult } from "../api/types.js";
+import type { LookupAttendeeResult, TicketTypeDto } from "../api/types.js";
+import { resolveTicketTypeLabel } from "../attendees/ticketTypeBadge.js";
 import { checkinSearchFieldAttrs } from "./searchFieldAttrs.js";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -18,6 +19,9 @@ type CameraOverlayManualSearchProps = Readonly<{
   manualError?: string | null;
   onClearManualError?: () => void;
   onBack: () => void;
+  /** Event's ticket-type catalog, for resolving each result's raw ticket_type key to its current
+   * label. Defaults to [] so an unresolved key still renders (fail-open) instead of disappearing. */
+  ticketTypes?: TicketTypeDto[];
 }>;
 
 /** Full-screen search — replaces the camera view while active (#433, mockup ManualSearch.jsx parity). */
@@ -29,6 +33,7 @@ export function CameraOverlayManualSearch({
   manualError,
   onClearManualError,
   onBack,
+  ticketTypes = [],
 }: CameraOverlayManualSearchProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<LookupAttendeeResult[]>([]);
@@ -144,7 +149,11 @@ export function CameraOverlayManualSearch({
                   <Avatar name={a.name} />
                   <div className="ms__info">
                     <strong>{a.name}</strong>
-                    <span>{[a.company, a.ticket_type].filter(Boolean).join(" · ") || "—"}</span>
+                    <span>
+                      {[a.company, resolveTicketTypeLabel(a.ticket_type, ticketTypes)]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
+                    </span>
                   </div>
                   {a.check_in_status === "admitted" && (
                     <span className="ms__checked">

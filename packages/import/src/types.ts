@@ -22,8 +22,18 @@ export type ImportAttributeField = {
   options?: string[];
 };
 
+/** Minimal per-event ticket-type catalog shape for import validation (batch 04 / #351) - key +
+ * label only, not the full TicketTypeInfo (color/sort_order are irrelevant to import). */
+export type ImportTicketType = {
+  key: string;
+  label: string;
+};
+
 export type ParseAttendeesOptions = {
   attributeFields?: ImportAttributeField[];
+  /** Undefined = caller didn't opt into ticket-type validation (today's free-text behavior).
+   * Provided (even []) = every non-empty ticket_type value must match a catalog entry. */
+  ticketTypes?: ImportTicketType[];
 };
 
 export type InvalidRow = {
@@ -47,6 +57,10 @@ export type ImportOptions = {
   ownedTransaction?: boolean;
   /** Event-item attribute definitions — required for custom_data validation at commit. */
   attributeFields?: ImportAttributeField[];
+  /** Same opt-in semantics as ParseAttendeesOptions.ticketTypes — re-validated at commit since
+   * the catalog can change between preview and commit (a type deleted after the CSV was
+   * previewed). */
+  ticketTypes?: ImportTicketType[];
 };
 
 export type SkippedRow = { email: string; reason: string };

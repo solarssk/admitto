@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useBlocker, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { Badge, Button, Card, EmptyState, Input, PageHeader, useToast } from "@admitto/ui";
 import {
@@ -7,6 +7,7 @@ import {
   deleteEvent,
   exportEventPii,
   fetchEventSettings,
+  fetchTicketTypes,
   patchEvent,
   revokeAllCheckIns,
   revokeAllItemsIssued,
@@ -14,7 +15,8 @@ import {
   uploadEventBrandingFile,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventSettingsDto } from "../api/types.js";
+import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
+import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -161,6 +163,9 @@ export function EventSettingsPage() {
   const [revokeCheckinsOpen, setRevokeCheckinsOpen] = useState(false);
   const [revokingItems, setRevokingItems] = useState(false);
   const [revokeItemsOpen, setRevokeItemsOpen] = useState(false);
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
+  const [ticketTypesLoading, setTicketTypesLoading] = useState(true);
+  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
   const [tab, setTab] = useState<EventSettingsTab>(initialTab);
@@ -221,6 +226,50 @@ export function EventSettingsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Only the very first load shows the card's "Loading…" placeholder - a background refresh
+  // after a color/label edit (TicketTypesCard's onChanged) must not swap the whole list out and
+  // back in, which read as a full-card flicker (PO review).
+  const ticketTypesLoadedRef = useRef(false);
+  const ticketTypesAbortRef = useRef<AbortController | null>(null);
+
+  // A stale in-flight request from a previous eventId (e.g. navigating between two events'
+  // settings before the first request lands) must not overwrite this event's state once it
+  // resolves - reset and discard it the same way RequirementsPage's own load effect does
+  // (CodeRabbit review).
+  useEffect(() => {
+    ticketTypesAbortRef.current?.abort();
+    setTicketTypes([]);
+    setTicketTypesError(null);
+    ticketTypesLoadedRef.current = false;
+  }, [eventId]);
+
+  const loadTicketTypes = useCallback(async () => {
+    if (!eventId) return;
+    ticketTypesAbortRef.current?.abort();
+    const ac = new AbortController();
+    ticketTypesAbortRef.current = ac;
+    if (!ticketTypesLoadedRef.current) setTicketTypesLoading(true);
+    try {
+      const types = await fetchTicketTypes(eventId, ac.signal);
+      if (ac.signal.aborted) return;
+      setTicketTypes(types);
+      setTicketTypesError(null);
+      ticketTypesLoadedRef.current = true;
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      ticketTypesLoadedRef.current = false;
+      setTicketTypes([]);
+      setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
+    } finally {
+      if (!ac.signal.aborted) setTicketTypesLoading(false);
+    }
+  }, [eventId]);
+
+  useEffect(() => {
+    loadTicketTypes().catch(() => {});
+    return () => ticketTypesAbortRef.current?.abort();
+  }, [loadTicketTypes]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -553,6 +602,18 @@ export function EventSettingsPage() {
         </Card>
       </EventSettingsTabPanel>
 
+      <EventSettingsTabPanel tab="ticket-types" activeTab={tab} visited={visitedTabs} label="Ticket types">
+        <TicketTypesCard
+          eventId={eventId}
+          event={event}
+          types={ticketTypes}
+          loading={ticketTypesLoading}
+          error={ticketTypesError}
+          onRetry={() => loadTicketTypes().catch(() => {})}
+          onChanged={() => loadTicketTypes().catch(() => {})}
+        />
+      </EventSettingsTabPanel>
+
       <EventSettingsTabPanel tab="branding" activeTab={tab} visited={visitedTabs} label="Branding">
         <Card title="Event branding" className="event-settings-card">
           <p className="field-hint">
@@ -777,7 +838,7 @@ export function EventSettingsPage() {
               <p className="danger-zone__desc">
                 {event.is_deletable
                   ? "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log."
-                  : "Only events with no attendees, custom items, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted."}
+                  : "Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted."}
               </p>
             </div>
             <ArchivedGuard

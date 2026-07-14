@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Badge, Button, Card } from "@admitto/ui";
 import type { BadgeVariant } from "@admitto/ui";
-import type { AttendeeCardDto, CheckInStatus } from "../api/types.js";
+import type { AttendeeCardDto, CheckInStatus, TicketTypeDto } from "../api/types.js";
 import { formatEventTime } from "../utils/event-dates.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
@@ -12,6 +12,7 @@ import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 
 type Props = {
   card: AttendeeCardDto;
+  ticketTypes?: TicketTypeDto[];
   eventTimezone: string;
   scanStatus?: CheckInStatus;
   confirmed?: boolean;
@@ -129,6 +130,7 @@ function isBlockedStatus(status: CheckInStatus): boolean {
 
 export function AttendeeCard({
   card,
+  ticketTypes = [],
   eventTimezone,
   scanStatus,
   confirmed,
@@ -215,7 +217,9 @@ export function AttendeeCard({
           <div className="checkin-card__identity">
             <h2 className="checkin-card__name">{card.name}</h2>
             <div className="checkin-card__meta">
-              {card.ticket_type && <TicketTypeBadge ticketType={card.ticket_type} />}
+              {card.ticket_type && (
+                <TicketTypeBadge ticketType={card.ticket_type} catalog={ticketTypes} />
+              )}
               {(card.company || card.department) && (
                 <span>{[card.company, card.department].filter(Boolean).join(" · ")}</span>
               )}
