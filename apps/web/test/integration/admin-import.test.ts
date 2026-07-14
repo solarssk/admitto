@@ -829,6 +829,76 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     }
   });
 
+  // TOCTOU regression: a row valid at preview time can become invalid by commit time if the
+  // catalog changes in between (e.g. someone deletes the ticket type it references). The commit
+  // handler re-parses with the current catalog and must surface that row as invalid rather than
+  // silently dropping it from created/updated/skipped with no trace.
+  it("reports rows invalidated by a ticket-type catalog change between preview and commit", async () => {
+    const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const raceType = await prisma.ticketType.create({
+      data: { event_id: EVENT_A, key: "race-vip", label: "Race VIP", sort_order: 99 },
+    });
+    try {
+      const csv = [
+        "first_name,last_name,email,ticket_type",
+        "Race,Condition,race-vip@example.com,race-vip",
+      ].join("\n");
+
+      // Preview sees the row as valid while the catalog still has the type.
+      const previewRes = await postImport(
+        `/api/admin/events/${EVENT_A}/import/preview`,
+        csvFormData(csv),
+        adminCookie,
+      );
+      expect(previewRes.status).toBe(200);
+      const previewBody = (await previewRes.json()) as { parse: { validCount: number } };
+      expect(previewBody.parse.validCount).toBe(1);
+
+      // Simulate the race: someone deletes the ticket type before the admin clicks Commit.
+      await prisma.ticketType.delete({ where: { id: raceType.id } });
+
+      const commitRes = await postImport(
+        `/api/admin/events/${EVENT_A}/import/commit`,
+        csvFormData(csv, "race.csv"),
+        adminCookie,
+      );
+      expect(commitRes.status).toBe(200);
+      const body = (await commitRes.json()) as {
+        created: number;
+        updated: number;
+        skipped: { email: string; reason: string }[];
+        invalidRows: { rowIndex: number; reason: string }[];
+      };
+
+      expect(body.created).toBe(0);
+      expect(body.updated).toBe(0);
+      expect(body.skipped).toHaveLength(0);
+      expect(body.invalidRows).toHaveLength(1);
+      expect(body.invalidRows[0]!.rowIndex).toBe(1);
+      expect(body.invalidRows[0]!.reason).toBe('Unknown ticket type: "race-vip"');
+
+      const attendee = await prisma.attendee.findFirst({
+        where: { event_id: EVENT_A, email: "race-vip@example.com" },
+      });
+      expect(attendee).toBeNull();
+
+      // Same log-redaction convention as preview: raw value in the response, sanitized in the
+      // aggregated log key.
+      const logEntries = spy.mock.calls
+        .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+        .filter((entry) => entry.msg === "Import commit complete");
+      expect(logEntries).toHaveLength(1);
+      const invalidByType = logEntries[0]!.invalidByType as Record<string, number>;
+      expect(invalidByType.unknown_ticket_type).toBe(1);
+      expect(JSON.stringify(invalidByType)).not.toMatch(/race-vip/i);
+    } finally {
+      spy.mockRestore();
+      await prisma.attendee.deleteMany({
+        where: { event_id: EVENT_A, email: "race-vip@example.com" },
+      });
+    }
+  });
+
   it("returns 409 event_full when import would exceed capacity", async () => {
     const current = await prisma.attendee.count({
       where: { event_id: EVENT_A, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },

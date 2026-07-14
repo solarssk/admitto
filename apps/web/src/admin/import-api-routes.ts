@@ -78,6 +78,13 @@ export type ImportCommitDto = {
   created: number;
   updated: number;
   skipped: Array<{ email: string; reason: string }>;
+  /**
+   * Rows that failed the commit-time re-parse (e.g. a ticket type deleted from the catalog
+   * between preview and commit) and were therefore never passed into commitImport at all - they
+   * are not reflected in toCreate/toUpdate/toSkip/created/updated/skipped above. Same shape as
+   * ImportPreviewDto's parse.invalidRows so the admin SPA can reuse its rendering.
+   */
+  invalidRows: ImportInvalidRowDto[];
 };
 
 type ImportFileType = "csv" | "xlsx";
@@ -183,6 +190,25 @@ function sanitizePreviewWarning(warning: string): string {
     return "Duplicate column(s) detected";
   }
   return warning;
+}
+
+/**
+ * Map parser invalid rows to response DTOs. Shared by the preview and commit responses so both
+ * shape invalidRows identically.
+ *
+ * "Unknown ticket type: ..." keeps its raw value here — the admin currently fixing this import
+ * needs to see which catalog value didn't match, same as before this reason gained a
+ * sanitizePreviewReason case. That case exists only to keep the raw value out of the aggregated
+ * log key in groupInvalidByType below (PII/log-leak fix, code review); this per-row response to
+ * the uploading admin isn't a log-leak concern.
+ */
+function invalidRowsForResponse(
+  invalidRows: { rowIndex: number; reason: string }[],
+): ImportInvalidRowDto[] {
+  return invalidRows.map(({ rowIndex, reason }) => ({
+    rowIndex,
+    reason: reason.startsWith("Unknown ticket type:") ? reason : sanitizePreviewReason(reason),
+  }));
 }
 
 /** Group invalid rows by sanitized reason type — counts only, no cell values. */
@@ -399,15 +425,7 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
       importId,
       parse: {
         validCount: parsed.validRows.length,
-        invalidRows: parsed.invalidRows.map(({ rowIndex, reason }) => ({
-          rowIndex,
-          // "Unknown ticket type: ..." keeps its raw value here - the admin currently fixing
-          // this import needs to see which catalog value didn't match, same as before this
-          // reason gained a sanitizePreviewReason case. That case exists only to keep the raw
-          // value out of the aggregated log key in groupInvalidByType below (PII/log-leak fix,
-          // code review); this per-row response to the uploading admin isn't a log-leak concern.
-          reason: reason.startsWith("Unknown ticket type:") ? reason : sanitizePreviewReason(reason),
-        })),
+        invalidRows: invalidRowsForResponse(parsed.invalidRows),
         warnings: parsed.warnings.map(sanitizePreviewWarning),
       },
       summary: {
@@ -543,6 +561,12 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
       created: summary.created,
       updated: summary.updated,
       skipped: summary.skipped.length,
+      // Rows the commit-time re-parse dropped before they ever reached commitImport (e.g. a
+      // ticket type deleted from the catalog between preview and commit) - same aggregation
+      // shape as the preview endpoint's logging above, for observability.
+      invalidCount: parsed.invalidRows.length,
+      invalidRows: parsed.invalidRows.map((r) => r.rowIndex),
+      invalidByType: groupInvalidByType(parsed.invalidRows),
       overwrite: upload.overwrite,
       durationMs: Date.now() - startTime,
     });
@@ -555,6 +579,7 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
       created: summary.created,
       updated: summary.updated,
       skipped: summary.skipped,
+      invalidRows: invalidRowsForResponse(parsed.invalidRows),
     };
 
     return c.json(body);

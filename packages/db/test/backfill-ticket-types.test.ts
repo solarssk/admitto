@@ -1,23 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { execSync } from "node:child_process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { backfillTicketTypes } from "../src/backfill-ticket-types.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_ROOT = path.resolve(__dirname, "..");
 
 const ORG_ID = "org-backfill-tt";
 
 let prisma: PrismaClient;
 
 beforeAll(async () => {
-  execSync("npx prisma db push --force-reset --accept-data-loss", {
-    cwd: DB_ROOT,
-    env: { ...process.env },
-    stdio: "pipe",
-  });
   prisma = new PrismaClient();
   await prisma.organization.create({
     data: { id: ORG_ID, name: "Org", slug: "org-backfill-tt" },
@@ -25,6 +14,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // Self-contained cleanup - this suite doesn't reset the shared test DB (unlike a force-reset),
+  // so it must remove exactly the fixtures it created, in FK-safe order (Attendee/TicketType
+  // before Event before Organization).
+  await prisma.attendee.deleteMany({ where: { event: { organization_id: ORG_ID } } });
+  await prisma.ticketType.deleteMany({ where: { event: { organization_id: ORG_ID } } });
+  await prisma.event.deleteMany({ where: { organization_id: ORG_ID } });
+  await prisma.organization.delete({ where: { id: ORG_ID } });
   await prisma.$disconnect();
 });
 
@@ -173,5 +169,94 @@ describe("backfillTicketTypes", () => {
     expect(types).toHaveLength(2);
     const keys = types.map((t) => t.key).sort();
     expect(new Set(keys).size).toBe(2);
+  });
+
+  it("falls back to the constant 'type' key for an unsluggable label, matching packages/tickets/src/ticket-types.ts's uniqueTicketTypeKey", async () => {
+    const event = await makeEvent("evt-tt-unsluggable");
+    await prisma.attendee.create({
+      data: { event_id: event.id, email: "u@example.com", name: "U", ticket_type: "###" },
+    });
+
+    await backfillTicketTypes(prisma);
+
+    const types = await prisma.ticketType.findMany({ where: { event_id: event.id } });
+    expect(types).toHaveLength(1);
+    // "###" slugifies to "" (no a-z0-9 characters survive), so the key falls back to the
+    // constant "type" - not a `type_${index}` that would vary depending on the group's position.
+    expect(types[0]?.key).toBe("type");
+    expect(types[0]?.label).toBe("###");
+  });
+
+  it("normalizes a whitespace-only ticket_type to null instead of leaving the literal whitespace forever", async () => {
+    const event = await makeEvent("evt-tt-blank");
+    await prisma.attendee.createMany({
+      data: [
+        { event_id: event.id, email: "blank@example.com", name: "Blank", ticket_type: "   " },
+        { event_id: event.id, email: "general@example.com", name: "General", ticket_type: "General" },
+      ],
+    });
+
+    const result = await backfillTicketTypes(prisma);
+    // Both the blank-to-null normalization and the real "General" group's normalization count.
+    expect(result.attendeesNormalized).toBeGreaterThanOrEqual(2);
+
+    const blank = await prisma.attendee.findFirst({ where: { event_id: event.id, email: "blank@example.com" } });
+    expect(blank?.ticket_type).toBeNull();
+
+    // The blank attendee never joined a group, so it doesn't produce its own TicketType row.
+    const types = await prisma.ticketType.findMany({ where: { event_id: event.id } });
+    expect(types.map((t) => t.key)).toEqual(["general"]);
+  });
+
+  it("a second call is a safe no-op once the event is fully migrated (simulates a blocked replica's transaction resuming under the lock and finding the event already done)", async () => {
+    const event = await makeEvent("evt-tt-second-call");
+    await prisma.attendee.createMany({
+      data: [
+        { event_id: event.id, email: "sc-a@example.com", name: "SA", ticket_type: "Gold" },
+        { event_id: event.id, email: "sc-b@example.com", name: "SB", ticket_type: "gold" },
+      ],
+    });
+
+    const first = await backfillTicketTypes(prisma);
+    expect(first.eventsSeeded).toBeGreaterThanOrEqual(1);
+    expect(first.typesCreated).toBeGreaterThanOrEqual(1);
+
+    const second = await backfillTicketTypes(prisma);
+    expect(second.eventsSeeded).toBe(0);
+    expect(second.typesCreated).toBe(0);
+    expect(second.attendeesNormalized).toBe(0);
+
+    const types = await prisma.ticketType.findMany({ where: { event_id: event.id } });
+    expect(types).toHaveLength(1);
+    expect(types[0]?.key).toBe("gold");
+  });
+
+  it("two concurrent calls racing the same event don't crash or duplicate TicketType rows (advisory lock + re-check under lock)", async () => {
+    const event = await makeEvent("evt-tt-concurrent");
+    await prisma.attendee.createMany({
+      data: [
+        { event_id: event.id, email: "cc-a@example.com", name: "CA", ticket_type: "Platinum" },
+        { event_id: event.id, email: "cc-b@example.com", name: "CB", ticket_type: "platinum" },
+      ],
+    });
+
+    // Both calls independently see this event with zero TicketType rows in their own outer query
+    // and race to migrate it - the per-event advisory lock (`ticket-types:<eventId>`) must
+    // serialize their transactions, and the re-check-under-lock must make the loser a safe no-op
+    // instead of both attempting `ticketType.create` for the same (event_id, key) and hitting the
+    // unique constraint (issue 1: rolling-deploy race).
+    const [a, b] = await Promise.all([backfillTicketTypes(prisma), backfillTicketTypes(prisma)]);
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+
+    const types = await prisma.ticketType.findMany({ where: { event_id: event.id } });
+    expect(types).toHaveLength(1);
+    expect(types[0]?.key).toBe("platinum");
+
+    const attendees = await prisma.attendee.findMany({
+      where: { event_id: event.id },
+      select: { ticket_type: true },
+    });
+    expect(attendees.every((at) => at.ticket_type === "platinum")).toBe(true);
   });
 });

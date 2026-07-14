@@ -230,21 +230,44 @@ export function EventSettingsPage() {
   // after a color/label edit (TicketTypesCard's onChanged) must not swap the whole list out and
   // back in, which read as a full-card flicker (PO review).
   const ticketTypesLoadedRef = useRef(false);
+  const ticketTypesAbortRef = useRef<AbortController | null>(null);
+
+  // A navigation to a different event must reset the ticket-types card back to its first-load
+  // state (loading placeholder, no stale rows from the previous event) - this effect only fires
+  // on an actual event switch, not on the same-event background refresh triggered by
+  // TicketTypesCard's onChanged, which keeps the no-flicker behavior above unchanged.
+  useEffect(() => {
+    setTicketTypes([]);
+    setTicketTypesLoading(true);
+    ticketTypesLoadedRef.current = false;
+  }, [eventId]);
+
   const loadTicketTypes = useCallback(async () => {
     if (!eventId) return;
-    if (!ticketTypesLoadedRef.current) setTicketTypesLoading(true);
+
+    ticketTypesAbortRef.current?.abort();
+    const ac = new AbortController();
+    ticketTypesAbortRef.current = ac;
+
+    const isFirstLoadForEvent = !ticketTypesLoadedRef.current;
+    if (isFirstLoadForEvent) setTicketTypesLoading(true);
     try {
-      setTicketTypes(await fetchTicketTypes(eventId));
+      const types = await fetchTicketTypes(eventId, ac.signal);
+      if (ac.signal.aborted) return;
+      setTicketTypes(types);
       ticketTypesLoadedRef.current = true;
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      if (isFirstLoadForEvent) setTicketTypes([]);
       addToast(operatorApiErrorMessage(err, "Failed to load ticket types"), "error");
     } finally {
-      setTicketTypesLoading(false);
+      if (!ac.signal.aborted) setTicketTypesLoading(false);
     }
   }, [eventId, addToast]);
 
   useEffect(() => {
     loadTicketTypes().catch(() => {});
+    return () => ticketTypesAbortRef.current?.abort();
   }, [loadTicketTypes]);
 
   useEffect(() => {
