@@ -112,6 +112,40 @@ describe("parseAttendees — event attribute columns", () => {
   });
 });
 
+describe("parseAttendees — ticket type catalog validation (batch 04 / #351)", () => {
+  const catalog = [{ key: "vip", label: "VIP" }];
+
+  it("rejects a ticket_type not in the catalog, with a clear per-row reason", () => {
+    const result = parseAttendees(
+      `${VALID_HEADER},ticket_type\nJan,K,jan@example.com,staff`,
+      { ticketTypes: catalog },
+    );
+    expect(result.validRows).toHaveLength(0);
+    expect(result.invalidRows[0]?.reason).toMatch(/unknown ticket type: "staff"/i);
+  });
+
+  it("normalizes a matched ticket_type to the catalog's canonical key (case-insensitive)", () => {
+    const result = parseAttendees(
+      `${VALID_HEADER},ticket_type\nJan,K,jan@example.com,VIP`,
+      { ticketTypes: catalog },
+    );
+    expect(result.validRows).toHaveLength(1);
+    expect(result.validRows[0]?.ticket_type).toBe("vip");
+  });
+
+  it("does not validate ticket_type when the caller opts out (ticketTypes undefined)", () => {
+    const result = parseAttendees(`${VALID_HEADER},ticket_type\nJan,K,jan@example.com,whatever`);
+    expect(result.validRows).toHaveLength(1);
+    expect(result.validRows[0]?.ticket_type).toBe("whatever");
+  });
+
+  it("does not reject a row with no ticket_type value at all, even with a catalog set", () => {
+    const result = parseAttendees(`${VALID_HEADER}\nJan,K,jan@example.com`, { ticketTypes: catalog });
+    expect(result.validRows).toHaveLength(1);
+    expect(result.validRows[0]?.ticket_type).toBeUndefined();
+  });
+});
+
 describe("parseAttendees — invalid rows", () => {
   it("rejects a row with invalid email", () => {
     const result = parseAttendees(`${VALID_HEADER}\nJan,K,not-an-email`);

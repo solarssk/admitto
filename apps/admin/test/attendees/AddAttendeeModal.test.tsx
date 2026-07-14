@@ -9,10 +9,11 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     ...actual,
     createAttendee: vi.fn(),
     fetchEventCustomFields: vi.fn().mockResolvedValue([]),
+    fetchTicketTypes: vi.fn().mockResolvedValue([]),
   };
 });
 
-import { ApiError, createAttendee } from "../../src/api/client.js";
+import { ApiError, createAttendee, fetchTicketTypes } from "../../src/api/client.js";
 
 const mockCreateAttendee = vi.mocked(createAttendee);
 
@@ -60,5 +61,35 @@ describe("AddAttendeeModal", () => {
     await waitFor(() => {
       expect(screen.getByText(/Failed to add attendee/)).toBeTruthy();
     });
+  });
+
+  it("populates the Ticket type dropdown from the event's catalog and submits the selected key (batch 04 / #351)", async () => {
+    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([
+      { id: "tt-1", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 0, created_at: "2026-01-01T00:00:00.000Z" },
+    ]);
+    mockCreateAttendee.mockResolvedValueOnce({} as never);
+    render(
+      <AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />,
+    );
+
+    const select = await screen.findByLabelText<HTMLSelectElement>("Ticket type");
+    await waitFor(() => expect(screen.getByRole("option", { name: "VIP" })).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jan@example.com" } });
+    fireEvent.change(select, { target: { value: "vip" } });
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add attendee" }));
+
+    await waitFor(() =>
+      expect(mockCreateAttendee).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({ ticket_type: "vip" }),
+      ),
+    );
   });
 });
