@@ -124,8 +124,16 @@ function ByTicketType({ rows }: { rows: EventReportsResponse["by_ticket_type"] }
 }
 
 /** Sentinel select value for the "(none)" bucket - <select> options are always strings, but a
- * row's ticket_type (and its matching by_ticket_type entry) can genuinely be null. */
+ * row's ticket_type (and its matching by_ticket_type entry) can genuinely be null. Real keys are
+ * always rendered/matched with a "type:" prefix (below) so this sentinel can never collide with
+ * an actual stored ticket_type value - including an unmatched/legacy one, which (unlike a
+ * catalog-created key) isn't constrained to the slugified key format and could in principle be
+ * any string, e.g. literally "__none__" (Codex review). */
 const NONE_TYPE_KEY = "__none__";
+
+function encodeTypeFilterValue(key: string | null): string {
+  return key === null ? NONE_TYPE_KEY : `type:${key}`;
+}
 
 interface AdmissionLogProps {
   log: EventReportsResponse["admission_log"];
@@ -155,7 +163,9 @@ function AdmissionLog({
   const filtered =
     typeFilter === "all"
       ? log
-      : log.filter((row) => (row.ticket_type ?? NONE_TYPE_KEY) === typeFilter);
+      : typeFilter === NONE_TYPE_KEY
+        ? log.filter((row) => row.ticket_type === null)
+        : log.filter((row) => encodeTypeFilterValue(row.ticket_type) === typeFilter);
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / LOG_PAGE_SIZE));
   const paged = filtered.slice((page - 1) * LOG_PAGE_SIZE, page * LOG_PAGE_SIZE);
@@ -181,7 +191,7 @@ function AdmissionLog({
           >
             <option value="all">All ticket types</option>
             {byTicketType.map((row) => (
-              <option key={row.key ?? NONE_TYPE_KEY} value={row.key ?? NONE_TYPE_KEY}>
+              <option key={row.key ?? NONE_TYPE_KEY} value={encodeTypeFilterValue(row.key)}>
                 {row.type}
               </option>
             ))}
