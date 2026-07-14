@@ -434,6 +434,74 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     }
   });
 
+  it("still shows an attendee whose stored ticket_type has no matching catalog row, instead of dropping it from the breakdown (Codex review)", async () => {
+    const EVENT_ORPHAN = "evt-reports-orphan";
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_ORPHAN } });
+    await prisma.ticketType.deleteMany({ where: { event_id: EVENT_ORPHAN } });
+    await prisma.event.deleteMany({ where: { id: EVENT_ORPHAN } });
+    await prisma.event.create({
+      data: {
+        id: EVENT_ORPHAN,
+        title: "Orphan Reports Event",
+        slug: "reports-event-orphan",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    await prisma.ticketType.create({
+      data: { event_id: EVENT_ORPHAN, key: "standard", label: "Standard", sort_order: 0 },
+    });
+    await prisma.attendee.createMany({
+      data: [
+        {
+          id: "att-rep-orphan-1",
+          event_id: EVENT_ORPHAN,
+          email: "orphan1@example.com",
+          name: "Typed",
+          ticket_type: "standard",
+          admitted_at: new Date("2026-10-01T09:00:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+        {
+          // Simulates a type deleted after assignment, or data seeded outside the app's normal
+          // write paths - the same scenario AttendeeDetailPage.tsx already shows as
+          // "(not in catalog)" instead of silently dropping.
+          id: "att-rep-orphan-2",
+          event_id: EVENT_ORPHAN,
+          email: "orphan2@example.com",
+          name: "Stray",
+          ticket_type: "deleted_type",
+          admitted_at: new Date("2026-10-01T09:05:00.000Z"),
+          ...mkAttendeeToken(),
+        },
+      ],
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_ORPHAN}/reports`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        summary: { total_attendees: number };
+        by_ticket_type: Array<{ key: string | null; type: string; color: string; total: number }>;
+      };
+      expect(body.summary.total_attendees).toBe(2);
+      expect(body.by_ticket_type).toHaveLength(2);
+      expect(body.by_ticket_type[0]).toMatchObject({ key: "standard", type: "Standard", total: 1 });
+      expect(body.by_ticket_type[1]).toMatchObject({
+        key: "deleted_type",
+        type: "deleted_type (not in catalog)",
+        color: "gray",
+        total: 1,
+      });
+    } finally {
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_ORPHAN } });
+      await prisma.ticketType.deleteMany({ where: { event_id: EVENT_ORPHAN } });
+      await prisma.event.deleteMany({ where: { id: EVENT_ORPHAN } });
+    }
+  });
+
   it("buckets hourly admissions in the event timezone, not raw UTC (#268)", async () => {
     const EVENT_TZ = "evt-reports-warsaw";
     await prisma.attendee.deleteMany({ where: { event_id: EVENT_TZ } });

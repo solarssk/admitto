@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Button, Card, EmptyState, PageHeader, Skeleton, Stat, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, PageHeader, Skeleton, Stat, TICKET_TYPE_COLORS, useToast } from "@admitto/ui";
 import {
   ApiError,
   eventReportsPrintUrl,
@@ -211,7 +211,11 @@ function AdmissionLog({
                   </div>
                 </td>
                 <td>
-                  <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
+                  {row.ticket_type === null ? (
+                    <Badge variant="neutral">(none)</Badge>
+                  ) : (
+                    <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
+                  )}
                 </td>
                 <td className="reports-mono">
                   {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}

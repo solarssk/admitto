@@ -29,8 +29,12 @@ export interface EventReportsResponse {
   by_hour: Array<{ hour: string; count: number }>;
   /** Iterates the event's live TicketType catalog (batch 04 / #351) - a configured type with 0
    * attendees still appears, ordered same as the Event Settings tab. A trailing entry with
-   * `key: null` covers attendees with no type set; a catalog key can't go stray (delete is
-   * blocked while any attendee still has it), so no "unmatched" bucket is needed. */
+   * `key: null` covers attendees with no type set. A stored `ticket_type` can still reference no
+   * live catalog row - the type was deleted after being assigned (same case AttendeeDetailPage.tsx
+   * already surfaces as "(not in catalog)"), or an event's data was seeded/restored outside the
+   * write paths that enforce catalog membership - so any remaining unmatched keys get their own
+   * trailing entries too (Codex review, batch 04 / #387), instead of silently vanishing from the
+   * breakdown while still counting in `summary` and the admission log. */
   by_ticket_type: Array<{
     key: string | null;
     type: string;
@@ -224,6 +228,23 @@ async function loadReportsAggregates(
       total: noneTotal,
       admitted: noneAdmitted,
       admission_pct: oneDecimalPct(noneAdmitted, noneTotal),
+    });
+  }
+
+  const catalogKeys = new Set(catalog.map((t) => t.key));
+  const unmatchedKeys = [...totalByType.keys()]
+    .filter((key): key is string => key !== null && !catalogKeys.has(key))
+    .sort();
+  for (const key of unmatchedKeys) {
+    const total = totalByType.get(key) ?? 0;
+    const admitted = admittedByType.get(key) ?? 0;
+    by_ticket_type.push({
+      key,
+      type: `${key} (not in catalog)`,
+      color: "gray",
+      total,
+      admitted,
+      admission_pct: oneDecimalPct(admitted, total),
     });
   }
 
