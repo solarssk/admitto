@@ -303,6 +303,7 @@ export async function handlePostMailSettingsTest(
   let errorMessage: string | undefined;
   let resultProvider: MailerProvider | undefined;
   let resultProviderMessageId: string | undefined;
+  let resultRetryable: boolean | undefined;
 
   try {
     const result = await sendTransportTestEmail(
@@ -318,6 +319,7 @@ export async function handlePostMailSettingsTest(
         console.error("[admin] mail transport test failed:", result.error);
       }
       errorMessage = transportTestErrorForAdmin(result.error);
+      resultRetryable = result.retryable;
     } else {
       resultStatus = "sent";
       resultProviderMessageId = result.providerMessageId;
@@ -360,5 +362,6 @@ export async function handlePostMailSettingsTest(
     status: "failed",
     error: errorMessage ?? "send failed",
     ...(resultProvider ? { provider: resultProvider } : {}),
-  } satisfies { status: "failed"; error: string; provider?: MailerProvider });
+    ...(resultRetryable !== undefined ? { retryable: resultRetryable } : {}),
+  } satisfies { status: "failed"; error: string; provider?: MailerProvider; retryable?: boolean });
 }

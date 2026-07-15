@@ -481,7 +481,7 @@ export interface TestSendBody {
 
 export type TestSendResponse =
   | { status: "sent"; provider: MailProvider; providerMessageId?: string }
-  | { status: "failed"; error: string; provider?: MailProvider };
+  | { status: "failed"; error: string; provider?: MailProvider; retryable?: boolean };
 
 /** Multi-template list item from GET .../templates. */
 export interface MailTemplateListItem {

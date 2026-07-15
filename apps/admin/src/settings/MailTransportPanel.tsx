@@ -29,8 +29,10 @@ import { formatUtcDateTime } from "../utils/event-dates.js";
 interface TestResult {
   kind: "ok" | "error";
   message: string;
+  recipient: string;
   provider?: MailProvider;
   providerMessageId?: string;
+  retryable?: boolean;
   timestamp: string;
 }
 
@@ -144,18 +146,23 @@ function SecretFieldRow({
           )}
         </div>
       ) : (
-        <div className="mail-secret-field__row">
-          <Input
-            type="password"
-            autoComplete="new-password"
-            placeholder={edit.mode === "clear" ? "Will be cleared on save" : "Enter new value"}
-            value={edit.value}
-            disabled={edit.mode === "clear" || field.locked}
-            onChange={(e) => onValueChange(e.target.value)}
-          />
-          <Button type="button" variant="secondary" onClick={onCancel}>
-            Cancel
-          </Button>
+        <div className="mail-secret-field__edit">
+          <div className="mail-secret-field__row">
+            <Input
+              type="password"
+              autoComplete="new-password"
+              placeholder={edit.mode === "clear" ? "Will be cleared on save" : "Enter new value"}
+              value={edit.value}
+              disabled={edit.mode === "clear" || field.locked}
+              onChange={(e) => onValueChange(e.target.value)}
+            />
+            <Button type="button" variant="secondary" onClick={onCancel}>
+              Cancel
+            </Button>
+          </div>
+          <FieldHint>
+            Saves with the page&rsquo;s Save changes button below — Cancel discards this edit only.
+          </FieldHint>
         </div>
       )}
     </div>
@@ -177,6 +184,20 @@ export function MailTransportPanel() {
   const [testSending, setTestSending] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
+  const validationErrorsRef = useRef<HTMLUListElement | null>(null);
+
+  useEffect(() => {
+    if (validationErrors.length > 0) {
+      validationErrorsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [validationErrors]);
+
+  // A test result reflects a send made under the *previous* transport — stale once
+  // the operator switches to a different provider, so drop it rather than leave a
+  // misleading pass/fail badge attached to the newly selected transport.
+  useEffect(() => {
+    setTestResult(null);
+  }, [draft.provider]);
 
   const applyResponse = useCallback((data: MailSettingsResponse) => {
     const nextDraft = draftFromResponse(data);
@@ -199,14 +220,15 @@ export function MailTransportPanel() {
       applyResponse(data);
     } catch {
       if (ac.signal.aborted) return;
-      const message = "Failed to load mail settings.";
-      setLoadError(message);
-      addToast(message, "error");
+      // Inline + Retry only (no toast) — this is an initial-load failure with a
+      // persistent retry control, not a transient action outcome. See AGENTS.md's
+      // toast-vs-inline table.
+      setLoadError("Failed to load mail settings.");
       setApiData(null);
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [applyResponse, addToast]);
+  }, [applyResponse]);
 
   useEffect(() => {
     void loadSettings();
@@ -289,6 +311,7 @@ export function MailTransportPanel() {
         setTestResult({
           kind: "ok",
           message: "Test email sent.",
+          recipient: to,
           provider: result.provider,
           providerMessageId: result.providerMessageId,
           timestamp: new Date().toISOString(),
@@ -299,7 +322,9 @@ export function MailTransportPanel() {
         setTestResult({
           kind: "error",
           message,
+          recipient: to,
           provider: result.provider,
+          retryable: result.retryable,
           timestamp: new Date().toISOString(),
         });
       }
@@ -309,7 +334,7 @@ export function MailTransportPanel() {
           ? "Enter a valid email address."
           : operatorApiErrorMessage(err, "Send failed.");
       addToast(message, "error");
-      setTestResult({ kind: "error", message, timestamp: new Date().toISOString() });
+      setTestResult({ kind: "error", message, recipient: to, timestamp: new Date().toISOString() });
     } finally {
       setTestSending(false);
     }
@@ -328,7 +353,7 @@ export function MailTransportPanel() {
         <div className="foot-actions">
           <div className="foot-actions__status">
             {validationErrors.length > 0 && (
-              <ul role="alert" className="text-error">
+              <ul ref={validationErrorsRef} role="alert" className="text-error">
                 {validationErrors.map((e) => (
                   <li key={e}>{e}</li>
                 ))}
@@ -377,7 +402,7 @@ export function MailTransportPanel() {
           <p className="mail-transport__desc">
             Instance-wide outbound transport for tickets and lifecycle mail.
           </p>
-          <div className="mail-field-row">
+          <div className="mail-transport-select-row">
             <Select
               label="Transport"
               value={provider}
@@ -398,11 +423,13 @@ export function MailTransportPanel() {
                 </option>
               ))}
             </Select>
-            <EnvBadge locked={fieldLocked("provider")} />
+            <div className="mail-transport-select-row__meta">
+              <EnvBadge locked={fieldLocked("provider")} />
+              {provider && PROVIDER_GUIDE[provider] && (
+                <p className="mail-transport-provider-guide">{PROVIDER_GUIDE[provider]}</p>
+              )}
+            </div>
           </div>
-          {provider && PROVIDER_GUIDE[provider] && (
-            <p className="mail-transport-provider-guide">{PROVIDER_GUIDE[provider]}</p>
-          )}
 
           {provider === "export_only" && (
             <p className="mail-dev-warning" role="status">
@@ -767,6 +794,10 @@ export function MailTransportPanel() {
                     {formatUtcDateTime(testResult.timestamp)}
                   </span>
                 </div>
+                <div className="mail-test-result__row">
+                  <span className="mail-test-result__label">Recipient</span>
+                  <span className="mail-test-result__value">{testResult.recipient}</span>
+                </div>
                 {testResult.provider && (
                   <div className="mail-test-result__row">
                     <span className="mail-test-result__label">Provider</span>
@@ -780,6 +811,16 @@ export function MailTransportPanel() {
                     <span className="mail-test-result__label">Message ID</span>
                     <span className="mail-test-result__value mail-test-result__value--mono">
                       {testResult.providerMessageId}
+                    </span>
+                  </div>
+                )}
+                {testResult.kind === "error" && testResult.retryable !== undefined && (
+                  <div className="mail-test-result__row">
+                    <span className="mail-test-result__label">Retryable</span>
+                    <span className="mail-test-result__value">
+                      {testResult.retryable
+                        ? "Yes — likely transient, try again"
+                        : "No — check configuration"}
                     </span>
                   </div>
                 )}
