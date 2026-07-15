@@ -278,6 +278,30 @@ describe("MailTransportPanel — secret field behavior (#407)", () => {
     expect(screen.getByText(/New value.*pending save/)).toBeTruthy();
   });
 
+  it("clicking Change from the pending-save state reopens the input with the typed value kept", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.change(screen.getByPlaceholderText("New value"), { target: { value: "s3cret" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    expect(screen.getByDisplayValue("s3cret")).toBeTruthy();
+  });
+
+  it("clicking Clear puts the secret field into a pending-clear state", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.getByPlaceholderText("Will be cleared on save")).toBeTruthy();
+    expect(isDisabled(screen.getByPlaceholderText("Will be cleared on save"))).toBe(true);
+  });
+
   it("clicking Cancel returns the secret field to idle", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
     renderWithToast(<MailTransportPanel />);
@@ -355,6 +379,23 @@ describe("MailTransportPanel — transport tile selection", () => {
     });
   });
 
+  it("keyboard navigation is a no-op when the transport is locked", async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeResponse(smtpFields({ provider: plain("smtp", { source: "env", locked: true }) })),
+    );
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: "SMTP (recommended)" })).toBeTruthy();
+    });
+    fireEvent.keyDown(screen.getByRole("radio", { name: "SMTP (recommended)" }), { key: "ArrowRight" });
+    expect(
+      screen.getByRole("radio", { name: "SMTP (recommended)" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(screen.getByRole("radio", { name: "Microsoft Graph" }).getAttribute("aria-checked")).toBe(
+      "false",
+    );
+  });
+
   it("shows a Configured badge once a transport is selected", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(baseFields()));
     renderWithToast(<MailTransportPanel />);
@@ -403,6 +444,20 @@ describe("MailTransportPanel — test send gating (#410)", () => {
       expect(isDisabled(screen.getByRole("button", { name: "Send test email" }))).toBe(false);
     });
     expect(isDisabled(screen.getByLabelText("Recipient"))).toBe(false);
+  });
+
+  it("shows a toast and does not call the API when the recipient email is invalid", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(isDisabled(screen.getByRole("button", { name: "Send test email" }))).toBe(false);
+    });
+    fireEvent.change(screen.getByLabelText("Recipient"), { target: { value: "not-an-email" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Enter a valid email address/);
+    });
+    expect(mockTest).not.toHaveBeenCalled();
   });
 
   it("export_only never allows test send even when saved", async () => {
@@ -508,6 +563,39 @@ describe("MailTransportPanel — test result panel (#411)", () => {
     expect(panel?.textContent).not.toMatch(/Retryable|Transport/);
   });
 
+  it("maps an ApiError 400 validation_failed rejection to a friendly message", async () => {
+    await renderReadySmtp();
+    mockTest.mockRejectedValueOnce(new ApiError(400, "validation_failed", "validation_failed"));
+    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
+    await waitFor(() => {
+      expect(document.querySelector(".mail-preview--error")).toBeTruthy();
+    });
+    expect(document.querySelector(".mail-preview--error")?.textContent).toContain(
+      "Enter a valid email address.",
+    );
+  });
+
+  it("ignores a stale test-send rejection if the transport is switched while the request is pending", async () => {
+    await renderReadySmtp();
+    let rejectTest: (err: unknown) => void = () => {};
+    mockTest.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectTest = reject;
+        }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Sending…" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "Microsoft Graph" }));
+    rejectTest(new Error("network down"));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Send test email" })).toBeTruthy();
+    });
+    expect(document.querySelector(".mail-preview")).toBeNull();
+  });
+
   it("clears the result panel when the transport tile is switched", async () => {
     await renderReadySmtp();
     mockTest.mockResolvedValueOnce({ status: "sent", provider: "smtp" });
@@ -562,6 +650,20 @@ describe("MailTransportPanel — toast vs inline consistency (#4)", () => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
     expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
+  it("clicking Retry calls fetchMailSettings again and recovers", async () => {
+    mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    });
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("SMTP host")).toBeTruthy();
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it("shows client-side validation errors inline (not toasted) and scrolls them into view", async () => {
@@ -640,5 +742,97 @@ describe("MailTransportPanel — footer save-state", () => {
     });
     expect(screen.getByText("All changes saved")).toBeTruthy();
     expect(mockSave).not.toHaveBeenCalled();
+  });
+});
+
+describe("MailTransportPanel — field wiring (save payload)", () => {
+  it("wires every Sender, SMTP connection, and Advanced tuning field to the save payload", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    mockSave.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("SMTP host")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Reply-to"), { target: { value: "reply@example.com" } });
+    fireEvent.change(screen.getByLabelText("Envelope from (bounce address)"), {
+      target: { value: "bounce@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Allowed from domain"), {
+      target: { value: "example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Port"), { target: { value: "465" } });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "new-user" } });
+    fireEvent.click(screen.getByRole("switch", { name: "Use TLS (secure)" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Require STARTTLS" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Connection pool" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Verify TLS certificate" }));
+    fireEvent.change(screen.getByLabelText("HELO/EHLO name"), {
+      target: { value: "mail.example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Rate limit (per minute)"), { target: { value: "42" } });
+    fireEvent.change(screen.getByLabelText("Max connections"), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Max messages per connection"), {
+      target: { value: "50" },
+    });
+    fireEvent.change(screen.getByLabelText("Connection timeout (ms)"), {
+      target: { value: "10000" },
+    });
+    fireEvent.change(screen.getByLabelText("Greeting timeout (ms)"), { target: { value: "5000" } });
+    fireEvent.change(screen.getByLabelText("Socket timeout (ms)"), { target: { value: "20000" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => {
+      expect(mockSave).toHaveBeenCalled();
+    });
+    expect(mockSave.mock.calls[0][0]).toMatchObject({
+      replyTo: "reply@example.com",
+      envelopeFrom: "bounce@example.com",
+      allowedFromDomain: "example.com",
+      port: 465,
+      user: "new-user",
+      secure: true,
+      requireTls: false,
+      pool: false,
+      tlsRejectUnauthorized: false,
+      heloName: "mail.example.com",
+      rateLimitPerMinute: 42,
+      maxConnections: 3,
+      maxMessages: 50,
+      connectionTimeout: 10000,
+      greetingTimeout: 5000,
+      socketTimeout: 20000,
+    });
+  });
+
+  it("wires Graph mailbox/tenant/client/save-to-sent-items fields to the save payload", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(graphFields()));
+    mockSave.mockResolvedValueOnce(makeResponse(graphFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Mailbox")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Mailbox"), {
+      target: { value: "new-shared@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Tenant ID"), {
+      target: { value: "33333333-3333-3333-3333-333333333333" },
+    });
+    fireEvent.change(screen.getByLabelText("Client ID"), {
+      target: { value: "44444444-4444-4444-4444-444444444444" },
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Save to Sent Items" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(mockSave).toHaveBeenCalled();
+    });
+    expect(mockSave.mock.calls[0][0]).toMatchObject({
+      mailbox: "new-shared@example.com",
+      tenantId: "33333333-3333-3333-3333-333333333333",
+      clientId: "44444444-4444-4444-4444-444444444444",
+      saveToSentItems: false,
+    });
   });
 });

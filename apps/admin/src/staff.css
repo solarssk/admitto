@@ -2988,10 +2988,6 @@
   white-space: nowrap;
 }
 
-.mail-secret-field > .mail-field-hint {
-  margin: 0;
-}
-
 /* Secret field — one consistent box shape (same height/border/radius as
    .at-input) across all three states: idle, editing, and confirmed-pending —
    only the content inside changes, so the field never resizes. */
