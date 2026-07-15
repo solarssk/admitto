@@ -126,54 +126,106 @@ function SecretFieldRow({
   onValueChange: (value: string) => void;
   onCancel: () => void;
 }) {
+  const editing = edit.mode !== "idle";
+  const [confirmed, setConfirmed] = useState(false);
+  useEffect(() => {
+    if (!editing) setConfirmed(false);
+  }, [editing]);
+
+  const canConfirm = edit.mode === "clear" || edit.value.trim().length > 0;
+
   return (
     <div className="mail-secret-field">
-      <div className="mail-secret-field__header">
+      <div className="at-field">
         <span className="at-label">{label}</span>
-        {field.set && (
-          <span className="password-pill">
-            <i className="ti ti-lock" aria-hidden="true" />
-            Set ••••
-          </span>
-        )}
-        <EnvBadge locked={field.locked} />
-      </div>
-      {hint && <FieldHint>{hint}</FieldHint>}
-      {edit.mode === "idle" ? (
-        <div className="mail-secret-field__row">
-          {!field.locked && (
-            <div className="mail-secret-field__actions">
-              <Button type="button" variant={field.set ? "secondary" : "primary"} onClick={onReplace}>
-                {field.set ? "Change" : "Set"}
-              </Button>
-              {field.set && (
-                <Button type="button" variant="secondary" onClick={onClear}>
-                  Clear
-                </Button>
+        <div className="mail-secret-field__display">
+          {editing && !confirmed && (
+            <>
+              <Input
+                type="password"
+                autoComplete="off"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
+                data-form-type="other"
+                className="mail-secret-field__input"
+                placeholder={edit.mode === "clear" ? "Will be cleared on save" : "New password"}
+                value={edit.value}
+                disabled={edit.mode === "clear" || field.locked}
+                onChange={(e) => onValueChange(e.target.value)}
+              />
+              <div className="mail-secret-field__display-actions">
+                <button
+                  type="button"
+                  className="mail-secret-field__icon-btn mail-secret-field__icon-btn--confirm"
+                  aria-label="Confirm"
+                  disabled={!canConfirm}
+                  onClick={() => setConfirmed(true)}
+                >
+                  <i className="ti ti-check" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="mail-secret-field__icon-btn mail-secret-field__icon-btn--cancel"
+                  aria-label="Cancel"
+                  onClick={onCancel}
+                >
+                  <i className="ti ti-x" aria-hidden="true" />
+                </button>
+              </div>
+            </>
+          )}
+          {editing && confirmed && (
+            <>
+              <span className="mail-secret-field__display-value">
+                <i className="ti ti-lock" aria-hidden="true" />
+                {edit.mode === "clear" ? "Will be cleared" : "New value"} — pending save
+              </span>
+              <div className="mail-secret-field__display-actions">
+                <button
+                  type="button"
+                  className="mail-secret-field__link"
+                  onClick={() => setConfirmed(false)}
+                >
+                  Change
+                </button>
+              </div>
+            </>
+          )}
+          {!editing && (
+            <>
+              <span className="mail-secret-field__display-value">
+                <i className="ti ti-lock" aria-hidden="true" />
+                {field.set ? "•••••••• set" : "Not set"}
+              </span>
+              {field.locked ? (
+                <EnvBadge locked />
+              ) : (
+                <div className="mail-secret-field__display-actions">
+                  <button type="button" className="mail-secret-field__link" onClick={onReplace}>
+                    {field.set ? "Change" : "Set"}
+                  </button>
+                  {field.set && (
+                    <button
+                      type="button"
+                      className="mail-secret-field__link mail-secret-field__link--danger"
+                      onClick={onClear}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
               )}
-            </div>
+            </>
           )}
         </div>
-      ) : (
-        <div className="mail-secret-field__edit">
-          <div className="mail-secret-field__row">
-            <Input
-              type="password"
-              autoComplete="new-password"
-              placeholder={edit.mode === "clear" ? "Will be cleared on save" : "Enter new value"}
-              value={edit.value}
-              disabled={edit.mode === "clear" || field.locked}
-              onChange={(e) => onValueChange(e.target.value)}
-            />
-            <Button type="button" variant="secondary" onClick={onCancel}>
-              Cancel
-            </Button>
-          </div>
+        {hint && <FieldHint>{hint}</FieldHint>}
+        {editing && !confirmed && (
           <FieldHint>
             Saves with the page&rsquo;s Save changes button below — Cancel discards this edit only.
           </FieldHint>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -500,6 +552,11 @@ export function MailTransportPanel() {
                 value={draft.user}
                 disabled={fieldLocked("user")}
                 onChange={(e) => updateDraft({ user: e.target.value })}
+                autoComplete="off"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
+                data-form-type="other"
               />
               <SecretFieldRow
                 label="Password"

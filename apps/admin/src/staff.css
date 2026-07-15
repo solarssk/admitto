@@ -2874,25 +2874,6 @@
   line-height: 1;
 }
 
-/* Secret field "Set ••••" indicator — SMTP password, Graph client secret, PA flow key */
-.password-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-  background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 7px var(--space-3);
-  font-family: ui-monospace, monospace;
-}
-
-.password-pill i {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-}
-
 /* Collapsible "Advanced tuning" section inside SMTP connection */
 .disclosure {
   border-top: 1px solid var(--border);
@@ -2944,7 +2925,6 @@
 /* Elements that need the full row instead of a half-width grid cell — secret
    fields carry inline action buttons, settings-row (TLS toggles) and the
    tuning sub-groups below define their own internal layout. */
-.mail-transport-section > .mail-secret-field,
 .mail-transport-section > .mail-field-hint,
 .mail-transport-section > .mail-field-row,
 .mail-transport-section > .settings-row,
@@ -2988,36 +2968,109 @@
 .mail-secret-field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
 }
 
-.mail-secret-field__edit {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.mail-secret-field__edit > .mail-field-hint {
+.mail-secret-field > .mail-field-hint {
   margin: 0;
 }
 
-.mail-secret-field__header {
+/* Secret field — one consistent box shape (same height/border/radius as
+   .at-input) across all three states: idle, editing, and confirmed-pending —
+   only the content inside changes, so the field never resizes. */
+.mail-secret-field__display {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
+  min-height: var(--control-h);
+  padding: 0 var(--space-2) 0 var(--pad-control-x);
+  background: var(--surface-card);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius);
 }
 
-.mail-secret-field__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
+.mail-secret-field__display > .at-field {
+  flex: 1;
+  min-width: 0;
 }
 
-.mail-secret-field__actions {
+.mail-secret-field__input.at-input {
+  border: 0;
+  background: transparent;
+  height: auto;
+  padding: 0;
+}
+
+.mail-secret-field__display-value {
   display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: ui-monospace, monospace;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.mail-secret-field__display-value i {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.mail-secret-field__display-actions {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
+  flex: none;
+}
+
+.mail-secret-field__link {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mail-secret-field__link:hover {
+  text-decoration: underline;
+}
+
+.mail-secret-field__link--danger {
+  color: var(--status-error);
+}
+
+.mail-secret-field__icon-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-body);
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.mail-secret-field__icon-btn:hover {
+  background: var(--surface-hover);
+}
+
+.mail-secret-field__icon-btn:disabled {
+  color: var(--text-disabled, var(--text-muted));
+  cursor: not-allowed;
+}
+
+.mail-secret-field__icon-btn--confirm:not(:disabled) {
+  color: var(--status-ok);
+}
+
+.mail-secret-field__icon-btn--cancel:not(:disabled) {
+  color: var(--status-error);
 }
 
 .mail-dev-warning {

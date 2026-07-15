@@ -216,36 +216,54 @@ describe("MailTransportPanel — provider rendering (#406/#408/#409)", () => {
 });
 
 describe("MailTransportPanel — secret field behavior (#407)", () => {
-  it("shows a 'Set ••••' pill and a Change button when a secret is already set", async () => {
+  it("shows a masked value and a Change link when a secret is already set", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(smtpFields({ smtpPassword: secret(true) })));
     renderWithToast(<MailTransportPanel />);
     await waitFor(() => {
-      expect(screen.getByText("Set ••••")).toBeTruthy();
+      expect(screen.getByText("•••••••• set")).toBeTruthy();
     });
     expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
   });
 
-  it("shows a primary Set button and no pill/Clear when a secret is unset", async () => {
+  it("shows a Set link and no Clear when a secret is unset", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(smtpFields({ smtpPassword: secret(false) })));
     renderWithToast(<MailTransportPanel />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Set" })).toBeTruthy();
     });
-    expect(screen.queryByText("Set ••••")).toBeNull();
+    expect(screen.getByText("Not set")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
   });
 
-  it("clicking Change reveals a password input, Cancel, and an explanatory hint", async () => {
+  it("clicking Change reveals a password input with Confirm/Cancel icon buttons and a hint", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
     renderWithToast(<MailTransportPanel />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
     });
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
-    expect(screen.getByPlaceholderText("Enter new value")).toBeTruthy();
+    expect(screen.getByPlaceholderText("New password")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeTruthy();
     expect(screen.getByText(/Saves with the page.s Save changes button below/)).toBeTruthy();
+  });
+
+  it("Confirm is disabled until a value is typed, then collapses to a pending state", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    expect(isDisabled(screen.getByRole("button", { name: "Confirm" }))).toBe(true);
+    fireEvent.change(screen.getByPlaceholderText("New password"), {
+      target: { value: "s3cret" },
+    });
+    expect(isDisabled(screen.getByRole("button", { name: "Confirm" }))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(screen.queryByPlaceholderText("New password")).toBeNull();
+    expect(screen.getByText(/New value.*pending save/)).toBeTruthy();
   });
 
   it("clicking Cancel returns the secret field to idle", async () => {
@@ -256,17 +274,17 @@ describe("MailTransportPanel — secret field behavior (#407)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByPlaceholderText("Enter new value")).toBeNull();
+    expect(screen.queryByPlaceholderText("New password")).toBeNull();
     expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
   });
 
-  it("hides Set/Change/Clear buttons and shows an env badge when the secret is locked", async () => {
+  it("hides Set/Change/Clear and shows an env badge when the secret is locked", async () => {
     mockFetch.mockResolvedValueOnce(
       makeResponse(smtpFields({ smtpPassword: secret(true, { source: "env", locked: true }) })),
     );
     renderWithToast(<MailTransportPanel />);
     await waitFor(() => {
-      expect(screen.getByText("Set ••••")).toBeTruthy();
+      expect(screen.getByText("•••••••• set")).toBeTruthy();
     });
     expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
