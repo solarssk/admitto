@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
-
 env:
   # Shared by every job below (only test-web/test-admin/test-rest actually use these; harmless
   # unused strings in lint-and-typecheck). Defined once at workflow level, not per-job - repeating
@@ -28,6 +25,8 @@ jobs:
   # volume; everything else is bundled into test-rest.
   lint-and-typecheck:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -46,6 +45,8 @@ jobs:
 
   test-web:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:16-alpine
@@ -108,6 +109,8 @@ jobs:
 
   test-admin:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -147,6 +150,8 @@ jobs:
   # database (or none at all), verified with an Explore agent before this split was written.
   test-rest:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:16-alpine
@@ -222,12 +227,16 @@ jobs:
   # `needs:` list, not the branch protection settings, if the shard jobs above are ever renamed.
   build-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [lint-and-typecheck, test-web, test-admin, test-rest]
     steps:
       - run: echo "All build-test shards passed."
 
   secret-scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -243,6 +252,8 @@ jobs:
 
   pii-guard:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -292,6 +303,8 @@ jobs:
   docker-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [build-test, migration-safety]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
