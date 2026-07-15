@@ -787,6 +787,67 @@ describe("EventsPickerPage archived event navigation", () => {
       true,
     );
   });
+
+  it("shows an EmptyState on the Archived tab when there are active events but none archived", async () => {
+    const activeEvent = {
+      id: "evt-active",
+      title: "Spring Gala",
+      slug: "spring-gala",
+      date: "2026-06-01",
+      timezone: "Europe/Warsaw",
+      location: "Hall A",
+      capacity: 100,
+      archived_at: null as string | null,
+    };
+    vi.mocked(fetchAdminEvents).mockResolvedValue([activeEvent]);
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin" element={<EventsPickerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /Archived events/ })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("tab", { name: /Archived events/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("No archived events")).toBeTruthy();
+    });
+    expect(screen.getByText("Events you archive will appear here.")).toBeTruthy();
+  });
+
+  it("shows an EmptyState with a link back to Archived when every event is archived (superadmin copy)", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValue([archivedEvent]);
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin" element={<EventsPickerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    // The page auto-switches to Archived once data loads (every event is archived) — wait
+    // for that to actually happen before clicking Active, otherwise the click can land
+    // while "Active" is still the untouched default tab and no-ops.
+    await waitFor(() => {
+      expect(screen.getByText("Archived Summit")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("tab", { name: /Active events/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("No active events")).toBeTruthy();
+    });
+    expect(
+      screen.getByText("All events are archived. Open the Archived events tab to unarchive one."),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "View archived events" }));
+    await waitFor(() => {
+      expect(screen.getByText("Archived Summit")).toBeTruthy();
+    });
+  });
 });
 
 describe("ImportPage operator errors", () => {
