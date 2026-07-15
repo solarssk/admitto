@@ -19,6 +19,7 @@ describe("MailerStatusBadge", () => {
     expect(badge).toBeTruthy();
     expect(badge?.getAttribute("aria-label")).toBe("Mailer configured (SMTP)");
     expect(badge?.getAttribute("data-tooltip")).toBe("Mailer configured (SMTP)");
+    expect(badge?.getAttribute("role")).toBe("img");
     expect(container.querySelector(".ti-mail")).toBeTruthy();
   });
 

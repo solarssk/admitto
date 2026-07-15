@@ -507,7 +507,9 @@ body {
     top: 0;
     left: 0;
     bottom: 0;
-    width: 100vw;
+    /* 100% (not 100vw) so a reserved-space scrollbar (e.g. Windows) isn't counted into
+       the drawer's width, which would push it past the actually-visible viewport edge. */
+    width: 100%;
     transform: translateX(-105%);
     transition: transform var(--dur-fast);
     box-shadow: var(--shadow-lg);

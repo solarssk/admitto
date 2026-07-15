@@ -45,6 +45,7 @@ describe("ServerConnectionBadge", () => {
     const { container } = render(<ServerConnectionBadge />);
     expect(screen.getByLabelText("Connected — all scans confirmed by server")).toBeTruthy();
     expect(container.querySelector(".status-circle--ok")).toBeTruthy();
+    expect(container.querySelector(".status-circle")?.getAttribute("role")).toBe("img");
   });
 
   it("shows a red offline icon instead of hiding when offline", () => {
