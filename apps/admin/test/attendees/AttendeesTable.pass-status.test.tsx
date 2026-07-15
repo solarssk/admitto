@@ -119,10 +119,8 @@ describe("AttendeesTable check-in column (#359)", () => {
       />,
     );
 
-    const cell = document.querySelector(".attendees-table-v2__checkin");
-    if (!cell) throw new Error("check-in cell not found");
-    expect(cell.textContent).toMatch(/09:44/);
-    expect(cell.textContent).not.toMatch(/Jun/);
+    const timeNode = screen.getByText(/09:44/);
+    expect(timeNode.textContent).not.toMatch(/Jun/);
   });
 
   it("shows date and time when the admission is outside the event's calendar day", () => {
@@ -133,9 +131,29 @@ describe("AttendeesTable check-in column (#359)", () => {
       />,
     );
 
-    const cell = document.querySelector(".attendees-table-v2__checkin");
-    if (!cell) throw new Error("check-in cell not found");
-    expect(cell.textContent).toMatch(/May 15, 2026/);
-    expect(cell.textContent).toMatch(/09:44/);
+    const timeNode = screen.getByText(/09:44/);
+    expect(timeNode.textContent).toMatch(/May 15, 2026/);
+  });
+});
+
+describe("AttendeesTable loading states (#271)", () => {
+  it("dims the existing rows and marks the table busy while re-fetching", () => {
+    const { container } = render(
+      <AttendeesTable {...tableProps} loading items={[baseRow]} />,
+    );
+
+    const wrap = container.querySelector(".attendees-table-wrap");
+    expect(wrap?.classList.contains("attendees-table-wrap--loading")).toBe(true);
+    expect(wrap?.getAttribute("aria-busy")).toBe("true");
+  });
+
+  it("does not dim the rows once loading finishes", () => {
+    const { container } = render(
+      <AttendeesTable {...tableProps} loading={false} items={[baseRow]} />,
+    );
+
+    const wrap = container.querySelector(".attendees-table-wrap");
+    expect(wrap?.classList.contains("attendees-table-wrap--loading")).toBe(false);
+    expect(wrap?.getAttribute("aria-busy")).toBe("false");
   });
 });

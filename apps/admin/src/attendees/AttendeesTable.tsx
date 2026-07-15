@@ -9,8 +9,9 @@ import { formatAdmissionDisplay } from "../utils/event-dates.js";
 /** First-load placeholder — same column layout as the real table, no data yet. */
 function AttendeesTableSkeleton() {
   return (
-    <div className="attendees-table-wrap" aria-hidden="true">
-      <table className="table attendees-table-v2">
+    <div className="attendees-table-wrap" aria-busy="true">
+      <span className="sr-only">Loading attendees…</span>
+      <table className="table attendees-table-v2" aria-hidden="true">
         <thead>
           <tr>
             <th>Attendee</th>
