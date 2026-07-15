@@ -225,13 +225,33 @@ jobs:
   # aggregator keeps that name alive (and its pass/fail contract equivalent to the old monolithic
   # job) without needing anyone to update the protection rule's required-checks list. Update this
   # `needs:` list, not the branch protection settings, if the shard jobs above are ever renamed.
+  #
+  # if: always() + an explicit result check, not the needs: default - by default a job whose
+  # needs: includes a failed job is skipped, not failed, and this aggregator is the one thing
+  # standing between a shard's real outcome and the required check GitHub actually gates merges
+  # on. Relying on "skipped never satisfies a required check" is the kind of implicit contract
+  # worth not staking a branch-protection guarantee on when an explicit, always-run check is this
+  # cheap (CodeRabbit review).
   build-test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
     needs: [lint-and-typecheck, test-web, test-admin, test-rest]
+    if: always()
     steps:
-      - run: echo "All build-test shards passed."
+      - name: Check all shards succeeded
+        run: |
+          for result in \
+            "${{ needs.lint-and-typecheck.result }}" \
+            "${{ needs.test-web.result }}" \
+            "${{ needs.test-admin.result }}" \
+            "${{ needs.test-rest.result }}"; do
+            if [ "$result" != "success" ]; then
+              echo "At least one build-test shard did not succeed."
+              exit 1
+            fi
+          done
+          echo "All build-test shards passed."
 
   secret-scan:
     runs-on: ubuntu-latest
