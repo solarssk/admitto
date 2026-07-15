@@ -89,3 +89,9 @@
     max-width: none;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .at-toast {
+    animation: none;
+  }
+}

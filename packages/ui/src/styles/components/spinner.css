@@ -34,3 +34,10 @@
     transform: rotate(360deg);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .at-spinner__ring {
+    /* Slowed, not stopped — a fully static ring loses its "still working" meaning. */
+    animation-duration: 2.5s;
+  }
+}

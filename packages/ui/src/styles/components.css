@@ -248,3 +248,9 @@
 .at-password-strength__label--fair { color: var(--status-warn-fg); }
 .at-password-strength__label--good { color: var(--primary); }
 .at-password-strength__label--strong { color: var(--status-ok); }
+
+@media (prefers-reduced-motion: reduce) {
+  .at-switch__thumb {
+    transition: none;
+  }
+}

@@ -24,7 +24,7 @@ function OperatorSidebar() {
   return (
     <>
       <NavLink to="/operator" className="sidebar__brand" end>
-        {BrandMark}
+        <BrandMark />
         <span>Admitto</span>
       </NavLink>
       {event && (

@@ -188,7 +188,7 @@ export function CameraOverlay({
     <div className="ck-overlay" role="dialog" aria-modal="true" aria-label="Camera check-in">
       <header className="ck-overlay__bar">
         <div className="ck-overlay__brand">
-          {BrandMark}
+          <BrandMark />
           <span>Check-in</span>
         </div>
         <span className="ck-overlay__admitted">{admittedCount} checked in</span>

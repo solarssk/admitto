@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { BrandMark } from "../layouts/BrandMark.js";
 import { WizardProvider, useWizard, WIZARD_CONTEXT_STORAGE_KEY } from "./wizard/WizardContext.js";
 import { WizardStep1Checks } from "./wizard/WizardStep1Checks.js";
 import { WizardStep2Mail, type WizardStep2MailHandle } from "./wizard/WizardStep2Mail.js";
@@ -78,26 +79,6 @@ const STEP_LABELS: Record<(typeof STEP_NAMES)[number], string> = {
 type SetupWizardPageProps = {
   onComplete: () => Promise<void>;
 };
-
-const BRAND_MARK = (
-  <svg
-    className="setup-wizard__brand-mark"
-    viewBox="0 0 32 32"
-    fill="none"
-    aria-hidden="true"
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <rect x="1" y="1" width="30" height="30" rx="7.5" fill="#066fd1" />
-    <path
-      d="M9.5 16.5l4.2 4.2 7.5-9"
-      stroke="#ffffff"
-      strokeWidth="2.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <rect x="22.5" y="6" width="4" height="4" rx="1" fill="#ffffff" fillOpacity="0.55" />
-  </svg>
-);
 
 export function SetupWizardPage({ onComplete }: SetupWizardPageProps) {
   return (
@@ -255,7 +236,7 @@ function SetupWizardContent({ onComplete }: SetupWizardPageProps) {
       <main className="setup-wizard__shell">
         <header className="setup-wizard__header">
           <span className="setup-wizard__brand" aria-label="Admitto">
-            {BRAND_MARK}
+            <BrandMark className="setup-wizard__brand-mark" />
             Admitto
           </span>
           <h1 className="setup-wizard__title">Set up your instance</h1>

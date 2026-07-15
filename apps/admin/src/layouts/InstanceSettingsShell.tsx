@@ -8,7 +8,7 @@ export function InstanceSettingsShell() {
   const sidebar = (
     <>
       <NavLink to="/admin" className="sidebar__brand" end>
-        {BrandMark}
+        <BrandMark />
         <span>Admitto</span>
       </NavLink>
       <div className="sidebar__nav" aria-hidden="true" />

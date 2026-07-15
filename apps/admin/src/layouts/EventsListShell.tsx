@@ -23,7 +23,7 @@ export function EventsListShell() {
   const sidebar = (
     <>
       <NavLink to={brandTo} className="sidebar__brand" end={brandTo === "/admin"}>
-        {BrandMark}
+        <BrandMark />
         <span>Admitto</span>
       </NavLink>
       <nav className="sidebar__nav" aria-label="Navigation" />

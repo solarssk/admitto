@@ -42,3 +42,10 @@
   flex-direction: column;
   gap: 0.5rem;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .at-skeleton {
+    /* The gray placeholder shape alone still reads as "loading" without the shimmer sweep. */
+    animation: none;
+  }
+}
