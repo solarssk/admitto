@@ -119,7 +119,8 @@ describe("AttendeesTable check-in column (#359)", () => {
       />,
     );
 
-    const cell = screen.getByText(/^✓/);
+    const cell = document.querySelector(".attendees-table-v2__checkin");
+    if (!cell) throw new Error("check-in cell not found");
     expect(cell.textContent).toMatch(/09:44/);
     expect(cell.textContent).not.toMatch(/Jun/);
   });
@@ -132,7 +133,8 @@ describe("AttendeesTable check-in column (#359)", () => {
       />,
     );
 
-    const cell = screen.getByText(/^✓/);
+    const cell = document.querySelector(".attendees-table-v2__checkin");
+    if (!cell) throw new Error("check-in cell not found");
     expect(cell.textContent).toMatch(/May 15, 2026/);
     expect(cell.textContent).toMatch(/09:44/);
   });

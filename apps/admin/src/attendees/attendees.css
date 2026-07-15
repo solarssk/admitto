@@ -2,6 +2,14 @@
   overflow-x: auto;
 }
 
+/* Re-fetching with existing rows still on screen (filter/page change) — dim them
+   instead of leaving stale data looking indistinguishable from fresh data. */
+.attendees-table-wrap--loading {
+  opacity: 0.5;
+  transition: opacity var(--dur-fast);
+  pointer-events: none;
+}
+
 .attendees-table-wrap .table {
   min-width: 720px;
 }
@@ -338,6 +346,9 @@
 }
 
 .attendees-table-v2__checkin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--status-ok);
   font-weight: 600;
 }

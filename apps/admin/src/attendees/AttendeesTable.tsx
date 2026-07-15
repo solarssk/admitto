@@ -1,10 +1,42 @@
-import { Badge, Button, Card, IconButton, Input, Select } from "@admitto/ui";
+import { Badge, Button, Card, IconButton, Input, Select, Skeleton } from "@admitto/ui";
 import type { AttendeeRowDto, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { RsvpStatusBadge } from "./rsvpStatusBadge.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
 import { formatAdmissionDisplay } from "../utils/event-dates.js";
+
+/** First-load placeholder — same column layout as the real table, no data yet. */
+function AttendeesTableSkeleton() {
+  return (
+    <div className="attendees-table-wrap" aria-hidden="true">
+      <table className="table attendees-table-v2">
+        <thead>
+          <tr>
+            <th>Attendee</th>
+            <th>Ticket</th>
+            <th>Company</th>
+            <th>Status</th>
+            <th>Mail</th>
+            <th>Check-in</th>
+            <th className="attendees-table-v2__actions-col" aria-label="Actions">
+              <span className="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: 6 }, (_, i) => (
+            <tr key={i}>
+              <td colSpan={7}>
+                <Skeleton variant="rect" height={44} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function formatCheckInTime(
   admittedAt: string | null,
@@ -142,13 +174,16 @@ export function AttendeesTable({
         </div>
       </div>
       {loading && items.length === 0 ? (
-        <p className="attendees-empty">Loading attendees…</p>
+        <AttendeesTableSkeleton />
       ) : items.length === 0 ? (
         <div className="attendees-empty">
           <p>{emptyMessage}</p>
         </div>
       ) : (
-        <div className="attendees-table-wrap">
+        <div
+          className={`attendees-table-wrap${loading ? " attendees-table-wrap--loading" : ""}`}
+          aria-busy={loading}
+        >
           <table className="table attendees-table-v2">
             <thead>
               <tr>
@@ -202,7 +237,10 @@ export function AttendeesTable({
                   </td>
                   <td>
                     {row.admitted_at ? (
-                      <span className="attendees-table-v2__checkin">✓ {formatCheckInTime(row.admitted_at, eventDate, eventTimezone)}</span>
+                      <span className="attendees-table-v2__checkin">
+                        <i className="ti ti-circle-check" aria-hidden="true" />
+                        <span>{formatCheckInTime(row.admitted_at, eventDate, eventTimezone)}</span>
+                      </span>
                     ) : (
                       <span className="attendee-readonly">—</span>
                     )}
