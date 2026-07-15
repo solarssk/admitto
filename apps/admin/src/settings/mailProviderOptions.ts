@@ -22,7 +22,7 @@ export function buildMailProviderOptions(
           { value: "powerautomate", label: "Power Automate webhook" },
         ]
       : [
-          { value: "smtp", label: "SMTP (DuoCircle)" },
+          { value: "smtp", label: "SMTP (recommended)" },
           { value: "graph", label: "Microsoft Graph" },
           { value: "powerautomate", label: "Power Automate" },
         ];

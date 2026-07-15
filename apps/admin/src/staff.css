@@ -2774,6 +2774,23 @@
   gap: var(--space-1);
 }
 
+/* .mail-field-hint's negative top margin assumes it directly follows a field
+   in the old single-column flow — inside .mail-switch-field's own flex gap
+   that would pull it into the Switch above, so neutralize it here. */
+.mail-switch-field > .mail-field-hint {
+  margin: 0;
+}
+
+.mail-tls-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.mail-tls-row > .mail-switch-field {
+  flex: 1 1 220px;
+}
+
 .mail-transport-provider-guide {
   margin: calc(-1 * var(--space-2)) 0 var(--space-2);
   font-size: var(--fs-sm);
@@ -2829,9 +2846,43 @@
 }
 
 .mail-transport-section {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
+}
+
+/* Elements that need the full row instead of a half-width grid cell — secret
+   fields carry inline action buttons, and the TLS/tuning sub-groups below
+   define their own internal layout. */
+.mail-transport-section > .mail-secret-field,
+.mail-transport-section > .mail-field-hint,
+.mail-transport-section > .mail-field-row,
+.mail-transport-section > .mail-tls-row,
+.mail-transport-section > .mail-tuning__toggles,
+.mail-transport-section > .mail-tuning__limits,
+.mail-transport-section > .mail-tuning__timeouts {
+  grid-column: 1 / -1;
+}
+
+.mail-tuning__toggles {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.mail-tuning__limits,
+.mail-tuning__timeouts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
+}
+
+@media (max-width: 720px) {
+  .mail-transport-section,
+  .mail-tuning__limits,
+  .mail-tuning__timeouts {
+    grid-template-columns: 1fr;
+  }
 }
 
 .mail-field-row {
@@ -2852,6 +2903,7 @@
 
 .mail-secret-field__header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
 }
@@ -2861,11 +2913,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-}
-
-.mail-secret-field__status {
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
 }
 
 .mail-secret-field__actions {
@@ -2879,6 +2926,34 @@
   background: var(--surface-hover);
   color: var(--text-secondary);
   font-size: var(--fs-sm);
+}
+
+.mail-graph-setup-info {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.mail-graph-setup-info summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mail-graph-setup-info ol {
+  margin: var(--space-2) 0;
+  padding-left: 1.25em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.mail-graph-setup-info code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+  background: var(--surface-sunken);
+  padding: 1px 4px;
+  border-radius: 3px;
 }
 
 .mail-test-send {
@@ -2912,6 +2987,47 @@
 
 .text-warning {
   color: var(--status-warning-fg, #b54708);
+}
+
+.mail-test-result {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md, 6px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--fs-sm);
+}
+
+.mail-test-result--ok {
+  background: var(--status-ok-tint);
+  border: 1px solid var(--status-ok);
+}
+
+.mail-test-result--error {
+  background: var(--status-error-tint);
+  border: 1px solid var(--status-error);
+}
+
+.mail-test-result__row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.mail-test-result__label {
+  flex: 0 0 90px;
+  color: var(--text-muted);
+}
+
+.mail-test-result__value {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.mail-test-result__value--mono {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
 }
 
 /* mail-transport-footer — shared footer row for Security panel */
