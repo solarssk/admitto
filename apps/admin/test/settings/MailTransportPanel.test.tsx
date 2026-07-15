@@ -151,11 +151,11 @@ afterEach(() => {
 });
 
 describe("MailTransportPanel — provider rendering (#406/#408/#409)", () => {
-  it("shows SMTP labeled 'SMTP (recommended)' in the transport options", async () => {
+  it("shows SMTP labeled 'SMTP (recommended)' as a transport tile", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(baseFields()));
     renderWithToast(<MailTransportPanel />);
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: "SMTP (recommended)" })).toBeTruthy();
+      expect(screen.getByRole("radio", { name: "SMTP (recommended)" })).toBeTruthy();
     });
   });
 
@@ -163,8 +163,11 @@ describe("MailTransportPanel — provider rendering (#406/#408/#409)", () => {
     mockFetch.mockResolvedValueOnce(makeResponse(baseFields()));
     renderWithToast(<MailTransportPanel />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Transport")).toBeTruthy();
+      expect(screen.getByRole("radiogroup", { name: "Transport" })).toBeTruthy();
     });
+    expect(screen.getByRole("radio", { name: "Not configured" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
     expect(screen.queryByLabelText("From address")).toBeNull();
     expect(screen.queryByLabelText("SMTP host")).toBeNull();
   });
@@ -177,6 +180,10 @@ describe("MailTransportPanel — provider rendering (#406/#408/#409)", () => {
     });
     expect(screen.getByLabelText("Port")).toBeTruthy();
     expect(screen.getByLabelText("Username")).toBeTruthy();
+    // Tuning fields live inside a collapsible <details> — jsdom doesn't apply the
+    // native closed-details hiding, so presence (not visibility) is what's testable here.
+    expect(screen.getByText("Advanced tuning")).toBeTruthy();
+    expect(screen.getByLabelText("Rate limit (per minute)")).toBeTruthy();
   });
 
   it("renders Graph branch fields and the Entra setup guide without crashing", async () => {
@@ -209,7 +216,7 @@ describe("MailTransportPanel — provider rendering (#406/#408/#409)", () => {
 });
 
 describe("MailTransportPanel — secret field behavior (#407)", () => {
-  it("shows 'Set ••••' badge and a Change button when a secret is already set", async () => {
+  it("shows a 'Set ••••' pill and a Change button when a secret is already set", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(smtpFields({ smtpPassword: secret(true) })));
     renderWithToast(<MailTransportPanel />);
     await waitFor(() => {
@@ -219,7 +226,7 @@ describe("MailTransportPanel — secret field behavior (#407)", () => {
     expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
   });
 
-  it("shows a primary Set button and no badge/Clear when a secret is unset", async () => {
+  it("shows a primary Set button and no pill/Clear when a secret is unset", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(smtpFields({ smtpPassword: secret(false) })));
     renderWithToast(<MailTransportPanel />);
     await waitFor(() => {
@@ -264,6 +271,37 @@ describe("MailTransportPanel — secret field behavior (#407)", () => {
     expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
     expect(screen.getByText("Managed by environment")).toBeTruthy();
+  });
+});
+
+describe("MailTransportPanel — transport tile selection", () => {
+  it("switching the tile updates which provider card renders", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("SMTP host")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "Microsoft Graph" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Mailbox")).toBeTruthy();
+    });
+    expect(screen.queryByLabelText("SMTP host")).toBeNull();
+    expect(screen.getByRole("radio", { name: "Microsoft Graph" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+  });
+
+  it("shows a Configured badge once a transport is selected", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(baseFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: "SMTP (recommended)" })).toBeTruthy();
+    });
+    expect(screen.queryByText("Configured")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
+    await waitFor(() => {
+      expect(screen.getByText("Configured")).toBeTruthy();
+    });
   });
 });
 
@@ -325,7 +363,7 @@ describe("MailTransportPanel — test result panel (#411)", () => {
     });
   }
 
-  it("renders recipient, provider, and message ID on a successful send", async () => {
+  it("renders recipient, provider, host, and message ID on a successful send", async () => {
     await renderReadySmtp();
     mockTest.mockResolvedValueOnce({
       status: "sent",
@@ -334,13 +372,13 @@ describe("MailTransportPanel — test result panel (#411)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
     await waitFor(() => {
-      expect(document.querySelector(".mail-test-result--ok")).toBeTruthy();
+      expect(document.querySelector(".mail-preview--ok")).toBeTruthy();
     });
-    const panel = document.querySelector(".mail-test-result--ok");
+    const panel = document.querySelector(".mail-preview--ok");
     expect(panel).toBeTruthy();
-    expect(panel?.textContent).toContain("Sent");
     expect(panel?.textContent).toContain("ops@example.com");
     expect(panel?.textContent).toContain("SMTP");
+    expect(panel?.textContent).toContain("smtp.example.com:587");
     expect(panel?.textContent).toContain("queue-123");
   });
 
@@ -354,12 +392,13 @@ describe("MailTransportPanel — test result panel (#411)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
     await waitFor(() => {
-      expect(document.querySelector(".mail-test-result--error")).toBeTruthy();
+      expect(document.querySelector(".mail-preview--error")).toBeTruthy();
     });
-    const panel = document.querySelector(".mail-test-result--error");
+    const panel = document.querySelector(".mail-preview--error");
     expect(panel?.textContent).toContain("Authentication rejected by server.");
     expect(panel?.textContent).toContain("ops@example.com");
-    expect(panel?.textContent).toMatch(/No — check configuration/);
+    expect(panel?.textContent).toMatch(/Retryable/);
+    expect(panel?.textContent).toMatch(/No/);
   });
 
   it("renders a retryable=true hint on a transient failure", async () => {
@@ -372,11 +411,11 @@ describe("MailTransportPanel — test result panel (#411)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
     await waitFor(() => {
-      expect(document.querySelector(".mail-test-result--error")).toBeTruthy();
+      expect(document.querySelector(".mail-preview--error")).toBeTruthy();
     });
-    expect(document.querySelector(".mail-test-result--error")?.textContent).toMatch(
-      /Yes — likely transient/,
-    );
+    const panel = document.querySelector(".mail-preview--error");
+    expect(panel?.textContent).toMatch(/Retryable/);
+    expect(panel?.textContent).toMatch(/Yes/);
   });
 
   it("renders a network/unexpected error without provider or retryable rows", async () => {
@@ -384,24 +423,23 @@ describe("MailTransportPanel — test result panel (#411)", () => {
     mockTest.mockRejectedValueOnce(new Error("network down"));
     fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
     await waitFor(() => {
-      expect(document.querySelector(".mail-test-result--error")).toBeTruthy();
+      expect(document.querySelector(".mail-preview--error")).toBeTruthy();
     });
-    const panel = document.querySelector(".mail-test-result--error");
+    const panel = document.querySelector(".mail-preview--error");
     expect(panel?.textContent).toContain("Send failed.");
-    expect(panel?.textContent).not.toMatch(/Retryable|check configuration|likely transient/);
-    expect(screen.queryByText("SMTP")).toBeNull();
+    expect(panel?.textContent).not.toMatch(/Retryable|Transport/);
   });
 
-  it("clears the result panel when the transport provider is switched", async () => {
+  it("clears the result panel when the transport tile is switched", async () => {
     await renderReadySmtp();
     mockTest.mockResolvedValueOnce({ status: "sent", provider: "smtp" });
     fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
     await waitFor(() => {
-      expect(document.querySelector(".mail-test-result")).toBeTruthy();
+      expect(document.querySelector(".mail-preview")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Transport"), { target: { value: "graph" } });
+    fireEvent.click(screen.getByRole("radio", { name: "Microsoft Graph" }));
     await waitFor(() => {
-      expect(document.querySelector(".mail-test-result")).toBeNull();
+      expect(document.querySelector(".mail-preview")).toBeNull();
     });
   });
 });
@@ -462,8 +500,21 @@ describe("MailTransportPanel — toast vs inline consistency (#4)", () => {
   });
 });
 
-describe("MailTransportPanel — reset", () => {
-  it("restores the saved draft and clears the unsaved-changes hint", async () => {
+describe("MailTransportPanel — footer save-state", () => {
+  it("shows 'All changes saved' when clean and 'Unsaved changes' once dirtied", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByText("All changes saved")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("From name"), { target: { value: "Changed Name" } });
+    await waitFor(() => {
+      expect(screen.getByText("Unsaved changes")).toBeTruthy();
+    });
+    expect(screen.queryByText("All changes saved")).toBeNull();
+  });
+
+  it("restores the saved draft and clears the unsaved-changes state on Reset", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
     renderWithToast(<MailTransportPanel />);
     await waitFor(() => {
@@ -471,13 +522,13 @@ describe("MailTransportPanel — reset", () => {
     });
     fireEvent.change(screen.getByLabelText("From name"), { target: { value: "Changed Name" } });
     await waitFor(() => {
-      expect(screen.getByText(/Unsaved changes/)).toBeTruthy();
+      expect(screen.getByText("Unsaved changes")).toBeTruthy();
     });
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     await waitFor(() => {
       expect((screen.getByLabelText("From name") as HTMLInputElement).value).toBe("Admitto");
     });
-    expect(screen.queryByText(/Unsaved changes/)).toBeNull();
+    expect(screen.getByText("All changes saved")).toBeTruthy();
     expect(mockSave).not.toHaveBeenCalled();
   });
 });
