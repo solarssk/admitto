@@ -6,12 +6,47 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
+env:
+  # Shared by every job below (only test-web/test-admin/test-rest actually use these; harmless
+  # unused strings in lint-and-typecheck). Defined once at workflow level, not per-job - repeating
+  # this same connection string in 4 job-level env: blocks tripped SonarCloud's hardcoded-secret
+  # rule (secrets:S6698) once per occurrence, even though it's the same non-production, CI-only
+  # ephemeral Postgres service password that was already here before this job was split in four.
+  DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto
+  REDIS_URL: redis://localhost:6379
+  # Fixed test key — 32 bytes. Not a production secret; used only in CI test runs.
+  ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 
 jobs:
-  build-test:
+  # build-test used to be one sequential job (~7-8 min, mostly the coverage step across all 14
+  # workspaces). Split into 4 parallel jobs so they run concurrently instead of one after another
+  # - free on this public repo (unlimited Actions minutes), only wall-clock time is at stake.
+  # apps/web and apps/admin each get their own job since together they're ~75%+ of total test
+  # volume; everything else is bundled into test-rest.
+  lint-and-typecheck:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: "24.17.0"
+          cache: "npm"
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run build
+      - name: Release doc version markers match package.json
+        run: python3 scripts/sync-release-docs.py --check
+      - run: npm run lint
+      - run: npm run typecheck --workspaces --if-present
+
+  test-web:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:16-alpine
@@ -35,11 +70,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
-    env:
-      DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto
-      REDIS_URL: redis://localhost:6379
-      # Fixed test key — 32 bytes. Not a production secret; used only in CI test runs.
-      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -49,33 +79,134 @@ jobs:
           node-version: "24.17.0"
           cache: "npm"
       - run: npm ci
-      - run: npm audit --audit-level=high
       - run: npm run build
-      - name: Release doc version markers match package.json
-        run: python3 scripts/sync-release-docs.py --check
-      - run: npm run lint
       - name: Create test databases
         run: bash infra/scripts/create-test-dbs.sh
-      - name: Run database migrations and agency public_ref backfill
-        run: npm run db:migrate -w @admitto/db
       - name: Migrate web integration test database
         env:
           DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto_web_test
         working-directory: packages/db
         run: npx prisma migrate deploy
-      - name: Migrate auth integration test database
-        env:
-          DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto_auth_test
-        working-directory: packages/db
-        run: npx prisma migrate deploy
-      - run: npm run typecheck --workspaces --if-present
-      - name: Run coverage (also emits JUnit XML per workspace for Test Analytics)
-        run: npm run coverage --workspaces --if-present -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
+      - name: Run coverage (also emits JUnit XML for Test Analytics)
+        run: npm run coverage -w @admitto/web --if-present -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          flags: web
+          files: |
+            apps/**/coverage/lcov.info
+            apps/**/coverage-integration/lcov.info
+          fail_ci_if_error: false
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1.2.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: web
+          fail_ci_if_error: false
+
+  test-admin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: "24.17.0"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run build
+      - name: Run coverage (also emits JUnit XML for Test Analytics)
+        run: npm run coverage -w @admitto/admin --if-present -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: admin
+          files: |
+            apps/**/coverage/lcov.info
+            apps/**/coverage-integration/lcov.info
+          fail_ci_if_error: false
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1.2.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: admin
+          fail_ci_if_error: false
+
+  # Every remaining workspace. packages/db and packages/tickets both target the same
+  # admitto_tickets_test database and both destructively reset its schema in their own beforeAll
+  # (prisma migrate reset / db push --force-reset) - they must stay in this one job, never split
+  # into separate concurrent jobs against each other, or a schema reset can race a live query in
+  # the other package's suite. Every other workspace here (auth/import/mail-delivery/
+  # mail-templates/mailer/mailer-config/crypto/ui/cli) already has its own uniquely-named test
+  # database (or none at all), verified with an Explore agent before this split was written.
+  test-rest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: admitto
+          POSTGRES_PASSWORD: admitto
+          POSTGRES_DB: admitto
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: "24.17.0"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run build
+      - name: Create test databases
+        run: bash infra/scripts/create-test-dbs.sh
+      - name: Run database migrations and agency public_ref backfill
+        run: npm run db:migrate -w @admitto/db
+      - name: Migrate auth integration test database
+        env:
+          DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto_auth_test
+        working-directory: packages/db
+        run: npx prisma migrate deploy
+      - name: Run coverage (also emits JUnit XML per workspace for Test Analytics)
+        run: >-
+          npm run coverage --if-present
+          -w @admitto/db -w @admitto/tickets -w @admitto/auth -w @admitto/import
+          -w @admitto/mail-delivery -w @admitto/mail-templates -w @admitto/mailer
+          -w @admitto/mailer-config -w @admitto/crypto -w @admitto/ui -w @admitto/cli
+          -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: rest
           files: |
             packages/**/coverage/lcov.info
             packages/**/coverage-integration/lcov.info
@@ -87,10 +218,45 @@ jobs:
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          flags: rest
           fail_ci_if_error: false
+
+  # main's branch protection requires a status check literally named "build-test" - this
+  # aggregator keeps that name alive (and its pass/fail contract equivalent to the old monolithic
+  # job) without needing anyone to update the protection rule's required-checks list. Update this
+  # `needs:` list, not the branch protection settings, if the shard jobs above are ever renamed.
+  #
+  # if: always() + an explicit result check, not the needs: default - by default a job whose
+  # needs: includes a failed job is skipped, not failed, and this aggregator is the one thing
+  # standing between a shard's real outcome and the required check GitHub actually gates merges
+  # on. Relying on "skipped never satisfies a required check" is the kind of implicit contract
+  # worth not staking a branch-protection guarantee on when an explicit, always-run check is this
+  # cheap (CodeRabbit review).
+  build-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs: [lint-and-typecheck, test-web, test-admin, test-rest]
+    if: always()
+    steps:
+      - name: Check all shards succeeded
+        run: |
+          for result in \
+            "${{ needs.lint-and-typecheck.result }}" \
+            "${{ needs.test-web.result }}" \
+            "${{ needs.test-admin.result }}" \
+            "${{ needs.test-rest.result }}"; do
+            if [ "$result" != "success" ]; then
+              echo "At least one build-test shard did not succeed."
+              exit 1
+            fi
+          done
+          echo "All build-test shards passed."
 
   secret-scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -106,6 +272,8 @@ jobs:
 
   pii-guard:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -155,6 +323,8 @@ jobs:
   docker-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [build-test, migration-safety]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
