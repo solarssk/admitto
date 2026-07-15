@@ -9,6 +9,17 @@ on:
 permissions:
   contents: read
 
+env:
+  # Shared by every job below (only test-web/test-admin/test-rest actually use these; harmless
+  # unused strings in lint-and-typecheck). Defined once at workflow level, not per-job - repeating
+  # this same connection string in 4 job-level env: blocks tripped SonarCloud's hardcoded-secret
+  # rule (secrets:S6698) once per occurrence, even though it's the same non-production, CI-only
+  # ephemeral Postgres service password that was already here before this job was split in four.
+  DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto
+  REDIS_URL: redis://localhost:6379
+  # Fixed test key — 32 bytes. Not a production secret; used only in CI test runs.
+  ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+
 jobs:
   # build-test used to be one sequential job (~7-8 min, mostly the coverage step across all 14
   # workspaces). Split into 4 parallel jobs so they run concurrently instead of one after another
@@ -17,11 +28,6 @@ jobs:
   # volume; everything else is bundled into test-rest.
   lint-and-typecheck:
     runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto
-      REDIS_URL: redis://localhost:6379
-      # Fixed test key — 32 bytes. Not a production secret; used only in CI test runs.
-      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -63,10 +69,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
-    env:
-      DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto
-      REDIS_URL: redis://localhost:6379
-      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -106,10 +108,6 @@ jobs:
 
   test-admin:
     runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto
-      REDIS_URL: redis://localhost:6379
-      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -172,10 +170,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
-    env:
-      DATABASE_URL: postgresql://admitto:admitto@localhost:5432/admitto
-      REDIS_URL: redis://localhost:6379
-      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
