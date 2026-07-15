@@ -95,10 +95,6 @@ function EnvBadge({ locked }: { locked: boolean }) {
   );
 }
 
-function FieldHint({ children }: { children: string }) {
-  return <p className="mail-field-hint">{children}</p>;
-}
-
 const PROVIDER_GUIDE: Record<MailProvider | "", string> = {
   "": "No mail will be sent yet.",
   smtp: "External SMTP relay. Port 587 + STARTTLS, or 465 + implicit TLS.",
@@ -135,7 +131,6 @@ function SecretFieldRow({
   label,
   field,
   edit,
-  hint,
   onReplace,
   onClear,
   onValueChange,
@@ -144,7 +139,6 @@ function SecretFieldRow({
   label: string;
   field: MailSecretFieldDto;
   edit: SecretEdits[keyof SecretEdits];
-  hint?: string;
   onReplace: () => void;
   onClear: () => void;
   onValueChange: (value: string) => void;
@@ -249,7 +243,6 @@ function SecretFieldRow({
             </>
           )}
         </div>
-        {hint && <FieldHint>{hint}</FieldHint>}
       </div>
     </div>
   );
