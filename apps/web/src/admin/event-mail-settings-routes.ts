@@ -20,12 +20,7 @@ import {
   validateEventMailSettingsUpdate,
   type MailSettingsInput,
 } from "@admitto/mailer-config";
-import {
-  sendEventTransportTestEmail,
-  transportTestErrorForAdmin,
-  type MailDeliveryDeps,
-} from "@admitto/mail-delivery";
-import { isSendSuccess, type MailerProvider } from "@admitto/mailer";
+import { sendEventTransportTestEmail, type MailDeliveryDeps } from "@admitto/mail-delivery";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 import {
@@ -33,9 +28,10 @@ import {
   testMailTransportBodySchema,
   serializeDescriptor,
   descriptorForKey,
-  isSecretKey,
   isProductionEnv,
-  MAIL_PROVIDER_UNCONFIGURED,
+  classifyMailSettingsFields,
+  runTransportTest,
+  transportTestResponse,
 } from "./mail-settings-shared.js";
 
 async function loadEventOrg(
@@ -133,18 +129,7 @@ export async function handlePutEventMailSettings(c: Context, db: PrismaClient): 
     return c.json({ error: "incomplete_transport", detail: transportCheck.error }, 400);
   }
 
-  const fieldsChanged: string[] = [];
-  const secretsRotated: string[] = [];
-  const secretsCleared: string[] = [];
-
-  for (const [key, value] of Object.entries(body)) {
-    if (isSecretKey(key)) {
-      if (value === "") secretsCleared.push(key);
-      else if (typeof value === "string" && value.length > 0) secretsRotated.push(key);
-    } else {
-      fieldsChanged.push(key);
-    }
-  }
+  const { fieldsChanged, secretsRotated, secretsCleared } = classifyMailSettingsFields(body);
 
   await db.$transaction(async (tx) => {
     await setMailSettings({ scopeType: "event", scopeId: eventId }, body as MailSettingsInput, tx);
@@ -237,42 +222,10 @@ export async function handlePostEventMailSettingsTest(
 
   const audit = adminAuditFromContext(c);
 
-  let resultStatus: "sent" | "failed" = "failed";
-  let errorMessage: string | undefined;
-  let resultProvider: MailerProvider | undefined;
-  let resultProviderMessageId: string | undefined;
-  let resultRetryable: boolean | undefined;
-
-  try {
-    const result = await sendEventTransportTestEmail(
-      { eventId, toAddress: body.to },
-      db,
-      process.env,
-      mailDeliveryDeps,
-    );
-    resultProvider = result.provider;
-
-    if (!isSendSuccess(result.status) || result.error) {
-      if (result.error) {
-        console.error("[admin] event mail transport test failed:", result.error);
-      }
-      errorMessage = transportTestErrorForAdmin(result.error);
-      resultRetryable = result.retryable;
-    } else {
-      resultStatus = "sent";
-      resultProviderMessageId = result.providerMessageId;
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : undefined;
-    if (message) {
-      console.error("[admin] event mail transport test failed:", message);
-    }
-    if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
-      errorMessage = "mail transport not configured";
-    } else {
-      errorMessage = transportTestErrorForAdmin(message);
-    }
-  }
+  const outcome = await runTransportTest(
+    () => sendEventTransportTestEmail({ eventId, toAddress: body.to }, db, process.env, mailDeliveryDeps),
+    "[admin] event mail transport test",
+  );
 
   try {
     await writeAdminAuditLog(db, {
@@ -281,25 +234,11 @@ export async function handlePostEventMailSettingsTest(
       sessionId: audit.sessionId,
       ip: audit.ip,
       actionType: "event_mail_transport_tested",
-      metadata: { eventId, result: resultStatus },
+      metadata: { eventId, result: outcome.resultStatus },
     });
   } catch (auditErr) {
     console.error("[audit] event_mail_transport_tested log failed", auditErr);
   }
 
-  if (resultStatus === "sent") {
-    // resultProvider is always set alongside resultStatus = "sent" above.
-    return c.json({
-      status: "sent",
-      provider: resultProvider!,
-      ...(resultProviderMessageId ? { providerMessageId: resultProviderMessageId } : {}),
-    } satisfies { status: "sent"; provider: MailerProvider; providerMessageId?: string });
-  }
-
-  return c.json({
-    status: "failed",
-    error: errorMessage ?? "send failed",
-    ...(resultProvider ? { provider: resultProvider } : {}),
-    ...(resultRetryable !== undefined ? { retryable: resultRetryable } : {}),
-  } satisfies { status: "failed"; error: string; provider?: MailerProvider; retryable?: boolean });
+  return transportTestResponse(c, outcome);
 }

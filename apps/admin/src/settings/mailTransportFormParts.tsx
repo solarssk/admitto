@@ -15,7 +15,7 @@ import type {
 } from "../api/types.js";
 import { ApiError } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { MailDraft, SecretEdits } from "./mailSettingsValidation.js";
+import { emptyMailDraft, emptySecretEdits, type MailDraft, type SecretEdits } from "./mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
 import { formatUtcDateTime } from "../utils/event-dates.js";
 
@@ -887,4 +887,109 @@ export function testSendErrorMessage(err: unknown): string {
     return "Enter a valid email address.";
   }
   return operatorApiErrorMessage(err, "Send failed.");
+}
+
+/** Draft/secret/save-state, shared verbatim between MailTransportPanel and
+ * EventMailSettingsCard — only what fetches/saves/tests the data differs per caller. */
+export function useMailSettingsFormState() {
+  const [draft, setDraft] = useState<MailDraft>(emptyMailDraft());
+  const [secrets, setSecrets] = useState<SecretEdits>(emptySecretEdits());
+  const [savedDraft, setSavedDraft] = useState<MailDraft>(emptyMailDraft());
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [testEmail, setTestEmail] = useState("");
+  const [testSending, setTestSending] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const loadAbortRef = useRef<AbortController | null>(null);
+  const validationErrorsRef = useRef<HTMLUListElement | null>(null);
+  // Bumped by every draft/secret edit so an in-flight test-send response can detect
+  // it's now stale (config changed while the request was in the air) and skip
+  // resurrecting a result the operator already moved past.
+  const testGenerationRef = useRef(0);
+
+  // A test result describes a specific saved configuration — any further edit (to
+  // the draft or to a secret) makes it stale, so both wrappers invalidate it.
+  const updateDraft = (patch: Partial<MailDraft>) => {
+    testGenerationRef.current += 1;
+    setTestResult(null);
+    setDraft((prev) => ({ ...prev, ...patch }));
+  };
+
+  const updateSecrets = (updater: (prev: SecretEdits) => SecretEdits) => {
+    testGenerationRef.current += 1;
+    setTestResult(null);
+    setSecrets(updater);
+  };
+
+  return {
+    draft,
+    setDraft,
+    secrets,
+    setSecrets,
+    savedDraft,
+    setSavedDraft,
+    loading,
+    setLoading,
+    loadError,
+    setLoadError,
+    validationErrors,
+    setValidationErrors,
+    saving,
+    setSaving,
+    testEmail,
+    setTestEmail,
+    testSending,
+    setTestSending,
+    testResult,
+    setTestResult,
+    loadAbortRef,
+    validationErrorsRef,
+    testGenerationRef,
+    updateDraft,
+    updateSecrets,
+  };
+}
+
+/** Validates the recipient, sends via `send`, and resolves the result into `TestResult`
+ * — shared tail of "Send test email" between the org and event panels. Only the actual
+ * send call (org- vs event-scoped) differs per caller. */
+export async function runTestSend(params: {
+  testEmail: string;
+  draft: Pick<MailDraft, "host" | "port" | "mailbox" | "fromAddress">;
+  send: (to: string) => Promise<MailTransportTestSendResponse>;
+  testGenerationRef: RefObject<number>;
+  setTestSending: (value: boolean) => void;
+  setTestResult: (value: TestResult | null) => void;
+  addToast: (message: string, variant?: "success" | "error" | "info" | "warning") => void;
+}): Promise<void> {
+  const { testEmail, draft, send, testGenerationRef, setTestSending, setTestResult, addToast } = params;
+  const to = testEmail.trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    addToast("Enter a valid email address.", "error");
+    return;
+  }
+  const requestGeneration = testGenerationRef.current;
+  const snapshotInputs = {
+    host: draft.host,
+    port: draft.port,
+    mailbox: draft.mailbox || draft.fromAddress,
+  };
+  setTestSending(true);
+  setTestResult(null);
+  try {
+    const result = await send(to);
+    if (testGenerationRef.current !== requestGeneration) return;
+    const nextResult = buildTestResult(result, to, snapshotInputs);
+    setTestResult(nextResult);
+    addToast(nextResult.message, nextResult.kind === "ok" ? "success" : "error");
+  } catch (err) {
+    if (testGenerationRef.current !== requestGeneration) return;
+    const message = testSendErrorMessage(err);
+    addToast(message, "error");
+    setTestResult({ kind: "error", message, recipient: to, timestamp: new Date().toISOString() });
+  } finally {
+    setTestSending(false);
+  }
 }

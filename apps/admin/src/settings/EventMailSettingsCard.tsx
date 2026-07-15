@@ -19,24 +19,21 @@ import {
   isMailSettingsDirty,
   smtpProviderDraftDefaults,
   validateMailDraft,
-  type MailDraft,
-  type SecretEdits,
 } from "./mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
 import {
-  buildTestResult,
   draftFromFields,
   GraphCard,
   NO_AUTOFILL_PROPS,
   PowerAutomateCard,
+  runTestSend,
   SenderCard,
   SettingsFooter,
   SmtpConnectionCard,
   TestResultPreview,
-  testSendErrorMessage,
   TransportTileGrid,
+  useMailSettingsFormState,
   type FieldLocked,
-  type TestResult,
 } from "./mailTransportFormParts.js";
 
 type Mode = "org" | "dedicated";
@@ -109,19 +106,33 @@ export function EventMailSettingsCard({
   const [apiData, setApiData] = useState<EventMailSettingsResponse | null>(null);
   const [mode, setMode] = useState<Mode>("org");
   const [savedMode, setSavedMode] = useState<Mode>("org");
-  const [draft, setDraft] = useState<MailDraft>(emptyMailDraft());
-  const [secrets, setSecrets] = useState<SecretEdits>(emptySecretEdits());
-  const [savedDraft, setSavedDraft] = useState<MailDraft>(emptyMailDraft());
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [testEmail, setTestEmail] = useState("");
-  const [testSending, setTestSending] = useState(false);
-  const [testResult, setTestResult] = useState<TestResult | null>(null);
-  const loadAbortRef = useRef<AbortController | null>(null);
-  const validationErrorsRef = useRef<HTMLUListElement | null>(null);
-  const testGenerationRef = useRef(0);
+  const {
+    draft,
+    setDraft,
+    secrets,
+    setSecrets,
+    savedDraft,
+    setSavedDraft,
+    loading,
+    setLoading,
+    loadError,
+    setLoadError,
+    validationErrors,
+    setValidationErrors,
+    saving,
+    setSaving,
+    testEmail,
+    setTestEmail,
+    testSending,
+    setTestSending,
+    testResult,
+    setTestResult,
+    loadAbortRef,
+    validationErrorsRef,
+    testGenerationRef,
+    updateDraft,
+    updateSecrets,
+  } = useMailSettingsFormState();
   // First switch into "dedicated" (no saved override yet) starts the draft blank rather
   // than prefilled with the organization's values — prefilled-but-unedited would silently
   // save as a full duplicate of the org's config the moment Save is clicked. Only the
@@ -134,20 +145,23 @@ export function EventMailSettingsCard({
     if (validationErrors.length > 0) {
       validationErrorsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [validationErrors]);
+  }, [validationErrors, validationErrorsRef]);
 
-  const applyResponse = useCallback((data: EventMailSettingsResponse) => {
-    const nextDraft = draftFromFields(data.fields);
-    const nextMode = modeFromResponse(data);
-    setApiData(data);
-    setMode(nextMode);
-    setSavedMode(nextMode);
-    setDraft(nextDraft);
-    setSavedDraft(nextDraft);
-    setSecrets(emptySecretEdits());
-    setValidationErrors([]);
-    dedicatedDraftSeededRef.current = false;
-  }, []);
+  const applyResponse = useCallback(
+    (data: EventMailSettingsResponse) => {
+      const nextDraft = draftFromFields(data.fields);
+      const nextMode = modeFromResponse(data);
+      setApiData(data);
+      setMode(nextMode);
+      setSavedMode(nextMode);
+      setDraft(nextDraft);
+      setSavedDraft(nextDraft);
+      setSecrets(emptySecretEdits());
+      setValidationErrors([]);
+      dedicatedDraftSeededRef.current = false;
+    },
+    [setDraft, setSavedDraft, setSecrets, setValidationErrors],
+  );
 
   const loadSettings = useCallback(async () => {
     loadAbortRef.current?.abort();
@@ -166,24 +180,12 @@ export function EventMailSettingsCard({
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [eventId, applyResponse]);
+  }, [eventId, applyResponse, loadAbortRef, setLoadError, setLoading]);
 
   useEffect(() => {
     void loadSettings();
     return () => loadAbortRef.current?.abort();
-  }, [loadSettings]);
-
-  const updateDraft = (patch: Partial<MailDraft>) => {
-    testGenerationRef.current += 1;
-    setTestResult(null);
-    setDraft((prev) => ({ ...prev, ...patch }));
-  };
-
-  const updateSecrets = (updater: (prev: SecretEdits) => SecretEdits) => {
-    testGenerationRef.current += 1;
-    setTestResult(null);
-    setSecrets(updater);
-  };
+  }, [loadSettings, loadAbortRef]);
 
   const handleModeChange = (next: Mode) => {
     testGenerationRef.current += 1;
@@ -280,33 +282,15 @@ export function EventMailSettingsCard({
       addToast(testSendReason, "warning");
       return;
     }
-    const to = testEmail.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
-      addToast("Enter a valid email address.", "error");
-      return;
-    }
-    const requestGeneration = testGenerationRef.current;
-    const snapshotInputs = {
-      host: draft.host,
-      port: draft.port,
-      mailbox: draft.mailbox || draft.fromAddress,
-    };
-    setTestSending(true);
-    setTestResult(null);
-    try {
-      const result = await sendEventMailTransportTest(eventId, to);
-      if (testGenerationRef.current !== requestGeneration) return;
-      const nextResult = buildTestResult(result, to, snapshotInputs);
-      setTestResult(nextResult);
-      addToast(nextResult.message, nextResult.kind === "ok" ? "success" : "error");
-    } catch (err) {
-      if (testGenerationRef.current !== requestGeneration) return;
-      const message = testSendErrorMessage(err);
-      addToast(message, "error");
-      setTestResult({ kind: "error", message, recipient: to, timestamp: new Date().toISOString() });
-    } finally {
-      setTestSending(false);
-    }
+    await runTestSend({
+      testEmail,
+      draft,
+      send: (to) => sendEventMailTransportTest(eventId, to),
+      testGenerationRef,
+      setTestSending,
+      setTestResult,
+      addToast,
+    });
   };
 
   if (loading) {

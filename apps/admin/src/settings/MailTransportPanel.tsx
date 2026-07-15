@@ -1,70 +1,80 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, Input, Button, useToast } from "@admitto/ui";
 import { fetchMailSettings, saveMailSettings, sendMailTransportTest } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { MailSettingsResponse } from "../api/types.js";
 import {
   buildSaveMailSettingsBody,
-  emptyMailDraft,
   emptySecretEdits,
   isMailSettingsDirty,
   smtpProviderDraftDefaults,
   validateMailDraft,
-  type MailDraft,
-  type SecretEdits,
 } from "./mailSettingsValidation.js";
 import { buildMailProviderOptions } from "./mailProviderOptions.js";
 import {
-  buildTestResult,
   draftFromFields,
   GraphCard,
   MailTransportCard,
   NO_AUTOFILL_PROPS,
   PowerAutomateCard,
+  runTestSend,
   SenderCard,
   SettingsFooter,
   SmtpConnectionCard,
   TestResultPreview,
-  testSendErrorMessage,
+  useMailSettingsFormState,
   type FieldLocked,
-  type TestResult,
 } from "./mailTransportFormParts.js";
 
 /** Superadmin mail transport configuration panel. */
 export function MailTransportPanel() {
   const { addToast } = useToast();
   const [apiData, setApiData] = useState<MailSettingsResponse | null>(null);
-  const [draft, setDraft] = useState<MailDraft>(emptyMailDraft());
-  const [secrets, setSecrets] = useState<SecretEdits>(emptySecretEdits());
-  const [savedDraft, setSavedDraft] = useState<MailDraft>(emptyMailDraft());
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [testEmail, setTestEmail] = useState("");
-  const [testSending, setTestSending] = useState(false);
-  const [testResult, setTestResult] = useState<TestResult | null>(null);
-  const loadAbortRef = useRef<AbortController | null>(null);
-  const validationErrorsRef = useRef<HTMLUListElement | null>(null);
-  // Bumped by every draft/secret edit so an in-flight test-send response can detect
-  // it's now stale (config changed while the request was in the air) and skip
-  // resurrecting a result the operator already moved past.
-  const testGenerationRef = useRef(0);
+  const {
+    draft,
+    setDraft,
+    secrets,
+    setSecrets,
+    savedDraft,
+    setSavedDraft,
+    loading,
+    setLoading,
+    loadError,
+    setLoadError,
+    validationErrors,
+    setValidationErrors,
+    saving,
+    setSaving,
+    testEmail,
+    setTestEmail,
+    testSending,
+    setTestSending,
+    testResult,
+    setTestResult,
+    loadAbortRef,
+    validationErrorsRef,
+    testGenerationRef,
+    updateDraft,
+    updateSecrets,
+  } = useMailSettingsFormState();
 
   useEffect(() => {
     if (validationErrors.length > 0) {
       validationErrorsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [validationErrors]);
+  }, [validationErrors, validationErrorsRef]);
 
-  const applyResponse = useCallback((data: MailSettingsResponse) => {
-    const nextDraft = draftFromFields(data.fields);
-    setApiData(data);
-    setDraft(nextDraft);
-    setSavedDraft(nextDraft);
-    setSecrets(emptySecretEdits());
-    setValidationErrors([]);
-  }, []);
+  const applyResponse = useCallback(
+    (data: MailSettingsResponse) => {
+      const nextDraft = draftFromFields(data.fields);
+      setApiData(data);
+      setDraft(nextDraft);
+      setSavedDraft(nextDraft);
+      setSecrets(emptySecretEdits());
+      setValidationErrors([]);
+    },
+    [setDraft, setSavedDraft, setSecrets, setValidationErrors],
+  );
 
   const loadSettings = useCallback(async () => {
     loadAbortRef.current?.abort();
@@ -86,26 +96,12 @@ export function MailTransportPanel() {
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [applyResponse]);
+  }, [applyResponse, loadAbortRef, setLoadError, setLoading]);
 
   useEffect(() => {
     void loadSettings();
     return () => loadAbortRef.current?.abort();
-  }, [loadSettings]);
-
-  // A test result describes a specific saved configuration — any further edit (to
-  // the draft or to a secret) makes it stale, so both wrappers invalidate it.
-  const updateDraft = (patch: Partial<MailDraft>) => {
-    testGenerationRef.current += 1;
-    setTestResult(null);
-    setDraft((prev) => ({ ...prev, ...patch }));
-  };
-
-  const updateSecrets = (updater: (prev: SecretEdits) => SecretEdits) => {
-    testGenerationRef.current += 1;
-    setTestResult(null);
-    setSecrets(updater);
-  };
+  }, [loadSettings, loadAbortRef]);
 
   const fieldLocked: FieldLocked = (key) => {
     if (!apiData) return false;
@@ -174,33 +170,15 @@ export function MailTransportPanel() {
       addToast("Save your changes before sending a test email.", "warning");
       return;
     }
-    const to = testEmail.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
-      addToast("Enter a valid email address.", "error");
-      return;
-    }
-    const requestGeneration = testGenerationRef.current;
-    const snapshotInputs = {
-      host: draft.host,
-      port: draft.port,
-      mailbox: draft.mailbox || draft.fromAddress,
-    };
-    setTestSending(true);
-    setTestResult(null);
-    try {
-      const result = await sendMailTransportTest(to);
-      if (testGenerationRef.current !== requestGeneration) return;
-      const nextResult = buildTestResult(result, to, snapshotInputs);
-      setTestResult(nextResult);
-      addToast(nextResult.message, nextResult.kind === "ok" ? "success" : "error");
-    } catch (err) {
-      if (testGenerationRef.current !== requestGeneration) return;
-      const message = testSendErrorMessage(err);
-      addToast(message, "error");
-      setTestResult({ kind: "error", message, recipient: to, timestamp: new Date().toISOString() });
-    } finally {
-      setTestSending(false);
-    }
+    await runTestSend({
+      testEmail,
+      draft,
+      send: (to) => sendMailTransportTest(to),
+      testGenerationRef,
+      setTestSending,
+      setTestResult,
+      addToast,
+    });
   };
 
   const showExportOnly =
