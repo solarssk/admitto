@@ -479,10 +479,17 @@ export interface TestSendBody {
   to: string;
 }
 
-export interface TestSendResponse {
-  status: "sent" | "failed";
-  error?: string;
-}
+/** Event/ticket template test-send — communication-api-routes.ts never reports a
+ * provider for this endpoint, unlike the mail-transport test-send below. */
+export type TemplateTestSendResponse =
+  | { status: "sent" }
+  | { status: "failed"; error: string };
+
+/** Instance Settings -> Mail transport test-send — mail-settings-routes.ts always
+ * includes the provider on success (see the route's own `satisfies` clause). */
+export type MailTransportTestSendResponse =
+  | { status: "sent"; provider: MailProvider; providerMessageId?: string }
+  | { status: "failed"; error: string; provider?: MailProvider; retryable?: boolean };
 
 /** Multi-template list item from GET .../templates. */
 export interface MailTemplateListItem {

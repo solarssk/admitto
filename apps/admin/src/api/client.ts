@@ -35,7 +35,8 @@ import type {
   BulkSendStatusResponse,
   RsvpStatus,
   TestSendBody,
-  TestSendResponse,
+  TemplateTestSendResponse,
+  MailTransportTestSendResponse,
   MailSettingsResponse,
   SaveMailSettingsBody,
   EventDeliveriesListParams,
@@ -876,12 +877,12 @@ export async function previewEventTemplate(
 export async function testSendEventTemplate(
   eventId: string,
   body: TestSendBody,
-): Promise<TestSendResponse> {
+): Promise<TemplateTestSendResponse> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/template/test-send`,
     jsonPostInit(body),
   );
-  return parseJson<TestSendResponse>(res);
+  return parseJson<TemplateTestSendResponse>(res);
 }
 
 /** List event-scoped mail templates. */
@@ -962,12 +963,12 @@ export async function testSendEventTemplateById(
   eventId: string,
   templateId: string,
   body: TestSendBody,
-): Promise<TestSendResponse> {
+): Promise<TemplateTestSendResponse> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/templates/${encodeURIComponent(templateId)}/test-send`,
     jsonPostInit(body),
   );
-  return parseJson<TestSendResponse>(res);
+  return parseJson<TemplateTestSendResponse>(res);
 }
 
 /** Queue or dry-run a bulk send for selected attendees. */
@@ -1137,9 +1138,9 @@ export async function saveMailSettings(body: SaveMailSettingsBody): Promise<Mail
 }
 
 /** Send a transport-level test email (superadmin). */
-export async function sendMailTransportTest(to: string): Promise<TestSendResponse> {
+export async function sendMailTransportTest(to: string): Promise<MailTransportTestSendResponse> {
   const res = await fetch("/api/admin/mail-settings/test", jsonPostInit({ to }));
-  return parseJson<TestSendResponse>(res);
+  return parseJson<MailTransportTestSendResponse>(res);
 }
 
 export async function fetchSessions(

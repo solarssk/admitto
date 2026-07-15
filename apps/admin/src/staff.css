@@ -2768,33 +2768,7 @@
   color: var(--text-muted);
 }
 
-.mail-switch-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.mail-transport-provider-guide {
-  margin: calc(-1 * var(--space-2)) 0 var(--space-2);
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-}
-
-.mail-transport-section__title {
-  margin: var(--space-2) 0 0;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.mail-transport-section__title:first-of-type {
-  margin-top: 0;
-}
-
 .mail-transport__desc,
-.mail-transport__unsaved-hint,
 .mail-transport__env-note {
   margin: 0 0 var(--space-3);
   font-size: var(--fs-sm);
@@ -2817,21 +2791,168 @@
   border-radius: 3px;
 }
 
-.mail-transport__unsaved-hint {
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
 .mail-transport-form {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
 }
 
-.mail-transport-section {
+/* Transport picker — clickable tile grid (Instance settings -> Mail card 1) */
+.transport-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: var(--space-3);
+}
+
+.transport-tile {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  align-items: flex-start;
+  gap: var(--space-2);
+  text-align: left;
+  padding: var(--space-3) var(--space-3) var(--space-3);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-card);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--dur-fast);
+}
+
+.transport-tile:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--primary-tint);
+}
+
+.transport-tile:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.transport-tile--active {
+  border-color: var(--primary);
+  background: var(--primary-tint);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.transport-tile__icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-body);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+}
+
+.transport-tile--active .transport-tile__icon {
+  background: var(--primary);
+  color: #fff;
+}
+
+.transport-tile strong {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.transport-tile > span:not(.transport-tile__icon) {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.transport-tile__check {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  color: var(--primary);
+  font-size: var(--fs-body);
+  line-height: 1;
+}
+
+/* Collapsible "Advanced tuning" section inside SMTP connection */
+.disclosure {
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
+.disclosure__summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-2) 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.disclosure__summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure__summary i {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  transition: transform var(--dur-fast);
+}
+
+.disclosure[open] .disclosure__summary i {
+  transform: rotate(90deg);
+}
+
+.disclosure__summary:hover {
+  color: var(--primary);
+}
+
+.disclosure__body {
+  padding: 4px 0 var(--space-2);
+}
+
+.mail-transport-section {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-3) var(--space-4);
+}
+
+/* Elements that need the full row instead of a half-width grid cell — secret
+   fields carry inline action buttons, settings-row (TLS toggles) and the
+   tuning sub-groups below define their own internal layout. */
+.mail-transport-section > .mail-field-hint,
+.mail-transport-section > .mail-field-row,
+.mail-transport-section > .settings-row,
+.mail-transport-section > .mail-tuning__toggles,
+.mail-transport-section > .mail-tuning__limits,
+.mail-transport-section > .mail-tuning__timeouts {
+  grid-column: 1 / -1;
+}
+
+.mail-tuning__toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.mail-tuning__limits,
+.mail-tuning__timeouts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
+}
+
+@media (max-width: 720px) {
+  .mail-transport-section,
+  .mail-tuning__limits,
+  .mail-tuning__timeouts {
+    grid-template-columns: 1fr;
+  }
 }
 
 .mail-field-row {
@@ -2847,30 +2968,127 @@
 .mail-secret-field {
   display: flex;
   flex-direction: column;
+}
+
+.mail-secret-field__label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: var(--space-2);
 }
 
-.mail-secret-field__header {
+/* Deliberately quieter than .at-label — this is a transient aside while
+   editing, not a field name, so it shouldn't compete with Username/Password/
+   SMTP host for attention. */
+.mail-secret-field__inline-hint {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.mail-secret-field > .mail-field-hint {
+  margin: 0;
+}
+
+/* Secret field — one consistent box shape (same height/border/radius as
+   .at-input) across all three states: idle, editing, and confirmed-pending —
+   only the content inside changes, so the field never resizes. */
+.mail-secret-field__display {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
+  min-height: var(--control-h);
+  padding: 0 var(--space-2) 0 var(--pad-control-x);
+  background: var(--surface-card);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius);
 }
 
-.mail-secret-field__row {
+.mail-secret-field__display > .at-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.mail-secret-field__input.at-input {
+  border: 0;
+  background: transparent;
+  height: auto;
+  padding: 0;
+}
+
+.mail-secret-field__display-value {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
-}
-
-.mail-secret-field__status {
+  gap: 6px;
+  font-family: ui-monospace, monospace;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
 
-.mail-secret-field__actions {
+.mail-secret-field__display-value i {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.mail-secret-field__display-actions {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
+  flex: none;
+}
+
+.mail-secret-field__link {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mail-secret-field__link:hover {
+  text-decoration: underline;
+}
+
+.mail-secret-field__link--danger {
+  color: var(--status-error);
+}
+
+.mail-secret-field__icon-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-body);
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.mail-secret-field__icon-btn:hover {
+  background: var(--surface-hover);
+}
+
+.mail-secret-field__icon-btn:disabled {
+  color: var(--text-disabled, var(--text-muted));
+  cursor: not-allowed;
+}
+
+.mail-secret-field__icon-btn--confirm:not(:disabled) {
+  color: var(--status-ok);
+}
+
+.mail-secret-field__icon-btn--cancel:not(:disabled) {
+  color: var(--status-error);
 }
 
 .mail-dev-warning {
@@ -2881,16 +3099,32 @@
   font-size: var(--fs-sm);
 }
 
-.mail-test-send {
-  margin-top: var(--space-2);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border);
+.mail-graph-setup-info {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
 }
 
-.mail-test-send__title {
-  margin: 0 0 var(--space-1);
-  font-size: var(--fs-body);
+.mail-graph-setup-info summary {
+  cursor: pointer;
   font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mail-graph-setup-info ol {
+  margin: var(--space-2) 0;
+  padding-left: 1.25em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.mail-graph-setup-info code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+  background: var(--surface-sunken);
+  padding: 1px 4px;
+  border-radius: 3px;
 }
 
 .mail-test-send__hint {
@@ -2914,10 +3148,143 @@
   color: var(--status-warning-fg, #b54708);
 }
 
+/* Send-test-email result — simulates the received test message (ok) or a
+   plain status readout (error, since nothing was actually delivered). */
+.mail-preview {
+  /* <output>'s UA default is display:inline — this box needs to behave like the
+     <div> it replaced (full-width, its children stacked as block boxes). */
+  display: block;
+  margin-top: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  background: var(--surface-card);
+}
+
+.mail-preview--ok {
+  border-color: var(--status-ok);
+}
+
+.mail-preview--error {
+  border-color: var(--status-error);
+}
+
+.mail-preview__head {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.mail-preview__head b {
+  display: block;
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+}
+
+.mail-preview__head span {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.test-mail-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.test-mail-hero__icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-h3);
+  background: var(--status-ok-tint);
+  color: var(--status-ok);
+}
+
+.mail-preview--error .test-mail-hero__icon {
+  background: var(--status-error-tint);
+  color: var(--status-error);
+}
+
+.test-mail-hero p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.test-mail-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm, 4px);
+  padding: var(--space-3) var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.test-mail-summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+}
+
+.test-mail-summary > div span {
+  color: var(--text-muted);
+}
+
+.test-mail-summary > div b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.test-mail-summary__mono {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+}
+
+.test-mail-footnote {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin: 0;
+  text-align: center;
+}
+
 /* mail-transport-footer — shared footer row for Security panel */
 .mail-transport-footer {
   display: flex;
   justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+/* settings-footer — Instance Settings -> Mail tab's own save/reset bar,
+   spanning below the tab's stack of Cards (not per-card). */
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.settings-footer__save-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.settings-footer__buttons {
+  display: flex;
   gap: var(--space-3);
 }
 

@@ -17,7 +17,7 @@ import {
   transportTestErrorForAdmin,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
-import { isSendSuccess } from "@admitto/mailer";
+import { isSendSuccess, type MailerProvider } from "@admitto/mailer";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
@@ -301,6 +301,9 @@ export async function handlePostMailSettingsTest(
 
   let resultStatus: "sent" | "failed" = "failed";
   let errorMessage: string | undefined;
+  let resultProvider: MailerProvider | undefined;
+  let resultProviderMessageId: string | undefined;
+  let resultRetryable: boolean | undefined;
 
   try {
     const result = await sendTransportTestEmail(
@@ -309,14 +312,17 @@ export async function handlePostMailSettingsTest(
       mailEnv,
       mailDeliveryDeps,
     );
+    resultProvider = result.provider;
 
     if (!isSendSuccess(result.status) || result.error) {
       if (result.error) {
         console.error("[admin] mail transport test failed:", result.error);
       }
       errorMessage = transportTestErrorForAdmin(result.error);
+      resultRetryable = result.retryable;
     } else {
       resultStatus = "sent";
+      resultProviderMessageId = result.providerMessageId;
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : undefined;
@@ -344,11 +350,18 @@ export async function handlePostMailSettingsTest(
   }
 
   if (resultStatus === "sent") {
-    return c.json({ status: "sent" } satisfies { status: "sent" });
+    // resultProvider is always set alongside resultStatus = "sent" above.
+    return c.json({
+      status: "sent",
+      provider: resultProvider!,
+      ...(resultProviderMessageId ? { providerMessageId: resultProviderMessageId } : {}),
+    } satisfies { status: "sent"; provider: MailerProvider; providerMessageId?: string });
   }
 
   return c.json({
     status: "failed",
     error: errorMessage ?? "send failed",
-  } satisfies { status: "failed"; error: string });
+    ...(resultProvider ? { provider: resultProvider } : {}),
+    ...(resultRetryable !== undefined ? { retryable: resultRetryable } : {}),
+  } satisfies { status: "failed"; error: string; provider?: MailerProvider; retryable?: boolean });
 }

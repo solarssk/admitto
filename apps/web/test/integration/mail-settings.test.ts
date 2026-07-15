@@ -25,6 +25,7 @@ const EMAIL_ADMIN = "mail-settings-admin@example.com";
 const PASSWORD = "mail-settings-pass-123";
 
 const exported: ExportPayload[] = [];
+let failExport = false;
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -98,6 +99,7 @@ beforeAll(async () => {
     adminDistRoot,
     mailDeliveryDeps: {
       exportSink: (payload) => {
+        if (failExport) throw new Error("export sink failed");
         exported.push(payload);
       },
     },
@@ -113,6 +115,7 @@ afterEach(async () => {
   await prisma.adminAuditLog.deleteMany({ where: { organization_id: ORG_MAIL } });
   await prisma.mailSettings.deleteMany({ where: { scope_id: ORG_MAIL } });
   exported.length = 0;
+  failExport = false;
   if (prevNodeEnv !== undefined) process.env.NODE_ENV = prevNodeEnv;
   else delete process.env.NODE_ENV;
 });
@@ -594,8 +597,9 @@ describe("POST /api/admin/mail-settings/test", () => {
       body: JSON.stringify({ to: "tester@example.com" }),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string };
+    const body = (await res.json()) as { status: string; provider?: string };
     expect(body.status).toBe("sent");
+    expect(body.provider).toBe("export_only");
     expect(exported.length).toBe(1);
     expect(await prisma.emailDelivery.count()).toBe(before);
 
@@ -616,9 +620,33 @@ describe("POST /api/admin/mail-settings/test", () => {
       body: JSON.stringify({ to: "tester@example.com" }),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; error?: string };
+    const body = (await res.json()) as { status: string; error?: string; provider?: string };
     expect(body.status).toBe("failed");
     expect(body.error).toBe("mail transport not configured");
+    // Provider is unknown here — resolution fails before a mailer is created.
+    expect(body.provider).toBeUndefined();
+  });
+
+  it("includes provider on failure once the transport is resolved", async () => {
+    await prisma.mailSettings.create({
+      data: {
+        scope_type: "organization",
+        scope_id: ORG_MAIL,
+        provider: "export_only",
+        from_address: "transport@example.com",
+      },
+    });
+    failExport = true;
+
+    const res = await app.request("/api/admin/mail-settings/test", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ to: "tester@example.com" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; error?: string; provider?: string };
+    expect(body.status).toBe("failed");
+    expect(body.provider).toBe("export_only");
   });
 
   it("rejects invalid email", async () => {

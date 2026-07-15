@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Button, Card, Input, Select, Switch, useToast } from "@admitto/ui";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { Badge, Button, Card, Input, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   fetchMailSettings,
@@ -12,6 +12,7 @@ import type {
   MailProvider,
   MailSecretFieldDto,
   MailSettingsResponse,
+  MailTransportTestSendResponse,
 } from "../api/types.js";
 import {
   buildSaveMailSettingsBody,
@@ -23,7 +24,25 @@ import {
   type MailDraft,
   type SecretEdits,
 } from "./mailSettingsValidation.js";
-import { buildMailProviderOptions } from "./mailProviderOptions.js";
+import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
+import { formatUtcDateTime } from "../utils/event-dates.js";
+
+interface TestResult {
+  kind: "ok" | "error";
+  message: string;
+  recipient: string;
+  provider?: MailProvider;
+  providerMessageId?: string;
+  retryable?: boolean;
+  timestamp: string;
+  /** Snapshotted at send time — the transport can be edited (unsaved) after a test
+   * completes, and this result must keep describing what was actually tested. */
+  host?: string;
+  port?: string;
+  mailbox?: string;
+}
+
+type FieldLocked = (key: keyof MailSettingsResponse["fields"]) => boolean;
 
 function strValue(fd: MailPlainFieldDto<string | null>): string {
   return fd.value ?? "";
@@ -80,17 +99,37 @@ function FieldHint({ children }: { children: string }) {
   return <p className="mail-field-hint">{children}</p>;
 }
 
-function SectionTitle({ children }: { children: string }) {
-  return <h3 className="mail-transport-section__title">{children}</h3>;
-}
-
-const PROVIDER_GUIDE: Record<MailProvider | "", string | null> = {
-  "": null,
-  smtp: "External SMTP relay (e.g. DuoCircle). Port 587 + STARTTLS, or 465 + implicit TLS.",
+const PROVIDER_GUIDE: Record<MailProvider | "", string> = {
+  "": "No mail will be sent yet.",
+  smtp: "External SMTP relay. Port 587 + STARTTLS, or 465 + implicit TLS.",
   graph: "Entra app-only Graph send (Mail.Send). Mailbox may differ from From.",
   powerautomate: "HTTP fallback when SMTP/Graph are unavailable.",
   export_only: "No network send — message export only (non-production).",
 };
+
+const TRANSPORT_ICON: Record<MailProvider | "", string> = {
+  "": "plug-off",
+  smtp: "server-2",
+  graph: "brand-office",
+  powerautomate: "bolt",
+  export_only: "file-export",
+};
+
+/** Builds the four SecretFieldRow callbacks for one secret key, routed through the
+ * shared updateSecrets wrapper so every edit invalidates any stale test result. */
+function makeSecretHandlers(
+  key: keyof SecretEdits,
+  updateSecrets: (updater: (prev: SecretEdits) => SecretEdits) => void,
+) {
+  return {
+    onReplace: () =>
+      updateSecrets((s) => ({ ...s, [key]: { mode: "replace" as const, value: "" } })),
+    onClear: () => updateSecrets((s) => ({ ...s, [key]: { mode: "clear" as const, value: "" } })),
+    onValueChange: (value: string) =>
+      updateSecrets((s) => ({ ...s, [key]: { mode: "replace" as const, value } })),
+    onCancel: () => updateSecrets((s) => ({ ...s, [key]: { mode: "idle" as const, value: "" } })),
+  };
+}
 
 function SecretFieldRow({
   label,
@@ -111,48 +150,739 @@ function SecretFieldRow({
   onValueChange: (value: string) => void;
   onCancel: () => void;
 }) {
-  const status = field.set ? "Set ••••" : "Not set";
+  const editing = edit.mode !== "idle";
+  const [confirmed, setConfirmed] = useState(false);
+  useEffect(() => {
+    if (!editing) setConfirmed(false);
+  }, [editing]);
+
+  const canConfirm = edit.mode === "clear" || edit.value.trim().length > 0;
 
   return (
     <div className="mail-secret-field">
-      <div className="mail-secret-field__header">
-        <span className="at-label">{label}</span>
-        <EnvBadge locked={field.locked} />
-      </div>
-      {hint && <FieldHint>{hint}</FieldHint>}
-      {edit.mode === "idle" ? (
-        <div className="mail-secret-field__row">
-          <span className="mail-secret-field__status">{status}</span>
-          {!field.locked && (
-            <div className="mail-secret-field__actions">
-              <Button type="button" variant="secondary" onClick={onReplace}>
-                Replace
-              </Button>
-              {field.set && (
-                <Button type="button" variant="secondary" onClick={onClear}>
-                  Clear
-                </Button>
-              )}
-            </div>
+      <div className="at-field">
+        <div className="mail-secret-field__label-row">
+          <span className="at-label">{label}</span>
+          {editing && !confirmed && (
+            <span className="mail-secret-field__inline-hint">Saves with Save changes below.</span>
           )}
         </div>
-      ) : (
-        <div className="mail-secret-field__row">
-          <Input
-            type="password"
-            autoComplete="new-password"
-            placeholder={edit.mode === "clear" ? "Will be cleared on save" : "Enter new value"}
-            value={edit.value}
-            disabled={edit.mode === "clear" || field.locked}
-            onChange={(e) => onValueChange(e.target.value)}
-          />
-          <Button type="button" variant="secondary" onClick={onCancel}>
-            Cancel
-          </Button>
+        <div className="mail-secret-field__display">
+          {editing && !confirmed && (
+            <>
+              <Input
+                type="password"
+                aria-label={label}
+                autoComplete="off"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-bwignore="true"
+                data-form-type="other"
+                className="mail-secret-field__input"
+                placeholder={edit.mode === "clear" ? "Will be cleared on save" : "New value"}
+                value={edit.value}
+                disabled={edit.mode === "clear" || field.locked}
+                onChange={(e) => onValueChange(e.target.value)}
+              />
+              <div className="mail-secret-field__display-actions">
+                <button
+                  type="button"
+                  className="mail-secret-field__icon-btn mail-secret-field__icon-btn--confirm"
+                  aria-label="Confirm"
+                  disabled={!canConfirm}
+                  onClick={() => setConfirmed(true)}
+                >
+                  <i className="ti ti-check" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="mail-secret-field__icon-btn mail-secret-field__icon-btn--cancel"
+                  aria-label="Cancel"
+                  onClick={onCancel}
+                >
+                  <i className="ti ti-x" aria-hidden="true" />
+                </button>
+              </div>
+            </>
+          )}
+          {editing && confirmed && (
+            <>
+              <span className="mail-secret-field__display-value">
+                <i className="ti ti-lock" aria-hidden="true" />
+                {edit.mode === "clear" ? "Will be cleared" : "New value"} — pending save
+              </span>
+              <div className="mail-secret-field__display-actions">
+                <button
+                  type="button"
+                  className="mail-secret-field__link"
+                  onClick={() => setConfirmed(false)}
+                >
+                  Change
+                </button>
+              </div>
+            </>
+          )}
+          {!editing && (
+            <>
+              <span className="mail-secret-field__display-value">
+                <i className="ti ti-lock" aria-hidden="true" />
+                {field.set ? "•••••••• set" : "Not set"}
+              </span>
+              {field.locked ? (
+                <EnvBadge locked />
+              ) : (
+                <div className="mail-secret-field__display-actions">
+                  <button type="button" className="mail-secret-field__link" onClick={onReplace}>
+                    {field.set ? "Change" : "Set"}
+                  </button>
+                  {field.set && (
+                    <button
+                      type="button"
+                      className="mail-secret-field__link mail-secret-field__link--danger"
+                      onClick={onClear}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </div>
-      )}
+        {hint && <FieldHint>{hint}</FieldHint>}
+      </div>
     </div>
   );
+}
+
+const TRANSPORT_TILES = [{ value: "" as const, label: "Not configured" }] as const;
+
+function TransportTileGrid({
+  provider,
+  providerOptions,
+  locked,
+  onSelect,
+}: Readonly<{
+  provider: MailProvider | "";
+  providerOptions: ReturnType<typeof buildMailProviderOptions>;
+  locked: boolean;
+  onSelect: (value: MailProvider | "") => void;
+}>) {
+  const tiles = [...TRANSPORT_TILES, ...providerOptions];
+  const tileRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const focusAndSelect = (index: number) => {
+    if (locked) return;
+    const wrapped = (index + tiles.length) % tiles.length;
+    onSelect(tiles[wrapped].value);
+    tileRefs.current[wrapped]?.focus();
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      e.preventDefault();
+      focusAndSelect(index + 1);
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      e.preventDefault();
+      focusAndSelect(index - 1);
+    }
+  };
+
+  return (
+    <div className="transport-grid" role="radiogroup" aria-label="Transport">
+      {tiles.map((opt, index) => {
+        const active = provider === opt.value;
+        return (
+          <button
+            key={opt.value || "none"}
+            ref={(el) => {
+              tileRefs.current[index] = el;
+            }}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            aria-label={opt.label}
+            tabIndex={active ? 0 : -1}
+            className={`transport-tile${active ? " transport-tile--active" : ""}`}
+            disabled={locked}
+            onClick={() => onSelect(opt.value)}
+            onKeyDown={(e) => handleKeyDown(e, index)}
+          >
+            <span className="transport-tile__icon">
+              <i className={`ti ti-${TRANSPORT_ICON[opt.value]}`} aria-hidden="true" />
+            </span>
+            <strong>{opt.label}</strong>
+            <span>{PROVIDER_GUIDE[opt.value]}</span>
+            {active && (
+              <i className="ti ti-circle-check-filled transport-tile__check" aria-hidden="true" />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SenderCard({
+  draft,
+  fieldLocked,
+  updateDraft,
+}: Readonly<{
+  draft: MailDraft;
+  fieldLocked: FieldLocked;
+  updateDraft: (patch: Partial<MailDraft>) => void;
+}>) {
+  return (
+    <Card title="Sender">
+      <div className="mail-transport-section">
+        <Input
+          label="From address"
+          type="email"
+          value={draft.fromAddress}
+          disabled={fieldLocked("fromAddress")}
+          onChange={(e) => updateDraft({ fromAddress: e.target.value })}
+        />
+        <Input
+          label="From name"
+          value={draft.fromName}
+          disabled={fieldLocked("fromName")}
+          onChange={(e) => updateDraft({ fromName: e.target.value })}
+        />
+        <Input
+          label="Reply-to"
+          type="email"
+          value={draft.replyTo}
+          disabled={fieldLocked("replyTo")}
+          onChange={(e) => updateDraft({ replyTo: e.target.value })}
+        />
+        <Input
+          label="Envelope from (bounce address)"
+          type="email"
+          value={draft.envelopeFrom}
+          disabled={fieldLocked("envelopeFrom")}
+          onChange={(e) => updateDraft({ envelopeFrom: e.target.value })}
+          hint="SMTP MAIL FROM / return-path."
+        />
+        <Input
+          label="Allowed from domain"
+          value={draft.allowedFromDomain}
+          disabled={fieldLocked("allowedFromDomain")}
+          onChange={(e) => updateDraft({ allowedFromDomain: e.target.value })}
+          hint="Optional. Send fails when From (or Graph mailbox) is outside this domain."
+        />
+      </div>
+    </Card>
+  );
+}
+
+function SmtpConnectionCard({
+  draft,
+  fieldLocked,
+  updateDraft,
+  smtpPasswordField,
+  smtpPasswordEdit,
+  updateSecrets,
+}: Readonly<{
+  draft: MailDraft;
+  fieldLocked: FieldLocked;
+  updateDraft: (patch: Partial<MailDraft>) => void;
+  smtpPasswordField: MailSecretFieldDto;
+  smtpPasswordEdit: SecretEdits[keyof SecretEdits];
+  updateSecrets: (updater: (prev: SecretEdits) => SecretEdits) => void;
+}>) {
+  return (
+    <Card title="SMTP connection">
+      <div className="mail-transport-form">
+        <div className="mail-transport-section">
+          <Input
+            label="SMTP host"
+            value={draft.host}
+            disabled={fieldLocked("host")}
+            onChange={(e) => updateDraft({ host: e.target.value })}
+            placeholder="smtp.example.com"
+          />
+          <Input
+            label="Port"
+            inputMode="numeric"
+            value={draft.port}
+            disabled={fieldLocked("port")}
+            onChange={(e) => updateDraft({ port: e.target.value })}
+            placeholder="587"
+          />
+          <Input
+            label="Username"
+            value={draft.user}
+            disabled={fieldLocked("user")}
+            onChange={(e) => updateDraft({ user: e.target.value })}
+            autoComplete="off"
+            data-1p-ignore="true"
+            data-lpignore="true"
+            data-bwignore="true"
+            data-form-type="other"
+          />
+          <SecretFieldRow
+            label="Password"
+            field={smtpPasswordField}
+            edit={smtpPasswordEdit}
+            {...makeSecretHandlers("smtpPassword", updateSecrets)}
+          />
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>Use TLS (secure)</strong>
+              <p>Implicit TLS on connect — typically port 465.</p>
+            </div>
+            <Switch
+              aria-label="Use TLS (secure)"
+              checked={draft.secure}
+              disabled={fieldLocked("secure")}
+              onChange={(e) => updateDraft({ secure: e.target.checked })}
+            />
+          </div>
+          <div className="settings-row">
+            <div className="settings-row__text">
+              <strong>Require STARTTLS</strong>
+              <p>Upgrade a plaintext connection — typically port 587.</p>
+            </div>
+            <Switch
+              aria-label="Require STARTTLS"
+              checked={draft.requireTls}
+              disabled={fieldLocked("requireTls")}
+              onChange={(e) => updateDraft({ requireTls: e.target.checked })}
+            />
+          </div>
+        </div>
+
+        <details className="disclosure">
+          <summary className="disclosure__summary">
+            <i className="ti ti-chevron-right" aria-hidden="true" /> Advanced tuning
+          </summary>
+          <div className="disclosure__body">
+            <div className="mail-transport-section">
+              <div className="mail-tuning__toggles">
+                <Switch
+                  label="Connection pool"
+                  checked={draft.pool}
+                  disabled={fieldLocked("pool")}
+                  onChange={(e) => updateDraft({ pool: e.target.checked })}
+                />
+                <Switch
+                  label="Verify TLS certificate"
+                  checked={draft.tlsRejectUnauthorized}
+                  disabled={fieldLocked("tlsRejectUnauthorized")}
+                  onChange={(e) => updateDraft({ tlsRejectUnauthorized: e.target.checked })}
+                />
+              </div>
+              <div className="mail-field-row">
+                <Input
+                  label="HELO/EHLO name"
+                  value={draft.heloName}
+                  disabled={fieldLocked("heloName")}
+                  onChange={(e) => updateDraft({ heloName: e.target.value })}
+                />
+              </div>
+              <div className="mail-tuning__limits">
+                <Input
+                  label="Rate limit (per minute)"
+                  inputMode="numeric"
+                  value={draft.rateLimitPerMinute}
+                  disabled={fieldLocked("rateLimitPerMinute")}
+                  onChange={(e) => updateDraft({ rateLimitPerMinute: e.target.value })}
+                />
+                <Input
+                  label="Max connections"
+                  inputMode="numeric"
+                  value={draft.maxConnections}
+                  disabled={fieldLocked("maxConnections")}
+                  onChange={(e) => updateDraft({ maxConnections: e.target.value })}
+                />
+                <Input
+                  label="Max messages per connection"
+                  inputMode="numeric"
+                  value={draft.maxMessages}
+                  disabled={fieldLocked("maxMessages")}
+                  onChange={(e) => updateDraft({ maxMessages: e.target.value })}
+                />
+              </div>
+              <div className="mail-tuning__timeouts">
+                <Input
+                  label="Connection timeout (ms)"
+                  inputMode="numeric"
+                  value={draft.connectionTimeout}
+                  disabled={fieldLocked("connectionTimeout")}
+                  onChange={(e) => updateDraft({ connectionTimeout: e.target.value })}
+                />
+                <Input
+                  label="Greeting timeout (ms)"
+                  inputMode="numeric"
+                  value={draft.greetingTimeout}
+                  disabled={fieldLocked("greetingTimeout")}
+                  onChange={(e) => updateDraft({ greetingTimeout: e.target.value })}
+                />
+                <Input
+                  label="Socket timeout (ms)"
+                  inputMode="numeric"
+                  value={draft.socketTimeout}
+                  disabled={fieldLocked("socketTimeout")}
+                  onChange={(e) => updateDraft({ socketTimeout: e.target.value })}
+                />
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+    </Card>
+  );
+}
+
+function GraphCard({
+  draft,
+  fieldLocked,
+  updateDraft,
+  graphClientSecretField,
+  graphClientSecretEdit,
+  updateSecrets,
+}: Readonly<{
+  draft: MailDraft;
+  fieldLocked: FieldLocked;
+  updateDraft: (patch: Partial<MailDraft>) => void;
+  graphClientSecretField: MailSecretFieldDto;
+  graphClientSecretEdit: SecretEdits[keyof SecretEdits];
+  updateSecrets: (updater: (prev: SecretEdits) => SecretEdits) => void;
+}>) {
+  return (
+    <Card title="Microsoft Graph">
+      <div className="mail-transport-form">
+        <details className="mail-graph-setup-info">
+          <summary>Entra app registration steps</summary>
+          <ol>
+            <li>Register an app in Entra ID (App registrations → New registration).</li>
+            <li>
+              API permissions → Microsoft Graph → <strong>Application permissions</strong> (not
+              Delegated) → <code>Mail.Send</code>.
+            </li>
+            <li>
+              Grant <strong>admin consent</strong> for the tenant.
+            </li>
+            <li>
+              Create a <strong>client secret</strong> and copy the value immediately — it's shown
+              once.
+            </li>
+            <li>
+              Enter the sending mailbox's address into <strong>Mailbox</strong> below — it can
+              differ from <strong>From address</strong> above.
+            </li>
+            <li>
+              Paste <strong>Tenant ID</strong>, <strong>Client ID</strong>, and the secret into the
+              fields below.
+            </li>
+          </ol>
+          <p>
+            This is app-only (client-credentials) authentication — Settings never opens an
+            interactive Microsoft sign-in, and there's no consent screen to click through here; a
+            tenant admin grants consent once, in Entra. After saving, use{" "}
+            <strong>Send test email</strong> below to confirm delivery.
+          </p>
+        </details>
+        <div className="mail-transport-section">
+          <Input
+            label="Mailbox"
+            type="email"
+            value={draft.mailbox}
+            disabled={fieldLocked("mailbox")}
+            onChange={(e) => updateDraft({ mailbox: e.target.value })}
+            placeholder="shared@contoso.com"
+          />
+          <Input
+            label="Tenant ID"
+            value={draft.tenantId}
+            disabled={fieldLocked("tenantId")}
+            onChange={(e) => updateDraft({ tenantId: e.target.value })}
+            placeholder="00000000-0000-0000-0000-000000000000"
+          />
+          <Input
+            label="Client ID"
+            value={draft.clientId}
+            disabled={fieldLocked("clientId")}
+            onChange={(e) => updateDraft({ clientId: e.target.value })}
+            placeholder="00000000-0000-0000-0000-000000000000"
+          />
+          <SecretFieldRow
+            label="Client secret"
+            field={graphClientSecretField}
+            edit={graphClientSecretEdit}
+            {...makeSecretHandlers("graphClientSecret", updateSecrets)}
+          />
+          <Switch
+            label="Save to Sent Items"
+            checked={draft.saveToSentItems}
+            disabled={fieldLocked("saveToSentItems")}
+            onChange={(e) => updateDraft({ saveToSentItems: e.target.checked })}
+          />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function PowerAutomateCard({
+  powerAutomateUrlField,
+  powerAutomateUrlEdit,
+  powerAutomateKeyField,
+  powerAutomateKeyEdit,
+  updateSecrets,
+}: Readonly<{
+  powerAutomateUrlField: MailSecretFieldDto;
+  powerAutomateUrlEdit: SecretEdits[keyof SecretEdits];
+  powerAutomateKeyField: MailSecretFieldDto;
+  powerAutomateKeyEdit: SecretEdits[keyof SecretEdits];
+  updateSecrets: (updater: (prev: SecretEdits) => SecretEdits) => void;
+}>) {
+  return (
+    <Card title="Power Automate">
+      <div className="mail-transport-section">
+        <SecretFieldRow
+          label="Flow URL"
+          field={powerAutomateUrlField}
+          edit={powerAutomateUrlEdit}
+          {...makeSecretHandlers("powerAutomateUrl", updateSecrets)}
+        />
+        <SecretFieldRow
+          label="Flow key"
+          field={powerAutomateKeyField}
+          edit={powerAutomateKeyEdit}
+          {...makeSecretHandlers("powerAutomateKey", updateSecrets)}
+        />
+      </div>
+    </Card>
+  );
+}
+
+function TestResultPreview({ testResult }: Readonly<{ testResult: TestResult }>) {
+  const transportLabel = testResult.provider
+    ? MAIL_PROVIDER_LABELS[testResult.provider]
+    : "the configured transport";
+  const heroText =
+    testResult.kind === "ok" ? `Sent successfully via ${transportLabel}.` : testResult.message;
+
+  return (
+    <output className={`mail-preview mail-preview--${testResult.kind}`}>
+      {testResult.kind === "ok" && (
+        <div className="mail-preview__head">
+          <b>✅ Your Admitto mail configuration is working</b>
+          <span>to {testResult.recipient}</span>
+        </div>
+      )}
+      <div className="test-mail-hero">
+        <span className="test-mail-hero__icon">
+          <i
+            className={`ti ${testResult.kind === "ok" ? "ti-circle-check" : "ti-circle-x"}`}
+            aria-hidden="true"
+          />
+        </span>
+        <p>{heroText}</p>
+      </div>
+      <div className="test-mail-summary">
+        <div>
+          <span>Recipient</span>
+          <b>{testResult.recipient}</b>
+        </div>
+        {testResult.provider && (
+          <div>
+            <span>Transport</span>
+            <b>{MAIL_PROVIDER_LABELS[testResult.provider]}</b>
+          </div>
+        )}
+        {testResult.provider === "smtp" && testResult.host && (
+          <div>
+            <span>Host</span>
+            <b>
+              {testResult.host}:{testResult.port}
+            </b>
+          </div>
+        )}
+        {testResult.provider === "graph" && testResult.mailbox && (
+          <div>
+            <span>Mailbox</span>
+            <b>{testResult.mailbox}</b>
+          </div>
+        )}
+        <div>
+          <span>{testResult.kind === "ok" ? "Sent at" : "Attempted at"}</span>
+          <b>{formatUtcDateTime(testResult.timestamp)}</b>
+        </div>
+        {testResult.providerMessageId && (
+          <div>
+            <span>Message ID</span>
+            <b className="test-mail-summary__mono">{testResult.providerMessageId}</b>
+          </div>
+        )}
+        {testResult.kind === "error" && testResult.retryable !== undefined && (
+          <div>
+            <span>Retryable</span>
+            <b>{testResult.retryable ? "Yes" : "No"}</b>
+          </div>
+        )}
+      </div>
+      {testResult.kind === "ok" && (
+        <p className="test-mail-footnote">Automated message from Admitto — no reply needed.</p>
+      )}
+    </output>
+  );
+}
+
+function MailTransportCard({
+  provider,
+  providerOptions,
+  fieldLocked,
+  onSelectProvider,
+}: Readonly<{
+  provider: MailProvider | "";
+  providerOptions: ReturnType<typeof buildMailProviderOptions>;
+  fieldLocked: FieldLocked;
+  onSelectProvider: (value: MailProvider | "") => void;
+}>) {
+  return (
+    <Card
+      title="Mail transport"
+      actions={
+        <Badge variant={provider ? "ok" : "neutral"}>{provider ? "Configured" : "Not configured"}</Badge>
+      }
+    >
+      <div className="mail-transport-form">
+        {fieldLocked("provider") && (
+          <p className="mail-transport__env-note">
+            Some transport settings are managed by your deployment configuration and cannot be changed
+            here. Contact your instance administrator if you need to update them.
+          </p>
+        )}
+        <p className="mail-transport__desc">
+          Instance-wide outbound transport for tickets and lifecycle mail.
+        </p>
+        <TransportTileGrid
+          provider={provider}
+          providerOptions={providerOptions}
+          locked={fieldLocked("provider")}
+          onSelect={onSelectProvider}
+        />
+        {provider === "export_only" && (
+          <p className="mail-dev-warning" role="status">
+            Dev/test only — cannot send real mail in production.
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function SettingsFooter({
+  validationErrors,
+  validationErrorsRef,
+  hasUnsavedChanges,
+  saving,
+  onReset,
+  onSave,
+}: Readonly<{
+  validationErrors: string[];
+  validationErrorsRef: RefObject<HTMLUListElement | null>;
+  hasUnsavedChanges: boolean;
+  saving: boolean;
+  onReset: () => void;
+  onSave: () => void;
+}>) {
+  let saveLabel: string;
+  if (saving) {
+    saveLabel = "Saving…";
+  } else if (hasUnsavedChanges) {
+    saveLabel = "Save changes";
+  } else {
+    saveLabel = "Save";
+  }
+
+  return (
+    <div className="settings-footer">
+      <div className="settings-footer__status">
+        {validationErrors.length > 0 ? (
+          <ul ref={validationErrorsRef} role="alert" className="text-error">
+            {validationErrors.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+        ) : (
+          <span className="settings-footer__save-state">
+            <i
+              className={`ti ${hasUnsavedChanges ? "ti-alert-triangle" : "ti-circle-check"}`}
+              aria-hidden="true"
+            />
+            {hasUnsavedChanges ? "Unsaved changes" : "All changes saved"}
+          </span>
+        )}
+      </div>
+      <div className="settings-footer__buttons">
+        <Button type="button" variant="secondary" disabled={saving} onClick={onReset}>
+          Reset
+        </Button>
+        <Button type="button" variant="primary" disabled={saving} onClick={onSave}>
+          {saveLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Snapshots which fields are relevant to the tested provider — undefined fields
+ * are simply not rendered by TestResultPreview. */
+function snapshotFieldsFor(
+  provider: MailProvider | undefined,
+  host: string,
+  port: string,
+  mailbox: string,
+): Pick<TestResult, "host" | "port" | "mailbox"> {
+  return {
+    host: provider === "smtp" ? host : undefined,
+    port: provider === "smtp" ? port : undefined,
+    mailbox: provider === "graph" ? mailbox : undefined,
+  };
+}
+
+function buildTestResult(
+  result: MailTransportTestSendResponse,
+  recipient: string,
+  snapshotInputs: { host: string; port: string; mailbox: string },
+): TestResult {
+  const snapshot = snapshotFieldsFor(
+    result.provider,
+    snapshotInputs.host,
+    snapshotInputs.port,
+    snapshotInputs.mailbox,
+  );
+  const timestamp = new Date().toISOString();
+  if (result.status === "sent") {
+    return {
+      kind: "ok",
+      message: "Test email sent.",
+      recipient,
+      provider: result.provider,
+      providerMessageId: result.providerMessageId,
+      timestamp,
+      ...snapshot,
+    };
+  }
+  return {
+    kind: "error",
+    message: result.error ?? "Send failed.",
+    recipient,
+    provider: result.provider,
+    retryable: result.retryable,
+    timestamp,
+    ...snapshot,
+  };
+}
+
+function testSendErrorMessage(err: unknown): string {
+  if (err instanceof ApiError && err.status === 400 && hasApiErrorCode(err, "validation_failed")) {
+    return "Enter a valid email address.";
+  }
+  return operatorApiErrorMessage(err, "Send failed.");
 }
 
 /** Superadmin mail transport configuration panel. */
@@ -168,7 +898,19 @@ export function MailTransportPanel() {
   const [saving, setSaving] = useState(false);
   const [testEmail, setTestEmail] = useState("");
   const [testSending, setTestSending] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
+  const validationErrorsRef = useRef<HTMLUListElement | null>(null);
+  // Bumped by every draft/secret edit so an in-flight test-send response can detect
+  // it's now stale (config changed while the request was in the air) and skip
+  // resurrecting a result the operator already moved past.
+  const testGenerationRef = useRef(0);
+
+  useEffect(() => {
+    if (validationErrors.length > 0) {
+      validationErrorsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [validationErrors]);
 
   const applyResponse = useCallback((data: MailSettingsResponse) => {
     const nextDraft = draftFromResponse(data);
@@ -191,25 +933,36 @@ export function MailTransportPanel() {
       applyResponse(data);
     } catch {
       if (ac.signal.aborted) return;
-      const message = "Failed to load mail settings.";
-      setLoadError(message);
-      addToast(message, "error");
+      // Inline + Retry only (no toast) — this is an initial-load failure with a
+      // persistent retry control, not a transient action outcome. See AGENTS.md's
+      // toast-vs-inline table.
+      setLoadError("Failed to load mail settings.");
       setApiData(null);
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [applyResponse, addToast]);
+  }, [applyResponse]);
 
   useEffect(() => {
     void loadSettings();
     return () => loadAbortRef.current?.abort();
   }, [loadSettings]);
 
+  // A test result describes a specific saved configuration — any further edit (to
+  // the draft or to a secret) makes it stale, so both wrappers invalidate it.
   const updateDraft = (patch: Partial<MailDraft>) => {
+    testGenerationRef.current += 1;
+    setTestResult(null);
     setDraft((prev) => ({ ...prev, ...patch }));
   };
 
-  const fieldLocked = (key: keyof MailSettingsResponse["fields"]): boolean => {
+  const updateSecrets = (updater: (prev: SecretEdits) => SecretEdits) => {
+    testGenerationRef.current += 1;
+    setTestResult(null);
+    setSecrets(updater);
+  };
+
+  const fieldLocked: FieldLocked = (key) => {
     if (!apiData) return false;
     const fd = apiData.fields[key];
     return Boolean(fd && "locked" in fd && fd.locked);
@@ -248,8 +1001,30 @@ export function MailTransportPanel() {
   };
 
   const hasUnsavedChanges = isMailSettingsDirty(draft, savedDraft, secrets);
+  // export_only deliberately excluded — it never sends real mail, so a "test send" there
+  // would misleadingly report success without anything actually leaving the instance.
+  const transportConfigured =
+    draft.provider === "smtp" || draft.provider === "graph" || draft.provider === "powerautomate";
+
+  let testSendReason: string | undefined;
+  let testSendHint: string;
+  if (!transportConfigured) {
+    testSendReason = "Select and save a transport (SMTP, Graph, or Power Automate) first.";
+    testSendHint = testSendReason;
+  } else if (hasUnsavedChanges) {
+    testSendReason = "Save your changes before sending a test email.";
+    testSendHint =
+      "Save your changes first — the test uses the saved configuration from the database, not unsaved form values.";
+  } else {
+    testSendReason = undefined;
+    testSendHint = "Verifies transport credentials with a trivial message (not an event template).";
+  }
 
   const handleTestSend = async () => {
+    if (!transportConfigured) {
+      addToast(testSendReason ?? "Configure a transport before sending a test email.", "warning");
+      return;
+    }
     if (hasUnsavedChanges) {
       addToast("Save your changes before sending a test email.", "warning");
       return;
@@ -259,20 +1034,25 @@ export function MailTransportPanel() {
       addToast("Enter a valid email address.", "error");
       return;
     }
+    const requestGeneration = testGenerationRef.current;
+    const snapshotInputs = {
+      host: draft.host,
+      port: draft.port,
+      mailbox: draft.mailbox || draft.fromAddress,
+    };
     setTestSending(true);
+    setTestResult(null);
     try {
       const result = await sendMailTransportTest(to);
-      if (result.status === "sent") {
-        addToast("Test email sent.", "success");
-      } else {
-        addToast(result.error ?? "Send failed.", "error");
-      }
+      if (testGenerationRef.current !== requestGeneration) return;
+      const nextResult = buildTestResult(result, to, snapshotInputs);
+      setTestResult(nextResult);
+      addToast(nextResult.message, nextResult.kind === "ok" ? "success" : "error");
     } catch (err) {
-      const message =
-        err instanceof ApiError && err.status === 400 && hasApiErrorCode(err, "validation_failed")
-          ? "Enter a valid email address."
-          : operatorApiErrorMessage(err, "Send failed.");
+      if (testGenerationRef.current !== requestGeneration) return;
+      const message = testSendErrorMessage(err);
       addToast(message, "error");
+      setTestResult({ kind: "error", message, recipient: to, timestamp: new Date().toISOString() });
     } finally {
       setTestSending(false);
     }
@@ -284,384 +1064,119 @@ export function MailTransportPanel() {
 
   const provider = draft.provider;
 
-  return (
-    <Card
-      title={hasUnsavedChanges ? "Mail transport *" : "Mail transport"}
-      footer={
-        <div className="foot-actions">
-          <div className="foot-actions__status">
-            {validationErrors.length > 0 && (
-              <ul role="alert" className="text-error">
-                {validationErrors.map((e) => (
-                  <li key={e}>{e}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className="foot-actions__buttons">
-            <Button type="button" variant="secondary" disabled={loading || saving} onClick={handleReset}>
-              Reset
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              disabled={loading || saving || !!loadError}
-              onClick={() => void handleSave()}
-              aria-describedby={hasUnsavedChanges ? "mail-transport-unsaved" : undefined}
-            >
-              {saving ? "Saving…" : hasUnsavedChanges ? "Save changes" : "Save"}
-            </Button>
-          </div>
-        </div>
-      }
-    >
-      {loading && <p>Loading mail settings…</p>}
-      {loadError && (
+  if (loading) {
+    return (
+      <Card title="Mail transport">
+        <p>Loading mail settings…</p>
+      </Card>
+    );
+  }
+
+  if (loadError || !apiData) {
+    return (
+      <Card title="Mail transport">
         <p role="alert" className="text-error">
-          {loadError}{" "}
+          {loadError ?? "Failed to load mail settings."}{" "}
           <button type="button" className="settings-retry-link" onClick={() => void loadSettings()}>
             Retry
           </button>
         </p>
+      </Card>
+    );
+  }
+
+  const handleSelectProvider = (value: MailProvider | "") => {
+    if (value === "smtp" && draft.provider !== "smtp") {
+      updateDraft({ provider: "smtp", ...smtpProviderDraftDefaults() });
+    } else {
+      updateDraft({ provider: value });
+    }
+  };
+
+  return (
+    <>
+      <MailTransportCard
+        provider={provider}
+        providerOptions={providerOptions}
+        fieldLocked={fieldLocked}
+        onSelectProvider={handleSelectProvider}
+      />
+
+      {provider !== "" && (
+        <SenderCard draft={draft} fieldLocked={fieldLocked} updateDraft={updateDraft} />
       )}
-      {!loading && !loadError && apiData && (
-        <div className="mail-transport-form">
-          {hasUnsavedChanges && (
-            <p id="mail-transport-unsaved" className="mail-transport__unsaved-hint">
-              Unsaved changes — save before leaving this page.
-            </p>
-          )}
-          {fieldLocked("provider") && (
-            <p className="mail-transport__env-note">
-              Some transport settings are managed by your deployment configuration and cannot be changed
-              here. Contact your instance administrator if you need to update them.
-            </p>
-          )}
-          <p className="mail-transport__desc">
-            Instance-wide outbound transport for tickets and lifecycle mail.
-          </p>
-          <div className="mail-field-row">
-            <Select
-              label="Transport"
-              value={provider}
-              disabled={fieldLocked("provider")}
-              onChange={(e) => {
-                const provider = e.target.value as MailProvider | "";
-                if (provider === "smtp" && draft.provider !== "smtp") {
-                  updateDraft({ provider, ...smtpProviderDraftDefaults() });
-                } else {
-                  updateDraft({ provider });
-                }
-              }}
+
+      {provider === "smtp" && (
+        <SmtpConnectionCard
+          draft={draft}
+          fieldLocked={fieldLocked}
+          updateDraft={updateDraft}
+          smtpPasswordField={apiData.fields.smtpPassword}
+          smtpPasswordEdit={secrets.smtpPassword}
+          updateSecrets={updateSecrets}
+        />
+      )}
+
+      {provider === "graph" && (
+        <GraphCard
+          draft={draft}
+          fieldLocked={fieldLocked}
+          updateDraft={updateDraft}
+          graphClientSecretField={apiData.fields.graphClientSecret}
+          graphClientSecretEdit={secrets.graphClientSecret}
+          updateSecrets={updateSecrets}
+        />
+      )}
+
+      {provider === "powerautomate" && (
+        <PowerAutomateCard
+          powerAutomateUrlField={apiData.fields.powerAutomateUrl}
+          powerAutomateUrlEdit={secrets.powerAutomateUrl}
+          powerAutomateKeyField={apiData.fields.powerAutomateKey}
+          powerAutomateKeyEdit={secrets.powerAutomateKey}
+          updateSecrets={updateSecrets}
+        />
+      )}
+
+      <Card title="Send test email">
+        <p className="mail-test-send__hint">{testSendHint}</p>
+        <div className="mail-test-send__row">
+          <Input
+            label="Recipient"
+            type="email"
+            value={testEmail}
+            onChange={(e) => setTestEmail(e.target.value)}
+            placeholder="you@example.com"
+            disabled={!!testSendReason}
+          />
+          <span className={testSendReason ? "at-tooltip" : undefined} data-tooltip={testSendReason}>
+            {testSendReason && (
+              <span id="mail-test-send-reason" className="sr-only">
+                {testSendReason}
+              </span>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={testSending || !!testSendReason}
+              aria-describedby={testSendReason ? "mail-test-send-reason" : undefined}
+              onClick={() => void handleTestSend()}
             >
-              <option value="">Not configured</option>
-              {providerOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </Select>
-            <EnvBadge locked={fieldLocked("provider")} />
-          </div>
-          {provider && PROVIDER_GUIDE[provider] && (
-            <p className="mail-transport-provider-guide">{PROVIDER_GUIDE[provider]}</p>
-          )}
-
-          {provider === "export_only" && (
-            <p className="mail-dev-warning" role="status">
-              Dev/test only — cannot send real mail in production.
-            </p>
-          )}
-
-          {(provider === "smtp" || provider === "graph" || provider === "powerautomate" || provider === "export_only") && (
-            <>
-              <SectionTitle>Sender</SectionTitle>
-              <div className="mail-transport-section">
-              <Input
-                label="From address"
-                type="email"
-                value={draft.fromAddress}
-                disabled={fieldLocked("fromAddress")}
-                onChange={(e) => updateDraft({ fromAddress: e.target.value })}
-              />
-              <Input
-                label="From name"
-                value={draft.fromName}
-                disabled={fieldLocked("fromName")}
-                onChange={(e) => updateDraft({ fromName: e.target.value })}
-              />
-              <Input
-                label="Reply-to"
-                type="email"
-                value={draft.replyTo}
-                disabled={fieldLocked("replyTo")}
-                onChange={(e) => updateDraft({ replyTo: e.target.value })}
-              />
-              <Input
-                label="Envelope from (bounce address)"
-                type="email"
-                value={draft.envelopeFrom}
-                disabled={fieldLocked("envelopeFrom")}
-                onChange={(e) => updateDraft({ envelopeFrom: e.target.value })}
-                hint="SMTP MAIL FROM / return-path."
-              />
-              <Input
-                label="Allowed from domain"
-                value={draft.allowedFromDomain}
-                disabled={fieldLocked("allowedFromDomain")}
-                onChange={(e) => updateDraft({ allowedFromDomain: e.target.value })}
-                hint="Optional. Send fails when From (or Graph mailbox) is outside this domain."
-              />
-            </div>
-            </>
-          )}
-
-          {provider === "smtp" && (
-            <>
-              <SectionTitle>SMTP connection</SectionTitle>
-            <div className="mail-transport-section">
-              <Input
-                label="SMTP host"
-                value={draft.host}
-                disabled={fieldLocked("host")}
-                onChange={(e) => updateDraft({ host: e.target.value })}
-                placeholder="smtp.example.com"
-              />
-              <Input
-                label="Port"
-                inputMode="numeric"
-                value={draft.port}
-                disabled={fieldLocked("port")}
-                onChange={(e) => updateDraft({ port: e.target.value })}
-                placeholder="587"
-              />
-              <Input
-                label="Username"
-                value={draft.user}
-                disabled={fieldLocked("user")}
-                onChange={(e) => updateDraft({ user: e.target.value })}
-              />
-              <SecretFieldRow
-                label="Password"
-                field={apiData.fields.smtpPassword}
-                edit={secrets.smtpPassword}
-                onReplace={() =>
-                  setSecrets((s) => ({ ...s, smtpPassword: { mode: "replace", value: "" } }))
-                }
-                onClear={() =>
-                  setSecrets((s) => ({ ...s, smtpPassword: { mode: "clear", value: "" } }))
-                }
-                onValueChange={(value) =>
-                  setSecrets((s) => ({ ...s, smtpPassword: { mode: "replace", value } }))
-                }
-                onCancel={() =>
-                  setSecrets((s) => ({ ...s, smtpPassword: { mode: "idle", value: "" } }))
-                }
-              />
-              <Switch
-                label="Use TLS (secure)"
-                checked={draft.secure}
-                disabled={fieldLocked("secure")}
-                onChange={(e) => updateDraft({ secure: e.target.checked })}
-              />
-              <Switch
-                label="Require STARTTLS"
-                checked={draft.requireTls}
-                disabled={fieldLocked("requireTls")}
-                onChange={(e) => updateDraft({ requireTls: e.target.checked })}
-              />
-              <FieldHint>587: STARTTLS on, TLS off. 465: TLS on, STARTTLS off.</FieldHint>
-            </div>
-
-            <SectionTitle>SMTP tuning</SectionTitle>
-            <div className="mail-transport-section">
-              <Switch
-                label="Connection pool"
-                checked={draft.pool}
-                disabled={fieldLocked("pool")}
-                onChange={(e) => updateDraft({ pool: e.target.checked })}
-              />
-              <Switch
-                label="Verify TLS certificate"
-                checked={draft.tlsRejectUnauthorized}
-                disabled={fieldLocked("tlsRejectUnauthorized")}
-                onChange={(e) => updateDraft({ tlsRejectUnauthorized: e.target.checked })}
-              />
-              <Input
-                label="HELO/EHLO name"
-                value={draft.heloName}
-                disabled={fieldLocked("heloName")}
-                onChange={(e) => updateDraft({ heloName: e.target.value })}
-              />
-              <Input
-                label="Rate limit (per minute)"
-                inputMode="numeric"
-                value={draft.rateLimitPerMinute}
-                disabled={fieldLocked("rateLimitPerMinute")}
-                onChange={(e) => updateDraft({ rateLimitPerMinute: e.target.value })}
-              />
-              <Input
-                label="Max connections"
-                inputMode="numeric"
-                value={draft.maxConnections}
-                disabled={fieldLocked("maxConnections")}
-                onChange={(e) => updateDraft({ maxConnections: e.target.value })}
-              />
-              <Input
-                label="Max messages per connection"
-                inputMode="numeric"
-                value={draft.maxMessages}
-                disabled={fieldLocked("maxMessages")}
-                onChange={(e) => updateDraft({ maxMessages: e.target.value })}
-              />
-              <Input
-                label="Connection timeout (ms)"
-                inputMode="numeric"
-                value={draft.connectionTimeout}
-                disabled={fieldLocked("connectionTimeout")}
-                onChange={(e) => updateDraft({ connectionTimeout: e.target.value })}
-              />
-              <Input
-                label="Greeting timeout (ms)"
-                inputMode="numeric"
-                value={draft.greetingTimeout}
-                disabled={fieldLocked("greetingTimeout")}
-                onChange={(e) => updateDraft({ greetingTimeout: e.target.value })}
-              />
-              <Input
-                label="Socket timeout (ms)"
-                inputMode="numeric"
-                value={draft.socketTimeout}
-                disabled={fieldLocked("socketTimeout")}
-                onChange={(e) => updateDraft({ socketTimeout: e.target.value })}
-              />
-            </div>
-            </>
-          )}
-
-          {provider === "graph" && (
-            <>
-              <SectionTitle>Microsoft Graph</SectionTitle>
-            <div className="mail-transport-section">
-              <Input
-                label="Mailbox"
-                type="email"
-                value={draft.mailbox}
-                disabled={fieldLocked("mailbox")}
-                onChange={(e) => updateDraft({ mailbox: e.target.value })}
-                placeholder="shared@contoso.com"
-              />
-              <Input
-                label="Tenant ID"
-                value={draft.tenantId}
-                disabled={fieldLocked("tenantId")}
-                onChange={(e) => updateDraft({ tenantId: e.target.value })}
-                placeholder="00000000-0000-0000-0000-000000000000"
-              />
-              <Input
-                label="Client ID"
-                value={draft.clientId}
-                disabled={fieldLocked("clientId")}
-                onChange={(e) => updateDraft({ clientId: e.target.value })}
-                placeholder="00000000-0000-0000-0000-000000000000"
-              />
-              <SecretFieldRow
-                label="Client secret"
-                field={apiData.fields.graphClientSecret}
-                edit={secrets.graphClientSecret}
-                onReplace={() =>
-                  setSecrets((s) => ({ ...s, graphClientSecret: { mode: "replace", value: "" } }))
-                }
-                onClear={() =>
-                  setSecrets((s) => ({ ...s, graphClientSecret: { mode: "clear", value: "" } }))
-                }
-                onValueChange={(value) =>
-                  setSecrets((s) => ({ ...s, graphClientSecret: { mode: "replace", value } }))
-                }
-                onCancel={() =>
-                  setSecrets((s) => ({ ...s, graphClientSecret: { mode: "idle", value: "" } }))
-                }
-              />
-              <Switch
-                label="Save to Sent Items"
-                checked={draft.saveToSentItems}
-                disabled={fieldLocked("saveToSentItems")}
-                onChange={(e) => updateDraft({ saveToSentItems: e.target.checked })}
-              />
-            </div>
-            </>
-          )}
-
-          {provider === "powerautomate" && (
-            <>
-              <SectionTitle>Power Automate</SectionTitle>
-            <div className="mail-transport-section">
-              <SecretFieldRow
-                label="Flow URL"
-                field={apiData.fields.powerAutomateUrl}
-                edit={secrets.powerAutomateUrl}
-                onReplace={() =>
-                  setSecrets((s) => ({ ...s, powerAutomateUrl: { mode: "replace", value: "" } }))
-                }
-                onClear={() =>
-                  setSecrets((s) => ({ ...s, powerAutomateUrl: { mode: "clear", value: "" } }))
-                }
-                onValueChange={(value) =>
-                  setSecrets((s) => ({ ...s, powerAutomateUrl: { mode: "replace", value } }))
-                }
-                onCancel={() =>
-                  setSecrets((s) => ({ ...s, powerAutomateUrl: { mode: "idle", value: "" } }))
-                }
-              />
-              <SecretFieldRow
-                label="Flow key"
-                field={apiData.fields.powerAutomateKey}
-                edit={secrets.powerAutomateKey}
-                onReplace={() =>
-                  setSecrets((s) => ({ ...s, powerAutomateKey: { mode: "replace", value: "" } }))
-                }
-                onClear={() =>
-                  setSecrets((s) => ({ ...s, powerAutomateKey: { mode: "clear", value: "" } }))
-                }
-                onValueChange={(value) =>
-                  setSecrets((s) => ({ ...s, powerAutomateKey: { mode: "replace", value } }))
-                }
-                onCancel={() =>
-                  setSecrets((s) => ({ ...s, powerAutomateKey: { mode: "idle", value: "" } }))
-                }
-              />
-            </div>
-            </>
-          )}
-
-          <div className="mail-test-send">
-            <h3 className="mail-test-send__title">Send test email</h3>
-            <p className="mail-test-send__hint">
-              {hasUnsavedChanges
-                ? "Save your changes first — the test uses the saved configuration from the database, not unsaved form values."
-                : "Verifies transport credentials with a trivial message (not an event template)."}
-            </p>
-            <div className="mail-test-send__row">
-              <Input
-                label="Recipient"
-                type="email"
-                value={testEmail}
-                onChange={(e) => setTestEmail(e.target.value)}
-                placeholder="you@example.com"
-                disabled={hasUnsavedChanges}
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={testSending || hasUnsavedChanges}
-                onClick={() => void handleTestSend()}
-              >
-                {testSending ? "Sending…" : "Send test email"}
-              </Button>
-            </div>
-          </div>
+              {testSending ? "Sending…" : "Send test email"}
+            </Button>
+          </span>
         </div>
-      )}
-    </Card>
+        {testResult && <TestResultPreview testResult={testResult} />}
+      </Card>
+
+      <SettingsFooter
+        validationErrors={validationErrors}
+        validationErrorsRef={validationErrorsRef}
+        hasUnsavedChanges={hasUnsavedChanges}
+        saving={saving}
+        onReset={handleReset}
+        onSave={() => void handleSave()}
+      />
+    </>
   );
 }
