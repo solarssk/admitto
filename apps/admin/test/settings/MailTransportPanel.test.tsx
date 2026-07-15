@@ -253,7 +253,7 @@ describe("MailTransportPanel — secret field behavior (#407)", () => {
     mockFetch.mockResolvedValueOnce(makeResponse(powerAutomateFields()));
     renderWithToast(<MailTransportPanel />);
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "Change" }).length).toBe(2);
+      expect(screen.getAllByRole("button", { name: "Change" })).toHaveLength(2);
     });
     fireEvent.click(screen.getAllByRole("button", { name: "Change" })[0]);
     expect(screen.getByLabelText("Flow URL")).toBeTruthy();

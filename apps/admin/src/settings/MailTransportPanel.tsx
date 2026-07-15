@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { Badge, Button, Card, Input, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -12,6 +12,7 @@ import type {
   MailProvider,
   MailSecretFieldDto,
   MailSettingsResponse,
+  TestSendResponse,
 } from "../api/types.js";
 import {
   buildSaveMailSettingsBody,
@@ -261,12 +262,12 @@ function TransportTileGrid({
   providerOptions,
   locked,
   onSelect,
-}: {
+}: Readonly<{
   provider: MailProvider | "";
   providerOptions: ReturnType<typeof buildMailProviderOptions>;
   locked: boolean;
   onSelect: (value: MailProvider | "") => void;
-}) {
+}>) {
   const tiles = [...TRANSPORT_TILES, ...providerOptions];
   const tileRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -326,11 +327,11 @@ function SenderCard({
   draft,
   fieldLocked,
   updateDraft,
-}: {
+}: Readonly<{
   draft: MailDraft;
   fieldLocked: FieldLocked;
   updateDraft: (patch: Partial<MailDraft>) => void;
-}) {
+}>) {
   return (
     <Card title="Sender">
       <div className="mail-transport-section">
@@ -381,14 +382,14 @@ function SmtpConnectionCard({
   smtpPasswordField,
   smtpPasswordEdit,
   updateSecrets,
-}: {
+}: Readonly<{
   draft: MailDraft;
   fieldLocked: FieldLocked;
   updateDraft: (patch: Partial<MailDraft>) => void;
   smtpPasswordField: MailSecretFieldDto;
   smtpPasswordEdit: SecretEdits[keyof SecretEdits];
   updateSecrets: (updater: (prev: SecretEdits) => SecretEdits) => void;
-}) {
+}>) {
   return (
     <Card title="SMTP connection">
       <div className="mail-transport-form">
@@ -540,14 +541,14 @@ function GraphCard({
   graphClientSecretField,
   graphClientSecretEdit,
   updateSecrets,
-}: {
+}: Readonly<{
   draft: MailDraft;
   fieldLocked: FieldLocked;
   updateDraft: (patch: Partial<MailDraft>) => void;
   graphClientSecretField: MailSecretFieldDto;
   graphClientSecretEdit: SecretEdits[keyof SecretEdits];
   updateSecrets: (updater: (prev: SecretEdits) => SecretEdits) => void;
-}) {
+}>) {
   return (
     <Card title="Microsoft Graph">
       <div className="mail-transport-form">
@@ -629,13 +630,13 @@ function PowerAutomateCard({
   powerAutomateKeyField,
   powerAutomateKeyEdit,
   updateSecrets,
-}: {
+}: Readonly<{
   powerAutomateUrlField: MailSecretFieldDto;
   powerAutomateUrlEdit: SecretEdits[keyof SecretEdits];
   powerAutomateKeyField: MailSecretFieldDto;
   powerAutomateKeyEdit: SecretEdits[keyof SecretEdits];
   updateSecrets: (updater: (prev: SecretEdits) => SecretEdits) => void;
-}) {
+}>) {
   return (
     <Card title="Power Automate">
       <div className="mail-transport-section">
@@ -656,7 +657,7 @@ function PowerAutomateCard({
   );
 }
 
-function TestResultPreview({ testResult }: { testResult: TestResult }) {
+function TestResultPreview({ testResult }: Readonly<{ testResult: TestResult }>) {
   const transportLabel = testResult.provider
     ? MAIL_PROVIDER_LABELS[testResult.provider]
     : "the configured transport";
@@ -727,6 +728,161 @@ function TestResultPreview({ testResult }: { testResult: TestResult }) {
       )}
     </output>
   );
+}
+
+function MailTransportCard({
+  provider,
+  providerOptions,
+  fieldLocked,
+  onSelectProvider,
+}: Readonly<{
+  provider: MailProvider | "";
+  providerOptions: ReturnType<typeof buildMailProviderOptions>;
+  fieldLocked: FieldLocked;
+  onSelectProvider: (value: MailProvider | "") => void;
+}>) {
+  return (
+    <Card
+      title="Mail transport"
+      actions={
+        <Badge variant={provider ? "ok" : "neutral"}>{provider ? "Configured" : "Not configured"}</Badge>
+      }
+    >
+      <div className="mail-transport-form">
+        {fieldLocked("provider") && (
+          <p className="mail-transport__env-note">
+            Some transport settings are managed by your deployment configuration and cannot be changed
+            here. Contact your instance administrator if you need to update them.
+          </p>
+        )}
+        <p className="mail-transport__desc">
+          Instance-wide outbound transport for tickets and lifecycle mail.
+        </p>
+        <TransportTileGrid
+          provider={provider}
+          providerOptions={providerOptions}
+          locked={fieldLocked("provider")}
+          onSelect={onSelectProvider}
+        />
+        {provider === "export_only" && (
+          <p className="mail-dev-warning" role="status">
+            Dev/test only — cannot send real mail in production.
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function SettingsFooter({
+  validationErrors,
+  validationErrorsRef,
+  hasUnsavedChanges,
+  saving,
+  onReset,
+  onSave,
+}: Readonly<{
+  validationErrors: string[];
+  validationErrorsRef: RefObject<HTMLUListElement | null>;
+  hasUnsavedChanges: boolean;
+  saving: boolean;
+  onReset: () => void;
+  onSave: () => void;
+}>) {
+  let saveLabel: string;
+  if (saving) {
+    saveLabel = "Saving…";
+  } else if (hasUnsavedChanges) {
+    saveLabel = "Save changes";
+  } else {
+    saveLabel = "Save";
+  }
+
+  return (
+    <div className="settings-footer">
+      <div className="settings-footer__status">
+        {validationErrors.length > 0 ? (
+          <ul ref={validationErrorsRef} role="alert" className="text-error">
+            {validationErrors.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+        ) : (
+          <span className="settings-footer__save-state">
+            <i
+              className={`ti ${hasUnsavedChanges ? "ti-alert-triangle" : "ti-circle-check"}`}
+              aria-hidden="true"
+            />
+            {hasUnsavedChanges ? "Unsaved changes" : "All changes saved"}
+          </span>
+        )}
+      </div>
+      <div className="settings-footer__buttons">
+        <Button type="button" variant="secondary" disabled={saving} onClick={onReset}>
+          Reset
+        </Button>
+        <Button type="button" variant="primary" disabled={saving} onClick={onSave}>
+          {saveLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Snapshots which fields are relevant to the tested provider — undefined fields
+ * are simply not rendered by TestResultPreview. */
+function snapshotFieldsFor(
+  provider: MailProvider | undefined,
+  host: string,
+  port: string,
+  mailbox: string,
+): Pick<TestResult, "host" | "port" | "mailbox"> {
+  return {
+    host: provider === "smtp" ? host : undefined,
+    port: provider === "smtp" ? port : undefined,
+    mailbox: provider === "graph" ? mailbox : undefined,
+  };
+}
+
+function buildTestResult(
+  result: TestSendResponse,
+  recipient: string,
+  snapshotInputs: { host: string; port: string; mailbox: string },
+): TestResult {
+  const snapshot = snapshotFieldsFor(
+    result.provider,
+    snapshotInputs.host,
+    snapshotInputs.port,
+    snapshotInputs.mailbox,
+  );
+  const timestamp = new Date().toISOString();
+  if (result.status === "sent") {
+    return {
+      kind: "ok",
+      message: "Test email sent.",
+      recipient,
+      provider: result.provider,
+      providerMessageId: result.providerMessageId,
+      timestamp,
+      ...snapshot,
+    };
+  }
+  return {
+    kind: "error",
+    message: result.error ?? "Send failed.",
+    recipient,
+    provider: result.provider,
+    retryable: result.retryable,
+    timestamp,
+    ...snapshot,
+  };
+}
+
+function testSendErrorMessage(err: unknown): string {
+  if (err instanceof ApiError && err.status === 400 && hasApiErrorCode(err, "validation_failed")) {
+    return "Enter a valid email address.";
+  }
+  return operatorApiErrorMessage(err, "Send failed.");
 }
 
 /** Superadmin mail transport configuration panel. */
@@ -879,48 +1035,22 @@ export function MailTransportPanel() {
       return;
     }
     const requestGeneration = testGenerationRef.current;
-    const testedHost = draft.host;
-    const testedPort = draft.port;
-    const testedMailbox = draft.mailbox || draft.fromAddress;
+    const snapshotInputs = {
+      host: draft.host,
+      port: draft.port,
+      mailbox: draft.mailbox || draft.fromAddress,
+    };
     setTestSending(true);
     setTestResult(null);
     try {
       const result = await sendMailTransportTest(to);
       if (testGenerationRef.current !== requestGeneration) return;
-      if (result.status === "sent") {
-        addToast("Test email sent.", "success");
-        setTestResult({
-          kind: "ok",
-          message: "Test email sent.",
-          recipient: to,
-          provider: result.provider,
-          providerMessageId: result.providerMessageId,
-          timestamp: new Date().toISOString(),
-          host: result.provider === "smtp" ? testedHost : undefined,
-          port: result.provider === "smtp" ? testedPort : undefined,
-          mailbox: result.provider === "graph" ? testedMailbox : undefined,
-        });
-      } else {
-        const message = result.error ?? "Send failed.";
-        addToast(message, "error");
-        setTestResult({
-          kind: "error",
-          message,
-          recipient: to,
-          provider: result.provider,
-          retryable: result.retryable,
-          timestamp: new Date().toISOString(),
-          host: result.provider === "smtp" ? testedHost : undefined,
-          port: result.provider === "smtp" ? testedPort : undefined,
-          mailbox: result.provider === "graph" ? testedMailbox : undefined,
-        });
-      }
+      const nextResult = buildTestResult(result, to, snapshotInputs);
+      setTestResult(nextResult);
+      addToast(nextResult.message, nextResult.kind === "ok" ? "success" : "error");
     } catch (err) {
       if (testGenerationRef.current !== requestGeneration) return;
-      const message =
-        err instanceof ApiError && err.status === 400 && hasApiErrorCode(err, "validation_failed")
-          ? "Enter a valid email address."
-          : operatorApiErrorMessage(err, "Send failed.");
+      const message = testSendErrorMessage(err);
       addToast(message, "error");
       setTestResult({ kind: "error", message, recipient: to, timestamp: new Date().toISOString() });
     } finally {
@@ -955,45 +1085,24 @@ export function MailTransportPanel() {
     );
   }
 
+  const handleSelectProvider = (value: MailProvider | "") => {
+    if (value === "smtp" && draft.provider !== "smtp") {
+      updateDraft({ provider: "smtp", ...smtpProviderDraftDefaults() });
+    } else {
+      updateDraft({ provider: value });
+    }
+  };
+
   return (
     <>
-      <Card
-        title="Mail transport"
-        actions={
-          <Badge variant={provider ? "ok" : "neutral"}>{provider ? "Configured" : "Not configured"}</Badge>
-        }
-      >
-        <div className="mail-transport-form">
-          {fieldLocked("provider") && (
-            <p className="mail-transport__env-note">
-              Some transport settings are managed by your deployment configuration and cannot be changed
-              here. Contact your instance administrator if you need to update them.
-            </p>
-          )}
-          <p className="mail-transport__desc">
-            Instance-wide outbound transport for tickets and lifecycle mail.
-          </p>
-          <TransportTileGrid
-            provider={provider}
-            providerOptions={providerOptions}
-            locked={fieldLocked("provider")}
-            onSelect={(value) => {
-              if (value === "smtp" && draft.provider !== "smtp") {
-                updateDraft({ provider: "smtp", ...smtpProviderDraftDefaults() });
-              } else {
-                updateDraft({ provider: value });
-              }
-            }}
-          />
-          {provider === "export_only" && (
-            <p className="mail-dev-warning" role="status">
-              Dev/test only — cannot send real mail in production.
-            </p>
-          )}
-        </div>
-      </Card>
+      <MailTransportCard
+        provider={provider}
+        providerOptions={providerOptions}
+        fieldLocked={fieldLocked}
+        onSelectProvider={handleSelectProvider}
+      />
 
-      {(provider === "smtp" || provider === "graph" || provider === "powerautomate" || provider === "export_only") && (
+      {provider !== "" && (
         <SenderCard draft={draft} fieldLocked={fieldLocked} updateDraft={updateDraft} />
       )}
 
@@ -1060,33 +1169,14 @@ export function MailTransportPanel() {
         {testResult && <TestResultPreview testResult={testResult} />}
       </Card>
 
-      <div className="settings-footer">
-        <div className="settings-footer__status">
-          {validationErrors.length > 0 ? (
-            <ul ref={validationErrorsRef} role="alert" className="text-error">
-              {validationErrors.map((e) => (
-                <li key={e}>{e}</li>
-              ))}
-            </ul>
-          ) : (
-            <span className="settings-footer__save-state">
-              <i
-                className={`ti ${hasUnsavedChanges ? "ti-alert-triangle" : "ti-circle-check"}`}
-                aria-hidden="true"
-              />
-              {hasUnsavedChanges ? "Unsaved changes" : "All changes saved"}
-            </span>
-          )}
-        </div>
-        <div className="settings-footer__buttons">
-          <Button type="button" variant="secondary" disabled={saving} onClick={handleReset}>
-            Reset
-          </Button>
-          <Button type="button" variant="primary" disabled={saving} onClick={() => void handleSave()}>
-            {saving ? "Saving…" : hasUnsavedChanges ? "Save changes" : "Save"}
-          </Button>
-        </div>
-      </div>
+      <SettingsFooter
+        validationErrors={validationErrors}
+        validationErrorsRef={validationErrorsRef}
+        hasUnsavedChanges={hasUnsavedChanges}
+        saving={saving}
+        onReset={handleReset}
+        onSave={() => void handleSave()}
+      />
     </>
   );
 }
