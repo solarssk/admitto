@@ -56,6 +56,10 @@ body {
   text-decoration: none;
 }
 
+.sidebar__close-btn {
+  display: none;
+}
+
 .sidebar__event {
   padding: 10px 10px 12px;
   border-top: 1px solid var(--border);
@@ -111,12 +115,14 @@ body {
   flex-direction: column;
   gap: 2px;
   margin-top: 8px;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
 }
 
 .sidebar__foot {
+  /* Consumes leftover flex space to sit flush at the bottom when the column is
+     shorter than the sidebar; if content instead overflows, auto-margin space
+     collapses to 0 and .sidebar's own overflow-y:auto scrolls everything as one
+     unit instead of pinning the footer while only the nav list scrolls. */
+  margin-top: auto;
   border-top: 1px solid var(--border);
   padding-top: 6px;
 }
@@ -501,10 +507,13 @@ body {
     top: 0;
     left: 0;
     bottom: 0;
-    width: min(var(--sidebar-w), 88vw);
+    width: 100vw;
     transform: translateX(-105%);
     transition: transform var(--dur-fast);
     box-shadow: var(--shadow-lg);
+    /* .topbar shares --z-sticky and follows .sidebar in DOM order, so it would otherwise
+       paint over the open drawer's top-left corner (covering .sidebar__brand) on mobile. */
+    z-index: calc(var(--z-sticky) + 1);
   }
 
   .shell--nav-open .sidebar {
@@ -513,6 +522,33 @@ body {
 
   .shell--nav-open .shell__backdrop {
     display: block;
+  }
+
+  /* A full-width mobile drawer covers the topbar's hamburger toggle entirely, so it
+     needs its own explicit close affordance instead of relying on the (now hidden) toggle.
+     Styled to match .topbar__menu (same button language); top offset centers it against
+     .sidebar__brand-mark's vertical center (14px sidebar padding + 6px brand padding + half
+     of the 28px mark = 34px from the top of .sidebar). */
+  .sidebar__close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 16px;
+    right: 12px;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+    z-index: 1;
+  }
+
+  .sidebar__close-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
   }
 }
 

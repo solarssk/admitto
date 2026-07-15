@@ -209,17 +209,6 @@
   background: var(--surface-subtle);
 }
 
-/* Mailer indicator */
-.topbar__mailer-label {
-  white-space: nowrap;
-}
-
-@media (max-width: 640px) {
-  .topbar__mailer-label {
-    display: none;
-  }
-}
-
 /* Role badge */
 .role-badge {
   display: inline-flex;
@@ -289,7 +278,7 @@
   gap: 8px;
   padding: 0 12px;
   background: var(--surface-card);
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border);
   font-size: 0.75rem;
   z-index: var(--z-demo-bar, 200);
 }
@@ -297,7 +286,7 @@
 .demo-bar button {
   font-size: 0.75rem;
   padding: 2px 8px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
   border-radius: 4px;
   background: none;
   cursor: pointer;
@@ -954,7 +943,7 @@
   align-items: center;
   gap: 10px;
   padding: 9px 0;
-  border-bottom: 1px solid var(--border-subtle, var(--border));
+  border-bottom: 1px solid var(--border);
 }
 
 .ck-recent__row:last-child {
@@ -2971,7 +2960,7 @@
 
 .sessions-filter__btn {
   padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
@@ -3019,7 +3008,7 @@
   padding: var(--space-2) var(--space-3);
   text-align: left;
   vertical-align: middle;
-  border-bottom: 1px solid var(--border-subtle, var(--border-default));
+  border-bottom: 1px solid var(--border);
 }
 
 .table th {
@@ -3250,7 +3239,7 @@
   right: var(--space-4);
   padding: var(--space-3) var(--space-4);
   background: var(--surface-card, var(--bg-elevated));
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.08));
   z-index: 100;
@@ -3355,7 +3344,7 @@
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border);
 }
 
 .overview-alert:last-child {
@@ -3413,7 +3402,7 @@
   align-items: center;
   gap: var(--space-3);
   padding: 7px 0;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border);
 }
 
 .overview-readiness__row:last-child {
@@ -3533,7 +3522,7 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border);
 }
 
 .overview-activity__item:last-child {
@@ -3856,21 +3845,6 @@
 .event-card__hint {
   margin: var(--space-2) 0 0;
   font-size: var(--fs-sm);
-}
-
-.picker-inline-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--brand-600, var(--primary));
-  font: inherit;
-  font-size: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.picker-inline-link:hover {
-  color: var(--brand-700, var(--primary));
 }
 
 .timezone-select {
@@ -4364,5 +4338,14 @@
 .at-tooltip--below::after {
   bottom: auto;
   top: calc(100% + 5px);
+}
+
+/* Opt-in variant for controls that sit near the LEFT edge of their row (e.g. the
+   first of several icons in the topbar, followed by more content to its right) —
+   the default right-anchored growth spills past the left edge of a narrow
+   viewport before it can render, since there isn't 220px of room to the left. */
+.at-tooltip--left::after {
+  right: auto;
+  left: 0;
 }
 

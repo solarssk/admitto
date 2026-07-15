@@ -1,4 +1,3 @@
-import { Badge } from "@admitto/ui";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import type { ConnectionState } from "../connection/types.js";
 
@@ -39,6 +38,13 @@ const COPY: Record<CheckinConnectionVisual, { icon: string; message: string }> =
   },
 };
 
+const BADGE_VARIANT: Record<CheckinConnectionVisual, "ok" | "warn" | "error"> = {
+  connected: "ok",
+  offline: "error",
+  degraded: "warn",
+  session_ended: "error",
+};
+
 /** Screen-reader announcements for all connection states in one stable live region. */
 export function CheckinConnectionLiveRegion() {
   const { state } = useConnectionState();
@@ -59,18 +65,25 @@ export function CheckinConnectionLiveRegion() {
 }
 
 /**
- * Compact indicator when the app-wide connection heartbeat is healthy.
- * Rendered globally in StaffShell's topbar (next to MailerStatusBadge), not
- * scoped to the check-in page — the underlying ConnectionStateProvider is
- * app-wide, not check-in-specific.
+ * Compact colored-icon indicator of the app-wide connection heartbeat, shown in every
+ * state (not just when healthy) so a degraded/offline connection is actually visible
+ * instead of the badge just disappearing. Rendered globally in StaffShell's topbar
+ * (next to MailerStatusBadge), not scoped to the check-in page — the underlying
+ * ConnectionStateProvider is app-wide, not check-in-specific.
  */
 export function ServerConnectionBadge() {
   const { state } = useConnectionState();
-  if (mapConnectionState(state) !== "connected") return null;
+  const visual = mapConnectionState(state);
+  if (!visual) return null;
+  const { icon, message } = COPY[visual];
 
   return (
-    <span title="All scans confirmed by server">
-      <Badge variant="ok">Server connected</Badge>
+    <span
+      className={`status-circle status-circle--${BADGE_VARIANT[visual]} at-tooltip at-tooltip--below at-tooltip--left`}
+      data-tooltip={message}
+      aria-label={message}
+    >
+      <i className={`ti ${icon}`} aria-hidden="true" />
     </span>
   );
 }

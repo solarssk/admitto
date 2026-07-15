@@ -121,6 +121,16 @@
 .at-badge--vip { background: var(--status-vip-tint); color: var(--status-vip-fg); }
 .at-badge--outline { background: transparent; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text-secondary); }
 
+/* ---------------- Status circle (icon-only status indicator) ---------------- */
+.status-circle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; border-radius: 50%; font-size: 15px; flex-shrink: 0;
+}
+.status-circle--ok { background: var(--status-ok-tint); color: var(--status-ok-fg); }
+.status-circle--warn { background: var(--status-warn-tint); color: var(--status-warn-fg); }
+.status-circle--error { background: var(--status-error-tint); color: var(--status-error-fg); }
+.status-circle--neutral { background: var(--at-gray-100); color: var(--text-secondary); }
+
 /* ---------------- Avatar ---------------- */
 .at-avatar {
   display: inline-grid; place-items: center; flex: none;

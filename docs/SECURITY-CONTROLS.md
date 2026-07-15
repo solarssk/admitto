@@ -62,6 +62,17 @@ Expired or revoked session and trusted-device rows are purged best-effort during
 after migrations/backfills with a 120-second timeout. Operators can also run
 `npm run cli -w @admitto/auth -- purge-auth-retention` (use `--dry-run` first
 to preview counts).
+**Trusted-device revocation on logout.** Signing out (`POST /logout` in the staff UI, or
+`POST /api/auth/logout`) revokes the `admitto_trusted_device` cookie and its database row for
+that browser, in addition to the session itself. The next sign-in on that browser requires MFA
+again unless the user checks **"Remember this device"** during verification. This is intentional:
+the trusted-device cookie must not silently persist past a sign-out on a browser other people may
+use next.
+
+> **Shared check-in devices.** On shared operator tablets, sign out before handing the device to
+> the next person — logout is what clears the remembered-device state; simply closing the browser
+> or app does not. Instance operators can also shorten or disable trusted-device persistence
+> entirely via the `trusted_device_days` setting (`0` disables the feature).
 Frozen email delivery bodies (`EmailDelivery.rendered_html` / `rendered_subject`) are nullified
 best-effort during container startup once a delivery is terminal and older than 60 days
 (configurable via `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`). Preview with

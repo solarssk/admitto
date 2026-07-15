@@ -128,20 +128,29 @@ export function EventsPickerPage() {
         />
       )}
 
-      {!loading && !error && displayedEvents.length === 0 && events.length > 0 && (
-        <Card>
-          <p>{tab === "archived" ? "No archived events." : "No active events in your scope."}</p>
-          {tab === "active" && allEventsArchived && (
-            <p className="at-hint">
-              All events are archived. Open the{" "}
-              <button type="button" className="picker-inline-link" onClick={() => setTab("archived")}>
-                Archived events
-              </button>{" "}
-              tab to unarchive.
-              {!showInstanceSettings && <> Contact your administrator if you need help.</>}
-            </p>
-          )}
-        </Card>
+      {!loading && !error && tab === "archived" && displayedEvents.length === 0 && events.length > 0 && (
+        <EmptyState
+          icon={<i className="ti ti-archive-off" aria-hidden="true" />}
+          title="No archived events"
+          description="Events you archive will appear here."
+        />
+      )}
+
+      {!loading && !error && tab === "active" && displayedEvents.length === 0 && allEventsArchived && (
+        <EmptyState
+          icon={<i className="ti ti-archive" aria-hidden="true" />}
+          title="No active events"
+          description={
+            showInstanceSettings
+              ? "All events are archived. Open the Archived events tab to unarchive one."
+              : "All events are archived. Contact your administrator if you need help."
+          }
+          action={
+            <Button type="button" variant="secondary" onClick={() => setTab("archived")}>
+              View archived events
+            </Button>
+          }
+        />
       )}
 
       <div className={gridClass}>
