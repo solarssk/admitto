@@ -23,10 +23,9 @@ import {
   classifyMailSettingsFields,
   runTransportTest,
   transportTestResponse,
-  MAX_MAIL_SETTINGS_BODY_BYTES,
 } from "./mail-settings-shared.js";
 
-export { MAX_MAIL_SETTINGS_BODY_BYTES };
+export { MAX_MAIL_SETTINGS_BODY_BYTES } from "./mail-settings-shared.js";
 
 async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response | null> {
   const auth = c.get("auth");

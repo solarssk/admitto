@@ -22,7 +22,12 @@ import {
 } from "@admitto/mailer-config";
 import { sendEventTransportTestEmail, type MailDeliveryDeps } from "@admitto/mail-delivery";
 import { writeAdminAuditLog } from "@admitto/tickets";
-import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import {
+  adminAuditFromContext,
+  assertEventManageAccess,
+  lockEventForMailSettingsWrite,
+  requireEventId,
+} from "./admin-helpers.js";
 import {
   putMailSettingsBodySchema,
   testMailTransportBodySchema,
@@ -52,6 +57,11 @@ async function hasEventMailOverride(db: PrismaClient, eventId: string): Promise<
   });
   return row !== null;
 }
+
+/** Thrown inside the PUT transaction when a concurrent deletion removed the event while
+ * this request was validating — signals the route to return 404 instead of writing an
+ * orphaned MailSettings row for an event that no longer exists. */
+class EventGoneDuringWriteError extends Error {}
 
 /** GET /api/admin/events/:eventId/mail-settings */
 export async function handleGetEventMailSettings(c: Context, db: PrismaClient): Promise<Response> {
@@ -131,25 +141,37 @@ export async function handlePutEventMailSettings(c: Context, db: PrismaClient): 
 
   const { fieldsChanged, secretsRotated, secretsCleared } = classifyMailSettingsFields(body);
 
-  await db.$transaction(async (tx) => {
-    await setMailSettings({ scopeType: "event", scopeId: eventId }, body as MailSettingsInput, tx);
+  try {
+    await db.$transaction(async (tx) => {
+      // Serializes with permanent event deletion (see event-deletion.ts) — without this,
+      // a concurrent delete could remove the event right after the checks above and
+      // this write would otherwise recreate an orphaned MailSettings row.
+      await lockEventForMailSettingsWrite(tx, eventId);
+      const stillExists = await tx.event.findUnique({ where: { id: eventId }, select: { id: true } });
+      if (!stillExists) throw new EventGoneDuringWriteError();
 
-    const audit = adminAuditFromContext(c);
-    await writeAdminAuditLog(tx, {
-      organizationId: org.organizationId,
-      actorUserId: audit.operator!,
-      sessionId: audit.sessionId,
-      ip: audit.ip,
-      actionType: "event_mail_settings_updated",
-      metadata: {
-        eventId,
-        provider: body.provider ?? current.provider.value,
-        fields_changed: fieldsChanged,
-        secrets_rotated: secretsRotated,
-        secrets_cleared: secretsCleared,
-      },
+      await setMailSettings({ scopeType: "event", scopeId: eventId }, body as MailSettingsInput, tx);
+
+      const audit = adminAuditFromContext(c);
+      await writeAdminAuditLog(tx, {
+        organizationId: org.organizationId,
+        actorUserId: audit.operator!,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        actionType: "event_mail_settings_updated",
+        metadata: {
+          eventId,
+          provider: body.provider ?? current.provider.value,
+          fields_changed: fieldsChanged,
+          secrets_rotated: secretsRotated,
+          secrets_cleared: secretsCleared,
+        },
+      });
     });
-  });
+  } catch (err) {
+    if (err instanceof EventGoneDuringWriteError) return c.json({ error: "not_found" }, 404);
+    throw err;
+  }
 
   const desc = await describeMailConfig(eventId, db, process.env);
   return c.json({

@@ -11,6 +11,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventMailSettingsResponse } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { Segmented } from "../components/Segmented.js";
 import {
   buildSaveMailSettingsBody,
@@ -97,7 +98,14 @@ function OrgMailSummary({
 export function EventMailSettingsCard({
   eventId,
   isArchived,
-}: Readonly<{ eventId: string; isArchived: boolean }>) {
+  onDirtyChange,
+}: Readonly<{
+  eventId: string;
+  isArchived: boolean;
+  /** Notified on every change to hasUnsavedChanges, so a hosting page can fold this card's
+   * dirty state into its own navigation/unload/destructive-action warnings (CodeRabbit review). */
+  onDirtyChange?: (dirty: boolean) => void;
+}>) {
   const { addToast } = useToast();
   const { assignments } = useAuth();
   const isSa = isSuperadmin(assignments);
@@ -106,6 +114,8 @@ export function EventMailSettingsCard({
   const [apiData, setApiData] = useState<EventMailSettingsResponse | null>(null);
   const [mode, setMode] = useState<Mode>("org");
   const [savedMode, setSavedMode] = useState<Mode>("org");
+  const [confirmRevertOpen, setConfirmRevertOpen] = useState(false);
+  const [revertError, setRevertError] = useState<string | null>(null);
   const {
     draft,
     setDraft,
@@ -183,7 +193,7 @@ export function EventMailSettingsCard({
   }, [eventId, applyResponse, loadAbortRef, setLoadError, setLoading]);
 
   useEffect(() => {
-    void loadSettings();
+    loadSettings().catch(() => {});
     return () => loadAbortRef.current?.abort();
   }, [loadSettings, loadAbortRef]);
 
@@ -233,13 +243,20 @@ export function EventMailSettingsCard({
     }
 
     setValidationErrors([]);
+    setRevertError(null);
+    setConfirmRevertOpen(true);
+  };
+
+  const handleConfirmRevert = async () => {
     setSaving(true);
+    setRevertError(null);
     try {
       const data = await clearEventMailSettings(eventId);
       applyResponse(data);
+      setConfirmRevertOpen(false);
       addToast("Reverted to the organization's mail settings.", "success");
     } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Failed to save mail settings."), "error");
+      setRevertError(operatorApiErrorMessage(err, "Failed to save mail settings."));
     } finally {
       setSaving(false);
     }
@@ -256,8 +273,19 @@ export function EventMailSettingsCard({
   const hasUnsavedChanges =
     mode !== savedMode || (mode === "dedicated" && isMailSettingsDirty(draft, savedDraft, secrets));
 
+  useEffect(() => {
+    onDirtyChange?.(hasUnsavedChanges);
+  }, [hasUnsavedChanges, onDirtyChange]);
+
+  // Org mode always tests the saved organization transport, never leftover edits from a
+  // dedicated draft the admin switched away from (CodeRabbit review) — inherited -> dedicated
+  // edits -> back to organization must not disable/mislabel the test using stale draft state.
+  const testDraft = mode === "org" ? savedDraft : draft;
+
   const transportConfigured =
-    draft.provider === "smtp" || draft.provider === "graph" || draft.provider === "powerautomate";
+    testDraft.provider === "smtp" ||
+    testDraft.provider === "graph" ||
+    testDraft.provider === "powerautomate";
 
   let testSendReason: string | undefined;
   let testSendHint: string;
@@ -284,7 +312,7 @@ export function EventMailSettingsCard({
     }
     await runTestSend({
       testEmail,
-      draft,
+      draft: testDraft,
       send: (to) => sendEventMailTransportTest(eventId, to),
       testGenerationRef,
       setTestSending,
@@ -306,7 +334,13 @@ export function EventMailSettingsCard({
       <Card title="Mail transport">
         <p role="alert" className="text-error">
           {loadError ?? "Failed to load mail settings."}{" "}
-          <button type="button" className="settings-retry-link" onClick={() => void loadSettings()}>
+          <button
+            type="button"
+            className="settings-retry-link"
+            onClick={() => {
+              loadSettings().catch(() => {});
+            }}
+          >
             Retry
           </button>
         </p>
@@ -393,7 +427,12 @@ export function EventMailSettingsCard({
       {mode === "dedicated" && (
         <>
           {draft.provider !== "" && (
-            <SenderCard draft={draft} fieldLocked={fieldLocked} updateDraft={updateDraft} />
+            <SenderCard
+              draft={draft}
+              fieldLocked={fieldLocked}
+              updateDraft={updateDraft}
+              disabled={isArchived}
+            />
           )}
 
           {draft.provider === "smtp" && (
@@ -404,6 +443,7 @@ export function EventMailSettingsCard({
               smtpPasswordField={apiData.fields.smtpPassword}
               smtpPasswordEdit={secrets.smtpPassword}
               updateSecrets={updateSecrets}
+              disabled={isArchived}
             />
           )}
 
@@ -415,6 +455,7 @@ export function EventMailSettingsCard({
               graphClientSecretField={apiData.fields.graphClientSecret}
               graphClientSecretEdit={secrets.graphClientSecret}
               updateSecrets={updateSecrets}
+              disabled={isArchived}
             />
           )}
 
@@ -425,6 +466,7 @@ export function EventMailSettingsCard({
               powerAutomateKeyField={apiData.fields.powerAutomateKey}
               powerAutomateKeyEdit={secrets.powerAutomateKey}
               updateSecrets={updateSecrets}
+              disabled={isArchived}
             />
           )}
         </>
@@ -477,6 +519,18 @@ export function EventMailSettingsCard({
           onSave={() => void handleSave()}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmRevertOpen}
+        title="Revert to organization mail"
+        message="This removes this event's dedicated mail transport and any stored secrets, and reverts to the organization's mail settings."
+        errorMessage={revertError}
+        confirmLabel="Revert"
+        confirmVariant="danger"
+        loading={saving}
+        onConfirm={() => void handleConfirmRevert()}
+        onCancel={() => setConfirmRevertOpen(false)}
+      />
     </div>
   );
 }

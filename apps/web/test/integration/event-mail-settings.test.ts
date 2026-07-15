@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -26,6 +26,7 @@ const PASSWORD = "event-mail-settings-pass-123";
 
 const exported: ExportPayload[] = [];
 let failExport = false;
+const originalNodeEnv = process.env.NODE_ENV;
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -156,7 +157,11 @@ afterEach(async () => {
   exported.length = 0;
   failExport = false;
   rateLimitStore.reset();
-  delete process.env.NODE_ENV;
+  if (originalNodeEnv === undefined) {
+    delete process.env.NODE_ENV;
+  } else {
+    process.env.NODE_ENV = originalNodeEnv;
+  }
 });
 
 afterAll(async () => {
@@ -524,6 +529,71 @@ describe("PUT /api/admin/events/:eventId/mail-settings", () => {
     });
     expect(res.status).toBe(404);
   });
+
+  it("returns 400 validation_failed for malformed JSON", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT}/mail-settings`, {
+      method: "PUT",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("validation_failed");
+  });
+
+  it("returns 404 without writing a row when the event is deleted between validation and the write", async () => {
+    const raceEventId = "evt-event-mail-settings-race";
+    await prisma.event.create({
+      data: {
+        id: raceEventId,
+        title: "Event Mail Settings Race Event",
+        slug: "event-mail-settings-race",
+        date: new Date("2026-10-05T12:00:00.000Z"),
+        location: "Warsaw",
+        organization_id: ORG_A,
+      },
+    });
+
+    // Simulates a concurrent permanent event-delete landing between this route's initial
+    // validation (loadEventOrg, below) and its transaction's own advisory-lock re-check —
+    // the lock in handlePutEventMailSettings/deleteEvent exists precisely to prevent this
+    // write from recreating an orphaned MailSettings row (CodeRabbit review).
+    const originalFindUnique = prisma.event.findUnique.bind(prisma.event);
+    let alreadyDeleted = false;
+    const spy = vi.spyOn(prisma.event, "findUnique").mockImplementation((async (args: { where?: { id?: string } }) => {
+      const result = await originalFindUnique(args as Parameters<typeof originalFindUnique>[0]);
+      if (args?.where?.id === raceEventId && !alreadyDeleted) {
+        alreadyDeleted = true;
+        await prisma.event.delete({ where: { id: raceEventId } });
+      }
+      return result;
+    }) as never);
+
+    try {
+      const res = await app.request(`/api/admin/events/${raceEventId}/mail-settings`, {
+        method: "PUT",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "smtp",
+          host: "smtp.race.example.com",
+          port: 587,
+          user: "race@example.com",
+          fromAddress: "race@example.com",
+          smtpPassword: "race-secret",
+        }),
+      });
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error?: string };
+      expect(body.error).toBe("not_found");
+
+      const row = await prisma.mailSettings.findUnique({
+        where: { scope_type_scope_id: { scope_type: "event", scope_id: raceEventId } },
+      });
+      expect(row).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe("DELETE /api/admin/events/:eventId/mail-settings", () => {
@@ -655,7 +725,7 @@ describe("POST /api/admin/events/:eventId/mail-settings/test", () => {
     const body = (await res.json()) as { status: string; provider?: string };
     expect(body.status).toBe("sent");
     expect(body.provider).toBe("export_only");
-    expect(exported.length).toBe(1);
+    expect(exported).toHaveLength(1);
   });
 
   it("falls back to the organization's transport when the event has no override", async () => {
@@ -677,7 +747,7 @@ describe("POST /api/admin/events/:eventId/mail-settings/test", () => {
     const body = (await res.json()) as { status: string; provider?: string };
     expect(body.status).toBe("sent");
     expect(body.provider).toBe("export_only");
-    expect(exported.length).toBe(1);
+    expect(exported).toHaveLength(1);
 
     const row = await prisma.mailSettings.findUnique({
       where: { scope_type_scope_id: { scope_type: "event", scope_id: EVENT } },

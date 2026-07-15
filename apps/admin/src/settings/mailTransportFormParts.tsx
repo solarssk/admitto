@@ -59,7 +59,7 @@ function numValue(fd: MailPlainFieldDto<number | null>): string {
 }
 
 function boolValue(fd: MailPlainFieldDto<boolean | null>, fallback: boolean): boolean {
-  return fd.value === null || fd.value === undefined ? fallback : fd.value;
+  return fd.value ?? fallback;
 }
 
 export function draftFromFields(f: MailSettingsFieldsDto): MailDraft {
@@ -91,7 +91,7 @@ export function draftFromFields(f: MailSettingsFieldsDto): MailDraft {
   };
 }
 
-export function EnvBadge({ locked }: { locked: boolean }) {
+export function EnvBadge({ locked }: Readonly<{ locked: boolean }>) {
   if (!locked) return null;
   return (
     <Badge variant="neutral" className="mail-field-env-badge">
@@ -140,7 +140,8 @@ export function SecretFieldRow({
   onClear,
   onValueChange,
   onCancel,
-}: {
+  disabled = false,
+}: Readonly<{
   label: string;
   field: MailSecretFieldDto;
   edit: SecretEdits[keyof SecretEdits];
@@ -148,7 +149,10 @@ export function SecretFieldRow({
   onClear: () => void;
   onValueChange: (value: string) => void;
   onCancel: () => void;
-}) {
+  /** Read-only override independent of `field.locked` (env-managed) — e.g. an archived
+   * event's fields, where nothing is env-managed but edits still can't be saved. */
+  disabled?: boolean;
+}>) {
   const editing = edit.mode !== "idle";
   const [confirmed, setConfirmed] = useState(false);
   useEffect(() => {
@@ -176,7 +180,7 @@ export function SecretFieldRow({
                 className="mail-secret-field__input"
                 placeholder={edit.mode === "clear" ? "Will be cleared on save" : "New value"}
                 value={edit.value}
-                disabled={edit.mode === "clear" || field.locked}
+                disabled={edit.mode === "clear" || field.locked || disabled}
                 onChange={(e) => onValueChange(e.target.value)}
               />
               <div className="mail-secret-field__display-actions">
@@ -227,13 +231,19 @@ export function SecretFieldRow({
                 <EnvBadge locked />
               ) : (
                 <div className="mail-secret-field__display-actions">
-                  <button type="button" className="mail-secret-field__link" onClick={onReplace}>
+                  <button
+                    type="button"
+                    className="mail-secret-field__link"
+                    disabled={disabled}
+                    onClick={onReplace}
+                  >
                     {field.set ? "Change" : "Set"}
                   </button>
                   {field.set && (
                     <button
                       type="button"
                       className="mail-secret-field__link mail-secret-field__link--danger"
+                      disabled={disabled}
                       onClick={onClear}
                     >
                       Clear
@@ -267,6 +277,10 @@ export function TransportTileGrid({
   includeNotConfigured?: boolean;
 }>) {
   const tiles = includeNotConfigured ? [...TRANSPORT_TILES, ...providerOptions] : providerOptions;
+  // Dedicated mode starts with provider="" and omits "Not configured", so no tile is ever
+  // active — without this fallback every tile gets tabIndex -1 and keyboard users can't
+  // enter the group at all (CodeRabbit review).
+  const hasActiveTile = tiles.some((tile) => tile.value === provider);
   const tileRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const focusAndSelect = (index: number) => {
@@ -293,7 +307,10 @@ export function TransportTileGrid({
         // The tile itself only has room for a short word or two — the parenthetical
         // qualifier ("(recommended)", "(dev/test)") moves to the hover tooltip instead of
         // getting truncated with an ellipsis. aria-label keeps the full text either way.
-        const shortLabel = opt.label.replace(/\s*\([^)]*\)\s*$/, "");
+        // Plain indexOf/slice rather than a regex — SonarCloud flagged the equivalent
+        // \s*\([^)]*\)\s*$ pattern as super-linear on adversarial input.
+        const parenIndex = opt.label.indexOf("(");
+        const shortLabel = parenIndex === -1 ? opt.label : opt.label.slice(0, parenIndex).trimEnd();
         return (
           <button
             key={opt.value || "none"}
@@ -305,7 +322,7 @@ export function TransportTileGrid({
             aria-checked={active}
             aria-label={opt.label}
             data-tooltip={PROVIDER_GUIDE[opt.value]}
-            tabIndex={active ? 0 : -1}
+            tabIndex={active || (!hasActiveTile && index === 0) ? 0 : -1}
             className={`transport-tile at-tooltip${active ? " transport-tile--active" : ""}`}
             disabled={locked}
             onClick={() => onSelect(opt.value)}
@@ -326,11 +343,15 @@ export function SenderCard({
   draft,
   fieldLocked,
   updateDraft,
+  disabled = false,
 }: Readonly<{
   draft: MailDraft;
   fieldLocked: FieldLocked;
   updateDraft: (patch: Partial<MailDraft>) => void;
+  /** Read-only override independent of `fieldLocked` (env-managed) — e.g. an archived event. */
+  disabled?: boolean;
 }>) {
+  const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
     <Card title="Sender">
       <div className="mail-transport-section">
@@ -339,14 +360,14 @@ export function SenderCard({
           type="text"
           inputMode="email"
           value={draft.fromAddress}
-          disabled={fieldLocked("fromAddress")}
+          disabled={isDisabled("fromAddress")}
           onChange={(e) => updateDraft({ fromAddress: e.target.value })}
           {...NO_AUTOFILL_PROPS}
         />
         <Input
           label="From name"
           value={draft.fromName}
-          disabled={fieldLocked("fromName")}
+          disabled={isDisabled("fromName")}
           onChange={(e) => updateDraft({ fromName: e.target.value })}
         />
         <Input
@@ -354,7 +375,7 @@ export function SenderCard({
           type="text"
           inputMode="email"
           value={draft.replyTo}
-          disabled={fieldLocked("replyTo")}
+          disabled={isDisabled("replyTo")}
           onChange={(e) => updateDraft({ replyTo: e.target.value })}
           {...NO_AUTOFILL_PROPS}
         />
@@ -363,7 +384,7 @@ export function SenderCard({
           type="text"
           inputMode="email"
           value={draft.envelopeFrom}
-          disabled={fieldLocked("envelopeFrom")}
+          disabled={isDisabled("envelopeFrom")}
           {...NO_AUTOFILL_PROPS}
           onChange={(e) => updateDraft({ envelopeFrom: e.target.value })}
           hint="SMTP MAIL FROM / return-path."
@@ -371,7 +392,7 @@ export function SenderCard({
         <Input
           label="Allowed from domain"
           value={draft.allowedFromDomain}
-          disabled={fieldLocked("allowedFromDomain")}
+          disabled={isDisabled("allowedFromDomain")}
           onChange={(e) => updateDraft({ allowedFromDomain: e.target.value })}
           hint="Optional. Send fails when From (or Graph mailbox) is outside this domain."
         />
@@ -387,6 +408,7 @@ export function SmtpConnectionCard({
   smtpPasswordField,
   smtpPasswordEdit,
   updateSecrets,
+  disabled = false,
 }: Readonly<{
   draft: MailDraft;
   fieldLocked: FieldLocked;
@@ -394,7 +416,10 @@ export function SmtpConnectionCard({
   smtpPasswordField: MailSecretFieldDto;
   smtpPasswordEdit: SecretEdits[keyof SecretEdits];
   updateSecrets: (updater: (prev: SecretEdits) => SecretEdits) => void;
+  /** Read-only override independent of `fieldLocked` (env-managed) — e.g. an archived event. */
+  disabled?: boolean;
 }>) {
+  const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
     <Card title="SMTP connection">
       <div className="mail-transport-form">
@@ -402,7 +427,7 @@ export function SmtpConnectionCard({
           <Input
             label="SMTP host"
             value={draft.host}
-            disabled={fieldLocked("host")}
+            disabled={isDisabled("host")}
             onChange={(e) => updateDraft({ host: e.target.value })}
             placeholder="smtp.example.com"
           />
@@ -410,14 +435,14 @@ export function SmtpConnectionCard({
             label="Port"
             inputMode="numeric"
             value={draft.port}
-            disabled={fieldLocked("port")}
+            disabled={isDisabled("port")}
             onChange={(e) => updateDraft({ port: e.target.value })}
             placeholder="587"
           />
           <Input
             label="Username"
             value={draft.user}
-            disabled={fieldLocked("user")}
+            disabled={isDisabled("user")}
             onChange={(e) => updateDraft({ user: e.target.value })}
             {...NO_AUTOFILL_PROPS}
           />
@@ -425,6 +450,7 @@ export function SmtpConnectionCard({
             label="Password"
             field={smtpPasswordField}
             edit={smtpPasswordEdit}
+            disabled={disabled}
             {...makeSecretHandlers("smtpPassword", updateSecrets)}
           />
           <div className="settings-row">
@@ -435,7 +461,7 @@ export function SmtpConnectionCard({
             <Switch
               aria-label="Use TLS (secure)"
               checked={draft.secure}
-              disabled={fieldLocked("secure")}
+              disabled={isDisabled("secure")}
               onChange={(e) => updateDraft({ secure: e.target.checked })}
             />
           </div>
@@ -447,7 +473,7 @@ export function SmtpConnectionCard({
             <Switch
               aria-label="Require STARTTLS"
               checked={draft.requireTls}
-              disabled={fieldLocked("requireTls")}
+              disabled={isDisabled("requireTls")}
               onChange={(e) => updateDraft({ requireTls: e.target.checked })}
             />
           </div>
@@ -463,13 +489,13 @@ export function SmtpConnectionCard({
                 <Switch
                   label="Connection pool"
                   checked={draft.pool}
-                  disabled={fieldLocked("pool")}
+                  disabled={isDisabled("pool")}
                   onChange={(e) => updateDraft({ pool: e.target.checked })}
                 />
                 <Switch
                   label="Verify TLS certificate"
                   checked={draft.tlsRejectUnauthorized}
-                  disabled={fieldLocked("tlsRejectUnauthorized")}
+                  disabled={isDisabled("tlsRejectUnauthorized")}
                   onChange={(e) => updateDraft({ tlsRejectUnauthorized: e.target.checked })}
                 />
               </div>
@@ -477,7 +503,7 @@ export function SmtpConnectionCard({
                 <Input
                   label="HELO/EHLO name"
                   value={draft.heloName}
-                  disabled={fieldLocked("heloName")}
+                  disabled={isDisabled("heloName")}
                   onChange={(e) => updateDraft({ heloName: e.target.value })}
                 />
               </div>
@@ -486,21 +512,21 @@ export function SmtpConnectionCard({
                   label="Rate limit (per minute)"
                   inputMode="numeric"
                   value={draft.rateLimitPerMinute}
-                  disabled={fieldLocked("rateLimitPerMinute")}
+                  disabled={isDisabled("rateLimitPerMinute")}
                   onChange={(e) => updateDraft({ rateLimitPerMinute: e.target.value })}
                 />
                 <Input
                   label="Max connections"
                   inputMode="numeric"
                   value={draft.maxConnections}
-                  disabled={fieldLocked("maxConnections")}
+                  disabled={isDisabled("maxConnections")}
                   onChange={(e) => updateDraft({ maxConnections: e.target.value })}
                 />
                 <Input
                   label="Max messages per connection"
                   inputMode="numeric"
                   value={draft.maxMessages}
-                  disabled={fieldLocked("maxMessages")}
+                  disabled={isDisabled("maxMessages")}
                   onChange={(e) => updateDraft({ maxMessages: e.target.value })}
                 />
               </div>
@@ -509,21 +535,21 @@ export function SmtpConnectionCard({
                   label="Connection timeout (ms)"
                   inputMode="numeric"
                   value={draft.connectionTimeout}
-                  disabled={fieldLocked("connectionTimeout")}
+                  disabled={isDisabled("connectionTimeout")}
                   onChange={(e) => updateDraft({ connectionTimeout: e.target.value })}
                 />
                 <Input
                   label="Greeting timeout (ms)"
                   inputMode="numeric"
                   value={draft.greetingTimeout}
-                  disabled={fieldLocked("greetingTimeout")}
+                  disabled={isDisabled("greetingTimeout")}
                   onChange={(e) => updateDraft({ greetingTimeout: e.target.value })}
                 />
                 <Input
                   label="Socket timeout (ms)"
                   inputMode="numeric"
                   value={draft.socketTimeout}
-                  disabled={fieldLocked("socketTimeout")}
+                  disabled={isDisabled("socketTimeout")}
                   onChange={(e) => updateDraft({ socketTimeout: e.target.value })}
                 />
               </div>
@@ -542,6 +568,7 @@ export function GraphCard({
   graphClientSecretField,
   graphClientSecretEdit,
   updateSecrets,
+  disabled = false,
 }: Readonly<{
   draft: MailDraft;
   fieldLocked: FieldLocked;
@@ -549,7 +576,10 @@ export function GraphCard({
   graphClientSecretField: MailSecretFieldDto;
   graphClientSecretEdit: SecretEdits[keyof SecretEdits];
   updateSecrets: (updater: (prev: SecretEdits) => SecretEdits) => void;
+  /** Read-only override independent of `fieldLocked` (env-managed) — e.g. an archived event. */
+  disabled?: boolean;
 }>) {
+  const isDisabled: FieldLocked = (key) => fieldLocked(key) || disabled;
   return (
     <Card title="Microsoft Graph">
       <div className="mail-transport-form">
@@ -590,7 +620,7 @@ export function GraphCard({
             type="text"
             inputMode="email"
             value={draft.mailbox}
-            disabled={fieldLocked("mailbox")}
+            disabled={isDisabled("mailbox")}
             onChange={(e) => updateDraft({ mailbox: e.target.value })}
             placeholder="shared@contoso.com"
             {...NO_AUTOFILL_PROPS}
@@ -598,14 +628,14 @@ export function GraphCard({
           <Input
             label="Tenant ID"
             value={draft.tenantId}
-            disabled={fieldLocked("tenantId")}
+            disabled={isDisabled("tenantId")}
             onChange={(e) => updateDraft({ tenantId: e.target.value })}
             placeholder="00000000-0000-0000-0000-000000000000"
           />
           <Input
             label="Client ID"
             value={draft.clientId}
-            disabled={fieldLocked("clientId")}
+            disabled={isDisabled("clientId")}
             onChange={(e) => updateDraft({ clientId: e.target.value })}
             placeholder="00000000-0000-0000-0000-000000000000"
           />
@@ -613,12 +643,13 @@ export function GraphCard({
             label="Client secret"
             field={graphClientSecretField}
             edit={graphClientSecretEdit}
+            disabled={disabled}
             {...makeSecretHandlers("graphClientSecret", updateSecrets)}
           />
           <Switch
             label="Save to Sent Items"
             checked={draft.saveToSentItems}
-            disabled={fieldLocked("saveToSentItems")}
+            disabled={isDisabled("saveToSentItems")}
             onChange={(e) => updateDraft({ saveToSentItems: e.target.checked })}
           />
         </div>
@@ -633,12 +664,15 @@ export function PowerAutomateCard({
   powerAutomateKeyField,
   powerAutomateKeyEdit,
   updateSecrets,
+  disabled = false,
 }: Readonly<{
   powerAutomateUrlField: MailSecretFieldDto;
   powerAutomateUrlEdit: SecretEdits[keyof SecretEdits];
   powerAutomateKeyField: MailSecretFieldDto;
   powerAutomateKeyEdit: SecretEdits[keyof SecretEdits];
   updateSecrets: (updater: (prev: SecretEdits) => SecretEdits) => void;
+  /** Read-only override — e.g. an archived event. */
+  disabled?: boolean;
 }>) {
   return (
     <Card title="Power Automate">
@@ -647,12 +681,14 @@ export function PowerAutomateCard({
           label="Flow URL"
           field={powerAutomateUrlField}
           edit={powerAutomateUrlEdit}
+          disabled={disabled}
           {...makeSecretHandlers("powerAutomateUrl", updateSecrets)}
         />
         <SecretFieldRow
           label="Flow key"
           field={powerAutomateKeyField}
           edit={powerAutomateKeyEdit}
+          disabled={disabled}
           {...makeSecretHandlers("powerAutomateKey", updateSecrets)}
         />
       </div>
@@ -770,9 +806,9 @@ export function MailTransportCard({
           onSelect={onSelectProvider}
         />
         {provider === "export_only" && (
-          <p className="mail-dev-warning" role="status">
+          <output className="mail-dev-warning">
             Dev/test only — cannot send real mail in production.
-          </p>
+          </output>
         )}
       </div>
     </Card>
@@ -815,8 +851,7 @@ export function SettingsFooter({
         ) : (
           hasUnsavedChanges && (
             <span className="settings-footer__save-state">
-              <i className="ti ti-alert-triangle" aria-hidden="true" />
-              Unsaved changes
+              <i className="ti ti-alert-triangle" aria-hidden="true" /> Unsaved changes
             </span>
           )
         )}
@@ -952,6 +987,19 @@ export function useMailSettingsFormState() {
   };
 }
 
+/** Client-side plausibility check only — the server does the authoritative validation.
+ * Plain indexOf/slice rather than a regex — SonarCloud flagged the equivalent
+ * /^[^\s@]+@[^\s@]+\.[^\s@]+$/ pattern as super-linear on adversarial input. */
+function isPlausibleEmail(value: string): boolean {
+  if (/\s/.test(value)) return false;
+  const parts = value.split("@");
+  if (parts.length !== 2) return false;
+  const [local, domain] = parts;
+  if (!local || !domain) return false;
+  const dot = domain.indexOf(".");
+  return dot > 0 && dot < domain.length - 1;
+}
+
 /** Validates the recipient, sends via `send`, and resolves the result into `TestResult`
  * — shared tail of "Send test email" between the org and event panels. Only the actual
  * send call (org- vs event-scoped) differs per caller. */
@@ -966,7 +1014,7 @@ export async function runTestSend(params: {
 }): Promise<void> {
   const { testEmail, draft, send, testGenerationRef, setTestSending, setTestResult, addToast } = params;
   const to = testEmail.trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+  if (!isPlausibleEmail(to)) {
     addToast("Enter a valid email address.", "error");
     return;
   }

@@ -3092,6 +3092,9 @@
 }
 
 .mail-dev-warning {
+  /* <output>'s UA default is display:inline — this box needs to behave like the
+     <p> it replaced (full-width block). */
+  display: block;
   padding: var(--space-3);
   border-radius: var(--radius);
   background: var(--surface-hover);

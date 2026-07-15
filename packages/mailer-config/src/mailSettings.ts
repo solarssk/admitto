@@ -48,6 +48,46 @@ function emptyMailSettingsRow(scopeId: string): MailSettings {
   };
 }
 
+/** Non-secret fields whose merge is a straight passthrough (`??  null` for numbers/
+ * booleans, `str()` for strings that treat "" as absent) — split from the secret
+ * fields below to keep mergeMailSettingsRow's own cognitive complexity low. */
+function applyIdentityAndSenderFields(row: MailSettings, input: MailSettingsInput): void {
+  if ("provider" in input) row.provider = str(input.provider);
+  if ("host" in input) row.host = str(input.host);
+  if ("user" in input) row.user = str(input.user);
+  if ("heloName" in input) row.helo_name = str(input.heloName);
+  if ("mailbox" in input) row.mailbox = str(input.mailbox);
+  if ("tenantId" in input) row.tenant_id = str(input.tenantId);
+  if ("clientId" in input) row.client_id = str(input.clientId);
+  if ("fromAddress" in input) row.from_address = str(input.fromAddress);
+  if ("fromName" in input) row.from_name = str(input.fromName);
+  if ("replyTo" in input) row.reply_to = str(input.replyTo);
+  if ("envelopeFrom" in input) row.envelope_from = str(input.envelopeFrom);
+  if ("allowedFromDomain" in input) row.allowed_from_domain = str(input.allowedFromDomain);
+}
+
+function applyNumericAndBooleanFields(row: MailSettings, input: MailSettingsInput): void {
+  if ("port" in input) row.port = input.port ?? null;
+  if ("secure" in input) row.secure = input.secure ?? null;
+  if ("requireTls" in input) row.require_tls = input.requireTls ?? null;
+  if ("tlsRejectUnauthorized" in input) row.tls_reject_unauthorized = input.tlsRejectUnauthorized ?? null;
+  if ("pool" in input) row.pool = input.pool ?? null;
+  if ("maxConnections" in input) row.max_connections = input.maxConnections ?? null;
+  if ("maxMessages" in input) row.max_messages = input.maxMessages ?? null;
+  if ("rateLimitPerMinute" in input) row.rate_limit_per_minute = input.rateLimitPerMinute ?? null;
+  if ("connectionTimeout" in input) row.connection_timeout = input.connectionTimeout ?? null;
+  if ("greetingTimeout" in input) row.greeting_timeout = input.greetingTimeout ?? null;
+  if ("socketTimeout" in input) row.socket_timeout = input.socketTimeout ?? null;
+  if ("saveToSentItems" in input) row.save_to_sent_items = input.saveToSentItems ?? null;
+}
+
+function applySecretFields(row: MailSettings, input: MailSettingsInput): void {
+  if ("smtpPassword" in input) row.smtp_password_enc = maybeEncrypt(input.smtpPassword) ?? null;
+  if ("graphClientSecret" in input) row.graph_client_secret_enc = maybeEncrypt(input.graphClientSecret) ?? null;
+  if ("powerAutomateKey" in input) row.power_automate_key_enc = maybeEncrypt(input.powerAutomateKey) ?? null;
+  if ("powerAutomateUrl" in input) row.power_automate_url_enc = maybeEncrypt(input.powerAutomateUrl) ?? null;
+}
+
 /** Applies a partial MailSettingsInput onto a row — org or event, the merge logic
  * doesn't read scope_type (same semantics as setMailSettings update). */
 export function mergeMailSettingsRow(
@@ -57,34 +97,9 @@ export function mergeMailSettingsRow(
 ): MailSettings {
   const row = { ...(current ?? emptyMailSettingsRow(scopeId)) };
 
-  if ("provider" in input) row.provider = str(input.provider);
-  if ("host" in input) row.host = str(input.host);
-  if ("port" in input) row.port = input.port ?? null;
-  if ("secure" in input) row.secure = input.secure ?? null;
-  if ("user" in input) row.user = str(input.user);
-  if ("requireTls" in input) row.require_tls = input.requireTls ?? null;
-  if ("tlsRejectUnauthorized" in input) row.tls_reject_unauthorized = input.tlsRejectUnauthorized ?? null;
-  if ("heloName" in input) row.helo_name = str(input.heloName);
-  if ("pool" in input) row.pool = input.pool ?? null;
-  if ("maxConnections" in input) row.max_connections = input.maxConnections ?? null;
-  if ("maxMessages" in input) row.max_messages = input.maxMessages ?? null;
-  if ("rateLimitPerMinute" in input) row.rate_limit_per_minute = input.rateLimitPerMinute ?? null;
-  if ("connectionTimeout" in input) row.connection_timeout = input.connectionTimeout ?? null;
-  if ("greetingTimeout" in input) row.greeting_timeout = input.greetingTimeout ?? null;
-  if ("socketTimeout" in input) row.socket_timeout = input.socketTimeout ?? null;
-  if ("mailbox" in input) row.mailbox = str(input.mailbox);
-  if ("tenantId" in input) row.tenant_id = str(input.tenantId);
-  if ("clientId" in input) row.client_id = str(input.clientId);
-  if ("saveToSentItems" in input) row.save_to_sent_items = input.saveToSentItems ?? null;
-  if ("fromAddress" in input) row.from_address = str(input.fromAddress);
-  if ("fromName" in input) row.from_name = str(input.fromName);
-  if ("replyTo" in input) row.reply_to = str(input.replyTo);
-  if ("envelopeFrom" in input) row.envelope_from = str(input.envelopeFrom);
-  if ("allowedFromDomain" in input) row.allowed_from_domain = str(input.allowedFromDomain);
-  if ("smtpPassword" in input) row.smtp_password_enc = maybeEncrypt(input.smtpPassword) ?? null;
-  if ("graphClientSecret" in input) row.graph_client_secret_enc = maybeEncrypt(input.graphClientSecret) ?? null;
-  if ("powerAutomateKey" in input) row.power_automate_key_enc = maybeEncrypt(input.powerAutomateKey) ?? null;
-  if ("powerAutomateUrl" in input) row.power_automate_url_enc = maybeEncrypt(input.powerAutomateUrl) ?? null;
+  applyIdentityAndSenderFields(row, input);
+  applyNumericAndBooleanFields(row, input);
+  applySecretFields(row, input);
 
   return row;
 }

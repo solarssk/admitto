@@ -13,21 +13,26 @@ const SECRET_INPUT_KEYS = [
 function effectiveProvider(
   merged: MailSettings,
   env: NodeJS.ProcessEnv,
+  fallback?: MailSettings | null,
 ): string | null | undefined {
   const fromEnv = env.EMAIL_PROVIDER?.trim();
   if (fromEnv) return fromEnv.toLowerCase();
-  return merged.provider;
+  return merged.provider ?? fallback?.provider;
 }
 
 function shouldValidateMergedTransport(
   input: MailSettingsInput,
   merged: MailSettings,
   env: NodeJS.ProcessEnv,
+  fallback?: MailSettings | null,
 ): boolean {
   if ("provider" in input && input.provider === "") {
     return false;
   }
-  if (!effectiveProvider(merged, env)) {
+  // A provider-less event override still resolves through the org's provider at send
+  // time (resolveMailConfig precedence) — skipping validation here let a conflicting
+  // fromAddress/allowedFromDomain slip past until send (CodeRabbit review).
+  if (!effectiveProvider(merged, env, fallback)) {
     return false;
   }
   const keys = Object.keys(input) as Array<keyof MailSettingsInput>;
@@ -67,7 +72,7 @@ export function validateEventMailSettingsUpdate(
   env: NodeJS.ProcessEnv = process.env,
 ): { ok: true } | { ok: false; error: string } {
   const merged = mergeMailSettingsRow(currentEventRow, input);
-  if (!shouldValidateMergedTransport(input, merged, env)) {
+  if (!shouldValidateMergedTransport(input, merged, env, orgRow)) {
     return { ok: true };
   }
   return tryParseEventMailConfigFromRow(merged, orgRow, env);

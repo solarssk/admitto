@@ -139,6 +139,23 @@ describe("validateEventMailSettingsUpdate", () => {
     expect(result).toEqual({ ok: true });
   });
 
+  it("rejects a provider-less event fromAddress that conflicts with the org's allowed-from-domain", () => {
+    // Event sets no provider of its own — it inherits the org's Graph transport, so a
+    // fromAddress outside the org's allowed-from-domain must still be rejected here,
+    // not silently accepted until send time.
+    const orgWithDomain = mergeMailSettingsRow(orgRow, { allowedFromDomain: "example.com" });
+    const result = validateEventMailSettingsUpdate(
+      null,
+      orgWithDomain,
+      { fromAddress: "cobranded@other.com" },
+      {},
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/allowed from domain/i);
+    }
+  });
+
   it("rejects an incomplete dedicated event transport even with a valid org fallback", () => {
     const result = validateEventMailSettingsUpdate(
       null,

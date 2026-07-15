@@ -204,7 +204,9 @@ export async function runTransportTest(
 
     if (!isSendSuccess(result.status) || result.error) {
       if (result.error) {
-        console.error(`${logPrefix} failed:`, result.error);
+        // Never log the raw provider error — it can include the rejected recipient
+        // address or transport details (coding guidelines: no unnecessary PII in logs).
+        console.error(`${logPrefix} failed`);
       }
       errorMessage = transportTestErrorForAdmin(result.error);
       resultRetryable = result.retryable;
@@ -215,7 +217,7 @@ export async function runTransportTest(
   } catch (err) {
     const message = err instanceof Error ? err.message : undefined;
     if (message) {
-      console.error(`${logPrefix} failed:`, message);
+      console.error(`${logPrefix} failed`);
     }
     if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
       errorMessage = "mail transport not configured";
