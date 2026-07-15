@@ -12,7 +12,7 @@ import type {
   MailProvider,
   MailSecretFieldDto,
   MailSettingsResponse,
-  TestSendResponse,
+  MailTransportTestSendResponse,
 } from "../api/types.js";
 import {
   buildSaveMailSettingsBody,
@@ -845,7 +845,7 @@ function snapshotFieldsFor(
 }
 
 function buildTestResult(
-  result: TestSendResponse,
+  result: MailTransportTestSendResponse,
   recipient: string,
   snapshotInputs: { host: string; port: string; mailbox: string },
 ): TestResult {
