@@ -713,17 +713,19 @@ describe("MailTransportPanel — toast vs inline consistency (#4)", () => {
 });
 
 describe("MailTransportPanel — footer save-state", () => {
-  it("shows 'All changes saved' when clean and 'Unsaved changes' once dirtied", async () => {
+  it("shows nothing when clean and 'Unsaved changes' once dirtied — save confirmation is the toast's job, not a persistent label", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
     renderWithToast(<MailTransportPanel />);
     await waitFor(() => {
-      expect(screen.getByText("All changes saved")).toBeTruthy();
+      expect(screen.getByLabelText("From name")).toBeTruthy();
     });
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+    expect(screen.queryByText("All changes saved")).toBeNull();
+
     fireEvent.change(screen.getByLabelText("From name"), { target: { value: "Changed Name" } });
     await waitFor(() => {
       expect(screen.getByText("Unsaved changes")).toBeTruthy();
     });
-    expect(screen.queryByText("All changes saved")).toBeNull();
   });
 
   it("restores the saved draft and clears the unsaved-changes state on Reset", async () => {
@@ -740,7 +742,7 @@ describe("MailTransportPanel — footer save-state", () => {
     await waitFor(() => {
       expect((screen.getByLabelText("From name") as HTMLInputElement).value).toBe("Admitto");
     });
-    expect(screen.getByText("All changes saved")).toBeTruthy();
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
     expect(mockSave).not.toHaveBeenCalled();
   });
 });

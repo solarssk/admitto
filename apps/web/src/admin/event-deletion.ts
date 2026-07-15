@@ -132,6 +132,13 @@ export async function deleteEvent(
       // event can never leave an orphaned scope_id behind under any future race.
       await tx.mailTemplate.deleteMany({ where: { scope_type: "event", scope_id: eventId } });
 
+      // MailSettings (event-scoped mail transport override, #511) is the same polymorphic
+      // scope_type/scope_id pattern with no FK — but unlike MailTemplate it's config, not
+      // content/activity, so it's deliberately NOT one of the deletability signals above (an
+      // otherwise-empty event with a configured transport override should still be
+      // deletable). Clean it up here so a delete never orphans its scope_id.
+      await tx.mailSettings.deleteMany({ where: { scope_type: "event", scope_id: eventId } });
+
       await tx.event.delete({ where: { id: eventId } });
 
       await writeAdminAuditLog(tx, {

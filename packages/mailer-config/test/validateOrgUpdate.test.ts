@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mergeOrgMailSettingsRow } from "../src/mailSettings.js";
-import { validateOrgMailSettingsUpdate } from "../src/validateOrgUpdate.js";
+import { mergeMailSettingsRow } from "../src/mailSettings.js";
+import { validateOrgMailSettingsUpdate, validateEventMailSettingsUpdate } from "../src/validateOrgUpdate.js";
 
 describe("validateOrgMailSettingsUpdate", () => {
   it("allows clearing provider without validating transport", () => {
-    const current = mergeOrgMailSettingsRow(null, {
+    const current = mergeMailSettingsRow(null, {
       provider: "smtp",
       host: "smtp.example.com",
       port: 587,
@@ -50,7 +50,7 @@ describe("validateOrgMailSettingsUpdate", () => {
   });
 
   it("skips validation for secret-only updates", () => {
-    const current = mergeOrgMailSettingsRow(null, {
+    const current = mergeMailSettingsRow(null, {
       provider: "smtp",
       host: "smtp.example.com",
       port: 587,
@@ -102,7 +102,7 @@ describe("validateOrgMailSettingsUpdate", () => {
   });
 
   it("allows switching to export_only when clearing stale allowed from domain", () => {
-    const current = mergeOrgMailSettingsRow(null, {
+    const current = mergeMailSettingsRow(null, {
       provider: "smtp",
       host: "smtp.example.com",
       port: 587,
@@ -117,6 +117,90 @@ describe("validateOrgMailSettingsUpdate", () => {
         provider: "export_only",
         fromAddress: "dev@other.com",
         allowedFromDomain: "",
+      },
+      {},
+    );
+    expect(result).toEqual({ ok: true });
+  });
+});
+
+describe("validateEventMailSettingsUpdate", () => {
+  const orgRow = mergeMailSettingsRow(null, {
+    provider: "graph",
+    mailbox: "org@example.com",
+    tenantId: "11111111-1111-1111-1111-111111111111",
+    clientId: "22222222-2222-2222-2222-222222222222",
+    fromAddress: "org@example.com",
+    graphClientSecret: "org-secret",
+  });
+
+  it("skips validation when the event has no provider of its own (inherits org)", () => {
+    const result = validateEventMailSettingsUpdate(null, orgRow, { fromName: "Autumn Summit" }, {});
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("rejects an incomplete dedicated event transport even with a valid org fallback", () => {
+    const result = validateEventMailSettingsUpdate(
+      null,
+      orgRow,
+      {
+        provider: "smtp",
+        host: "smtp.event.example.com",
+        port: 587,
+        fromAddress: "event@example.com",
+        // missing user/password — org's Graph credentials can't fill an SMTP gap
+      },
+      {},
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/user/i);
+    }
+  });
+
+  it("accepts a complete dedicated event transport that doesn't need the org fallback", () => {
+    const result = validateEventMailSettingsUpdate(
+      null,
+      orgRow,
+      {
+        provider: "smtp",
+        host: "smtp.event.example.com",
+        port: 587,
+        user: "event-user",
+        fromAddress: "event@example.com",
+        smtpPassword: "event-secret",
+      },
+      {},
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("resolves a partial event update against the org row as fallback", () => {
+    // Event sets its own from address only — provider/mailbox/tenant/client/secret
+    // all come from the org row, mirroring resolveMailConfig's own precedence.
+    const currentEventRow = mergeMailSettingsRow(null, { provider: "graph" });
+    const result = validateEventMailSettingsUpdate(
+      currentEventRow,
+      orgRow,
+      { fromAddress: "cobranded@example.com" },
+      {},
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("prefers the event's own allowed-from-domain over the org's when both are set", () => {
+    const orgWithDomain = mergeMailSettingsRow(orgRow, { allowedFromDomain: "org.example.com" });
+    const result = validateEventMailSettingsUpdate(
+      null,
+      orgWithDomain,
+      {
+        provider: "smtp",
+        host: "smtp.event.example.com",
+        port: 587,
+        user: "event-user",
+        fromAddress: "event@other.com",
+        allowedFromDomain: "other.com",
+        smtpPassword: "event-secret",
       },
       {},
     );

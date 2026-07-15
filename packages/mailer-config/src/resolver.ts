@@ -117,23 +117,25 @@ export async function resolveMailConfigForOrg(
   return config;
 }
 
-/** Safe org-scoped parse for pre-save validation (no throw). */
-export function tryParseOrgMailConfigFromRow(
-  orgRow: MailSettings | null,
-  env: NodeJS.ProcessEnv = process.env,
+/** Shared by tryParseOrgMailConfigFromRow and tryParseEventMailConfigFromRow —
+ * `ev` is null for the org-only case. */
+function tryParseMailConfigFromRows(
+  ev: Row,
+  org: Row,
+  env: NodeJS.ProcessEnv,
 ): { ok: true } | { ok: false; error: string } {
   try {
     const envFields = rawMailFieldsFromEnv(env);
-    const provider = first<string>(envFields.provider, orgRow?.provider ?? undefined);
+    const provider = first<string>(envFields.provider, ev?.provider, org?.provider);
     if (!provider) {
       return { ok: true };
     }
 
-    const raw = buildRawConfig(provider, envFields, null, orgRow);
+    const raw = buildRawConfig(provider, envFields, ev, org);
     const parsed = safeParseMailerConfig(raw);
     if (parsed.success) {
       try {
-        enforceAllowedFromDomain(orgRow?.allowed_from_domain, parsed.data);
+        enforceAllowedFromDomain(first(ev?.allowed_from_domain, org?.allowed_from_domain), parsed.data);
       } catch (err) {
         const message = err instanceof Error ? err.message : "allowed from domain mismatch";
         return { ok: false, error: message };
@@ -151,6 +153,24 @@ export function tryParseOrgMailConfigFromRow(
     const message = err instanceof Error ? err.message : "invalid mail environment configuration";
     return { ok: false, error: message };
   }
+}
+
+/** Safe org-scoped parse for pre-save validation (no throw). */
+export function tryParseOrgMailConfigFromRow(
+  orgRow: MailSettings | null,
+  env: NodeJS.ProcessEnv = process.env,
+): { ok: true } | { ok: false; error: string } {
+  return tryParseMailConfigFromRows(null, orgRow, env);
+}
+
+/** Safe event-scoped parse for pre-save validation (no throw) — resolves against
+ * the org row as fallback, mirroring resolveMailConfig's own env > event > org precedence. */
+export function tryParseEventMailConfigFromRow(
+  eventRow: MailSettings | null,
+  orgRow: MailSettings | null,
+  env: NodeJS.ProcessEnv = process.env,
+): { ok: true } | { ok: false; error: string } {
+  return tryParseMailConfigFromRows(eventRow, orgRow, env);
 }
 
 function buildRawConfig(

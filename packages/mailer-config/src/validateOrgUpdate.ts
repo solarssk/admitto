@@ -1,6 +1,6 @@
 import type { MailSettings } from "@prisma/client";
-import { mergeOrgMailSettingsRow } from "./mailSettings.js";
-import { tryParseOrgMailConfigFromRow } from "./resolver.js";
+import { mergeMailSettingsRow } from "./mailSettings.js";
+import { tryParseOrgMailConfigFromRow, tryParseEventMailConfigFromRow } from "./resolver.js";
 import type { MailSettingsInput } from "./types.js";
 
 const SECRET_INPUT_KEYS = [
@@ -46,9 +46,29 @@ export function validateOrgMailSettingsUpdate(
   input: MailSettingsInput,
   env: NodeJS.ProcessEnv = process.env,
 ): { ok: true } | { ok: false; error: string } {
-  const merged = mergeOrgMailSettingsRow(currentOrgRow, input);
+  const merged = mergeMailSettingsRow(currentOrgRow, input);
   if (!shouldValidateMergedTransport(input, merged, env)) {
     return { ok: true };
   }
   return tryParseOrgMailConfigFromRow(merged, env);
+}
+
+/**
+ * Validates that the event mail settings row would resolve to a complete transport
+ * after applying `input`, resolving against the org row as fallback — same
+ * precedence resolveMailConfig uses at send time. If the event's own merged row
+ * ends up with no provider, the event is inheriting the (already-validated) org
+ * transport, so there's nothing new to check.
+ */
+export function validateEventMailSettingsUpdate(
+  currentEventRow: MailSettings | null,
+  orgRow: MailSettings | null,
+  input: MailSettingsInput,
+  env: NodeJS.ProcessEnv = process.env,
+): { ok: true } | { ok: false; error: string } {
+  const merged = mergeMailSettingsRow(currentEventRow, input);
+  if (!shouldValidateMergedTransport(input, merged, env)) {
+    return { ok: true };
+  }
+  return tryParseEventMailConfigFromRow(merged, orgRow, env);
 }

@@ -17,6 +17,7 @@ import {
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
+import { EventMailSettingsCard } from "../settings/EventMailSettingsCard.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -648,6 +649,10 @@ export function EventSettingsPage() {
             />
           </Card>
         )}
+      </EventSettingsTabPanel>
+
+      <EventSettingsTabPanel tab="mail" activeTab={tab} visited={visitedTabs} label="Mail">
+        <EventMailSettingsCard eventId={eventId} isArchived={isArchived} />
       </EventSettingsTabPanel>
 
       <EventSettingsTabPanel tab="wallet" activeTab={tab} visited={visitedTabs} label="Wallet">

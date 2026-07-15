@@ -38,6 +38,7 @@ import type {
   TemplateTestSendResponse,
   MailTransportTestSendResponse,
   MailSettingsResponse,
+  EventMailSettingsResponse,
   SaveMailSettingsBody,
   EventDeliveriesListParams,
   EventDeliveriesListResponse,
@@ -1140,6 +1141,53 @@ export async function saveMailSettings(body: SaveMailSettingsBody): Promise<Mail
 /** Send a transport-level test email (superadmin). */
 export async function sendMailTransportTest(to: string): Promise<MailTransportTestSendResponse> {
   const res = await fetch("/api/admin/mail-settings/test", jsonPostInit({ to }));
+  return parseJson<MailTransportTestSendResponse>(res);
+}
+
+/** Load an event's dedicated mail transport override, or its inherited (effective) org
+ * values plus hasEventOverride:false when it has none. */
+export async function fetchEventMailSettings(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventMailSettingsResponse> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/mail-settings`, {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<EventMailSettingsResponse>(res);
+}
+
+/** Create or update an event's dedicated mail transport override. */
+export async function saveEventMailSettings(
+  eventId: string,
+  body: SaveMailSettingsBody,
+): Promise<EventMailSettingsResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/mail-settings`,
+    jsonPutInit(body),
+  );
+  return parseJson<EventMailSettingsResponse>(res);
+}
+
+/** Remove an event's dedicated mail transport override, reverting it to inherit the org's. */
+export async function clearEventMailSettings(eventId: string): Promise<EventMailSettingsResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/mail-settings`,
+    jsonDeleteInit(),
+  );
+  return parseJson<EventMailSettingsResponse>(res);
+}
+
+/** Send a transport-level test email using whatever transport actually resolves for this
+ * event (dedicated override or inherited org transport). */
+export async function sendEventMailTransportTest(
+  eventId: string,
+  to: string,
+): Promise<MailTransportTestSendResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/mail-settings/test`,
+    jsonPostInit({ to }),
+  );
   return parseJson<MailTransportTestSendResponse>(res);
 }
 

@@ -10,7 +10,7 @@ function maybeEncrypt(value: string | undefined): string | undefined {
 /** Treats blank strings the same as absent — stores null instead. */
 const str = (v: string | undefined): string | null => (v === undefined || v === "" ? null : v);
 
-function emptyOrgMailSettingsRow(scopeId: string): MailSettings {
+function emptyMailSettingsRow(scopeId: string): MailSettings {
   return {
     id: "__merge_sim__",
     scope_type: "organization",
@@ -48,13 +48,14 @@ function emptyOrgMailSettingsRow(scopeId: string): MailSettings {
   };
 }
 
-/** Applies a partial MailSettingsInput onto an org row (same semantics as setMailSettings update). */
-export function mergeOrgMailSettingsRow(
+/** Applies a partial MailSettingsInput onto a row — org or event, the merge logic
+ * doesn't read scope_type (same semantics as setMailSettings update). */
+export function mergeMailSettingsRow(
   current: MailSettings | null,
   input: MailSettingsInput,
   scopeId = "",
 ): MailSettings {
-  const row = { ...(current ?? emptyOrgMailSettingsRow(scopeId)) };
+  const row = { ...(current ?? emptyMailSettingsRow(scopeId)) };
 
   if ("provider" in input) row.provider = str(input.provider);
   if ("host" in input) row.host = str(input.host);
