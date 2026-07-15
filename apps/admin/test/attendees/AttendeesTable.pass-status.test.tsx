@@ -156,4 +156,11 @@ describe("AttendeesTable loading states (#271)", () => {
     expect(wrap?.classList.contains("attendees-table-wrap--loading")).toBe(false);
     expect(wrap?.getAttribute("aria-busy")).toBe("false");
   });
+
+  it("shows a neutral Loading… footer instead of falsely claiming 0 attendees on first load", () => {
+    render(<AttendeesTable {...tableProps} loading items={[]} total={0} />);
+
+    expect(screen.getByText("Loading…")).toBeTruthy();
+    expect(screen.queryByText("0 attendees")).toBeNull();
+  });
 });

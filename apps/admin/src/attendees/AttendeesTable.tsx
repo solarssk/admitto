@@ -292,7 +292,13 @@ export function AttendeesTable({
         </div>
       )}
       <div className="attendees-table-foot">
-        <span>{total === 0 ? "0 attendees" : `Showing ${from}–${to} of ${total}`}</span>
+        <span>
+          {loading && items.length === 0
+            ? "Loading…"
+            : total === 0
+              ? "0 attendees"
+              : `Showing ${from}–${to} of ${total}`}
+        </span>
         <div className="attendees-table-foot__pager">
           <Button
             variant="secondary"
