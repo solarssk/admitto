@@ -17,6 +17,7 @@ export function MailerStatusBadge({ status }: { status: MailerStatus | null | un
     <span
       className={`status-circle status-circle--${status.configured ? "ok" : "neutral"} at-tooltip at-tooltip--below at-tooltip--left`}
       data-tooltip={message}
+      role="img"
       aria-label={message}
     >
       <i className={`ti ${status.configured ? "ti-mail" : "ti-mail-off"}`} aria-hidden="true" />
