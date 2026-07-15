@@ -1,4 +1,3 @@
-import { Badge } from "@admitto/ui";
 import type { MailerStatus } from "../api/types.js";
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -12,13 +11,15 @@ export function MailerStatusBadge({ status }: { status: MailerStatus | null | un
   if (!status) return null;
 
   const name = status.provider ? (PROVIDER_LABELS[status.provider] ?? status.provider) : "—";
+  const message = status.configured ? `Mailer configured (${name})` : "Mailer not configured";
 
   return (
-    <Badge
-      variant={status.configured ? "ok" : "neutral"}
-      title={status.configured ? "Mailer configured" : "Mailer not configured"}
+    <span
+      className={`status-circle status-circle--${status.configured ? "ok" : "neutral"} at-tooltip at-tooltip--below at-tooltip--left`}
+      data-tooltip={message}
+      aria-label={message}
     >
-      <span className="topbar__mailer-label">Mailer: {name}</span>
-    </Badge>
+      <i className={`ti ${status.configured ? "ti-mail" : "ti-mail-off"}`} aria-hidden="true" />
+    </span>
   );
 }

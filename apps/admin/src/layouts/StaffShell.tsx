@@ -68,6 +68,14 @@ export function StaffShell({ sidebar, subnav, children }: StaffShellProps) {
         onMouseEnter={() => !pinned && setHovered(true)}
         onMouseLeave={() => !pinned && setHovered(false)}
       >
+        <button
+          type="button"
+          className="sidebar__close-btn"
+          onClick={closeNav}
+          aria-label="Close navigation"
+        >
+          <i className="ti ti-x" aria-hidden="true" />
+        </button>
         {sidebar}
         <button
           type="button"

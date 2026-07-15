@@ -40,16 +40,20 @@ describe("CheckinConnectionBanner", () => {
 });
 
 describe("ServerConnectionBadge", () => {
-  it("shows a compact label when connected", () => {
+  it("shows a green connected icon when connected", () => {
     mockState("connected");
-    render(<ServerConnectionBadge />);
-    expect(screen.getByText("Server connected")).toBeTruthy();
+    const { container } = render(<ServerConnectionBadge />);
+    expect(screen.getByLabelText("Connected — all scans confirmed by server")).toBeTruthy();
+    expect(container.querySelector(".status-circle--ok")).toBeTruthy();
   });
 
-  it("hides when not connected", () => {
+  it("shows a red offline icon instead of hiding when offline", () => {
     mockState("offline");
     const { container } = render(<ServerConnectionBadge />);
-    expect(container.firstChild).toBeNull();
+    expect(
+      screen.getByLabelText("Offline — new check-ins are blocked until connection returns"),
+    ).toBeTruthy();
+    expect(container.querySelector(".status-circle--error")).toBeTruthy();
   });
 });
 
