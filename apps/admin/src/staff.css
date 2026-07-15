@@ -2970,6 +2970,24 @@
   flex-direction: column;
 }
 
+.mail-secret-field__label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* Deliberately quieter than .at-label — this is a transient aside while
+   editing, not a field name, so it shouldn't compete with Username/Password/
+   SMTP host for attention. */
+.mail-secret-field__inline-hint {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
 .mail-secret-field > .mail-field-hint {
   margin: 0;
 }

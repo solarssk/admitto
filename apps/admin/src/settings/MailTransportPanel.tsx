@@ -137,7 +137,12 @@ function SecretFieldRow({
   return (
     <div className="mail-secret-field">
       <div className="at-field">
-        <span className="at-label">{label}</span>
+        <div className="mail-secret-field__label-row">
+          <span className="at-label">{label}</span>
+          {editing && !confirmed && (
+            <span className="mail-secret-field__inline-hint">Saves with Save changes below.</span>
+          )}
+        </div>
         <div className="mail-secret-field__display">
           {editing && !confirmed && (
             <>
@@ -220,11 +225,6 @@ function SecretFieldRow({
           )}
         </div>
         {hint && <FieldHint>{hint}</FieldHint>}
-        {editing && !confirmed && (
-          <FieldHint>
-            Saves with the page&rsquo;s Save changes button below — Cancel discards this edit only.
-          </FieldHint>
-        )}
       </div>
     </div>
   );

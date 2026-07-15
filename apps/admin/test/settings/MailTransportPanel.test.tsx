@@ -246,7 +246,7 @@ describe("MailTransportPanel — secret field behavior (#407)", () => {
     expect(screen.getByPlaceholderText("New password")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Confirm" })).toBeTruthy();
-    expect(screen.getByText(/Saves with the page.s Save changes button below/)).toBeTruthy();
+    expect(screen.getByText("Saves with Save changes below.")).toBeTruthy();
   });
 
   it("Confirm is disabled until a value is typed, then collapses to a pending state", async () => {
