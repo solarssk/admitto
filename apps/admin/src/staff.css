@@ -2859,7 +2859,7 @@
   color: var(--text-primary);
 }
 
-.transport-tile span {
+.transport-tile > span:not(.transport-tile__icon) {
   font-size: var(--fs-xs);
   color: var(--text-muted);
   line-height: 1.4;
@@ -3151,6 +3151,9 @@
 /* Send-test-email result — simulates the received test message (ok) or a
    plain status readout (error, since nothing was actually delivered). */
 .mail-preview {
+  /* <output>'s UA default is display:inline — this box needs to behave like the
+     <div> it replaced (full-width, its children stacked as block boxes). */
+  display: block;
   margin-top: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius);

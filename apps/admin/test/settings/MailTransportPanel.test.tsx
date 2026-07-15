@@ -96,7 +96,7 @@ function graphFields(overrides: Partial<MailSettingsFieldsDto> = {}): MailSettin
     ...baseFields(),
     provider: plain("graph"),
     fromAddress: plain("noreply@example.com"),
-    mailbox: plain("shared@contoso.com"),
+    mailbox: plain("shared@example.com"),
     tenantId: plain("11111111-1111-1111-1111-111111111111"),
     clientId: plain("22222222-2222-2222-2222-222222222222"),
     saveToSentItems: plain(true),
@@ -243,10 +243,22 @@ describe("MailTransportPanel — secret field behavior (#407)", () => {
       expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
     });
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
-    expect(screen.getByPlaceholderText("New password")).toBeTruthy();
+    expect(screen.getByPlaceholderText("New value")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Confirm" })).toBeTruthy();
     expect(screen.getByText("Saves with Save changes below.")).toBeTruthy();
+  });
+
+  it("gives each secret editor a field-specific accessible name", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(powerAutomateFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Change" }).length).toBe(2);
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Change" })[0]);
+    expect(screen.getByLabelText("Flow URL")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Change" })[0]);
+    expect(screen.getByLabelText("Flow key")).toBeTruthy();
   });
 
   it("Confirm is disabled until a value is typed, then collapses to a pending state", async () => {
@@ -257,12 +269,12 @@ describe("MailTransportPanel — secret field behavior (#407)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     expect(isDisabled(screen.getByRole("button", { name: "Confirm" }))).toBe(true);
-    fireEvent.change(screen.getByPlaceholderText("New password"), {
+    fireEvent.change(screen.getByPlaceholderText("New value"), {
       target: { value: "s3cret" },
     });
     expect(isDisabled(screen.getByRole("button", { name: "Confirm" }))).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    expect(screen.queryByPlaceholderText("New password")).toBeNull();
+    expect(screen.queryByPlaceholderText("New value")).toBeNull();
     expect(screen.getByText(/New value.*pending save/)).toBeTruthy();
   });
 
@@ -274,7 +286,7 @@ describe("MailTransportPanel — secret field behavior (#407)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByPlaceholderText("New password")).toBeNull();
+    expect(screen.queryByPlaceholderText("New value")).toBeNull();
     expect(screen.getByRole("button", { name: "Change" })).toBeTruthy();
   });
 
@@ -307,6 +319,40 @@ describe("MailTransportPanel — transport tile selection", () => {
     expect(screen.getByRole("radio", { name: "Microsoft Graph" }).getAttribute("aria-checked")).toBe(
       "true",
     );
+  });
+
+  it("only the active tile is tabbable (roving tabindex)", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: "SMTP (recommended)" })).toBeTruthy();
+    });
+    expect(screen.getByRole("radio", { name: "SMTP (recommended)" }).getAttribute("tabindex")).toBe(
+      "0",
+    );
+    expect(screen.getByRole("radio", { name: "Microsoft Graph" }).getAttribute("tabindex")).toBe(
+      "-1",
+    );
+  });
+
+  it("ArrowRight moves selection to the next tile and wraps at the end", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(baseFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: "Not configured" })).toBeTruthy();
+    });
+    fireEvent.keyDown(screen.getByRole("radio", { name: "Not configured" }), { key: "ArrowRight" });
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: "SMTP (recommended)" }).getAttribute("aria-checked")).toBe(
+        "true",
+      );
+    });
+    fireEvent.keyDown(screen.getByRole("radio", { name: "SMTP (recommended)" }), { key: "ArrowLeft" });
+    await waitFor(() => {
+      expect(screen.getByRole("radio", { name: "Not configured" }).getAttribute("aria-checked")).toBe(
+        "true",
+      );
+    });
   });
 
   it("shows a Configured badge once a transport is selected", async () => {
@@ -394,10 +440,24 @@ describe("MailTransportPanel — test result panel (#411)", () => {
     });
     const panel = document.querySelector(".mail-preview--ok");
     expect(panel).toBeTruthy();
+    expect(panel?.tagName.toLowerCase()).toBe("output");
     expect(panel?.textContent).toContain("ops@example.com");
     expect(panel?.textContent).toContain("SMTP");
     expect(panel?.textContent).toContain("smtp.example.com:587");
     expect(panel?.textContent).toContain("queue-123");
+    expect(panel?.textContent).toContain("Sent at");
+  });
+
+  it("labels the timestamp 'Attempted at' (not 'Sent at') on a failed send", async () => {
+    await renderReadySmtp();
+    mockTest.mockResolvedValueOnce({ status: "failed", error: "Auth rejected.", provider: "smtp" });
+    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
+    await waitFor(() => {
+      expect(document.querySelector(".mail-preview--error")).toBeTruthy();
+    });
+    const panel = document.querySelector(".mail-preview--error");
+    expect(panel?.textContent).toContain("Attempted at");
+    expect(panel?.textContent).not.toContain("Sent at");
   });
 
   it("renders a retryable=false hint on an API-reported failure", async () => {
@@ -459,6 +519,38 @@ describe("MailTransportPanel — test result panel (#411)", () => {
     await waitFor(() => {
       expect(document.querySelector(".mail-preview")).toBeNull();
     });
+  });
+
+  it("clears the result panel when a non-provider field is edited (not just on provider switch)", async () => {
+    await renderReadySmtp();
+    mockTest.mockResolvedValueOnce({ status: "sent", provider: "smtp" });
+    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
+    await waitFor(() => {
+      expect(document.querySelector(".mail-preview")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("SMTP host"), { target: { value: "changed.example.com" } });
+    expect(document.querySelector(".mail-preview")).toBeNull();
+  });
+
+  it("ignores a stale test-send response if the transport is switched while the request is pending", async () => {
+    await renderReadySmtp();
+    let resolveTest: (value: { status: "sent"; provider: "smtp" }) => void = () => {};
+    mockTest.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveTest = resolve;
+        }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send test email" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Sending…" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "Microsoft Graph" }));
+    resolveTest({ status: "sent", provider: "smtp" });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Send test email" })).toBeTruthy();
+    });
+    expect(document.querySelector(".mail-preview")).toBeNull();
   });
 });
 
