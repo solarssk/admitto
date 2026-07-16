@@ -49,7 +49,10 @@ describe("validateOrgMailSettingsUpdate", () => {
     expect(result).toEqual({ ok: true });
   });
 
-  it("skips validation for secret-only updates", () => {
+  it("rejects clearing the only SMTP password while SMTP remains active", () => {
+    // A secret-only update is not exempt from validation — clearing the sole credential
+    // on an already-active transport must fail loudly instead of silently disabling mail
+    // (previously this returned ok:true and cleared smtp_password_enc with no warning).
     const current = mergeMailSettingsRow(null, {
       provider: "smtp",
       host: "smtp.example.com",
@@ -59,6 +62,22 @@ describe("validateOrgMailSettingsUpdate", () => {
       smtpPassword: "secret",
     });
     const result = validateOrgMailSettingsUpdate(current, { smtpPassword: "" }, {});
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/password/i);
+    }
+  });
+
+  it("allows rotating a secret to a new non-empty value on an already-valid transport", () => {
+    const current = mergeMailSettingsRow(null, {
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: 587,
+      user: "u@example.com",
+      fromAddress: "u@example.com",
+      smtpPassword: "secret",
+    });
+    const result = validateOrgMailSettingsUpdate(current, { smtpPassword: "new-secret" }, {});
     expect(result).toEqual({ ok: true });
   });
 
@@ -187,6 +206,52 @@ describe("validateEventMailSettingsUpdate", () => {
         fromAddress: "event@example.com",
         smtpPassword: "event-secret",
       },
+      {},
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("rejects an event override that redirects the SMTP host while inheriting the org's password", () => {
+    // Security: an event-scoped admin (lower privilege than the superadmin-only org Mail
+    // Transport panel) must not be able to point the connection at a host they control
+    // while the resolved config silently authenticates with the organization's real SMTP
+    // password. Without this guard, `tryParseEventMailConfigFromRow` (called from here)
+    // would consider the merged row complete and this would return ok:true.
+    const orgSmtpRow = mergeMailSettingsRow(null, {
+      provider: "smtp",
+      host: "smtp.org.example.com",
+      port: 587,
+      user: "org-user",
+      fromAddress: "org@example.com",
+      smtpPassword: "org-real-secret",
+    });
+    const result = validateEventMailSettingsUpdate(
+      null,
+      orgSmtpRow,
+      { host: "smtp.attacker.example.com" },
+      {},
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/password/i);
+    }
+  });
+
+  it("accepts an event override that redirects the Power Automate URL, but must not leak the org's key", () => {
+    // Power Automate's `key` is a genuinely optional header (schema: z.string().optional()),
+    // so a URL-only override is a *valid* config on its own — it just must not silently
+    // carry the org's key to that URL. The leak itself is proven at the resolver level in
+    // resolver.test.ts ("event cannot borrow the org secret while redirecting the endpoint").
+    const orgPowerAutomateRow = mergeMailSettingsRow(null, {
+      provider: "powerautomate",
+      fromAddress: "org@example.com",
+      powerAutomateUrl: "https://org.example.com/flow",
+      powerAutomateKey: "org-real-key",
+    });
+    const result = validateEventMailSettingsUpdate(
+      null,
+      orgPowerAutomateRow,
+      { powerAutomateUrl: "https://attacker.example.com/flow" },
       {},
     );
     expect(result).toEqual({ ok: true });

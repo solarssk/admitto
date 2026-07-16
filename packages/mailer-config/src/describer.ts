@@ -1,4 +1,4 @@
-import type { PrismaClient, MailSettings } from "@prisma/client";
+import type { Prisma, PrismaClient, MailSettings } from "@prisma/client";
 import { rawMailFieldsFromEnv } from "./envFields.js";
 import { getProviderDefaults } from "./providerDefaults.js";
 import type { ConfigDescriptor, FieldDescriptor, FieldSource } from "./types.js";
@@ -120,7 +120,7 @@ function buildConfigDescriptor(
  */
 export async function describeMailConfig(
   eventId: string,
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ConfigDescriptor> {
   const envFields = rawMailFieldsFromEnv(env);

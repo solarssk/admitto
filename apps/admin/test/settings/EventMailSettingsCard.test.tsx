@@ -104,7 +104,7 @@ function graphFields(overrides: Partial<MailSettingsFieldsDto> = {}): MailSettin
     ...baseFields(),
     provider: plain("graph"),
     fromAddress: plain("org@example.com"),
-    mailbox: plain("shared@contoso.com"),
+    mailbox: plain("shared@example.com"),
     tenantId: plain("11111111-1111-1111-1111-111111111111"),
     clientId: plain("22222222-2222-2222-2222-222222222222"),
     graphClientSecret: secret(true),
@@ -452,7 +452,7 @@ describe("EventMailSettingsCard — reverting to organization", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Revert" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("dialog").textContent).toMatch(/Failed to save mail settings/);
+      expect(screen.getByRole("dialog").textContent).toMatch(/Failed to revert mail settings/);
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
     // Dialog stays open on failure — the operator can retry or cancel.
@@ -489,7 +489,7 @@ describe("EventMailSettingsCard — test send", () => {
 
     await waitFor(() => expect(mockTest).toHaveBeenCalledWith("evt-1", "tester@example.com"));
     await waitFor(() => screen.getByText("Mailbox"));
-    expect(screen.getByText("shared@contoso.com")).toBeTruthy();
+    expect(screen.getByText("shared@example.com")).toBeTruthy();
   });
 
   it("falls back to a generic message when a failed test send has no error detail", async () => {

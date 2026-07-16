@@ -48,12 +48,15 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     deleteEventImageAsset: vi.fn(),
     fetchTicketTypes: vi.fn().mockResolvedValue([]),
     updateTicketType: vi.fn(),
+    fetchEventMailSettings: vi.fn(),
   };
 });
 
 import {
+  archiveEvent,
   deleteEvent,
   fetchEventImageAssets,
+  fetchEventMailSettings,
   fetchEventSettings,
   fetchTicketTypes,
   patchEvent,
@@ -63,6 +66,7 @@ import {
   updateTicketType,
   uploadEventBrandingFile,
 } from "../../src/api/client.js";
+import type { EventMailSettingsResponse, MailSettingsFieldsDto } from "../../src/api/types.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import { formatUtcDateTime } from "../../src/utils/event-dates.js";
 
@@ -95,6 +99,51 @@ const archivedEvent = {
   archived_at: "2026-01-01T00:00:00.000Z",
   capacity: null,
 };
+
+function plainField<T>(value: T) {
+  return { value, source: "db" as const, locked: false };
+}
+
+function inheritedMailSettingsResponse(): EventMailSettingsResponse {
+  const secret = { set: false, masked: null, source: "db" as const, locked: false };
+  const fields: MailSettingsFieldsDto = {
+    provider: plainField(null),
+    fromAddress: plainField(null),
+    fromName: plainField(null),
+    replyTo: plainField(null),
+    envelopeFrom: plainField(null),
+    allowedFromDomain: plainField(null),
+    host: plainField(null),
+    port: plainField(null),
+    secure: plainField(null),
+    user: plainField(null),
+    requireTls: plainField(null),
+    tlsRejectUnauthorized: plainField(null),
+    heloName: plainField(null),
+    pool: plainField(null),
+    maxConnections: plainField(null),
+    maxMessages: plainField(null),
+    rateLimitPerMinute: plainField(null),
+    connectionTimeout: plainField(null),
+    greetingTimeout: plainField(null),
+    socketTimeout: plainField(null),
+    smtpPassword: secret,
+    mailbox: plainField(null),
+    tenantId: plainField(null),
+    clientId: plainField(null),
+    saveToSentItems: plainField(null),
+    graphClientSecret: secret,
+    powerAutomateUrl: secret,
+    powerAutomateKey: secret,
+  };
+  return {
+    eventId: "evt-1",
+    organizationId: "org-1",
+    isProduction: true,
+    hasEventOverride: false,
+    fields,
+  };
+}
 
 beforeEach(() => {
   // The Branding tab also mounts EventImageAssetLibrary, which fetches its own list on mount.
@@ -385,6 +434,44 @@ describe("EventSettingsPage tabs", () => {
     });
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Event unarchived/);
+    });
+  });
+
+  it("discards the Mail tab's dirty draft after archiving (CodeRabbit review)", async () => {
+    // The archive confirm dialog warns "you also have unsaved changes elsewhere on this
+    // page — they'll be lost when this finishes" — this proves that promise is kept for
+    // the Mail tab specifically, by remounting EventMailSettingsCard on archive success.
+    vi.mocked(fetchEventSettings).mockResolvedValue(activeEvent);
+    vi.mocked(fetchEventMailSettings).mockResolvedValue(inheritedMailSettingsResponse());
+    vi.mocked(archiveEvent).mockResolvedValueOnce(undefined);
+    renderSettings();
+
+    await waitFor(() => screen.getByRole("tab", { name: "Mailing" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Mailing" }));
+    await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalledTimes(1));
+    await screen.findByRole("radio", { name: "Organization mail" });
+
+    // Dirty the mail draft without saving it.
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    expect(
+      screen.getByRole("radio", { name: "Dedicated for this event" }).getAttribute("aria-checked"),
+    ).toBe("true");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Archive event/ }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive event" }));
+
+    await waitFor(() => expect(archiveEvent).toHaveBeenCalledWith("evt-1"));
+    // The card remounted and re-fetched — proof its old in-memory draft was discarded
+    // rather than silently surviving the "this will be lost" warning.
+    await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Mailing" }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("radio", { name: "Organization mail" }).getAttribute("aria-checked"),
+      ).toBe("true");
     });
   });
 

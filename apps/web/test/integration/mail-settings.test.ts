@@ -409,7 +409,9 @@ describe("PUT /api/admin/mail-settings", () => {
     expect(row?.smtp_password_enc).not.toBe("new-rotate-secret");
   });
 
-  it("clears secret when empty string sent", async () => {
+  it("rejects clearing the only password on an active SMTP transport", async () => {
+    // Clearing the sole credential would leave an active transport unable to
+    // authenticate — this must fail validation instead of silently disabling mail.
     await setMailSettings(
       { scopeType: "organization", scopeId: ORG_MAIL },
       {
@@ -427,6 +429,34 @@ describe("PUT /api/admin/mail-settings", () => {
       method: "PUT",
       headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({ smtpPassword: "" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("incomplete_transport");
+    const row = await prisma.mailSettings.findUnique({
+      where: { scope_type_scope_id: { scope_type: "organization", scope_id: ORG_MAIL } },
+    });
+    expect(row?.smtp_password_enc).toBeTruthy();
+  });
+
+  it("clears secret when switching away from the provider that needs it", async () => {
+    await setMailSettings(
+      { scopeType: "organization", scopeId: ORG_MAIL },
+      {
+        provider: "smtp",
+        host: "smtp.clear.example.com",
+        port: 587,
+        user: "clear@example.com",
+        fromAddress: "clear@example.com",
+        smtpPassword: "clear-me",
+      },
+      prisma,
+    );
+
+    const res = await app.request("/api/admin/mail-settings", {
+      method: "PUT",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "", smtpPassword: "" }),
     });
     expect(res.status).toBe(200);
     const row = await prisma.mailSettings.findUnique({

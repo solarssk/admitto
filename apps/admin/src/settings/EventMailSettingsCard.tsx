@@ -256,7 +256,7 @@ export function EventMailSettingsCard({
       setConfirmRevertOpen(false);
       addToast("Reverted to the organization's mail settings.", "success");
     } catch (err) {
-      setRevertError(operatorApiErrorMessage(err, "Failed to save mail settings."));
+      setRevertError(operatorApiErrorMessage(err, "Failed to revert mail settings."));
     } finally {
       setSaving(false);
     }

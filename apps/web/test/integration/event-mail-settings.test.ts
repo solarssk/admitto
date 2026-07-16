@@ -352,7 +352,28 @@ describe("PUT /api/admin/events/:eventId/mail-settings", () => {
     expect(res.status).toBe(403);
   });
 
-  it("resolves an incomplete event override against the org fallback (per-field precedence)", async () => {
+  it("resolves an incomplete event override against the org fallback for non-connection fields", async () => {
+    await createOrgSmtp();
+
+    const res = await app.request(`/api/admin/events/${EVENT}/mail-settings`, {
+      method: "PUT",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "smtp", fromName: "Autumn Summit" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventMailSettingsApi;
+    // Event overrides a cosmetic sender field, org fills in the connection (host/user/password)
+    // — same precedence as send time. Connection-identity fields (host) are covered separately
+    // below: an event can't redirect the connection while still inheriting the org's password.
+    expect(body.fields.fromName?.value).toBe("Autumn Summit");
+    expect(body.fields.host?.value).toBe("smtp.org.example.com");
+    expect(body.fields.user?.value).toBe("org-smtp@example.com");
+  });
+
+  it("rejects an event override that sets host without its own password, even with an org fallback available", async () => {
+    // Security: overriding the connection host must not silently authenticate with the
+    // organization's real SMTP password against whatever server the event admin chose
+    // (see the dedicated host-redirection test further down for the full exploit shape).
     await createOrgSmtp();
 
     const res = await app.request(`/api/admin/events/${EVENT}/mail-settings`, {
@@ -360,12 +381,9 @@ describe("PUT /api/admin/events/:eventId/mail-settings", () => {
       headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({ provider: "smtp", host: "smtp.event-only.example.com" }),
     });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as EventMailSettingsApi;
-    // Event overrides host, org fills in the rest (user/fromAddress) — same precedence as send time.
-    expect(body.fields.host?.value).toBe("smtp.event-only.example.com");
-    expect(body.fields.user?.value).toBe("org-smtp@example.com");
-    expect(body.fields.fromAddress?.value).toBe("org-smtp@example.com");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("incomplete_transport");
   });
 
   it("rejects incomplete transport when there is no org fallback", async () => {
@@ -448,7 +466,7 @@ describe("PUT /api/admin/events/:eventId/mail-settings", () => {
     expect(row?.smtp_password_enc).not.toBe("new-rotate-secret");
   });
 
-  it("clears secret when empty string sent", async () => {
+  it("rejects clearing the only password on an active SMTP transport", async () => {
     await app.request(`/api/admin/events/${EVENT}/mail-settings`, {
       method: "PUT",
       headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
@@ -467,11 +485,33 @@ describe("PUT /api/admin/events/:eventId/mail-settings", () => {
       headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({ smtpPassword: "" }),
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("incomplete_transport");
     const row = await prisma.mailSettings.findUnique({
       where: { scope_type_scope_id: { scope_type: "event", scope_id: EVENT } },
     });
-    expect(row?.smtp_password_enc).toBeNull();
+    expect(row?.smtp_password_enc).toBeTruthy();
+  });
+
+  it("rejects an event override that redirects the SMTP host while inheriting the org's password", async () => {
+    // Security: an org admin (this event's manager) must not be able to point the
+    // connection at a host they control while the resolved config authenticates with
+    // the organization's real SMTP password.
+    await createOrgSmtp();
+
+    const res = await app.request(`/api/admin/events/${EVENT}/mail-settings`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ host: "smtp.attacker.example.com" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("incomplete_transport");
+    const row = await prisma.mailSettings.findUnique({
+      where: { scope_type_scope_id: { scope_type: "event", scope_id: EVENT } },
+    });
+    expect(row).toBeNull();
   });
 
   it("rejects export_only in production", async () => {

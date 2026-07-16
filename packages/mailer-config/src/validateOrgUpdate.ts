@@ -3,13 +3,6 @@ import { mergeMailSettingsRow } from "./mailSettings.js";
 import { tryParseOrgMailConfigFromRow, tryParseEventMailConfigFromRow } from "./resolver.js";
 import type { MailSettingsInput } from "./types.js";
 
-const SECRET_INPUT_KEYS = [
-  "smtpPassword",
-  "graphClientSecret",
-  "powerAutomateKey",
-  "powerAutomateUrl",
-] as const satisfies ReadonlyArray<keyof MailSettingsInput>;
-
 function effectiveProvider(
   merged: MailSettings,
   env: NodeJS.ProcessEnv,
@@ -35,10 +28,11 @@ function shouldValidateMergedTransport(
   if (!effectiveProvider(merged, env, fallback)) {
     return false;
   }
-  const keys = Object.keys(input) as Array<keyof MailSettingsInput>;
-  if (keys.length > 0 && keys.every((key) => (SECRET_INPUT_KEYS as readonly string[]).includes(key))) {
-    return false;
-  }
+  // No blanket "secret-only updates skip validation" exemption: clearing the only
+  // stored credential on an already-active transport is itself a secret-only update,
+  // and must still be validated so it fails loudly instead of silently disabling mail
+  // (CodeRabbit review — this previously let `{ smtpPassword: "" }` return 200 on a
+  // fully configured SMTP transport).
   return true;
 }
 

@@ -168,6 +168,12 @@ export function EventSettingsPage() {
   const [ticketTypesLoading, setTicketTypesLoading] = useState(true);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [mailDirty, setMailDirty] = useState(false);
+  // Archiving and the bulk Danger Zone actions below reload `event` but never touch
+  // EventMailSettingsCard's own internal draft/secrets state, so a pending mail edit would
+  // otherwise survive them despite the confirm dialogs promising unsaved changes are lost
+  // (CodeRabbit review). Bumping this key remounts the card, discarding its draft and
+  // re-fetching current server state.
+  const [mailCardResetKey, setMailCardResetKey] = useState(0);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
   const [tab, setTab] = useState<EventSettingsTab>(initialTab);
@@ -331,6 +337,7 @@ export function EventSettingsPage() {
         addToast("Event unarchived", "success");
       }
       setArchiveOpen(false);
+      setMailCardResetKey((n) => n + 1);
       await load();
       await refreshLayoutEvent?.();
     } catch (err) {
@@ -399,6 +406,7 @@ export function EventSettingsPage() {
         "success",
       );
       setRevokeCheckinsOpen(false);
+      setMailCardResetKey((n) => n + 1);
       await load();
       await refreshLayoutEvent?.();
     } catch (err) {
@@ -420,6 +428,7 @@ export function EventSettingsPage() {
         "success",
       );
       setRevokeItemsOpen(false);
+      setMailCardResetKey((n) => n + 1);
       await load();
       await refreshLayoutEvent?.();
     } catch (err) {
@@ -657,7 +666,12 @@ export function EventSettingsPage() {
       </EventSettingsTabPanel>
 
       <EventSettingsTabPanel tab="mail" activeTab={tab} visited={visitedTabs} label="Mail">
-        <EventMailSettingsCard eventId={eventId} isArchived={isArchived} onDirtyChange={setMailDirty} />
+        <EventMailSettingsCard
+          key={mailCardResetKey}
+          eventId={eventId}
+          isArchived={isArchived}
+          onDirtyChange={setMailDirty}
+        />
       </EventSettingsTabPanel>
 
       <EventSettingsTabPanel tab="wallet" activeTab={tab} visited={visitedTabs} label="Wallet">

@@ -63,6 +63,16 @@ async function hasEventMailOverride(db: PrismaClient, eventId: string): Promise<
  * orphaned MailSettings row for an event that no longer exists. */
 class EventGoneDuringWriteError extends Error {}
 
+/** Thrown inside the PUT transaction when the request touches an env-locked field. */
+class LockedFieldError extends Error {}
+
+/** Thrown inside the PUT transaction when the merged transport would be incomplete. */
+class IncompleteTransportError extends Error {
+  constructor(public readonly detail: string) {
+    super(detail);
+  }
+}
+
 /** GET /api/admin/events/:eventId/mail-settings */
 export async function handleGetEventMailSettings(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -112,43 +122,41 @@ export async function handlePutEventMailSettings(c: Context, db: PrismaClient): 
   const org = await loadEventOrg(db, eventId);
   if (!org) return c.json({ error: "not_found" }, 404);
 
-  const [current, eventRow, orgRow] = await Promise.all([
-    describeMailConfig(eventId, db, process.env),
-    db.mailSettings.findUnique({
-      where: { scope_type_scope_id: { scope_type: "event", scope_id: eventId } },
-    }),
-    db.mailSettings.findUnique({
-      where: { scope_type_scope_id: { scope_type: "organization", scope_id: org.organizationId } },
-    }),
-  ]);
-
-  for (const key of Object.keys(body) as Array<keyof typeof body>) {
-    const fd = descriptorForKey(current, key as keyof MailSettingsInput);
-    if (fd.locked) {
-      return c.json({ error: "managed by environment" }, 400);
-    }
-  }
-
-  const transportCheck = validateEventMailSettingsUpdate(
-    eventRow,
-    orgRow,
-    body as MailSettingsInput,
-    process.env,
-  );
-  if (!transportCheck.ok) {
-    return c.json({ error: "incomplete_transport", detail: transportCheck.error }, 400);
-  }
-
-  const { fieldsChanged, secretsRotated, secretsCleared } = classifyMailSettingsFields(body);
-
   try {
     await db.$transaction(async (tx) => {
-      // Serializes with permanent event deletion (see event-deletion.ts) — without this,
-      // a concurrent delete could remove the event right after the checks above and
-      // this write would otherwise recreate an orphaned MailSettings row.
+      // Serializes with permanent event deletion (see event-deletion.ts) and with any
+      // other concurrent PUT on this event — reads and validates below only run once
+      // this request holds the lock, so two racing PUTs can no longer both validate
+      // against stale pre-write state and then serialize into a merged configuration
+      // that was never actually validated as a whole (CodeRabbit review, round 2).
       await lockEventForMailSettingsWrite(tx, eventId);
       const stillExists = await tx.event.findUnique({ where: { id: eventId }, select: { id: true } });
       if (!stillExists) throw new EventGoneDuringWriteError();
+
+      const [current, eventRow, orgRow] = await Promise.all([
+        describeMailConfig(eventId, tx, process.env),
+        tx.mailSettings.findUnique({
+          where: { scope_type_scope_id: { scope_type: "event", scope_id: eventId } },
+        }),
+        tx.mailSettings.findUnique({
+          where: { scope_type_scope_id: { scope_type: "organization", scope_id: org.organizationId } },
+        }),
+      ]);
+
+      for (const key of Object.keys(body) as Array<keyof typeof body>) {
+        const fd = descriptorForKey(current, key as keyof MailSettingsInput);
+        if (fd.locked) throw new LockedFieldError();
+      }
+
+      const transportCheck = validateEventMailSettingsUpdate(
+        eventRow,
+        orgRow,
+        body as MailSettingsInput,
+        process.env,
+      );
+      if (!transportCheck.ok) throw new IncompleteTransportError(transportCheck.error);
+
+      const { fieldsChanged, secretsRotated, secretsCleared } = classifyMailSettingsFields(body);
 
       await setMailSettings({ scopeType: "event", scopeId: eventId }, body as MailSettingsInput, tx);
 
@@ -170,6 +178,10 @@ export async function handlePutEventMailSettings(c: Context, db: PrismaClient): 
     });
   } catch (err) {
     if (err instanceof EventGoneDuringWriteError) return c.json({ error: "not_found" }, 404);
+    if (err instanceof LockedFieldError) return c.json({ error: "managed by environment" }, 400);
+    if (err instanceof IncompleteTransportError) {
+      return c.json({ error: "incomplete_transport", detail: err.detail }, 400);
+    }
     throw err;
   }
 

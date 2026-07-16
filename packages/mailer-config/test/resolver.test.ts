@@ -16,7 +16,7 @@ const BASE_SMTP_ENV: NodeJS.ProcessEnv = {
 };
 
 beforeAll(async () => {
-  resetDb();
+  await resetDb();
 
   await prisma.organization.create({
     data: { id: "org-r", name: "Resolver Org", slug: "resolver-org" },
@@ -111,6 +111,81 @@ describe("resolveMailConfig — event overrides org", () => {
     const config = await resolveMailConfig("evt-r", prisma, {});
     if (config.provider === "smtp") {
       expect(config.port).toBe(587);
+    }
+  });
+});
+
+describe("resolveMailConfig — event cannot borrow the org secret while redirecting the endpoint", () => {
+  it("throws instead of resolving the org's SMTP password when the event overrides only the host", async () => {
+    await prisma.organization.create({
+      data: { id: "org-r2", name: "Resolver Org 2", slug: "resolver-org-2" },
+    });
+    await prisma.event.create({
+      data: {
+        id: "evt-r2",
+        organization_id: "org-r2",
+        title: "Resolver Event 2",
+        slug: "resolver-event-2",
+        date: new Date("2026-09-01"),
+      },
+    });
+    await setMailSettings(
+      { scopeType: "organization", scopeId: "org-r2" },
+      {
+        provider: "smtp",
+        host: "smtp.org2.example.com",
+        port: 587,
+        user: "org2@example.com",
+        fromAddress: "org2@example.com",
+        smtpPassword: "org2-real-secret",
+      },
+      prisma,
+    );
+    // Matches the exploit shape exactly: a minimal event-level PUT body containing only
+    // `host`, with no provider and no password of its own.
+    await setMailSettings(
+      { scopeType: "event", scopeId: "evt-r2" },
+      { host: "smtp.attacker.example.com" },
+      prisma,
+    );
+
+    await expect(resolveMailConfig("evt-r2", prisma, {})).rejects.toThrow();
+  });
+
+  it("does not carry the org's Power Automate key to an event-overridden URL", async () => {
+    await prisma.organization.create({
+      data: { id: "org-r3", name: "Resolver Org 3", slug: "resolver-org-3" },
+    });
+    await prisma.event.create({
+      data: {
+        id: "evt-r3",
+        organization_id: "org-r3",
+        title: "Resolver Event 3",
+        slug: "resolver-event-3",
+        date: new Date("2026-09-01"),
+      },
+    });
+    await setMailSettings(
+      { scopeType: "organization", scopeId: "org-r3" },
+      {
+        provider: "powerautomate",
+        fromAddress: "org3@example.com",
+        powerAutomateUrl: "https://org3.example.com/flow",
+        powerAutomateKey: "org3-real-key",
+      },
+      prisma,
+    );
+    await setMailSettings(
+      { scopeType: "event", scopeId: "evt-r3" },
+      { powerAutomateUrl: "https://attacker.example.com/flow" },
+      prisma,
+    );
+
+    const config = await resolveMailConfig("evt-r3", prisma, {});
+    expect(config.provider).toBe("powerautomate");
+    if (config.provider === "powerautomate") {
+      expect(config.url).toBe("https://attacker.example.com/flow");
+      expect(config.key).toBeUndefined();
     }
   });
 });

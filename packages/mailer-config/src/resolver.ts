@@ -189,6 +189,13 @@ function buildRawConfig(
 
   switch (provider) {
     case "smtp": {
+      // An event's own host is a fully event-admin-controlled connection target — never
+      // let it authenticate with the organization's password. Without this, an event
+      // override that sets only `host` (leaving its own smtpPassword unset) would silently
+      // inherit the org's real SMTP credential and hand it to whatever server the event
+      // admin chose, via either a normal send or the test-send preflight (security review
+      // on #511/#512). The event's own password still wins first when it has one.
+      const eventOwnsHost = ev?.host != null;
       return {
         ...base,
         host: first(env.host, ev?.host, org?.host),
@@ -199,7 +206,7 @@ function buildRawConfig(
         password: firstLazy(
           () => env.smtpPassword,
           () => maybeDecrypt(ev?.smtp_password_enc),
-          () => maybeDecrypt(org?.smtp_password_enc),
+          () => (eventOwnsHost ? undefined : maybeDecrypt(org?.smtp_password_enc)),
         ),
         requireTLS: first(env.requireTls, ev?.require_tls, org?.require_tls),
         tlsRejectUnauthorized: first(
@@ -251,6 +258,9 @@ function buildRawConfig(
       };
     }
     case "powerautomate": {
+      // Same reasoning as SMTP's host guard above: the URL is the connection target, so an
+      // event that supplies its own URL must not receive the org's flow key.
+      const eventOwnsUrl = ev?.power_automate_url_enc != null;
       return {
         ...base,
         url: firstLazy(
@@ -261,7 +271,7 @@ function buildRawConfig(
         key: firstLazy(
           () => env.powerAutomateKey,
           () => maybeDecrypt(ev?.power_automate_key_enc),
-          () => maybeDecrypt(org?.power_automate_key_enc),
+          () => (eventOwnsUrl ? undefined : maybeDecrypt(org?.power_automate_key_enc)),
         ),
       };
     }
