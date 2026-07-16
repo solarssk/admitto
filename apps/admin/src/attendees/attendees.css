@@ -45,6 +45,7 @@
 
 .attendees-table-foot__pager {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
 }
 
@@ -279,6 +280,29 @@
   font-weight: 600;
 }
 
+.attendee-resend-modal__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--status-error-tint);
+  border: 1px solid var(--status-error);
+  border-radius: var(--radius);
+}
+
+.attendee-resend-modal__error > i {
+  color: var(--status-error);
+  font-size: 1.0625rem;
+  flex: none;
+}
+
+.attendee-resend-modal__error p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--status-error);
+  line-height: 1.45;
+}
+
 .attendee-resend-options {
   display: flex;
   flex-direction: column;
@@ -355,8 +379,18 @@
 
 .attendees-table-v2__actions {
   display: flex;
+  align-items: center;
   gap: 4px;
   white-space: nowrap;
+}
+
+/* ArchivedGuard wraps Restore/Revoke pass in a bare <span> (display: inline by
+   default) so it can carry the archived tooltip. Left unstyled, that span doesn't
+   size/align identically to the plain "View attendee" IconButton next to it in
+   every browser engine — force it to participate in the row the same way. */
+.attendees-table-v2__actions > span {
+  display: inline-flex;
+  align-items: center;
 }
 
 .attendees-table-v2__actions-col {
@@ -390,35 +424,41 @@
   gap: 16px;
 }
 
-.status-stats-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+.attendee-status-list {
+  display: flex;
+  flex-direction: column;
   gap: 16px;
 }
 
-.status-stats-grid__label {
-  display: block;
+.attendee-status-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.attendee-status-row__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface-subtle);
+  color: var(--text-muted);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.attendee-status-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.attendee-status-row__label {
   font-size: 0.75rem;
   color: var(--text-muted);
-  margin-bottom: 6px;
-}
-
-.attendee-detail-mono {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.875rem;
-}
-
-.attendee-detail-readonly-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.attendee-detail-readonly-row__label {
-  font-size: 0.875rem;
-  font-weight: 600;
-  min-width: 88px;
 }
 
 .attendee-detail-checkin {

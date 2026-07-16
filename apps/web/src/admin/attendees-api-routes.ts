@@ -55,6 +55,7 @@ import {
   requireEventId,
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
+import { MAIL_PROVIDER_UNCONFIGURED } from "./mail-settings-shared.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
 import { randomUUID } from "node:crypto";
 import { decryptFromString } from "@admitto/crypto";
@@ -1377,10 +1378,19 @@ export async function handleResendEventAttendeeTicket(
   // personal domain; a hardcoded allowlist would break that use-case without org configuration.
   const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
   if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
-  const sendResult = await resendTicketEmail(attendeeId, db, process.env, mailDeps, {
-    to,
-    baseUrl: baseUrlOrRes,
-  });
+  let sendResult;
+  try {
+    sendResult = await resendTicketEmail(attendeeId, db, process.env, mailDeps, {
+      to,
+      baseUrl: baseUrlOrRes,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : undefined;
+    if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
+      return c.json({ error: "mail_not_configured" }, 422);
+    }
+    throw err;
+  }
 
   const skipped = sendResult.skipped.find((s) => s.attendeeId === attendeeId);
   if (skipped) {

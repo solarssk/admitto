@@ -17,7 +17,8 @@ function AttendeesTableSkeleton() {
             <th>Attendee</th>
             <th>Ticket</th>
             <th>Company</th>
-            <th>Status</th>
+            <th>RSVP</th>
+            <th>Pass status</th>
             <th>Mail</th>
             <th>Check-in</th>
             <th className="attendees-table-v2__actions-col" aria-label="Actions">
@@ -28,7 +29,7 @@ function AttendeesTableSkeleton() {
         <tbody>
           {Array.from({ length: 6 }, (_, i) => (
             <tr key={i}>
-              <td colSpan={7}>
+              <td colSpan={8}>
                 <Skeleton variant="rect" height={44} />
               </td>
             </tr>
@@ -191,7 +192,8 @@ export function AttendeesTable({
                 <th>Attendee</th>
                 <th>Ticket</th>
                 <th>Company</th>
-                <th>Status</th>
+                <th>RSVP</th>
+                <th>Pass status</th>
                 <th>Mail</th>
                 <th>Check-in</th>
                 <th className="attendees-table-v2__actions-col" aria-label="Actions">
@@ -224,14 +226,18 @@ export function AttendeesTable({
                     </div>
                   </td>
                   <td>
-                    <div className="attendees-table-v2__status">
-                      <RsvpStatusBadge status={row.rsvp_status} />
-                      {row.status === "revoked" ? (
-                        <Badge variant="error">Revoked</Badge>
-                      ) : row.status === "cancelled" ? (
-                        <Badge variant="neutral">Cancelled</Badge>
-                      ) : null}
-                    </div>
+                    <RsvpStatusBadge status={row.rsvp_status} />
+                  </td>
+                  <td>
+                    {row.status === "revoked" ? (
+                      <Badge variant="error">Revoked</Badge>
+                    ) : row.status === "cancelled" ? (
+                      <Badge variant="neutral">Cancelled</Badge>
+                    ) : row.status === "confirmed" ? (
+                      <Badge variant="ok">Confirmed</Badge>
+                    ) : (
+                      <Badge variant="neutral">Registered</Badge>
+                    )}
                   </td>
                   <td>
                     <MailStatusBadge status={row.last_mail_status} />
@@ -246,44 +252,49 @@ export function AttendeesTable({
                       <span className="attendee-readonly">—</span>
                     )}
                   </td>
-                  <td className="attendees-table-v2__actions">
-                    <IconButton
-                      label="View attendee"
-                      icon={<i className="ti ti-eye" aria-hidden="true" />}
-                      onClick={() => onViewAttendee(row.id)}
-                    />
-                    {row.status === "revoked" && onRestorePass ? (
-                      <ArchivedGuard
-                        event={event}
-                        reasonId={`restore-pass-reason-${row.id}`}
-                        disabled={passActionBusyIds.has(row.id)}
-                      >
-                        {(guard) => (
-                          <IconButton
-                            label="Restore pass"
-                            icon={<i className="ti ti-refresh" aria-hidden="true" />}
-                            {...guard}
-                            onClick={() => onRestorePass(row)}
-                          />
-                        )}
-                      </ArchivedGuard>
-                    ) : null}
-                    {row.status !== "cancelled" && row.status !== "revoked" && onRevokePass ? (
-                      <ArchivedGuard
-                        event={event}
-                        reasonId={`revoke-pass-reason-${row.id}`}
-                        disabled={passActionBusyIds.has(row.id)}
-                      >
-                        {(guard) => (
-                          <IconButton
-                            label="Revoke pass"
-                            icon={<i className="ti ti-ban" aria-hidden="true" />}
-                            {...guard}
-                            onClick={() => onRevokePass(row)}
-                          />
-                        )}
-                      </ArchivedGuard>
-                    ) : null}
+                  <td>
+                    <div className="attendees-table-v2__actions">
+                      <IconButton
+                        label="View attendee"
+                        icon={<i className="ti ti-eye" aria-hidden="true" />}
+                        size="sm"
+                        onClick={() => onViewAttendee(row.id)}
+                      />
+                      {row.status === "revoked" && onRestorePass ? (
+                        <ArchivedGuard
+                          event={event}
+                          reasonId={`restore-pass-reason-${row.id}`}
+                          disabled={passActionBusyIds.has(row.id)}
+                        >
+                          {(guard) => (
+                            <IconButton
+                              label="Restore pass"
+                              icon={<i className="ti ti-refresh" aria-hidden="true" />}
+                              size="sm"
+                              {...guard}
+                              onClick={() => onRestorePass(row)}
+                            />
+                          )}
+                        </ArchivedGuard>
+                      ) : null}
+                      {row.status !== "cancelled" && row.status !== "revoked" && onRevokePass ? (
+                        <ArchivedGuard
+                          event={event}
+                          reasonId={`revoke-pass-reason-${row.id}`}
+                          disabled={passActionBusyIds.has(row.id)}
+                        >
+                          {(guard) => (
+                            <IconButton
+                              label="Revoke pass"
+                              icon={<i className="ti ti-ban" aria-hidden="true" />}
+                              size="sm"
+                              {...guard}
+                              onClick={() => onRevokePass(row)}
+                            />
+                          )}
+                        </ArchivedGuard>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}

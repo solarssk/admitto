@@ -46,6 +46,8 @@ const CODE_MESSAGES: Record<string, string> = {
   last_superadmin: "Cannot remove or deactivate the last superadmin.",
   managed_by_idp: "This role is managed by an identity provider and cannot be removed.",
   manual_lookup_disabled: "Manual lookup is disabled for this event — use QR scan only.",
+  mail_not_configured:
+    "Mail transport isn't configured for this event or organization. Set it up in Instance Settings → Mail (or this event's Mailing settings) before sending.",
   mappings_required: "Role mappings are required before enabling this provider.",
   no_local_password: "Password is managed by your identity provider.",
   not_admitted: "This attendee isn't currently checked in.",
