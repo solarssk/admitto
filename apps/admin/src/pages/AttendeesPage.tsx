@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
-import { Button, EmptyState, PageHeader, useToast } from "@admitto/ui";
+import { Button, EmptyState, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,
   bulkResendTickets,
@@ -25,7 +25,7 @@ import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
 import { ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { useClickOutside } from "../components/useClickOutside.js";
+import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import "../attendees/add-attendee-modal.css";
@@ -41,6 +41,38 @@ function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): Att
     check_in_status: updated.check_in_status,
     admitted_at: updated.admitted_at,
   };
+}
+
+/** Standard "N queued / M failed / K skipped" toast for a bulk-send queue result — shared by
+ * the header "Send tickets" dialog and the bulk-bar's send-to-selection action. */
+function notifyBulkSendResult(
+  result: { queued: number; skipped: number; failed: number },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  if (result.failed > 0) {
+    addToast(
+      result.queued > 0
+        ? `Sent ${result.queued} ticket${result.queued === 1 ? "" : "s"}; ${result.failed} failed${
+            result.skipped > 0 ? `; ${result.skipped} skipped` : ""
+          }.`
+        : `Bulk send failed: ${result.failed} ticket${result.failed === 1 ? "" : "s"} could not be sent${
+            result.skipped > 0 ? ` (${result.skipped} skipped)` : ""
+          }.`,
+      result.queued > 0 ? "warning" : "error",
+    );
+  } else if (result.queued === 0) {
+    addToast(
+      result.skipped > 0 ? `No tickets were queued (${result.skipped} skipped).` : "No tickets to send.",
+      "info",
+    );
+  } else {
+    addToast(
+      `Sending tickets to ${result.queued} attendee${result.queued === 1 ? "" : "s"}${
+        result.skipped > 0 ? ` (${result.skipped} skipped)` : ""
+      }.`,
+      "success",
+    );
+  }
 }
 
 interface SendTicketsDialogProps {
@@ -142,28 +174,7 @@ const EXPORT_FORMATS: { key: "xlsx" | "csv" | "pdf"; label: string; icon: string
 
 /** Single "Export" entry point — opens a small menu for XLSX/CSV/PDF, replacing three separate buttons. */
 function ExportMenu({ exportingFormat, onExport }: ExportMenuProps) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  const close = () => {
-    setOpen(false);
-    triggerRef.current?.focus();
-  };
-
-  useClickOutside(rootRef, open, close);
-
-  useEffect(() => {
-    if (!open) return;
-    // Move focus into the menu when it opens.
-    panelRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") close();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
     <div className="attendees-export-menu" ref={rootRef}>
@@ -480,32 +491,7 @@ export function AttendeesPage() {
     try {
       const result = await bulkResendTickets(eventId, sendTarget);
       setSendTicketsOpen(false);
-      if (result.failed > 0) {
-        addToast(
-          result.queued > 0
-            ? `Sent ${result.queued} ticket${result.queued === 1 ? "" : "s"}; ${result.failed} failed${
-                result.skipped > 0 ? `; ${result.skipped} skipped` : ""
-              }.`
-            : `Bulk send failed: ${result.failed} ticket${result.failed === 1 ? "" : "s"} could not be sent${
-                result.skipped > 0 ? ` (${result.skipped} skipped)` : ""
-              }.`,
-          result.queued > 0 ? "warning" : "error",
-        );
-      } else if (result.queued === 0) {
-        addToast(
-          result.skipped > 0
-            ? `No tickets were queued (${result.skipped} skipped).`
-            : "No tickets to send.",
-          "info",
-        );
-      } else {
-        addToast(
-          `Sending tickets to ${result.queued} attendee${result.queued === 1 ? "" : "s"}${
-            result.skipped > 0 ? ` (${result.skipped} skipped)` : ""
-          }.`,
-          "success",
-        );
-      }
+      notifyBulkSendResult(result, addToast);
       setReloadToken((n) => n + 1);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -558,32 +544,7 @@ export function AttendeesPage() {
       const result = await sendEventBulk(eventId, {
         filter: { type: "attendee_ids", ids: [...selectedIds] },
       });
-      if (result.failed > 0) {
-        addToast(
-          result.queued > 0
-            ? `Sent ${result.queued} ticket${result.queued === 1 ? "" : "s"}; ${result.failed} failed${
-                result.skipped > 0 ? `; ${result.skipped} skipped` : ""
-              }.`
-            : `Bulk send failed: ${result.failed} ticket${result.failed === 1 ? "" : "s"} could not be sent${
-                result.skipped > 0 ? ` (${result.skipped} skipped)` : ""
-              }.`,
-          result.queued > 0 ? "warning" : "error",
-        );
-      } else if (result.queued === 0) {
-        addToast(
-          result.skipped > 0
-            ? `No tickets were queued (${result.skipped} skipped).`
-            : "No tickets to send.",
-          "info",
-        );
-      } else {
-        addToast(
-          `Sending tickets to ${result.queued} attendee${result.queued === 1 ? "" : "s"}${
-            result.skipped > 0 ? ` (${result.skipped} skipped)` : ""
-          }.`,
-          "success",
-        );
-      }
+      notifyBulkSendResult(result, addToast);
       setReloadToken((n) => n + 1);
     } catch (err) {
       if (err instanceof ApiError) {

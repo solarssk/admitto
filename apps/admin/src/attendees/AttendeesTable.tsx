@@ -58,6 +58,17 @@ function AttendeesCardsSkeleton() {
   );
 }
 
+/** Sortable columns, left to right, matching how operators scan a row (identity, affiliation,
+ * the two independent status pairs, then attendance). Mail is deliberately absent — its value
+ * is resolved per-row from a separate delivery lookup, not a plain column. */
+const SORTABLE_COLUMNS: { column: AttendeeSortBy; label: string }[] = [
+  { column: "name", label: "Attendee" },
+  { column: "company", label: "Company" },
+  { column: "ticket_type", label: "Ticket" },
+  { column: "status", label: "Pass status" },
+  { column: "rsvp_status", label: "RSVP status" },
+];
+
 /** Column header that toggles the list's sort order on click — an unsorted column shows a
  * neutral two-way arrow, the active column shows a single arrow pointing in its current
  * direction. Clicking a new column always starts ascending (see AttendeesPage's onSortChange). */
@@ -89,6 +100,65 @@ function SortableHeader({
         />
       </button>
     </th>
+  );
+}
+
+/** Revoke/Restore pass icon buttons for one row — shared by the desktop table row and the
+ * mobile card, which otherwise duplicated this exact block with only their `reasonId` suffix
+ * differing (`row.id` vs `card-${row.id}`, so ArchivedGuard's `aria-describedby` id stays
+ * unique between the two layouts if both ever render at once, e.g. mid-breakpoint-resize). */
+function PassActionButtons({
+  row,
+  event,
+  reasonIdSuffix,
+  passActionBusyIds,
+  onRevokePass,
+  onRestorePass,
+}: {
+  row: AttendeeRowDto;
+  event: ArchivedGuardEvent;
+  reasonIdSuffix: string;
+  passActionBusyIds: ReadonlySet<string>;
+  onRevokePass?: (row: AttendeeRowDto) => void;
+  onRestorePass?: (row: AttendeeRowDto) => void;
+}) {
+  return (
+    <>
+      {row.status === "revoked" && onRestorePass ? (
+        <ArchivedGuard
+          event={event}
+          reasonId={`restore-pass-reason-${reasonIdSuffix}`}
+          disabled={passActionBusyIds.has(row.id)}
+        >
+          {(guard) => (
+            <IconButton
+              label="Restore pass"
+              icon={<i className="ti ti-refresh" aria-hidden="true" />}
+              size="sm"
+              {...guard}
+              onClick={() => onRestorePass(row)}
+            />
+          )}
+        </ArchivedGuard>
+      ) : null}
+      {row.status !== "cancelled" && row.status !== "revoked" && onRevokePass ? (
+        <ArchivedGuard
+          event={event}
+          reasonId={`revoke-pass-reason-${reasonIdSuffix}`}
+          disabled={passActionBusyIds.has(row.id)}
+        >
+          {(guard) => (
+            <IconButton
+              label="Revoke pass"
+              icon={<i className="ti ti-ban" aria-hidden="true" />}
+              size="sm"
+              {...guard}
+              onClick={() => onRevokePass(row)}
+            />
+          )}
+        </ArchivedGuard>
+      ) : null}
+    </>
   );
 }
 
@@ -217,40 +287,14 @@ function AttendeeCard({
             size="sm"
             onClick={onView}
           />
-          {row.status === "revoked" && onRestorePass ? (
-            <ArchivedGuard
-              event={event}
-              reasonId={`restore-pass-reason-card-${row.id}`}
-              disabled={passActionBusyIds.has(row.id)}
-            >
-              {(guard) => (
-                <IconButton
-                  label="Restore pass"
-                  icon={<i className="ti ti-refresh" aria-hidden="true" />}
-                  size="sm"
-                  {...guard}
-                  onClick={() => onRestorePass(row)}
-                />
-              )}
-            </ArchivedGuard>
-          ) : null}
-          {row.status !== "cancelled" && row.status !== "revoked" && onRevokePass ? (
-            <ArchivedGuard
-              event={event}
-              reasonId={`revoke-pass-reason-card-${row.id}`}
-              disabled={passActionBusyIds.has(row.id)}
-            >
-              {(guard) => (
-                <IconButton
-                  label="Revoke pass"
-                  icon={<i className="ti ti-ban" aria-hidden="true" />}
-                  size="sm"
-                  {...guard}
-                  onClick={() => onRevokePass(row)}
-                />
-              )}
-            </ArchivedGuard>
-          ) : null}
+          <PassActionButtons
+            row={row}
+            event={event}
+            reasonIdSuffix={`card-${row.id}`}
+            passActionBusyIds={passActionBusyIds}
+            onRevokePass={onRevokePass}
+            onRestorePass={onRestorePass}
+          />
         </div>
       </div>
     </div>
@@ -456,41 +500,16 @@ export function AttendeesTable({
                     aria-label="Select all"
                   />
                 </th>
-                <SortableHeader
-                  column="name"
-                  label="Attendee"
-                  sortBy={sortBy}
-                  sortDir={sortDir}
-                  onSortChange={onSortChange}
-                />
-                <SortableHeader
-                  column="company"
-                  label="Company"
-                  sortBy={sortBy}
-                  sortDir={sortDir}
-                  onSortChange={onSortChange}
-                />
-                <SortableHeader
-                  column="ticket_type"
-                  label="Ticket"
-                  sortBy={sortBy}
-                  sortDir={sortDir}
-                  onSortChange={onSortChange}
-                />
-                <SortableHeader
-                  column="status"
-                  label="Pass status"
-                  sortBy={sortBy}
-                  sortDir={sortDir}
-                  onSortChange={onSortChange}
-                />
-                <SortableHeader
-                  column="rsvp_status"
-                  label="RSVP status"
-                  sortBy={sortBy}
-                  sortDir={sortDir}
-                  onSortChange={onSortChange}
-                />
+                {SORTABLE_COLUMNS.map(({ column, label }) => (
+                  <SortableHeader
+                    key={column}
+                    column={column}
+                    label={label}
+                    sortBy={sortBy}
+                    sortDir={sortDir}
+                    onSortChange={onSortChange}
+                  />
+                ))}
                 <th>Mail</th>
                 <SortableHeader
                   column="admitted_at"
@@ -560,40 +579,14 @@ export function AttendeesTable({
                         size="sm"
                         onClick={() => onViewAttendee(row.id)}
                       />
-                      {row.status === "revoked" && onRestorePass ? (
-                        <ArchivedGuard
-                          event={event}
-                          reasonId={`restore-pass-reason-${row.id}`}
-                          disabled={passActionBusyIds.has(row.id)}
-                        >
-                          {(guard) => (
-                            <IconButton
-                              label="Restore pass"
-                              icon={<i className="ti ti-refresh" aria-hidden="true" />}
-                              size="sm"
-                              {...guard}
-                              onClick={() => onRestorePass(row)}
-                            />
-                          )}
-                        </ArchivedGuard>
-                      ) : null}
-                      {row.status !== "cancelled" && row.status !== "revoked" && onRevokePass ? (
-                        <ArchivedGuard
-                          event={event}
-                          reasonId={`revoke-pass-reason-${row.id}`}
-                          disabled={passActionBusyIds.has(row.id)}
-                        >
-                          {(guard) => (
-                            <IconButton
-                              label="Revoke pass"
-                              icon={<i className="ti ti-ban" aria-hidden="true" />}
-                              size="sm"
-                              {...guard}
-                              onClick={() => onRevokePass(row)}
-                            />
-                          )}
-                        </ArchivedGuard>
-                      ) : null}
+                      <PassActionButtons
+                        row={row}
+                        event={event}
+                        reasonIdSuffix={row.id}
+                        passActionBusyIds={passActionBusyIds}
+                        onRevokePass={onRevokePass}
+                        onRestorePass={onRestorePass}
+                      />
                     </div>
                   </td>
                 </tr>
