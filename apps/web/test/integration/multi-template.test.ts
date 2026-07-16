@@ -510,6 +510,59 @@ describe("multi-template API", () => {
     }
   });
 
+  it("POST /send with an attendee_ids ticket-template send records purpose 'initial', so a later 'Everyone undelivered' sweep doesn't double-send (regression)", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-multi-checkbox-dedup",
+        event_id: EVENT_A,
+        email: "checkbox-dedup@example.com",
+        name: "Late Registrant",
+      },
+    });
+
+    try {
+      const sendRes = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          filter: { type: "attendee_ids", ids: ["att-multi-checkbox-dedup"] },
+        }),
+      });
+      expect(sendRes.status).toBe(200);
+      const sendBody = (await sendRes.json()) as { queued: number };
+      expect(sendBody.queued).toBe(1);
+
+      const delivery = await prisma.emailDelivery.findFirstOrThrow({
+        where: { event_id: EVENT_A, attendee_id: "att-multi-checkbox-dedup" },
+      });
+      // The bug: this stayed "resend" for every attendee_ids send regardless of history,
+      // so a never-before-sent attendee still didn't get a purpose:"initial" row - the one
+      // thing the no_delivery exclusion below actually checks for.
+      expect(delivery.purpose).toBe("initial");
+
+      const dryRunRes = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({ filter: { type: "no_delivery" }, dryRun: true }),
+      });
+      const dryRunBody = (await dryRunRes.json()) as { recipientCount: number };
+      // The end-to-end regression: without the fix, this attendee - despite already having
+      // received a ticket seconds earlier via the checkbox bulk-send - would still show up
+      // as "undelivered" and get emailed a second time.
+      expect(dryRunBody.recipientCount).toBe(0);
+    } finally {
+      rateLimitStore.reset();
+    }
+  });
+
   it("POST /send with filter no_delivery and an explicit non-ticket templateId scopes to that template, not the built-in default", async () => {
     const reminder = await postNamedTemplate(app, "Reminder");
     await prisma.attendee.create({

@@ -253,18 +253,30 @@ export async function handleBulkSend(
   let noDeliveryScope: BulkSendNoDeliveryScope | undefined;
   let purpose: "initial" | "resend" = "resend";
 
-  if (body.filter.type === "no_delivery") {
+  // attendee_ids shares the no_delivery branch's purpose logic (not its noDeliveryScope,
+  // which attendee_ids doesn't use) - without this, every checkbox-selection send was
+  // recorded as "resend" regardless of template, routing through createResendDelivery's
+  // unconditional insert instead of claimInitialDelivery's atomic (attendee, event) dedup.
+  // A ticket-template send to attendees who'd never received one still queued fine (no
+  // existing row to collide with), but re-selecting an overlapping group, or later running
+  // "Everyone undelivered" (whose own no_delivery exclusion only matches purpose:"initial"
+  // rows - see noDeliveryDeliveryWhere above), would double-send instead of being skipped.
+  if (body.filter.type === "no_delivery" || body.filter.type === "attendee_ids") {
     if (body.templateId) {
       const templateName = await getBulkSendTemplateName(db, body.templateId);
       const isTicket = templateName === "ticket";
-      noDeliveryScope = isTicket
-        ? { mode: "initial_ticket" }
-        : { mode: "template", templateId: body.templateId };
       purpose = isTicket ? "initial" : "resend";
+      if (body.filter.type === "no_delivery") {
+        noDeliveryScope = isTicket
+          ? { mode: "initial_ticket" }
+          : { mode: "template", templateId: body.templateId };
+      }
     } else {
       // No templateId -> built-in default template, which is always the "ticket" slot.
-      noDeliveryScope = { mode: "initial_ticket" };
       purpose = "initial";
+      if (body.filter.type === "no_delivery") {
+        noDeliveryScope = { mode: "initial_ticket" };
+      }
     }
   }
 
