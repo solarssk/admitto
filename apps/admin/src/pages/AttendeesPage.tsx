@@ -43,36 +43,41 @@ function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): Att
   };
 }
 
+function pluralize(count: number, singular: string): string {
+  return count === 1 ? singular : `${singular}s`;
+}
+
 /** Standard "N queued / M failed / K skipped" toast for a bulk-send queue result — shared by
  * the header "Send tickets" dialog and the bulk-bar's send-to-selection action. */
 function notifyBulkSendResult(
   result: { queued: number; skipped: number; failed: number },
   addToast: (message: string, variant?: ToastVariant) => void,
 ) {
-  if (result.failed > 0) {
-    addToast(
-      result.queued > 0
-        ? `Sent ${result.queued} ticket${result.queued === 1 ? "" : "s"}; ${result.failed} failed${
-            result.skipped > 0 ? `; ${result.skipped} skipped` : ""
-          }.`
-        : `Bulk send failed: ${result.failed} ticket${result.failed === 1 ? "" : "s"} could not be sent${
-            result.skipped > 0 ? ` (${result.skipped} skipped)` : ""
-          }.`,
-      result.queued > 0 ? "warning" : "error",
-    );
-  } else if (result.queued === 0) {
-    addToast(
-      result.skipped > 0 ? `No tickets were queued (${result.skipped} skipped).` : "No tickets to send.",
-      "info",
-    );
-  } else {
-    addToast(
-      `Sending tickets to ${result.queued} attendee${result.queued === 1 ? "" : "s"}${
-        result.skipped > 0 ? ` (${result.skipped} skipped)` : ""
-      }.`,
-      "success",
-    );
+  const { queued, skipped, failed } = result;
+
+  if (failed === 0 && queued === 0) {
+    const message = skipped > 0 ? `No tickets were queued (${skipped} skipped).` : "No tickets to send.";
+    addToast(message, "info");
+    return;
   }
+
+  if (failed === 0) {
+    const skippedNote = skipped > 0 ? ` (${skipped} skipped)` : "";
+    addToast(`Sending tickets to ${queued} ${pluralize(queued, "attendee")}${skippedNote}.`, "success");
+    return;
+  }
+
+  if (queued === 0) {
+    const skippedNote = skipped > 0 ? ` (${skipped} skipped)` : "";
+    addToast(
+      `Bulk send failed: ${failed} ${pluralize(failed, "ticket")} could not be sent${skippedNote}.`,
+      "error",
+    );
+    return;
+  }
+
+  const skippedNote = skipped > 0 ? `; ${skipped} skipped` : "";
+  addToast(`Sent ${queued} ${pluralize(queued, "ticket")}; ${failed} failed${skippedNote}.`, "warning");
 }
 
 interface SendTicketsDialogProps {
@@ -161,19 +166,21 @@ function SendTicketsDialog({
   );
 }
 
+type ExportFormat = "xlsx" | "csv" | "pdf";
+
 interface ExportMenuProps {
-  exportingFormat: "xlsx" | "csv" | "pdf" | null;
-  onExport: (format: "xlsx" | "csv" | "pdf") => void;
+  exportingFormat: ExportFormat | null;
+  onExport: (format: ExportFormat) => void;
 }
 
-const EXPORT_FORMATS: { key: "xlsx" | "csv" | "pdf"; label: string; icon: string; hint: string }[] = [
+const EXPORT_FORMATS: { key: ExportFormat; label: string; icon: string; hint: string }[] = [
   { key: "xlsx", label: "XLSX", icon: "table", hint: "Excel workbook" },
   { key: "csv", label: "CSV", icon: "file-text", hint: "Plain text file" },
   { key: "pdf", label: "PDF", icon: "file-type-pdf", hint: "Ready to print" },
 ];
 
 /** Single "Export" entry point — opens a small menu for XLSX/CSV/PDF, replacing three separate buttons. */
-function ExportMenu({ exportingFormat, onExport }: ExportMenuProps) {
+function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
   const { open, setOpen, close, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
@@ -243,7 +250,7 @@ export function AttendeesPage() {
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
-  const [exportingFormat, setExportingFormat] = useState<"xlsx" | "csv" | "pdf" | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -384,7 +391,7 @@ export function AttendeesPage() {
   useEffect(() => () => exportAbortRef.current?.abort(), []);
 
   const handleExport = useCallback(
-    async (format: "xlsx" | "csv" | "pdf") => {
+    async (format: ExportFormat) => {
       if (!eventId) return;
 
       exportAbortRef.current?.abort();

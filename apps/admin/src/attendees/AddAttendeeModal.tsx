@@ -182,8 +182,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
       <div className="add-attendee-modal__backdrop" role="presentation" onClick={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel">
         <h2 className="add-attendee-modal__title" id={titleId}>
-          <i className="ti ti-user-plus" aria-hidden="true" />
-          Add attendee
+          <i className="ti ti-user-plus" aria-hidden="true" /> Add attendee
         </h2>
         <p className="add-attendee-modal__subtitle">
           Enter their email and name. Everything else is optional.

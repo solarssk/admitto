@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Button, Card, Checkbox, IconButton, Input, Select, Skeleton } from "@admitto/ui";
 import type { AttendeeRowDto, AttendeeSortBy, AttendeeSortDir, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
@@ -86,8 +86,12 @@ function SortableHeader({
   onSortChange: (column: AttendeeSortBy) => void;
 }>) {
   const active = sortBy === column;
-  const ariaSortValue = active ? (sortDir === "asc" ? "ascending" : "descending") : "none";
-  const iconClass = active ? (sortDir === "asc" ? "ti-arrow-up" : "ti-arrow-down") : "ti-arrows-sort";
+  let ariaSortValue: "ascending" | "descending" | "none" = "none";
+  let iconClass = "ti-arrows-sort";
+  if (active) {
+    ariaSortValue = sortDir === "asc" ? "ascending" : "descending";
+    iconClass = sortDir === "asc" ? "ti-arrow-up" : "ti-arrow-down";
+  }
   return (
     <th aria-sort={ariaSortValue}>
       <button
@@ -345,6 +349,151 @@ export function AttendeesTable({
   const activeFilterCount =
     (statusFilter !== "all" ? 1 : 0) + (rsvpStatusFilter !== "" ? 1 : 0) + (ticketTypeFilter !== "" ? 1 : 0);
 
+  let listContent: ReactNode;
+  if (loading && items.length === 0) {
+    listContent = isDesktop ? <AttendeesTableSkeleton /> : <AttendeesCardsSkeleton />;
+  } else if (items.length === 0) {
+    listContent = (
+      <div className="attendees-empty">
+        <p>{emptyMessage}</p>
+      </div>
+    );
+  } else if (isDesktop) {
+    listContent = (
+      <div
+        className={`attendees-table-wrap${loading ? " attendees-table-wrap--loading" : ""}`}
+        aria-busy={loading}
+      >
+        <table className="table attendees-table-v2">
+          <thead>
+            <tr>
+              <th className="attendees-table-v2__checkbox-col">
+                <Checkbox
+                  checked={items.length > 0 && items.every((row) => selectedIds.has(row.id))}
+                  onChange={onToggleSelectAll}
+                  aria-label="Select all"
+                />
+              </th>
+              {SORTABLE_COLUMNS.map(({ column, label }) => (
+                <SortableHeader
+                  key={column}
+                  column={column}
+                  label={label}
+                  sortBy={sortBy}
+                  sortDir={sortDir}
+                  onSortChange={onSortChange}
+                />
+              ))}
+              <th>Mail</th>
+              <SortableHeader
+                column="admitted_at"
+                label="Check-in"
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onSortChange={onSortChange}
+              />
+              <th className="attendees-table-v2__actions-col" aria-label="Actions">
+                <span className="sr-only">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((row) => (
+              <tr
+                key={row.id}
+                className={`attendees-table-v2__row${
+                  selectedIds.has(row.id) ? " attendees-table-v2__row--selected" : ""
+                }`}
+              >
+                <td>
+                  <Checkbox
+                    checked={selectedIds.has(row.id)}
+                    onChange={() => onToggleRow(row.id)}
+                    aria-label={`Select ${row.name}`}
+                  />
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="attendees-row-btn attendees-table-v2__attendee"
+                    onClick={() => onViewAttendee(row.id)}
+                  >
+                    <span className="attendees-table-v2__name">{row.name}</span>
+                    <span className="attendees-table-v2__email">{row.email}</span>
+                  </button>
+                </td>
+                <td>
+                  <div className="attendees-table-v2__company">
+                    <span>{row.company ?? "—"}</span>
+                    {row.department ? (
+                      <span className="attendees-table-v2__department">{row.department}</span>
+                    ) : null}
+                  </div>
+                </td>
+                <td>
+                  <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
+                </td>
+                <td>
+                  <PassStatusBadge status={row.status} />
+                </td>
+                <td>
+                  <RsvpStatusBadge status={row.rsvp_status} />
+                </td>
+                <td>
+                  <MailStatusBadge status={row.last_mail_status} />
+                </td>
+                <td>
+                  <CheckInCell admittedAt={row.admitted_at} eventTimezone={eventTimezone} />
+                </td>
+                <td>
+                  <div className="attendees-table-v2__actions">
+                    <IconButton
+                      label="View attendee"
+                      icon={<i className="ti ti-eye" aria-hidden="true" />}
+                      size="sm"
+                      onClick={() => onViewAttendee(row.id)}
+                    />
+                    <PassActionButtons
+                      row={row}
+                      event={event}
+                      reasonIdSuffix={row.id}
+                      passActionBusyIds={passActionBusyIds}
+                      onRevokePass={onRevokePass}
+                      onRestorePass={onRestorePass}
+                    />
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  } else {
+    listContent = (
+      <div
+        className={`attendees-cards${loading ? " attendees-table-wrap--loading" : ""}`}
+        aria-busy={loading}
+      >
+        {items.map((row) => (
+          <AttendeeCard
+            key={row.id}
+            row={row}
+            selected={selectedIds.has(row.id)}
+            onToggle={() => onToggleRow(row.id)}
+            onView={() => onViewAttendee(row.id)}
+            ticketTypes={ticketTypes}
+            eventTimezone={eventTimezone}
+            event={event}
+            passActionBusyIds={passActionBusyIds}
+            onRevokePass={onRevokePass}
+            onRestorePass={onRestorePass}
+          />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <Card padded={false}>
       {selectedIds.size > 0 ? (
@@ -474,147 +623,7 @@ export function AttendeesTable({
           </div>
         </div>
       )}
-      {loading && items.length === 0 ? (
-        isDesktop ? (
-          <AttendeesTableSkeleton />
-        ) : (
-          <AttendeesCardsSkeleton />
-        )
-      ) : items.length === 0 ? (
-        <div className="attendees-empty">
-          <p>{emptyMessage}</p>
-        </div>
-      ) : isDesktop ? (
-        <div
-          className={`attendees-table-wrap${loading ? " attendees-table-wrap--loading" : ""}`}
-          aria-busy={loading}
-        >
-          <table className="table attendees-table-v2">
-            <thead>
-              <tr>
-                <th className="attendees-table-v2__checkbox-col">
-                  <Checkbox
-                    checked={items.length > 0 && items.every((row) => selectedIds.has(row.id))}
-                    onChange={onToggleSelectAll}
-                    aria-label="Select all"
-                  />
-                </th>
-                {SORTABLE_COLUMNS.map(({ column, label }) => (
-                  <SortableHeader
-                    key={column}
-                    column={column}
-                    label={label}
-                    sortBy={sortBy}
-                    sortDir={sortDir}
-                    onSortChange={onSortChange}
-                  />
-                ))}
-                <th>Mail</th>
-                <SortableHeader
-                  column="admitted_at"
-                  label="Check-in"
-                  sortBy={sortBy}
-                  sortDir={sortDir}
-                  onSortChange={onSortChange}
-                />
-                <th className="attendees-table-v2__actions-col" aria-label="Actions">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((row) => (
-                <tr
-                  key={row.id}
-                  className={`attendees-table-v2__row${
-                    selectedIds.has(row.id) ? " attendees-table-v2__row--selected" : ""
-                  }`}
-                >
-                  <td>
-                    <Checkbox
-                      checked={selectedIds.has(row.id)}
-                      onChange={() => onToggleRow(row.id)}
-                      aria-label={`Select ${row.name}`}
-                    />
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="attendees-row-btn attendees-table-v2__attendee"
-                      onClick={() => onViewAttendee(row.id)}
-                    >
-                      <span className="attendees-table-v2__name">{row.name}</span>
-                      <span className="attendees-table-v2__email">{row.email}</span>
-                    </button>
-                  </td>
-                  <td>
-                    <div className="attendees-table-v2__company">
-                      <span>{row.company ?? "—"}</span>
-                      {row.department ? (
-                        <span className="attendees-table-v2__department">{row.department}</span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td>
-                    <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
-                  </td>
-                  <td>
-                    <PassStatusBadge status={row.status} />
-                  </td>
-                  <td>
-                    <RsvpStatusBadge status={row.rsvp_status} />
-                  </td>
-                  <td>
-                    <MailStatusBadge status={row.last_mail_status} />
-                  </td>
-                  <td>
-                    <CheckInCell admittedAt={row.admitted_at} eventTimezone={eventTimezone} />
-                  </td>
-                  <td>
-                    <div className="attendees-table-v2__actions">
-                      <IconButton
-                        label="View attendee"
-                        icon={<i className="ti ti-eye" aria-hidden="true" />}
-                        size="sm"
-                        onClick={() => onViewAttendee(row.id)}
-                      />
-                      <PassActionButtons
-                        row={row}
-                        event={event}
-                        reasonIdSuffix={row.id}
-                        passActionBusyIds={passActionBusyIds}
-                        onRevokePass={onRevokePass}
-                        onRestorePass={onRestorePass}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div
-          className={`attendees-cards${loading ? " attendees-table-wrap--loading" : ""}`}
-          aria-busy={loading}
-        >
-          {items.map((row) => (
-            <AttendeeCard
-              key={row.id}
-              row={row}
-              selected={selectedIds.has(row.id)}
-              onToggle={() => onToggleRow(row.id)}
-              onView={() => onViewAttendee(row.id)}
-              ticketTypes={ticketTypes}
-              eventTimezone={eventTimezone}
-              event={event}
-              passActionBusyIds={passActionBusyIds}
-              onRevokePass={onRevokePass}
-              onRestorePass={onRestorePass}
-            />
-          ))}
-        </div>
-      )}
+      {listContent}
       <div className="attendees-table-foot">
         <span>
           {loading && items.length === 0
