@@ -4,7 +4,7 @@ import { z } from "zod";
 import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
 import { sendTicketEmails, type MailDeliveryDeps } from "@admitto/mail-delivery";
 import { resolveTemplateById, TemplateNotFoundError } from "@admitto/mail-templates";
-import { MAIL_PROVIDER_UNCONFIGURED } from "./mail-settings-shared.js";
+import { mailNotConfiguredResponse } from "./mail-settings-shared.js";
 import {
   assertTicketTypeInCatalog,
   loadEventTicketTypes,
@@ -309,10 +309,8 @@ export async function handleBulkSend(
     if (err instanceof TemplateNotFoundError) {
       return c.json({ error: "template_not_found" }, 404);
     }
-    const message = err instanceof Error ? err.message : undefined;
-    if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
-      return c.json({ error: "mail_not_configured" }, 422);
-    }
+    const mailErr = mailNotConfiguredResponse(c, err);
+    if (mailErr) return mailErr;
     throw err;
   }
 

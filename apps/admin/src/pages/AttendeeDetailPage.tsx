@@ -778,15 +778,6 @@ export function AttendeeDetailPage() {
                 </div>
               </div>
             </Card>
-
-            <Card
-              title="Wallet pass"
-              actions={<Badge variant="neutral">coming soon</Badge>}
-              className="attendee-wallet-placeholder"
-            >
-              <p>This event doesn&apos;t have wallet passes enabled yet.</p>
-              <p className="attendee-readonly">Wallet passes will be available in v0.5.</p>
-            </Card>
           </div>
         </div>
       )}

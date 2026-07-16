@@ -1,6 +1,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import * as mailDelivery from "@admitto/mail-delivery";
 import { PrismaClient } from "@prisma/client";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -8,7 +9,7 @@ import { DEFAULT_BODY_MJML, DEFAULT_SUBJECT_TEMPLATE } from "@admitto/mail-templ
 import type { ExportPayload } from "@admitto/mailer";
 import { setMailSettings } from "@admitto/mailer-config";
 import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { createRateLimitStore, type InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -25,6 +26,7 @@ const PASSWORD = "multi-tpl-pass-123";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
+let rateLimitStore: InMemoryRateLimitStore;
 let adminCookie = "";
 let admin2Cookie = "";
 const exported: ExportPayload[] = [];
@@ -179,7 +181,7 @@ describe("multi-template API", () => {
       checkinToken: "multi-tpl-checkin-token-32chars!!",
       allowCheckinBearer: true,
       baseUrl: "https://tickets.example.com",
-      rateLimitStore: createRateLimitStore(),
+      rateLimitStore: (rateLimitStore = createRateLimitStore() as InMemoryRateLimitStore),
       skipCheckinBootValidation: true,
       adminDistRoot,
       mailDeliveryDeps: { exportSink: (p) => { exported.push(p); } },
@@ -435,6 +437,94 @@ describe("multi-template API", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { recipientCount: number };
     expect(body.recipientCount).toBe(1);
+  });
+
+  it("POST /send returns 422 mail_not_configured instead of a raw 500 when no mail transport is set up", async () => {
+    await putTicketTemplate(app);
+    const ticket = await prisma.mailTemplate.findUniqueOrThrow({
+      where: {
+        scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: "att-multi-mail-unconfigured",
+        event_id: EVENT_A,
+        email: "unconfigured@example.com",
+        name: "Guest",
+      },
+    });
+
+    const spy = vi
+      .spyOn(mailDelivery, "sendTicketEmails")
+      .mockRejectedValueOnce(new Error("Cannot resolve mail provider: not set in env"));
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          templateId: ticket.id,
+          filter: { type: "attendee_ids", ids: ["att-multi-mail-unconfigured"] },
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("mail_not_configured");
+    } finally {
+      spy.mockRestore();
+      // These two tests each spend one /send rate-limit slot on top of the rest of this
+      // file's suite; reset so they don't push a later, unrelated /send test over the cap.
+      rateLimitStore.reset();
+    }
+  });
+
+  it("POST /send does not remap an unrelated send failure to mail_not_configured (rethrows instead)", async () => {
+    await putTicketTemplate(app);
+    const ticket = await prisma.mailTemplate.findUniqueOrThrow({
+      where: {
+        scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: "att-multi-mail-unrelated-error",
+        event_id: EVENT_A,
+        email: "unrelated-error@example.com",
+        name: "Guest",
+      },
+    });
+
+    const spy = vi
+      .spyOn(mailDelivery, "sendTicketEmails")
+      .mockRejectedValueOnce(new Error("boom: provider timed out"));
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          templateId: ticket.id,
+          filter: { type: "attendee_ids", ids: ["att-multi-mail-unrelated-error"] },
+        }),
+      });
+      // Not caught by mailNotConfiguredResponse — falls through to the framework's
+      // generic unhandled-error response (plain text, not our JSON error envelope).
+      expect(res.status).toBe(500);
+      const text = await res.text();
+      expect(text).not.toContain("mail_not_configured");
+    } finally {
+      spy.mockRestore();
+      // These two tests each spend one /send rate-limit slot on top of the rest of this
+      // file's suite; reset so they don't push a later, unrelated /send test over the cap.
+      rateLimitStore.reset();
+    }
   });
 
   it("POST /send dryRun attendee_ids ignores IDs from other events", async () => {

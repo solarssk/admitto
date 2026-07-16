@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
@@ -39,13 +39,14 @@ vi.mock("react-router-dom", async (importOriginal) => {
 });
 
 const updateAttendee = vi.fn();
+const resendTicket = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
   return {
     ...actual,
     updateAttendee: (...args: unknown[]) => updateAttendee(...args),
-    resendTicket: vi.fn(),
+    resendTicket: (...args: unknown[]) => resendTicket(...args),
     fetchAttendeeDetail: vi.fn(),
     revokeAttendeeCheckIn: vi.fn(),
     fetchTicketTypes: vi.fn().mockResolvedValue([
@@ -168,6 +169,25 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog.textContent).toMatch(/Resend ticket/);
+  });
+
+  it("shows a mapped mail_not_configured error in the Resend dialog, without closing it", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockLoad(baseDetail());
+    resendTicket.mockRejectedValueOnce(new ApiError(422, "mail_not_configured", "mail_not_configured"));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Resend ticket" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(
+      /Mail transport isn't configured for this event or organization/,
+    );
+    // Dialog stays open — the operator can fix mail settings and retry without reopening it.
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
   it("changes RSVP status and saves it", async () => {

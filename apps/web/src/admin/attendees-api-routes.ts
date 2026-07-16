@@ -55,7 +55,7 @@ import {
   requireEventId,
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
-import { MAIL_PROVIDER_UNCONFIGURED } from "./mail-settings-shared.js";
+import { mailNotConfiguredResponse } from "./mail-settings-shared.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
 import { randomUUID } from "node:crypto";
 import { decryptFromString } from "@admitto/crypto";
@@ -1385,10 +1385,8 @@ export async function handleResendEventAttendeeTicket(
       baseUrl: baseUrlOrRes,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : undefined;
-    if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
-      return c.json({ error: "mail_not_configured" }, 422);
-    }
+    const mailErr = mailNotConfiguredResponse(c, err);
+    if (mailErr) return mailErr;
     throw err;
   }
 
@@ -1580,17 +1578,24 @@ export async function handleBulkResendTickets(
   const mailPurpose = target === "unsent" ? "initial" : "resend";
   const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
   if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
-  const sendResult = await sendTicketEmails(
-    eventId,
-    {
-      attendeeIds,
-      purpose: mailPurpose,
-      baseUrl: baseUrlOrRes,
-    },
-    db,
-    process.env,
-    mailDeps,
-  );
+  let sendResult;
+  try {
+    sendResult = await sendTicketEmails(
+      eventId,
+      {
+        attendeeIds,
+        purpose: mailPurpose,
+        baseUrl: baseUrlOrRes,
+      },
+      db,
+      process.env,
+      mailDeps,
+    );
+  } catch (err) {
+    const mailErr = mailNotConfiguredResponse(c, err);
+    if (mailErr) return mailErr;
+    throw err;
+  }
 
   const skipped = sendResult.skipped.length;
   const queued = sendResult.sent;
