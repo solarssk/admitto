@@ -220,6 +220,10 @@ export interface AttendeesListResponse {
   pageSize: number;
 }
 
+/** Whitelisted sortable columns, mirroring ATTENDEE_SORT_COLUMNS in packages/tickets. */
+export type AttendeeSortBy = "name" | "ticket_type" | "company" | "rsvp_status" | "status" | "admitted_at";
+export type AttendeeSortDir = "asc" | "desc";
+
 export interface AttendeesListParams {
   page?: number;
   pageSize?: number;
@@ -227,6 +231,8 @@ export interface AttendeesListParams {
   status?: "all" | "admitted" | "not_admitted";
   ticket_type?: string;
   rsvp_status?: RsvpStatus;
+  sortBy?: AttendeeSortBy;
+  sortDir?: AttendeeSortDir;
 }
 
 export interface UpdateAttendeePatch {
@@ -516,9 +522,11 @@ export type BulkSendFilter =
   | { type: "no_delivery" }
   | { type: "attendee_ids"; ids: string[] };
 
-/** Request body for bulk mail send (dry-run or queue). */
+/** Request body for bulk mail send (dry-run or queue). Omitted templateId -> the
+ * built-in default ("ticket") template, same fallback the simpler bulk-resend
+ * endpoint already gets. */
 export interface BulkSendBody {
-  templateId: string;
+  templateId?: string;
   filter: BulkSendFilter;
   dryRun?: boolean;
 }

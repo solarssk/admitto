@@ -439,6 +439,162 @@ describe("multi-template API", () => {
     expect(body.recipientCount).toBe(1);
   });
 
+  it("POST /send with no templateId (and no persisted 'ticket' template anywhere) still dry-runs, via the built-in default template", async () => {
+    // Deliberately does NOT call putTicketTemplate - EVENT_A has no persisted template at
+    // all here (resetEventAState clears it every test), and ORG_A never gets one in seed().
+    await prisma.attendee.create({
+      data: {
+        id: "att-multi-builtin-dry",
+        event_id: EVENT_A,
+        email: "builtin-dry@example.com",
+        name: "Guest",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+      method: "POST",
+      headers: {
+        Cookie: adminCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        filter: { type: "attendee_ids", ids: ["att-multi-builtin-dry"] },
+        dryRun: true,
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { recipientCount: number };
+    expect(body.recipientCount).toBe(1);
+  });
+
+  it("POST /send with no templateId actually sends using the built-in default template content", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-multi-builtin-send",
+        event_id: EVENT_A,
+        email: "builtin-send@example.com",
+        name: "Guest",
+      },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          filter: { type: "attendee_ids", ids: ["att-multi-builtin-send"] },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { queued: number; skipped: number; failed: number };
+      expect(body.queued).toBe(1);
+      expect(body.failed).toBe(0);
+
+      expect(exported).toHaveLength(1);
+      expect(exported[0]?.message.subject).toBe("Your ticket for Event");
+      expect(exported[0]?.message.to).toBe("builtin-send@example.com");
+
+      const delivery = await prisma.emailDelivery.findFirstOrThrow({
+        where: { event_id: EVENT_A, attendee_id: "att-multi-builtin-send" },
+      });
+      // Same convention a builtin-sourced send already uses elsewhere: no real template row
+      // backs it, so template_id stays null rather than pointing at something that doesn't exist.
+      expect(delivery.template_id).toBeNull();
+    } finally {
+      rateLimitStore.reset();
+    }
+  });
+
+  it("POST /send with an attendee_ids ticket-template send records purpose 'initial', so a later 'Everyone undelivered' sweep doesn't double-send (regression)", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-multi-checkbox-dedup",
+        event_id: EVENT_A,
+        email: "checkbox-dedup@example.com",
+        name: "Late Registrant",
+      },
+    });
+
+    try {
+      const sendRes = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          filter: { type: "attendee_ids", ids: ["att-multi-checkbox-dedup"] },
+        }),
+      });
+      expect(sendRes.status).toBe(200);
+      const sendBody = (await sendRes.json()) as { queued: number };
+      expect(sendBody.queued).toBe(1);
+
+      const delivery = await prisma.emailDelivery.findFirstOrThrow({
+        where: { event_id: EVENT_A, attendee_id: "att-multi-checkbox-dedup" },
+      });
+      // The bug: this stayed "resend" for every attendee_ids send regardless of history,
+      // so a never-before-sent attendee still didn't get a purpose:"initial" row - the one
+      // thing the no_delivery exclusion below actually checks for.
+      expect(delivery.purpose).toBe("initial");
+
+      const dryRunRes = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({ filter: { type: "no_delivery" }, dryRun: true }),
+      });
+      const dryRunBody = (await dryRunRes.json()) as { recipientCount: number };
+      // The end-to-end regression: without the fix, this attendee - despite already having
+      // received a ticket seconds earlier via the checkbox bulk-send - would still show up
+      // as "undelivered" and get emailed a second time.
+      expect(dryRunBody.recipientCount).toBe(0);
+    } finally {
+      rateLimitStore.reset();
+    }
+  });
+
+  it("POST /send with filter no_delivery and an explicit non-ticket templateId scopes to that template, not the built-in default", async () => {
+    const reminder = await postNamedTemplate(app, "Reminder");
+    await prisma.attendee.create({
+      data: {
+        id: "att-multi-no-delivery-reminder",
+        event_id: EVENT_A,
+        email: "no-delivery-reminder@example.com",
+        name: "Guest",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+      method: "POST",
+      headers: {
+        Cookie: adminCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        templateId: reminder.id,
+        filter: { type: "no_delivery" },
+        dryRun: true,
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { recipientCount: number };
+    // Attendee has no delivery for the "Reminder" template, so it's in scope - proves the
+    // no_delivery + explicit templateId path resolved { mode: "template", templateId } rather
+    // than silently falling back to the built-in ticket template's own no-delivery scope.
+    expect(body.recipientCount).toBe(1);
+  });
+
   it("POST /send returns 422 mail_not_configured instead of a raw 500 when no mail transport is set up", async () => {
     await putTicketTemplate(app);
     const ticket = await prisma.mailTemplate.findUniqueOrThrow({

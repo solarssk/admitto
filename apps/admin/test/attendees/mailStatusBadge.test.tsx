@@ -16,9 +16,9 @@ describe("MailStatusBadge", () => {
     expect(screen.getByText("Pending")).toBeTruthy();
   });
 
-  it("shows a dash when no mail was sent", () => {
+  it("shows Not sent when no mail was sent", () => {
     render(<MailStatusBadge status={null} />);
-    expect(screen.getByText("—")).toBeTruthy();
+    expect(screen.getByText("Not sent")).toBeTruthy();
   });
 
   it("falls back to the raw status for unknown values", () => {

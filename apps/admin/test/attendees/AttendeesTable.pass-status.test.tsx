@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AttendeesTable } from "../../src/attendees/AttendeesTable.js";
+import { mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
 const baseRow: AttendeeRowDto = {
@@ -34,14 +35,31 @@ const tableProps = {
   onStatusFilterChange: vi.fn(),
   onTicketTypeFilterChange: vi.fn(),
   onRsvpStatusFilterChange: vi.fn(),
+  sortBy: "name" as const,
+  sortDir: "asc" as const,
+  onSortChange: vi.fn(),
   onViewAttendee: vi.fn(),
   onPageChange: vi.fn(),
+  onPageSizeChange: vi.fn(),
+  selectedIds: new Set<string>(),
+  onToggleRow: vi.fn(),
+  onToggleSelectAll: vi.fn(),
+  onClearSelection: vi.fn(),
+  onBulkSendTickets: vi.fn(),
+  bulkSendBusy: false,
+  canBulkSend: true,
   eventTimezone: "UTC",
-  eventDate: "2026-06-01T12:00:00.000Z" as string | null,
   event: { archived_at: null as string | null },
 };
 
-afterEach(cleanup);
+beforeEach(() => {
+  mockMatchMedia(true);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("AttendeesTable pass status actions", () => {
   it("shows revoke for registered attendees and calls onRevokePass", () => {
@@ -126,20 +144,40 @@ describe("AttendeesTable pass status actions", () => {
   });
 });
 
-describe("AttendeesTable check-in column (#359)", () => {
-  it("shows time-only when the admission falls on the event's calendar day", () => {
+describe("AttendeesTable check-in column (#359), two stacked lines", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-15T12:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('shows "Today" on its own line above the time when the admission was today', () => {
     render(
       <AttendeesTable
         {...tableProps}
-        items={[{ ...baseRow, admitted_at: "2026-06-01T09:44:00.000Z" }]}
+        items={[{ ...baseRow, admitted_at: "2026-06-15T09:44:00.000Z" }]}
       />,
     );
 
-    const timeNode = screen.getByText(/09:44/);
-    expect(timeNode.textContent).not.toMatch(/Jun/);
+    expect(screen.getByText("Today")).toBeTruthy();
+    expect(screen.getByText(/09:44/)).toBeTruthy();
   });
 
-  it("shows date and time when the admission is outside the event's calendar day", () => {
+  it('shows "Yesterday" when the admission was the day before, in the event timezone', () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[{ ...baseRow, admitted_at: "2026-06-14T09:44:00.000Z" }]}
+      />,
+    );
+
+    expect(screen.getByText("Yesterday")).toBeTruthy();
+  });
+
+  it("shows the full date above the time for anything older than yesterday", () => {
     render(
       <AttendeesTable
         {...tableProps}
@@ -147,8 +185,8 @@ describe("AttendeesTable check-in column (#359)", () => {
       />,
     );
 
-    const timeNode = screen.getByText(/09:44/);
-    expect(timeNode.textContent).toMatch(/May 15, 2026/);
+    expect(screen.getByText(/May 15, 2026/)).toBeTruthy();
+    expect(screen.getByText(/09:44/)).toBeTruthy();
   });
 });
 

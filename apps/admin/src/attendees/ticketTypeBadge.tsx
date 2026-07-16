@@ -1,4 +1,4 @@
-import { Badge, TicketTypeBadge as UiTicketTypeBadge } from "@admitto/ui";
+import { TicketTypeBadge as UiTicketTypeBadge } from "@admitto/ui";
 import type { TicketTypeDto } from "../api/types.js";
 
 /** Resolves a raw `ticket_type` catalog key to its current display label - fail-open, so an
@@ -26,7 +26,7 @@ export function TicketTypeBadge({
   catalog?: TicketTypeDto[];
 }) {
   if (!ticketType) {
-    return <Badge variant="neutral">—</Badge>;
+    return <span className="attendee-readonly">—</span>;
   }
   const found = catalog.find((t) => t.key === ticketType);
   return <UiTicketTypeBadge label={found?.label ?? ticketType} color={found?.color ?? "gray"} />;

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
+import { mockMatchMedia } from "../test-utils.js";
 import type { AttendeeDetailDto, AttendeeRowDto } from "../../src/api/types.js";
 
 const updateAttendee = vi.fn();
@@ -127,8 +128,26 @@ vi.mock("../../src/api/client.js", () => ({
   },
   fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
+  fetchEventTemplates: vi.fn().mockResolvedValue([
+    {
+      id: "tpl-ticket",
+      name: "ticket",
+      label: "Ticket",
+      template_format: "html",
+      subject_template: "",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    },
+  ]),
+  fetchEventMailSettings: vi.fn().mockResolvedValue({
+    eventId: "evt-1",
+    organizationId: "org-1",
+    isProduction: false,
+    hasEventOverride: false,
+    fields: { provider: { value: "smtp", source: "organization", locked: false } },
+  }),
   exportAttendees: (...args: unknown[]) => exportAttendees(...args),
   bulkResendTickets: (...args: unknown[]) => bulkResendTickets(...args),
+  sendEventBulk: vi.fn(),
   updateAttendee: (...args: unknown[]) => updateAttendee(...args),
 }));
 
@@ -179,9 +198,13 @@ beforeEach(() => {
   fetchEventAttendees.mockReset();
   setListItems([sampleRow]);
   mockFetchEventAttendees();
+  mockMatchMedia(true);
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("AttendeesPage revoke/restore", () => {
   it("confirms revoke, merges PATCH response into the row, and shows restore action", async () => {
@@ -404,9 +427,11 @@ describe("AttendeesPage revoke/restore", () => {
     exportAttendees.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export XLSX" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Export XLSX" }));
+    // Export formats live behind a single "Export" menu button (#354).
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^XLSX/ }));
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("Request failed.", "error");
     });

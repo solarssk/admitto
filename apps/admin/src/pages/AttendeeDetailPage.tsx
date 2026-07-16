@@ -38,7 +38,7 @@ import type { CustomDataFieldDef } from "../attendees/customData.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { ArchivedGuard, ARCHIVED_ACTION_TOOLTIP, isEventArchived } from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
-import { useClickOutside } from "../components/useClickOutside.js";
+import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
@@ -60,29 +60,7 @@ function RevokeActionMenu({
   disabled?: boolean;
   "aria-describedby"?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  const close = () => {
-    setOpen(false);
-    triggerRef.current?.focus();
-  };
-
-  useClickOutside(rootRef, open, close);
-
-  useEffect(() => {
-    if (!open) return;
-    // Move focus into the menu when it opens.
-    panelRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") close();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- close is a plain component function (not useCallback); it only touches stable refs/setState, so a stale closure here is harmless.
-  }, [open]);
+  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
     <div className="revoke-menu" ref={rootRef}>

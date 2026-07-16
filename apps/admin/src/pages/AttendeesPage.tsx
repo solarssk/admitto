@@ -1,13 +1,31 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
-import { Button, EmptyState, PageHeader, useToast } from "@admitto/ui";
-import { ApiError, bulkResendTickets, exportAttendees, fetchEventAttendees, fetchTicketTypes, updateAttendee } from "../api/client.js";
+import { Button, EmptyState, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
+import {
+  ApiError,
+  bulkResendTickets,
+  exportAttendees,
+  fetchEventAttendees,
+  fetchEventMailSettings,
+  fetchTicketTypes,
+  sendEventBulk,
+  updateAttendee,
+} from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeDetailDto, AttendeeRowDto, EventDto, RsvpStatus, TicketTypeDto } from "../api/types.js";
+import type {
+  AttendeeDetailDto,
+  AttendeeRowDto,
+  AttendeeSortBy,
+  AttendeeSortDir,
+  EventDto,
+  RsvpStatus,
+  TicketTypeDto,
+} from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
 import { ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import "../attendees/add-attendee-modal.css";
@@ -23,6 +41,43 @@ function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): Att
     check_in_status: updated.check_in_status,
     admitted_at: updated.admitted_at,
   };
+}
+
+function pluralize(count: number, singular: string): string {
+  return count === 1 ? singular : `${singular}s`;
+}
+
+/** Standard "N queued / M failed / K skipped" toast for a bulk-send queue result — shared by
+ * the header "Send tickets" dialog and the bulk-bar's send-to-selection action. */
+function notifyBulkSendResult(
+  result: { queued: number; skipped: number; failed: number },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { queued, skipped, failed } = result;
+
+  if (failed === 0 && queued === 0) {
+    const message = skipped > 0 ? `No tickets were queued (${skipped} skipped).` : "No tickets to send.";
+    addToast(message, "info");
+    return;
+  }
+
+  if (failed === 0) {
+    const skippedNote = skipped > 0 ? ` (${skipped} skipped)` : "";
+    addToast(`Sending tickets to ${queued} ${pluralize(queued, "attendee")}${skippedNote}.`, "success");
+    return;
+  }
+
+  if (queued === 0) {
+    const skippedNote = skipped > 0 ? ` (${skipped} skipped)` : "";
+    addToast(
+      `Bulk send failed: ${failed} ${pluralize(failed, "ticket")} could not be sent${skippedNote}.`,
+      "error",
+    );
+    return;
+  }
+
+  const skippedNote = skipped > 0 ? `; ${skipped} skipped` : "";
+  addToast(`Sent ${queued} ${pluralize(queued, "ticket")}; ${failed} failed${skippedNote}.`, "warning");
 }
 
 interface SendTicketsDialogProps {
@@ -93,7 +148,7 @@ function SendTicketsDialog({
             <span>
               <strong>All attendees</strong>
               <span className="mail-field-hint">
-                Resend to everyone — including those who already received a ticket.
+                Resend to everyone, including those who already received a ticket.
               </span>
             </span>
           </label>
@@ -111,6 +166,66 @@ function SendTicketsDialog({
   );
 }
 
+type ExportFormat = "xlsx" | "csv" | "pdf";
+
+interface ExportMenuProps {
+  exportingFormat: ExportFormat | null;
+  onExport: (format: ExportFormat) => void;
+}
+
+const EXPORT_FORMATS: { key: ExportFormat; label: string; icon: string; hint: string }[] = [
+  { key: "xlsx", label: "XLSX", icon: "table", hint: "Excel workbook" },
+  { key: "csv", label: "CSV", icon: "file-text", hint: "Plain text file" },
+  { key: "pdf", label: "PDF", icon: "file-type-pdf", hint: "Ready to print" },
+];
+
+/** Single "Export" entry point — opens a small menu for XLSX/CSV/PDF, replacing three separate buttons. */
+function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
+  const { open, setOpen, close, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+
+  return (
+    <div className="attendees-export-menu" ref={rootRef}>
+      <Button
+        ref={triggerRef}
+        type="button"
+        variant="secondary"
+        icon={<i className="ti ti-download" aria-hidden="true" />}
+        hasMenu
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={exportingFormat !== null}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {exportingFormat ? `Exporting ${exportingFormat.toUpperCase()}…` : "Export"}
+      </Button>
+      {open && (
+        <div className="attendees-export-menu__panel" role="menu" ref={panelRef}>
+          {EXPORT_FORMATS.map((format) => (
+            <button
+              key={format.key}
+              type="button"
+              role="menuitem"
+              className="attendees-export-menu__item"
+              onClick={() => {
+                close();
+                onExport(format.key);
+              }}
+            >
+              <span className="attendees-export-menu__item-icon">
+                <i className={`ti ti-${format.icon}`} aria-hidden="true" />
+              </span>
+              <span className="attendees-export-menu__item-text">
+                <strong>{format.label}</strong>
+                <span>{format.hint}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AttendeesPage() {
   const { eventId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -123,16 +238,19 @@ export function AttendeesPage() {
   const [items, setItems] = useState<AttendeeRowDto[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(25);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "admitted" | "not_admitted">("all");
   const [rsvpStatusFilter, setRsvpStatusFilter] = useState<"" | RsvpStatus>("");
   const [ticketTypeFilter, setTicketTypeFilter] = useState("");
+  const [sortBy, setSortBy] = useState<AttendeeSortBy>("name");
+  const [sortDir, setSortDir] = useState<AttendeeSortDir>("asc");
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
-  const [exportingFormat, setExportingFormat] = useState<"xlsx" | "csv" | "pdf" | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -140,6 +258,9 @@ export function AttendeesPage() {
   const [sendTarget, setSendTarget] = useState<"unsent" | "all">("unsent");
   const [sendBusy, setSendBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [mailConfigured, setMailConfigured] = useState<boolean | undefined>(undefined);
+  const [bulkSendBusy, setBulkSendBusy] = useState(false);
+  const [bulkSendConfirmOpen, setBulkSendConfirmOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<AttendeeRowDto | null>(null);
@@ -179,6 +300,28 @@ export function AttendeesPage() {
     return () => ac.abort();
   }, [eventId, ticketTypesRetryToken]);
 
+  // Whether the header "Send tickets" button should work at all — resolves the event's
+  // *effective* mail transport (its own dedicated one, or the inherited org one; same
+  // resolution Event Settings -> Mailing already shows). "export_only" is a real, saved
+  // provider value but never actually delivers mail, so it doesn't count as configured
+  // here either - mirrors EventMailSettingsCard's own transportConfigured check.
+  useEffect(() => {
+    if (!eventId) return;
+    setMailConfigured(undefined);
+    const ac = new AbortController();
+    fetchEventMailSettings(eventId, ac.signal)
+      .then((data) => {
+        if (ac.signal.aborted) return;
+        const provider = data.fields.provider.value;
+        setMailConfigured(provider === "smtp" || provider === "graph" || provider === "powerautomate");
+      })
+      .catch(() => {
+        if (ac.signal.aborted) return;
+        setMailConfigured(undefined);
+      });
+    return () => ac.abort();
+  }, [eventId]);
+
   const loadList = useCallback(async () => {
     if (!eventId) return;
 
@@ -187,6 +330,7 @@ export function AttendeesPage() {
     listAbortRef.current = ac;
 
     setLoading(true);
+    setSelectedIds(new Set());
     try {
       const data = await fetchEventAttendees(
         eventId,
@@ -197,6 +341,8 @@ export function AttendeesPage() {
           status: statusFilter,
           ticket_type: ticketTypeFilter || undefined,
           rsvp_status: rsvpStatusFilter || undefined,
+          sortBy,
+          sortDir,
         },
         ac.signal,
       );
@@ -232,6 +378,8 @@ export function AttendeesPage() {
     statusFilter,
     ticketTypeFilter,
     rsvpStatusFilter,
+    sortBy,
+    sortDir,
     reportApiError,
   ]);
 
@@ -243,7 +391,7 @@ export function AttendeesPage() {
   useEffect(() => () => exportAbortRef.current?.abort(), []);
 
   const handleExport = useCallback(
-    async (format: "xlsx" | "csv" | "pdf") => {
+    async (format: ExportFormat) => {
       if (!eventId) return;
 
       exportAbortRef.current?.abort();
@@ -351,32 +499,7 @@ export function AttendeesPage() {
     try {
       const result = await bulkResendTickets(eventId, sendTarget);
       setSendTicketsOpen(false);
-      if (result.failed > 0) {
-        addToast(
-          result.queued > 0
-            ? `Sent ${result.queued} ticket${result.queued === 1 ? "" : "s"}; ${result.failed} failed${
-                result.skipped > 0 ? `; ${result.skipped} skipped` : ""
-              }.`
-            : `Bulk send failed — ${result.failed} ticket${result.failed === 1 ? "" : "s"} could not be sent${
-                result.skipped > 0 ? ` (${result.skipped} skipped)` : ""
-              }.`,
-          result.queued > 0 ? "warning" : "error",
-        );
-      } else if (result.queued === 0) {
-        addToast(
-          result.skipped > 0
-            ? `No tickets were queued (${result.skipped} skipped).`
-            : "No tickets to send.",
-          "info",
-        );
-      } else {
-        addToast(
-          `Sending tickets to ${result.queued} attendee${result.queued === 1 ? "" : "s"}${
-            result.skipped > 0 ? ` (${result.skipped} skipped)` : ""
-          }.`,
-          "success",
-        );
-      }
+      notifyBulkSendResult(result, addToast);
       setReloadToken((n) => n + 1);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -395,6 +518,59 @@ export function AttendeesPage() {
     }
   };
 
+  const toggleRow = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  /** Selects/deselects every currently-loaded row — scoped to this page only, never across pages. */
+  const toggleSelectAllOnPage = () => {
+    setSelectedIds((prev) => {
+      const allSelected = items.length > 0 && items.every((item) => prev.has(item.id));
+      return allSelected ? new Set() : new Set(items.map((item) => item.id));
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  /** Separate, additive bulk-send path for an explicit subset of selected attendees — the
+   * existing header "Send tickets" dialog (all / undelivered-only) is untouched. No
+   * templateId here on purpose: the server falls back to the built-in default ("ticket")
+   * template when it's omitted, the same as the plain bulk-resend endpoint already does -
+   * so this works even for an event with no persisted ticket template row. */
+  const handleBulkSendSelected = async () => {
+    if (!eventId || selectedIds.size === 0) return;
+    setBulkSendBusy(true);
+    try {
+      const result = await sendEventBulk(eventId, {
+        filter: { type: "attendee_ids", ids: [...selectedIds] },
+      });
+      notifyBulkSendResult(result, addToast);
+      setReloadToken((n) => n + 1);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        if (err.status === 401) {
+          const next = encodeURIComponent(window.location.pathname);
+          window.location.assign(`/login?next=${next}`);
+          return;
+        }
+        addToast(operatorApiErrorMessage(err, "Send failed."), "error");
+      } else {
+        addToast("Failed to queue tickets.", "error");
+      }
+    } finally {
+      setBulkSendBusy(false);
+    }
+  };
+
   const emptyMessage =
     total === 0 && !searchQuery && statusFilter === "all" && !ticketTypeFilter && !rsvpStatusFilter
       ? "No attendees yet. Import a CSV or XLSX file to get started."
@@ -409,30 +585,6 @@ export function AttendeesPage() {
         subtitle="Manage attendee records and resend tickets."
         actions={
           <>
-            <Button
-              variant="secondary"
-              icon={<i className="ti ti-download" aria-hidden="true" />}
-              disabled={exportingFormat !== null}
-              onClick={() => void handleExport("xlsx")}
-            >
-              {exportingFormat === "xlsx" ? "Exporting…" : "Export XLSX"}
-            </Button>
-            <Button
-              variant="secondary"
-              icon={<i className="ti ti-file-text" aria-hidden="true" />}
-              disabled={exportingFormat !== null}
-              onClick={() => void handleExport("csv")}
-            >
-              {exportingFormat === "csv" ? "Exporting…" : "Export CSV"}
-            </Button>
-            <Button
-              variant="secondary"
-              icon={<i className="ti ti-file-type-pdf" aria-hidden="true" />}
-              disabled={exportingFormat !== null}
-              onClick={() => void handleExport("pdf")}
-            >
-              {exportingFormat === "pdf" ? "Exporting…" : "Export PDF"}
-            </Button>
             {isEventArchived(event) ? (
               <ArchivedGuard event={event} reasonId="import-attendees-reason" placement="below">
                 {(guard) => (
@@ -456,7 +608,12 @@ export function AttendeesPage() {
             <ArchivedGuard
               event={event}
               reasonId="send-tickets-reason"
-              disabled={sendBusy}
+              disabled={sendBusy || mailConfigured === false}
+              tooltip={
+                mailConfigured === false
+                  ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
+                  : undefined
+              }
               placement="below"
             >
               {(guard) => (
@@ -473,6 +630,7 @@ export function AttendeesPage() {
                 </Button>
               )}
             </ArchivedGuard>
+            <ExportMenu exportingFormat={exportingFormat} onExport={handleExport} />
           </>
         }
       />
@@ -515,6 +673,17 @@ export function AttendeesPage() {
           setRsvpStatusFilter(v);
           setPage(1);
         }}
+        sortBy={sortBy}
+        sortDir={sortDir}
+        onSortChange={(column) => {
+          if (column === sortBy) {
+            setSortDir(sortDir === "asc" ? "desc" : "asc");
+          } else {
+            setSortBy(column);
+            setSortDir("asc");
+          }
+          setPage(1);
+        }}
         onViewAttendee={(id) => navigate(`/admin/events/${eventId}/attendees/${id}`)}
         onRevokePass={(row) => {
           setRevokeTarget(row);
@@ -524,8 +693,18 @@ export function AttendeesPage() {
         onRestorePass={(row) => void handlePassStatusChange(row, "registered")}
         passActionBusyIds={passActionBusyIds}
         onPageChange={setPage}
+        onPageSizeChange={(v) => {
+          setPageSize(v);
+          setPage(1);
+        }}
+        selectedIds={selectedIds}
+        onToggleRow={toggleRow}
+        onToggleSelectAll={toggleSelectAllOnPage}
+        onClearSelection={clearSelection}
+        onBulkSendTickets={() => setBulkSendConfirmOpen(true)}
+        bulkSendBusy={bulkSendBusy}
+        canBulkSend={mailConfigured !== false}
         eventTimezone={event.timezone}
-        eventDate={event.date}
         event={event}
       />
       )}
@@ -570,6 +749,21 @@ export function AttendeesPage() {
             setRevokeTarget(null);
             setRevokeError(null);
           }
+        }}
+      />
+
+      <ConfirmDialog
+        open={bulkSendConfirmOpen}
+        title="Send tickets?"
+        message={`Send tickets to ${selectedIds.size} selected attendee${selectedIds.size === 1 ? "" : "s"}?`}
+        confirmLabel="Send tickets"
+        loading={bulkSendBusy}
+        onConfirm={() => {
+          setBulkSendConfirmOpen(false);
+          void handleBulkSendSelected();
+        }}
+        onCancel={() => {
+          if (!bulkSendBusy) setBulkSendConfirmOpen(false);
         }}
       />
     </>

@@ -60,6 +60,7 @@ export { writeActionLog, writeBulkActionLog } from "./ops-audit.js";
 export { writeAdminAuditLog } from "./admin-audit.js";
 export {
   ATTENDEE_EXPORT_RSVP_STATUSES,
+  ATTENDEE_SORT_COLUMNS,
   EXPORT_ROW_CAP,
   buildAttendeeListWhere,
   countFilteredAttendees,
@@ -70,6 +71,8 @@ export type {
   AttendeeExportRsvpStatus,
   AttendeeListFilterParams,
   AttendeeListSqlRow,
+  AttendeeSortBy,
+  AttendeeSortDir,
   ExportAttendeeSqlRow,
 } from "./attendees-list-filters.js";
 export { sanitizeCsvCell } from "./csv-sanitize.js";

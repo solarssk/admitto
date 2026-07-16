@@ -200,6 +200,20 @@
   flex-shrink: 0;
 }
 
+/* Title and actions sit side by side by default; below 768px the row never had
+   room for both, so actions wrap onto extra lines instead of squeezing next to
+   the title — stack the title above them and let them use the full width. */
+@media (max-width: 767px) {
+  .at-pageheader__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .at-pageheader__actions {
+    justify-content: flex-start;
+  }
+}
+
 /* ---------------- Password strength ---------------- */
 .at-password-slot {
   position: relative;

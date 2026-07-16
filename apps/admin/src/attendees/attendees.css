@@ -18,7 +18,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
-  align-items: flex-end;
+  align-items: center;
   padding: var(--space-4);
   border-bottom: 1px solid var(--border);
 }
@@ -31,6 +31,89 @@
 .attendees-toolbar__filter {
   flex: 0 0 auto;
   min-width: 160px;
+}
+
+/* Mobile-only "Sort by" select + direction toggle (AttendeesTable has no column headers to
+   click below 768px) — sits alongside the filter selects in the same collapsible panel. */
+.attendees-toolbar__sort {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Filters toggle — hidden on desktop (filters always shown inline); becomes the
+   only way to reveal the filter selects below 768px, so the toolbar's first row
+   (search + toggle) never has to fight three selects for width on a phone. */
+.attendees-filters-toggle {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-card);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex: none;
+}
+
+.attendees-filters-toggle:hover {
+  background: var(--surface-hover);
+}
+
+.attendees-filters-toggle__count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--text-on-primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.attendees-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* 767, not 768 — useIsDesktop() (apps/admin/src/hooks/useIsDesktop.ts) switches
+   the table/cards split at min-width:768px; this must be the exact complement
+   or the two breakpoints overlap by one pixel and disagree at exactly 768px. */
+@media (max-width: 767px) {
+  .attendees-filters-toggle {
+    display: flex;
+  }
+
+  .attendees-filters {
+    display: none;
+    flex-basis: 100%;
+  }
+
+  .attendees-filters--open {
+    display: flex;
+  }
+
+  /* The summary text + rows-per-page + Previous/Page X of Y/Next pager don't fit on one
+     row below ~600px — stack them, and let the pager itself wrap rather than overflow. */
+  .attendees-table-foot {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .attendees-table-foot__pager {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
 }
 
 .attendees-table-foot {
@@ -47,6 +130,103 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.attendees-table-foot__pagesize {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.attendees-table-foot__pagesize label {
+  white-space: nowrap;
+}
+
+/* Two classes, not one — .at-select's own height:var(--control-h) rule is the
+   same specificity as a single-class override, so which one wins depends on
+   CSS bundle order rather than intent. Compounding onto .at-select here
+   guarantees this rule wins regardless of import order. */
+.at-select.attendees-table-foot__pagesize-select {
+  height: var(--control-h-sm);
+  width: auto;
+  padding: 0 1.4rem 0 var(--space-2);
+  background-position: right 0.4rem center;
+  background-size: 12px;
+  font-size: var(--fs-sm);
+}
+
+/* Own full-width strip in the toolbar's slot (not stacked below it) so
+   selecting rows never grows the card's height — same padding as the
+   toolbar it replaces, for a seamless swap. */
+.attendees-bulkbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border);
+  /* A neutral gray, not --primary-tint — that's also the selected-row color,
+     and sitting right above a block of tinted rows made the bar read as
+     "one more selected row" instead of a toolbar. The count text and the
+     Send tickets icon stay blue, so the bar is still visibly "active". */
+  background: var(--at-gray-100);
+}
+
+.attendees-bulkbar__count {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--primary-active);
+  white-space: nowrap;
+}
+
+.attendees-bulkbar__count strong {
+  font-weight: 700;
+}
+
+/* Pushes the separator + action button to the right edge, keeping
+   count/clear on the left — matches the previous, preferred layout. */
+.attendees-bulkbar__spacer {
+  flex: 1;
+}
+
+.attendees-bulkbar__sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-strong);
+  opacity: 0.5;
+}
+
+.attendees-bulkbar__clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.attendees-bulkbar__clear:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.attendees-table-v2__checkbox-col {
+  width: 40px;
+}
+
+.attendees-table-v2__row--selected {
+  background: var(--primary-tint);
+}
+
+/* The generic `.table tbody tr:hover` rule (packages/ui/src/styles/shell.css)
+   otherwise wins on specificity and flashes a plain gray over the tint on
+   every row the mouse passes across a block of selected rows — keep the
+   tint while hovering instead of fighting it. */
+.attendees-table-v2__row.attendees-table-v2__row--selected:hover {
+  background: var(--primary-tint);
 }
 
 .attendees-row-btn {
@@ -70,6 +250,103 @@
 
 .attendees-empty p {
   margin: 0 0 var(--space-2);
+}
+
+/* Mobile card list (< 768px) — same data as the table, one attendee per card
+   instead of a horizontally-scrolling row. Rendered instead of the table
+   (AttendeesTable picks one or the other via useIsDesktop), not alongside it. */
+.attendees-cards {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Mobile equivalent of the desktop table's header checkbox — there's no header row to put it
+   in, so it gets its own thin strip above the first card. */
+.attendees-cards__selectall {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.attendees-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.attendees-card:last-child {
+  border-bottom: 0;
+}
+
+.attendees-card--selected {
+  background: var(--primary-tint);
+}
+
+.attendees-card__top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.attendees-card__cb {
+  padding-top: 3px;
+}
+
+.attendees-card__identity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.attendees-card__name {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.attendees-card__email {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendees-card__meta {
+  padding-left: 1.75rem;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.attendees-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-left: 1.75rem;
+}
+
+.attendees-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  padding-left: 1.75rem;
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+}
+
+.attendees-card__actions {
+  display: flex;
+  gap: 2px;
+  flex: none;
 }
 
 /* Detail drawer */
@@ -246,6 +523,75 @@
   background: var(--status-error-tint);
 }
 
+.attendees-export-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.attendees-export-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  min-width: 240px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attendees-export-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-sans);
+  cursor: pointer;
+}
+
+.attendees-export-menu__item:hover {
+  background: var(--surface-hover);
+}
+
+.attendees-export-menu__item-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.attendees-export-menu__item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.attendees-export-menu__item-text strong {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.attendees-export-menu__item-text span {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
 .attendee-resend-modal {
   position: fixed;
   inset: 0;
@@ -372,9 +718,24 @@
 .attendees-table-v2__checkin {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   color: var(--status-ok);
+}
+
+.attendees-table-v2__checkin-lines {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.attendees-table-v2__checkin-day {
   font-weight: 600;
+}
+
+.attendees-table-v2__checkin-time {
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 .attendees-table-v2__actions {
@@ -540,4 +901,38 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+}
+
+/* Sortable column headers */
+.attendees-table-v2__sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.attendees-table-v2__sort-btn i {
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+
+.attendees-table-v2__sort-btn:hover i,
+.attendees-table-v2__sort-btn:focus-visible i {
+  color: var(--text-secondary);
+}
+
+.attendees-table-v2__sort-btn--active {
+  color: var(--text-primary);
+}
+
+.attendees-table-v2__sort-btn--active i {
+  color: var(--primary);
 }

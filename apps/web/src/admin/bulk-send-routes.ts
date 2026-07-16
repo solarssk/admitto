@@ -32,7 +32,9 @@ const bulkSendFilterSchema = z.discriminatedUnion("type", [
 
 const bulkSendBodySchema = z
   .object({
-    templateId: z.string().trim().min(1),
+    // Omitted -> the built-in default ("ticket") template, same fallback sendTicketEmails
+    // already gives the simpler bulk-resend endpoint when it doesn't pass a templateId at all.
+    templateId: z.string().trim().min(1).optional(),
     filter: bulkSendFilterSchema,
     dryRun: z.boolean().optional(),
   })
@@ -232,7 +234,9 @@ export async function handleBulkSend(
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const templateError = await assertTemplateForEvent(db, eventId, body.templateId);
+  const templateError = body.templateId
+    ? await assertTemplateForEvent(db, eventId, body.templateId)
+    : null;
   if (templateError) return templateError;
 
   if (body.filter.type === "ticket_type") {
@@ -249,13 +253,31 @@ export async function handleBulkSend(
   let noDeliveryScope: BulkSendNoDeliveryScope | undefined;
   let purpose: "initial" | "resend" = "resend";
 
-  if (body.filter.type === "no_delivery") {
-    const templateName = await getBulkSendTemplateName(db, body.templateId);
-    const isTicket = templateName === "ticket";
-    noDeliveryScope = isTicket
-      ? { mode: "initial_ticket" }
-      : { mode: "template", templateId: body.templateId };
-    purpose = isTicket ? "initial" : "resend";
+  // attendee_ids shares the no_delivery branch's purpose logic (not its noDeliveryScope,
+  // which attendee_ids doesn't use) - without this, every checkbox-selection send was
+  // recorded as "resend" regardless of template, routing through createResendDelivery's
+  // unconditional insert instead of claimInitialDelivery's atomic (attendee, event) dedup.
+  // A ticket-template send to attendees who'd never received one still queued fine (no
+  // existing row to collide with), but re-selecting an overlapping group, or later running
+  // "Everyone undelivered" (whose own no_delivery exclusion only matches purpose:"initial"
+  // rows - see noDeliveryDeliveryWhere above), would double-send instead of being skipped.
+  if (body.filter.type === "no_delivery" || body.filter.type === "attendee_ids") {
+    if (body.templateId) {
+      const templateName = await getBulkSendTemplateName(db, body.templateId);
+      const isTicket = templateName === "ticket";
+      purpose = isTicket ? "initial" : "resend";
+      if (body.filter.type === "no_delivery") {
+        noDeliveryScope = isTicket
+          ? { mode: "initial_ticket" }
+          : { mode: "template", templateId: body.templateId };
+      }
+    } else {
+      // No templateId -> built-in default template, which is always the "ticket" slot.
+      purpose = "initial";
+      if (body.filter.type === "no_delivery") {
+        noDeliveryScope = { mode: "initial_ticket" };
+      }
+    }
   }
 
   const { ids, overLimit } = await resolveBulkSendAttendeeIds(
@@ -319,7 +341,10 @@ export async function handleBulkSend(
   const failed = sendResult.deliveries.length - sendResult.sent;
 
   await auditBulkSend(db, c, eventId, {
-    templateId: body.templateId,
+    // The actually-resolved template (event override -> org override -> builtin default), not
+    // just what the caller passed - omitting templateId doesn't necessarily mean the builtin
+    // default was used, and EmailDelivery.template_id already records the resolved value per row.
+    templateId: sendResult.resolvedTemplateId,
     filterType: body.filter.type,
     queued,
     skipped,
@@ -382,7 +407,7 @@ async function auditBulkSend(
   c: Context,
   eventId: string,
   meta: {
-    templateId: string;
+    templateId: string | undefined;
     filterType: string;
     queued: number;
     skipped: number;
@@ -395,7 +420,12 @@ async function auditBulkSend(
       action_type: "mail_bulk_resend",
       audit: adminAuditFromContext(c),
       metadata: {
-        template_id: meta.templateId,
+        // null, not omitted - explicit signal the resolved template was the built-in default
+        // (packages/mail-templates/src/defaultTemplate.ts), same convention EmailDelivery.template_id
+        // already uses. meta.templateId is the *resolved* template id (see handleBulkSend), not
+        // simply whatever the caller passed - those differ whenever templateId was omitted and
+        // the event/org override resolved instead of the true built-in default.
+        template_id: meta.templateId ?? null,
         filter: meta.filterType,
         queued: meta.queued,
         skipped: meta.skipped,

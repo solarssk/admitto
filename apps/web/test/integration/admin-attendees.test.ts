@@ -275,6 +275,137 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
     expect(notBody.items.some((i) => i.id === ATT_A2)).toBe(true);
   });
 
+  it("sorts by name ascending (default) and descending", async () => {
+    const asc = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      headers: { Cookie: adminCookie },
+    });
+    const ascBody = (await asc.json()) as { items: { name: string }[] };
+    expect(ascBody.items.map((i) => i.name)).toEqual(["Anna Alpha", "Bob Beta", "Rate Limit"]);
+
+    const desc = await app.request(`/api/admin/events/${EVENT_A}/attendees?sortDir=desc`, {
+      headers: { Cookie: adminCookie },
+    });
+    const descBody = (await desc.json()) as { items: { name: string }[] };
+    expect(descBody.items.map((i) => i.name)).toEqual(["Rate Limit", "Bob Beta", "Anna Alpha"]);
+  });
+
+  it("sorts ticket type by the catalog's curated order, not alphabetically", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?sortBy=ticket_type`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { ticket_type: string | null }[] };
+    // "vip" has sort_order 0, "standard" has sort_order 1 - vip sorts first despite "standard"
+    // < "vip" alphabetically, proving this follows the catalog order, not A-Z.
+    expect(body.items.map((i) => i.ticket_type)).toEqual(["vip", "standard", null]);
+  });
+
+  it("sorts ticket type by catalog order through the search branch too (raw-SQL join)", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees?sortBy=ticket_type&q=a`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { ticket_type: string | null }[] };
+    expect(body.items.map((i) => i.ticket_type)).toEqual(["vip", "standard", null]);
+  });
+
+  it("sorts by company with nulls last regardless of direction", async () => {
+    const asc = await app.request(`/api/admin/events/${EVENT_A}/attendees?sortBy=company`, {
+      headers: { Cookie: adminCookie },
+    });
+    const ascBody = (await asc.json()) as { items: { name: string }[] };
+    expect(ascBody.items.map((i) => i.name)).toEqual(["Anna Alpha", "Bob Beta", "Rate Limit"]);
+
+    const desc = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees?sortBy=company&sortDir=desc`,
+      { headers: { Cookie: adminCookie } },
+    );
+    const descBody = (await desc.json()) as { items: { name: string }[] };
+    // Beta Ltd > Alpha Corp descending, but Rate Limit (no company) still sorts last, not first.
+    expect(descBody.items.map((i) => i.name)).toEqual(["Bob Beta", "Anna Alpha", "Rate Limit"]);
+  });
+
+  it("sorts by company using the displayed value, not the raw column, when custom_data overrides it (regression)", async () => {
+    // resolveCompanyDepartment prefers custom_data.company over the scalar column - the ORDER BY
+    // has to follow the same precedence, or an attendee could sort in a position that doesn't
+    // match the company value actually shown for them in the same response.
+    await prisma.attendee.create({
+      data: {
+        id: "att-admin-company-regression",
+        event_id: EVENT_A,
+        email: "company-regression@example.com",
+        name: "Zack Sort",
+        company: null,
+        custom_data: { company: "Aaa Corp" },
+      },
+    });
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?sortBy=company`, {
+        headers: { Cookie: adminCookie },
+      });
+      const body = (await res.json()) as { items: { name: string; company: string | null }[] };
+      // "Aaa Corp" (from custom_data; the scalar column is null) sorts before "Alpha Corp" - if
+      // the ORDER BY used only the null scalar column, this attendee would sort last instead.
+      expect(body.items[0]).toMatchObject({ name: "Zack Sort", company: "Aaa Corp" });
+    } finally {
+      await prisma.attendee.delete({ where: { id: "att-admin-company-regression" } });
+    }
+  });
+
+  it("sorts by admitted_at with nulls last regardless of direction", async () => {
+    const asc = await app.request(`/api/admin/events/${EVENT_A}/attendees?sortBy=admitted_at`, {
+      headers: { Cookie: adminCookie },
+    });
+    const ascBody = (await asc.json()) as { items: { name: string }[] };
+    expect(ascBody.items[0]!.name).toBe("Anna Alpha");
+
+    const desc = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees?sortBy=admitted_at&sortDir=desc`,
+      { headers: { Cookie: adminCookie } },
+    );
+    const descBody = (await desc.json()) as { items: { name: string }[] };
+    expect(descBody.items[0]!.name).toBe("Anna Alpha");
+  });
+
+  it("uses name as a stable tiebreak when the sort column has identical values", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees?sortBy=status&sortDir=desc`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { name: string }[] };
+    // every seeded attendee has status "registered" - desc on an all-equal column falls through
+    // to the name-asc tiebreak, proving pagination stays stable across ties.
+    expect(body.items.map((i) => i.name)).toEqual(["Anna Alpha", "Bob Beta", "Rate Limit"]);
+  });
+
+  it("falls back to name asc for an unknown sortBy/sortDir", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees?sortBy=bogus&sortDir=bogus`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { name: string }[] };
+    expect(body.items.map((i) => i.name)).toEqual(["Anna Alpha", "Bob Beta", "Rate Limit"]);
+  });
+
+  it("sorts name case-insensitively, not by raw byte order", async () => {
+    await prisma.attendee.update({ where: { id: ATT_RL }, data: { name: "aaron lowercase" } });
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+        headers: { Cookie: adminCookie },
+      });
+      const body = (await res.json()) as { items: { name: string }[] };
+      // "aaron lowercase" sorts right before "Anna Alpha" under a human-friendly,
+      // case-insensitive comparison; a case-sensitive byte-order compare would instead put it
+      // dead last, since every uppercase-starting name sorts before every lowercase one.
+      expect(body.items.map((i) => i.name)).toEqual(["aaron lowercase", "Anna Alpha", "Bob Beta"]);
+    } finally {
+      await prisma.attendee.update({ where: { id: ATT_RL }, data: { name: "Rate Limit" } });
+    }
+  });
+
   it("finds attendees by company stored only in custom_data", async () => {
     await prisma.attendee.update({
       where: { id: ATT_A2 },
@@ -1530,6 +1661,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
         { attendeeId: ATT_A1, deliveryId: "del-fail-1" },
         { attendeeId: ATT_A2, deliveryId: "del-fail-2" },
       ],
+      resolvedTemplateId: undefined,
     });
     try {
       const res = await postBulkResend("all");

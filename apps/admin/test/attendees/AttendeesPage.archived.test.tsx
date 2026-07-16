@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
-import { renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
 const fetchEventAttendees = vi.fn();
@@ -49,8 +49,26 @@ vi.mock("../../src/api/client.js", () => ({
   },
   fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
+  fetchEventTemplates: vi.fn().mockResolvedValue([
+    {
+      id: "tpl-ticket",
+      name: "ticket",
+      label: "Ticket",
+      template_format: "html",
+      subject_template: "",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    },
+  ]),
+  fetchEventMailSettings: vi.fn().mockResolvedValue({
+    eventId: "evt-1",
+    organizationId: "org-1",
+    isProduction: false,
+    hasEventOverride: false,
+    fields: { provider: { value: "smtp", source: "organization", locked: false } },
+  }),
   exportAttendees: vi.fn(),
   bulkResendTickets: vi.fn(),
+  sendEventBulk: vi.fn(),
   updateAttendee: vi.fn(),
 }));
 
@@ -82,9 +100,14 @@ function renderPage() {
   );
 }
 
+beforeEach(() => {
+  mockMatchMedia(true);
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("AttendeesPage archived lockdown", () => {
@@ -128,10 +151,14 @@ describe("AttendeesPage archived lockdown", () => {
       expect(control.closest(".at-tooltip")?.classList.contains("at-tooltip--below")).toBe(false);
     }
 
-    // Read-only controls stay usable on archived events.
-    expect(screen.getByRole("button", { name: "Export XLSX" }).disabled).toBe(false);
-    expect(screen.getByRole("button", { name: "Export CSV" }).disabled).toBe(false);
-    expect(screen.getByRole("button", { name: "Export PDF" }).disabled).toBe(false);
+    // Read-only controls stay usable on archived events — the export formats now live behind a
+    // single "Export" menu button (#354) instead of three standalone buttons.
+    const exportTrigger = screen.getByRole("button", { name: "Export" });
+    expect(exportTrigger.disabled).toBe(false);
+    fireEvent.click(exportTrigger);
+    expect(screen.getByRole("menuitem", { name: /^XLSX/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /^CSV/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /^PDF/ })).toBeTruthy();
     const viewButtons = screen.getAllByRole("button", { name: "View attendee" });
     expect(viewButtons.every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
   });
