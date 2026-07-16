@@ -200,4 +200,60 @@ describe("AttendeesTable mobile card view (<768px)", () => {
     fireEvent.click(screen.getByLabelText("Select Jane Doe"));
     expect(onToggleRow).toHaveBeenCalledWith("att-1");
   });
+
+  it("has a 'Select all' checkbox above the cards, reflecting and driving the same selection as the desktop header checkbox", () => {
+    const onToggleSelectAll = vi.fn();
+    const { rerender } = render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow, otherRow]}
+        selectedIds={new Set()}
+        onToggleSelectAll={onToggleSelectAll}
+      />,
+    );
+
+    const selectAll = screen.getByLabelText("Select all") as HTMLInputElement;
+    expect(selectAll.checked).toBe(false);
+
+    fireEvent.click(selectAll);
+    expect(onToggleSelectAll).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow, otherRow]}
+        selectedIds={new Set(["att-1", "att-2"])}
+        onToggleSelectAll={onToggleSelectAll}
+      />,
+    );
+    expect((screen.getByLabelText("Select all") as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("offers a 'Sort by' select and a direction toggle, since there's no column header to click", () => {
+    const onSortChange = vi.fn();
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow, otherRow]}
+        selectedIds={new Set()}
+        sortBy="name"
+        sortDir="asc"
+        onSortChange={onSortChange}
+      />,
+    );
+
+    // Behind the same "Filters" toggle as the three filter selects.
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+
+    const sortSelect = screen.getByLabelText("Sort by") as HTMLSelectElement;
+    expect(sortSelect.value).toBe("name");
+
+    fireEvent.change(sortSelect, { target: { value: "ticket_type" } });
+    expect(onSortChange).toHaveBeenLastCalledWith("ticket_type");
+
+    // Direction toggle passes the *current* column, matching AttendeesPage's onSortChange
+    // contract (same column => flip direction, not reset to ascending).
+    fireEvent.click(screen.getByRole("button", { name: "Sort ascending" }));
+    expect(onSortChange).toHaveBeenLastCalledWith("name");
+  });
 });

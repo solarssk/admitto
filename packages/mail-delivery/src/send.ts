@@ -289,5 +289,6 @@ export async function sendTicketEmails(
       attendeeId: item.attendeeId,
       deliveryId: item.deliveryId,
     })),
+    resolvedTemplateId: resolvedTemplate.templateId,
   };
 }

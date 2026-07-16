@@ -140,4 +140,43 @@ describe("AttendeesPage export menu (#354)", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
   });
+
+  it("moves focus between menu items with ArrowDown/ArrowUp/Home/End (WAI-ARIA menu pattern)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [sampleRow], total: 1, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Jane Doe")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    const items = screen.getAllByRole("menuitem");
+    expect(items.map((i) => i.textContent)).toEqual([
+      expect.stringContaining("XLSX"),
+      expect.stringContaining("CSV"),
+      expect.stringContaining("PDF"),
+    ]);
+    expect(document.activeElement).toBe(items[0]);
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(items[1]);
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(items[2]);
+
+    // Wraps back to the first item past the last one.
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(items[0]);
+
+    // Wraps to the last item going backward past the first one.
+    fireEvent.keyDown(document, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(items[2]);
+
+    fireEvent.keyDown(document, { key: "Home" });
+    expect(document.activeElement).toBe(items[0]);
+
+    fireEvent.keyDown(document, { key: "End" });
+    expect(document.activeElement).toBe(items[2]);
+  });
 });

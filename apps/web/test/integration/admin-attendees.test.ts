@@ -326,6 +326,33 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
     expect(descBody.items.map((i) => i.name)).toEqual(["Bob Beta", "Anna Alpha", "Rate Limit"]);
   });
 
+  it("sorts by company using the displayed value, not the raw column, when custom_data overrides it (regression)", async () => {
+    // resolveCompanyDepartment prefers custom_data.company over the scalar column - the ORDER BY
+    // has to follow the same precedence, or an attendee could sort in a position that doesn't
+    // match the company value actually shown for them in the same response.
+    await prisma.attendee.create({
+      data: {
+        id: "att-admin-company-regression",
+        event_id: EVENT_A,
+        email: "company-regression@example.com",
+        name: "Zack Sort",
+        company: null,
+        custom_data: { company: "Aaa Corp" },
+      },
+    });
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?sortBy=company`, {
+        headers: { Cookie: adminCookie },
+      });
+      const body = (await res.json()) as { items: { name: string; company: string | null }[] };
+      // "Aaa Corp" (from custom_data; the scalar column is null) sorts before "Alpha Corp" - if
+      // the ORDER BY used only the null scalar column, this attendee would sort last instead.
+      expect(body.items[0]).toMatchObject({ name: "Zack Sort", company: "Aaa Corp" });
+    } finally {
+      await prisma.attendee.delete({ where: { id: "att-admin-company-regression" } });
+    }
+  });
+
   it("sorts by admitted_at with nulls last regardless of direction", async () => {
     const asc = await app.request(`/api/admin/events/${EVENT_A}/attendees?sortBy=admitted_at`, {
       headers: { Cookie: adminCookie },
@@ -1634,6 +1661,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
         { attendeeId: ATT_A1, deliveryId: "del-fail-1" },
         { attendeeId: ATT_A2, deliveryId: "del-fail-2" },
       ],
+      resolvedTemplateId: undefined,
     });
     try {
       const res = await postBulkResend("all");

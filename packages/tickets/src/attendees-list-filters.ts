@@ -97,7 +97,10 @@ function attendeeOrderBySql(sortBy: AttendeeSortBy, sortDir: AttendeeSortDir): P
     case "ticket_type":
       return Prisma.sql`ORDER BY tt.sort_order ${dir} NULLS LAST, LOWER(a.name) ASC, a.id ASC`;
     case "company":
-      return Prisma.sql`ORDER BY LOWER(a.company) ${dir} NULLS LAST, LOWER(a.name) ASC, a.id ASC`;
+      // Matches resolveCompanyDepartment's precedence (custom_data.company first, then the
+      // scalar column) - sorting by the raw column alone would order rows differently than
+      // the company value actually shown for them.
+      return Prisma.sql`ORDER BY LOWER(COALESCE(a.custom_data->>'company', a.company)) ${dir} NULLS LAST, LOWER(a.name) ASC, a.id ASC`;
     case "admitted_at":
       return Prisma.sql`ORDER BY a.admitted_at ${dir} NULLS LAST, LOWER(a.name) ASC, a.id ASC`;
     case "rsvp_status":

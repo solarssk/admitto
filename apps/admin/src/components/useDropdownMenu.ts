@@ -21,8 +21,27 @@ export function useDropdownMenu<TTrigger extends HTMLElement = HTMLButtonElement
     if (!open) return;
     // Move focus into the menu when it opens.
     panelRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+
+    // Roving focus between menuitems (WAI-ARIA menu pattern) - Escape alone isn't enough
+    // keyboard support for a role="menu"/menuitem popover.
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        close();
+        return;
+      }
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
+
+      const items = Array.from(
+        panelRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [],
+      );
+      if (items.length === 0) return;
+      const activeIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+
+      e.preventDefault();
+      if (e.key === "ArrowDown") items[(activeIndex + 1) % items.length]?.focus();
+      else if (e.key === "ArrowUp") items[(activeIndex - 1 + items.length) % items.length]?.focus();
+      else if (e.key === "Home") items[0]?.focus();
+      else items[items.length - 1]?.focus();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);

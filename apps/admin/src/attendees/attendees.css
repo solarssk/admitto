@@ -33,6 +33,14 @@
   min-width: 160px;
 }
 
+/* Mobile-only "Sort by" select + direction toggle (AttendeesTable has no column headers to
+   click below 768px) — sits alongside the filter selects in the same collapsible panel. */
+.attendees-toolbar__sort {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 /* Filters toggle — hidden on desktop (filters always shown inline); becomes the
    only way to reveal the filter selects below 768px, so the toolbar's first row
    (search + toggle) never has to fight three selects for width on a phone. */
@@ -92,6 +100,19 @@
 
   .attendees-filters--open {
     display: flex;
+  }
+
+  /* The summary text + rows-per-page + Previous/Page X of Y/Next pager don't fit on one
+     row below ~600px — stack them, and let the pager itself wrap rather than overflow. */
+  .attendees-table-foot {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .attendees-table-foot__pager {
+    flex-wrap: wrap;
+    justify-content: center;
   }
 }
 
@@ -237,6 +258,15 @@
 .attendees-cards {
   display: flex;
   flex-direction: column;
+}
+
+/* Mobile equivalent of the desktop table's header checkbox — there's no header row to put it
+   in, so it gets its own thin strip above the first card. */
+.attendees-cards__selectall {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
 }
 
 .attendees-card {

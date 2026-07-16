@@ -329,7 +329,10 @@ export async function handleBulkSend(
   const failed = sendResult.deliveries.length - sendResult.sent;
 
   await auditBulkSend(db, c, eventId, {
-    templateId: body.templateId,
+    // The actually-resolved template (event override -> org override -> builtin default), not
+    // just what the caller passed - omitting templateId doesn't necessarily mean the builtin
+    // default was used, and EmailDelivery.template_id already records the resolved value per row.
+    templateId: sendResult.resolvedTemplateId,
     filterType: body.filter.type,
     queued,
     skipped,
@@ -405,9 +408,11 @@ async function auditBulkSend(
       action_type: "mail_bulk_resend",
       audit: adminAuditFromContext(c),
       metadata: {
-        // null, not omitted - explicit signal this send used the built-in default
-        // template (packages/mail-templates/src/defaultTemplate.ts), same convention
-        // EmailDelivery.template_id already uses for a builtin-sourced send.
+        // null, not omitted - explicit signal the resolved template was the built-in default
+        // (packages/mail-templates/src/defaultTemplate.ts), same convention EmailDelivery.template_id
+        // already uses. meta.templateId is the *resolved* template id (see handleBulkSend), not
+        // simply whatever the caller passed - those differ whenever templateId was omitted and
+        // the event/org override resolved instead of the true built-in default.
         template_id: meta.templateId ?? null,
         filter: meta.filterType,
         queued: meta.queued,
