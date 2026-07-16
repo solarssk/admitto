@@ -17,6 +17,7 @@ import {
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
+import { EventMailSettingsCard } from "../settings/EventMailSettingsCard.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -166,6 +167,13 @@ export function EventSettingsPage() {
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [ticketTypesLoading, setTicketTypesLoading] = useState(true);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
+  const [mailDirty, setMailDirty] = useState(false);
+  // Archiving and the bulk Danger Zone actions below reload `event` but never touch
+  // EventMailSettingsCard's own internal draft/secrets state, so a pending mail edit would
+  // otherwise survive them despite the confirm dialogs promising unsaved changes are lost
+  // (CodeRabbit review). Bumping this key remounts the card, discarding its draft and
+  // re-fetching current server state.
+  const [mailCardResetKey, setMailCardResetKey] = useState(0);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
   const [tab, setTab] = useState<EventSettingsTab>(initialTab);
@@ -193,12 +201,16 @@ export function EventSettingsPage() {
 
   const dirty =
     form !== null && original !== null && JSON.stringify(form) !== JSON.stringify(original);
+  // Combines the General form's own dirty state with the Mail tab's — navigating away or
+  // running a page action that reloads state (archive, revoke) would otherwise silently
+  // discard unsaved mail transport edits and pending secret replacements (CodeRabbit review).
+  const pageDirty = dirty || mailDirty;
   let saveButtonLabel = "Save changes";
   if (saving) saveButtonLabel = "Saving…";
   else if (logoUploading) saveButtonLabel = "Uploading…";
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
-      dirty && currentLocation.pathname !== nextLocation.pathname,
+      pageDirty && currentLocation.pathname !== nextLocation.pathname,
   );
   const isArchived = event?.status === "archived";
 
@@ -272,14 +284,14 @@ export function EventSettingsPage() {
   }, [loadTicketTypes]);
 
   useEffect(() => {
-    if (!dirty) return;
+    if (!pageDirty) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
+  }, [pageDirty]);
 
   const goBack = () => {
     if (eventId) navigate(`/admin/events/${eventId}/overview`);
@@ -325,6 +337,7 @@ export function EventSettingsPage() {
         addToast("Event unarchived", "success");
       }
       setArchiveOpen(false);
+      setMailCardResetKey((n) => n + 1);
       await load();
       await refreshLayoutEvent?.();
     } catch (err) {
@@ -393,6 +406,7 @@ export function EventSettingsPage() {
         "success",
       );
       setRevokeCheckinsOpen(false);
+      setMailCardResetKey((n) => n + 1);
       await load();
       await refreshLayoutEvent?.();
     } catch (err) {
@@ -414,6 +428,7 @@ export function EventSettingsPage() {
         "success",
       );
       setRevokeItemsOpen(false);
+      setMailCardResetKey((n) => n + 1);
       await load();
       await refreshLayoutEvent?.();
     } catch (err) {
@@ -650,6 +665,15 @@ export function EventSettingsPage() {
         )}
       </EventSettingsTabPanel>
 
+      <EventSettingsTabPanel tab="mail" activeTab={tab} visited={visitedTabs} label="Mail">
+        <EventMailSettingsCard
+          key={mailCardResetKey}
+          eventId={eventId}
+          isArchived={isArchived}
+          onDirtyChange={setMailDirty}
+        />
+      </EventSettingsTabPanel>
+
       <EventSettingsTabPanel tab="wallet" activeTab={tab} visited={visitedTabs} label="Wallet">
         <EmptyState
           icon={<i className="ti ti-wallet" aria-hidden="true" />}
@@ -876,7 +900,7 @@ export function EventSettingsPage() {
         title="Revoke all check-ins?"
         message={
           `This will revoke check-in for ${event.admitted_count} attendee${pluralSuffix(event.admitted_count)}. They can check in again afterwards.` +
-          (dirty ? UNSAVED_CHANGES_WARNING : "")
+          (pageDirty ? UNSAVED_CHANGES_WARNING : "")
         }
         confirmLabel="Revoke all check-ins"
         confirmVariant="danger"
@@ -890,7 +914,7 @@ export function EventSettingsPage() {
         title="Revoke all items issued?"
         message={
           `This will reset ${event.issued_items_count} issued item${pluralSuffix(event.issued_items_count)} back to pending. They can be handed out again afterwards.` +
-          (dirty ? UNSAVED_CHANGES_WARNING : "")
+          (pageDirty ? UNSAVED_CHANGES_WARNING : "")
         }
         confirmLabel="Revoke all items issued"
         confirmVariant="danger"
@@ -906,7 +930,7 @@ export function EventSettingsPage() {
           (archiveMode === "archive"
             ? "This event will become fully read-only, including check-in. Attendee data is kept. Only a superadmin can undo this."
             : "This event will become active again and editable in admin.") +
-          (dirty ? UNSAVED_CHANGES_WARNING : "")
+          (pageDirty ? UNSAVED_CHANGES_WARNING : "")
         }
         confirmLabel={archiveMode === "archive" ? "Archive event" : "Unarchive event"}
         confirmVariant={archiveMode === "archive" ? "danger" : "primary"}

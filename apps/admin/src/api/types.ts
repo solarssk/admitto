@@ -599,6 +599,16 @@ export interface MailSettingsResponse {
   fields: MailSettingsFieldsDto;
 }
 
+/** Event-scoped mail transport (#511) — fields are the *effective* (resolved) values,
+ * inherited from the organization when hasEventOverride is false. */
+export interface EventMailSettingsResponse {
+  eventId: string;
+  organizationId: string;
+  isProduction: boolean;
+  hasEventOverride: boolean;
+  fields: MailSettingsFieldsDto;
+}
+
 export interface SaveMailSettingsBody {
   /** Omit = unchanged; `""` clears stored provider (Not configured). */
   provider?: MailProvider | "";

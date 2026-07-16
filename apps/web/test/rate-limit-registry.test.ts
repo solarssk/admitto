@@ -14,6 +14,7 @@ const EXPECTED_POLICIES: Record<
   "admin:oidc-provider-ops": { windowMs: [60_000], max: [10], checks: 1 },
   "admin:test-send": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:mail-transport-test": { windowMs: [60_000], max: [5], checks: 1 },
+  "admin:event-mail-transport-test": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:export": { windowMs: [3_600_000], max: [10], checks: 1 },
   "admin:export-pii": { windowMs: [3_600_000], max: [5], checks: 1 },
   "admin:import-preview": { windowMs: [60_000], max: [10], checks: 1 },

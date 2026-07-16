@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { canManageEvent, canManageInstance } from "@admitto/auth";
 import { IllegalItemTransitionError, type OpsAuditContext } from "@admitto/tickets";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
@@ -82,6 +82,22 @@ export function positiveIntQuery(
   const n = Number(raw);
   if (!Number.isSafeInteger(n) || n < 1) return fallback;
   return max !== undefined ? Math.min(n, max) : n;
+}
+
+/**
+ * Acquires a Postgres advisory lock scoped to one event, held for the rest of the current
+ * transaction. Serializes permanent event deletion against a concurrent event mail-settings
+ * PUT on the same eventId — whichever transaction starts first blocks the other until it
+ * commits, so a PUT can never recreate an orphaned MailSettings row for an event a
+ * concurrent delete just removed (MailSettings has no FK to Event; see event-deletion.ts).
+ * Call at the very start of both transactions, before any other read (CodeRabbit review).
+ */
+export async function lockEventForMailSettingsWrite(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+): Promise<void> {
+  const lockKey = `event-mail-settings:${eventId}`;
+  await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 }
 
 /** Shared error shape for a failed item-state transition/revoke (operator and admin routes). */

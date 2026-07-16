@@ -1,0 +1,552 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { EventMailSettingsCard } from "../../src/settings/EventMailSettingsCard.js";
+import { renderWithToast } from "../test-utils.js";
+import type { EventMailSettingsResponse, MailSettingsFieldsDto } from "../../src/api/types.js";
+
+let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
+  { role: "superadmin", scope_type: "instance", scope_id: null },
+];
+
+vi.mock("../../src/auth/AuthProvider.js", () => ({
+  useAuth: () => ({ assignments: mockAssignments }),
+}));
+
+vi.mock("../../src/api/client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/api/client.js")>();
+  return {
+    ...actual,
+    fetchEventMailSettings: vi.fn(),
+    saveEventMailSettings: vi.fn(),
+    clearEventMailSettings: vi.fn(),
+    sendEventMailTransportTest: vi.fn(),
+  };
+});
+
+import {
+  ApiError,
+  clearEventMailSettings,
+  fetchEventMailSettings,
+  saveEventMailSettings,
+  sendEventMailTransportTest,
+} from "../../src/api/client.js";
+
+const mockFetch = vi.mocked(fetchEventMailSettings);
+const mockSave = vi.mocked(saveEventMailSettings);
+const mockClear = vi.mocked(clearEventMailSettings);
+const mockTest = vi.mocked(sendEventMailTransportTest);
+
+function isDisabled(el: HTMLElement): boolean {
+  return (el as HTMLInputElement | HTMLButtonElement).disabled;
+}
+
+function plain<T>(value: T) {
+  return { value, source: "db" as const, locked: false };
+}
+
+function secret(set: boolean) {
+  return { set, masked: set ? ("••••" as const) : null, source: "db" as const, locked: false };
+}
+
+function baseFields(): MailSettingsFieldsDto {
+  return {
+    provider: plain(null),
+    fromAddress: plain(null),
+    fromName: plain(null),
+    replyTo: plain(null),
+    envelopeFrom: plain(null),
+    allowedFromDomain: plain(null),
+    host: plain(null),
+    port: plain(null),
+    secure: plain(null),
+    user: plain(null),
+    requireTls: plain(null),
+    tlsRejectUnauthorized: plain(null),
+    heloName: plain(null),
+    pool: plain(null),
+    maxConnections: plain(null),
+    maxMessages: plain(null),
+    rateLimitPerMinute: plain(null),
+    connectionTimeout: plain(null),
+    greetingTimeout: plain(null),
+    socketTimeout: plain(null),
+    smtpPassword: secret(false),
+    mailbox: plain(null),
+    tenantId: plain(null),
+    clientId: plain(null),
+    saveToSentItems: plain(null),
+    graphClientSecret: secret(false),
+    powerAutomateUrl: secret(false),
+    powerAutomateKey: secret(false),
+  };
+}
+
+function smtpFields(overrides: Partial<MailSettingsFieldsDto> = {}): MailSettingsFieldsDto {
+  return {
+    ...baseFields(),
+    provider: plain("smtp"),
+    fromAddress: plain("org@example.com"),
+    host: plain("smtp.org.example.com"),
+    port: plain(587),
+    user: plain("org-user"),
+    requireTls: plain(true),
+    tlsRejectUnauthorized: plain(true),
+    pool: plain(true),
+    smtpPassword: secret(true),
+    ...overrides,
+  };
+}
+
+function graphFields(overrides: Partial<MailSettingsFieldsDto> = {}): MailSettingsFieldsDto {
+  return {
+    ...baseFields(),
+    provider: plain("graph"),
+    fromAddress: plain("org@example.com"),
+    mailbox: plain("shared@example.com"),
+    tenantId: plain("11111111-1111-1111-1111-111111111111"),
+    clientId: plain("22222222-2222-2222-2222-222222222222"),
+    graphClientSecret: secret(true),
+    ...overrides,
+  };
+}
+
+function inheritedResponse(overrides: Partial<EventMailSettingsResponse> = {}): EventMailSettingsResponse {
+  return {
+    eventId: "evt-1",
+    organizationId: "org-1",
+    isProduction: true,
+    hasEventOverride: false,
+    fields: smtpFields(),
+    ...overrides,
+  };
+}
+
+function dedicatedResponse(overrides: Partial<EventMailSettingsResponse> = {}): EventMailSettingsResponse {
+  return {
+    eventId: "evt-1",
+    organizationId: "org-1",
+    isProduction: true,
+    hasEventOverride: true,
+    fields: smtpFields({ host: plain("smtp.dedicated.example.com") }),
+    ...overrides,
+  };
+}
+
+const SMTP_SUMMARY_TEXT = "SMTP · sends as org@example.com";
+const DEDICATED_HINT = /This event sends its own mail instead of the organization/;
+
+function renderCard(isArchived = false) {
+  return renderWithToast(
+    <MemoryRouter>
+      <EventMailSettingsCard eventId="evt-1" isArchived={isArchived} />
+    </MemoryRouter>,
+  );
+}
+
+/** Renders with a real route table so "Open instance settings" navigation is observable. */
+function renderCardWithRoutes() {
+  return renderWithToast(
+    <MemoryRouter initialEntries={["/admin/events/evt-1/settings"]}>
+      <Routes>
+        <Route
+          path="/admin/events/evt-1/settings"
+          element={<EventMailSettingsCard eventId="evt-1" isArchived={false} />}
+        />
+        <Route path="/admin/settings" element={<div>instance-settings-page</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+beforeEach(() => {
+  mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+  mockFetch.mockReset();
+  mockSave.mockReset();
+  mockClear.mockReset();
+  mockTest.mockReset();
+  // jsdom does not implement scrollIntoView.
+  Element.prototype.scrollIntoView = vi.fn();
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+describe("EventMailSettingsCard — inherited (organization) mode", () => {
+  it("shows the org's effective transport summary and the Organization toggle active", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    expect(
+      screen.getByRole("radio", { name: "Organization mail" }).getAttribute("aria-checked"),
+    ).toBe("true");
+  });
+
+  it("shows Open instance settings link for a superadmin", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+
+    expect(await screen.findByText("Open instance settings")).toBeTruthy();
+  });
+
+  it("navigates to instance mail settings when the link is clicked", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCardWithRoutes();
+
+    fireEvent.click(await screen.findByText("Open instance settings"));
+
+    expect(await screen.findByText("instance-settings-page")).toBeTruthy();
+  });
+
+  it("hides the instance settings link for a non-superadmin org admin", async () => {
+    mockAssignments = [{ role: "admin", scope_type: "organization", scope_id: "org-1" }];
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    expect(screen.queryByText("Open instance settings")).toBeNull();
+    expect(screen.getByText(/Only a superadmin can view or change the organization/)).toBeTruthy();
+  });
+
+  it("does not render the dedicated transport form while inherited", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    expect(screen.queryByText(DEDICATED_HINT)).toBeNull();
+  });
+
+  it("gives the summary a positive treatment when a transport is actually configured", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+    expect(document.querySelector(".org-mail-summary--configured")).not.toBeNull();
+  });
+
+  it("shows a neutral not-set-up state when nothing is configured anywhere", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse({ fields: baseFields() }));
+    renderCard();
+
+    await waitFor(() => screen.getByText("Organization mail transport not set up"));
+    expect(document.querySelector(".org-mail-summary--configured")).toBeNull();
+  });
+});
+
+describe("EventMailSettingsCard — switching to dedicated", () => {
+  it("starts blank on first toggle, not prefilled with the inherited org values", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+
+    expect(screen.getByText(DEDICATED_HINT)).toBeTruthy();
+    // No tile selected and no provider-specific card rendered yet — a prefilled-but-
+    // unedited draft would otherwise silently save as a copy of the org's config.
+    expect(screen.queryByLabelText("SMTP host")).toBeNull();
+    for (const opt of ["SMTP (recommended)", "Microsoft Graph", "Power Automate"]) {
+      expect(screen.getByRole("radio", { name: opt }).getAttribute("aria-checked")).toBe("false");
+    }
+  });
+
+  it("shows the event's own saved values in dedicated mode when an override already exists", async () => {
+    mockFetch.mockResolvedValue(dedicatedResponse());
+    renderCard();
+
+    await waitFor(() => screen.getByText(DEDICATED_HINT));
+    expect((screen.getByLabelText("SMTP host") as HTMLInputElement).value).toBe(
+      "smtp.dedicated.example.com",
+    );
+  });
+
+  it("preserves in-progress edits when toggling away and back before saving", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
+    fireEvent.change(screen.getByLabelText("SMTP host"), {
+      target: { value: "smtp.in-progress.example.com" },
+    });
+
+    fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+
+    expect((screen.getByLabelText("SMTP host") as HTMLInputElement).value).toBe(
+      "smtp.in-progress.example.com",
+    );
+  });
+
+  it("excludes the Not configured tile in dedicated mode", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+
+    expect(screen.queryByRole("radio", { name: "Not configured" })).toBeNull();
+  });
+
+  it("saves via saveEventMailSettings with the edited field and applies the response", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    mockSave.mockResolvedValue(dedicatedResponse());
+    renderCard();
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
+    fireEvent.change(screen.getByLabelText("From address"), {
+      target: { value: "dedicated@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("SMTP host"), {
+      target: { value: "smtp.dedicated.example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Port"), { target: { value: "587" } });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "dedicated-user" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+
+    await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
+    expect(mockSave.mock.calls[0][0]).toBe("evt-1");
+    expect(mockSave.mock.calls[0][1]).toMatchObject({ host: "smtp.dedicated.example.com" });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("radio", { name: "Dedicated for this event" }).getAttribute("aria-checked"),
+      ).toBe("true"),
+    );
+  });
+
+  it("Reset reverts the toggle and discards the draft", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    expect(screen.getByText(DEDICATED_HINT)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(
+      screen.getByRole("radio", { name: "Organization mail" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(screen.queryByText(DEDICATED_HINT)).toBeNull();
+  });
+
+  it("shows validation errors and does not save an incomplete SMTP draft", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("SMTP host is required.")).toBeTruthy();
+    });
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("toasts save failure without leaking server detail", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    mockSave.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderCard();
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
+    fireEvent.change(screen.getByLabelText("From address"), {
+      target: { value: "dedicated@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("SMTP host"), {
+      target: { value: "smtp.dedicated.example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Port"), { target: { value: "587" } });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "dedicated-user" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save mail settings/);
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("renders the Graph card when the Microsoft Graph tile is selected", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Microsoft Graph" }));
+
+    expect(screen.getByLabelText("Mailbox")).toBeTruthy();
+    expect(screen.getByLabelText("Tenant ID")).toBeTruthy();
+  });
+
+  it("renders the Power Automate card when the Power Automate tile is selected", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Power Automate" }));
+
+    expect(screen.getByText("Flow URL")).toBeTruthy();
+    expect(screen.getByText("Flow key")).toBeTruthy();
+  });
+});
+
+describe("EventMailSettingsCard — reverting to organization", () => {
+  it("shows a revert warning instead of an org summary while a saved override is still toggled off", async () => {
+    mockFetch.mockResolvedValue(dedicatedResponse());
+    renderCard();
+    await waitFor(() => screen.getByText(DEDICATED_HINT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
+
+    expect(screen.getByText(/Reverting will remove this event's dedicated transport/)).toBeTruthy();
+  });
+
+  it("calls clearEventMailSettings on save and applies the inherited response", async () => {
+    mockFetch.mockResolvedValue(dedicatedResponse());
+    mockClear.mockResolvedValue(inheritedResponse());
+    renderCard();
+    await waitFor(() => screen.getByText(DEDICATED_HINT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+
+    // Reverting to org mail is destructive (deletes the event's dedicated transport and
+    // secrets) — it goes through a ConfirmDialog rather than saving immediately.
+    expect(mockClear).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "Revert" }));
+
+    await waitFor(() => expect(mockClear).toHaveBeenCalledWith("evt-1"));
+    await waitFor(() => expect(screen.queryByText(DEDICATED_HINT)).toBeNull());
+  });
+
+  it("cancelling the confirm dialog leaves the dedicated override in place", async () => {
+    mockFetch.mockResolvedValue(dedicatedResponse());
+    renderCard();
+    await waitFor(() => screen.getByText(DEDICATED_HINT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    expect(mockClear).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("shows the error inline in the confirm dialog when revert fails", async () => {
+    mockFetch.mockResolvedValue(dedicatedResponse());
+    mockClear.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderCard();
+    await waitFor(() => screen.getByText(DEDICATED_HINT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Organization mail" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Revert" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog").textContent).toMatch(/Failed to revert mail settings/);
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+    // Dialog stays open on failure — the operator can retry or cancel.
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+});
+
+describe("EventMailSettingsCard — test send", () => {
+  it("sends via sendEventMailTransportTest and shows the result", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    mockTest.mockResolvedValue({ status: "sent", provider: "smtp" });
+    renderCard();
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    fireEvent.change(screen.getByLabelText("Recipient"), {
+      target: { value: "tester@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send test email/ }));
+
+    await waitFor(() => expect(mockTest).toHaveBeenCalledWith("evt-1", "tester@example.com"));
+    await waitFor(() => screen.getByText(/Sent successfully via SMTP/));
+  });
+
+  it("shows the mailbox for a successful Graph test send", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse({ fields: graphFields() }));
+    mockTest.mockResolvedValue({ status: "sent", provider: "graph" });
+    renderCard();
+    await waitFor(() => screen.getByText("Microsoft Graph · sends as org@example.com"));
+
+    fireEvent.change(screen.getByLabelText("Recipient"), {
+      target: { value: "tester@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send test email/ }));
+
+    await waitFor(() => expect(mockTest).toHaveBeenCalledWith("evt-1", "tester@example.com"));
+    await waitFor(() => screen.getByText("Mailbox"));
+    expect(screen.getByText("shared@example.com")).toBeTruthy();
+  });
+
+  it("falls back to a generic message when a failed test send has no error detail", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    mockTest.mockResolvedValue({ status: "failed", provider: "smtp" });
+    renderCard();
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    fireEvent.change(screen.getByLabelText("Recipient"), {
+      target: { value: "tester@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send test email/ }));
+
+    await waitFor(() => expect(mockTest).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getAllByText("Send failed.").length).toBeGreaterThan(0));
+  });
+
+  it("disables test-send while the toggle has unsaved changes", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated for this event" }));
+
+    expect(isDisabled(screen.getByRole("button", { name: /Send test email/ }))).toBe(true);
+  });
+});
+
+describe("EventMailSettingsCard — archived event", () => {
+  it("hides the Save/Reset footer and shows an archived note instead", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard(true);
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
+    expect(screen.getByText(/This event is archived - mail settings cannot be changed/)).toBeTruthy();
+  });
+
+  it("disables the mode toggle and test-send", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard(true);
+    await waitFor(() => screen.getByText(SMTP_SUMMARY_TEXT));
+
+    expect(isDisabled(screen.getByRole("radio", { name: "Dedicated for this event" }))).toBe(true);
+    expect(isDisabled(screen.getByRole("button", { name: /Send test email/ }))).toBe(true);
+  });
+});
+
+describe("EventMailSettingsCard — loading and errors", () => {
+  it("shows a retry link on load failure and recovers on retry", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("network"));
+    mockFetch.mockResolvedValueOnce(inheritedResponse());
+    renderCard();
+
+    expect(await screen.findByText("Failed to load mail settings.")).toBeTruthy();
+    fireEvent.click(screen.getByText("Retry"));
+
+    expect(await screen.findByText(SMTP_SUMMARY_TEXT)).toBeTruthy();
+  });
+});

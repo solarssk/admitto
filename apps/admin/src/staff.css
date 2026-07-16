@@ -2797,21 +2797,26 @@
   gap: var(--space-4);
 }
 
-/* Transport picker — clickable tile grid (Instance settings -> Mail card 1) */
+/* Transport picker — clickable tile grid (Instance settings -> Mail card 1). A compact
+ * icon + label chip, not a description card — the per-provider blurb moved to the tile's
+ * tooltip instead of taking up space. auto-fit packs as many as actually fit per row (5
+ * on the org page with "Not configured", 4 on the event page without it) and reduces the
+ * column count itself as the container narrows, so no hardcoded breakpoint needs to know
+ * how many tiles there are. */
 .transport-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: var(--space-3);
 }
 
 .transport-tile {
   position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-direction: row;
+  align-items: center;
   gap: var(--space-2);
   text-align: left;
-  padding: var(--space-3) var(--space-3) var(--space-3);
+  padding: var(--space-3);
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-card);
@@ -2839,6 +2844,7 @@
 .transport-tile__icon {
   width: 32px;
   height: 32px;
+  flex-shrink: 0;
   border-radius: 9px;
   display: flex;
   align-items: center;
@@ -2854,24 +2860,11 @@
 }
 
 .transport-tile strong {
+  min-width: 0;
   font-size: var(--fs-sm);
   font-weight: 700;
+  line-height: 1.25;
   color: var(--text-primary);
-}
-
-.transport-tile > span:not(.transport-tile__icon) {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-
-.transport-tile__check {
-  position: absolute;
-  top: var(--space-2);
-  right: var(--space-2);
-  color: var(--primary);
-  font-size: var(--fs-body);
-  line-height: 1;
 }
 
 /* Collapsible "Advanced tuning" section inside SMTP connection */
@@ -2932,6 +2925,17 @@
 .mail-transport-section > .mail-tuning__limits,
 .mail-transport-section > .mail-tuning__timeouts {
   grid-column: 1 / -1;
+}
+
+/* The global .settings-row mobile rule (below, shared with e.g. Danger Zone's row+button
+ * layout) stacks label text above its control — fine for a wide action button, but a
+ * Switch is small and fixed-size, so stacking just leaves it looking stranded on its own
+ * line. Higher specificity than the global rule, so this wins regardless of source order. */
+@media (max-width: 640px) {
+  .mail-transport-section > .settings-row {
+    flex-direction: row;
+    align-items: center;
+  }
 }
 
 .mail-tuning__toggles {
@@ -3088,6 +3092,9 @@
 }
 
 .mail-dev-warning {
+  /* <output>'s UA default is display:inline — this box needs to behave like the
+     <p> it replaced (full-width block). */
+  display: block;
   padding: var(--space-3);
   border-radius: var(--radius);
   background: var(--surface-hover);
@@ -3129,11 +3136,19 @@
   color: var(--text-muted);
 }
 
+/* Recipient + button always share one row, at any width — a grid column pair (like
+ * SMTP host/Port) forces a stacked 1-column layout on mobile, which splits this into
+ * two rows; flex without wrap keeps them together and just shrinks the input instead. */
 .mail-test-send__row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--space-3);
+  align-items: end;
+  gap: var(--space-3) var(--space-4);
+}
+
+.mail-test-send__row .at-field {
+  flex: 1 1 260px;
+  max-width: 420px;
+  min-width: 0;
 }
 
 .text-success {
@@ -3282,6 +3297,108 @@
 .settings-footer__buttons {
   display: flex;
   gap: var(--space-3);
+}
+
+/* Segmented — exclusive-choice toggle (event Mail tab: Organization mail / Dedicated).
+ * Values match the ui_kits/admin design-system mockup's .seg-control/.seg-btn exactly. */
+.seg-control {
+  display: inline-flex;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+  gap: 2px;
+  margin-bottom: var(--space-3);
+}
+
+.seg-btn {
+  border: 0;
+  background: none;
+  border-radius: calc(var(--radius) - 2px);
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--dur-fast);
+  white-space: nowrap;
+}
+
+.seg-btn:hover:not(:disabled):not(.seg-btn--active) {
+  color: var(--text-primary);
+}
+
+.seg-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.seg-btn--active {
+  background: var(--surface-card);
+  color: var(--primary-active);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0 0 0 / .08);
+}
+
+/* org-mail-summary — read-only preview of the organization's effective transport, shown
+ * on the event Mail tab while it's inheriting (not dedicated). Matches the ui_kits/admin
+ * design-system mockup's .org-mail-summary exactly. */
+.org-mail-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+
+.org-mail-summary__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.org-mail-summary__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.org-mail-summary__body strong {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.org-mail-summary__body span {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* --configured — a real transport is resolved (org or env), not just the neutral
+ * "nothing set up yet" state — a plain gray box read as identical either way. */
+.org-mail-summary--configured {
+  background: var(--status-ok-tint);
+  border-color: var(--status-ok);
+}
+
+.org-mail-summary--configured .org-mail-summary__icon {
+  background: var(--status-ok-tint);
+  color: var(--status-ok-fg, var(--status-ok));
+  border-color: var(--status-ok);
 }
 
 /* mfa-roles-fieldset — Security panel "Require 2FA for roles" checkbox group */

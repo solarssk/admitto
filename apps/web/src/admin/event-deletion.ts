@@ -28,7 +28,12 @@
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, writeAdminAuditLog } from "@admitto/tickets";
-import { requireAuditActor, requireEventId, requireSuperadmin } from "./admin-helpers.js";
+import {
+  lockEventForMailSettingsWrite,
+  requireAuditActor,
+  requireEventId,
+  requireSuperadmin,
+} from "./admin-helpers.js";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
@@ -118,6 +123,12 @@ export async function deleteEvent(
 ): Promise<DeleteEventResult> {
   try {
     return await db.$transaction(async (tx): Promise<DeleteEventResult> => {
+      // Serializes with the event mail-settings PUT transaction on the same eventId (see
+      // that route) — without this, a concurrent PUT can validate the event exists, then
+      // this transaction deletes it, then the PUT's upsert recreates an orphaned
+      // MailSettings row with no FK to catch it (CodeRabbit review).
+      await lockEventForMailSettingsWrite(tx, eventId);
+
       const event = await tx.event.findUnique({
         where: { id: eventId },
         select: { archived_at: true, pinned_note: true, organization_id: true },
@@ -131,6 +142,13 @@ export async function deleteEvent(
       // guard above already requires eventMailTemplateCount === 0 — kept so a deleted
       // event can never leave an orphaned scope_id behind under any future race.
       await tx.mailTemplate.deleteMany({ where: { scope_type: "event", scope_id: eventId } });
+
+      // MailSettings (event-scoped mail transport override, #511) is the same polymorphic
+      // scope_type/scope_id pattern with no FK — but unlike MailTemplate it's config, not
+      // content/activity, so it's deliberately NOT one of the deletability signals above (an
+      // otherwise-empty event with a configured transport override should still be
+      // deletable). Clean it up here so a delete never orphans its scope_id.
+      await tx.mailSettings.deleteMany({ where: { scope_type: "event", scope_id: eventId } });
 
       await tx.event.delete({ where: { id: eventId } });
 

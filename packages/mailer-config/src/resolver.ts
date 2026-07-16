@@ -117,23 +117,25 @@ export async function resolveMailConfigForOrg(
   return config;
 }
 
-/** Safe org-scoped parse for pre-save validation (no throw). */
-export function tryParseOrgMailConfigFromRow(
-  orgRow: MailSettings | null,
-  env: NodeJS.ProcessEnv = process.env,
+/** Shared by tryParseOrgMailConfigFromRow and tryParseEventMailConfigFromRow —
+ * `ev` is null for the org-only case. */
+function tryParseMailConfigFromRows(
+  ev: Row,
+  org: Row,
+  env: NodeJS.ProcessEnv,
 ): { ok: true } | { ok: false; error: string } {
   try {
     const envFields = rawMailFieldsFromEnv(env);
-    const provider = first<string>(envFields.provider, orgRow?.provider ?? undefined);
+    const provider = first<string>(envFields.provider, ev?.provider, org?.provider);
     if (!provider) {
       return { ok: true };
     }
 
-    const raw = buildRawConfig(provider, envFields, null, orgRow);
+    const raw = buildRawConfig(provider, envFields, ev, org);
     const parsed = safeParseMailerConfig(raw);
     if (parsed.success) {
       try {
-        enforceAllowedFromDomain(orgRow?.allowed_from_domain, parsed.data);
+        enforceAllowedFromDomain(first(ev?.allowed_from_domain, org?.allowed_from_domain), parsed.data);
       } catch (err) {
         const message = err instanceof Error ? err.message : "allowed from domain mismatch";
         return { ok: false, error: message };
@@ -153,6 +155,24 @@ export function tryParseOrgMailConfigFromRow(
   }
 }
 
+/** Safe org-scoped parse for pre-save validation (no throw). */
+export function tryParseOrgMailConfigFromRow(
+  orgRow: MailSettings | null,
+  env: NodeJS.ProcessEnv = process.env,
+): { ok: true } | { ok: false; error: string } {
+  return tryParseMailConfigFromRows(null, orgRow, env);
+}
+
+/** Safe event-scoped parse for pre-save validation (no throw) — resolves against
+ * the org row as fallback, mirroring resolveMailConfig's own env > event > org precedence. */
+export function tryParseEventMailConfigFromRow(
+  eventRow: MailSettings | null,
+  orgRow: MailSettings | null,
+  env: NodeJS.ProcessEnv = process.env,
+): { ok: true } | { ok: false; error: string } {
+  return tryParseMailConfigFromRows(eventRow, orgRow, env);
+}
+
 function buildRawConfig(
   provider: string,
   env: ReturnType<typeof rawMailFieldsFromEnv>,
@@ -169,6 +189,13 @@ function buildRawConfig(
 
   switch (provider) {
     case "smtp": {
+      // An event's own host is a fully event-admin-controlled connection target — never
+      // let it authenticate with the organization's password. Without this, an event
+      // override that sets only `host` (leaving its own smtpPassword unset) would silently
+      // inherit the org's real SMTP credential and hand it to whatever server the event
+      // admin chose, via either a normal send or the test-send preflight (security review
+      // on #511/#512). The event's own password still wins first when it has one.
+      const eventOwnsHost = ev?.host != null;
       return {
         ...base,
         host: first(env.host, ev?.host, org?.host),
@@ -179,7 +206,7 @@ function buildRawConfig(
         password: firstLazy(
           () => env.smtpPassword,
           () => maybeDecrypt(ev?.smtp_password_enc),
-          () => maybeDecrypt(org?.smtp_password_enc),
+          () => (eventOwnsHost ? undefined : maybeDecrypt(org?.smtp_password_enc)),
         ),
         requireTLS: first(env.requireTls, ev?.require_tls, org?.require_tls),
         tlsRejectUnauthorized: first(
@@ -231,6 +258,9 @@ function buildRawConfig(
       };
     }
     case "powerautomate": {
+      // Same reasoning as SMTP's host guard above: the URL is the connection target, so an
+      // event that supplies its own URL must not receive the org's flow key.
+      const eventOwnsUrl = ev?.power_automate_url_enc != null;
       return {
         ...base,
         url: firstLazy(
@@ -241,7 +271,7 @@ function buildRawConfig(
         key: firstLazy(
           () => env.powerAutomateKey,
           () => maybeDecrypt(ev?.power_automate_key_enc),
-          () => maybeDecrypt(org?.power_automate_key_enc),
+          () => (eventOwnsUrl ? undefined : maybeDecrypt(org?.power_automate_key_enc)),
         ),
       };
     }

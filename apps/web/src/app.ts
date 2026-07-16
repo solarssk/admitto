@@ -194,6 +194,12 @@ import {
   handlePostMailSettingsTest,
   MAX_MAIL_SETTINGS_BODY_BYTES,
 } from "./admin/mail-settings-routes.js";
+import {
+  handleGetEventMailSettings,
+  handlePutEventMailSettings,
+  handleDeleteEventMailSettings,
+  handlePostEventMailSettingsTest,
+} from "./admin/event-mail-settings-routes.js";
 import { handleGetSetupChecks } from "./admin/setup-checks-routes.js";
 import { handlePostSetupComplete } from "./admin/setup-complete-routes.js";
 import {
@@ -368,6 +374,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminExportRateLimit = rateLimit(rateLimitStore, "admin:export");
   const adminCommunicationRateLimit = rateLimit(rateLimitStore, "admin:test-send");
   const adminMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:mail-transport-test");
+  const adminEventMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-transport-test");
   const adminImportPreviewRateLimit = rateLimit(rateLimitStore, "admin:import-preview");
   const adminImportCommitRateLimit = rateLimit(rateLimitStore, "admin:import-commit");
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
@@ -546,6 +553,29 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handlePatchEvent(c, db)),
+  );
+  app.get("/api/admin/events/:eventId/mail-settings", staffAdminGate, (c) =>
+    handleGetEventMailSettings(c, db),
+  );
+  app.put(
+    "/api/admin/events/:eventId/mail-settings",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handlePutEventMailSettings(c, db)),
+  );
+  app.delete(
+    "/api/admin/events/:eventId/mail-settings",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDeleteEventMailSettings(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/mail-settings/test",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminEventMailSettingsRateLimit,
+    guardArchivedEvent((c) => handlePostEventMailSettingsTest(c, db, mailDeliveryDeps)),
   );
   app.post(
     "/api/admin/events/:eventId/branding-upload",

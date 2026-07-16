@@ -4,6 +4,7 @@ export type EventSettingsTab =
   | "general"
   | "ticket-types"
   | "branding"
+  | "mail"
   | "wallet"
   | "integrations"
   | "danger-zone";
@@ -12,6 +13,7 @@ export const EVENT_SETTINGS_TABS = [
   { id: "general", label: "General" },
   { id: "ticket-types", label: "Ticket types" },
   { id: "branding", label: "Branding" },
+  { id: "mail", label: "Mailing" },
   { id: "wallet", label: "Wallet" },
   { id: "integrations", label: "Integrations" },
   { id: "danger-zone", label: "Danger zone" },

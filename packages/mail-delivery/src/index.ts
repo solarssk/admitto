@@ -2,8 +2,8 @@ export { sendTicketEmails } from "./send.js";
 export type { SendTicketEmailsOptions, MailDeliveryDeps } from "./send.js";
 export { sendTestEmail } from "./testSend.js";
 export type { SendTestEmailParams, SendTestEmailOptions } from "./testSend.js";
-export { sendTransportTestEmail } from "./transportTest.js";
-export type { SendTransportTestEmailParams } from "./transportTest.js";
+export { sendTransportTestEmail, sendEventTransportTestEmail } from "./transportTest.js";
+export type { SendTransportTestEmailParams, SendEventTransportTestEmailParams } from "./transportTest.js";
 export {
   getMailConfigDescription,
   serializeConfigDescriptionForCli,

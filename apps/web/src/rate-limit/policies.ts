@@ -187,6 +187,15 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  "admin:event-mail-transport-test": {
+    checks: [
+      {
+        keyOf: (c) => `admin:event-mail-transport-test:user:${c.get("auth").userId}`,
+        windowMs: 60_000,
+        max: 5,
+      },
+    ],
+  },
   "admin:export": {
     checks: [
       {

@@ -30,6 +30,7 @@ const CODE_MESSAGES: Record<string, string> = {
   file_required: "Choose a file to upload.",
   file_too_large: "File exceeds the 2 MB limit.",
   forbidden: "You do not have access.",
+  incomplete_transport: "Fill in all required fields for this mail transport before saving.",
   invalid_form_data: "Could not read the upload. Try again.",
   invalid_code: "Invalid authenticator code.",
   invalid_totp: "Invalid authenticator or backup code.",

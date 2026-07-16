@@ -16,12 +16,7 @@ import {
 } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import { useAuth } from "../../auth/AuthProvider.js";
-import type {
-  MailPlainFieldDto,
-  MailProvider,
-  MailSecretFieldDto,
-  MailSettingsResponse,
-} from "../../api/types.js";
+import type { MailProvider, MailSecretFieldDto, MailSettingsResponse } from "../../api/types.js";
 import {
   buildSaveMailSettingsBody,
   emptyMailDraft,
@@ -32,6 +27,7 @@ import {
   type SecretEdits,
 } from "../../settings/mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "../../settings/mailProviderOptions.js";
+import { draftFromFields } from "../../settings/mailTransportFormParts.js";
 import { useWizard } from "./WizardContext.js";
 
 export type WizardStep2MailHandle = {
@@ -41,48 +37,6 @@ export type WizardStep2MailHandle = {
 type WizardStep2MailProps = {
   onDirtyChange?: (dirty: boolean) => void;
 };
-
-function strValue(fd: MailPlainFieldDto<string | null>): string {
-  return fd.value ?? "";
-}
-
-function numValue(fd: MailPlainFieldDto<number | null>): string {
-  return fd.value === null || fd.value === undefined ? "" : String(fd.value);
-}
-
-function boolValue(fd: MailPlainFieldDto<boolean | null>, fallback: boolean): boolean {
-  return fd.value === null || fd.value === undefined ? fallback : fd.value;
-}
-
-function draftFromResponse(data: MailSettingsResponse): MailDraft {
-  const f = data.fields;
-  return {
-    provider: f.provider.value ?? "",
-    fromAddress: strValue(f.fromAddress),
-    fromName: strValue(f.fromName),
-    replyTo: strValue(f.replyTo),
-    envelopeFrom: strValue(f.envelopeFrom),
-    allowedFromDomain: strValue(f.allowedFromDomain),
-    host: strValue(f.host),
-    port: numValue(f.port),
-    secure: boolValue(f.secure, false),
-    user: strValue(f.user),
-    requireTls: boolValue(f.requireTls, true),
-    tlsRejectUnauthorized: boolValue(f.tlsRejectUnauthorized, true),
-    heloName: strValue(f.heloName),
-    pool: boolValue(f.pool, true),
-    maxConnections: numValue(f.maxConnections),
-    maxMessages: numValue(f.maxMessages),
-    rateLimitPerMinute: numValue(f.rateLimitPerMinute),
-    connectionTimeout: numValue(f.connectionTimeout),
-    greetingTimeout: numValue(f.greetingTimeout),
-    socketTimeout: numValue(f.socketTimeout),
-    mailbox: strValue(f.mailbox),
-    tenantId: strValue(f.tenantId),
-    clientId: strValue(f.clientId),
-    saveToSentItems: boolValue(f.saveToSentItems, true),
-  };
-}
 
 const PROVIDER_LABELS = MAIL_PROVIDER_LABELS;
 
@@ -111,7 +65,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
 
     const applyResponse = useCallback((data: MailSettingsResponse) => {
       setApiData(data);
-      setDraft(draftFromResponse(data));
+      setDraft(draftFromFields(data.fields));
       setSecrets(emptySecretEdits());
       setValidationErrors([]);
     }, []);
