@@ -1033,6 +1033,44 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
     });
   });
 
+  it("returns 422 mail_not_configured instead of a raw 500 when no mail transport is set up", async () => {
+    const spy = vi
+      .spyOn(mailDelivery, "resendTicketEmail")
+      .mockRejectedValueOnce(new Error("Cannot resolve mail provider: not set in env"));
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A1}/resend`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("mail_not_configured");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("does not remap an unrelated send failure to mail_not_configured (rethrows instead)", async () => {
+    const spy = vi
+      .spyOn(mailDelivery, "resendTicketEmail")
+      .mockRejectedValueOnce(new Error("boom: provider timed out"));
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A1}/resend`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      // Not caught by mailNotConfiguredResponse — falls through to the framework's
+      // generic unhandled-error response (plain text, not our JSON error envelope).
+      expect(res.status).toBe(500);
+      const text = await res.text();
+      expect(text).not.toContain("mail_not_configured");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("returns 429 after 5 resends per minute for the same attendee", async () => {
     for (let i = 0; i < 5; i++) {
       const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_RL}/resend`, {
@@ -1504,6 +1542,36 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
         orderBy: { created_at: "desc" },
       });
       expect(log!.metadata).toEqual({ target: "all", queued: 0, skipped: 0, failed: 2 });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("returns 422 mail_not_configured instead of a raw 500 when no mail transport is set up", async () => {
+    const spy = vi
+      .spyOn(mailDelivery, "sendTicketEmails")
+      .mockRejectedValueOnce(new Error("Cannot resolve mail provider: not set in env"));
+    try {
+      const res = await postBulkResend("all");
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("mail_not_configured");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("does not remap an unrelated send failure to mail_not_configured (rethrows instead)", async () => {
+    const spy = vi
+      .spyOn(mailDelivery, "sendTicketEmails")
+      .mockRejectedValueOnce(new Error("boom: provider timed out"));
+    try {
+      const res = await postBulkResend("all");
+      // Not caught by mailNotConfiguredResponse — falls through to the framework's
+      // generic unhandled-error response (plain text, not our JSON error envelope).
+      expect(res.status).toBe(500);
+      const text = await res.text();
+      expect(text).not.toContain("mail_not_configured");
     } finally {
       spy.mockRestore();
     }

@@ -152,6 +152,16 @@ export function isProductionEnv(env: NodeJS.ProcessEnv): boolean {
 
 export const MAIL_PROVIDER_UNCONFIGURED = "Cannot resolve mail provider";
 
+/** Maps a `resolveMailConfig()` "no provider configured" error to a 422 JSON response;
+ * returns null for any other error so the caller can rethrow it unchanged. */
+export function mailNotConfiguredResponse(c: Context, err: unknown): Response | null {
+  const message = err instanceof Error ? err.message : undefined;
+  if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
+    return c.json({ error: "mail_not_configured" }, 422);
+  }
+  return null;
+}
+
 /** Splits a PUT body into what changed for the audit log: plain fields vs. which secrets
  * were rotated (non-empty value) vs. cleared (explicit ""). Shared by org and event PUT. */
 export function classifyMailSettingsFields(body: Record<string, unknown>): {

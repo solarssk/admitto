@@ -108,6 +108,22 @@ describe("AttendeesTable pass status actions", () => {
     expect(screen.queryByRole("button", { name: "Revoke pass" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Restore pass" })).toBeNull();
   });
+
+  it("shows Confirmed pass status with Revoke pass still available (#352/#366 split columns)", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[{ ...baseRow, status: "confirmed" }]}
+        onRevokePass={vi.fn()}
+        onRestorePass={vi.fn()}
+      />,
+    );
+
+    // rsvp_status and status are both "confirmed" on baseRow but render in separate
+    // columns (#366) — two independent "Confirmed" badges, not a single shared one.
+    expect(within(screen.getByRole("table")).getAllByText("Confirmed")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Revoke pass" })).toBeTruthy();
+  });
 });
 
 describe("AttendeesTable check-in column (#359)", () => {

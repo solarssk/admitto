@@ -5,7 +5,6 @@ import {
   Button,
   Card,
   EmptyState,
-  IconButton,
   Input,
   PageHeader,
   Select,
@@ -25,12 +24,12 @@ import {
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeDetailDto, EventDto, RsvpStatus, TicketTypeDto, UpdateAttendeePatch } from "../api/types.js";
 import {
-  formatDateTime,
   loadAttendeeDetailData,
   mergeFormAfterReload,
   toAttendeeForm,
   type AttendeeFormState,
 } from "../attendees/attendeeDetailForm.js";
+import { formatAdmissionDisplay } from "../utils/event-dates.js";
 import { getTimelineDetail, getTimelineIcon, getTimelineLabel, formatActivityTimestamp } from "../attendees/attendeeTimeline.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
@@ -421,16 +420,6 @@ export function AttendeeDetailPage() {
     }
   }
 
-  async function copyTicketRef() {
-    if (!detail?.ticket_ref) return;
-    try {
-      await navigator.clipboard.writeText(detail.ticket_ref);
-      addToast("Copied to clipboard", "success", 2000);
-    } catch {
-      addToast("Could not copy", "error");
-    }
-  }
-
   /** Revoke or restore wallet pass; preserves unsaved profile edits in the form. */
   async function handlePassStatusChange(
     nextStatus: "registered" | "revoked",
@@ -548,15 +537,15 @@ export function AttendeeDetailPage() {
   return (
     <div className="attendee-detail-page">
       <PageHeader
-        breadcrumb={["Attendees", detail.name]}
         title={detail.name}
+        subtitle="Manage this attendee's profile, ticket, and check-in status."
         actions={
           <>
             {isRevoked && <Badge variant="error">Revoked</Badge>}
             <ArchivedGuard event={event} reasonId="resend-ticket-reason">
               {(guard) => (
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   icon={<i className="ti ti-refresh" aria-hidden="true" />}
                   {...guard}
                   onClick={() => setResendOpen(true)}
@@ -711,13 +700,6 @@ export function AttendeeDetailPage() {
                   />
                 ))}
               </fieldset>
-              <div className="attendee-detail-readonly-row">
-                <span className="attendee-detail-readonly-row__label">Token</span>
-                <span className="attendee-detail-mono">{detail.ticket_ref ?? "Not issued yet"}</span>
-                {detail.ticket_ref && (
-                  <IconButton label="Copy token preview" icon={<i className="ti ti-copy" aria-hidden="true" />} onClick={() => void copyTicketRef()} />
-                )}
-              </div>
               <div className="attendee-form__actions">
                 <ArchivedGuard
                   event={event}
@@ -735,53 +717,66 @@ export function AttendeeDetailPage() {
           </Card>
 
           <div className="attendee-detail-side">
-            <Card className="status-stats-card">
-              <div className="status-stats-grid">
-                <div className="status-stats-grid__item">
-                  <span className="status-stats-grid__label">Attendee status</span>
-                  <ArchivedGuard event={event} reasonId="rsvp-status-reason" disabled={rsvpSaving}>
-                    {(guard) => (
-                      <Select
-                        label="RSVP status"
-                        value={detail.rsvp_status}
-                        {...guard}
-                        onChange={(e) => void handleRsvpChange(e.target.value as RsvpStatus)}
-                      >
-                        <option value="none">Registered</option>
-                        <option value="confirmed">Confirmed</option>
-                        <option value="declined">Declined</option>
-                        <option value="tentative">Tentative</option>
-                        <option value="cancelled">Cancelled</option>
-                      </Select>
-                    )}
-                  </ArchivedGuard>
+            <Card title="Status">
+              <div className="attendee-status-list">
+                <div className="attendee-status-row">
+                  <span className="attendee-status-row__icon">
+                    <i className="ti ti-calendar-question" aria-hidden="true" />
+                  </span>
+                  <div className="attendee-status-row__body">
+                    <span className="attendee-status-row__label">RSVP</span>
+                    <ArchivedGuard event={event} reasonId="rsvp-status-reason" disabled={rsvpSaving}>
+                      {(guard) => (
+                        <Select
+                          label="RSVP status"
+                          value={detail.rsvp_status}
+                          {...guard}
+                          onChange={(e) => void handleRsvpChange(e.target.value as RsvpStatus)}
+                        >
+                          <option value="none">Registered</option>
+                          <option value="confirmed">Confirmed</option>
+                          <option value="declined">Declined</option>
+                          <option value="tentative">Tentative</option>
+                          <option value="cancelled">Cancelled</option>
+                        </Select>
+                      )}
+                    </ArchivedGuard>
+                  </div>
                 </div>
-                <div className="status-stats-grid__item">
-                  <span className="status-stats-grid__label">Email</span>
-                  <MailStatusBadge status={lastMail} />
+                <div className="attendee-status-row">
+                  <span className="attendee-status-row__icon">
+                    <i className="ti ti-mail" aria-hidden="true" />
+                  </span>
+                  <div className="attendee-status-row__body">
+                    <span className="attendee-status-row__label">Ticket delivery</span>
+                    <MailStatusBadge status={lastMail} />
+                  </div>
                 </div>
-                <div className="status-stats-grid__item">
-                  <span className="status-stats-grid__label">Wallet pass</span>
-                  <span className="attendee-readonly">—</span>
-                </div>
-                <div className="status-stats-grid__item">
-                  <span className="status-stats-grid__label">Check-in</span>
-                  {detail.admitted_at ? (
-                    <span className="attendee-detail-checkin">{formatDateTime(detail.admitted_at, event.timezone)}</span>
-                  ) : (
+                <div className="attendee-status-row">
+                  <span className="attendee-status-row__icon">
+                    <i className="ti ti-wallet" aria-hidden="true" />
+                  </span>
+                  <div className="attendee-status-row__body">
+                    <span className="attendee-status-row__label">Wallet pass</span>
                     <span className="attendee-readonly">—</span>
-                  )}
+                  </div>
+                </div>
+                <div className="attendee-status-row">
+                  <span className="attendee-status-row__icon">
+                    <i className="ti ti-qrcode" aria-hidden="true" />
+                  </span>
+                  <div className="attendee-status-row__body">
+                    <span className="attendee-status-row__label">Check-in</span>
+                    {detail.admitted_at ? (
+                      <span className="attendee-detail-checkin">
+                        {formatAdmissionDisplay(detail.admitted_at, event.date, event.timezone)}
+                      </span>
+                    ) : (
+                      <span className="attendee-readonly">—</span>
+                    )}
+                  </div>
                 </div>
               </div>
-            </Card>
-
-            <Card
-              title="Wallet pass"
-              actions={<Badge variant="neutral">coming soon</Badge>}
-              className="attendee-wallet-placeholder"
-            >
-              <p>This event doesn&apos;t have wallet passes enabled yet.</p>
-              <p className="attendee-readonly">Wallet passes will be available in v0.5.</p>
             </Card>
           </div>
         </div>
@@ -821,7 +816,12 @@ export function AttendeeDetailPage() {
           <div className="attendee-resend-modal__backdrop" role="presentation" onClick={() => setResendOpen(false)} />
           <form ref={resendPanelRef} className="attendee-resend-modal__panel" onSubmit={handleResend}>
             <h3 id={resendTitleId} className="attendee-resend-modal__title">Resend ticket</h3>
-            {resendError && <p className="attendee-form__error">{resendError}</p>}
+            {resendError && (
+              <div className="attendee-resend-modal__error" role="alert">
+                <i className="ti ti-alert-triangle" aria-hidden="true" />
+                <p>{resendError}</p>
+              </div>
+            )}
             <div className="attendee-resend-options">
               <label>
                 <input type="radio" name="resendMode" checked={resendMode === "same"} onChange={() => setResendMode("same")} />

@@ -18,9 +18,5 @@ const RSVP_VARIANTS: Record<RsvpStatus, "neutral" | "ok" | "error" | "warn"> = {
 };
 
 export function RsvpStatusBadge({ status }: { status: RsvpStatus }) {
-  return (
-    <Badge variant={RSVP_VARIANTS[status]} dot>
-      {RSVP_LABELS[status]}
-    </Badge>
-  );
+  return <Badge variant={RSVP_VARIANTS[status]}>{RSVP_LABELS[status]}</Badge>;
 }
