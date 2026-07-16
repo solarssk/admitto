@@ -1,29 +1,11 @@
-import { Badge, Button, Card, IconButton, Input, Select, Skeleton } from "@admitto/ui";
-import type { AttendeeStatus } from "@admitto/db/status";
+import { Button, Card, IconButton, Input, Select, Skeleton } from "@admitto/ui";
 import type { AttendeeRowDto, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
+import { PassStatusBadge } from "./passStatusBadge.js";
 import { RsvpStatusBadge } from "./rsvpStatusBadge.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
 import { formatAdmissionDisplay } from "../utils/event-dates.js";
-
-const PASS_STATUS_LABELS: Record<AttendeeStatus, string> = {
-  registered: "Registered",
-  confirmed: "Confirmed",
-  cancelled: "Cancelled",
-  revoked: "Revoked",
-};
-
-const PASS_STATUS_VARIANTS: Record<AttendeeStatus, "neutral" | "ok" | "error"> = {
-  registered: "neutral",
-  confirmed: "ok",
-  cancelled: "neutral",
-  revoked: "error",
-};
-
-function PassStatusBadge({ status }: { status: AttendeeStatus }) {
-  return <Badge variant={PASS_STATUS_VARIANTS[status]}>{PASS_STATUS_LABELS[status]}</Badge>;
-}
 
 /** First-load placeholder — same column layout as the real table, no data yet. */
 function AttendeesTableSkeleton() {

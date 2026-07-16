@@ -1561,6 +1561,22 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
     }
   });
 
+  it("does not remap an unrelated send failure to mail_not_configured (rethrows instead)", async () => {
+    const spy = vi
+      .spyOn(mailDelivery, "sendTicketEmails")
+      .mockRejectedValueOnce(new Error("boom: provider timed out"));
+    try {
+      const res = await postBulkResend("all");
+      // Not caught by mailNotConfiguredResponse — falls through to the framework's
+      // generic unhandled-error response (plain text, not our JSON error envelope).
+      expect(res.status).toBe(500);
+      const text = await res.text();
+      expect(text).not.toContain("mail_not_configured");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("returns 403 when event is archived", async () => {
     await prisma.event.update({
       where: { id: EVENT_A },
