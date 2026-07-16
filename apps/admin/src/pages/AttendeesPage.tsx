@@ -174,7 +174,7 @@ const EXPORT_FORMATS: { key: "xlsx" | "csv" | "pdf"; label: string; icon: string
 
 /** Single "Export" entry point — opens a small menu for XLSX/CSV/PDF, replacing three separate buttons. */
 function ExportMenu({ exportingFormat, onExport }: ExportMenuProps) {
-  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, close, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
     <div className="attendees-export-menu" ref={rootRef}>
@@ -200,7 +200,7 @@ function ExportMenu({ exportingFormat, onExport }: ExportMenuProps) {
               role="menuitem"
               className="attendees-export-menu__item"
               onClick={() => {
-                setOpen(false);
+                close();
                 onExport(format.key);
               }}
             >
@@ -253,6 +253,7 @@ export function AttendeesPage() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [mailConfigured, setMailConfigured] = useState<boolean | undefined>(undefined);
   const [bulkSendBusy, setBulkSendBusy] = useState(false);
+  const [bulkSendConfirmOpen, setBulkSendConfirmOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<AttendeeRowDto | null>(null);
@@ -622,7 +623,7 @@ export function AttendeesPage() {
                 </Button>
               )}
             </ArchivedGuard>
-            <ExportMenu exportingFormat={exportingFormat} onExport={(format) => void handleExport(format)} />
+            <ExportMenu exportingFormat={exportingFormat} onExport={handleExport} />
           </>
         }
       />
@@ -693,7 +694,7 @@ export function AttendeesPage() {
         onToggleRow={toggleRow}
         onToggleSelectAll={toggleSelectAllOnPage}
         onClearSelection={clearSelection}
-        onBulkSendTickets={() => void handleBulkSendSelected()}
+        onBulkSendTickets={() => setBulkSendConfirmOpen(true)}
         bulkSendBusy={bulkSendBusy}
         canBulkSend={mailConfigured !== false}
         eventTimezone={event.timezone}
@@ -741,6 +742,21 @@ export function AttendeesPage() {
             setRevokeTarget(null);
             setRevokeError(null);
           }
+        }}
+      />
+
+      <ConfirmDialog
+        open={bulkSendConfirmOpen}
+        title="Send tickets?"
+        message={`Send tickets to ${selectedIds.size} selected attendee${selectedIds.size === 1 ? "" : "s"}?`}
+        confirmLabel="Send tickets"
+        loading={bulkSendBusy}
+        onConfirm={() => {
+          setBulkSendConfirmOpen(false);
+          void handleBulkSendSelected();
+        }}
+        onCancel={() => {
+          if (!bulkSendBusy) setBulkSendConfirmOpen(false);
         }}
       />
     </>

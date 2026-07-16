@@ -238,6 +238,16 @@ function previousIsoDate(isoDate: string): string {
   return prev.toISOString().slice(0, 10);
 }
 
+/** Shared by formatRelativeAdmissionDisplay and formatAdmissionDisplayParts — classifies an
+ * admission timestamp as today/yesterday (relative to now, in the given zone) or neither. */
+function classifyAdmissionDay(admittedAtIso: string, timezone?: string): "today" | "yesterday" | null {
+  const admissionDay = calendarDateInZone(admittedAtIso, timezone ?? "UTC");
+  const today = calendarDateInZone(new Date().toISOString(), timezone ?? "UTC");
+  if (admissionDay === today) return "today";
+  if (admissionDay === previousIsoDate(today)) return "yesterday";
+  return null;
+}
+
 /**
  * Live-feed variant of formatAdmissionDisplay (Recent scans, Overview
  * "recent check-ins"): "Today HH:MM" / "Yesterday HH:MM" when the admission
@@ -252,11 +262,9 @@ export function formatRelativeAdmissionDisplay(
   eventDateIso: string | null | undefined,
   timezone?: string,
 ): string {
-  const admissionDay = calendarDateInZone(admittedAtIso, timezone ?? "UTC");
-  const today = calendarDateInZone(new Date().toISOString(), timezone ?? "UTC");
-  const yesterday = previousIsoDate(today);
-  if (admissionDay === today) return `Today ${formatEventTime(admittedAtIso, timezone)}`;
-  if (admissionDay === yesterday) return `Yesterday ${formatEventTime(admittedAtIso, timezone)}`;
+  const dayClass = classifyAdmissionDay(admittedAtIso, timezone);
+  if (dayClass === "today") return `Today ${formatEventTime(admittedAtIso, timezone)}`;
+  if (dayClass === "yesterday") return `Yesterday ${formatEventTime(admittedAtIso, timezone)}`;
   return formatAdmissionDisplay(admittedAtIso, eventDateIso, timezone);
 }
 
@@ -275,12 +283,10 @@ export function formatAdmissionDisplayParts(
   admittedAtIso: string,
   timezone?: string,
 ): AdmissionDisplayParts {
-  const admissionDay = calendarDateInZone(admittedAtIso, timezone ?? "UTC");
-  const today = calendarDateInZone(new Date().toISOString(), timezone ?? "UTC");
-  const yesterday = previousIsoDate(today);
+  const dayClass = classifyAdmissionDay(admittedAtIso, timezone);
   const time = formatEventTime(admittedAtIso, timezone);
-  if (admissionDay === today) return { day: "Today", time };
-  if (admissionDay === yesterday) return { day: "Yesterday", time };
+  if (dayClass === "today") return { day: "Today", time };
+  if (dayClass === "yesterday") return { day: "Yesterday", time };
   return { day: formatEventDate(admittedAtIso, timezone), time };
 }
 

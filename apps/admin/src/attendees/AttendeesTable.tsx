@@ -78,26 +78,25 @@ function SortableHeader({
   sortBy,
   sortDir,
   onSortChange,
-}: {
+}: Readonly<{
   column: AttendeeSortBy;
   label: string;
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
   onSortChange: (column: AttendeeSortBy) => void;
-}) {
+}>) {
   const active = sortBy === column;
+  const ariaSortValue = active ? (sortDir === "asc" ? "ascending" : "descending") : "none";
+  const iconClass = active ? (sortDir === "asc" ? "ti-arrow-up" : "ti-arrow-down") : "ti-arrows-sort";
   return (
-    <th aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+    <th aria-sort={ariaSortValue}>
       <button
         type="button"
         className={`attendees-table-v2__sort-btn${active ? " attendees-table-v2__sort-btn--active" : ""}`}
         onClick={() => onSortChange(column)}
       >
         {label}
-        <i
-          className={`ti ${active ? (sortDir === "asc" ? "ti-arrow-up" : "ti-arrow-down") : "ti-arrows-sort"}`}
-          aria-hidden="true"
-        />
+        <i className={`ti ${iconClass}`} aria-hidden="true" />
       </button>
     </th>
   );
@@ -114,14 +113,14 @@ function PassActionButtons({
   passActionBusyIds,
   onRevokePass,
   onRestorePass,
-}: {
+}: Readonly<{
   row: AttendeeRowDto;
   event: ArchivedGuardEvent;
   reasonIdSuffix: string;
   passActionBusyIds: ReadonlySet<string>;
   onRevokePass?: (row: AttendeeRowDto) => void;
   onRestorePass?: (row: AttendeeRowDto) => void;
-}) {
+}>) {
   return (
     <>
       {row.status === "revoked" && onRestorePass ? (
@@ -167,10 +166,10 @@ function PassActionButtons({
 function CheckInCell({
   admittedAt,
   eventTimezone,
-}: {
+}: Readonly<{
   admittedAt: string | null;
   eventTimezone: string;
-}) {
+}>) {
   if (!admittedAt) return <span className="attendee-readonly">—</span>;
   const parts = formatAdmissionDisplayParts(admittedAt, eventTimezone);
   return (
@@ -250,7 +249,7 @@ function AttendeeCard({
   passActionBusyIds,
   onRevokePass,
   onRestorePass,
-}: AttendeeCardProps) {
+}: Readonly<AttendeeCardProps>) {
   return (
     <div className={`attendees-card${selected ? " attendees-card--selected" : ""}`}>
       <div className="attendees-card__top">

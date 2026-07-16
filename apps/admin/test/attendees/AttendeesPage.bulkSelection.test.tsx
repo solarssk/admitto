@@ -180,6 +180,8 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
     await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
 
     fireEvent.click(bulkBar().getByRole("button", { name: "Send tickets" }));
+    const confirmDialog = screen.getByRole("dialog", { name: "Send tickets?" });
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Send tickets" }));
 
     await waitFor(() => {
       // No templateId — the server falls back to the built-in default ("ticket")
@@ -206,6 +208,8 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
     fireEvent.click(bulkBar().getByRole("button", { name: "Send tickets" }));
+    const confirmDialog = screen.getByRole("dialog", { name: "Send tickets?" });
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Send tickets" }));
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("Send failed.", "error");

@@ -495,7 +495,7 @@ describe("multi-template API", () => {
       expect(body.queued).toBe(1);
       expect(body.failed).toBe(0);
 
-      expect(exported.length).toBe(1);
+      expect(exported).toHaveLength(1);
       expect(exported[0]?.message.subject).toBe("Your ticket for Event");
       expect(exported[0]?.message.to).toBe("builtin-send@example.com");
 

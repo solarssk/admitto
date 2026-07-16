@@ -87,24 +87,26 @@ export function buildAttendeeListWhere(
  * on `name`/`company` via `LOWER()`, since Postgres's default collation here is case-sensitive
  * (every capitalized name sorts before every lowercase one, e.g. "asdasd" would land after
  * "Dave Brown" instead of next to "Alice Smith"). Nullable sort keys go last regardless of
- * direction, and every non-name column carries a `LOWER(name)` tiebreak for stable pagination
- * across ties. `tt` is only joined in when sortBy is "ticket_type" (see attendeeTicketTypeJoinSql). */
+ * direction, and every branch carries a `LOWER(name)` then `id` tiebreak — name alone isn't
+ * unique (two attendees can share a normalized name), and without a final unique key, ties can
+ * shuffle across `LIMIT`/`OFFSET` pages. `tt` is only joined in when sortBy is "ticket_type"
+ * (see attendeeTicketTypeJoinSql). */
 function attendeeOrderBySql(sortBy: AttendeeSortBy, sortDir: AttendeeSortDir): Prisma.Sql {
   const dir = sortDir === "desc" ? Prisma.sql`DESC` : Prisma.sql`ASC`;
   switch (sortBy) {
     case "ticket_type":
-      return Prisma.sql`ORDER BY tt.sort_order ${dir} NULLS LAST, LOWER(a.name) ASC`;
+      return Prisma.sql`ORDER BY tt.sort_order ${dir} NULLS LAST, LOWER(a.name) ASC, a.id ASC`;
     case "company":
-      return Prisma.sql`ORDER BY LOWER(a.company) ${dir} NULLS LAST, LOWER(a.name) ASC`;
+      return Prisma.sql`ORDER BY LOWER(a.company) ${dir} NULLS LAST, LOWER(a.name) ASC, a.id ASC`;
     case "admitted_at":
-      return Prisma.sql`ORDER BY a.admitted_at ${dir} NULLS LAST, LOWER(a.name) ASC`;
+      return Prisma.sql`ORDER BY a.admitted_at ${dir} NULLS LAST, LOWER(a.name) ASC, a.id ASC`;
     case "rsvp_status":
-      return Prisma.sql`ORDER BY a.rsvp_status ${dir}, LOWER(a.name) ASC`;
+      return Prisma.sql`ORDER BY a.rsvp_status ${dir}, LOWER(a.name) ASC, a.id ASC`;
     case "status":
-      return Prisma.sql`ORDER BY a.status ${dir}, LOWER(a.name) ASC`;
+      return Prisma.sql`ORDER BY a.status ${dir}, LOWER(a.name) ASC, a.id ASC`;
     case "name":
     default:
-      return Prisma.sql`ORDER BY LOWER(a.name) ${dir}`;
+      return Prisma.sql`ORDER BY LOWER(a.name) ${dir}, a.id ASC`;
   }
 }
 
