@@ -11,7 +11,14 @@ const prisma = new PrismaClient();
 
 const EVENT_SLUG = process.env["EVENT_SLUG"] ?? "test-event-2024";
 const COUNT = Number(process.env["COUNT"] ?? "300");
-const EMAIL_DOMAIN = process.env["EMAIL_DOMAIN"] ?? "loadtest.example.com";
+const EMAIL_DOMAIN = (process.env["EMAIL_DOMAIN"] ?? "loadtest.example.com").trim().toLowerCase();
+
+/** Restricts EMAIL_DOMAIN to example.com or a subdomain of it (AGENTS.md: synthetic @example.com only). */
+function isSyntheticEmailDomain(domain: string): boolean {
+  if (domain.length === 0 || domain.length > 255) return false;
+  if (domain !== "example.com" && !domain.endsWith(".example.com")) return false;
+  return /^[a-z0-9.-]+$/.test(domain);
+}
 
 /** Small deterministic PRNG — same COUNT => same names if re-seeded on empty DB. */
 function mulberry32(seed: number): () => number {
@@ -152,15 +159,26 @@ const DEPARTMENTS = [
   "Field Services",
 ] as const;
 
-const TICKET_TYPES = [
-  { value: "Standard", weight: 58 },
-  { value: "VIP", weight: 18 },
-  { value: "AAA", weight: 10 },
-  { value: "Press", weight: 5 },
-  { value: "Speaker", weight: 4 },
-  { value: "Disabled", weight: 3 },
-  { value: "Staff", weight: 2 },
-] as const;
+/** Approximates a realistic distribution when the event's real catalog uses these common names. */
+const DEFAULT_TICKET_TYPE_WEIGHTS: Readonly<Record<string, number>> = {
+  standard: 58,
+  vip: 18,
+  aaa: 10,
+  press: 5,
+  speaker: 4,
+  disabled: 3,
+  staff: 2,
+};
+const FALLBACK_TICKET_TYPE_WEIGHT = 5;
+
+function buildTicketTypeWeights(
+  keys: readonly string[],
+): ReadonlyArray<{ value: string; weight: number }> {
+  return keys.map((key) => ({
+    value: key,
+    weight: DEFAULT_TICKET_TYPE_WEIGHTS[key.toLowerCase()] ?? FALLBACK_TICKET_TYPE_WEIGHT,
+  }));
+}
 
 /** Bare attendees for list/search/load testing — no check-in or RSVP presets. */
 const BULK_STATUS = "registered" as const;
@@ -197,6 +215,7 @@ function buildAttendeeRow(
   rng: () => number,
   eventId: string,
   index: number,
+  ticketTypeWeights: ReadonlyArray<{ value: string; weight: number }>,
 ): Prisma.AttendeeCreateManyInput {
   const hasCompany = rng() < 0.68;
   const company = hasCompany ? pick(rng, COMPANIES) : null;
@@ -207,7 +226,7 @@ function buildAttendeeRow(
     event_id: eventId,
     email: `loadtest.${String(index).padStart(4, "0")}@${EMAIL_DOMAIN}`,
     name: buildName(rng, index),
-    ticket_type: pickWeighted(rng, TICKET_TYPES),
+    ticket_type: pickWeighted(rng, ticketTypeWeights),
     company,
     department,
     status: BULK_STATUS,
@@ -224,8 +243,11 @@ async function main(): Promise<void> {
   if (process.env["NODE_ENV"] === "production") {
     throw new Error("Refusing to run bulk attendee seed in production");
   }
-  if (!Number.isFinite(COUNT) || COUNT < 1 || COUNT > 5000) {
-    throw new Error("COUNT must be between 1 and 5000");
+  if (!Number.isInteger(COUNT) || COUNT < 1 || COUNT > 5000) {
+    throw new Error("COUNT must be an integer between 1 and 5000");
+  }
+  if (!isSyntheticEmailDomain(EMAIL_DOMAIN)) {
+    throw new Error(`EMAIL_DOMAIN must be "example.com" or a subdomain of it (got "${EMAIL_DOMAIN}")`);
   }
 
   const event = await prisma.event.findUnique({
@@ -236,12 +258,24 @@ async function main(): Promise<void> {
     throw new Error(`Event not found for slug "${EVENT_SLUG}"`);
   }
 
+  const ticketTypes = await prisma.ticketType.findMany({
+    where: { event_id: event.id },
+    select: { key: true },
+    orderBy: { sort_order: "asc" },
+  });
+  if (ticketTypes.length === 0) {
+    throw new Error(
+      `Event "${EVENT_SLUG}" has no ticket types configured — create at least one before running this script`,
+    );
+  }
+  const ticketTypeWeights = buildTicketTypeWeights(ticketTypes.map((t) => t.key));
+
   const before = await prisma.attendee.count({ where: { event_id: event.id } });
   const rng = mulberry32(42_026_0708);
 
   const rows: Prisma.AttendeeCreateManyInput[] = [];
   for (let i = 1; i <= COUNT; i++) {
-    rows.push(buildAttendeeRow(rng, event.id, i));
+    rows.push(buildAttendeeRow(rng, event.id, i, ticketTypeWeights));
   }
 
   const BATCH = 100;
