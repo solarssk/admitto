@@ -654,6 +654,8 @@ function attendeesListQuery(eventId: string, params: AttendeesListParams = {}): 
   if (params.status && params.status !== "all") q.set("status", params.status);
   if (params.ticket_type) q.set("ticket_type", params.ticket_type);
   if (params.rsvp_status) q.set("rsvp_status", params.rsvp_status);
+  if (params.sortBy && params.sortBy !== "name") q.set("sortBy", params.sortBy);
+  if (params.sortDir && params.sortDir !== "asc") q.set("sortDir", params.sortDir);
   const qs = q.toString();
   return `/api/admin/events/${encodeURIComponent(eventId)}/attendees${qs ? `?${qs}` : ""}`;
 }

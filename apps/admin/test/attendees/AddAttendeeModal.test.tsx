@@ -33,10 +33,10 @@ describe("AddAttendeeModal", () => {
     const submit = screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
 
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
     expect(submit.disabled).toBe(true);
 
-    fireEvent.change(screen.getByLabelText("Email"), {
+    fireEvent.change(screen.getByLabelText("Email *"), {
       target: { value: "jan@example.com" },
     });
 
@@ -45,13 +45,33 @@ describe("AddAttendeeModal", () => {
     });
   });
 
+  it("keeps Email out of browser/password-manager email autofill, and moves the Required hint down to the actions row", () => {
+    render(
+      <AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />,
+    );
+
+    const email = screen.getByLabelText("Email *") as HTMLInputElement;
+    expect(email.type).toBe("text");
+    expect(email.inputMode).toBe("email");
+    expect(email.autocomplete).toBe("off");
+    expect(email.getAttribute("data-1p-ignore")).toBe("true");
+    expect(email.getAttribute("data-lpignore")).toBe("true");
+
+    expect(screen.getByText(/enter their email and name/i)).toBeTruthy();
+
+    const requiredHint = screen.getByText("* Required");
+    const addButton = screen.getByRole("button", { name: "Add attendee" });
+    // Same row as the action buttons, not up near the title.
+    expect(requiredHint.parentElement).toBe(addButton.closest(".add-attendee-modal__actions"));
+  });
+
   it("shows operator-safe add failure", async () => {
     mockCreateAttendee.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     render(
       <AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />,
     );
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jan Kowalski" } });
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jan@example.com" } });
+    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
     await waitFor(() => {
       expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
         false,
@@ -75,8 +95,8 @@ describe("AddAttendeeModal", () => {
     const select = await screen.findByLabelText<HTMLSelectElement>("Ticket type");
     await waitFor(() => expect(screen.getByRole("option", { name: "VIP" })).toBeTruthy());
 
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jan Kowalski" } });
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jan@example.com" } });
+    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
     fireEvent.change(select, { target: { value: "vip" } });
     await waitFor(() => {
       expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
@@ -122,8 +142,8 @@ describe("AddAttendeeModal", () => {
 
     await screen.findByText("Failed to load ticket types.");
 
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jan Kowalski" } });
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jan@example.com" } });
+    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
 
     // ticket_type is optional - a broken catalog fetch must not block adding an attendee with no
     // type, even though the dropdown itself has nothing but the blank option to offer right now.
@@ -144,8 +164,8 @@ describe("AddAttendeeModal", () => {
     render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
 
     await screen.findByText("Loading ticket types…");
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jan Kowalski" } });
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jan@example.com" } });
+    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
 
     // Same reasoning as the load-failure case above - loading is a transient state, not a reason
     // to block adding a typeless attendee.
@@ -172,8 +192,8 @@ describe("AddAttendeeModal", () => {
 
     const select = await screen.findByLabelText<HTMLSelectElement>("Ticket type");
     await waitFor(() => expect(screen.getByRole("option", { name: "VIP" })).toBeTruthy());
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jan Kowalski" } });
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "jan@example.com" } });
+    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
     fireEvent.change(select, { target: { value: "vip" } });
     expect(select.value).toBe("vip");
 

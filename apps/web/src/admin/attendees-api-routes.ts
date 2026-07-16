@@ -25,6 +25,7 @@ import {
   writeBulkActionLog,
   type EventItemContent,
   ATTENDEE_EXPORT_RSVP_STATUSES,
+  ATTENDEE_SORT_COLUMNS,
   EXPORT_ROW_CAP,
   countFilteredAttendees,
   findFilteredAttendeesForExport,
@@ -39,6 +40,8 @@ import {
   assertTicketTypeInCatalog,
   UnknownTicketTypeError,
   acquireEventTicketTypesLock,
+  type AttendeeSortBy,
+  type AttendeeSortDir,
 } from "@admitto/tickets";
 import {
   EXPORT_BASE_COLUMNS,
@@ -472,7 +475,7 @@ async function loadAttendeeInEvent(
   return row;
 }
 
-/** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`). */
+/** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`, `sortBy`, `sortDir`). */
 function parseListQuery(c: Context): {
   page: number;
   pageSize: number;
@@ -480,6 +483,8 @@ function parseListQuery(c: Context): {
   status: "all" | "admitted" | "not_admitted";
   ticket_type?: string;
   rsvp_status?: RsvpStatus;
+  sortBy: AttendeeSortBy;
+  sortDir: AttendeeSortDir;
 } {
   const page = positiveIntQuery(c.req.query("page"), 1);
   const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
@@ -494,7 +499,13 @@ function parseListQuery(c: Context): {
   const rsvp_status = RSVP_STATUSES.includes(rsvpRaw as RsvpStatus)
     ? (rsvpRaw as RsvpStatus)
     : undefined;
-  return { page, pageSize, q, status, ticket_type, rsvp_status };
+  const sortByRaw = c.req.query("sortBy");
+  const sortBy = ATTENDEE_SORT_COLUMNS.includes(sortByRaw as AttendeeSortBy)
+    ? (sortByRaw as AttendeeSortBy)
+    : "name";
+  const sortDirRaw = c.req.query("sortDir");
+  const sortDir: AttendeeSortDir = sortDirRaw === "desc" ? "desc" : "asc";
+  return { page, pageSize, q, status, ticket_type, rsvp_status, sortBy, sortDir };
 }
 
 /** Latest email delivery status per attendee id (one entry per id). */
@@ -680,13 +691,13 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const { page, pageSize, q, status, ticket_type, rsvp_status } = parseListQuery(c);
+  const { page, pageSize, q, status, ticket_type, rsvp_status, sortBy, sortDir } = parseListQuery(c);
 
   const filterParams = { q, status, ticket_type, rsvp_status };
 
   const [total, rows] = await Promise.all([
     countFilteredAttendees(db, eventId, filterParams),
-    findFilteredAttendeesForList(db, eventId, filterParams, page, pageSize),
+    findFilteredAttendeesForList(db, eventId, filterParams, page, pageSize, sortBy, sortDir),
   ]);
 
   const lastMail = await lastMailStatusByAttendee(

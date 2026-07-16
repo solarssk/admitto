@@ -439,6 +439,77 @@ describe("multi-template API", () => {
     expect(body.recipientCount).toBe(1);
   });
 
+  it("POST /send with no templateId (and no persisted 'ticket' template anywhere) still dry-runs, via the built-in default template", async () => {
+    // Deliberately does NOT call putTicketTemplate - EVENT_A has no persisted template at
+    // all here (resetEventAState clears it every test), and ORG_A never gets one in seed().
+    await prisma.attendee.create({
+      data: {
+        id: "att-multi-builtin-dry",
+        event_id: EVENT_A,
+        email: "builtin-dry@example.com",
+        name: "Guest",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+      method: "POST",
+      headers: {
+        Cookie: adminCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        filter: { type: "attendee_ids", ids: ["att-multi-builtin-dry"] },
+        dryRun: true,
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { recipientCount: number };
+    expect(body.recipientCount).toBe(1);
+  });
+
+  it("POST /send with no templateId actually sends using the built-in default template content", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-multi-builtin-send",
+        event_id: EVENT_A,
+        email: "builtin-send@example.com",
+        name: "Guest",
+      },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          filter: { type: "attendee_ids", ids: ["att-multi-builtin-send"] },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { queued: number; skipped: number; failed: number };
+      expect(body.queued).toBe(1);
+      expect(body.failed).toBe(0);
+
+      expect(exported.length).toBe(1);
+      expect(exported[0]?.message.subject).toBe("Your ticket for Event");
+      expect(exported[0]?.message.to).toBe("builtin-send@example.com");
+
+      const delivery = await prisma.emailDelivery.findFirstOrThrow({
+        where: { event_id: EVENT_A, attendee_id: "att-multi-builtin-send" },
+      });
+      // Same convention a builtin-sourced send already uses elsewhere: no real template row
+      // backs it, so template_id stays null rather than pointing at something that doesn't exist.
+      expect(delivery.template_id).toBeNull();
+    } finally {
+      rateLimitStore.reset();
+    }
+  });
+
   it("POST /send returns 422 mail_not_configured instead of a raw 500 when no mail transport is set up", async () => {
     await putTicketTemplate(app);
     const ticket = await prisma.mailTemplate.findUniqueOrThrow({

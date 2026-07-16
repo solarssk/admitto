@@ -260,6 +260,30 @@ export function formatRelativeAdmissionDisplay(
   return formatAdmissionDisplay(admittedAtIso, eventDateIso, timezone);
 }
 
+export interface AdmissionDisplayParts {
+  /** "Today" / "Yesterday" / a full date, for a cell that stacks day above time. */
+  day: string;
+  time: string;
+}
+
+/**
+ * Structured two-line variant of {@link formatRelativeAdmissionDisplay}, for cells that
+ * already stack two lines (e.g. the Attendees list, next to the name/email cell) instead
+ * of a single "Today HH:MM" string.
+ */
+export function formatAdmissionDisplayParts(
+  admittedAtIso: string,
+  timezone?: string,
+): AdmissionDisplayParts {
+  const admissionDay = calendarDateInZone(admittedAtIso, timezone ?? "UTC");
+  const today = calendarDateInZone(new Date().toISOString(), timezone ?? "UTC");
+  const yesterday = previousIsoDate(today);
+  const time = formatEventTime(admittedAtIso, timezone);
+  if (admissionDay === today) return { day: "Today", time };
+  if (admissionDay === yesterday) return { day: "Yesterday", time };
+  return { day: formatEventDate(admittedAtIso, timezone), time };
+}
+
 /** Category 2 — admin/system timestamps always in UTC with explicit label. */
 export function formatUtcDateTime(iso: string): string {
   return new Date(iso).toLocaleString(getPreferredLocale(), {

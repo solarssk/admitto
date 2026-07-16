@@ -18,21 +18,21 @@ export type AttendeeListFilterParams = {
   rsvp_status?: AttendeeExportRsvpStatus;
 };
 
-export const EXPORT_ROW_CAP = 50_000;
+/** Whitelisted sortable columns for the attendee list — Ticket sorts by the catalog's curated
+ * `TicketType.sort_order` (the same order the ticket-type dropdowns use), not alphabetically. */
+export const ATTENDEE_SORT_COLUMNS = [
+  "name",
+  "ticket_type",
+  "company",
+  "rsvp_status",
+  "status",
+  "admitted_at",
+] as const;
 
-const ATTENDEE_LIST_SELECT = {
-  id: true,
-  name: true,
-  email: true,
-  company: true,
-  department: true,
-  custom_data: true,
-  ticket_type: true,
-  status: true,
-  admitted_at: true,
-  updated_at: true,
-  rsvp_status: true,
-} as const;
+export type AttendeeSortBy = (typeof ATTENDEE_SORT_COLUMNS)[number];
+export type AttendeeSortDir = "asc" | "desc";
+
+export const EXPORT_ROW_CAP = 50_000;
 
 export const EXPORT_ATTENDEE_SELECT = {
   name: true,
@@ -83,30 +83,65 @@ export function buildAttendeeListWhere(
   };
 }
 
+/** Attendee list ordering, always raw SQL (see findFilteredAttendeesForList) — case-insensitive
+ * on `name`/`company` via `LOWER()`, since Postgres's default collation here is case-sensitive
+ * (every capitalized name sorts before every lowercase one, e.g. "asdasd" would land after
+ * "Dave Brown" instead of next to "Alice Smith"). Nullable sort keys go last regardless of
+ * direction, and every non-name column carries a `LOWER(name)` tiebreak for stable pagination
+ * across ties. `tt` is only joined in when sortBy is "ticket_type" (see attendeeTicketTypeJoinSql). */
+function attendeeOrderBySql(sortBy: AttendeeSortBy, sortDir: AttendeeSortDir): Prisma.Sql {
+  const dir = sortDir === "desc" ? Prisma.sql`DESC` : Prisma.sql`ASC`;
+  switch (sortBy) {
+    case "ticket_type":
+      return Prisma.sql`ORDER BY tt.sort_order ${dir} NULLS LAST, LOWER(a.name) ASC`;
+    case "company":
+      return Prisma.sql`ORDER BY LOWER(a.company) ${dir} NULLS LAST, LOWER(a.name) ASC`;
+    case "admitted_at":
+      return Prisma.sql`ORDER BY a.admitted_at ${dir} NULLS LAST, LOWER(a.name) ASC`;
+    case "rsvp_status":
+      return Prisma.sql`ORDER BY a.rsvp_status ${dir}, LOWER(a.name) ASC`;
+    case "status":
+      return Prisma.sql`ORDER BY a.status ${dir}, LOWER(a.name) ASC`;
+    case "name":
+    default:
+      return Prisma.sql`ORDER BY LOWER(a.name) ${dir}`;
+  }
+}
+
+/** Only join the ticket-type catalog when actually sorting by it — every other sort/search
+ * path has no need for it. */
+function attendeeTicketTypeJoinSql(sortBy: AttendeeSortBy): Prisma.Sql {
+  return sortBy === "ticket_type"
+    ? Prisma.sql`LEFT JOIN "TicketType" tt ON tt.event_id = a.event_id AND tt.key = a.ticket_type`
+    : Prisma.empty;
+}
+
 function attendeeStatusSql(status: AttendeeListFilterParams["status"]) {
-  if (status === "admitted") return Prisma.sql`AND admitted_at IS NOT NULL`;
-  if (status === "not_admitted") return Prisma.sql`AND admitted_at IS NULL`;
+  if (status === "admitted") return Prisma.sql`AND a.admitted_at IS NOT NULL`;
+  if (status === "not_admitted") return Prisma.sql`AND a.admitted_at IS NULL`;
   return Prisma.empty;
 }
 
 function attendeeTicketTypeSql(ticket_type?: string) {
-  return ticket_type ? Prisma.sql`AND ticket_type = ${ticket_type}` : Prisma.empty;
+  return ticket_type ? Prisma.sql`AND a.ticket_type = ${ticket_type}` : Prisma.empty;
 }
 
 function attendeeRsvpStatusSql(rsvp_status?: AttendeeExportRsvpStatus) {
-  return rsvp_status ? Prisma.sql`AND rsvp_status = ${rsvp_status}` : Prisma.empty;
+  return rsvp_status ? Prisma.sql`AND a.rsvp_status = ${rsvp_status}` : Prisma.empty;
 }
 
-/** Search OR (columns + custom_data json), inlined in SQL — no id materialization. */
-function attendeeSearchOrSql(q: string) {
+/** Search OR (columns + custom_data json), inlined in SQL — no id materialization. Empty when
+ * there's no search term (the raw-SQL branch also runs, unsearched, for ticket_type sorting). */
+function attendeeSearchOrSql(q?: string) {
+  if (!q) return Prisma.empty;
   const pattern = `%${q}%`;
   return Prisma.sql`AND (
-    name ILIKE ${pattern}
-    OR email ILIKE ${pattern}
-    OR company ILIKE ${pattern}
-    OR department ILIKE ${pattern}
-    OR (custom_data->>'company') ILIKE ${pattern}
-    OR (custom_data->>'department') ILIKE ${pattern}
+    a.name ILIKE ${pattern}
+    OR a.email ILIKE ${pattern}
+    OR a.company ILIKE ${pattern}
+    OR a.department ILIKE ${pattern}
+    OR (a.custom_data->>'company') ILIKE ${pattern}
+    OR (a.custom_data->>'department') ILIKE ${pattern}
   )`;
 }
 
@@ -120,8 +155,8 @@ export async function countFilteredAttendees(
     return db.attendee.count({ where: buildAttendeeListWhere(eventId, params) });
   }
   const [{ count }] = await db.$queryRaw<[{ count: bigint }]>`
-    SELECT COUNT(*)::bigint AS count FROM "Attendee"
-    WHERE event_id = ${eventId}
+    SELECT COUNT(*)::bigint AS count FROM "Attendee" a
+    WHERE a.event_id = ${eventId}
       ${attendeeStatusSql(status)}
       ${attendeeTicketTypeSql(ticket_type)}
       ${attendeeRsvpStatusSql(rsvp_status)}
@@ -136,27 +171,21 @@ export async function findFilteredAttendeesForList(
   params: AttendeeListFilterParams,
   page: number,
   pageSize: number,
+  sortBy: AttendeeSortBy = "name",
+  sortDir: AttendeeSortDir = "asc",
 ): Promise<AttendeeListSqlRow[]> {
   const { q, status, ticket_type, rsvp_status } = params;
-  if (!q) {
-    return db.attendee.findMany({
-      where: buildAttendeeListWhere(eventId, params),
-      select: ATTENDEE_LIST_SELECT,
-      orderBy: { name: "asc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    });
-  }
   const skip = (page - 1) * pageSize;
   return db.$queryRaw<AttendeeListSqlRow[]>`
-    SELECT id, name, email, company, department, custom_data, ticket_type, status, admitted_at, updated_at, rsvp_status
-    FROM "Attendee"
-    WHERE event_id = ${eventId}
+    SELECT a.id, a.name, a.email, a.company, a.department, a.custom_data, a.ticket_type, a.status, a.admitted_at, a.updated_at, a.rsvp_status
+    FROM "Attendee" a
+    ${attendeeTicketTypeJoinSql(sortBy)}
+    WHERE a.event_id = ${eventId}
       ${attendeeStatusSql(status)}
       ${attendeeTicketTypeSql(ticket_type)}
       ${attendeeRsvpStatusSql(rsvp_status)}
       ${attendeeSearchOrSql(q)}
-    ORDER BY name ASC
+    ${attendeeOrderBySql(sortBy, sortDir)}
     LIMIT ${pageSize} OFFSET ${skip}
   `;
 }
@@ -176,14 +205,14 @@ export async function findFilteredAttendeesForExport(
     });
   }
   return db.$queryRaw<ExportAttendeeSqlRow[]>`
-    SELECT name, email, company, department, custom_data, ticket_type, admitted_at
-    FROM "Attendee"
-    WHERE event_id = ${eventId}
+    SELECT a.name, a.email, a.company, a.department, a.custom_data, a.ticket_type, a.admitted_at
+    FROM "Attendee" a
+    WHERE a.event_id = ${eventId}
       ${attendeeStatusSql(status)}
       ${attendeeTicketTypeSql(ticket_type)}
       ${attendeeRsvpStatusSql(rsvp_status)}
       ${attendeeSearchOrSql(q)}
-    ORDER BY name ASC
+    ORDER BY a.name ASC
     LIMIT ${EXPORT_ROW_CAP}
   `;
 }

@@ -2,14 +2,14 @@ import { Badge } from "@admitto/ui";
 import type { AttendeeStatus } from "@admitto/db/status";
 
 const PASS_STATUS_LABELS: Record<AttendeeStatus, string> = {
-  registered: "Registered",
+  registered: "Active",
   confirmed: "Confirmed",
   cancelled: "Cancelled",
   revoked: "Revoked",
 };
 
 const PASS_STATUS_VARIANTS: Record<AttendeeStatus, "neutral" | "ok" | "error"> = {
-  registered: "neutral",
+  registered: "ok",
   confirmed: "ok",
   cancelled: "neutral",
   revoked: "error",

@@ -11,6 +11,7 @@ import {
   type CustomDataFieldDef,
 } from "./customData.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import "./add-attendee-modal.css";
 
 type AddAttendeeModalProps = {
@@ -181,8 +182,12 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
       <div className="add-attendee-modal__backdrop" role="presentation" onClick={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel">
         <h2 className="add-attendee-modal__title" id={titleId}>
+          <i className="ti ti-user-plus" aria-hidden="true" />
           Add attendee
         </h2>
+        <p className="add-attendee-modal__subtitle">
+          Enter their email and name. Everything else is optional.
+        </p>
         {error && (
           <p className="add-attendee-modal__error" role="alert">
             {error}
@@ -206,28 +211,34 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
         )}
         <div className="add-attendee-modal__fields">
           <Input
-            label="Email"
-            type="email"
+            label="Email *"
+            type="text"
+            inputMode="email"
             required
+            icon={<i className="ti ti-mail" aria-hidden="true" />}
             value={email}
             disabled={submitting}
             onChange={(e) => {
               setEmail(e.target.value);
               setError(null);
             }}
+            {...NO_AUTOFILL_PROPS}
           />
           <Input
-            label="Name"
+            label="Name *"
             required
+            icon={<i className="ti ti-user" aria-hidden="true" />}
             value={name}
             disabled={submitting}
             onChange={(e) => {
               setName(e.target.value);
               setError(null);
             }}
+            {...NO_AUTOFILL_PROPS}
           />
           <Input
             label="Company"
+            icon={<i className="ti ti-building" aria-hidden="true" />}
             value={company}
             disabled={submitting}
             onChange={(e) => {
@@ -237,6 +248,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
           />
           <Input
             label="Department"
+            icon={<i className="ti ti-sitemap" aria-hidden="true" />}
             value={department}
             disabled={submitting}
             onChange={(e) => {
@@ -274,12 +286,15 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: AddAtten
           ))}
         </div>
         <div className="add-attendee-modal__actions">
-          <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
-            Cancel
-          </Button>
-          <Button type="button" variant="primary" disabled={!canSubmit} onClick={() => void handleSubmit()}>
-            {submitting ? "Adding…" : "Add attendee"}
-          </Button>
+          <p className="add-attendee-modal__required-hint">* Required</p>
+          <div className="add-attendee-modal__actions-buttons">
+            <Button type="button" variant="secondary" disabled={submitting} onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button type="button" variant="primary" disabled={!canSubmit} onClick={() => void handleSubmit()}>
+              {submitting ? "Adding…" : "Add attendee"}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

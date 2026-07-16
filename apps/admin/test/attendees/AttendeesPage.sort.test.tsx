@@ -4,9 +4,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import type { AttendeeRowDto } from "../../src/api/types.js";
 
 const fetchEventAttendees = vi.fn();
 const reportApiError = vi.fn();
+
+function makeRow(id: string, name: string): AttendeeRowDto {
+  return {
+    id,
+    name,
+    email: `${id}@example.com`,
+    company: "Acme",
+    department: null,
+    ticket_type: "VIP",
+    status: "registered",
+    check_in_status: "not_admitted",
+    admitted_at: null,
+    updated_at: "2026-06-01T10:00:00.000Z",
+    last_mail_status: "sent",
+    rsvp_status: "confirmed",
+  };
+}
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => ({ reportApiError }),
@@ -24,16 +42,7 @@ vi.mock("../../src/api/client.js", () => ({
   },
   fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  fetchEventTemplates: vi.fn().mockResolvedValue([
-    {
-      id: "tpl-ticket",
-      name: "ticket",
-      label: "Ticket",
-      template_format: "html",
-      subject_template: "",
-      updated_at: "2026-01-01T00:00:00.000Z",
-    },
-  ]),
+  fetchEventTemplates: vi.fn().mockResolvedValue([]),
   fetchEventMailSettings: vi.fn().mockResolvedValue({
     eventId: "evt-1",
     organizationId: "org-1",
@@ -58,7 +67,7 @@ vi.mock("react-router-dom", async (importOriginal) => {
         timezone: "UTC",
         date: "2026-07-01",
         location: null,
-        attendee_count: 0,
+        attendee_count: 60,
         archived_at: null,
       },
     }),
@@ -85,42 +94,57 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("AttendeesPage load errors", () => {
-  it("shows persistent empty state instead of an empty roster on load failure", async () => {
-    const { ApiError } = await import("../../src/api/client.js");
-    fetchEventAttendees.mockRejectedValueOnce(new ApiError(403, "Forbidden"));
+describe("AttendeesPage sortable columns", () => {
+  it("clicking a column header sorts ascending, resets to page 1, and clicking again flips to descending", async () => {
+    fetchEventAttendees.mockResolvedValue({
+      items: [makeRow("att-1", "Jane Doe"), makeRow("att-2", "John Smith")],
+      total: 60,
+      page: 1,
+      pageSize: 25,
+    });
 
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Could not load attendees")).toBeTruthy();
+      expect(screen.getByText("Jane Doe")).toBeTruthy();
     });
-    expect(screen.getByText("You do not have access to this event.")).toBeTruthy();
-    expect(screen.queryByText(/No attendees yet/i)).toBeNull();
-    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
-  });
 
-  it("shows a small inline retryable error next to the Type filter when only the ticket-type catalog fails, without blocking the attendee list (CodeRabbit review)", async () => {
-    const { fetchTicketTypes } = await import("../../src/api/client.js");
-    fetchEventAttendees.mockResolvedValue({
-      items: [],
-      total: 0,
-      page: 1,
-      pageSize: 25,
+    // Move off page 1 first, so we can prove sorting resets it.
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 2 }),
+        expect.anything(),
+      );
     });
-    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
 
-    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /Ticket/ }));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 1, sortBy: "ticket_type", sortDir: "asc" }),
+        expect.anything(),
+      );
+    });
 
-    await waitFor(() => expect(screen.getByText("Couldn't load types.")).toBeTruthy());
-    // The list itself isn't replaced by an error - only the Type filter is affected.
-    expect(screen.queryByText("Could not load attendees")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Ticket/ }));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 1, sortBy: "ticket_type", sortDir: "desc" }),
+        expect.anything(),
+      );
+    });
 
-    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([
-      { id: "tt-1", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 0, created_at: "2026-01-01T00:00:00.000Z" },
-    ]);
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-
-    await waitFor(() => expect(screen.queryByText("Couldn't load types.")).toBeNull());
+    // Switching to a different column starts fresh at ascending, not carrying over "desc".
+    fireEvent.click(screen.getByRole("button", { name: /Company/ }));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ page: 1, sortBy: "company", sortDir: "asc" }),
+        expect.anything(),
+      );
+    });
   });
 });

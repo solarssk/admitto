@@ -27,14 +27,45 @@
 }
 
 .add-attendee-modal__title {
-  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
   font-size: var(--fs-h3);
+}
+
+.add-attendee-modal__title i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary-tint);
+  color: var(--primary);
+  font-size: 1rem;
+}
+
+.add-attendee-modal__subtitle {
+  margin: 0 0 20px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
 }
 
 .add-attendee-modal__fields {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* The global .at-select rule (apps/admin/src/staff.css) caps native <select>
+   elements at max-width: 24rem for filter-style contexts elsewhere in the app.
+   Override it here so Ticket type matches the other fields' full column width
+   (same technique as apps/admin/src/account/account-page.css). */
+.add-attendee-modal__fields .at-select {
+  max-width: none;
 }
 
 .add-attendee-modal__error {
@@ -51,7 +82,19 @@
 
 .add-attendee-modal__actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 20px;
+}
+
+.add-attendee-modal__required-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.add-attendee-modal__actions-buttons {
+  display: flex;
+  gap: 8px;
 }

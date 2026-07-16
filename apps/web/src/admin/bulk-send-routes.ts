@@ -32,7 +32,9 @@ const bulkSendFilterSchema = z.discriminatedUnion("type", [
 
 const bulkSendBodySchema = z
   .object({
-    templateId: z.string().trim().min(1),
+    // Omitted -> the built-in default ("ticket") template, same fallback sendTicketEmails
+    // already gives the simpler bulk-resend endpoint when it doesn't pass a templateId at all.
+    templateId: z.string().trim().min(1).optional(),
     filter: bulkSendFilterSchema,
     dryRun: z.boolean().optional(),
   })
@@ -232,7 +234,9 @@ export async function handleBulkSend(
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const templateError = await assertTemplateForEvent(db, eventId, body.templateId);
+  const templateError = body.templateId
+    ? await assertTemplateForEvent(db, eventId, body.templateId)
+    : null;
   if (templateError) return templateError;
 
   if (body.filter.type === "ticket_type") {
@@ -250,12 +254,18 @@ export async function handleBulkSend(
   let purpose: "initial" | "resend" = "resend";
 
   if (body.filter.type === "no_delivery") {
-    const templateName = await getBulkSendTemplateName(db, body.templateId);
-    const isTicket = templateName === "ticket";
-    noDeliveryScope = isTicket
-      ? { mode: "initial_ticket" }
-      : { mode: "template", templateId: body.templateId };
-    purpose = isTicket ? "initial" : "resend";
+    if (body.templateId) {
+      const templateName = await getBulkSendTemplateName(db, body.templateId);
+      const isTicket = templateName === "ticket";
+      noDeliveryScope = isTicket
+        ? { mode: "initial_ticket" }
+        : { mode: "template", templateId: body.templateId };
+      purpose = isTicket ? "initial" : "resend";
+    } else {
+      // No templateId -> built-in default template, which is always the "ticket" slot.
+      noDeliveryScope = { mode: "initial_ticket" };
+      purpose = "initial";
+    }
   }
 
   const { ids, overLimit } = await resolveBulkSendAttendeeIds(
@@ -382,7 +392,7 @@ async function auditBulkSend(
   c: Context,
   eventId: string,
   meta: {
-    templateId: string;
+    templateId: string | undefined;
     filterType: string;
     queued: number;
     skipped: number;
@@ -395,7 +405,10 @@ async function auditBulkSend(
       action_type: "mail_bulk_resend",
       audit: adminAuditFromContext(c),
       metadata: {
-        template_id: meta.templateId,
+        // null, not omitted - explicit signal this send used the built-in default
+        // template (packages/mail-templates/src/defaultTemplate.ts), same convention
+        // EmailDelivery.template_id already uses for a builtin-sourced send.
+        template_id: meta.templateId ?? null,
         filter: meta.filterType,
         queued: meta.queued,
         skipped: meta.skipped,
