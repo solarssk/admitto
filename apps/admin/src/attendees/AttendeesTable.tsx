@@ -12,7 +12,7 @@ import { formatAdmissionDisplayParts } from "../utils/event-dates.js";
 /** First-load placeholder for the desktop table — same column layout, no data yet. */
 function AttendeesTableSkeleton() {
   return (
-    <div className="attendees-table-wrap" aria-busy="true">
+    <div className="attendees-table-wrap attendees-list-table-wrap" aria-busy="true">
       <span className="sr-only">Loading attendees…</span>
       <table className="table attendees-table-v2" aria-hidden="true">
         <thead>
@@ -584,7 +584,9 @@ function AttendeesListContent({
 
   if (items.length === 0) {
     return (
-      <div className={`attendees-table-wrap${loading ? " attendees-table-wrap--loading" : ""}`}>
+      <div
+        className={`attendees-table-wrap attendees-list-table-wrap${loading ? " attendees-table-wrap--loading" : ""}`}
+      >
         {isUnfilteredEmpty ? (
           <EmptyState
             icon={<i className="ti ti-users" aria-hidden="true" />}
@@ -631,7 +633,7 @@ function AttendeesListContent({
 
   return (
     <div
-      className={`attendees-table-wrap${loading ? " attendees-table-wrap--loading" : ""}`}
+      className={`attendees-table-wrap attendees-list-table-wrap${loading ? " attendees-table-wrap--loading" : ""}`}
       aria-busy={loading}
     >
       <table className="table attendees-table-v2">

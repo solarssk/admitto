@@ -1,10 +1,17 @@
+/* Shared by the Attendees list, Requirements' Event items table, and its Custom attendee
+   fields table - keep this to layout that's actually generic across all three. */
 .attendees-table-wrap {
   overflow-x: auto;
-  /* A filter/search narrowing the result set swaps in fewer rows the instant the new page
-     loads (stale rows stay on screen, dimmed, until then - see .attendees-table-wrap--loading)
-     - without a floor, that swap can visibly snap the whole table (and everything below it:
-     footer, pager) upward. Sized for ~6 data rows + header at this table's own row height. */
-  min-height: 304px;
+}
+
+/* Attendees-list-only: a filter/search narrowing the result set swaps in fewer rows the
+   instant the new page loads (stale rows stay on screen, dimmed, until then - see
+   .attendees-table-wrap--loading) - without a floor, that swap can visibly snap the whole
+   table (and everything below it: footer, pager) upward. Kept modest (~3 rows + header) so
+   it softens the worst-case collapse without padding out every ordinary filtered result with
+   visible dead space. */
+.attendees-list-table-wrap {
+  min-height: 200px;
 }
 
 /* Re-fetching with existing rows still on screen (filter/page change) — dim them
