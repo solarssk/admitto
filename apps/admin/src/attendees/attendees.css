@@ -940,6 +940,9 @@
    from ui_kits/admin/index.html, not eyeballed: 8px icon radius not a circle, 500-weight
    body-sized label, 600-weight xs-sized state, muted/disabled text tokens for "not yet"). */
 .attendee-items-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
 }
