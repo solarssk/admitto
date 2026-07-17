@@ -57,10 +57,10 @@ function fieldChangeLabel(key: string, customFieldLabels: Map<string, string>): 
 }
 
 /** Reads `metadata.field_changes[key]` for `attendee_edited` rows, if present - the backend only
- * populates this for a fixed safe subset (email/company/department/ticket_type, see
- * LOGGED_VALUE_FIELDS in attendees-api-routes.ts); `name` and every custom_data field are
- * deliberately never in there (PII-safe by construction, #364), so this returns null for those
- * and the caller falls back to showing just the field name. */
+ * populates this for a fixed subset (email/company/department/ticket_type, see
+ * LOGGED_VALUE_FIELDS in attendees-api-routes.ts and DATA-PROTECTION.md's "Admin audit trail"
+ * section); `name` and every custom_data field are deliberately never in there (#364), so this
+ * returns null for those and the caller falls back to showing just the field name. */
 function fieldValueChange(
   fieldChanges: unknown,
   key: string,
@@ -74,7 +74,15 @@ function fieldValueChange(
   return { from, to };
 }
 
-const ITEM_STATE_ACTIONS = new Set(["item_issued", "item_returned", "item_revoked"]);
+// item_state_changed isn't produced by any current writer (getTimelineIcon/getTimelineLabel
+// already treat it as a synonym of item_issued defensively) - included here too so the detail
+// line resolves the same way if it's ever emitted, rather than only the headline being right.
+const ITEM_STATE_ACTIONS = new Set([
+  "item_issued",
+  "item_state_changed",
+  "item_returned",
+  "item_revoked",
+]);
 
 export type TimelineTone = "ok" | "warn" | "error" | "neutral";
 
@@ -212,10 +220,12 @@ function rsvpChangeDetail(
 }
 
 /** email/company/department/ticket_type are the one approved exception to #364's field-names-only
- * rule (PO review, round 2) - fixed business/contact fields, never free text a guest could have
- * put anything sensitive into - and show their real before/after value when the backend captured
- * one (see fieldValueChange, LOGGED_VALUE_FIELDS in attendees-api-routes.ts). `name` and every
- * custom_data field never get one, so this falls back to the field name alone for those. */
+ * rule (PO review, round 2) - a deliberate accountability record covered by the same erasure as
+ * the rest of the attendee's data, see DATA-PROTECTION.md's "Admin audit trail" section - and
+ * show their real before/after value when the backend captured one (see fieldValueChange,
+ * LOGGED_VALUE_FIELDS in attendees-api-routes.ts). `name` and every custom_data field never get
+ * one (can hold GDPR Art. 9 special-category data a guest typed in - dietary, accessibility,
+ * emergency contact), so this falls back to the field name alone for those. */
 function attendeeEditedDetail(
   entry: AttendeeActionLogEntryDto,
   meta: Record<string, unknown>,

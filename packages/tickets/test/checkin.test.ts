@@ -232,6 +232,7 @@ describe("checkInScan — PREVIEW audit", () => {
         operator: "op-preview",
         deviceId: "tablet-preview",
         sessionId: "sess-preview",
+        timezone: "Europe/Warsaw",
       },
       prisma,
     );
@@ -244,6 +245,10 @@ describe("checkInScan — PREVIEW audit", () => {
     expect(log?.actor_user_id).toBe("op-preview");
     expect(log?.device_id).toBe("tablet-preview");
     expect(log?.session_id).toBe("sess-preview");
+    // bot review: CheckInScanParams.timezone must reach the AttendeeActionLog row the same way
+    // operator/deviceId/sessionId already do, not get dropped when auditFromParams rebuilds the
+    // OpsAuditContext from CheckInScanParams.
+    expect(log?.client_timezone).toBe("Europe/Warsaw");
   });
 });
 

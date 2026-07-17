@@ -103,7 +103,15 @@ export async function handleCheckinScan(c: Context, db: PrismaClient): Promise<R
   try {
     const audit = await opsAuditFromBody(c, db, deviceId);
     const result = await checkInScan(
-      { scanned, eventId, operator: audit.operator, deviceId: audit.deviceId, sessionId: audit.sessionId, ip: audit.ip },
+      {
+        scanned,
+        eventId,
+        operator: audit.operator,
+        deviceId: audit.deviceId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        timezone: audit.timezone,
+      },
       db,
     );
     if (result.status === "VALID") {

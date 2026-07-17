@@ -878,12 +878,14 @@ export async function handleGetEventAttendee(c: Context, db: PrismaClient): Prom
 
 type PatchInput = z.infer<typeof patchAttendeeFieldsSchema>;
 
-/** Fields whose before/after value is safe to log verbatim in AttendeeActionLog.metadata: fixed
- * business/contact fields, never free text a guest or admin could have put anything sensitive
- * into. Deliberately excludes `name` (kept name-only, no value, matching the existing PII-cautious
- * default) and every custom_data field (can hold accessibility needs, emergency contacts, etc. -
- * #364's whole point). PO review, round 2: extends #364's "field names only" rule rather than
- * reverting it - only these four get real values now. */
+/** Fields whose before/after value is recorded verbatim in AttendeeActionLog.metadata -
+ * see DATA-PROTECTION.md's "Admin audit trail" section for the full reasoning: this is a
+ * deliberate accountability record (GDPR Art. 5(2)), not a routine log line, admin-only, and
+ * cascade-deletes with the attendee (Prisma `onDelete: Cascade`) so erasure already covers it.
+ * Deliberately excludes `name` and every custom_data field (dietary, accessibility, emergency
+ * contact, and other free-text attributes an event might collect) - those can hold
+ * special-category data (GDPR Art. 9) a guest typed into a form field, which this fixed list
+ * is not meant to capture; an edit to any of those still shows only the field name (#364). */
 const LOGGED_VALUE_FIELDS = new Set(["email", "company", "department", "ticket_type"]);
 
 /** Compute Prisma update payload, changed field names, and before/after values (for

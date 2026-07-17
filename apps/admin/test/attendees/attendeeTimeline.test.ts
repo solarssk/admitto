@@ -19,6 +19,7 @@ describe("check_in_revoked timeline mapping (#449 review)", () => {
         actor_display: "admin",
         metadata: null,
         created_at: "2026-06-28T13:00:00.000Z",
+        client_timezone: null,
       }),
     ).toBe("Check-in revoked");
   });
@@ -34,6 +35,7 @@ describe("item_revoked timeline mapping (bot review, #457)", () => {
         actor_display: "admin",
         metadata: null,
         created_at: "2026-06-28T13:00:00.000Z",
+        client_timezone: null,
       }),
     ).toBe("Item reset to pending");
   });
@@ -54,6 +56,7 @@ describe("item_issued/item_state_changed timeline label (PO review)", () => {
           actor_display: "admin",
           metadata: null,
           created_at: "2026-06-28T13:00:00.000Z",
+          client_timezone: null,
         }),
       ).toBe("Item issued");
     }
@@ -69,6 +72,7 @@ describe("getTimelineActor (PO review — actor moved next to the timestamp)", (
         actor_display: "operator 1",
         metadata: null,
         created_at: "2026-06-28T13:00:00.000Z",
+        client_timezone: null,
       }),
     ).toBe("operator 1");
   });
@@ -81,6 +85,7 @@ describe("getTimelineActor (PO review — actor moved next to the timestamp)", (
         actor_display: null,
         metadata: null,
         created_at: "2026-06-28T13:00:00.000Z",
+        client_timezone: null,
       }),
     ).toBe("System");
   });
@@ -95,6 +100,7 @@ describe("getTimelineDetail — pre-existing rsvp_status_changed rendering", () 
         actor_display: "Admin",
         metadata: { from: "none", to: "confirmed" },
         created_at: "2026-06-28T13:00:00.000Z",
+        client_timezone: null,
       }),
     ).toBe("Registered → Confirmed");
   });
@@ -108,6 +114,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
       actor_display: "operator 1",
       metadata: null,
       created_at: "2026-06-28T13:00:00.000Z",
+      client_timezone: null,
       ...overrides,
     };
   }
@@ -302,6 +309,7 @@ describe("getTimelineTone (PO review — colored icons to distinguish outcomes)"
       actor_display: "operator 1",
       metadata,
       created_at: "2026-06-28T13:00:00.000Z",
+      client_timezone: null,
     };
   }
 
