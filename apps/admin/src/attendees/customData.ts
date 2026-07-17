@@ -73,23 +73,26 @@ export function validateCustomFieldsForm(
   return null;
 }
 
-/** custom_data keys not covered by any configured attribute field - e.g. a CSV import column
- * with no matching event item, or a field removed from the event's requirements after import
- * (#365). company/department are legacy columns the backend mirrors into custom_data on every
- * write (resolveCompanyDepartment) - excluded here since they already render as their own
- * Profile rows. */
-export function leftoverCustomDataEntries(
+/** Every custom_data entry, labeled - a configured attribute field gets its registry label,
+ * anything else (a CSV import column with no matching event item, or a field removed from the
+ * event's requirements after import) is humanized from its raw key. Mirrors the design mockup's
+ * "Additional information" card, which shows all custom fields together rather than splitting
+ * configured ones into the Profile card (#365). company/department are legacy columns the backend
+ * mirrors into custom_data on every write (resolveCompanyDepartment) - excluded here since they
+ * already render as their own Profile rows. */
+export function allCustomDataEntries(
   customData: unknown,
   attributeFields: CustomDataFieldDef[],
-): Array<[string, string]> {
+  humanizeKey: (key: string) => string,
+): Array<[string, string, string]> {
   if (!customData || typeof customData !== "object" || Array.isArray(customData)) return [];
-  const known = new Set(attributeFields.map((f) => f.source_field));
-  known.add("company");
-  known.add("department");
-  return Object.entries(customData as Record<string, unknown>).filter(
-    (pair): pair is [string, string] =>
-      !known.has(pair[0]) && typeof pair[1] === "string" && pair[1].trim() !== "",
-  );
+  const labels = new Map(attributeFields.map((f) => [f.source_field, f.label]));
+  return Object.entries(customData as Record<string, unknown>)
+    .filter(
+      (pair): pair is [string, string] =>
+        pair[0] !== "company" && pair[0] !== "department" && typeof pair[1] === "string" && pair[1].trim() !== "",
+    )
+    .map(([key, value]) => [key, labels.get(key) ?? humanizeKey(key), value]);
 }
 
 export { fieldLabel as customDataFieldLabel };

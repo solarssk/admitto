@@ -104,8 +104,8 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
     const menu = openRevokeMenu();
-    expect(within(menu).queryByRole("menuitem", { name: "Revoke check-in" })).toBeNull();
-    expect(within(menu).getByRole("menuitem", { name: "Revoke pass" })).toBeTruthy();
+    expect(within(menu).queryByRole("menuitem", { name: "Check-in" })).toBeNull();
+    expect(within(menu).getByRole("menuitem", { name: "Pass" })).toBeTruthy();
   });
 
   it("Revoke pass menu item opens the pass confirm dialog and closes the menu", async () => {
@@ -114,7 +114,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
     const menu = openRevokeMenu();
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Revoke pass" }));
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Pass" }));
 
     expect(screen.queryByRole("menu")).toBeNull();
     const dialog = screen.getByRole("dialog");
@@ -149,7 +149,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     mockLoad(baseDetail({ check_in_status: "not_admitted", admitted_at: null }));
 
     const menu = openRevokeMenu();
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Revoke check-in" }));
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Check-in" }));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Revoke check-in?")).toBeTruthy();
 
@@ -162,7 +162,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     });
     // Reloaded detail no longer offers the action.
     const reopenedMenu = openRevokeMenu();
-    expect(within(reopenedMenu).queryByRole("menuitem", { name: "Revoke check-in" })).toBeNull();
+    expect(within(reopenedMenu).queryByRole("menuitem", { name: "Check-in" })).toBeNull();
   });
 
   it("shows an inline error on failure and keeps the action available", async () => {
@@ -173,7 +173,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
     revokeAttendeeCheckIn.mockRejectedValue(new Error("boom"));
 
     const menu = openRevokeMenu();
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Revoke check-in" }));
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Check-in" }));
     const dialog = screen.getByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke check-in" }));
 

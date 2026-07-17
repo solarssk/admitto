@@ -170,7 +170,8 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: "Resend ticket" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Resend ticket" }));
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog.textContent).toMatch(/Resend ticket/);
@@ -183,7 +184,8 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: "Resend ticket" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Resend ticket" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Send" }));
 
@@ -278,18 +280,25 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
   });
 
+  it("Back with no unsaved changes navigates away immediately, without a confirm dialog", async () => {
+    mockLoad(baseDetail());
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Anna" })).toBeNull());
+  });
+
   it("shows the stale-write warning and Reload control when a save hits a 409 stale_write", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockLoad(baseDetail());
     updateAttendee.mockRejectedValueOnce(new ApiError(409, "stale", "stale_write"));
-    // Auto-triggered reload (fired from inside the stale-write catch handler) - left pending so
-    // we can observe the intermediate staleWrite=true render before it resolves.
-    let resolveReload!: () => void;
-    loadAttendeeDetailData.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveReload = () => resolve({ detail: baseDetail(), attributeFields, itemsWarning: null });
-      }),
-    );
+    // Auto-triggered reload (fired from inside the stale-write catch handler) fails too, so
+    // `reloading` settles back to false while `staleWrite` stays true - the only state in which
+    // the Reload button is actually enabled and clickable, not just rendered-but-disabled.
+    loadAttendeeDetailData.mockRejectedValueOnce(new Error("network hiccup"));
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
@@ -300,8 +309,19 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     expect(
       await screen.findByText("Someone else updated this attendee — reload and reapply your edits."),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Reload/ })).toBeTruthy();
-    resolveReload();
+    const reloadButton = (await screen.findByRole("button", { name: "Reload" })) as HTMLButtonElement;
+    expect(reloadButton.disabled).toBe(false);
+
+    loadAttendeeDetailData.mockResolvedValueOnce({ detail: baseDetail(), attributeFields, itemsWarning: null });
+    fireEvent.click(reloadButton);
+
+    // Matches only the Profile-modal warning banner, not the (differently-worded, longer-lived)
+    // toast notification triggered by the same stale-write catch handler.
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Someone else updated this attendee — reload and reapply your edits."),
+      ).toBeNull(),
+    );
   });
 
   it("clicking Save with no actual changes exits edit mode without calling the API", async () => {
@@ -326,7 +346,9 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Someone Else" } });
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
 
-    const dialog = await screen.findByRole("dialog");
+    // Two dialogs are open at once here - the Edit modal underneath, and this confirm on top -
+    // so the query must be scoped by accessible name, not just role.
+    const dialog = await screen.findByRole("dialog", { name: "Discard unsaved changes?" });
     expect(dialog.textContent).toMatch(/Leave without saving\?/);
     fireEvent.click(within(dialog).getByRole("button", { name: "Leave" }));
 
@@ -344,7 +366,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Someone Else" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", { name: "Discard unsaved changes?" });
     expect(dialog.textContent).toMatch(/Discard unsaved changes\?/);
     fireEvent.click(within(dialog).getByRole("button", { name: "Discard" }));
 
@@ -408,7 +430,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", { name: "Discard unsaved changes?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
 
@@ -470,8 +492,20 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     expect(screen.getByText("L")).toBeTruthy();
   });
 
-  it("hides the Additional information card when every custom_data key is already a configured field", async () => {
+  it("shows a configured attribute field in Additional information, not inline in Profile", async () => {
+    // Matches the design mockup: the Profile card stays to its fixed core fields; every
+    // custom_data entry - configured or not - lives in Additional information instead.
     mockLoad(baseDetail({ custom_data: { dietary: "vegan" } }));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    expect(screen.getByText("Additional information")).toBeTruthy();
+    expect(screen.getByText("Dietary")).toBeTruthy();
+    expect(screen.getByText("vegan")).toBeTruthy();
+  });
+
+  it("hides the Additional information card when custom_data is empty", async () => {
+    mockLoad(baseDetail({ custom_data: {} }));
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 

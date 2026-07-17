@@ -109,7 +109,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Revoke pass" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pass" }));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Revoke pass?")).toBeTruthy();
 

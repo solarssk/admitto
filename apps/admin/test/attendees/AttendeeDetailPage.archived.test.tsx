@@ -104,12 +104,12 @@ function expectArchivedLock(control: HTMLElement) {
 }
 
 describe("AttendeeDetailPage archived lockdown", () => {
-  it("disables resend ticket, revoke menu, RSVP select, and the profile form for a registered attendee", async () => {
+  it("disables More actions (resend ticket), revoke menu, RSVP select, and Edit for a registered attendee", async () => {
     mockLoad(baseDetail());
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
-    expectArchivedLock(screen.getByRole("button", { name: "Resend ticket" }));
+    expectArchivedLock(screen.getByRole("button", { name: "More actions" }));
     expectArchivedLock(screen.getByRole("button", { name: "Revoke" }));
     expectArchivedLock(screen.getByRole("combobox", { name: "RSVP status" }));
     // Edit mode can't be entered at all on an archived event — the read-only

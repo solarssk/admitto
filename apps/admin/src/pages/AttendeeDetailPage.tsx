@@ -42,8 +42,7 @@ import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
 import {
-  customDataFieldLabel,
-  leftoverCustomDataEntries,
+  allCustomDataEntries,
   readCustomDataField,
   validateCustomFieldsForm,
 } from "../attendees/customData.js";
@@ -102,7 +101,7 @@ function RevokeActionMenu({
               onRevokePass();
             }}
           >
-            Revoke pass
+            <i className="ti ti-wallet" aria-hidden="true" /> Pass
           </button>
           {canRevokeCheckIn && (
             <button
@@ -114,9 +113,56 @@ function RevokeActionMenu({
                 onRevokeCheckIn();
               }}
             >
-              Revoke check-in
+              <i className="ti ti-qrcode" aria-hidden="true" /> Check-in
             </button>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Secondary actions that don't need their own header button - today just Resend ticket, matching
+ * the design mockup's "More actions" menu (which also groups actions this page doesn't have yet,
+ * e.g. attendee removal, tracked separately by #356). */
+function MoreActionsMenu({
+  onResend,
+  disabled = false,
+  "aria-describedby": ariaDescribedBy,
+}: {
+  onResend: () => void;
+  disabled?: boolean;
+  "aria-describedby"?: string;
+}) {
+  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+
+  return (
+    <div className="more-actions-menu" ref={rootRef}>
+      <Button
+        ref={triggerRef}
+        type="button"
+        variant="secondary"
+        icon={<i className="ti ti-dots-vertical" aria-hidden="true" />}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="More actions"
+        disabled={disabled}
+        aria-describedby={ariaDescribedBy}
+        onClick={() => setOpen((o) => !o)}
+      />
+      {open && (
+        <div className="more-actions-menu__panel" role="menu" ref={panelRef}>
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item"
+            onClick={() => {
+              setOpen(false);
+              onResend();
+            }}
+          >
+            <i className="ti ti-send" aria-hidden="true" /> Resend ticket
+          </button>
         </div>
       )}
     </div>
@@ -133,6 +179,8 @@ export function AttendeeDetailPage() {
   const { addToast } = useToast();
   const resendTitleId = useId();
   const resendPanelRef = useRef<HTMLFormElement>(null);
+  const editTitleId = useId();
+  const editPanelRef = useRef<HTMLFormElement>(null);
 
   const [tab, setTab] = useState<TabId>("overview");
   const [detail, setDetail] = useState<AttendeeDetailDto | null>(null);
@@ -271,6 +319,7 @@ export function AttendeeDetailPage() {
   }
 
   useModalFocusTrap(resendPanelRef, resendOpen, () => setResendOpen(false));
+  useModalFocusTrap(editPanelRef, editMode, handleCancelEdit);
 
   async function handleReload() {
     if (!eventId || !attendeeId) return;
@@ -548,7 +597,7 @@ export function AttendeeDetailPage() {
       ? form.ticket_type
       : null;
   const attendeeSource = deriveAttendeeSource(detail.action_log);
-  const leftoverCustomData = leftoverCustomDataEntries(detail.custom_data, attributeFields);
+  const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey);
 
   return (
     <div className="attendee-detail-page">
@@ -558,15 +607,16 @@ export function AttendeeDetailPage() {
         actions={
           <>
             {isRevoked && <Badge variant="error">Revoked</Badge>}
-            <ArchivedGuard event={event} reasonId="resend-ticket-reason">
+            <ArchivedGuard event={event} reasonId="edit-profile-reason">
               {(guard) => (
                 <Button
+                  type="button"
                   variant="secondary"
-                  icon={<i className="ti ti-refresh" aria-hidden="true" />}
+                  icon={<i className="ti ti-pencil" aria-hidden="true" />}
                   {...guard}
-                  onClick={() => setResendOpen(true)}
+                  onClick={() => setEditMode(true)}
                 >
-                  Resend ticket
+                  Edit
                 </Button>
               )}
             </ArchivedGuard>
@@ -607,6 +657,9 @@ export function AttendeeDetailPage() {
                 )}
               </ArchivedGuard>
             )}
+            <ArchivedGuard event={event} reasonId="more-actions-reason">
+              {(guard) => <MoreActionsMenu onResend={() => setResendOpen(true)} {...guard} />}
+            </ArchivedGuard>
             <Button variant="secondary" onClick={handleBack}>
               Back
             </Button>
@@ -645,165 +698,47 @@ export function AttendeeDetailPage() {
       {tab === "overview" && (
         <div className="attendee-detail-grid">
           <div className="attendee-detail-main">
-            <Card
-              title="Profile"
-              className="attendee-detail-profile"
-              actions={
-                !editMode ? (
-                  <ArchivedGuard event={event} reasonId="edit-profile-reason">
-                    {(guard) => (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        icon={<i className="ti ti-pencil" aria-hidden="true" />}
-                        {...guard}
-                        onClick={() => setEditMode(true)}
-                      >
-                        Edit
-                      </Button>
-                    )}
-                  </ArchivedGuard>
-                ) : undefined
-              }
-            >
-              {!editMode ? (
-                <div className="attendee-detail-readonly">
-                  <div className="attendee-detail-row">
-                    <span>Email</span>
-                    <span className="mono">{detail.email}</span>
-                  </div>
-                  <div className="attendee-detail-row">
-                    <span>Name</span>
-                    <span>{detail.name}</span>
-                  </div>
-                  <div className="attendee-detail-row">
-                    <span>Company</span>
-                    <span>{detail.company ?? "—"}</span>
-                  </div>
-                  <div className="attendee-detail-row">
-                    <span>Department</span>
-                    <span>{detail.department ?? "—"}</span>
-                  </div>
-                  <div className="attendee-detail-row">
-                    <span>Ticket type</span>
-                    <TicketTypeBadge ticketType={detail.ticket_type} catalog={ticketTypes} />
-                  </div>
-                  {attributeFields.map((field) => (
-                    <div className="attendee-detail-row" key={field.source_field}>
-                      <span>{customDataFieldLabel(field)}</span>
-                      <span>{readCustomDataField(detail.custom_data, field.source_field) ?? "—"}</span>
-                    </div>
-                  ))}
-                  <div className="attendee-detail-row">
-                    <span>Added on</span>
-                    <span className="mono">{formatUtcDateTime(detail.created_at)}</span>
-                  </div>
-                  {attendeeSource && (
-                    <div className="attendee-detail-row">
-                      <span>Added via</span>
-                      <span>{attendeeSource}</span>
-                    </div>
-                  )}
+            <Card title="Profile" className="attendee-detail-profile">
+              <div className="attendee-detail-readonly">
+                <div className="attendee-detail-row">
+                  <span>Email</span>
+                  <span className="mono">{detail.email}</span>
                 </div>
-              ) : (
-                <form className="attendee-form" onSubmit={handleSave}>
-                  {staleWrite && (
-                    <div className="attendee-form__warn">
-                      <p>Someone else updated this attendee — reload and reapply your edits.</p>
-                      <Button type="button" variant="secondary" size="sm" onClick={() => void handleReload()} disabled={reloading}>
-                        {reloading ? "Reloading…" : "Reload"}
-                      </Button>
-                    </div>
-                  )}
-                  <fieldset
-                    className={["attendee-form__fieldset", isEventArchived(event) && "at-tooltip"]
-                      .filter(Boolean)
-                      .join(" ")}
-                    data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
-                    disabled={isEventArchived(event)}
-                  >
-                    <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-                    {emailChanged && (
-                      <p className="attendee-form__warn">
-                        This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
-                      </p>
-                    )}
-                    {emailConflict && (
-                      <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
-                    )}
-                    <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-                    <Input label="Company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
-                    <Input label="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
-                    <Select
-                      label="Ticket type"
-                      value={form.ticket_type}
-                      onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
-                    >
-                      <option value="">—</option>
-                      {orphanedTicketType && (
-                        <option
-                          value={orphanedTicketType}
-                          title="Not in this event's ticket-type catalog — it may have been deleted after being assigned. Picking another option here replaces it."
-                        >
-                          {orphanedTicketType} (not in catalog)
-                        </option>
-                      )}
-                      {ticketTypes.map((type) => (
-                        <option key={type.key} value={type.key}>
-                          {type.label}
-                        </option>
-                      ))}
-                    </Select>
-                    {ticketTypesError && (
-                      <p className="attendee-form__error">
-                        {ticketTypesError}{" "}
-                        <button type="button" className="link-btn" onClick={loadTicketTypes}>
-                          Retry
-                        </button>
-                      </p>
-                    )}
-                    {attributeFields.map((field) => (
-                      <CustomDataFieldInput
-                        key={field.source_field}
-                        field={field}
-                        value={form.customFields[field.source_field] ?? ""}
-                        disabled={saving || reloading || staleWrite}
-                        onChange={(next) =>
-                          setForm({
-                            ...form,
-                            customFields: { ...form.customFields, [field.source_field]: next },
-                          })
-                        }
-                      />
-                    ))}
-                  </fieldset>
-                  <div className="attendee-form__actions">
-                    <Button type="button" variant="secondary" onClick={handleCancelEdit} disabled={saving}>
-                      Cancel
-                    </Button>
-                    <ArchivedGuard
-                      event={event}
-                      reasonId="save-changes-reason"
-                      disabled={saving || reloading || staleWrite || rsvpSaving}
-                    >
-                      {(guard) => (
-                        <Button type="submit" variant="primary" {...guard}>
-                          {saving ? "Saving…" : "Save changes"}
-                        </Button>
-                      )}
-                    </ArchivedGuard>
+                <div className="attendee-detail-row">
+                  <span>Name</span>
+                  <span>{detail.name}</span>
+                </div>
+                <div className="attendee-detail-row">
+                  <span>Company</span>
+                  <span>{detail.company ?? "—"}</span>
+                </div>
+                <div className="attendee-detail-row">
+                  <span>Department</span>
+                  <span>{detail.department ?? "—"}</span>
+                </div>
+                <div className="attendee-detail-row">
+                  <span>Ticket type</span>
+                  <TicketTypeBadge ticketType={detail.ticket_type} catalog={ticketTypes} />
+                </div>
+                <div className="attendee-detail-row">
+                  <span>Added on</span>
+                  <span className="mono">{formatUtcDateTime(detail.created_at)}</span>
+                </div>
+                {attendeeSource && (
+                  <div className="attendee-detail-row">
+                    <span>Added via</span>
+                    <span>{attendeeSource}</span>
                   </div>
-                </form>
-              )}
+                )}
+              </div>
             </Card>
 
-            {leftoverCustomData.length > 0 && (
+            {customDataEntries.length > 0 && (
               <Card title="Additional information">
                 <div className="attendee-detail-readonly">
-                  {leftoverCustomData.map(([key, value]) => (
+                  {customDataEntries.map(([key, label, value]) => (
                     <div className="attendee-detail-row" key={key}>
-                      <span>{humanizeFieldKey(key)}</span>
+                      <span>{label}</span>
                       <span>{value}</span>
                     </div>
                   ))}
@@ -933,6 +868,103 @@ export function AttendeeDetailPage() {
             </ul>
           )}
         </Card>
+      )}
+
+      {editMode && (
+        <div className="attendee-edit-modal" role="dialog" aria-modal="true" aria-labelledby={editTitleId}>
+          <div className="attendee-edit-modal__backdrop" role="presentation" onClick={handleCancelEdit} />
+          <form ref={editPanelRef} className="attendee-edit-modal__panel" onSubmit={handleSave}>
+            <h2 id={editTitleId} className="attendee-edit-modal__title">
+              <i className="ti ti-pencil" aria-hidden="true" /> Edit attendee
+            </h2>
+            {staleWrite && (
+              <div className="attendee-form__warn">
+                <p>Someone else updated this attendee — reload and reapply your edits.</p>
+                <Button type="button" variant="secondary" size="sm" onClick={() => void handleReload()} disabled={reloading}>
+                  {reloading ? "Reloading…" : "Reload"}
+                </Button>
+              </div>
+            )}
+            <fieldset
+              className={["attendee-form__fieldset", isEventArchived(event) && "at-tooltip"]
+                .filter(Boolean)
+                .join(" ")}
+              data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+              disabled={isEventArchived(event)}
+            >
+              <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+              {emailChanged && (
+                <p className="attendee-form__warn">
+                  This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
+                </p>
+              )}
+              {emailConflict && (
+                <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
+              )}
+              <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+              <Input label="Company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
+              <Input label="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+              <Select
+                label="Ticket type"
+                value={form.ticket_type}
+                onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
+              >
+                <option value="">—</option>
+                {orphanedTicketType && (
+                  <option
+                    value={orphanedTicketType}
+                    title="Not in this event's ticket-type catalog — it may have been deleted after being assigned. Picking another option here replaces it."
+                  >
+                    {orphanedTicketType} (not in catalog)
+                  </option>
+                )}
+                {ticketTypes.map((type) => (
+                  <option key={type.key} value={type.key}>
+                    {type.label}
+                  </option>
+                ))}
+              </Select>
+              {ticketTypesError && (
+                <p className="attendee-form__error">
+                  {ticketTypesError}{" "}
+                  <button type="button" className="link-btn" onClick={loadTicketTypes}>
+                    Retry
+                  </button>
+                </p>
+              )}
+              {attributeFields.map((field) => (
+                <CustomDataFieldInput
+                  key={field.source_field}
+                  field={field}
+                  value={form.customFields[field.source_field] ?? ""}
+                  disabled={saving || reloading || staleWrite}
+                  onChange={(next) =>
+                    setForm({
+                      ...form,
+                      customFields: { ...form.customFields, [field.source_field]: next },
+                    })
+                  }
+                />
+              ))}
+            </fieldset>
+            <div className="attendee-form__actions">
+              <Button type="button" variant="secondary" onClick={handleCancelEdit} disabled={saving}>
+                Cancel
+              </Button>
+              <ArchivedGuard
+                event={event}
+                reasonId="save-changes-reason"
+                disabled={saving || reloading || staleWrite || rsvpSaving}
+              >
+                {(guard) => (
+                  <Button type="submit" variant="primary" {...guard}>
+                    {saving ? "Saving…" : "Save changes"}
+                  </Button>
+                )}
+              </ArchivedGuard>
+            </div>
+          </form>
+        </div>
       )}
 
       {resendOpen && (
