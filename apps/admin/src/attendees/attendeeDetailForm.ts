@@ -1,5 +1,5 @@
 import { fetchAttendeeDetail } from "../api/client.js";
-import type { AttendeeDetailDto } from "../api/types.js";
+import type { AttendeeDetailDto, RsvpStatus } from "../api/types.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
 import {
   fetchAttendeeCustomFields,
@@ -13,6 +13,7 @@ export type AttendeeFormState = {
   company: string;
   department: string;
   ticket_type: string;
+  rsvp_status: RsvpStatus;
   customFields: Record<string, string>;
 };
 
@@ -40,6 +41,7 @@ export function toAttendeeForm(
     company: detail.company ?? "",
     department: detail.department ?? "",
     ticket_type: detail.ticket_type ?? "",
+    rsvp_status: detail.rsvp_status,
     customFields: customFieldsFromDetail(detail, attributeFields),
   };
 }
@@ -72,6 +74,10 @@ export function mergeFormAfterReload(
       currentForm.ticket_type !== previousForm.ticket_type
         ? currentForm.ticket_type
         : nextForm.ticket_type,
+    rsvp_status:
+      currentForm.rsvp_status !== previousForm.rsvp_status
+        ? currentForm.rsvp_status
+        : nextForm.rsvp_status,
     customFields,
   };
 }

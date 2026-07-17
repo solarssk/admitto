@@ -197,18 +197,22 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("changes RSVP status and saves it", async () => {
+  it("changes RSVP status and saves it along with the rest of the form", async () => {
     mockLoad(baseDetail());
     updateAttendee.mockResolvedValueOnce(baseDetail({ rsvp_status: "declined" }));
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
-    // The RSVP control lives inside the Edit modal - it still saves immediately on
-    // change, unlike the rest of the form which requires Save changes.
+    // The RSVP control lives inside the Edit modal, as a normal field - it no longer
+    // saves itself immediately on change; it's part of the same patch as everything
+    // else and only goes out when Save changes is clicked.
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByRole("combobox", { name: "RSVP status" }), {
       target: { value: "declined" },
     });
+    expect(updateAttendee).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => {
       expect(updateAttendee).toHaveBeenCalledWith(
@@ -218,7 +222,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
       );
     });
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Status updated/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Profile saved/);
     });
   });
 

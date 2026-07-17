@@ -225,7 +225,6 @@ export function AttendeeDetailPage() {
   const [emailConflict, setEmailConflict] = useState(false);
   const [staleWrite, setStaleWrite] = useState(false);
   const [reloading, setReloading] = useState(false);
-  const [rsvpSaving, setRsvpSaving] = useState(false);
   const [resendOpen, setResendOpen] = useState(false);
   const [resendMode, setResendMode] = useState<"same" | "other">("same");
   const [resendEmail, setResendEmail] = useState("");
@@ -319,6 +318,7 @@ export function AttendeeDetailPage() {
       form.company !== baseline.company ||
       form.department !== baseline.department ||
       form.ticket_type !== baseline.ticket_type ||
+      form.rsvp_status !== baseline.rsvp_status ||
       JSON.stringify(form.customFields) !== JSON.stringify(baseline.customFields));
 
   const goBack = () => {
@@ -386,6 +386,7 @@ export function AttendeeDetailPage() {
     if (form.company !== (detail.company ?? "")) patch.company = form.company || null;
     if (form.department !== (detail.department ?? "")) patch.department = form.department || null;
     if (form.ticket_type !== (detail.ticket_type ?? "")) patch.ticket_type = form.ticket_type || null;
+    if (form.rsvp_status !== detail.rsvp_status) patch.rsvp_status = form.rsvp_status;
 
     const customDataPatch: Record<string, string | null> = {};
     for (const field of attributeFields) {
@@ -446,36 +447,6 @@ export function AttendeeDetailPage() {
       }
     } finally {
       if (isStillSelected(target)) setSaving(false);
-    }
-  }
-
-  async function handleRsvpChange(next: RsvpStatus) {
-    if (!eventId || !attendeeId || !detail || next === detail.rsvp_status || rsvpSaving) return;
-    const target = { eventId, attendeeId };
-    const previous = detail;
-    const expectedUpdatedAt = detail.updated_at;
-    setDetail({ ...detail, rsvp_status: next });
-    setRsvpSaving(true);
-    try {
-      const updated = await updateAttendee(eventId, attendeeId, {
-        rsvp_status: next,
-        expected_updated_at: expectedUpdatedAt,
-      });
-      if (!isStillSelected(target)) return;
-      setDetail(updated);
-      setForm((f) => (f ? f : null));
-      addToast("Status updated", "success");
-    } catch (err) {
-      if (!isStillSelected(target)) return;
-      setDetail(previous);
-      if (err instanceof ApiError && err.code === "stale_write") {
-        addToast("Someone else updated this attendee — page will reload", "warning");
-        void handleReload();
-      } else {
-        addToast(operatorApiErrorMessage(err, "Failed to update status"), "error");
-      }
-    } finally {
-      if (isStillSelected(target)) setRsvpSaving(false);
     }
   }
 
@@ -901,24 +872,6 @@ export function AttendeeDetailPage() {
                 </Button>
               </div>
             )}
-            {/* Saves immediately on change, unlike the fields below - same as the RSVP
-                control this replaced in the old sidebar Status card. */}
-            <ArchivedGuard event={event} reasonId="rsvp-status-reason" disabled={rsvpSaving}>
-              {(guard) => (
-                <Select
-                  label="RSVP status"
-                  value={detail.rsvp_status}
-                  {...guard}
-                  onChange={(e) => void handleRsvpChange(e.target.value as RsvpStatus)}
-                >
-                  <option value="none">Registered</option>
-                  <option value="confirmed">Confirmed</option>
-                  <option value="declined">Declined</option>
-                  <option value="tentative">Tentative</option>
-                  <option value="cancelled">Cancelled</option>
-                </Select>
-              )}
-            </ArchivedGuard>
             <fieldset
               className={["attendee-form__fieldset", isEventArchived(event) && "at-tooltip"]
                 .filter(Boolean)
@@ -926,6 +879,17 @@ export function AttendeeDetailPage() {
               data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
               disabled={isEventArchived(event)}
             >
+              <Select
+                label="RSVP status"
+                value={form.rsvp_status}
+                onChange={(e) => setForm({ ...form, rsvp_status: e.target.value as RsvpStatus })}
+              >
+                <option value="none">Registered</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="declined">Declined</option>
+                <option value="tentative">Tentative</option>
+                <option value="cancelled">Cancelled</option>
+              </Select>
               <Input
                 label="Email"
                 type="text"
@@ -1014,7 +978,7 @@ export function AttendeeDetailPage() {
               <ArchivedGuard
                 event={event}
                 reasonId="save-changes-reason"
-                disabled={saving || reloading || staleWrite || rsvpSaving}
+                disabled={saving || reloading || staleWrite}
               >
                 {(guard) => (
                   <Button type="submit" variant="primary" {...guard}>
