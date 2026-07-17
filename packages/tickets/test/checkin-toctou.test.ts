@@ -25,6 +25,7 @@ vi.mock("../src/resolve.js", () => ({
 
 import { checkInScan } from "../src/checkin.js";
 import { resolveTicket } from "../src/resolve.js";
+import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -35,6 +36,7 @@ let prisma: PrismaClient;
 
 beforeAll(async () => {
   process.env["DATABASE_URL"] = TEST_DATABASE_URL;
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
   execSync("npx prisma db push --force-reset --accept-data-loss", {
     cwd: DB_ROOT,
     env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },

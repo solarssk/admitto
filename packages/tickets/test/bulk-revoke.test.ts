@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { revokeAllCheckInsForEvent, revokeAllItemsForEvent } from "../src/bulk-revoke.js";
 import type { OpsAuditContext } from "../src/ops-audit.js";
+import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -31,6 +32,7 @@ let prisma: PrismaClient;
 let giftbagItemId: string;
 
 beforeAll(async () => {
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
   execSync("npx prisma db push --force-reset --accept-data-loss", {
     cwd: DB_ROOT,
     env: { ...process.env },

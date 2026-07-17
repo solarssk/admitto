@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { acquireEventTicketTypesLock } from "@admitto/tickets";
 import { runImport } from "../src/cli.js";
+import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -17,6 +18,8 @@ const ORG_ID = "org_cli_import";
 const EVENT_ID = "test-event-cli-import";
 
 beforeAll(async () => {
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
+
   execSync("npx prisma db push --force-reset --accept-data-loss", {
     cwd: DB_ROOT,
     env: { ...process.env },

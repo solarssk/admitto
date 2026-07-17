@@ -3,6 +3,7 @@ import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
+import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..");
@@ -13,12 +14,7 @@ const USER_ID = "oidc-grant-index-user";
 let prisma: PrismaClient | undefined;
 
 beforeAll(async () => {
-  const dbUrl = process.env.DATABASE_URL ?? "";
-  if (!dbUrl.includes("localhost") && !dbUrl.includes("127.0.0.1") && !dbUrl.includes("local")) {
-    throw new Error(
-      "oidc-role-grant-partial-index.test.ts: refusing migrate reset on non-local DATABASE_URL",
-    );
-  }
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
   execSync("npx prisma migrate reset --force --skip-seed", {
     cwd: DB_ROOT,
     env: { ...process.env },

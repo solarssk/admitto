@@ -3,6 +3,7 @@ import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
+import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..");
@@ -13,6 +14,7 @@ const ORG_ID = "org-rsvp-check";
 let prisma: PrismaClient | undefined;
 
 beforeAll(async () => {
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
   execSync("npx prisma migrate reset --force --skip-seed", {
     cwd: DB_ROOT,
     env: { ...process.env },

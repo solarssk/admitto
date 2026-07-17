@@ -7,6 +7,7 @@ import { checkInScan, getRecentCheckIns, isAdmittable } from "../src/checkin.js"
 import { generateToken } from "../src/token.js";
 import { hashToken } from "../src/hash.js";
 import { buildTicketUrl } from "../src/url.js";
+import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -22,6 +23,7 @@ let attendeeBId: string;
 let attendeeCancelledId: string;
 
 beforeAll(async () => {
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
   execSync("npx prisma db push --force-reset --accept-data-loss", {
     cwd: DB_ROOT,
     env: { ...process.env },

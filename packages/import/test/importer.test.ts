@@ -9,6 +9,7 @@ import {
   IMPORT_CONFLICT_SKIP_REASON,
 } from "../src/importer.js";
 import type { AttendeeRow } from "../src/types.js";
+import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -35,6 +36,8 @@ const rowB: AttendeeRow = {
 };
 
 beforeAll(async () => {
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
+
   execSync("npx prisma db push --force-reset --accept-data-loss", {
     cwd: DB_ROOT,
     env: { ...process.env },

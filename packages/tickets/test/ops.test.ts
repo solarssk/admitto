@@ -14,6 +14,7 @@ import {
 import { addAttendeeNote, NoteTooLongError, OperatorRequiredError } from "../src/notes.js";
 import { generateToken, hashToken } from "../src/index.js";
 import { getAttendeeCard, getCheckInStats, lookupAttendees } from "../src/attendee-card.js";
+import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -25,10 +26,7 @@ const DEVICE = "tablet-1";
 const OPERATOR = "user-op-1";
 
 beforeAll(async () => {
-  const dbUrl = process.env.DATABASE_URL ?? "";
-  if (!dbUrl.includes("localhost") && !dbUrl.includes("127.0.0.1") && !dbUrl.includes("local")) {
-    throw new Error("ops.test.ts: refusing --force-reset on non-local DATABASE_URL");
-  }
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
   execSync("npx prisma db push --force-reset --accept-data-loss", {
     cwd: DB_ROOT,
     env: { ...process.env },
