@@ -1,8 +1,10 @@
 import { defineConfig } from "vitest/config";
 import { vitestCoverage } from "../../vitest.coverage.ts";
 
-const AUTH_TEST_DATABASE_URL =
-  process.env["DATABASE_URL"] ?? "postgresql://admitto:admitto@localhost:5432/admitto_auth_test";
+// Fixed, not `process.env["DATABASE_URL"] ?? ...` - an ambient DATABASE_URL (e.g. CI's
+// job-level default, or a developer's shell) must never redirect this destructive
+// migrate/reset flow, matching every sibling package's vitest config (db/tickets/import/web).
+const AUTH_TEST_DATABASE_URL = "postgresql://admitto:admitto@localhost:5432/admitto_auth_test";
 
 export default defineConfig({
   test: {
