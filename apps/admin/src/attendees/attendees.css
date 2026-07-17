@@ -1,5 +1,10 @@
 .attendees-table-wrap {
   overflow-x: auto;
+  /* A filter/search narrowing the result set swaps in fewer rows the instant the new page
+     loads (stale rows stay on screen, dimmed, until then - see .attendees-table-wrap--loading)
+     - without a floor, that swap can visibly snap the whole table (and everything below it:
+     footer, pager) upward. Sized for ~6 data rows + header at this table's own row height. */
+  min-height: 304px;
 }
 
 /* Re-fetching with existing rows still on screen (filter/page change) — dim them
