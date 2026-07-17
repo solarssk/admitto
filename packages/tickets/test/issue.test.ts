@@ -7,6 +7,7 @@ import { issueTicket, issueTicketsForEvent } from "../src/issue.js";
 import { hashToken } from "../src/hash.js";
 import { looksLikeInternalToken } from "../src/url.js";
 import { decryptFromString } from "@admitto/crypto";
+import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -18,6 +19,7 @@ let attendeeBId: string;
 let attendeeCancelledId: string;
 
 beforeAll(async () => {
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
   execSync("npx prisma db push --force-reset --accept-data-loss", {
     cwd: DB_ROOT,
     env: { ...process.env },

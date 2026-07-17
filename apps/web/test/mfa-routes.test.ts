@@ -11,6 +11,7 @@ import {
   parseTotpSecretFromOtpauthUri,
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret, generateTotpCode } from "@admitto/auth/testing";
+import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 import { createApp } from "../src/app.js";
 import { clearEnrollmentBackupCacheForTests } from "../src/auth/enrollment-backup-cache.js";
 import { InMemoryRateLimitStore } from "../src/rate-limit/index.js";
@@ -97,6 +98,7 @@ async function resetAdminAuthLabState(userId: string): Promise<void> {
 }
 
 beforeAll(async () => {
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
   execSync("npx prisma db push --force-reset --accept-data-loss", {
     cwd: DB_ROOT,
     env: { ...process.env },

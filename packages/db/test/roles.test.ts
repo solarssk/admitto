@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { hasScope } from "../src/roles.js";
+import { assertTestDatabaseUrl } from "../src/testDbGuard.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..");
@@ -17,6 +18,7 @@ const USER_OP = "user-operator";
 const USER_NONE = "user-no-roles";
 
 beforeAll(async () => {
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
   execSync("npx prisma db push --force-reset --accept-data-loss", {
     cwd: DB_ROOT,
     env: { ...process.env },

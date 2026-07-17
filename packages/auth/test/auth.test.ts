@@ -27,6 +27,7 @@ import { login } from "../src/login.js";
 import { bootstrapSuperadmin, superadminInstanceExists } from "../src/bootstrap.js";
 import { generateTotpSecret, encryptTotpSecret } from "../src/mfa/totp.js";
 import { purgeAuthRetention } from "../src/retention.js";
+import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..", "..", "db");
@@ -43,10 +44,7 @@ const USER_INACTIVE = "user-inactive-auth";
 let prisma: PrismaClient;
 
 beforeAll(async () => {
-  const dbUrl = process.env.DATABASE_URL ?? "";
-  if (!dbUrl.includes("localhost") && !dbUrl.includes("127.0.0.1") && !dbUrl.includes("local")) {
-    throw new Error("auth.test.ts: refusing --force-reset on non-local DATABASE_URL");
-  }
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
   execSync("npx prisma db push --force-reset --accept-data-loss", {
     cwd: DB_ROOT,
     env: { ...process.env },

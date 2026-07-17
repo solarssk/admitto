@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { backfillAgencyPublicRefs } from "../src/backfill-public-ref.js";
+import { assertTestDatabaseUrl } from "../src/testDbGuard.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..");
@@ -14,6 +15,7 @@ const ORG_ID = "org-backfill";
 let prisma: PrismaClient;
 
 beforeAll(async () => {
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
   execSync("npx prisma db push --force-reset --accept-data-loss", {
     cwd: DB_ROOT,
     env: { ...process.env },

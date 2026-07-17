@@ -7,6 +7,7 @@ import { generateToken } from "../src/token.js";
 import { hashToken } from "../src/hash.js";
 import { buildTicketUrl } from "../src/url.js";
 import { resolveTicket } from "../src/resolve.js";
+import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -23,6 +24,7 @@ let tokenOrgLogo: string;
 let tokenEventLogo: string;
 
 beforeAll(async () => {
+  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
   execSync("npx prisma db push --force-reset --accept-data-loss", {
     cwd: DB_ROOT,
     env: { ...process.env },
