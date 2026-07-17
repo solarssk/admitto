@@ -27,6 +27,12 @@ describe("unbracketHostname", () => {
   it("leaves a plain hostname untouched", () => {
     expect(unbracketHostname("example.com")).toBe("example.com");
   });
+
+  it("strips an IPv6 zone index (CodeRabbit finding: bypassed the blocklist otherwise)", () => {
+    expect(unbracketHostname("fe80::1%eth0")).toBe("fe80::1");
+    expect(unbracketHostname("::ffff:127.0.0.1%eth0")).toBe("::ffff:127.0.0.1");
+    expect(unbracketHostname("[fe80::1%eth0]")).toBe("fe80::1");
+  });
 });
 
 describe("isLoopbackHost", () => {
@@ -38,6 +44,10 @@ describe("isLoopbackHost", () => {
 
   it("recognizes IPv4-mapped IPv6 loopback", () => {
     expect(isLoopbackHost("::ffff:127.0.0.1")).toBe(true);
+  });
+
+  it("recognizes IPv4-mapped IPv6 loopback even with a zone index appended (CodeRabbit finding)", () => {
+    expect(isLoopbackHost("::ffff:127.0.0.1%eth0")).toBe(true);
   });
 
   it("does not flag a public hostname", () => {
@@ -75,6 +85,12 @@ describe("isBlockedPrivateOrMetadataHost", () => {
   it("allows a public hostname/IP", () => {
     expect(isBlockedPrivateOrMetadataHost("example.com")).toBe(false);
     expect(isBlockedPrivateOrMetadataHost("93.184.216.34")).toBe(false);
+  });
+
+  it("blocks a link-local or IPv4-mapped-loopback address even with a zone index appended (CodeRabbit finding)", () => {
+    expect(isBlockedPrivateOrMetadataHost("fe80::1%eth0")).toBe(true);
+    expect(isBlockedPrivateOrMetadataHost("::ffff:127.0.0.1%eth0")).toBe(true);
+    expect(isBlockedPrivateOrMetadataHost("::ffff:169.254.169.254%0")).toBe(true);
   });
 });
 

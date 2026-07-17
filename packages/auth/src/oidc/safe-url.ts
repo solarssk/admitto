@@ -42,7 +42,7 @@ export function assertSafeOidcFetchUrl(urlString: string): void {
 
 /** Resolve hostname and reject private/link-local/unspecified targets (used before pinned outbound fetch). */
 export function resolveSafeOidcHostname(hostname: string): Promise<LookupAddress[]> {
-  return resolveSafeHostname(unbracketHostname(hostname));
+  return resolveSafeHostname(hostname);
 }
 
 /**

@@ -46,7 +46,7 @@ export const smtpConfigSchema = z
   .object({
     provider: z.literal("smtp"),
     host: z.string().min(1).refine((h) => !isBlockedMailHost(h), {
-      message: "host must not be a private, loopback, or link-local address",
+      error: "host must not be a private, loopback, or link-local address",
     }),
     port: z.number().int().positive().default(587),
     /** false => STARTTLS (port 587), true => TLS (port 465). */
@@ -85,7 +85,7 @@ export const powerAutomateConfigSchema = z
             return false;
           }
         },
-        { message: "url must not target a private, loopback, or link-local address" },
+        { error: "url must not target a private, loopback, or link-local address" },
       ),
     /** Optional key sent in x-admitto-key header (endpoint protection). */
     key: z.string().optional(),

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { lookup } from "node:dns/promises";
 import { PowerAutomateAdapter } from "../src/adapters/powerAutomate.js";
 import type { PowerAutomateConfig } from "../src/config.js";
+import * as ssrfGuard from "../src/ssrfGuard.js";
 
 vi.mock("node:dns/promises", () => ({
   lookup: vi.fn(),
@@ -116,6 +117,19 @@ describe("PowerAutomateAdapter", () => {
     const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
     expect(res.status).toBe("rejected");
     expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a generic message when the destination guard throws a non-Error", async () => {
+    const spy = vi
+      .spyOn(ssrfGuard, "assertSafeMailDestination")
+      .mockRejectedValueOnce("not-an-error");
+    const fetchFn = vi.fn();
+    const adapter = new PowerAutomateAdapter(config, fetchFn as unknown as typeof fetch);
+    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(res.status).toBe("rejected");
+    expect(res.error).toBe("mail transport destination is not permitted");
+    expect(fetchFn).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 
   it("sends with redirect: 'error' so the fetch itself refuses to follow a redirect", async () => {

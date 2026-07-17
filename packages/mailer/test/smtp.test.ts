@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { lookup } from "node:dns/promises";
 import { SmtpAdapter } from "../src/adapters/smtp.js";
 import type { SmtpConfig } from "../src/config.js";
+import * as ssrfGuard from "../src/ssrfGuard.js";
 
 vi.mock("node:dns/promises", () => ({
   lookup: vi.fn(),
@@ -158,6 +159,19 @@ describe("SmtpAdapter", () => {
     expect(res.retryable).toBe(false);
     expect(res.error).toMatch(/private, loopback, or link-local/);
     expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a generic message when the destination guard throws a non-Error", async () => {
+    const spy = vi
+      .spyOn(ssrfGuard, "assertSafeMailDestination")
+      .mockRejectedValueOnce("not-an-error");
+    const sendMail = vi.fn(async () => ({ messageId: "<id@test>" }));
+    const adapter = new SmtpAdapter(config, { sendMail } as unknown as nodemailer.Transporter);
+    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(res.status).toBe("rejected");
+    expect(res.error).toBe("mail transport destination is not permitted");
+    expect(sendMail).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 
   it("rejects a host that resolves to a private address at send-time (DNS rebinding)", async () => {

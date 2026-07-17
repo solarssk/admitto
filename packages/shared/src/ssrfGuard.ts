@@ -14,12 +14,16 @@ const privateIpv6 = new BlockList();
 privateIpv6.addSubnet("fe80::", 10, "ipv6");
 privateIpv6.addSubnet("fc00::", 7, "ipv6");
 
-/** Strip bracket wrapping from IPv6 literals in URL.hostname. */
+/**
+ * Strip bracket wrapping from IPv6 literals in URL.hostname, and any IPv6 zone index
+ * (e.g. "fe80::1%eth0" -> "fe80::1"). Node's isIP/isIPv6 accept zone indices, but the
+ * exact-match and regex checks below don't — left unstripped, a private/loopback/
+ * mapped-IPv4 address with an appended zone index slips past every check in this file.
+ */
 export function unbracketHostname(hostname: string): string {
-  if (hostname.startsWith("[") && hostname.endsWith("]")) {
-    return hostname.slice(1, -1);
-  }
-  return hostname;
+  const unbracketed =
+    hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+  return isIPv6(unbracketed) ? unbracketed.split("%")[0]! : unbracketed;
 }
 
 /** Whether the hostname is loopback (localhost / 127.0.0.1 / ::1). */
