@@ -6,3 +6,9 @@ export {
   sanitizePreferredLocale,
   type SupportedLocale,
 } from "./supportedLocales.js";
+export {
+  unbracketHostname,
+  isLoopbackHost,
+  isBlockedPrivateOrMetadataHost,
+  resolveSafeHostname,
+} from "./ssrfGuard.js";
