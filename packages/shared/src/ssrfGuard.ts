@@ -33,7 +33,7 @@ export function isLoopbackHost(hostname: string): boolean {
 function parseIpv4(host: string): [number, number, number, number] | null {
   const parts = host.split(".");
   if (parts.length !== 4) return null;
-  const nums = parts.map((part) => Number(part));
+  const nums = parts.map(Number);
   if (nums.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
   return nums as [number, number, number, number];
 }
@@ -43,13 +43,13 @@ function extractIpv4FromMappedIpv6(host: string): string | null {
   const lower = host.toLowerCase();
   if (!isIPv6(lower)) return null;
 
-  const dotted = lower.match(/(?:^|:)ffff:((?:\d{1,3}\.){3}\d{1,3})$/);
+  const dotted = /(?:^|:)ffff:((?:\d{1,3}\.){3}\d{1,3})$/.exec(lower);
   if (dotted) return dotted[1] ?? null;
 
-  const hex = lower.match(/(?:^|:)ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  const hex = /(?:^|:)ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(lower);
   if (!hex) return null;
-  const hi = parseInt(hex[1]!, 16);
-  const lo = parseInt(hex[2]!, 16);
+  const hi = Number.parseInt(hex[1]!, 16);
+  const lo = Number.parseInt(hex[2]!, 16);
   if (!Number.isFinite(hi) || !Number.isFinite(lo)) return null;
   return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
 }

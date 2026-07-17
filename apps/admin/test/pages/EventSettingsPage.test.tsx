@@ -536,16 +536,16 @@ describe("EventSettingsPage Mailing tab (superadmin-only)", () => {
     mockAssignments = superadminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
-    await waitFor(() => screen.getByRole("tab", { name: "Mailing" }));
+    await screen.findByRole("tab", { name: "Mailing" });
     fireEvent.click(screen.getByRole("tab", { name: "Mailing" }));
-    await screen.findByRole("radio", { name: "Organization mail" });
+    expect(await screen.findByRole("radio", { name: "Organization mail" })).toBeTruthy();
   });
 
   it("hides the Mailing tab entirely for a non-superadmin org admin", async () => {
     mockAssignments = orgAdminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
-    await waitFor(() => screen.getByRole("tab", { name: "General" }));
+    await screen.findByRole("tab", { name: "General" });
     expect(screen.queryByRole("tab", { name: "Mailing" })).toBeNull();
   });
 
@@ -553,7 +553,7 @@ describe("EventSettingsPage Mailing tab (superadmin-only)", () => {
     mockAssignments = orgAdminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings("/admin/events/evt-1/settings?tab=mail");
-    await waitFor(() => screen.getByLabelText("Event title"));
+    await screen.findByLabelText("Event title");
     expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByRole("radio", { name: "Organization mail" })).toBeNull();
   });
