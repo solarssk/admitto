@@ -15,7 +15,6 @@ import {
 import {
   ApiError,
   fetchAttendeeDetail,
-  fetchEventMailSettings,
   fetchTicketTypes,
   resendTicket,
   revokeAttendeeCheckIn,
@@ -52,6 +51,7 @@ import {
   validateCustomFieldsForm,
 } from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
+import { useMailConfigured } from "../attendees/useMailConfigured.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import {
   ArchivedGuard,
@@ -146,13 +146,13 @@ function MoreActionsMenu({
   disabled = false,
   mailConfigured,
   "aria-describedby": ariaDescribedBy,
-}: {
+}: Readonly<{
   event: ArchivedGuardEvent;
   onResend: () => void;
   disabled?: boolean;
   mailConfigured: boolean | undefined;
   "aria-describedby"?: string;
-}) {
+}>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
@@ -359,26 +359,9 @@ export function AttendeeDetailPage() {
     loadTicketTypes();
   }, [loadTicketTypes]);
 
-  // Whether "Resend ticket" should work at all — same effective-transport resolution as the
-  // Attendees list's "Send tickets" button (fetchEventMailSettings, provider smtp/graph/
-  // powerautomate only - "export_only" is a real saved value but never actually delivers mail).
-  const [mailConfigured, setMailConfigured] = useState<boolean | undefined>(undefined);
-  useEffect(() => {
-    if (!eventId) return;
-    setMailConfigured(undefined);
-    const ac = new AbortController();
-    fetchEventMailSettings(eventId, ac.signal)
-      .then((data) => {
-        if (ac.signal.aborted) return;
-        const provider = data.fields.provider.value;
-        setMailConfigured(provider === "smtp" || provider === "graph" || provider === "powerautomate");
-      })
-      .catch(() => {
-        if (ac.signal.aborted) return;
-        setMailConfigured(undefined);
-      });
-    return () => ac.abort();
-  }, [eventId]);
+  // Whether "Resend ticket" should work at all — same check as the Attendees list's "Send
+  // tickets" button, shared via useMailConfigured.
+  const mailConfigured = useMailConfigured(eventId);
 
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
   const isDirty =
@@ -469,6 +452,8 @@ export function AttendeeDetailPage() {
     if (Object.keys(customDataPatch).length > 0) patch.custom_data_fields = customDataPatch;
     if (Object.keys(patch).length === 0) {
       setEditMode(false);
+      setError(null);
+      setEmailConflict(false);
       return;
     }
 
@@ -497,8 +482,10 @@ export function AttendeeDetailPage() {
       if (err instanceof ApiError && err.status === 409) {
         if (hasApiErrorCode(err, "email_conflict")) setEmailConflict(true);
         else if (hasApiErrorCode(err, "stale_write")) {
+          // Inline modal warning + Reload button only, no toast - same error, actionable
+          // retry control already visible in the still-open modal (bot review, matches the
+          // ConfirmDialog convention of not duplicating an actionable inline error as a toast).
           setStaleWrite(true);
-          addToast("Someone else updated this attendee — page will reload", "warning");
           void handleReload();
         } else setError("Could not save changes.");
       } else if (
@@ -752,7 +739,10 @@ export function AttendeeDetailPage() {
         }
       />
 
-      {error && <p className="text-error">{error}</p>}
+      {/* Not shown while the Edit modal is open - that error text renders inside the modal
+          itself instead, otherwise it's stuck behind the modal's opaque backdrop, invisible
+          (bot review), and duplicated in the DOM behind it if left unconditional here. */}
+      {error && !editMode && <p className="text-error">{error}</p>}
       {revokeError && activeRevoke === null && (
         <div className="attendee-form__warn">
           <p className="text-error">{revokeError}</p>
@@ -1020,6 +1010,11 @@ export function AttendeeDetailPage() {
             <p className="attendee-edit-modal__subtitle">
               Update this attendee&apos;s profile and ticket details.
             </p>
+            {error && (
+              <p className="text-error" role="alert">
+                {error}
+              </p>
+            )}
             {staleWrite && (
               <div className="attendee-form__warn">
                 <p>Someone else updated this attendee — reload and reapply your edits.</p>

@@ -220,16 +220,16 @@ describe("AttendeesTable loading states (#271)", () => {
   });
 
   it("shows the shimmer skeleton only on the very first load, not a later filter landing on zero matches", () => {
-    const { rerender } = render(
+    const { container, rerender } = render(
       <AttendeesTable {...tableProps} hasLoadedOnce={false} loading items={[]} total={0} />,
     );
-    expect(document.querySelector("table[aria-hidden='true']")).toBeTruthy();
+    expect(container.querySelector("table[aria-hidden='true']")).toBeTruthy();
     expect(screen.queryByText("No matches")).toBeNull();
 
     // Once the first load has settled, a later filter/search landing on zero matches dims
     // the empty state in place instead of flashing the skeleton again.
     rerender(<AttendeesTable {...tableProps} hasLoadedOnce loading items={[]} total={0} />);
-    expect(document.querySelector("table[aria-hidden='true']")).toBeNull();
+    expect(container.querySelector("table[aria-hidden='true']")).toBeNull();
     expect(screen.getByText("No matches")).toBeTruthy();
   });
 });

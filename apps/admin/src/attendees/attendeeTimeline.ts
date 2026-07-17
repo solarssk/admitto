@@ -48,7 +48,7 @@ const PROFILE_FIELD_LABELS: Record<string, string> = {
 };
 
 export function humanizeFieldKey(key: string): string {
-  const spaced = key.replace(/_/g, " ").trim();
+  const spaced = key.replaceAll("_", " ").trim();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
@@ -100,7 +100,8 @@ const TONE_BY_ACTION: Record<string, TimelineTone> = {
  * tone, matching how getTimelineLabel already reads meta.to for its label text. */
 export function getTimelineTone(entry: AttendeeActionLogEntryDto): TimelineTone {
   if (entry.action_type === "rsvp_status_changed") {
-    const to = String(entry.metadata?.to ?? "");
+    const rawTo = entry.metadata?.to;
+    const to = typeof rawTo === "string" ? rawTo : "";
     if (to === "confirmed") return "ok";
     if (to === "declined" || to === "cancelled") return "error";
     if (to === "tentative") return "warn";
@@ -200,21 +201,74 @@ export function getTimelineActor(entry: AttendeeActionLogEntryDto): string {
   return entry.actor_display ?? "System";
 }
 
+function rsvpChangeDetail(
+  entry: AttendeeActionLogEntryDto,
+  meta: Record<string, unknown>,
+): string | null {
+  if (entry.action_type !== "rsvp_status_changed") return null;
+  const { from, to } = meta;
+  if (from == null || to == null) return null;
+  return `${formatRsvpStatus(from)} → ${formatRsvpStatus(to)}`;
+}
+
+/** email/company/department/ticket_type are the one approved exception to #364's field-names-only
+ * rule (PO review, round 2) - fixed business/contact fields, never free text a guest could have
+ * put anything sensitive into - and show their real before/after value when the backend captured
+ * one (see fieldValueChange, LOGGED_VALUE_FIELDS in attendees-api-routes.ts). `name` and every
+ * custom_data field never get one, so this falls back to the field name alone for those. */
+function attendeeEditedDetail(
+  entry: AttendeeActionLogEntryDto,
+  meta: Record<string, unknown>,
+  customFields: CustomDataFieldDef[],
+): string | null {
+  if (entry.action_type !== "attendee_edited") return null;
+  const fields = meta.fields;
+  if (!Array.isArray(fields) || fields.length === 0) return null;
+  const customFieldLabels = new Map(customFields.map((f) => [f.source_field, f.label]));
+  return fields
+    .map((f) => {
+      const key = String(f);
+      const label = fieldChangeLabel(key, customFieldLabels);
+      const change = fieldValueChange(meta.field_changes, key);
+      return change ? `${label}: ${change.from ?? "—"} → ${change.to ?? "—"}` : label;
+    })
+    .join(", ");
+}
+
+function passChangeDetail(
+  entry: AttendeeActionLogEntryDto,
+  meta: Record<string, unknown>,
+): string | null {
+  if (entry.action_type !== "pass_revoked" && entry.action_type !== "pass_restored") return null;
+  const from = meta.previous_status;
+  if (from == null) return null;
+  const to = entry.action_type === "pass_revoked" ? "revoked" : "registered";
+  return `${formatPassStatus(from)} → ${formatPassStatus(to)}`;
+}
+
+/** `eventItems` is the same registry-backed list the Event-day items card renders
+ * (detail.event_items) - an item's real configured label (e.g. "Gratis") beats humanizing its
+ * raw key, same reasoning as fieldChangeLabel for custom_data fields. */
+function itemStateDetail(
+  entry: AttendeeActionLogEntryDto,
+  meta: Record<string, unknown>,
+  eventItems: AttendeeDetailItemDto[],
+): string | null {
+  if (!ITEM_STATE_ACTIONS.has(entry.action_type)) return null;
+  const itemKey = meta.event_item_key;
+  if (typeof itemKey !== "string" || !itemKey) return null;
+  const itemLabels = new Map(eventItems.map((i) => [i.key, i.label]));
+  return itemLabels.get(itemKey) ?? humanizeFieldKey(itemKey);
+}
+
 /** Human-readable diff for the activity log row - who did it is getTimelineActor's job, not
  * this function's; empty string means there's nothing beyond the headline to show. PII-safe by
  * construction: `name` and every custom_data field only ever show which field changed, never
  * the old/new values themselves (custom_data can hold sensitive text like accessibility notes or
- * emergency contacts - #364). email/company/department/ticket_type are the one approved
- * exception (PO review, round 2) - fixed business/contact fields, never free text a guest could
- * have put anything sensitive into - and show their real before/after value when the backend
- * captured one (see fieldValueChange, LOGGED_VALUE_FIELDS in attendees-api-routes.ts). Rows
- * written before that capture existed just show the field name, same as name/custom_data always
- * has. `customFields` is the event's custom-field registry (same list `allCustomDataEntries`
- * uses) - passing it lets a changed custom field show its real configured label instead of a
- * humanized guess at its slugified source_field key (PO review, see fieldChangeLabel).
- * `eventItems` is the same registry-backed list the Event-day items card renders
- * (detail.event_items) - same reasoning, an item's real configured label (e.g. "Gratis") beats
- * humanizing its raw key. */
+ * emergency contacts - #364); see attendeeEditedDetail for the one approved exception.
+ * `customFields` is the event's custom-field registry (same list `allCustomDataEntries` uses) -
+ * passing it lets a changed custom field show its real configured label instead of a humanized
+ * guess at its slugified source_field key (PO review, see fieldChangeLabel). */
 export function getTimelineDetail(
   entry: AttendeeActionLogEntryDto,
   customFields: CustomDataFieldDef[] = [],
@@ -222,47 +276,13 @@ export function getTimelineDetail(
 ): string {
   const meta = entry.metadata;
   if (!meta) return "";
-
-  if (entry.action_type === "rsvp_status_changed") {
-    const from = meta.from;
-    const to = meta.to;
-    if (from != null && to != null) {
-      return `${formatRsvpStatus(from)} → ${formatRsvpStatus(to)}`;
-    }
-  }
-
-  if (entry.action_type === "attendee_edited") {
-    const fields = meta.fields;
-    if (Array.isArray(fields) && fields.length > 0) {
-      const customFieldLabels = new Map(customFields.map((f) => [f.source_field, f.label]));
-      return fields
-        .map((f) => {
-          const key = String(f);
-          const label = fieldChangeLabel(key, customFieldLabels);
-          const change = fieldValueChange(meta.field_changes, key);
-          return change ? `${label}: ${change.from ?? "—"} → ${change.to ?? "—"}` : label;
-        })
-        .join(", ");
-    }
-  }
-
-  if (entry.action_type === "pass_revoked" || entry.action_type === "pass_restored") {
-    const from = meta.previous_status;
-    if (from != null) {
-      const to = entry.action_type === "pass_revoked" ? "revoked" : "registered";
-      return `${formatPassStatus(from)} → ${formatPassStatus(to)}`;
-    }
-  }
-
-  if (ITEM_STATE_ACTIONS.has(entry.action_type)) {
-    const itemKey = meta.event_item_key;
-    if (typeof itemKey === "string" && itemKey) {
-      const itemLabels = new Map(eventItems.map((i) => [i.key, i.label]));
-      return itemLabels.get(itemKey) ?? humanizeFieldKey(itemKey);
-    }
-  }
-
-  return "";
+  return (
+    rsvpChangeDetail(entry, meta) ??
+    attendeeEditedDetail(entry, meta, customFields) ??
+    passChangeDetail(entry, meta) ??
+    itemStateDetail(entry, meta, eventItems) ??
+    ""
+  );
 }
 
 /** How this attendee was added, read off the oldest loaded action-log entry (#365). Log rows are
@@ -276,7 +296,7 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 export function deriveAttendeeSource(actionLog: AttendeeActionLogEntryDto[]): string | null {
-  if (actionLog.length === 0) return null;
-  const oldest = actionLog[actionLog.length - 1];
+  const oldest = actionLog.at(-1);
+  if (!oldest) return null;
   return SOURCE_LABELS[oldest.action_type] ?? null;
 }

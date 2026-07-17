@@ -109,7 +109,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     let resolveSave!: (value: ReturnType<typeof baseDetail>) => void;
     updateAttendee.mockReturnValueOnce(new Promise((resolve) => (resolveSave = resolve)));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "anna.b@example.com" } });
@@ -155,7 +155,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     mockLoad(baseDetail());
     updateAttendee.mockRejectedValueOnce(new ApiError(409, "email in use", "email_conflict"));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "taken@example.com" } });
@@ -169,7 +169,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
   it("opens the Resend ticket panel", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Resend ticket" }));
@@ -183,7 +183,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     mockLoad(baseDetail());
     resendTicket.mockRejectedValueOnce(new ApiError(422, "mail_not_configured", "mail_not_configured"));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Resend ticket" }));
@@ -202,7 +202,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     mockLoad(baseDetail());
     updateAttendee.mockResolvedValueOnce(baseDetail({ rsvp_status: "declined" }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     // The RSVP control lives inside the Edit modal, as a normal field - it no longer
     // saves itself immediately on change; it's part of the same patch as everything
@@ -233,7 +233,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     // in this file's module mock only ever returns "vip" and "standard".
     mockLoad(baseDetail({ ticket_type: "vintage" }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
     // Read-only view renders the orphaned value via TicketTypeBadge's own fail-open fallback.
     expect(screen.getByText("vintage")).toBeTruthy();
 
@@ -263,7 +263,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
   it("renders the profile as read-only text by default, with no Save button until Edit is clicked", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.queryByLabelText("Email")).toBeNull();
     expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
@@ -278,7 +278,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
   it("Cancel with no changes exits edit mode immediately, without a confirm dialog", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -291,7 +291,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
   it("Back with no unsaved changes navigates away immediately, without a confirm dialog", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
 
@@ -308,7 +308,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     // the Reload button is actually enabled and clickable, not just rendered-but-disabled.
     loadAttendeeDetailData.mockRejectedValueOnce(new Error("network hiccup"));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
@@ -323,8 +323,6 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     loadAttendeeDetailData.mockResolvedValueOnce({ detail: baseDetail(), attributeFields, itemsWarning: null });
     fireEvent.click(reloadButton);
 
-    // Matches only the Profile-modal warning banner, not the (differently-worded, longer-lived)
-    // toast notification triggered by the same stale-write catch handler.
     await waitFor(() =>
       expect(
         screen.queryByText("Someone else updated this attendee — reload and reapply your edits."),
@@ -335,7 +333,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
   it("clicking Save with no actual changes exits edit mode without calling the API", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -348,7 +346,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
   it("the header Back button warns before leaving with unsaved edits, distinct from in-form Cancel", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Someone Else" } });
@@ -368,7 +366,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
   it("Cancel with unsaved changes confirms before discarding, and reverts the field on confirm", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Someone Else Inc" } });
@@ -392,7 +390,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     mockLoad(baseDetail());
     updateAttendee.mockResolvedValueOnce(baseDetail({ name: "Anna B." }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
@@ -407,7 +405,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     mockLoad(baseDetail());
     updateAttendee.mockRejectedValueOnce(new ApiError(500, "boom"));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
@@ -423,12 +421,52 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     expect(screen.queryByText("Failed to save changes.")).toBeNull();
   });
 
+  it("clears a leftover save error when Save changes is clicked on a since-reverted (no-op) form (regression, bot review)", async () => {
+    // Distinct from the Cancel-button regression above: this goes through handleSave's own
+    // "nothing actually changed" early return, a separate code path that used to leave a
+    // stale error/emailConflict behind since it only called setEditMode(false).
+    const { ApiError } = await import("../../src/api/client.js");
+    mockLoad(baseDetail());
+    updateAttendee.mockRejectedValueOnce(new ApiError(500, "boom"));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText("Failed to save changes.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
+    expect(screen.queryByText("Failed to save changes.")).toBeNull();
+  });
+
+  it("shows a generic save error inside the Edit modal itself, not hidden behind it (bot review)", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockLoad(baseDetail());
+    updateAttendee.mockRejectedValueOnce(new ApiError(500, "boom"));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Failed to save changes.")).toBeTruthy();
+    // Exactly one copy in the DOM - not also duplicated behind the modal, which would make
+    // this and any other error-text query ambiguous (multiple matches).
+    expect(screen.getAllByText("Failed to save changes.")).toHaveLength(1);
+  });
+
   it("clears a stale email-conflict error after discarding the edit that caused it (regression)", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockLoad(baseDetail());
     updateAttendee.mockRejectedValueOnce(new ApiError(409, "email in use", "email_conflict"));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "taken@example.com" } });
@@ -474,7 +512,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
       }),
     );
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("Registered on")).toBeTruthy();
     expect(screen.getByText("Added via")).toBeTruthy();
@@ -484,7 +522,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
   it("omits Added via when the action log doesn't include a creation entry", async () => {
     mockLoad(baseDetail({ action_log: [] }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("Registered on")).toBeTruthy();
     expect(screen.queryByText("Added via")).toBeNull();
@@ -493,7 +531,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
   it("shows an Additional information card for custom_data keys with no configured attribute field", async () => {
     mockLoad(baseDetail({ custom_data: { dietary: "vegan", shirt_size: "L" } }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("Additional information")).toBeTruthy();
     expect(screen.getByText("Shirt size")).toBeTruthy();
@@ -505,7 +543,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     // custom_data entry - configured or not - lives in Additional information instead.
     mockLoad(baseDetail({ custom_data: { dietary: "vegan" } }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("Additional information")).toBeTruthy();
     expect(screen.getByText("Dietary")).toBeTruthy();
@@ -515,7 +553,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
   it("shows an empty-state placeholder in Additional information when custom_data is empty", async () => {
     mockLoad(baseDetail({ custom_data: {} }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("Additional information")).toBeTruthy();
     expect(screen.getByText("No additional information")).toBeTruthy();
@@ -527,7 +565,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     // thing as the app's own QR admission pass (Revoke menu's "Pass", the Registration chip).
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     // "Wallet" also appears as the status-strip chip's own label - scope to the card title.
     expect(screen.getAllByText("Wallet")).toHaveLength(2);
@@ -537,7 +575,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
   it("shows an empty-state placeholder in Event-day items when the event has no configured items", async () => {
     mockLoad(baseDetail({ event_items: [] }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("Event-day items")).toBeTruthy();
     expect(screen.getByText("No event-day items")).toBeTruthy();
@@ -554,7 +592,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
       }),
     );
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("Gift bag")).toBeTruthy();
     // Scoped to the items list — the Check-in status-strip chip can also read "Not yet".
@@ -583,7 +621,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
       }),
     );
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("Mail delivery history")).toBeTruthy();
     expect(screen.getByText("Your ticket")).toBeTruthy();
@@ -593,7 +631,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
   it("shows an icon+text empty-state placeholder in Mail delivery history when nothing was ever sent", async () => {
     mockLoad(baseDetail({ deliveries: [] }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("Mail delivery history")).toBeTruthy();
     expect(screen.getByText("No delivery attempts yet")).toBeTruthy();

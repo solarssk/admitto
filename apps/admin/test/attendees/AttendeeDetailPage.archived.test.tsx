@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
@@ -108,7 +108,7 @@ describe("AttendeeDetailPage archived lockdown", () => {
   it("disables More actions (resend ticket), revoke menu, and Edit for a registered attendee", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     expectArchivedLock(screen.getByRole("button", { name: "More actions" }));
     expectArchivedLock(screen.getByRole("button", { name: "Revoke" }));
@@ -127,7 +127,7 @@ describe("AttendeeDetailPage archived lockdown", () => {
   it("disables restore pass for a revoked attendee", async () => {
     mockLoad(baseDetail({ status: "revoked" }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     expectArchivedLock(screen.getByRole("button", { name: "Restore pass" }));
   });

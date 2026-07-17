@@ -103,7 +103,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
   it("shows the menu item only for an admitted attendee", async () => {
     mockLoad(baseDetail({ check_in_status: "not_admitted", admitted_at: null }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
     const menu = openRevokeMenu();
     expect(within(menu).queryByRole("menuitem", { name: "Check-in" })).toBeNull();
     expect(within(menu).getByRole("menuitem", { name: "Pass" })).toBeTruthy();
@@ -112,7 +112,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
   it("Revoke pass menu item opens the pass confirm dialog and closes the menu", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     const menu = openRevokeMenu();
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Pass" }));
@@ -125,7 +125,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
   it("clicking outside the open menu closes it without triggering an action", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     openRevokeMenu();
     fireEvent.pointerDown(document.body);
@@ -136,7 +136,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
   it("hides the whole Revoke menu once the pass itself has been revoked, even with a stale admitted_at (PO review)", async () => {
     mockLoad(baseDetail({ status: "revoked" }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
     expect(screen.queryByRole("button", { name: "Revoke" })).toBeNull();
     expect(screen.getByRole("button", { name: "Restore pass" })).toBeTruthy();
   });
@@ -144,7 +144,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
   it("confirms, revokes, and reloads the detail", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     revokeAttendeeCheckIn.mockResolvedValue({ card: { check_in_status: "not_admitted" } });
     mockLoad(baseDetail({ check_in_status: "not_admitted", admitted_at: null }));
@@ -169,7 +169,7 @@ describe("AttendeeDetailPage — Revoke check-in", () => {
   it("shows an inline error on failure and keeps the action available", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     revokeAttendeeCheckIn.mockRejectedValue(new Error("boom"));
 

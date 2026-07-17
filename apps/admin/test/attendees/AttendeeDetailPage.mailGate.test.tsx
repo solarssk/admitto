@@ -111,10 +111,10 @@ describe("AttendeeDetailPage More actions — Resend ticket mail-configured gate
     fetchEventMailSettings.mockResolvedValue(mailSettings(null));
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    const resendItem = await waitFor(() => screen.getByRole("menuitem", { name: "Resend ticket" }));
+    const resendItem = await screen.findByRole("menuitem", { name: "Resend ticket" });
 
     await waitFor(() => expect((resendItem as HTMLButtonElement).disabled).toBe(true));
     const describedBy = resendItem.getAttribute("aria-describedby");
@@ -126,10 +126,10 @@ describe("AttendeeDetailPage More actions — Resend ticket mail-configured gate
     fetchEventMailSettings.mockResolvedValue(mailSettings("graph"));
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    const resendItem = await waitFor(() => screen.getByRole("menuitem", { name: "Resend ticket" }));
+    const resendItem = await screen.findByRole("menuitem", { name: "Resend ticket" });
     await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalled());
     expect((resendItem as HTMLButtonElement).disabled).toBe(false);
   });
@@ -138,10 +138,10 @@ describe("AttendeeDetailPage More actions — Resend ticket mail-configured gate
     fetchEventMailSettings.mockResolvedValue(mailSettings("export_only"));
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    const resendItem = await waitFor(() => screen.getByRole("menuitem", { name: "Resend ticket" }));
+    const resendItem = await screen.findByRole("menuitem", { name: "Resend ticket" });
     await waitFor(() => expect((resendItem as HTMLButtonElement).disabled).toBe(true));
   });
 
@@ -149,10 +149,10 @@ describe("AttendeeDetailPage More actions — Resend ticket mail-configured gate
     fetchEventMailSettings.mockRejectedValue(new Error("network down"));
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
-    const resendItem = await waitFor(() => screen.getByRole("menuitem", { name: "Resend ticket" }));
+    const resendItem = await screen.findByRole("menuitem", { name: "Resend ticket" });
     await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalled());
     expect((resendItem as HTMLButtonElement).disabled).toBe(false);
   });
@@ -163,9 +163,9 @@ describe("AttendeeDetailPage More actions — Resend ticket mail-configured gate
     fetchEventMailSettings.mockResolvedValue(mailSettings(null));
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
-    const trigger = await waitFor(() => screen.getByRole("button", { name: "More actions" }));
+    const trigger = await screen.findByRole("button", { name: "More actions" });
     await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalled());
     expect((trigger as HTMLButtonElement).disabled).toBe(false);
   });

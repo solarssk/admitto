@@ -6,7 +6,6 @@ import {
   bulkResendTickets,
   exportAttendees,
   fetchEventAttendees,
-  fetchEventMailSettings,
   fetchTicketTypes,
   sendEventBulk,
   updateAttendee,
@@ -23,6 +22,7 @@ import type {
 } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
+import { useMailConfigured } from "../attendees/useMailConfigured.js";
 import { ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
@@ -262,7 +262,6 @@ export function AttendeesPage() {
   const [sendTarget, setSendTarget] = useState<"unsent" | "all">("unsent");
   const [sendBusy, setSendBusy] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [mailConfigured, setMailConfigured] = useState<boolean | undefined>(undefined);
   const [bulkSendBusy, setBulkSendBusy] = useState(false);
   const [bulkSendConfirmOpen, setBulkSendConfirmOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
@@ -304,27 +303,9 @@ export function AttendeesPage() {
     return () => ac.abort();
   }, [eventId, ticketTypesRetryToken]);
 
-  // Whether the header "Send tickets" button should work at all — resolves the event's
-  // *effective* mail transport (its own dedicated one, or the inherited org one; same
-  // resolution Event Settings -> Mailing already shows). "export_only" is a real, saved
-  // provider value but never actually delivers mail, so it doesn't count as configured
-  // here either - mirrors EventMailSettingsCard's own transportConfigured check.
-  useEffect(() => {
-    if (!eventId) return;
-    setMailConfigured(undefined);
-    const ac = new AbortController();
-    fetchEventMailSettings(eventId, ac.signal)
-      .then((data) => {
-        if (ac.signal.aborted) return;
-        const provider = data.fields.provider.value;
-        setMailConfigured(provider === "smtp" || provider === "graph" || provider === "powerautomate");
-      })
-      .catch(() => {
-        if (ac.signal.aborted) return;
-        setMailConfigured(undefined);
-      });
-    return () => ac.abort();
-  }, [eventId]);
+  // Whether the header "Send tickets" button should work at all — shared with the Attendee
+  // Detail page's "Resend ticket" gate via useMailConfigured.
+  const mailConfigured = useMailConfigured(eventId);
 
   const loadList = useCallback(async () => {
     if (!eventId) return;

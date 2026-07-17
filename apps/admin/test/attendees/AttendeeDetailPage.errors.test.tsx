@@ -104,7 +104,7 @@ describe("AttendeeDetailPage operator errors", () => {
     vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
     renderPage();
 
-    await waitFor(() => screen.getByRole("heading", { name: "Anna" }));
+    await screen.findByRole("heading", { name: "Anna" });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(await screen.findByText("Failed to load ticket types.")).toBeTruthy();
 

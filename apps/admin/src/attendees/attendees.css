@@ -899,13 +899,15 @@
   gap: 16px;
 }
 
-/* Same 5-column track (repeat(5, 1fr), 12px gap) as .attendee-status-strip above it, so
-   the main/side split lines up exactly with the strip's chip boundaries at every width
+/* Same 5-column track (repeat(5, minmax(0, 1fr)), 12px gap) as .attendee-status-strip above
+   it, so the main/side split lines up exactly with the strip's chip boundaries at every width
    instead of just at whatever one viewport width a fixed side-column px value happened to
-   match (PO review — "symmetry" with the Check-in chip's left edge). */
+   match (PO review — "symmetry" with the Check-in chip's left edge). minmax(0, 1fr), not bare
+   1fr, for the same reason as the status strip - a Card's own content shouldn't be able to
+   stretch this grid wider than its container. */
 .attendee-detail-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
   margin-top: 16px;
@@ -960,6 +962,14 @@
 .attendee-detail-row > span:first-child {
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+/* The value side has no width constraint of its own by default - a long email or imported
+   value would otherwise force the row (and its card) wider instead of wrapping (bot review). */
+.attendee-detail-row > :last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
 /* Event-day items list — matches the design mockup's .att-item-row exactly (values pulled
@@ -1025,7 +1035,11 @@
    Wallet), matching the design mockup's .att-status-strip. */
 .attendee-status-strip {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  /* minmax(0, 1fr), not bare 1fr - a bare 1fr track can still grow to its content's
+     max-content width (a long check-in timestamp, a long badge), pushing the whole grid
+     wider than its container instead of letting the chip's own text-overflow:ellipsis
+     kick in (bot review). */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-top: 16px;
 }
@@ -1083,13 +1097,13 @@
 
 @media (max-width: 900px) {
   .attendee-status-strip {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 560px) {
   .attendee-status-strip {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

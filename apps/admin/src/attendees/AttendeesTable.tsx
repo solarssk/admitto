@@ -508,7 +508,7 @@ function FilterToolbar({
             value={rsvpStatusFilter}
             onChange={(e) => onRsvpStatusFilterChange(e.target.value as "" | RsvpStatus)}
           >
-            <option value="">All attendance</option>
+            <option value="">All attendance statuses</option>
             <option value="none">Registered</option>
             <option value="confirmed">Confirmed</option>
             <option value="declined">Declined</option>

@@ -103,7 +103,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
   it("confirms Revoke pass, closes the dialog, and shows Restore pass afterward", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     updateAttendee.mockResolvedValue(
       baseDetail({ status: "revoked", updated_at: "2026-01-02T00:00:00.000Z" }),
@@ -126,7 +126,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
   it("shows the capacity-blocked banner (not the dialog) when Restore pass hits event_full", async () => {
     mockLoad(baseDetail({ status: "revoked" }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     const { ApiError } = await import("../../src/api/client.js");
     updateAttendee.mockRejectedValue(
@@ -145,7 +145,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
     mockLoad(baseDetail({ status: "revoked" }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     const { ApiError } = await import("../../src/api/client.js");
     updateAttendee
