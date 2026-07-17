@@ -193,6 +193,14 @@ export interface AttendeeActionLogEntryDto {
   created_at: string;
 }
 
+export interface AttendeeDetailItemDto {
+  key: string;
+  label: string;
+  icon: string | null;
+  state: string;
+  detail: string | null;
+}
+
 export interface AttendeeDetailDto {
   id: string;
   name: string;
@@ -212,6 +220,7 @@ export interface AttendeeDetailDto {
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
+  event_items: AttendeeDetailItemDto[];
 }
 
 export interface AttendeesListResponse {

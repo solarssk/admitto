@@ -197,6 +197,16 @@ function mailTone(status: string | null): ChipTone {
   return variant === "ok" || variant === "warn" || variant === "error" ? variant : "neutral";
 }
 
+function itemStateLabel(state: string): string {
+  if (state === "issued") return "Issued";
+  if (state === "returned") return "Returned";
+  return "Not yet";
+}
+
+function itemStateTone(state: string): ChipTone {
+  return state === "issued" || state === "returned" ? "ok" : "neutral";
+}
+
 /** Event attendee detail: profile edit, pass revoke/restore, resend, and activity log. */
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
@@ -779,8 +789,53 @@ export function AttendeeDetailPage() {
               </div>
             </Card>
 
-            {customDataEntries.length > 0 && (
-              <Card title="Additional information">
+            <Card title="Event-day items">
+              {detail.event_items.length === 0 ? (
+                <EmptyState
+                  icon={<i className="ti ti-package" aria-hidden="true" />}
+                  title="No event-day items"
+                  description="This event has no hand-out items configured yet."
+                />
+              ) : (
+                <>
+                  <p className="attendee-readonly">Issued at check-in</p>
+                  <ul className="attendee-items-list">
+                    {detail.event_items.map((item) => (
+                      <li className="attendee-items-row" key={item.key}>
+                        <span
+                          className={`attendee-items-row__icon attendee-items-row__icon--${itemStateTone(item.state)}`}
+                        >
+                          <i
+                            className={`ti ti-${item.state === "issued" || item.state === "returned" ? "circle-check" : (item.icon ?? "package")}`}
+                            aria-hidden="true"
+                          />
+                        </span>
+                        <span className="attendee-items-row__label">
+                          {item.label}
+                          {item.detail && (
+                            <span className="attendee-items-row__detail"> · {item.detail}</span>
+                          )}
+                        </span>
+                        <span
+                          className={`attendee-items-row__state attendee-items-row__state--${itemStateTone(item.state)}`}
+                        >
+                          {itemStateLabel(item.state)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </Card>
+
+            <Card title="Additional information">
+              {customDataEntries.length === 0 ? (
+                <EmptyState
+                  icon={<i className="ti ti-list-details" aria-hidden="true" />}
+                  title="No additional information"
+                  description="Custom fields will appear here once this attendee has some."
+                />
+              ) : (
                 <div className="attendee-detail-readonly">
                   {customDataEntries.map(([key, label, value]) => (
                     <div className="attendee-detail-row" key={key}>
@@ -789,8 +844,8 @@ export function AttendeeDetailPage() {
                     </div>
                   ))}
                 </div>
-              </Card>
-            )}
+              )}
+            </Card>
           </div>
 
           <div className="attendee-detail-side">
@@ -880,7 +935,7 @@ export function AttendeeDetailPage() {
               disabled={isEventArchived(event)}
             >
               <Select
-                label="RSVP status"
+                label="Attendance"
                 value={form.rsvp_status}
                 onChange={(e) => setForm({ ...form, rsvp_status: e.target.value as RsvpStatus })}
               >

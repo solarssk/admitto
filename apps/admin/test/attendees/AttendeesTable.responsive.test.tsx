@@ -82,7 +82,7 @@ describe("AttendeesTable toolbar vs bulk bar", () => {
 
     expect(screen.getByLabelText("Search attendees by name, email, or company")).toBeTruthy();
     expect(screen.getByLabelText("Filter by check-in status")).toBeTruthy();
-    expect(screen.getByLabelText("Filter by RSVP status")).toBeTruthy();
+    expect(screen.getByLabelText("Filter by attendance")).toBeTruthy();
     expect(screen.getByLabelText("Filter by ticket type")).toBeTruthy();
     expect(document.querySelector(".attendees-bulkbar")).toBeNull();
 
@@ -99,7 +99,7 @@ describe("AttendeesTable toolbar vs bulk bar", () => {
     // Not just visually hidden - not in the DOM at all.
     expect(screen.queryByLabelText("Search attendees by name, email, or company")).toBeNull();
     expect(screen.queryByLabelText("Filter by check-in status")).toBeNull();
-    expect(screen.queryByLabelText("Filter by RSVP status")).toBeNull();
+    expect(screen.queryByLabelText("Filter by attendance")).toBeNull();
     expect(screen.queryByLabelText("Filter by ticket type")).toBeNull();
     const bar = document.querySelector(".attendees-bulkbar");
     expect(bar).toBeTruthy();

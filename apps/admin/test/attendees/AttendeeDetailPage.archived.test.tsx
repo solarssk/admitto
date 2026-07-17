@@ -71,6 +71,7 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
     ticket_ref: null,
     deliveries: [],
     action_log: [],
+    event_items: [],
     ...overrides,
   };
 }
@@ -116,7 +117,7 @@ describe("AttendeeDetailPage archived lockdown", () => {
     // inside the Edit modal) is unreachable along with the rest of the form (#361).
     expectArchivedLock(screen.getByRole("button", { name: "Edit" }));
     expect(screen.queryByLabelText("Email")).toBeNull();
-    expect(screen.queryByRole("combobox", { name: "RSVP status" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Attendance" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
 
     // Back is read-only navigation and must stay usable.

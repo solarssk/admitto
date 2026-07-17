@@ -22,7 +22,7 @@ function AttendeesTableSkeleton() {
             <th>Company</th>
             <th>Ticket</th>
             <th>Pass status</th>
-            <th>RSVP status</th>
+            <th>Attendance</th>
             <th>Mail</th>
             <th>Check-in</th>
             <th className="attendees-table-v2__actions-col" aria-label="Actions">
@@ -66,7 +66,7 @@ const SORTABLE_COLUMNS: { column: AttendeeSortBy; label: string }[] = [
   { column: "company", label: "Company" },
   { column: "ticket_type", label: "Ticket" },
   { column: "status", label: "Pass status" },
-  { column: "rsvp_status", label: "RSVP status" },
+  { column: "rsvp_status", label: "Attendance" },
 ];
 
 /** Same columns as the desktop header, plus Check-in (which sits after the unsortable Mail
@@ -503,11 +503,11 @@ function FilterToolbar({
           <Select
             id="attendees-filter-rsvp"
             name="attendees-filter-rsvp"
-            aria-label="Filter by RSVP status"
+            aria-label="Filter by attendance"
             value={rsvpStatusFilter}
             onChange={(e) => onRsvpStatusFilterChange(e.target.value as "" | RsvpStatus)}
           >
-            <option value="">All RSVP statuses</option>
+            <option value="">All attendance</option>
             <option value="none">Registered</option>
             <option value="confirmed">Confirmed</option>
             <option value="declined">Declined</option>

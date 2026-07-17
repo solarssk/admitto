@@ -70,6 +70,7 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
     ticket_ref: null,
     deliveries: [],
     action_log: [],
+    event_items: [],
     ...overrides,
   };
 }

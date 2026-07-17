@@ -9,9 +9,5 @@ export function MailStatusBadge({ status }: { status: string | null }) {
     );
   }
   const meta = resolveStatusMeta(status);
-  return (
-    <Badge variant={meta.variant} dot>
-      {meta.label}
-    </Badge>
-  );
+  return <Badge variant={meta.variant}>{meta.label}</Badge>;
 }

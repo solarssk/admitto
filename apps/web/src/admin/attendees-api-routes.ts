@@ -35,6 +35,7 @@ import {
   revokeCheckInMutation,
   revokeItemState,
   getAttendeeCard,
+  buildItemDetail,
   UndoNotAllowedError,
   loadEventTicketTypes,
   assertTicketTypeInCatalog,
@@ -409,6 +410,14 @@ export type AttendeeActionLogEntryDto = {
   created_at: string;
 };
 
+export type AttendeeDetailItemDto = {
+  key: string;
+  label: string;
+  icon: string | null;
+  state: string;
+  detail: string | null;
+};
+
 export type AttendeeDetailDto = {
   id: string;
   name: string;
@@ -428,7 +437,42 @@ export type AttendeeDetailDto = {
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
+  event_items: AttendeeDetailItemDto[];
 };
+
+/** Read-only event-day item summary for the attendee detail page — same source data as the
+ * check-in AttendeeCardDto (enabled EventItems + this attendee's AttendeeItemState rows), but
+ * without getAttendeeCard's ensureAttendeeItemStates write-on-read side effect: a plain detail
+ * view has no reason to create pending-state rows the operator card would lazily backfill. */
+async function loadAttendeeItemsSummary(
+  db: PrismaClient,
+  eventId: string,
+  attendeeId: string,
+  customData: unknown,
+): Promise<AttendeeDetailItemDto[]> {
+  const items = await db.eventItem.findMany({
+    where: { event_id: eventId, enabled: true },
+    orderBy: { key: "asc" },
+  });
+  if (items.length === 0) return [];
+
+  const [states, registryFields] = await Promise.all([
+    db.attendeeItemState.findMany({
+      where: { attendee_id: attendeeId, event_item_id: { in: items.map((item) => item.id) } },
+    }),
+    loadEventCustomDataFields(db, eventId).catch(() => [] as EventItemContent[]),
+  ]);
+  const stateByItem = new Map(states.map((s) => [s.event_item_id, s.state]));
+  const registryByKey = new Map(registryFields.map((f) => [f.source_field, f]));
+
+  return items.map((item) => ({
+    key: item.key,
+    label: item.label,
+    icon: item.icon,
+    state: stateByItem.get(item.id) ?? "pending",
+    detail: buildItemDetail(item.config, customData, registryByKey) ?? null,
+  }));
+}
 
 /** Map admitted_at to API check-in status for list/detail DTOs. */
 function checkInStatus(admittedAt: Date | null): "admitted" | "not_admitted" {
@@ -659,9 +703,10 @@ async function buildAttendeeDetailDto(
     public_ref: string | null;
   },
 ): Promise<AttendeeDetailDto> {
-  const [deliveriesResult, action_log] = await Promise.all([
+  const [deliveriesResult, action_log, event_items] = await Promise.all([
     listDeliveries({ eventId, filters: { attendeeId: row.id } }, db),
     loadAttendeeActionLogEntries(db, row.id),
+    loadAttendeeItemsSummary(db, eventId, row.id, row.custom_data),
   ]);
   const { company, department } = resolveCompanyDepartment(row);
 
@@ -684,6 +729,7 @@ async function buildAttendeeDetailDto(
     custom_data: row.custom_data ?? null,
     deliveries: deliveriesResult.items.map(toDeliveryDto),
     action_log,
+    event_items,
   };
 }
 

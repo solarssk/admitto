@@ -72,6 +72,7 @@ const detail = {
   ticket_ref: null,
   deliveries: [],
   action_log: [],
+  event_items: [],
 };
 
 function renderPage() {

@@ -77,6 +77,7 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
     ticket_ref: null,
     deliveries: [],
     action_log: [],
+    event_items: [],
     ...overrides,
   };
 }
@@ -197,7 +198,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("changes RSVP status and saves it along with the rest of the form", async () => {
+  it("changes attendance status and saves it along with the rest of the form", async () => {
     mockLoad(baseDetail());
     updateAttendee.mockResolvedValueOnce(baseDetail({ rsvp_status: "declined" }));
     renderPage();
@@ -207,7 +208,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     // saves itself immediately on change; it's part of the same patch as everything
     // else and only goes out when Save changes is clicked.
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByRole("combobox", { name: "RSVP status" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Attendance" }), {
       target: { value: "declined" },
     });
     expect(updateAttendee).not.toHaveBeenCalled();
@@ -511,12 +512,44 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     expect(screen.getByText("vegan")).toBeTruthy();
   });
 
-  it("hides the Additional information card when custom_data is empty", async () => {
+  it("shows an empty-state placeholder in Additional information when custom_data is empty", async () => {
     mockLoad(baseDetail({ custom_data: {} }));
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
-    expect(screen.queryByText("Additional information")).toBeNull();
+    expect(screen.getByText("Additional information")).toBeTruthy();
+    expect(screen.getByText("No additional information")).toBeTruthy();
+  });
+
+  it("shows an empty-state placeholder in Event-day items when the event has no configured items", async () => {
+    mockLoad(baseDetail({ event_items: [] }));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    expect(screen.getByText("Event-day items")).toBeTruthy();
+    expect(screen.getByText("No event-day items")).toBeTruthy();
+  });
+
+  it("lists event-day items with their hand-out state and detail", async () => {
+    mockLoad(
+      baseDetail({
+        event_items: [
+          { key: "gift_bag", label: "Gift bag", icon: "gift", state: "issued", detail: "T-shirt size: M" },
+          { key: "badge", label: "Name badge", icon: "id-badge-2", state: "issued", detail: null },
+          { key: "headset", label: "Headset", icon: "headphones", state: "pending", detail: null },
+        ],
+      }),
+    );
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    expect(screen.getByText("Issued at check-in")).toBeTruthy();
+    expect(screen.getByText(/Gift bag/)).toBeTruthy();
+    expect(screen.getByText(/T-shirt size: M/)).toBeTruthy();
+    // Scoped to the items list — the Check-in status-strip chip can also read "Not yet".
+    const itemsList = document.querySelector(".attendee-items-list") as HTMLElement;
+    expect(within(itemsList).getAllByText("Issued")).toHaveLength(2);
+    expect(within(itemsList).getByText("Not yet")).toBeTruthy();
   });
 
   it("lists mail delivery history when deliveries exist", async () => {
