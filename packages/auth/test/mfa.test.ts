@@ -47,7 +47,7 @@ import { userRequiresMfa, userHasConfirmedTotp } from "../src/mfa/policy.js";
 import { validateSession, validatePartialSession, promoteSessionToFull } from "../src/session.js";
 import { getSessionTtlAdminMs, getMfaRequiredRoles } from "../src/settings/resolver.js";
 import { SETTING_SESSION_TTL } from "../src/settings/keys.js";
-import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
+import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..", "..", "db");

@@ -2,7 +2,7 @@ import { exec, execFile } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
+import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);

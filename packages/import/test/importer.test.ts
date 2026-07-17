@@ -9,7 +9,7 @@ import {
   IMPORT_CONFLICT_SKIP_REASON,
 } from "../src/importer.js";
 import type { AttendeeRow } from "../src/types.js";
-import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
+import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");

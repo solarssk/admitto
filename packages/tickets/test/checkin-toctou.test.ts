@@ -25,7 +25,7 @@ vi.mock("../src/resolve.js", () => ({
 
 import { checkInScan } from "../src/checkin.js";
 import { resolveTicket } from "../src/resolve.js";
-import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
+import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");

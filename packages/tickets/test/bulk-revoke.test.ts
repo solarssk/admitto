@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { revokeAllCheckInsForEvent, revokeAllItemsForEvent } from "../src/bulk-revoke.js";
 import type { OpsAuditContext } from "../src/ops-audit.js";
-import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
+import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");

@@ -7,7 +7,7 @@ import { generateToken } from "../src/token.js";
 import { hashToken } from "../src/hash.js";
 import { buildTicketUrl } from "../src/url.js";
 import { resolveTicket } from "../src/resolve.js";
-import { assertTestDatabaseUrl } from "./assertTestDatabaseUrl.js";
+import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
