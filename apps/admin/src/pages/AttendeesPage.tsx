@@ -571,10 +571,8 @@ export function AttendeesPage() {
     }
   };
 
-  const emptyMessage =
-    total === 0 && !searchQuery && statusFilter === "all" && !ticketTypeFilter && !rsvpStatusFilter
-      ? "No attendees yet. Import a CSV or XLSX file to get started."
-      : "No matches";
+  const isUnfilteredEmpty =
+    total === 0 && !searchQuery && statusFilter === "all" && !ticketTypeFilter && !rsvpStatusFilter;
 
   if (!eventId) return <p>Missing event.</p>;
 
@@ -652,7 +650,7 @@ export function AttendeesPage() {
         page={page}
         pageSize={pageSize}
         loading={loading}
-        emptyMessage={emptyMessage}
+        isUnfilteredEmpty={isUnfilteredEmpty}
         searchInput={searchInput}
         statusFilter={statusFilter}
         ticketTypeFilter={ticketTypeFilter}

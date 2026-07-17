@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Button, Card, Checkbox, IconButton, Input, Select, Skeleton } from "@admitto/ui";
+import { Button, Card, Checkbox, EmptyState, IconButton, Input, Select, Skeleton } from "@admitto/ui";
 import type { AttendeeRowDto, AttendeeSortBy, AttendeeSortDir, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
@@ -239,7 +239,7 @@ export interface AttendeesTableProps {
   page: number;
   pageSize: number;
   loading: boolean;
-  emptyMessage: string;
+  isUnfilteredEmpty: boolean;
   searchInput: string;
   statusFilter: "all" | "admitted" | "not_admitted";
   ticketTypeFilter: string;
@@ -539,7 +539,7 @@ function AttendeesListContent({
   loading,
   items,
   isDesktop,
-  emptyMessage,
+  isUnfilteredEmpty,
   selectedIds,
   onToggleRow,
   onToggleSelectAll,
@@ -557,7 +557,7 @@ function AttendeesListContent({
   loading: boolean;
   items: AttendeeRowDto[];
   isDesktop: boolean;
-  emptyMessage: string;
+  isUnfilteredEmpty: boolean;
   selectedIds: ReadonlySet<string>;
   onToggleRow: (id: string) => void;
   onToggleSelectAll: () => void;
@@ -577,10 +577,18 @@ function AttendeesListContent({
   }
 
   if (items.length === 0) {
-    return (
-      <div className="attendees-empty">
-        <p>{emptyMessage}</p>
-      </div>
+    return isUnfilteredEmpty ? (
+      <EmptyState
+        icon={<i className="ti ti-users" aria-hidden="true" />}
+        title="No attendees yet"
+        description="Import a CSV or XLSX file, or add attendees one at a time."
+      />
+    ) : (
+      <EmptyState
+        icon={<i className="ti ti-search-off" aria-hidden="true" />}
+        title="No matches"
+        description="Try a different search, or clear your filters."
+      />
     );
   }
 
@@ -731,7 +739,7 @@ export function AttendeesTable({
   page,
   pageSize,
   loading,
-  emptyMessage,
+  isUnfilteredEmpty,
   searchInput,
   statusFilter,
   ticketTypeFilter,
@@ -801,7 +809,7 @@ export function AttendeesTable({
         loading={loading}
         items={items}
         isDesktop={isDesktop}
-        emptyMessage={emptyMessage}
+        isUnfilteredEmpty={isUnfilteredEmpty}
         selectedIds={selectedIds}
         onToggleRow={onToggleRow}
         onToggleSelectAll={onToggleSelectAll}

@@ -25,7 +25,7 @@ const tableProps = {
   page: 1,
   pageSize: 25,
   loading: false,
-  emptyMessage: "No matches",
+  isUnfilteredEmpty: false,
   searchInput: "",
   statusFilter: "all" as const,
   ticketTypeFilter: "",
@@ -216,5 +216,24 @@ describe("AttendeesTable loading states (#271)", () => {
 
     expect(screen.getByText("Loading…")).toBeTruthy();
     expect(screen.queryByText("0 attendees")).toBeNull();
+  });
+});
+
+describe("AttendeesTable empty states", () => {
+  it("shows an icon+text placeholder for a truly empty event", () => {
+    render(<AttendeesTable {...tableProps} isUnfilteredEmpty items={[]} total={0} />);
+
+    expect(screen.getByText("No attendees yet")).toBeTruthy();
+    expect(
+      screen.getByText("Import a CSV or XLSX file, or add attendees one at a time."),
+    ).toBeTruthy();
+  });
+
+  it("shows a different icon+text placeholder when a search/filter matches nothing", () => {
+    render(<AttendeesTable {...tableProps} isUnfilteredEmpty={false} items={[]} total={0} />);
+
+    expect(screen.getByText("No matches")).toBeTruthy();
+    expect(screen.getByText("Try a different search, or clear your filters.")).toBeTruthy();
+    expect(screen.queryByText("No attendees yet")).toBeNull();
   });
 });

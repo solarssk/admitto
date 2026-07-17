@@ -32,7 +32,7 @@ const tableProps = {
   page: 1,
   pageSize: 25,
   loading: false,
-  emptyMessage: "No matches",
+  isUnfilteredEmpty: false,
   searchInput: "",
   statusFilter: "all" as const,
   ticketTypeFilter: "",
