@@ -982,11 +982,6 @@
   white-space: nowrap;
 }
 
-.attendee-items-row__detail {
-  color: var(--text-muted);
-  font-weight: 400;
-}
-
 .attendee-items-row__state {
   font-size: var(--fs-xs);
   font-weight: 600;

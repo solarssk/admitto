@@ -530,13 +530,13 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     expect(screen.getByText("No event-day items")).toBeTruthy();
   });
 
-  it("lists event-day items with their hand-out state and detail", async () => {
+  it("lists event-day items with their hand-out state, without a content_fields detail (PO review)", async () => {
     mockLoad(
       baseDetail({
         event_items: [
-          { key: "gift_bag", label: "Gift bag", icon: "gift", state: "issued", detail: "T-shirt size: M" },
-          { key: "badge", label: "Name badge", icon: "id-badge-2", state: "issued", detail: null },
-          { key: "headset", label: "Headset", icon: "headphones", state: "pending", detail: null },
+          { key: "gift_bag", label: "Gift bag", icon: "gift", state: "issued" },
+          { key: "badge", label: "Name badge", icon: "id-badge-2", state: "issued" },
+          { key: "headset", label: "Headset", icon: "headphones", state: "pending" },
         ],
       }),
     );
@@ -544,8 +544,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
     expect(screen.getByText("Issued at check-in")).toBeTruthy();
-    expect(screen.getByText(/Gift bag/)).toBeTruthy();
-    expect(screen.getByText(/T-shirt size: M/)).toBeTruthy();
+    expect(screen.getByText("Gift bag")).toBeTruthy();
     // Scoped to the items list — the Check-in status-strip chip can also read "Not yet".
     const itemsList = document.querySelector(".attendee-items-list") as HTMLElement;
     expect(within(itemsList).getAllByText("Issued")).toHaveLength(2);

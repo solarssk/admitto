@@ -850,12 +850,7 @@ export function AttendeeDetailPage() {
                             aria-hidden="true"
                           />
                         </span>
-                        <span className="attendee-items-row__label">
-                          {item.label}
-                          {item.detail && (
-                            <span className="attendee-items-row__detail"> · {item.detail}</span>
-                          )}
-                        </span>
+                        <span className="attendee-items-row__label">{item.label}</span>
                         <span
                           className={`attendee-items-row__state attendee-items-row__state--${itemStateTone(item.state)}`}
                         >

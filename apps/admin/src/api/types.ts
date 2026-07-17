@@ -198,7 +198,6 @@ export interface AttendeeDetailItemDto {
   label: string;
   icon: string | null;
   state: string;
-  detail: string | null;
 }
 
 export interface AttendeeDetailDto {

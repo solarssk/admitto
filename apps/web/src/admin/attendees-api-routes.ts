@@ -35,7 +35,6 @@ import {
   revokeCheckInMutation,
   revokeItemState,
   getAttendeeCard,
-  buildItemDetail,
   UndoNotAllowedError,
   loadEventTicketTypes,
   assertTicketTypeInCatalog,
@@ -415,7 +414,6 @@ export type AttendeeDetailItemDto = {
   label: string;
   icon: string | null;
   state: string;
-  detail: string | null;
 };
 
 export type AttendeeDetailDto = {
@@ -443,12 +441,14 @@ export type AttendeeDetailDto = {
 /** Read-only event-day item summary for the attendee detail page — same source data as the
  * check-in AttendeeCardDto (enabled EventItems + this attendee's AttendeeItemState rows), but
  * without getAttendeeCard's ensureAttendeeItemStates write-on-read side effect: a plain detail
- * view has no reason to create pending-state rows the operator card would lazily backfill. */
+ * view has no reason to create pending-state rows the operator card would lazily backfill.
+ * Deliberately doesn't surface each item's configured content_fields (e.g. shirt size) inline -
+ * with several fields configured that reads as clutter next to the item name and duplicates the
+ * Additional information card, which already lists every custom_data field on its own (PO review). */
 async function loadAttendeeItemsSummary(
   db: PrismaClient,
   eventId: string,
   attendeeId: string,
-  customData: unknown,
 ): Promise<AttendeeDetailItemDto[]> {
   const items = await db.eventItem.findMany({
     where: { event_id: eventId, enabled: true },
@@ -456,21 +456,16 @@ async function loadAttendeeItemsSummary(
   });
   if (items.length === 0) return [];
 
-  const [states, registryFields] = await Promise.all([
-    db.attendeeItemState.findMany({
-      where: { attendee_id: attendeeId, event_item_id: { in: items.map((item) => item.id) } },
-    }),
-    loadEventCustomDataFields(db, eventId).catch(() => [] as EventItemContent[]),
-  ]);
+  const states = await db.attendeeItemState.findMany({
+    where: { attendee_id: attendeeId, event_item_id: { in: items.map((item) => item.id) } },
+  });
   const stateByItem = new Map(states.map((s) => [s.event_item_id, s.state]));
-  const registryByKey = new Map(registryFields.map((f) => [f.source_field, f]));
 
   return items.map((item) => ({
     key: item.key,
     label: item.label,
     icon: item.icon,
     state: stateByItem.get(item.id) ?? "pending",
-    detail: buildItemDetail(item.config, customData, registryByKey) ?? null,
   }));
 }
 
@@ -706,7 +701,7 @@ async function buildAttendeeDetailDto(
   const [deliveriesResult, action_log, event_items] = await Promise.all([
     listDeliveries({ eventId, filters: { attendeeId: row.id } }, db),
     loadAttendeeActionLogEntries(db, row.id),
-    loadAttendeeItemsSummary(db, eventId, row.id, row.custom_data),
+    loadAttendeeItemsSummary(db, eventId, row.id),
   ]);
   const { company, department } = resolveCompanyDepartment(row);
 
