@@ -890,17 +890,34 @@
   gap: 16px;
 }
 
+/* Same 5-column track (repeat(5, 1fr), 12px gap) as .attendee-status-strip above it, so
+   the main/side split lines up exactly with the strip's chip boundaries at every width
+   instead of just at whatever one viewport width a fixed side-column px value happened to
+   match (PO review — "symmetry" with the Check-in chip's left edge). */
 .attendee-detail-grid {
   display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 16px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
   align-items: start;
   margin-top: 16px;
+}
+
+.attendee-detail-main {
+  grid-column: 1 / 4;
+}
+
+.attendee-detail-side {
+  grid-column: 4 / 6;
 }
 
 @media (max-width: 900px) {
   .attendee-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .attendee-detail-main,
+  .attendee-detail-side {
+    grid-column: auto;
   }
 }
 
