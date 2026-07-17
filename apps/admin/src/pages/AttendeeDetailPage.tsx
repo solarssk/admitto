@@ -831,41 +831,42 @@ export function AttendeeDetailPage() {
                   description="This event has no hand-out items configured yet."
                 />
               ) : (
-                <>
-                  <p className="attendee-readonly">Issued at check-in</p>
-                  <ul className="attendee-items-list">
-                    {eventItems.map((item) => (
-                      <li className="attendee-items-row" key={item.key}>
-                        <span
-                          className={[
-                            "attendee-items-row__icon",
-                            itemIconModifier(item.state) &&
-                              `attendee-items-row__icon--${itemIconModifier(item.state)}`,
-                          ]
-                            .filter(Boolean)
-                            .join(" ")}
-                        >
-                          <i
-                            className={`ti ti-${item.state === "issued" || item.state === "returned" ? "circle-check" : (item.icon ?? "package")}`}
-                            aria-hidden="true"
-                          />
-                        </span>
-                        <span className="attendee-items-row__label">{item.label}</span>
-                        <span
-                          className={`attendee-items-row__state attendee-items-row__state--${itemStateTone(item.state)}`}
-                        >
-                          {itemStateLabel(item.state)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
+                <ul className="attendee-items-list">
+                  {eventItems.map((item) => (
+                    <li className="attendee-items-row" key={item.key}>
+                      <span
+                        className={[
+                          "attendee-items-row__icon",
+                          itemIconModifier(item.state) &&
+                            `attendee-items-row__icon--${itemIconModifier(item.state)}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        <i
+                          className={`ti ti-${item.state === "issued" || item.state === "returned" ? "circle-check" : (item.icon ?? "package")}`}
+                          aria-hidden="true"
+                        />
+                      </span>
+                      <span className="attendee-items-row__label">{item.label}</span>
+                      <span
+                        className={`attendee-items-row__state attendee-items-row__state--${itemStateTone(item.state)}`}
+                      >
+                        {itemStateLabel(item.state)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               )}
             </Card>
 
             <Card title="Mail delivery history">
               {detail.deliveries.length === 0 ? (
-                <p className="attendee-readonly">No delivery attempts yet.</p>
+                <EmptyState
+                  icon={<i className="ti ti-mail-off" aria-hidden="true" />}
+                  title="No delivery attempts yet"
+                  description="Ticket emails and resends will appear here once one is sent."
+                />
               ) : (
                 <ul className="attendee-deliveries">
                   {detail.deliveries.map((delivery) => (

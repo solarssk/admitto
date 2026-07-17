@@ -543,7 +543,6 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
-    expect(screen.getByText("Issued at check-in")).toBeTruthy();
     expect(screen.getByText("Gift bag")).toBeTruthy();
     // Scoped to the items list — the Check-in status-strip chip can also read "Not yet".
     const itemsList = document.querySelector(".attendee-items-list") as HTMLElement;
@@ -575,15 +574,15 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
 
     expect(screen.getByText("Mail delivery history")).toBeTruthy();
     expect(screen.getByText("Your ticket")).toBeTruthy();
-    expect(screen.queryByText("No delivery attempts yet.")).toBeNull();
+    expect(screen.queryByText("No delivery attempts yet")).toBeNull();
   });
 
-  it("shows an empty state in the Mail delivery history card when nothing was ever sent", async () => {
+  it("shows an icon+text empty-state placeholder in Mail delivery history when nothing was ever sent", async () => {
     mockLoad(baseDetail({ deliveries: [] }));
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
     expect(screen.getByText("Mail delivery history")).toBeTruthy();
-    expect(screen.getByText("No delivery attempts yet.")).toBeTruthy();
+    expect(screen.getByText("No delivery attempts yet")).toBeTruthy();
   });
 });
