@@ -35,6 +35,7 @@ import {
   getTimelineDetail,
   getTimelineIcon,
   getTimelineLabel,
+  getTimelineTone,
   formatActivityTimestamp,
   humanizeFieldKey,
 } from "../attendees/attendeeTimeline.js";
@@ -925,12 +926,12 @@ export function AttendeeDetailPage() {
             <ul className="at-timeline">
               {detail.action_log.map((entry) => (
                 <li key={entry.id} className="at-tl-item">
-                  <div className="at-tl-dot">
+                  <div className={`at-tl-dot at-tl-dot--${getTimelineTone(entry)}`}>
                     <i className={`ti ti-${getTimelineIcon(entry.action_type)}`} aria-hidden="true" />
                   </div>
                   <div className="at-tl-body">
                     <b>{getTimelineLabel(entry)}</b>
-                    <span>{getTimelineDetail(entry)}</span>
+                    <span>{getTimelineDetail(entry, attributeFields)}</span>
                   </div>
                   <time className="at-tl-time" dateTime={entry.created_at}>
                     {formatActivityTimestamp(entry.created_at, entry.client_timezone, event.timezone)}

@@ -1110,13 +1110,20 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--surface-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   font-size: 0.875rem;
 }
+
+/* Same ok/warn/error/neutral vocabulary as .attendee-status-chip__icon--* above, so a check-in or
+   item hand-out reads as a clear positive and a revoke/bounce reads as a clear negative at a
+   glance, instead of every action rendering in the same dark icon regardless of outcome. */
+.at-tl-dot--ok { background: var(--status-ok-tint); color: var(--status-ok-fg); }
+.at-tl-dot--warn { background: var(--status-warn-tint); color: var(--status-warn-fg); }
+.at-tl-dot--error { background: var(--status-error-tint); color: var(--status-error-fg); }
+.at-tl-dot--neutral { background: var(--at-gray-100); color: var(--text-muted); }
 
 .at-tl-body {
   flex: 1;
@@ -1133,6 +1140,7 @@
 }
 
 .at-tl-time {
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 0.75rem;
   color: var(--text-muted);
   white-space: nowrap;

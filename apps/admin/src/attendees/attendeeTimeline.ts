@@ -1,6 +1,7 @@
 import type { AttendeeStatus } from "@admitto/db/status";
 import type { AttendeeActionLogEntryDto, RsvpStatus } from "../api/types.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
+import type { CustomDataFieldDef } from "./customData.js";
 import { RSVP_LABELS } from "./rsvpStatusBadge.js";
 import { PASS_STATUS_LABELS } from "./passStatusBadge.js";
 
@@ -32,9 +33,12 @@ function formatPassStatus(value: unknown): string {
   return key;
 }
 
-/** Scalar profile columns get a friendly label; everything else (custom_data source-field keys)
- * is humanized from its raw key - attendeeTimeline has no access to the event's field registry
- * (label config lives server-side, this module only sees the action-log entry itself). */
+/** Scalar profile columns get a friendly label; a configured custom_data field gets its registry
+ * label (passed in by the caller, see getTimelineDetail's customFields param); anything else (a
+ * CSV import column with no matching event item, or a field removed from the event's requirements
+ * after import) is humanized from its raw key - which is a lossy last resort, since a slugified
+ * source_field key has already dropped whatever diacritics its label had (e.g. "niepe_nosprawnosc"
+ * for "Niepełnosprawność" - PO review). */
 const PROFILE_FIELD_LABELS: Record<string, string> = {
   name: "Name",
   email: "Email",
@@ -48,11 +52,44 @@ export function humanizeFieldKey(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-function fieldChangeLabel(key: string): string {
-  return PROFILE_FIELD_LABELS[key] ?? humanizeFieldKey(key);
+function fieldChangeLabel(key: string, customFieldLabels: Map<string, string>): string {
+  return PROFILE_FIELD_LABELS[key] ?? customFieldLabels.get(key) ?? humanizeFieldKey(key);
 }
 
 const ITEM_STATE_ACTIONS = new Set(["item_issued", "item_returned", "item_revoked"]);
+
+export type TimelineTone = "ok" | "warn" | "error" | "neutral";
+
+/** Static tone per action type, mirroring the status-strip chips' ok/warn/error/neutral
+ * vocabulary (`.attendee-status-chip__icon--*`) so the Activity log's icons read the same way -
+ * PO review: every icon rendered in the same dark tone regardless of outcome, making the log
+ * hard to scan for what actually went wrong vs. routine. Most rows (imports, sends, edits, notes)
+ * are purely informational and stay neutral; only a genuine positive/negative outcome gets ok/error. */
+const TONE_BY_ACTION: Record<string, TimelineTone> = {
+  check_in: "ok",
+  admitted: "ok",
+  item_issued: "ok",
+  item_state_changed: "ok",
+  pass_restored: "ok",
+  mail_delivered: "ok",
+  check_in_revoked: "error",
+  pass_revoked: "error",
+  mail_bounced: "error",
+  item_revoked: "error",
+};
+
+/** rsvp_status_changed varies by the change's own target status rather than a fixed per-action
+ * tone, matching how getTimelineLabel already reads meta.to for its label text. */
+export function getTimelineTone(entry: AttendeeActionLogEntryDto): TimelineTone {
+  if (entry.action_type === "rsvp_status_changed") {
+    const to = String(entry.metadata?.to ?? "");
+    if (to === "confirmed") return "ok";
+    if (to === "declined" || to === "cancelled") return "error";
+    if (to === "tentative") return "warn";
+    return "neutral";
+  }
+  return TONE_BY_ACTION[entry.action_type] ?? "neutral";
+}
 
 export function getTimelineIcon(actionType: string): string {
   const icons: Record<string, string> = {
@@ -140,8 +177,14 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
 
 /** Human-readable diff for the activity log row, PII-safe by construction: profile edits show
  * which fields changed, never the old/new values themselves (custom_data can hold sensitive
- * text like accessibility notes or emergency contacts - #364). */
-export function getTimelineDetail(entry: AttendeeActionLogEntryDto): string {
+ * text like accessibility notes or emergency contacts - #364). `customFields` is the event's
+ * custom-field registry (same list `allCustomDataEntries` uses) - passing it lets a changed
+ * custom field show its real configured label instead of a humanized guess at its slugified
+ * source_field key (PO review, see fieldChangeLabel). */
+export function getTimelineDetail(
+  entry: AttendeeActionLogEntryDto,
+  customFields: CustomDataFieldDef[] = [],
+): string {
   const actor = entry.actor_display ?? "System";
   const meta = entry.metadata;
   if (!meta) return actor;
@@ -157,7 +200,8 @@ export function getTimelineDetail(entry: AttendeeActionLogEntryDto): string {
   if (entry.action_type === "attendee_edited") {
     const fields = meta.fields;
     if (Array.isArray(fields) && fields.length > 0) {
-      return `${fields.map((f) => fieldChangeLabel(String(f))).join(", ")} · ${actor}`;
+      const customFieldLabels = new Map(customFields.map((f) => [f.source_field, f.label]));
+      return `${fields.map((f) => fieldChangeLabel(String(f), customFieldLabels)).join(", ")} · ${actor}`;
     }
   }
 

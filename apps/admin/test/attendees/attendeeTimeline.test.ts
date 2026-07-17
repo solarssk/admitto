@@ -4,6 +4,7 @@ import {
   getTimelineDetail,
   getTimelineIcon,
   getTimelineLabel,
+  getTimelineTone,
 } from "../../src/attendees/attendeeTimeline.js";
 import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
@@ -77,6 +78,17 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
         entry({ action_type: "attendee_edited", metadata: { fields: ["shirt_size"] } }),
       ),
     ).toBe("Shirt size · operator 1");
+  });
+
+  it("uses the registry's real label for a configured custom field, not a humanized guess at its slugified key (PO review)", () => {
+    // "niepe_nosprawnosc" is the slugified source_field for "Niepełnosprawność" - diacritics
+    // are already gone from the key itself, so humanizing it can never recover "Niepełnosprawność".
+    expect(
+      getTimelineDetail(
+        entry({ action_type: "attendee_edited", metadata: { fields: ["niepe_nosprawnosc"] } }),
+        [{ label: "Niepełnosprawność", source_field: "niepe_nosprawnosc", type: "boolean", required: false }],
+      ),
+    ).toBe("Niepełnosprawność · operator 1");
   });
 
   it("falls back to the actor alone when attendee_edited has no fields metadata", () => {
@@ -164,5 +176,42 @@ describe("formatActivityTimestamp (PO review, round 2 — actor's timezone at wr
     const result = formatActivityTimestamp(ISO, null, "Europe/Warsaw");
     expect(result).toMatch(/15:00/);
     expect(result).toMatch(/CEST|GMT\+2/);
+  });
+});
+
+describe("getTimelineTone (PO review — colored icons to distinguish outcomes)", () => {
+  function entry(action_type: string, metadata: Record<string, unknown> | null = null) {
+    return {
+      id: "log-1",
+      action_type,
+      actor_display: "operator 1",
+      metadata,
+      created_at: "2026-06-28T13:00:00.000Z",
+    };
+  }
+
+  it("marks a positive outcome ok", () => {
+    expect(getTimelineTone(entry("check_in"))).toBe("ok");
+    expect(getTimelineTone(entry("item_issued"))).toBe("ok");
+    expect(getTimelineTone(entry("pass_restored"))).toBe("ok");
+  });
+
+  it("marks a negative outcome error", () => {
+    expect(getTimelineTone(entry("check_in_revoked"))).toBe("error");
+    expect(getTimelineTone(entry("pass_revoked"))).toBe("error");
+    expect(getTimelineTone(entry("mail_bounced"))).toBe("error");
+  });
+
+  it("marks routine/informational rows neutral by default", () => {
+    expect(getTimelineTone(entry("attendee_edited"))).toBe("neutral");
+    expect(getTimelineTone(entry("attendees_imported"))).toBe("neutral");
+    expect(getTimelineTone(entry("note_added"))).toBe("neutral");
+  });
+
+  it("varies rsvp_status_changed by its own target status, not a fixed tone", () => {
+    expect(getTimelineTone(entry("rsvp_status_changed", { to: "confirmed" }))).toBe("ok");
+    expect(getTimelineTone(entry("rsvp_status_changed", { to: "declined" }))).toBe("error");
+    expect(getTimelineTone(entry("rsvp_status_changed", { to: "tentative" }))).toBe("warn");
+    expect(getTimelineTone(entry("rsvp_status_changed", { to: "none" }))).toBe("neutral");
   });
 });
