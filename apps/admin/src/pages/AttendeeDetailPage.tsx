@@ -793,6 +793,27 @@ export function AttendeeDetailPage() {
               </div>
             </Card>
 
+            <Card title="Additional information">
+              {customDataEntries.length === 0 ? (
+                <EmptyState
+                  icon={<i className="ti ti-list-details" aria-hidden="true" />}
+                  title="No additional information"
+                  description="Custom fields will appear here once this attendee has some."
+                />
+              ) : (
+                <div className="attendee-detail-readonly">
+                  {customDataEntries.map(([key, label, value]) => (
+                    <div className="attendee-detail-row" key={key}>
+                      <span>{label}</span>
+                      <span>{value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+
+          <div className="attendee-detail-side">
             <Card title="Event-day items">
               {eventItems.length === 0 ? (
                 <EmptyState
@@ -832,27 +853,6 @@ export function AttendeeDetailPage() {
               )}
             </Card>
 
-            <Card title="Additional information">
-              {customDataEntries.length === 0 ? (
-                <EmptyState
-                  icon={<i className="ti ti-list-details" aria-hidden="true" />}
-                  title="No additional information"
-                  description="Custom fields will appear here once this attendee has some."
-                />
-              ) : (
-                <div className="attendee-detail-readonly">
-                  {customDataEntries.map(([key, label, value]) => (
-                    <div className="attendee-detail-row" key={key}>
-                      <span>{label}</span>
-                      <span>{value}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-          </div>
-
-          <div className="attendee-detail-side">
             <Card title="Mail delivery history">
               {detail.deliveries.length === 0 ? (
                 <p className="attendee-readonly">No delivery attempts yet.</p>
