@@ -3,6 +3,7 @@ import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom
 import { Button, EmptyState, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,
+  bulkCheckInAttendees,
   bulkDeleteAttendees,
   bulkResendTickets,
   exportAttendees,
@@ -82,6 +83,32 @@ function notifyBulkSendResult(
 
   const skippedNote = skipped > 0 ? `; ${skipped} skipped` : "";
   addToast(`Sent ${queued} ${pluralize(queued, "ticket")}; ${failed} failed${skippedNote}.`, "warning");
+}
+
+/** Standard "N checked in (M already admitted)" toast for a bulk manual check-in result —
+ * shared shape with notifyBulkSendResult above. */
+function notifyBulkCheckInResult(
+  result: { checkedIn: number; alreadyCheckedIn: number; revoked: number; invalid: number },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { checkedIn, alreadyCheckedIn, revoked, invalid } = result;
+  const notes: string[] = [];
+  if (alreadyCheckedIn > 0) notes.push(`${alreadyCheckedIn} already admitted`);
+  if (revoked > 0) notes.push(`${revoked} pass revoked`);
+  if (invalid > 0) notes.push(`${invalid} not found`);
+  const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
+
+  if (checkedIn > 0) {
+    addToast(`${checkedIn} ${pluralize(checkedIn, "attendee")} checked in${noteSuffix}.`, "success");
+    return;
+  }
+
+  if (alreadyCheckedIn > 0) {
+    addToast("All selected attendees were already checked in.", "info");
+    return;
+  }
+
+  addToast(`No attendees checked in${noteSuffix}.`, "error");
 }
 
 interface SendTicketsDialogProps {
@@ -272,6 +299,7 @@ export function AttendeesPage() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [bulkSendBusy, setBulkSendBusy] = useState(false);
   const [bulkSendConfirmOpen, setBulkSendConfirmOpen] = useState(false);
+  const [bulkCheckInBusy, setBulkCheckInBusy] = useState(false);
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
@@ -570,6 +598,40 @@ export function AttendeesPage() {
     }
   };
 
+  /** Manual bulk check-in for an explicit subset of selected attendees — no confirmation dialog
+   * (matches the design mockup and ADR-0010's "manual check-in is first-class, must be fast";
+   * it's a reversible internal state change, not an email send). Guards the completion effect
+   * against the operator navigating to a different event's Attendees list before the request
+   * resolves, same pattern as handleBulkDeleteSelected below. */
+  const handleBulkCheckInSelected = async () => {
+    if (!eventId || selectedIds.size === 0) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    setBulkCheckInBusy(true);
+    try {
+      const result = await bulkCheckInAttendees(initiatingEventId, [...selectedIds]);
+      if (!isStillOnEvent()) return;
+      notifyBulkCheckInResult(result, addToast);
+      clearSelection();
+      setReloadToken((n) => n + 1);
+    } catch (err) {
+      if (!isStillOnEvent()) return;
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        if (err.status === 401) {
+          const next = encodeURIComponent(window.location.pathname);
+          window.location.assign(`/login?next=${next}`);
+          return;
+        }
+        addToast(operatorApiErrorMessage(err, "Check-in failed."), "error");
+      } else {
+        addToast("Failed to check in attendees.", "error");
+      }
+    } finally {
+      if (isStillOnEvent()) setBulkCheckInBusy(false);
+    }
+  };
+
   /** Bulk GDPR erasure for an explicit subset of selected attendees — same effect as running
    * the attendee detail page's "Delete attendee" once per selected row. Guards every
    * completion effect against the operator navigating to a different event's Attendees list
@@ -739,6 +801,8 @@ export function AttendeesPage() {
         onBulkSendTickets={() => setBulkSendConfirmOpen(true)}
         bulkSendBusy={bulkSendBusy}
         canBulkSend={mailConfigured !== false}
+        onBulkCheckIn={() => void handleBulkCheckInSelected()}
+        bulkCheckInBusy={bulkCheckInBusy}
         onBulkDelete={() => {
           setBulkDeleteError(null);
           setBulkDeleteConfirmOpen(true);

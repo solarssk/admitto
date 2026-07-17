@@ -32,6 +32,7 @@ import {
   findFilteredAttendeesForExport,
   findFilteredAttendeesForList,
   isAdmittable,
+  admitAttendee,
   revokeCheckIn,
   revokeCheckInMutation,
   revokeItemState,
@@ -1427,6 +1428,52 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
   return c.json({ deletedCount });
 }
 
+const bulkCheckInAttendeesBodySchema = z
+  .object({
+    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+  })
+  .strict();
+
+/** POST /api/admin/events/:eventId/attendees/bulk-checkin — manual check-in for a selection of
+ * attendees at once, from the Attendees list's row-selection bulk bar. Reuses `admitAttendee`
+ * (the same single-use CAS path scan check-in already goes through, ADR 0010 §4) once per
+ * selected id rather than a bespoke bulk update, so every existing guarantee — CAS, per-attendee
+ * AttendeeActionLog write, badge issuance — applies unchanged; ids that don't belong to this
+ * event are silently ignored, same convention as bulk-delete. */
+export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = bulkCheckInAttendeesBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+
+  const owned = await db.attendee.findMany({
+    where: { id: { in: parsed.data.attendeeIds }, event_id: eventId },
+    select: { id: true },
+  });
+
+  const audit = adminAuditFromContext(c);
+  const counts = { checkedIn: 0, alreadyCheckedIn: 0, revoked: 0, invalid: 0 };
+  for (const { id } of owned) {
+    const result = await admitAttendee({ attendeeId: id, eventId, method: "manual", audit }, db);
+    if (result.status === "VALID") counts.checkedIn += 1;
+    else if (result.status === "ALREADY_CHECKED_IN") counts.alreadyCheckedIn += 1;
+    else if (result.status === "REVOKED") counts.revoked += 1;
+    else counts.invalid += 1;
+  }
+
+  return c.json(counts);
+}
 
 /** POST /api/admin/events/:eventId/attendees — manual attendee create (admin/superadmin). */
 export async function handleCreateEventAttendee(c: Context, db: PrismaClient): Promise<Response> {

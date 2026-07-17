@@ -272,6 +272,8 @@ export interface AttendeesTableProps {
   onBulkSendTickets: () => void;
   bulkSendBusy: boolean;
   canBulkSend: boolean;
+  onBulkCheckIn: () => void;
+  bulkCheckInBusy: boolean;
   onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
@@ -406,6 +408,8 @@ function BulkBar({
   bulkSendBusy,
   canBulkSend,
   onBulkSendTickets,
+  bulkCheckInBusy,
+  onBulkCheckIn,
   onBulkDelete,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
@@ -414,6 +418,8 @@ function BulkBar({
   bulkSendBusy: boolean;
   canBulkSend: boolean;
   onBulkSendTickets: () => void;
+  bulkCheckInBusy: boolean;
+  onBulkCheckIn: () => void;
   onBulkDelete: () => void;
 }>) {
   return (
@@ -449,6 +455,18 @@ function BulkBar({
             onClick={onBulkSendTickets}
           >
             {bulkSendBusy ? "Sending…" : "Send tickets"}
+          </Button>
+        )}
+      </ArchivedGuard>
+      <ArchivedGuard event={event} reasonId="bulk-checkin-reason" disabled={bulkCheckInBusy}>
+        {(guard) => (
+          <Button
+            variant="ghost"
+            icon={<i className="ti ti-qrcode" aria-hidden="true" />}
+            {...guard}
+            onClick={onBulkCheckIn}
+          >
+            {bulkCheckInBusy ? "Checking in…" : "Check in"}
           </Button>
         )}
       </ArchivedGuard>
@@ -509,6 +527,16 @@ function FilterToolbar({
           onChange={(e) => onSearchChange(e.target.value)}
           icon={<i className="ti ti-search" aria-hidden="true" />}
         />
+        {searchInput.length > 0 && (
+          <button
+            type="button"
+            className="attendees-toolbar__search-clear"
+            onClick={() => onSearchChange("")}
+            aria-label="Clear search"
+          >
+            <i className="ti ti-x" aria-hidden="true" />
+          </button>
+        )}
       </div>
       <button
         type="button"
@@ -829,6 +857,8 @@ export function AttendeesTable({
   onBulkSendTickets,
   bulkSendBusy,
   canBulkSend,
+  onBulkCheckIn,
+  bulkCheckInBusy,
   onBulkDelete,
   eventTimezone,
   event,
@@ -848,6 +878,8 @@ export function AttendeesTable({
           bulkSendBusy={bulkSendBusy}
           canBulkSend={canBulkSend}
           onBulkSendTickets={onBulkSendTickets}
+          bulkCheckInBusy={bulkCheckInBusy}
+          onBulkCheckIn={onBulkCheckIn}
           onBulkDelete={onBulkDelete}
         />
       ) : (
