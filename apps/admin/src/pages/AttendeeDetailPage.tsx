@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import {
-  Badge,
   Button,
   Card,
   EmptyState,
@@ -55,6 +54,7 @@ import { ArchivedGuard, ARCHIVED_ACTION_TOOLTIP, isEventArchived } from "../comp
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
+import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import "../attendees/attendees.css";
@@ -146,13 +146,15 @@ function MoreActionsMenu({
         type="button"
         variant="secondary"
         icon={<i className="ti ti-dots-vertical" aria-hidden="true" />}
+        hasMenu
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label="More actions"
         disabled={disabled}
         aria-describedby={ariaDescribedBy}
         onClick={() => setOpen((o) => !o)}
-      />
+      >
+        More actions
+      </Button>
       {open && (
         <div className="more-actions-menu__panel" role="menu" ref={panelRef}>
           <button
@@ -632,7 +634,6 @@ export function AttendeeDetailPage() {
         subtitle="Manage this attendee's profile, ticket, and check-in status."
         actions={
           <>
-            {isRevoked && <Badge variant="error">Revoked</Badge>}
             <ArchivedGuard event={event} reasonId="edit-profile-reason">
               {(guard) => (
                 <Button
@@ -889,6 +890,9 @@ export function AttendeeDetailPage() {
             <h2 id={editTitleId} className="attendee-edit-modal__title">
               <i className="ti ti-pencil" aria-hidden="true" /> Edit attendee
             </h2>
+            <p className="attendee-edit-modal__subtitle">
+              Update this attendee&apos;s profile and ticket details.
+            </p>
             {staleWrite && (
               <div className="attendee-form__warn">
                 <p>Someone else updated this attendee — reload and reapply your edits.</p>
@@ -922,7 +926,16 @@ export function AttendeeDetailPage() {
               data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
               disabled={isEventArchived(event)}
             >
-              <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+              <Input
+                label="Email"
+                type="text"
+                inputMode="email"
+                icon={<i className="ti ti-mail" aria-hidden="true" />}
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                required
+                {...NO_AUTOFILL_PROPS}
+              />
               {emailChanged && (
                 <p className="attendee-form__warn">
                   This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
@@ -931,9 +944,26 @@ export function AttendeeDetailPage() {
               {emailConflict && (
                 <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
               )}
-              <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-              <Input label="Company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
-              <Input label="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+              <Input
+                label="Name"
+                icon={<i className="ti ti-user" aria-hidden="true" />}
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+                {...NO_AUTOFILL_PROPS}
+              />
+              <Input
+                label="Company"
+                icon={<i className="ti ti-building" aria-hidden="true" />}
+                value={form.company}
+                onChange={(e) => setForm({ ...form, company: e.target.value })}
+              />
+              <Input
+                label="Department"
+                icon={<i className="ti ti-sitemap" aria-hidden="true" />}
+                value={form.department}
+                onChange={(e) => setForm({ ...form, department: e.target.value })}
+              />
               <Select
                 label="Ticket type"
                 value={form.ticket_type}

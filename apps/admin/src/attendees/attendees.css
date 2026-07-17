@@ -747,6 +747,34 @@
   font-weight: 600;
 }
 
+.attendee-edit-modal__title i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary-tint);
+  color: var(--primary);
+  font-size: 1rem;
+}
+
+.attendee-edit-modal__subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+/* The global .at-select rule (apps/admin/src/staff.css) caps native <select>
+   elements at max-width: 24rem for filter-style contexts elsewhere in the app.
+   Override it here so Ticket type and RSVP status match the other fields' full
+   column width (same fix already applied to AddAttendeeModal). */
+.attendee-edit-modal .at-select {
+  max-width: none;
+}
+
 .attendee-success {
   padding: var(--space-3);
   background: var(--status-ok-bg, #ecfdf5);
