@@ -672,14 +672,22 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     // straight off the scalar columns wouldn't reliably match what computePatchChanges compares.
     await prisma.attendee.update({
       where: { id: ATT_A2 },
-      data: { company: "Beta Ltd", custom_data: { company: "Beta Ltd" }, department: null },
+      data: {
+        email: "bob@example.com",
+        company: "Beta Ltd",
+        custom_data: { company: "Beta Ltd" },
+        department: null,
+        ticket_type: "standard",
+      },
     });
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
+        email: "bob-value-logged@example.com",
         company: "Beta Value-Logged Co",
         department: "Value-Logged Dept",
+        ticket_type: "vip",
         expected_updated_at: await currentUpdatedAt(ATT_A2),
       }),
     });
@@ -693,8 +701,13 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     const meta = log!.metadata as {
       field_changes?: Record<string, { from: string | null; to: string | null }>;
     };
+    expect(meta.field_changes?.email).toEqual({
+      from: "bob@example.com",
+      to: "bob-value-logged@example.com",
+    });
     expect(meta.field_changes?.company).toEqual({ from: "Beta Ltd", to: "Beta Value-Logged Co" });
     expect(meta.field_changes?.department).toEqual({ from: null, to: "Value-Logged Dept" });
+    expect(meta.field_changes?.ticket_type).toEqual({ from: "standard", to: "vip" });
     // custom_data field edits stay values-never-logged even in the same request shape -
     // covered by "audits custom_data field names without PII values" below.
     expect(meta.field_changes?.name).toBeUndefined();
@@ -716,6 +729,9 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
   });
 
   it("rejects a ticket_type not in the event's catalog (batch 04 / #351)", async () => {
+    // Asserts the row is unchanged, not any specific value - other tests in this file mutate
+    // ATT_A2's ticket_type, so hardcoding an expected "before" value here is order-dependent.
+    const before = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
@@ -729,7 +745,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(body.error).toBe("unknown_ticket_type");
 
     const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
-    expect(row.ticket_type).toBe("standard");
+    expect(row.ticket_type).toBe(before.ticket_type);
   });
 
   it("clears ticket_type to null instead of persisting an empty string (CodeRabbit review)", async () => {

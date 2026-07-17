@@ -289,6 +289,41 @@ describe("resendTicketEmail", () => {
     expect(resendRow?.recipient_email).toBe("alt@example.com");
     expect(exported[0]?.message.to).toBe("alt@example.com");
   });
+
+  it("records the triggering admin's timezone when provided (Codecov review)", async () => {
+    exported.length = 0;
+
+    await resendTicketEmail(
+      "att-mode-a",
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+      { timezone: "Europe/Warsaw" },
+    );
+
+    const resendRow = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: "att-mode-a", purpose: "resend" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(resendRow?.client_timezone).toBe("Europe/Warsaw");
+  });
+
+  it("leaves client_timezone null when none is provided", async () => {
+    exported.length = 0;
+
+    await resendTicketEmail(
+      "att-mode-a",
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    const resendRow = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: "att-mode-a", purpose: "resend" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(resendRow?.client_timezone).toBeNull();
+  });
 });
 
 describe("retryDelivery", () => {

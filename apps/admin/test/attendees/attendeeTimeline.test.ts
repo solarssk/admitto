@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  deriveAttendeeSource,
   formatActivityTimestamp,
   getTimelineActor,
   getTimelineDetail,
@@ -63,6 +64,111 @@ describe("item_issued/item_state_changed timeline label (PO review)", () => {
   });
 });
 
+describe("getTimelineLabel — full action_type coverage (Codecov review)", () => {
+  function labelEntry(action_type: string, metadata: Record<string, unknown> | null = null) {
+    return {
+      id: "log-1",
+      action_type,
+      actor_display: "admin",
+      metadata,
+      created_at: "2026-06-28T13:00:00.000Z",
+      client_timezone: null,
+    };
+  }
+
+  it.each([
+    ["attendee_created_manual", "Created manually"],
+    ["attendees_imported", "Imported from CSV"],
+    ["attendee_imported", "Imported from CSV"],
+    ["mail_bulk_resend", "Bulk ticket send"],
+    ["attendee_ingested", "Ingested via API"],
+    ["ticket_sent", "Ticket sent"],
+    ["mail_delivered", "Email delivered"],
+    ["mail_bounced", "Email bounced"],
+    ["ticket_resent", "Ticket resent"],
+    ["resend_ticket", "Ticket resent"],
+    ["check_in", "Checked in"],
+    ["admitted", "Checked in"],
+    ["check_in_undo", "Check-in undone"],
+    ["check_in_undone", "Check-in undone"],
+    ["note_added", "Note added"],
+    ["item_returned", "Item returned"],
+    ["attendee_edited", "Profile updated"],
+    ["pass_revoked", "Pass revoked"],
+    ["pass_restored", "Pass restored"],
+    ["scan_preview", "Scan preview"],
+  ])("maps %s to %s", (actionType, expected) => {
+    expect(getTimelineLabel(labelEntry(actionType))).toBe(expected);
+  });
+
+  it("falls back to a humanized raw action_type for anything unrecognized", () => {
+    expect(getTimelineLabel(labelEntry("some_future_action"))).toBe("some future action");
+  });
+
+  it("shows the RSVP target status, defaulting to 'updated' when metadata has none", () => {
+    expect(getTimelineLabel(labelEntry("rsvp_status_changed", { to: "declined" }))).toBe(
+      "Status changed to Declined",
+    );
+    expect(getTimelineLabel(labelEntry("rsvp_status_changed"))).toBe("Status changed to updated");
+  });
+
+  it("falls back to the raw value for an unrecognized RSVP target status", () => {
+    expect(
+      getTimelineLabel(labelEntry("rsvp_status_changed", { to: "some_future_status" })),
+    ).toBe("Status changed to some_future_status");
+  });
+});
+
+describe("getTimelineIcon — unrecognized action_type (Codecov review)", () => {
+  it("falls back to a generic history icon", () => {
+    expect(getTimelineIcon("some_future_action")).toBe("history");
+  });
+});
+
+describe("deriveAttendeeSource (Codecov review — previously unimported/untested)", () => {
+  it("returns null for an empty action log", () => {
+    expect(deriveAttendeeSource([])).toBeNull();
+  });
+
+  it("returns null when the oldest entry's action_type has no configured source label", () => {
+    expect(
+      deriveAttendeeSource([
+        {
+          id: "log-1",
+          action_type: "attendee_edited",
+          actor_display: "admin",
+          metadata: null,
+          created_at: "2026-06-28T13:00:00.000Z",
+          client_timezone: null,
+        },
+      ]),
+    ).toBeNull();
+  });
+
+  it("reads the source off the oldest (last) entry, not the newest", () => {
+    expect(
+      deriveAttendeeSource([
+        {
+          id: "log-2",
+          action_type: "rsvp_status_changed",
+          actor_display: "admin",
+          metadata: null,
+          created_at: "2026-06-29T13:00:00.000Z",
+          client_timezone: null,
+        },
+        {
+          id: "log-1",
+          action_type: "attendees_imported",
+          actor_display: null,
+          metadata: null,
+          created_at: "2026-06-28T13:00:00.000Z",
+          client_timezone: null,
+        },
+      ]),
+    ).toBe("CSV/XLSX import");
+  });
+});
+
 describe("getTimelineActor (PO review — actor moved next to the timestamp)", () => {
   it("returns the actor's display name", () => {
     expect(
@@ -103,6 +209,32 @@ describe("getTimelineDetail — pre-existing rsvp_status_changed rendering", () 
         client_timezone: null,
       }),
     ).toBe("Registered → Confirmed");
+  });
+
+  it("falls back to the raw value for an unrecognized RSVP status on either side", () => {
+    expect(
+      getTimelineDetail({
+        id: "log-1",
+        action_type: "rsvp_status_changed",
+        actor_display: "Admin",
+        metadata: { from: "some_future_status", to: "confirmed" },
+        created_at: "2026-06-28T13:00:00.000Z",
+        client_timezone: null,
+      }),
+    ).toBe("some_future_status → Confirmed");
+  });
+
+  it("returns empty when rsvp_status_changed metadata is missing from/to (falls through to no other branch matching)", () => {
+    expect(
+      getTimelineDetail({
+        id: "log-1",
+        action_type: "rsvp_status_changed",
+        actor_display: "Admin",
+        metadata: {},
+        created_at: "2026-06-28T13:00:00.000Z",
+        client_timezone: null,
+      }),
+    ).toBe("");
   });
 });
 
@@ -156,6 +288,36 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
         }),
       ),
     ).toBe("Company: — → New Co");
+  });
+
+  it("falls back to the field name alone for a malformed field_changes shape, instead of throwing (Codecov review, fieldValueChange defensive branches)", () => {
+    // field_changes itself isn't an object.
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "attendee_edited",
+          metadata: { fields: ["email"], field_changes: "not-an-object" },
+        }),
+      ),
+    ).toBe("Email");
+    // field_changes[key] isn't an object.
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "attendee_edited",
+          metadata: { fields: ["email"], field_changes: { email: "not-an-object" } },
+        }),
+      ),
+    ).toBe("Email");
+    // from/to are neither string nor null (e.g. a stray number from a malformed write).
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "attendee_edited",
+          metadata: { fields: ["email"], field_changes: { email: { from: 1, to: "x" } } },
+        }),
+      ),
+    ).toBe("Email");
   });
 
   it("falls back to the field name alone when field_changes has nothing for it - name and custom_data stay values-never-shown (PII-safe)", () => {
@@ -336,5 +498,10 @@ describe("getTimelineTone (PO review — colored icons to distinguish outcomes)"
     expect(getTimelineTone(entry("rsvp_status_changed", { to: "declined" }))).toBe("error");
     expect(getTimelineTone(entry("rsvp_status_changed", { to: "tentative" }))).toBe("warn");
     expect(getTimelineTone(entry("rsvp_status_changed", { to: "none" }))).toBe("neutral");
+  });
+
+  it("treats a missing or non-string rsvp target status as neutral instead of throwing (Codecov review)", () => {
+    expect(getTimelineTone(entry("rsvp_status_changed", null))).toBe("neutral");
+    expect(getTimelineTone(entry("rsvp_status_changed", {}))).toBe("neutral");
   });
 });

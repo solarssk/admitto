@@ -102,6 +102,27 @@ describe("mergeFormAfterReload", () => {
 
     expect(merged.customFields.size).toBe("L");
   });
+
+  it("keeps an in-progress attendance (rsvp_status) edit that diverged since the last load (Codecov review)", () => {
+    const previousDetail = detail({ rsvp_status: "none" });
+    const reloaded = detail({ rsvp_status: "declined" });
+    const currentForm = toAttendeeForm(previousDetail, []);
+    currentForm.rsvp_status = "confirmed"; // operator picked this mid-edit, hasn't saved yet
+
+    const merged = mergeFormAfterReload(currentForm, previousDetail, reloaded, []);
+
+    expect(merged.rsvp_status).toBe("confirmed");
+  });
+
+  it("takes the reloaded attendance (rsvp_status) value when the operator hasn't touched it", () => {
+    const previousDetail = detail({ rsvp_status: "none" });
+    const reloaded = detail({ rsvp_status: "declined" });
+    const currentForm = toAttendeeForm(previousDetail, []);
+
+    const merged = mergeFormAfterReload(currentForm, previousDetail, reloaded, []);
+
+    expect(merged.rsvp_status).toBe("declined");
+  });
 });
 
 describe("formatDateTime", () => {

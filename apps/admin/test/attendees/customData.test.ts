@@ -7,6 +7,7 @@ vi.mock("../../src/api/client.js", () => ({
 
 const {
   allCustomDataEntries,
+  customDataFieldLabel,
   fetchAttendeeCustomFields,
   initialCustomFieldValues,
   readCustomDataField,
@@ -39,6 +40,20 @@ describe("readCustomDataField", () => {
 
   it("ignores non-string values", () => {
     expect(readCustomDataField({ jacket_size: 42 }, "jacket_size")).toBeNull();
+  });
+});
+
+describe("customDataFieldLabel (Codecov review — previously untested)", () => {
+  it("appends a required marker for required fields", () => {
+    expect(
+      customDataFieldLabel({ label: "Size", source_field: "size", type: "text", required: true }),
+    ).toBe("Size *");
+  });
+
+  it("leaves the label alone for optional fields", () => {
+    expect(
+      customDataFieldLabel({ label: "Notes", source_field: "notes", type: "text", required: false }),
+    ).toBe("Notes");
   });
 });
 
@@ -104,6 +119,37 @@ describe("validateCustomFieldsForm", () => {
   it("returns null when all values are valid", () => {
     expect(validateCustomFieldsForm([sizeField], { size: "M" })).toBeNull();
   });
+
+  it("treats a field missing from the values object as empty, same as an empty string (Codecov review)", () => {
+    expect(validateCustomFieldsForm([sizeField], {})).toMatch(/required/i);
+  });
+
+  it("skips validation for an optional field left empty, instead of erroring (Codecov review)", () => {
+    expect(
+      validateCustomFieldsForm(
+        [{ label: "Notes", source_field: "notes", type: "text", required: false }],
+        { notes: "" },
+      ),
+    ).toBeNull();
+  });
+
+  it("defaults an untyped field to text (no extra validation beyond required)", () => {
+    expect(
+      validateCustomFieldsForm(
+        [{ label: "Notes", source_field: "notes", required: false }],
+        { notes: "anything goes" },
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects any value for a select field with no configured options", () => {
+    expect(
+      validateCustomFieldsForm(
+        [{ label: "Size", source_field: "size", type: "select", required: false }],
+        { size: "M" },
+      ),
+    ).toMatch(/must be one of/i);
+  });
 });
 
 describe("allCustomDataEntries", () => {
@@ -150,5 +196,17 @@ describe("allCustomDataEntries", () => {
         (k) => k.replace(/_/g, " "),
       ),
     ).toEqual([["shirt_size", "shirt size", "L"]]);
+  });
+
+  it("leaves an unrecognized boolean-field value as-is instead of guessing Yes/No (Codecov review)", () => {
+    expect(allCustomDataEntries({ lunch: "maybe" }, [lunchField], (k) => k)).toEqual([
+      ["lunch", "Lunch", "maybe"],
+    ]);
+  });
+
+  it("returns an empty list for null, a non-object primitive, or an array custom_data value (Codecov review)", () => {
+    expect(allCustomDataEntries(null, [], (k) => k)).toEqual([]);
+    expect(allCustomDataEntries("not-an-object", [], (k) => k)).toEqual([]);
+    expect(allCustomDataEntries(["not", "an", "object"], [], (k) => k)).toEqual([]);
   });
 });
