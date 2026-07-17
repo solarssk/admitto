@@ -21,7 +21,7 @@ import {
 } from "@admitto/tickets";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { publishCheckinIfValid } from "./checkin-sse-publish.js";
-import { itemTransitionErrorResponse } from "./admin-helpers.js";
+import { itemTransitionErrorResponse, resolveClientTimezone } from "./admin-helpers.js";
 
 /** GET /api/checkin/events — session-only capability list (P4). */
 export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Promise<Response> {
@@ -67,6 +67,7 @@ async function opsAuditFromBody(
     sessionId,
     deviceId,
     ip: resolveClientIp(c),
+    timezone: resolveClientTimezone(c) ?? undefined,
   };
 }
 
@@ -102,7 +103,15 @@ export async function handleCheckinScan(c: Context, db: PrismaClient): Promise<R
   try {
     const audit = await opsAuditFromBody(c, db, deviceId);
     const result = await checkInScan(
-      { scanned, eventId, operator: audit.operator, deviceId: audit.deviceId, sessionId: audit.sessionId, ip: audit.ip },
+      {
+        scanned,
+        eventId,
+        operator: audit.operator,
+        deviceId: audit.deviceId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        timezone: audit.timezone,
+      },
       db,
     );
     if (result.status === "VALID") {

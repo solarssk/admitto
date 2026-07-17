@@ -56,6 +56,7 @@ import {
   itemTransitionErrorResponse,
   positiveIntQuery,
   requireEventId,
+  resolveClientTimezone,
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
 import { mailNotConfiguredResponse } from "./mail-settings-shared.js";
@@ -75,6 +76,8 @@ const ATTENDEE_DETAIL_SELECT = {
   status: true,
   admitted_at: true,
   custom_data: true,
+  created_at: true,
+  client_timezone: true,
   updated_at: true,
   rsvp_status: true,
   rsvp_updated_at: true,
@@ -406,6 +409,15 @@ export type AttendeeActionLogEntryDto = {
   actor_display: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
+  /** Acting admin's IANA timezone at write time, when known. */
+  client_timezone: string | null;
+};
+
+export type AttendeeDetailItemDto = {
+  key: string;
+  label: string;
+  icon: string | null;
+  state: string;
 };
 
 export type AttendeeDetailDto = {
@@ -418,6 +430,9 @@ export type AttendeeDetailDto = {
   status: AttendeeStatus;
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
+  created_at: string;
+  /** Acting admin's IANA timezone at attendee-creation time, when known (manual add / import). */
+  client_timezone: string | null;
   updated_at: string;
   rsvp_status: RsvpStatus;
   rsvp_updated_at: string | null;
@@ -426,7 +441,39 @@ export type AttendeeDetailDto = {
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
+  event_items: AttendeeDetailItemDto[];
 };
+
+/** Read-only event-day item summary for the attendee detail page — same source data as the
+ * check-in AttendeeCardDto (enabled EventItems + this attendee's AttendeeItemState rows), but
+ * without getAttendeeCard's ensureAttendeeItemStates write-on-read side effect: a plain detail
+ * view has no reason to create pending-state rows the operator card would lazily backfill.
+ * Deliberately doesn't surface each item's configured content_fields (e.g. shirt size) inline -
+ * with several fields configured that reads as clutter next to the item name and duplicates the
+ * Additional information card, which already lists every custom_data field on its own (PO review). */
+async function loadAttendeeItemsSummary(
+  db: PrismaClient,
+  eventId: string,
+  attendeeId: string,
+): Promise<AttendeeDetailItemDto[]> {
+  const items = await db.eventItem.findMany({
+    where: { event_id: eventId, enabled: true },
+    orderBy: { key: "asc" },
+  });
+  if (items.length === 0) return [];
+
+  const states = await db.attendeeItemState.findMany({
+    where: { attendee_id: attendeeId, event_item_id: { in: items.map((item) => item.id) } },
+  });
+  const stateByItem = new Map(states.map((s) => [s.event_item_id, s.state]));
+
+  return items.map((item) => ({
+    key: item.key,
+    label: item.label,
+    icon: item.icon,
+    state: stateByItem.get(item.id) ?? "pending",
+  }));
+}
 
 /** Map admitted_at to API check-in status for list/detail DTOs. */
 function checkInStatus(admittedAt: Date | null): "admitted" | "not_admitted" {
@@ -568,6 +615,7 @@ async function loadAttendeeActionLogEntries(
       actor_user_id: true,
       metadata: true,
       created_at: true,
+      client_timezone: true,
     },
   });
 
@@ -596,6 +644,7 @@ async function loadAttendeeActionLogEntries(
           ? (log.metadata as Record<string, unknown>)
           : null,
       created_at: log.created_at.toISOString(),
+      client_timezone: log.client_timezone,
     };
   });
 }
@@ -648,6 +697,8 @@ async function buildAttendeeDetailDto(
     status: string;
     admitted_at: Date | null;
     custom_data: unknown;
+    created_at: Date;
+    client_timezone: string | null;
     updated_at: Date;
     rsvp_status: string;
     rsvp_updated_at: Date | null;
@@ -656,9 +707,10 @@ async function buildAttendeeDetailDto(
     public_ref: string | null;
   },
 ): Promise<AttendeeDetailDto> {
-  const [deliveriesResult, action_log] = await Promise.all([
+  const [deliveriesResult, action_log, event_items] = await Promise.all([
     listDeliveries({ eventId, filters: { attendeeId: row.id } }, db),
     loadAttendeeActionLogEntries(db, row.id),
+    loadAttendeeItemsSummary(db, eventId, row.id),
   ]);
   const { company, department } = resolveCompanyDepartment(row);
 
@@ -672,6 +724,8 @@ async function buildAttendeeDetailDto(
     status: row.status as AttendeeStatus,
     check_in_status: checkInStatus(row.admitted_at),
     admitted_at: row.admitted_at ? row.admitted_at.toISOString() : null,
+    created_at: row.created_at.toISOString(),
+    client_timezone: row.client_timezone,
     updated_at: row.updated_at.toISOString(),
     rsvp_status: row.rsvp_status as RsvpStatus,
     rsvp_updated_at: row.rsvp_updated_at ? row.rsvp_updated_at.toISOString() : null,
@@ -680,6 +734,7 @@ async function buildAttendeeDetailDto(
     custom_data: row.custom_data ?? null,
     deliveries: deliveriesResult.items.map(toDeliveryDto),
     action_log,
+    event_items,
   };
 }
 
@@ -823,7 +878,18 @@ export async function handleGetEventAttendee(c: Context, db: PrismaClient): Prom
 
 type PatchInput = z.infer<typeof patchAttendeeFieldsSchema>;
 
-/** Compute Prisma update payload and changed field names from a PATCH body. */
+/** Fields whose before/after value is recorded verbatim in AttendeeActionLog.metadata -
+ * see DATA-PROTECTION.md's "Admin audit trail" section for the full reasoning: this is a
+ * deliberate accountability record (GDPR Art. 5(2)), not a routine log line, admin-only, and
+ * cascade-deletes with the attendee (Prisma `onDelete: Cascade`) so erasure already covers it.
+ * Deliberately excludes `name` and every custom_data field (dietary, accessibility, emergency
+ * contact, and other free-text attributes an event might collect) - those can hold
+ * special-category data (GDPR Art. 9) a guest typed into a form field, which this fixed list
+ * is not meant to capture; an edit to any of those still shows only the field name (#364). */
+const LOGGED_VALUE_FIELDS = new Set(["email", "company", "department", "ticket_type"]);
+
+/** Compute Prisma update payload, changed field names, and before/after values (for
+ * LOGGED_VALUE_FIELDS only) from a PATCH body. */
 function computePatchChanges(
   existing: {
     name: string;
@@ -834,8 +900,16 @@ function computePatchChanges(
     custom_data: unknown;
   },
   patch: PatchInput,
-): { data: Prisma.AttendeeUncheckedUpdateInput; fields: string[] } | null {
+): {
+  data: Prisma.AttendeeUncheckedUpdateInput;
+  fields: string[];
+  valueChanges: Record<string, { from: string | null; to: string | null }>;
+} | null {
   const fields: string[] = [];
+  const valueChanges: Record<string, { from: string | null; to: string | null }> = {};
+  const logValue = (field: string, from: string | null, to: string | null) => {
+    if (LOGGED_VALUE_FIELDS.has(field)) valueChanges[field] = { from, to };
+  };
   // Unchecked: ticket_type is now also a scalar FK column for the (event_id, ticket_type)
   // relation to TicketType, so Prisma's relation-aware AttendeeUpdateInput no longer exposes it
   // as a plain settable field - this function only ever sets raw scalar columns directly (never
@@ -856,6 +930,7 @@ function computePatchChanges(
   if (patch.email !== undefined && patch.email !== existing.email) {
     data.email = patch.email;
     fields.push("email");
+    logValue("email", existing.email, patch.email);
   }
   if (patch.company !== undefined && patch.company !== resolved.company) {
     data.company = patch.company;
@@ -863,6 +938,7 @@ function computePatchChanges(
     if (patch.company === null || patch.company === "") delete raw.company;
     else raw.company = patch.company;
     fields.push("company");
+    logValue("company", resolved.company, patch.company);
   }
   if (patch.department !== undefined && patch.department !== resolved.department) {
     data.department = patch.department;
@@ -870,10 +946,12 @@ function computePatchChanges(
     if (patch.department === null || patch.department === "") delete raw.department;
     else raw.department = patch.department;
     fields.push("department");
+    logValue("department", resolved.department, patch.department);
   }
   if (patch.ticket_type !== undefined && patch.ticket_type !== existing.ticket_type) {
     data.ticket_type = patch.ticket_type;
     fields.push("ticket_type");
+    logValue("ticket_type", existing.ticket_type, patch.ticket_type);
   }
   if (patch.custom_data_fields) {
     for (const [sourceField, next] of Object.entries(patch.custom_data_fields)) {
@@ -896,7 +974,7 @@ function computePatchChanges(
   }
 
   if (fields.length === 0) return null;
-  return { data, fields };
+  return { data, fields, valueChanges };
 }
 
 
@@ -1140,7 +1218,7 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
           attendee_id: attendeeId,
           action_type: "attendee_edited",
           audit: adminAuditFromContext(c),
-          metadata: { fields: profileChanges.fields },
+          metadata: { fields: profileChanges.fields, field_changes: profileChanges.valueChanges },
         });
       }
 
@@ -1310,6 +1388,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
           ...(customData !== undefined ? { custom_data: customData } : {}),
           rsvp_status: "none",
           rsvp_source: "admin",
+          client_timezone: resolveClientTimezone(c),
         },
         select: ATTENDEE_DETAIL_SELECT,
       });
@@ -1394,6 +1473,7 @@ export async function handleResendEventAttendeeTicket(
     sendResult = await resendTicketEmail(attendeeId, db, process.env, mailDeps, {
       to,
       baseUrl: baseUrlOrRes,
+      timezone: resolveClientTimezone(c) ?? undefined,
     });
   } catch (err) {
     const mailErr = mailNotConfiguredResponse(c, err);
@@ -1597,6 +1677,7 @@ export async function handleBulkResendTickets(
         attendeeIds,
         purpose: mailPurpose,
         baseUrl: baseUrlOrRes,
+        timezone: resolveClientTimezone(c) ?? undefined,
       },
       db,
       process.env,

@@ -1,7 +1,7 @@
 import { Badge } from "@admitto/ui";
 import type { AttendeeStatus } from "@admitto/db/status";
 
-const PASS_STATUS_LABELS: Record<AttendeeStatus, string> = {
+export const PASS_STATUS_LABELS: Record<AttendeeStatus, string> = {
   registered: "Active",
   confirmed: "Confirmed",
   cancelled: "Cancelled",

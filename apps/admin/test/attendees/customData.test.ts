@@ -6,6 +6,8 @@ vi.mock("../../src/api/client.js", () => ({
 }));
 
 const {
+  allCustomDataEntries,
+  customDataFieldLabel,
   fetchAttendeeCustomFields,
   initialCustomFieldValues,
   readCustomDataField,
@@ -38,6 +40,20 @@ describe("readCustomDataField", () => {
 
   it("ignores non-string values", () => {
     expect(readCustomDataField({ jacket_size: 42 }, "jacket_size")).toBeNull();
+  });
+});
+
+describe("customDataFieldLabel (Codecov review — previously untested)", () => {
+  it("appends a required marker for required fields", () => {
+    expect(
+      customDataFieldLabel({ label: "Size", source_field: "size", type: "text", required: true }),
+    ).toBe("Size *");
+  });
+
+  it("leaves the label alone for optional fields", () => {
+    expect(
+      customDataFieldLabel({ label: "Notes", source_field: "notes", type: "text", required: false }),
+    ).toBe("Notes");
   });
 });
 
@@ -102,5 +118,95 @@ describe("validateCustomFieldsForm", () => {
 
   it("returns null when all values are valid", () => {
     expect(validateCustomFieldsForm([sizeField], { size: "M" })).toBeNull();
+  });
+
+  it("treats a field missing from the values object as empty, same as an empty string (Codecov review)", () => {
+    expect(validateCustomFieldsForm([sizeField], {})).toMatch(/required/i);
+  });
+
+  it("skips validation for an optional field left empty, instead of erroring (Codecov review)", () => {
+    expect(
+      validateCustomFieldsForm(
+        [{ label: "Notes", source_field: "notes", type: "text", required: false }],
+        { notes: "" },
+      ),
+    ).toBeNull();
+  });
+
+  it("defaults an untyped field to text (no extra validation beyond required)", () => {
+    expect(
+      validateCustomFieldsForm(
+        [{ label: "Notes", source_field: "notes", required: false }],
+        { notes: "anything goes" },
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects any value for a select field with no configured options", () => {
+    expect(
+      validateCustomFieldsForm(
+        [{ label: "Size", source_field: "size", type: "select", required: false }],
+        { size: "M" },
+      ),
+    ).toMatch(/must be one of/i);
+  });
+});
+
+describe("allCustomDataEntries", () => {
+  const lunchField = {
+    label: "Lunch",
+    source_field: "lunch",
+    type: "boolean" as const,
+    required: false,
+  };
+
+  it("shows Yes/No for a boolean field instead of the raw stored true/false string", () => {
+    expect(allCustomDataEntries({ lunch: "true" }, [lunchField], (k) => k)).toEqual([
+      ["lunch", "Lunch", "Yes"],
+    ]);
+    expect(allCustomDataEntries({ lunch: "false" }, [lunchField], (k) => k)).toEqual([
+      ["lunch", "Lunch", "No"],
+    ]);
+  });
+
+  it("also normalizes yes/no/1/0 aliases a CSV import could have written directly", () => {
+    expect(allCustomDataEntries({ lunch: "YES" }, [lunchField], (k) => k)).toEqual([
+      ["lunch", "Lunch", "Yes"],
+    ]);
+    expect(allCustomDataEntries({ lunch: "0" }, [lunchField], (k) => k)).toEqual([
+      ["lunch", "Lunch", "No"],
+    ]);
+  });
+
+  it("leaves non-boolean fields untouched", () => {
+    expect(
+      allCustomDataEntries(
+        { dietary: "vegan" },
+        [{ label: "Dietary", source_field: "dietary", type: "text", required: false }],
+        (k) => k,
+      ),
+    ).toEqual([["dietary", "Dietary", "vegan"]]);
+  });
+
+  it("excludes company/department and humanizes unregistered keys", () => {
+    expect(
+      allCustomDataEntries(
+        { company: "Globex", department: "Ops", shirt_size: "L" },
+        [],
+        (k) => k.replace(/_/g, " "),
+      ),
+    ).toEqual([["shirt_size", "shirt size", "L"]]);
+  });
+
+  it("leaves an unrecognized boolean-field value as-is instead of guessing Yes/No (Codecov review)", () => {
+    expect(allCustomDataEntries({ lunch: "maybe" }, [lunchField], (k) => k)).toEqual([
+      ["lunch", "Lunch", "maybe"],
+    ]);
+  });
+
+  it("returns an empty list for null, a non-object primitive, or an array custom_data value (Codecov review)", () => {
+    expect(allCustomDataEntries(null, [], (k) => k)).toEqual([]);
+    expect(allCustomDataEntries("not-an-object", [], (k) => k)).toEqual([]);
+    expect(allCustomDataEntries(["not", "an", "object"], [], (k) => k)).toEqual([]);
   });
 });

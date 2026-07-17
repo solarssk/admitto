@@ -54,6 +54,7 @@ export type CheckInScanParams = {
   deviceId?: string;
   sessionId?: string;
   ip?: string;
+  timezone?: string;
 };
 
 export type EventItemContent = {

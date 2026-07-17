@@ -1,5 +1,17 @@
+/* Shared by the Attendees list, Requirements' Event items table, and its Custom attendee
+   fields table - keep this to layout that's actually generic across all three. */
 .attendees-table-wrap {
   overflow-x: auto;
+}
+
+/* Attendees-list-only: a filter/search narrowing the result set swaps in fewer rows the
+   instant the new page loads (stale rows stay on screen, dimmed, until then - see
+   .attendees-table-wrap--loading) - without a floor, that swap can visibly snap the whole
+   table (and everything below it: footer, pager) upward. Kept modest (~3 rows + header) so
+   it softens the worst-case collapse without padding out every ordinary filtered result with
+   visible dead space. */
+.attendees-list-table-wrap {
+  min-height: 200px;
 }
 
 /* Re-fetching with existing rows still on screen (filter/page change) — dim them
@@ -507,6 +519,10 @@
 }
 
 .revoke-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
   text-align: left;
   border: none;
   background: none;
@@ -521,6 +537,57 @@
 
 .revoke-menu__item:hover {
   background: var(--status-error-tint);
+}
+
+.more-actions-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.more-actions-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  min-width: 180px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.more-actions-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.more-actions-menu__item:hover {
+  background: var(--surface-hover);
+}
+
+.more-actions-menu__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.more-actions-menu__item:disabled:hover {
+  background: none;
 }
 
 .attendees-export-menu {
@@ -662,6 +729,73 @@
   cursor: pointer;
 }
 
+.attendee-edit-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+.attendee-edit-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.attendee-edit-modal__panel {
+  position: relative;
+  background: var(--surface-card);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  width: min(480px, 100%);
+  max-height: calc(100vh - 2 * var(--space-4));
+  overflow: auto;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.attendee-edit-modal__title {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-h3);
+  font-weight: 600;
+}
+
+.attendee-edit-modal__title i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary-tint);
+  color: var(--primary);
+  font-size: 1rem;
+}
+
+.attendee-edit-modal__subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+/* The global .at-select rule (apps/admin/src/staff.css) caps native <select>
+   elements at max-width: 24rem for filter-style contexts elsewhere in the app.
+   Override it here so Ticket type and RSVP status match the other fields' full
+   column width (same fix already applied to AddAttendeeModal). */
+.attendee-edit-modal .at-select {
+  max-width: none;
+}
+
 .attendee-success {
   padding: var(--space-3);
   background: var(--status-ok-bg, #ecfdf5);
@@ -765,67 +899,212 @@
   gap: 16px;
 }
 
+/* Same 5-column track (repeat(5, minmax(0, 1fr)), 12px gap) as .attendee-status-strip above
+   it, so the main/side split lines up exactly with the strip's chip boundaries at every width
+   instead of just at whatever one viewport width a fixed side-column px value happened to
+   match (PO review — "symmetry" with the Check-in chip's left edge). minmax(0, 1fr), not bare
+   1fr, for the same reason as the status strip - a Card's own content shouldn't be able to
+   stretch this grid wider than its container. */
 .attendee-detail-grid {
   display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 16px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
   align-items: start;
   margin-top: 16px;
+}
+
+.attendee-detail-main {
+  grid-column: 1 / 4;
+}
+
+.attendee-detail-side {
+  grid-column: 4 / 6;
 }
 
 @media (max-width: 900px) {
   .attendee-detail-grid {
     grid-template-columns: 1fr;
   }
+
+  .attendee-detail-main,
+  .attendee-detail-side {
+    grid-column: auto;
+  }
 }
 
-.attendee-detail-side {
+.attendee-detail-side,
+.attendee-detail-main {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.attendee-status-list {
+/* Profile / Additional information read-only rows (#361, #365) */
+.attendee-detail-readonly {
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
-.attendee-status-row {
+.attendee-detail-row {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-sm);
 }
 
-.attendee-status-row__icon {
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--surface-subtle);
+.attendee-detail-row:last-child {
+  border-bottom: 0;
+}
+
+.attendee-detail-row > span:first-child {
   color: var(--text-muted);
-  font-size: 1rem;
-  flex-shrink: 0;
+  white-space: nowrap;
 }
 
-.attendee-status-row__body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+/* The value side has no width constraint of its own by default - a long email or imported
+   value would otherwise force the row (and its card) wider instead of wrapping (bot review). */
+.attendee-detail-row > :last-child {
   min-width: 0;
-  flex: 1;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
-.attendee-status-row__label {
-  font-size: 0.75rem;
+/* Event-day items list — matches the design mockup's .att-item-row exactly (values pulled
+   from ui_kits/admin/index.html, not eyeballed: 8px icon radius not a circle, 500-weight
+   body-sized label, 600-weight xs-sized state, muted/disabled text tokens for "not yet"). */
+.attendee-items-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.attendee-items-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--at-gray-100);
+}
+
+.attendee-items-row:last-child {
+  border-bottom: 0;
+}
+
+.attendee-items-row__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+}
+
+.attendee-items-row__icon--issued { background: var(--status-ok-tint); color: var(--status-ok); }
+.attendee-items-row__icon--returned { background: var(--at-gray-100); color: var(--text-muted); }
+
+.attendee-items-row__label {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendee-items-row__state {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  flex: none;
+}
+
+.attendee-items-row__state--ok { color: var(--status-ok); }
+.attendee-items-row__state--muted { color: var(--text-disabled); }
+
+/* Attendee detail status strip - 5 chips (Registration/Attendance/Ticket delivery/Check-in/
+   Wallet), matching the design mockup's .att-status-strip. */
+.attendee-status-strip {
+  display: grid;
+  /* minmax(0, 1fr), not bare 1fr - a bare 1fr track can still grow to its content's
+     max-content width (a long check-in timestamp, a long badge), pushing the whole grid
+     wider than its container instead of letting the chip's own text-overflow:ellipsis
+     kick in (bot review). */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.attendee-status-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  box-shadow: var(--shadow-card);
+}
+
+.attendee-status-chip__icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.attendee-status-chip__icon--ok { background: var(--status-ok-tint); color: var(--status-ok-fg); }
+.attendee-status-chip__icon--warn { background: var(--status-warn-tint); color: var(--status-warn-fg); }
+.attendee-status-chip__icon--error { background: var(--status-error-tint); color: var(--status-error-fg); }
+.attendee-status-chip__icon--neutral { background: var(--at-gray-100); color: var(--text-muted); }
+
+.attendee-status-chip__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+}
+
+.attendee-status-chip__body strong {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: var(--text-muted);
 }
 
-.attendee-detail-checkin {
-  color: var(--status-ok);
-  font-weight: 600;
-  font-size: 0.875rem;
+.attendee-status-chip__body > span {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .attendee-status-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .attendee-status-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .attendee-detail-skeleton {
@@ -854,13 +1133,20 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--surface-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   font-size: 0.875rem;
 }
+
+/* Same ok/warn/error/neutral vocabulary as .attendee-status-chip__icon--* above, so a check-in or
+   item hand-out reads as a clear positive and a revoke/bounce reads as a clear negative at a
+   glance, instead of every action rendering in the same dark icon regardless of outcome. */
+.at-tl-dot--ok { background: var(--status-ok-tint); color: var(--status-ok-fg); }
+.at-tl-dot--warn { background: var(--status-warn-tint); color: var(--status-warn-fg); }
+.at-tl-dot--error { background: var(--status-error-tint); color: var(--status-error-fg); }
+.at-tl-dot--neutral { background: var(--at-gray-100); color: var(--text-muted); }
 
 .at-tl-body {
   flex: 1;
@@ -876,11 +1162,35 @@
   color: var(--text-secondary);
 }
 
+.at-tl-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 .at-tl-time {
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 0.75rem;
   color: var(--text-muted);
   white-space: nowrap;
-  margin-top: 2px;
+}
+
+/* Who performed the row's action, moved here next to the time instead of mixed into the diff
+   text below the headline (PO review) - a small icon makes it read as "who", not another detail. */
+.at-tl-actor {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.at-tl-actor i {
+  font-size: 0.8125rem;
 }
 
 /* Send tickets dialog */
