@@ -7,6 +7,7 @@ import { checkInScan, getRecentCheckIns, isAdmittable } from "../src/checkin.js"
 import { generateToken } from "../src/token.js";
 import { hashToken } from "../src/hash.js";
 import { buildTicketUrl } from "../src/url.js";
+import { writeBulkActionLog } from "../src/ops-audit.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "../../db");
@@ -232,6 +233,7 @@ describe("checkInScan — PREVIEW audit", () => {
         operator: "op-preview",
         deviceId: "tablet-preview",
         sessionId: "sess-preview",
+        timezone: "Europe/Warsaw",
       },
       prisma,
     );
@@ -244,6 +246,10 @@ describe("checkInScan — PREVIEW audit", () => {
     expect(log?.actor_user_id).toBe("op-preview");
     expect(log?.device_id).toBe("tablet-preview");
     expect(log?.session_id).toBe("sess-preview");
+    // bot review: CheckInScanParams.timezone must reach the AttendeeActionLog row the same way
+    // operator/deviceId/sessionId already do, not get dropped when auditFromParams rebuilds the
+    // OpsAuditContext from CheckInScanParams.
+    expect(log?.client_timezone).toBe("Europe/Warsaw");
   });
 });
 
@@ -364,5 +370,41 @@ describe("getRecentCheckIns", () => {
     } finally {
       await prisma.checkIn.delete({ where: { id: reversal.id } });
     }
+  });
+});
+
+describe("writeBulkActionLog (Codecov review — previously untested)", () => {
+  it("writes an event-scoped row with no attendee, capturing audit fields including timezone", async () => {
+    await writeBulkActionLog(prisma, {
+      event_id: EVENT_ID,
+      action_type: "attendees_imported",
+      audit: { operator: "op-bulk", ip: "203.0.113.9", timezone: "Europe/Warsaw" },
+      metadata: { created: 3, updated: 0, skipped: 0 },
+    });
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_ID, action_type: "attendees_imported", actor_user_id: "op-bulk" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    expect(log?.attendee_id).toBeNull();
+    expect(log?.ip).toBe("203.0.113.9");
+    expect(log?.client_timezone).toBe("Europe/Warsaw");
+    expect((log?.metadata as { created?: number } | null)?.created).toBe(3);
+  });
+
+  it("stores client_timezone as null when the audit context has none", async () => {
+    await writeBulkActionLog(prisma, {
+      event_id: EVENT_ID,
+      action_type: "attendee_erased",
+      audit: { operator: "op-bulk-2" },
+    });
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_ID, action_type: "attendee_erased", actor_user_id: "op-bulk-2" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    expect(log?.client_timezone).toBeNull();
   });
 });

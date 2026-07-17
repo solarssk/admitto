@@ -11,7 +11,7 @@ import {
   UnknownTicketTypeError,
   writeBulkActionLog,
 } from "@admitto/tickets";
-import { adminAuditFromContext, assertEventManageAccess, requireEventId, resolveMailInstanceBaseUrl } from "./admin-helpers.js";
+import { adminAuditFromContext, assertEventManageAccess, requireEventId, resolveClientTimezone, resolveMailInstanceBaseUrl } from "./admin-helpers.js";
 
 export const BULK_SEND_LIMIT = 500;
 
@@ -322,6 +322,7 @@ export async function handleBulkSend(
         templateId: body.templateId,
         purpose,
         baseUrl: baseUrlOrRes,
+        timezone: resolveClientTimezone(c) ?? undefined,
       },
       db,
       process.env,

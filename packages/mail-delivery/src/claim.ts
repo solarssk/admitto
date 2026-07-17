@@ -23,6 +23,8 @@ export interface ClaimInitialInput {
   recipientEmail: string;
   renderedSubject: string;
   renderedHtml: string;
+  /** Triggering admin's IANA timezone at send time, when known. */
+  timezone?: string;
 }
 
 function frozenFromRow(row: {
@@ -91,6 +93,7 @@ export async function claimInitialDelivery(
         rendered_subject: input.renderedSubject,
         rendered_html: input.renderedHtml,
         queued_at: now,
+        client_timezone: input.timezone ?? null,
       },
     });
     return {
@@ -131,6 +134,7 @@ export async function claimInitialDelivery(
         status: "queued",
         queued_at: new Date(),
         batch_id: input.batchId,
+        client_timezone: input.timezone ?? null,
       },
     });
     if (claimed.count === 0) {
@@ -176,6 +180,7 @@ export async function createResendDelivery(
       rendered_subject: input.renderedSubject,
       rendered_html: input.renderedHtml,
       queued_at: now,
+      client_timezone: input.timezone ?? null,
     },
   });
   return {

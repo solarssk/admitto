@@ -16,6 +16,7 @@ function auditFromParams(params: CheckInScanParams): OpsAuditContext {
     sessionId: params.sessionId,
     deviceId: params.deviceId,
     ip: params.ip,
+    timezone: params.timezone,
   };
 }
 

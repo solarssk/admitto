@@ -32,6 +32,8 @@ export interface SendTicketEmailsOptions {
   recipientEmail?: string;
   /** Resolved public instance URL (env BASE_URL or DB instance_url). */
   baseUrl?: string;
+  /** Triggering admin's IANA timezone at send time, when known. */
+  timezone?: string;
 }
 
 /** Optional test hooks for `sendTicketEmails()` (e.g. export_only sink). */
@@ -206,6 +208,7 @@ export async function sendTicketEmails(
           purpose === "resend" && options.recipientEmail ? options.recipientEmail : attendee.email,
         renderedSubject: rendered.subject,
         renderedHtml: rendered.html,
+        timezone: options.timezone,
       };
 
       if (purpose === "initial") {

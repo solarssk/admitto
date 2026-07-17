@@ -28,6 +28,7 @@ type AttendeeCreateData = {
   company?: string;
   department?: string;
   custom_data?: Prisma.InputJsonValue;
+  client_timezone?: string | null;
 };
 
 type AttendeeUpdateArgs = {
@@ -296,6 +297,7 @@ export async function commitImport(
         ...(row.custom_data !== undefined && {
           custom_data: row.custom_data as Prisma.InputJsonValue,
         }),
+        client_timezone: options.timezone ?? null,
       });
     }
   }

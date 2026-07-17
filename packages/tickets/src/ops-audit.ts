@@ -9,6 +9,8 @@ export type OpsAuditContext = {
   sessionId?: string;
   deviceId?: string;
   ip?: string;
+  /** Acting client's IANA timezone at write time, when known (browser-triggered writes only). */
+  timezone?: string;
 };
 
 /** Append an event-scoped audit row without a single attendee (e.g. bulk import). */
@@ -30,6 +32,7 @@ export async function writeBulkActionLog(
       session_id: data.audit.sessionId ?? null,
       device_id: data.audit.deviceId ?? null,
       ip: data.audit.ip ?? null,
+      client_timezone: data.audit.timezone ?? null,
       metadata: (data.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
     },
   });
@@ -54,6 +57,7 @@ export async function writeActionLog(
       session_id: data.audit.sessionId ?? null,
       device_id: data.audit.deviceId ?? null,
       ip: data.audit.ip ?? null,
+      client_timezone: data.audit.timezone ?? null,
       metadata: (data.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
     },
   });

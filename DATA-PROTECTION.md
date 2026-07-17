@@ -16,6 +16,7 @@
 | Entry status | Check-in tracking | Operational |
 | Random token / QR code | Ticket identifier — **no personal data embedded** | Non-personal |
 | OIDC IdP group membership (`ExternalIdentity.groups`) | Role mapping at OIDC login | Personal data (access metadata) |
+| `AttendeeActionLog.metadata` (admin audit trail) | Accountability — who changed an attendee's email/company/department/ticket type, from what, to what, and when | Personal data — see **Admin audit trail** below |
 
 `AttendeeNote.body` is a free-text operator note. It may contain special-category data
 (for example accessibility, dietary, or medical information) if staff enter it. Operators
@@ -36,9 +37,34 @@ contains only a random, unguessable identifier — no name, email, or other PII.
 
 ## Logs
 
-- Design goal: no full email addresses or names in routine application log lines.
+- Design goal: no full email addresses or names in **routine application log lines** — stdout/
+  stderr, error traces, and anything that could reach a third-party log aggregator.
 - No secrets or tokens in logs.
-- Audit output uses redacted identifiers where email is logged.
+- This does **not** apply to the admin audit trail (`AttendeeActionLog`), which is a first-class,
+  access-controlled product feature, not an operational log line — see below.
+
+## Admin audit trail (`AttendeeActionLog`)
+
+Every admin action on an attendee (profile edit, check-in, pass revoke/restore, ticket resend,
+import, etc.) writes a row here, shown to admins on the attendee's own Activity log tab. For a
+fixed set of fields — currently email, company, department, ticket type — a profile edit also
+records the before/after value (`metadata.field_changes`), not just which field changed, so an
+admin can see what actually changed, not only that something did.
+
+This is a deliberate accountability record (GDPR Art. 5(2)), not a "routine log line" the section
+above is about:
+
+- **Access:** admin-only, same access control as the rest of the attendee's data (no separate
+  export or public surface).
+- **Erasure:** `AttendeeActionLog.attendee_id` cascade-deletes with its `Attendee` row
+  (`onDelete: Cascade` in the Prisma schema) — erasing an attendee via the existing DSAR delete
+  flow removes every audit row referencing them, including any logged field values. No separate
+  cleanup step needed.
+- **Scope:** deliberately excludes `Attendee.name` and every `custom_data` field (dietary,
+  accessibility, emergency contact, and other free-text attributes an event might collect) — an
+  edit to any of those shows only the field name, never the value, since those can hold
+  special-category data (GDPR Art. 9) a guest typed into a form field, which this fixed
+  before/after list is not meant to capture. `ticket_type` is a catalog key, not free text.
 
 ## Retention
 

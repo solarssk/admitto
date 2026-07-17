@@ -74,6 +74,7 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
     ticket_ref: null,
     deliveries: [],
     action_log: [],
+    event_items: [],
     ...overrides,
   };
 }
@@ -102,14 +103,14 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
   it("confirms Revoke pass, closes the dialog, and shows Restore pass afterward", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     updateAttendee.mockResolvedValue(
       baseDetail({ status: "revoked", updated_at: "2026-01-02T00:00:00.000Z" }),
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Revoke pass" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pass" }));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("Revoke pass?")).toBeTruthy();
 
@@ -125,7 +126,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
   it("shows the capacity-blocked banner (not the dialog) when Restore pass hits event_full", async () => {
     mockLoad(baseDetail({ status: "revoked" }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     const { ApiError } = await import("../../src/api/client.js");
     updateAttendee.mockRejectedValue(
@@ -144,7 +145,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
     mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
     mockLoad(baseDetail({ status: "revoked" }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     const { ApiError } = await import("../../src/api/client.js");
     updateAttendee

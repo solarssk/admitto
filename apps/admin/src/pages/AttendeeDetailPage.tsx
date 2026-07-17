@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import {
-  Badge,
   Button,
   Card,
   EmptyState,
   Input,
   PageHeader,
+  resolveStatusMeta,
   Select,
   Skeleton,
   Tabs,
@@ -29,17 +29,40 @@ import {
   toAttendeeForm,
   type AttendeeFormState,
 } from "../attendees/attendeeDetailForm.js";
-import { formatAdmissionDisplay } from "../utils/event-dates.js";
-import { getTimelineDetail, getTimelineIcon, getTimelineLabel, formatActivityTimestamp } from "../attendees/attendeeTimeline.js";
+import { formatAdmissionDisplay, formatEventDateTime } from "../utils/event-dates.js";
+import {
+  deriveAttendeeSource,
+  getTimelineActor,
+  getTimelineDetail,
+  getTimelineIcon,
+  getTimelineLabel,
+  getTimelineTone,
+  formatActivityTimestamp,
+  humanizeFieldKey,
+} from "../attendees/attendeeTimeline.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
+import { PassStatusBadge } from "../attendees/passStatusBadge.js";
+import { RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
+import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
-import { readCustomDataField, validateCustomFieldsForm } from "../attendees/customData.js";
+import {
+  allCustomDataEntries,
+  readCustomDataField,
+  validateCustomFieldsForm,
+} from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
+import { useMailConfigured } from "../attendees/useMailConfigured.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { ArchivedGuard, ARCHIVED_ACTION_TOOLTIP, isEventArchived } from "../components/ArchivedGuard.js";
+import {
+  ArchivedGuard,
+  ARCHIVED_ACTION_TOOLTIP,
+  isEventArchived,
+  type ArchivedGuardEvent,
+} from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
+import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import "../attendees/attendees.css";
@@ -89,7 +112,7 @@ function RevokeActionMenu({
               onRevokePass();
             }}
           >
-            Revoke pass
+            <i className="ti ti-wallet" aria-hidden="true" /> Pass
           </button>
           {canRevokeCheckIn && (
             <button
@@ -101,13 +124,127 @@ function RevokeActionMenu({
                 onRevokeCheckIn();
               }}
             >
-              Revoke check-in
+              <i className="ti ti-qrcode" aria-hidden="true" /> Check-in
             </button>
           )}
         </div>
       )}
     </div>
   );
+}
+
+/** Secondary actions that don't need their own header button - today just Resend ticket, matching
+ * the design mockup's "More actions" menu (which also groups actions this page doesn't have yet,
+ * e.g. attendee removal, tracked separately by #356). The trigger's own `disabled` is the archived
+ * lock (blocks the whole menu); "Resend ticket" additionally gets its own disabled+tooltip when
+ * the event has no working mail transport - same check and copy as the Attendees list's "Send
+ * tickets" button, but scoped to just this one item since future menu entries (e.g. #356) may
+ * have nothing to do with mail. */
+function MoreActionsMenu({
+  event,
+  onResend,
+  disabled = false,
+  mailConfigured,
+  "aria-describedby": ariaDescribedBy,
+}: Readonly<{
+  event: ArchivedGuardEvent;
+  onResend: () => void;
+  disabled?: boolean;
+  mailConfigured: boolean | undefined;
+  "aria-describedby"?: string;
+}>) {
+  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+
+  return (
+    <div className="more-actions-menu" ref={rootRef}>
+      <Button
+        ref={triggerRef}
+        type="button"
+        variant="secondary"
+        icon={<i className="ti ti-dots-vertical" aria-hidden="true" />}
+        hasMenu
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        aria-describedby={ariaDescribedBy}
+        onClick={() => setOpen((o) => !o)}
+      >
+        More actions
+      </Button>
+      {open && (
+        <div className="more-actions-menu__panel" role="menu" ref={panelRef}>
+          <ArchivedGuard
+            event={event}
+            reasonId="resend-ticket-mail-reason"
+            disabled={mailConfigured === false}
+            tooltip={
+              mailConfigured === false
+                ? "No mail transport configured for this event. Set one up in Event Settings → Mailing."
+                : undefined
+            }
+            placement="below"
+          >
+            {(guard) => (
+              <button
+                type="button"
+                role="menuitem"
+                className="more-actions-menu__item"
+                {...guard}
+                onClick={() => {
+                  setOpen(false);
+                  onResend();
+                }}
+              >
+                <i className="ti ti-send" aria-hidden="true" /> Resend ticket
+              </button>
+            )}
+          </ArchivedGuard>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type ChipTone = "ok" | "warn" | "error" | "neutral";
+
+function passStatusTone(status: string): ChipTone {
+  if (status === "registered" || status === "confirmed") return "ok";
+  if (status === "revoked") return "error";
+  return "neutral";
+}
+
+function rsvpTone(status: RsvpStatus): ChipTone {
+  if (status === "confirmed") return "ok";
+  if (status === "declined" || status === "cancelled") return "error";
+  if (status === "tentative") return "warn";
+  return "neutral";
+}
+
+/** Clamped to this page's four chip tones - resolveStatusMeta's other badge variants
+ * (info/confirmed/vip/primary) don't apply to any mail delivery status. */
+function mailTone(status: string | null): ChipTone {
+  if (!status) return "neutral";
+  const variant = resolveStatusMeta(status).variant;
+  return variant === "ok" || variant === "warn" || variant === "error" ? variant : "neutral";
+}
+
+function itemStateLabel(state: string): string {
+  if (state === "issued") return "Issued";
+  if (state === "returned") return "Returned";
+  return "Not yet";
+}
+
+/** Icon background/color has three looks (pending/issued/returned); the status text
+ * only distinguishes "done" (issued) from everything else - matches the design mockup's
+ * .att-item-row__icon vs .att-item-row__status rules exactly, not a simplification. */
+function itemIconModifier(state: string): "issued" | "returned" | "" {
+  if (state === "issued") return "issued";
+  if (state === "returned") return "returned";
+  return "";
+}
+
+function itemStateTone(state: string): "ok" | "muted" {
+  return state === "issued" ? "ok" : "muted";
 }
 
 /** Event attendee detail: profile edit, pass revoke/restore, resend, and activity log. */
@@ -120,6 +257,8 @@ export function AttendeeDetailPage() {
   const { addToast } = useToast();
   const resendTitleId = useId();
   const resendPanelRef = useRef<HTMLFormElement>(null);
+  const editTitleId = useId();
+  const editPanelRef = useRef<HTMLFormElement>(null);
 
   const [tab, setTab] = useState<TabId>("overview");
   const [detail, setDetail] = useState<AttendeeDetailDto | null>(null);
@@ -136,13 +275,16 @@ export function AttendeeDetailPage() {
   const [emailConflict, setEmailConflict] = useState(false);
   const [staleWrite, setStaleWrite] = useState(false);
   const [reloading, setReloading] = useState(false);
-  const [rsvpSaving, setRsvpSaving] = useState(false);
   const [resendOpen, setResendOpen] = useState(false);
   const [resendMode, setResendMode] = useState<"same" | "other">("same");
   const [resendEmail, setResendEmail] = useState("");
   const [resending, setResending] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
+  // Which action the pending discard-confirm resolves to: navigating back away from the page,
+  // or just closing edit mode in place (#361) - same dialog, different consequence on confirm.
+  const [discardIntent, setDiscardIntent] = useState<"back" | "cancel-edit">("back");
+  const [editMode, setEditMode] = useState(false);
   // Which of the two "revoke" confirm flows is active — mutually exclusive
   // by construction, replacing six independent booleans that could
   // technically both be true at once (review finding).
@@ -217,6 +359,10 @@ export function AttendeeDetailPage() {
     loadTicketTypes();
   }, [loadTicketTypes]);
 
+  // Whether "Resend ticket" should work at all — same check as the Attendees list's "Send
+  // tickets" button, shared via useMailConfigured.
+  const mailConfigured = useMailConfigured(eventId);
+
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
   const isDirty =
     form !== null &&
@@ -226,6 +372,7 @@ export function AttendeeDetailPage() {
       form.company !== baseline.company ||
       form.department !== baseline.department ||
       form.ticket_type !== baseline.ticket_type ||
+      form.rsvp_status !== baseline.rsvp_status ||
       JSON.stringify(form.customFields) !== JSON.stringify(baseline.customFields));
 
   const goBack = () => {
@@ -234,11 +381,27 @@ export function AttendeeDetailPage() {
   };
 
   const handleBack = () => {
-    if (isDirty) setDiscardOpen(true);
-    else goBack();
+    if (isDirty) {
+      setDiscardIntent("back");
+      setDiscardOpen(true);
+    } else {
+      goBack();
+    }
   };
 
+  function handleCancelEdit() {
+    if (isDirty) {
+      setDiscardIntent("cancel-edit");
+      setDiscardOpen(true);
+    } else {
+      setEditMode(false);
+      setError(null);
+      setEmailConflict(false);
+    }
+  }
+
   useModalFocusTrap(resendPanelRef, resendOpen, () => setResendOpen(false));
+  useModalFocusTrap(editPanelRef, editMode, handleCancelEdit);
 
   async function handleReload() {
     if (!eventId || !attendeeId) return;
@@ -277,6 +440,7 @@ export function AttendeeDetailPage() {
     if (form.company !== (detail.company ?? "")) patch.company = form.company || null;
     if (form.department !== (detail.department ?? "")) patch.department = form.department || null;
     if (form.ticket_type !== (detail.ticket_type ?? "")) patch.ticket_type = form.ticket_type || null;
+    if (form.rsvp_status !== detail.rsvp_status) patch.rsvp_status = form.rsvp_status;
 
     const customDataPatch: Record<string, string | null> = {};
     for (const field of attributeFields) {
@@ -286,7 +450,12 @@ export function AttendeeDetailPage() {
       if (next !== current) customDataPatch[key] = next || null;
     }
     if (Object.keys(customDataPatch).length > 0) patch.custom_data_fields = customDataPatch;
-    if (Object.keys(patch).length === 0) return;
+    if (Object.keys(patch).length === 0) {
+      setEditMode(false);
+      setError(null);
+      setEmailConflict(false);
+      return;
+    }
 
     const customValidation = validateCustomFieldsForm(attributeFields, form.customFields);
     if (customValidation) {
@@ -306,14 +475,17 @@ export function AttendeeDetailPage() {
       setForm(toAttendeeForm(updated, attributeFields));
       setInitialEmail(updated.email);
       setStaleWrite(false);
+      setEditMode(false);
       addToast("Profile saved", "success");
     } catch (err) {
       if (!isStillSelected(target)) return;
       if (err instanceof ApiError && err.status === 409) {
         if (hasApiErrorCode(err, "email_conflict")) setEmailConflict(true);
         else if (hasApiErrorCode(err, "stale_write")) {
+          // Inline modal warning + Reload button only, no toast - same error, actionable
+          // retry control already visible in the still-open modal (bot review, matches the
+          // ConfirmDialog convention of not duplicating an actionable inline error as a toast).
           setStaleWrite(true);
-          addToast("Someone else updated this attendee — page will reload", "warning");
           void handleReload();
         } else setError("Could not save changes.");
       } else if (
@@ -333,36 +505,6 @@ export function AttendeeDetailPage() {
       }
     } finally {
       if (isStillSelected(target)) setSaving(false);
-    }
-  }
-
-  async function handleRsvpChange(next: RsvpStatus) {
-    if (!eventId || !attendeeId || !detail || next === detail.rsvp_status || rsvpSaving) return;
-    const target = { eventId, attendeeId };
-    const previous = detail;
-    const expectedUpdatedAt = detail.updated_at;
-    setDetail({ ...detail, rsvp_status: next });
-    setRsvpSaving(true);
-    try {
-      const updated = await updateAttendee(eventId, attendeeId, {
-        rsvp_status: next,
-        expected_updated_at: expectedUpdatedAt,
-      });
-      if (!isStillSelected(target)) return;
-      setDetail(updated);
-      setForm((f) => (f ? f : null));
-      addToast("Status updated", "success");
-    } catch (err) {
-      if (!isStillSelected(target)) return;
-      setDetail(previous);
-      if (err instanceof ApiError && err.code === "stale_write") {
-        addToast("Someone else updated this attendee — page will reload", "warning");
-        void handleReload();
-      } else {
-        addToast(operatorApiErrorMessage(err, "Failed to update status"), "error");
-      }
-    } finally {
-      if (isStillSelected(target)) setRsvpSaving(false);
     }
   }
 
@@ -511,6 +653,12 @@ export function AttendeeDetailPage() {
     form.ticket_type && !ticketTypes.some((type) => type.key === form.ticket_type)
       ? form.ticket_type
       : null;
+  const attendeeSource = deriveAttendeeSource(detail.action_log);
+  const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey);
+  // Falls back to [] against a stale API response missing this field (e.g. an apps/web dev
+  // server running from before event_items was added - it doesn't hot-reload) instead of
+  // crashing the whole page on detail.event_items.length.
+  const eventItems = detail.event_items ?? [];
 
   return (
     <div className="attendee-detail-page">
@@ -519,21 +667,26 @@ export function AttendeeDetailPage() {
         subtitle="Manage this attendee's profile, ticket, and check-in status."
         actions={
           <>
-            {isRevoked && <Badge variant="error">Revoked</Badge>}
-            <ArchivedGuard event={event} reasonId="resend-ticket-reason">
+            <ArchivedGuard event={event} reasonId="edit-profile-reason" placement="below">
               {(guard) => (
                 <Button
+                  type="button"
                   variant="secondary"
-                  icon={<i className="ti ti-refresh" aria-hidden="true" />}
+                  icon={<i className="ti ti-pencil" aria-hidden="true" />}
                   {...guard}
-                  onClick={() => setResendOpen(true)}
+                  onClick={() => setEditMode(true)}
                 >
-                  Resend ticket
+                  Edit
                 </Button>
               )}
             </ArchivedGuard>
             {isRevoked ? (
-              <ArchivedGuard event={event} reasonId="restore-pass-reason" disabled={revokeBusy}>
+              <ArchivedGuard
+                event={event}
+                reasonId="restore-pass-reason"
+                disabled={revokeBusy}
+                placement="below"
+              >
                 {(guard) => (
                   <Button
                     variant="primary"
@@ -549,7 +702,7 @@ export function AttendeeDetailPage() {
                 )}
               </ArchivedGuard>
             ) : (
-              <ArchivedGuard event={event} reasonId="revoke-menu-reason">
+              <ArchivedGuard event={event} reasonId="revoke-menu-reason" placement="below">
                 {(guard) => (
                   <RevokeActionMenu
                     canRevokeCheckIn={canRevokeCheckIn({
@@ -569,6 +722,16 @@ export function AttendeeDetailPage() {
                 )}
               </ArchivedGuard>
             )}
+            <ArchivedGuard event={event} reasonId="more-actions-reason" placement="below">
+              {(guard) => (
+                <MoreActionsMenu
+                  event={event}
+                  mailConfigured={mailConfigured}
+                  onResend={() => setResendOpen(true)}
+                  {...guard}
+                />
+              )}
+            </ArchivedGuard>
             <Button variant="secondary" onClick={handleBack}>
               Back
             </Button>
@@ -576,7 +739,10 @@ export function AttendeeDetailPage() {
         }
       />
 
-      {error && <p className="text-error">{error}</p>}
+      {/* Not shown while the Edit modal is open - that error text renders inside the modal
+          itself instead, otherwise it's stuck behind the modal's opaque backdrop, invisible
+          (bot review), and duplicated in the DOM behind it if left unconditional here. */}
+      {error && !editMode && <p className="text-error">{error}</p>}
       {revokeError && activeRevoke === null && (
         <div className="attendee-form__warn">
           <p className="text-error">{revokeError}</p>
@@ -595,6 +761,58 @@ export function AttendeeDetailPage() {
       )}
       {itemsWarning && <p className="attendee-form__warn">{itemsWarning}</p>}
 
+      <div className="attendee-status-strip">
+        <div className="attendee-status-chip">
+          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${passStatusTone(detail.status)}`}>
+            <i className="ti ti-user-check" aria-hidden="true" />
+          </span>
+          <div className="attendee-status-chip__body">
+            <strong>Registration</strong>
+            <PassStatusBadge status={detail.status} />
+          </div>
+        </div>
+        <div className="attendee-status-chip">
+          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${rsvpTone(detail.rsvp_status)}`}>
+            <i className="ti ti-calendar-question" aria-hidden="true" />
+          </span>
+          <div className="attendee-status-chip__body">
+            <strong>Attendance</strong>
+            <RsvpStatusBadge status={detail.rsvp_status} />
+          </div>
+        </div>
+        <div className="attendee-status-chip">
+          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${mailTone(lastMail)}`}>
+            <i className="ti ti-mail" aria-hidden="true" />
+          </span>
+          <div className="attendee-status-chip__body">
+            <strong>Ticket delivery</strong>
+            <MailStatusBadge status={lastMail} />
+          </div>
+        </div>
+        <div className="attendee-status-chip">
+          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${detail.admitted_at ? "ok" : "neutral"}`}>
+            <i className="ti ti-qrcode" aria-hidden="true" />
+          </span>
+          <div className="attendee-status-chip__body">
+            <strong>Check-in</strong>
+            <span>
+              {detail.admitted_at
+                ? formatAdmissionDisplay(detail.admitted_at, event.date, event.timezone)
+                : "Not yet"}
+            </span>
+          </div>
+        </div>
+        <div className="attendee-status-chip">
+          <span className="attendee-status-chip__icon attendee-status-chip__icon--neutral">
+            <i className="ti ti-wallet" aria-hidden="true" />
+          </span>
+          <div className="attendee-status-chip__body">
+            <strong>Wallet</strong>
+            <span>Not added</span>
+          </div>
+        </div>
+      </div>
+
       <Tabs
         value={tab}
         onChange={(id) => setTab(id as TabId)}
@@ -606,155 +824,139 @@ export function AttendeeDetailPage() {
 
       {tab === "overview" && (
         <div className="attendee-detail-grid">
-          <Card title="Profile" className="attendee-detail-profile">
-            <form className="attendee-form" onSubmit={handleSave}>
-              {staleWrite && (
-                <div className="attendee-form__warn">
-                  <p>Someone else updated this attendee — reload and reapply your edits.</p>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => void handleReload()} disabled={reloading}>
-                    {reloading ? "Reloading…" : "Reload"}
-                  </Button>
+          <div className="attendee-detail-main">
+            <Card title="Profile" className="attendee-detail-profile">
+              <div className="attendee-detail-readonly">
+                <div className="attendee-detail-row">
+                  <span>Email</span>
+                  <span className="mono">{detail.email}</span>
+                </div>
+                <div className="attendee-detail-row">
+                  <span>Ticket type</span>
+                  <TicketTypeBadge ticketType={detail.ticket_type} catalog={ticketTypes} />
+                </div>
+                <div className="attendee-detail-row">
+                  <span>Company</span>
+                  <span>{detail.company ?? "—"}</span>
+                </div>
+                <div className="attendee-detail-row">
+                  <span>Department</span>
+                  <span>{detail.department ?? "—"}</span>
+                </div>
+                {attendeeSource && (
+                  <div className="attendee-detail-row">
+                    <span>Added via</span>
+                    <span>{attendeeSource}</span>
+                  </div>
+                )}
+                <div className="attendee-detail-row">
+                  <span>Registered on</span>
+                  <span className="mono">
+                    {formatEventDateTime(detail.created_at, detail.client_timezone ?? event.timezone)}
+                  </span>
+                </div>
+              </div>
+            </Card>
+
+            <Card title="Additional information">
+              {customDataEntries.length === 0 ? (
+                <EmptyState
+                  icon={<i className="ti ti-list-details" aria-hidden="true" />}
+                  title="No additional information"
+                  description="Custom fields will appear here once this attendee has some."
+                />
+              ) : (
+                <div className="attendee-detail-readonly">
+                  {customDataEntries.map(([key, label, value]) => (
+                    <div className="attendee-detail-row" key={key}>
+                      <span>{label}</span>
+                      <span>{value}</span>
+                    </div>
+                  ))}
                 </div>
               )}
-              <fieldset
-                className={["attendee-form__fieldset", isEventArchived(event) && "at-tooltip"]
-                  .filter(Boolean)
-                  .join(" ")}
-                data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
-                disabled={isEventArchived(event)}
-              >
-                <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-                {emailChanged && (
-                  <p className="attendee-form__warn">
-                    This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
-                  </p>
-                )}
-                {emailConflict && (
-                  <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
-                )}
-                <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-                <Input label="Company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
-                <Input label="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
-                <Select
-                  label="Ticket type"
-                  value={form.ticket_type}
-                  onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
-                >
-                  <option value="">—</option>
-                  {orphanedTicketType && (
-                    <option
-                      value={orphanedTicketType}
-                      title="Not in this event's ticket-type catalog — it may have been deleted after being assigned. Picking another option here replaces it."
-                    >
-                      {orphanedTicketType} (not in catalog)
-                    </option>
-                  )}
-                  {ticketTypes.map((type) => (
-                    <option key={type.key} value={type.key}>
-                      {type.label}
-                    </option>
-                  ))}
-                </Select>
-                {ticketTypesError && (
-                  <p className="attendee-form__error">
-                    {ticketTypesError}{" "}
-                    <button type="button" className="link-btn" onClick={loadTicketTypes}>
-                      Retry
-                    </button>
-                  </p>
-                )}
-                {attributeFields.map((field) => (
-                  <CustomDataFieldInput
-                    key={field.source_field}
-                    field={field}
-                    value={form.customFields[field.source_field] ?? ""}
-                    disabled={saving || reloading || staleWrite}
-                    onChange={(next) =>
-                      setForm({
-                        ...form,
-                        customFields: { ...form.customFields, [field.source_field]: next },
-                      })
-                    }
-                  />
-                ))}
-              </fieldset>
-              <div className="attendee-form__actions">
-                <ArchivedGuard
-                  event={event}
-                  reasonId="save-changes-reason"
-                  disabled={saving || reloading || staleWrite || rsvpSaving}
-                >
-                  {(guard) => (
-                    <Button type="submit" variant="primary" {...guard}>
-                      {saving ? "Saving…" : "Save changes"}
-                    </Button>
-                  )}
-                </ArchivedGuard>
-              </div>
-            </form>
-          </Card>
+            </Card>
+
+            <Card title="Wallet">
+              <EmptyState
+                icon={<i className="ti ti-wallet" aria-hidden="true" />}
+                title="Not added to a wallet"
+                description="Apple Wallet and Google Wallet support isn't available yet."
+              />
+            </Card>
+          </div>
 
           <div className="attendee-detail-side">
-            <Card title="Status">
-              <div className="attendee-status-list">
-                <div className="attendee-status-row">
-                  <span className="attendee-status-row__icon">
-                    <i className="ti ti-calendar-question" aria-hidden="true" />
-                  </span>
-                  <div className="attendee-status-row__body">
-                    <span className="attendee-status-row__label">RSVP</span>
-                    <ArchivedGuard event={event} reasonId="rsvp-status-reason" disabled={rsvpSaving}>
-                      {(guard) => (
-                        <Select
-                          label="RSVP status"
-                          value={detail.rsvp_status}
-                          {...guard}
-                          onChange={(e) => void handleRsvpChange(e.target.value as RsvpStatus)}
-                        >
-                          <option value="none">Registered</option>
-                          <option value="confirmed">Confirmed</option>
-                          <option value="declined">Declined</option>
-                          <option value="tentative">Tentative</option>
-                          <option value="cancelled">Cancelled</option>
-                        </Select>
-                      )}
-                    </ArchivedGuard>
-                  </div>
-                </div>
-                <div className="attendee-status-row">
-                  <span className="attendee-status-row__icon">
-                    <i className="ti ti-mail" aria-hidden="true" />
-                  </span>
-                  <div className="attendee-status-row__body">
-                    <span className="attendee-status-row__label">Ticket delivery</span>
-                    <MailStatusBadge status={lastMail} />
-                  </div>
-                </div>
-                <div className="attendee-status-row">
-                  <span className="attendee-status-row__icon">
-                    <i className="ti ti-wallet" aria-hidden="true" />
-                  </span>
-                  <div className="attendee-status-row__body">
-                    <span className="attendee-status-row__label">Wallet pass</span>
-                    <span className="attendee-readonly">—</span>
-                  </div>
-                </div>
-                <div className="attendee-status-row">
-                  <span className="attendee-status-row__icon">
-                    <i className="ti ti-qrcode" aria-hidden="true" />
-                  </span>
-                  <div className="attendee-status-row__body">
-                    <span className="attendee-status-row__label">Check-in</span>
-                    {detail.admitted_at ? (
-                      <span className="attendee-detail-checkin">
-                        {formatAdmissionDisplay(detail.admitted_at, event.date, event.timezone)}
+            <Card title="Event-day items">
+              {eventItems.length === 0 ? (
+                <EmptyState
+                  icon={<i className="ti ti-package" aria-hidden="true" />}
+                  title="No event-day items"
+                  description="This event has no hand-out items configured yet."
+                />
+              ) : (
+                <ul className="attendee-items-list">
+                  {eventItems.map((item) => (
+                    <li className="attendee-items-row" key={item.key}>
+                      <span
+                        className={[
+                          "attendee-items-row__icon",
+                          itemIconModifier(item.state) &&
+                            `attendee-items-row__icon--${itemIconModifier(item.state)}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        <i
+                          className={`ti ti-${item.state === "issued" || item.state === "returned" ? "circle-check" : (item.icon ?? "package")}`}
+                          aria-hidden="true"
+                        />
                       </span>
-                    ) : (
-                      <span className="attendee-readonly">—</span>
-                    )}
-                  </div>
-                </div>
-              </div>
+                      <span className="attendee-items-row__label">{item.label}</span>
+                      <span
+                        className={`attendee-items-row__state attendee-items-row__state--${itemStateTone(item.state)}`}
+                      >
+                        {itemStateLabel(item.state)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+
+            <Card title="Mail delivery history">
+              {detail.deliveries.length === 0 ? (
+                <EmptyState
+                  icon={<i className="ti ti-mail-off" aria-hidden="true" />}
+                  title="No delivery attempts yet"
+                  description="Ticket emails and resends will appear here once one is sent."
+                />
+              ) : (
+                <ul className="attendee-deliveries">
+                  {detail.deliveries.map((delivery) => (
+                    <li className="attendee-delivery" key={delivery.id}>
+                      <div className="attendee-delivery__subject">
+                        {delivery.rendered_subject ?? "Ticket email"}
+                      </div>
+                      <div className="attendee-delivery__meta">
+                        <MailStatusBadge status={delivery.status} />
+                        <span className="mono">
+                          {formatEventDateTime(
+                            delivery.sent_at ?? delivery.accepted_at ?? delivery.queued_at,
+                            delivery.client_timezone ?? event.timezone,
+                          )}
+                        </span>
+                        {delivery.recipient_email && delivery.recipient_email !== detail.email && (
+                          <span>to {delivery.recipient_email}</span>
+                        )}
+                      </div>
+                      {delivery.error_code && (
+                        <p className="attendee-delivery__error">{delivery.error_code}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </Card>
           </div>
         </div>
@@ -770,23 +972,174 @@ export function AttendeeDetailPage() {
             />
           ) : (
             <ul className="at-timeline">
-              {detail.action_log.map((entry) => (
-                <li key={entry.id} className="at-tl-item">
-                  <div className="at-tl-dot">
-                    <i className={`ti ti-${getTimelineIcon(entry.action_type)}`} aria-hidden="true" />
-                  </div>
-                  <div className="at-tl-body">
-                    <b>{getTimelineLabel(entry)}</b>
-                    <span>{getTimelineDetail(entry)}</span>
-                  </div>
-                  <time className="at-tl-time" dateTime={entry.created_at}>
-                    {formatActivityTimestamp(entry.created_at, entry.action_type, event.timezone)}
-                  </time>
-                </li>
-              ))}
+              {detail.action_log.map((entry) => {
+                const detailText = getTimelineDetail(entry, attributeFields, eventItems);
+                return (
+                  <li key={entry.id} className="at-tl-item">
+                    <div className={`at-tl-dot at-tl-dot--${getTimelineTone(entry)}`}>
+                      <i className={`ti ti-${getTimelineIcon(entry.action_type)}`} aria-hidden="true" />
+                    </div>
+                    <div className="at-tl-body">
+                      <b>{getTimelineLabel(entry)}</b>
+                      {detailText && <span>{detailText}</span>}
+                    </div>
+                    <div className="at-tl-meta">
+                      <time className="at-tl-time" dateTime={entry.created_at}>
+                        {formatActivityTimestamp(entry.created_at, entry.client_timezone, event.timezone)}
+                      </time>
+                      <span className="at-tl-actor">
+                        <i className="ti ti-user" aria-hidden="true" />
+                        {getTimelineActor(entry)}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Card>
+      )}
+
+      {editMode && (
+        <div className="attendee-edit-modal" role="dialog" aria-modal="true" aria-labelledby={editTitleId}>
+          <div className="attendee-edit-modal__backdrop" role="presentation" onClick={handleCancelEdit} />
+          <form ref={editPanelRef} className="attendee-edit-modal__panel" onSubmit={handleSave}>
+            <h2 id={editTitleId} className="attendee-edit-modal__title">
+              <i className="ti ti-pencil" aria-hidden="true" /> Edit attendee
+            </h2>
+            <p className="attendee-edit-modal__subtitle">
+              Update this attendee&apos;s profile and ticket details.
+            </p>
+            {error && (
+              <p className="text-error" role="alert">
+                {error}
+              </p>
+            )}
+            {staleWrite && (
+              <div className="attendee-form__warn">
+                <p>Someone else updated this attendee — reload and reapply your edits.</p>
+                <Button type="button" variant="secondary" size="sm" onClick={() => void handleReload()} disabled={reloading}>
+                  {reloading ? "Reloading…" : "Reload"}
+                </Button>
+              </div>
+            )}
+            <fieldset
+              className={["attendee-form__fieldset", isEventArchived(event) && "at-tooltip"]
+                .filter(Boolean)
+                .join(" ")}
+              data-tooltip={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
+              disabled={isEventArchived(event)}
+            >
+              <Select
+                label="Attendance"
+                value={form.rsvp_status}
+                onChange={(e) => setForm({ ...form, rsvp_status: e.target.value as RsvpStatus })}
+              >
+                <option value="none">Registered</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="declined">Declined</option>
+                <option value="tentative">Tentative</option>
+                <option value="cancelled">Cancelled</option>
+              </Select>
+              <Input
+                label="Email"
+                type="text"
+                inputMode="email"
+                icon={<i className="ti ti-mail" aria-hidden="true" />}
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                required
+                {...NO_AUTOFILL_PROPS}
+              />
+              {emailChanged && (
+                <p className="attendee-form__warn">
+                  This changes the attendee&apos;s primary address. To send a ticket elsewhere, use Resend ticket.
+                </p>
+              )}
+              {emailConflict && (
+                <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
+              )}
+              <Input
+                label="Name"
+                icon={<i className="ti ti-user" aria-hidden="true" />}
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+                {...NO_AUTOFILL_PROPS}
+              />
+              <Input
+                label="Company"
+                icon={<i className="ti ti-building" aria-hidden="true" />}
+                value={form.company}
+                onChange={(e) => setForm({ ...form, company: e.target.value })}
+              />
+              <Input
+                label="Department"
+                icon={<i className="ti ti-sitemap" aria-hidden="true" />}
+                value={form.department}
+                onChange={(e) => setForm({ ...form, department: e.target.value })}
+              />
+              <Select
+                label="Ticket type"
+                value={form.ticket_type}
+                onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
+              >
+                <option value="">—</option>
+                {orphanedTicketType && (
+                  <option
+                    value={orphanedTicketType}
+                    title="Not in this event's ticket-type catalog — it may have been deleted after being assigned. Picking another option here replaces it."
+                  >
+                    {orphanedTicketType} (not in catalog)
+                  </option>
+                )}
+                {ticketTypes.map((type) => (
+                  <option key={type.key} value={type.key}>
+                    {type.label}
+                  </option>
+                ))}
+              </Select>
+              {ticketTypesError && (
+                <p className="attendee-form__error">
+                  {ticketTypesError}{" "}
+                  <button type="button" className="link-btn" onClick={loadTicketTypes}>
+                    Retry
+                  </button>
+                </p>
+              )}
+              {attributeFields.map((field) => (
+                <CustomDataFieldInput
+                  key={field.source_field}
+                  field={field}
+                  value={form.customFields[field.source_field] ?? ""}
+                  disabled={saving || reloading || staleWrite}
+                  onChange={(next) =>
+                    setForm({
+                      ...form,
+                      customFields: { ...form.customFields, [field.source_field]: next },
+                    })
+                  }
+                />
+              ))}
+            </fieldset>
+            <div className="attendee-form__actions">
+              <Button type="button" variant="secondary" onClick={handleCancelEdit} disabled={saving}>
+                Cancel
+              </Button>
+              <ArchivedGuard
+                event={event}
+                reasonId="save-changes-reason"
+                disabled={saving || reloading || staleWrite}
+              >
+                {(guard) => (
+                  <Button type="submit" variant="primary" {...guard}>
+                    {saving ? "Saving…" : "Save changes"}
+                  </Button>
+                )}
+              </ArchivedGuard>
+            </div>
+          </form>
+        </div>
       )}
 
       {resendOpen && (
@@ -824,11 +1177,22 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={discardOpen}
         title="Discard unsaved changes?"
-        message="You have unsaved profile edits. Leave without saving?"
-        confirmLabel="Leave"
+        message={
+          discardIntent === "back"
+            ? "You have unsaved profile edits. Leave without saving?"
+            : "You have unsaved profile edits. Discard them?"
+        }
+        confirmLabel={discardIntent === "back" ? "Leave" : "Discard"}
         onConfirm={() => {
           setDiscardOpen(false);
-          goBack();
+          if (discardIntent === "back") {
+            goBack();
+          } else {
+            if (baseline) setForm(baseline);
+            setEditMode(false);
+            setError(null);
+            setEmailConflict(false);
+          }
         }}
         onCancel={() => setDiscardOpen(false)}
       />

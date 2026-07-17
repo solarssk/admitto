@@ -12,6 +12,8 @@ export interface DeliveryDto {
   sent_at: string | null;
   failed_at: string | null;
   error_code: string | null;
+  /** Triggering admin's IANA timezone at send time, when known. */
+  client_timezone: string | null;
 }
 
 /** Format a Date as ISO string or null for delivery DTOs. */
@@ -32,5 +34,6 @@ export function toDeliveryDto(entry: DeliveryLogEntry): DeliveryDto {
     sent_at: isoOrNull(entry.sent_at),
     failed_at: isoOrNull(entry.failed_at),
     error_code: entry.error_code,
+    client_timezone: entry.client_timezone,
   };
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
@@ -61,6 +61,7 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
     custom_data: {},
     status: "registered" as const,
     admitted_at: null,
+    created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     check_in_status: "not_admitted" as const,
     last_mail_status: null,
@@ -70,6 +71,7 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
     ticket_ref: null,
     deliveries: [],
     action_log: [],
+    event_items: [],
     ...overrides,
   };
 }
@@ -103,20 +105,20 @@ function expectArchivedLock(control: HTMLElement) {
 }
 
 describe("AttendeeDetailPage archived lockdown", () => {
-  it("disables resend ticket, revoke menu, RSVP select, and the profile form for a registered attendee", async () => {
+  it("disables More actions (resend ticket), revoke menu, and Edit for a registered attendee", async () => {
     mockLoad(baseDetail());
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
-    expectArchivedLock(screen.getByRole("button", { name: "Resend ticket" }));
+    expectArchivedLock(screen.getByRole("button", { name: "More actions" }));
     expectArchivedLock(screen.getByRole("button", { name: "Revoke" }));
-    expectArchivedLock(screen.getByRole("combobox", { name: "RSVP status" }));
-    expectArchivedLock(screen.getByRole("button", { name: "Save changes" }));
-
-    const emailInput = screen.getByLabelText("Email") as HTMLInputElement;
-    expect(emailInput.closest("fieldset")?.disabled).toBe(true);
-    expect(emailInput.closest("fieldset")?.className).toContain("at-tooltip");
-    expect(emailInput.closest("fieldset")?.getAttribute("data-tooltip")).toBe(ARCHIVED_ACTION_TOOLTIP);
+    // Edit mode can't be entered at all on an archived event — the read-only
+    // view stays up, no Save button ever renders, and the RSVP select (now
+    // inside the Edit modal) is unreachable along with the rest of the form (#361).
+    expectArchivedLock(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByLabelText("Email")).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Attendance" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
 
     // Back is read-only navigation and must stay usable.
     expect((screen.getByRole("button", { name: "Back" }) as HTMLButtonElement).disabled).toBe(false);
@@ -125,7 +127,7 @@ describe("AttendeeDetailPage archived lockdown", () => {
   it("disables restore pass for a revoked attendee", async () => {
     mockLoad(baseDetail({ status: "revoked" }));
     renderPage();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+    await screen.findByRole("heading", { name: "Anna" });
 
     expectArchivedLock(screen.getByRole("button", { name: "Restore pass" }));
   });

@@ -21,6 +21,8 @@ export interface DeliveryLogEntry {
   failed_at: Date | null;
   delivered_at: Date | null;
   created_at: Date;
+  /** Triggering admin's IANA timezone at send time, when known. */
+  client_timezone: string | null;
 }
 
 export interface ListDeliveriesParams {
@@ -58,6 +60,7 @@ const DELIVERY_LOG_SELECT = {
   failed_at: true,
   delivered_at: true,
   created_at: true,
+  client_timezone: true,
 } as const;
 
 /** Normalize a single status or array for Prisma `{ in: [...] }` filters. */
@@ -100,6 +103,7 @@ function mapRow(row: {
   failed_at: Date | null;
   delivered_at: Date | null;
   created_at: Date;
+  client_timezone: string | null;
 }): DeliveryLogEntry {
   return {
     ...row,

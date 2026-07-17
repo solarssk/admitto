@@ -6,6 +6,8 @@ export interface ResendTicketEmailOptions {
   to?: string;
   /** Resolved public instance URL (env BASE_URL or DB instance_url). */
   baseUrl?: string;
+  /** Triggering admin's IANA timezone at send time, when known. */
+  timezone?: string;
 }
 
 /** Explicit resend — new EmailDelivery row with purpose=resend and fresh render. */
@@ -24,6 +26,7 @@ export async function resendTicketEmail(
       purpose: "resend",
       ...(options.to ? { recipientEmail: options.to } : {}),
       ...(options.baseUrl ? { baseUrl: options.baseUrl } : {}),
+      ...(options.timezone ? { timezone: options.timezone } : {}),
     },
     prisma,
     env,

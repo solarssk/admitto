@@ -61,6 +61,9 @@ export type ImportOptions = {
    * the catalog can change between preview and commit (a type deleted after the CSV was
    * previewed). */
   ticketTypes?: ImportTicketType[];
+  /** Committing admin's IANA timezone at commit time, when known — applied to every created
+   * row in this batch (one commit click, one moment, shared across the whole file). */
+  timezone?: string;
 };
 
 export type SkippedRow = { email: string; reason: string };
