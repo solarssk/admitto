@@ -363,7 +363,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Someone Else" } });
+    fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Someone Else Inc" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Discard unsaved changes?" });
@@ -371,11 +371,11 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     fireEvent.click(within(dialog).getByRole("button", { name: "Discard" }));
 
     await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
-    // Heading still shows the un-reverted name; the reverted Name *row* (not the discarded
-    // "Someone Else") is scoped to the read-only container to avoid matching both.
-    expect(document.querySelector(".attendee-detail-readonly")?.textContent).toContain("Anna");
+    // The reverted Company *row* (not the discarded "Someone Else Inc") is scoped to the
+    // read-only container to avoid matching a stray element elsewhere on the page.
+    expect(document.querySelector(".attendee-detail-readonly")?.textContent).toContain("Acme");
     expect(document.querySelector(".attendee-detail-readonly")?.textContent).not.toContain(
-      "Someone Else",
+      "Someone Else Inc",
     );
     expect(updateAttendee).not.toHaveBeenCalled();
   });
@@ -443,7 +443,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
 });
 
 describe("AttendeeDetailPage extended guest information (#365)", () => {
-  it("shows Added on / Added via derived from the oldest loaded action-log entry", async () => {
+  it("shows Registered on / Added via derived from the oldest loaded action-log entry", async () => {
     mockLoad(
       baseDetail({
         created_at: "2026-01-05T09:30:00.000Z",
@@ -468,7 +468,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
-    expect(screen.getByText("Added on")).toBeTruthy();
+    expect(screen.getByText("Registered on")).toBeTruthy();
     expect(screen.getByText("Added via")).toBeTruthy();
     expect(screen.getByText("CSV/XLSX import")).toBeTruthy();
   });
@@ -478,7 +478,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     renderPage();
     await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
 
-    expect(screen.getByText("Added on")).toBeTruthy();
+    expect(screen.getByText("Registered on")).toBeTruthy();
     expect(screen.queryByText("Added via")).toBeNull();
   });
 

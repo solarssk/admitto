@@ -896,47 +896,82 @@
   white-space: nowrap;
 }
 
-.attendee-status-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.attendee-status-row {
-  display: flex;
-  align-items: flex-start;
+/* Attendee detail status strip - 5 chips (Registration/Attendance/Ticket delivery/Check-in/
+   Wallet), matching the design mockup's .att-status-strip. */
+.attendee-status-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
   gap: 12px;
+  margin-top: 16px;
 }
 
-.attendee-status-row__icon {
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--surface-subtle);
-  color: var(--text-muted);
-  font-size: 1rem;
-  flex-shrink: 0;
+.attendee-status-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  box-shadow: var(--shadow-card);
 }
 
-.attendee-status-row__body {
+.attendee-status-chip__icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.attendee-status-chip__icon--ok { background: var(--status-ok-tint); color: var(--status-ok-fg); }
+.attendee-status-chip__icon--warn { background: var(--status-warn-tint); color: var(--status-warn-fg); }
+.attendee-status-chip__icon--error { background: var(--status-error-tint); color: var(--status-error-fg); }
+.attendee-status-chip__icon--neutral { background: var(--at-gray-100); color: var(--text-muted); }
+
+.attendee-status-chip__body {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
-  flex: 1;
 }
 
-.attendee-status-row__label {
-  font-size: 0.75rem;
+.attendee-status-chip__body strong {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: var(--text-muted);
 }
 
-.attendee-detail-checkin {
-  color: var(--status-ok);
-  font-weight: 600;
-  font-size: 0.875rem;
+.attendee-status-chip__body > span {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The RSVP chip's <Select> replaces the mockup's static text - keep it visually compact
+   enough to still fit the chip. */
+.attendee-status-chip__body .at-select {
+  max-width: none;
+  font-size: var(--fs-sm);
+}
+
+@media (max-width: 900px) {
+  .attendee-status-strip {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .attendee-status-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .attendee-detail-skeleton {

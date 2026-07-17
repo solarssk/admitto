@@ -7,6 +7,7 @@ import {
   EmptyState,
   Input,
   PageHeader,
+  resolveStatusMeta,
   Select,
   Skeleton,
   Tabs,
@@ -39,6 +40,7 @@ import {
   humanizeFieldKey,
 } from "../attendees/attendeeTimeline.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
+import { PassStatusBadge } from "../attendees/passStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
 import {
@@ -167,6 +169,29 @@ function MoreActionsMenu({
       )}
     </div>
   );
+}
+
+type ChipTone = "ok" | "warn" | "error" | "neutral";
+
+function passStatusTone(status: string): ChipTone {
+  if (status === "registered" || status === "confirmed") return "ok";
+  if (status === "revoked") return "error";
+  return "neutral";
+}
+
+function rsvpTone(status: RsvpStatus): ChipTone {
+  if (status === "confirmed") return "ok";
+  if (status === "declined" || status === "cancelled") return "error";
+  if (status === "tentative") return "warn";
+  return "neutral";
+}
+
+/** Clamped to this page's four chip tones - resolveStatusMeta's other badge variants
+ * (info/confirmed/vip/primary) don't apply to any mail delivery status. */
+function mailTone(status: string | null): ChipTone {
+  if (!status) return "neutral";
+  const variant = resolveStatusMeta(status).variant;
+  return variant === "ok" || variant === "warn" || variant === "error" ? variant : "neutral";
 }
 
 /** Event attendee detail: profile edit, pass revoke/restore, resend, and activity log. */
@@ -686,6 +711,73 @@ export function AttendeeDetailPage() {
       )}
       {itemsWarning && <p className="attendee-form__warn">{itemsWarning}</p>}
 
+      <div className="attendee-status-strip">
+        <div className="attendee-status-chip">
+          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${passStatusTone(detail.status)}`}>
+            <i className="ti ti-user-check" aria-hidden="true" />
+          </span>
+          <div className="attendee-status-chip__body">
+            <strong>Registration</strong>
+            <PassStatusBadge status={detail.status} />
+          </div>
+        </div>
+        <div className="attendee-status-chip">
+          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${rsvpTone(detail.rsvp_status)}`}>
+            <i className="ti ti-calendar-question" aria-hidden="true" />
+          </span>
+          <div className="attendee-status-chip__body">
+            <strong>Attendance</strong>
+            <ArchivedGuard event={event} reasonId="rsvp-status-reason" disabled={rsvpSaving}>
+              {(guard) => (
+                <Select
+                  label="RSVP status"
+                  value={detail.rsvp_status}
+                  {...guard}
+                  onChange={(e) => void handleRsvpChange(e.target.value as RsvpStatus)}
+                >
+                  <option value="none">Registered</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="declined">Declined</option>
+                  <option value="tentative">Tentative</option>
+                  <option value="cancelled">Cancelled</option>
+                </Select>
+              )}
+            </ArchivedGuard>
+          </div>
+        </div>
+        <div className="attendee-status-chip">
+          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${mailTone(lastMail)}`}>
+            <i className="ti ti-mail" aria-hidden="true" />
+          </span>
+          <div className="attendee-status-chip__body">
+            <strong>Ticket delivery</strong>
+            <MailStatusBadge status={lastMail} />
+          </div>
+        </div>
+        <div className="attendee-status-chip">
+          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${detail.admitted_at ? "ok" : "neutral"}`}>
+            <i className="ti ti-qrcode" aria-hidden="true" />
+          </span>
+          <div className="attendee-status-chip__body">
+            <strong>Check-in</strong>
+            <span>
+              {detail.admitted_at
+                ? formatAdmissionDisplay(detail.admitted_at, event.date, event.timezone)
+                : "Not yet"}
+            </span>
+          </div>
+        </div>
+        <div className="attendee-status-chip">
+          <span className="attendee-status-chip__icon attendee-status-chip__icon--neutral">
+            <i className="ti ti-wallet" aria-hidden="true" />
+          </span>
+          <div className="attendee-status-chip__body">
+            <strong>Wallet</strong>
+            <span>Not added</span>
+          </div>
+        </div>
+      </div>
+
       <Tabs
         value={tab}
         onChange={(id) => setTab(id as TabId)}
@@ -705,8 +797,8 @@ export function AttendeeDetailPage() {
                   <span className="mono">{detail.email}</span>
                 </div>
                 <div className="attendee-detail-row">
-                  <span>Name</span>
-                  <span>{detail.name}</span>
+                  <span>Ticket type</span>
+                  <TicketTypeBadge ticketType={detail.ticket_type} catalog={ticketTypes} />
                 </div>
                 <div className="attendee-detail-row">
                   <span>Company</span>
@@ -716,20 +808,16 @@ export function AttendeeDetailPage() {
                   <span>Department</span>
                   <span>{detail.department ?? "—"}</span>
                 </div>
-                <div className="attendee-detail-row">
-                  <span>Ticket type</span>
-                  <TicketTypeBadge ticketType={detail.ticket_type} catalog={ticketTypes} />
-                </div>
-                <div className="attendee-detail-row">
-                  <span>Added on</span>
-                  <span className="mono">{formatUtcDateTime(detail.created_at)}</span>
-                </div>
                 {attendeeSource && (
                   <div className="attendee-detail-row">
                     <span>Added via</span>
                     <span>{attendeeSource}</span>
                   </div>
                 )}
+                <div className="attendee-detail-row">
+                  <span>Registered on</span>
+                  <span className="mono">{formatUtcDateTime(detail.created_at)}</span>
+                </div>
               </div>
             </Card>
 
@@ -748,68 +836,6 @@ export function AttendeeDetailPage() {
           </div>
 
           <div className="attendee-detail-side">
-            <Card title="Status">
-              <div className="attendee-status-list">
-                <div className="attendee-status-row">
-                  <span className="attendee-status-row__icon">
-                    <i className="ti ti-calendar-question" aria-hidden="true" />
-                  </span>
-                  <div className="attendee-status-row__body">
-                    <span className="attendee-status-row__label">RSVP</span>
-                    <ArchivedGuard event={event} reasonId="rsvp-status-reason" disabled={rsvpSaving}>
-                      {(guard) => (
-                        <Select
-                          label="RSVP status"
-                          value={detail.rsvp_status}
-                          {...guard}
-                          onChange={(e) => void handleRsvpChange(e.target.value as RsvpStatus)}
-                        >
-                          <option value="none">Registered</option>
-                          <option value="confirmed">Confirmed</option>
-                          <option value="declined">Declined</option>
-                          <option value="tentative">Tentative</option>
-                          <option value="cancelled">Cancelled</option>
-                        </Select>
-                      )}
-                    </ArchivedGuard>
-                  </div>
-                </div>
-                <div className="attendee-status-row">
-                  <span className="attendee-status-row__icon">
-                    <i className="ti ti-mail" aria-hidden="true" />
-                  </span>
-                  <div className="attendee-status-row__body">
-                    <span className="attendee-status-row__label">Ticket delivery</span>
-                    <MailStatusBadge status={lastMail} />
-                  </div>
-                </div>
-                <div className="attendee-status-row">
-                  <span className="attendee-status-row__icon">
-                    <i className="ti ti-wallet" aria-hidden="true" />
-                  </span>
-                  <div className="attendee-status-row__body">
-                    <span className="attendee-status-row__label">Wallet pass</span>
-                    <span className="attendee-readonly">—</span>
-                  </div>
-                </div>
-                <div className="attendee-status-row">
-                  <span className="attendee-status-row__icon">
-                    <i className="ti ti-qrcode" aria-hidden="true" />
-                  </span>
-                  <div className="attendee-status-row__body">
-                    <span className="attendee-status-row__label">Check-in</span>
-                    {detail.admitted_at ? (
-                      <span className="attendee-detail-checkin">
-                        {formatAdmissionDisplay(detail.admitted_at, event.date, event.timezone)}
-                      </span>
-                    ) : (
-                      <span className="attendee-readonly">—</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </Card>
-
             <Card title="Mail delivery history">
               {detail.deliveries.length === 0 ? (
                 <p className="attendee-readonly">No delivery attempts yet.</p>
