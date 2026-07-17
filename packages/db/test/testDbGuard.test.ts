@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { assertTestDatabaseUrl } from "../src/testDbGuard.js";
 
 describe("assertTestDatabaseUrl", () => {
-  it("allows a local host with a non-test database name", () => {
+  it("refuses a local host with a non-test database name (the real dev DB, e.g. packages/db/.env)", () => {
     expect(() =>
       assertTestDatabaseUrl("postgresql://admitto:admitto@localhost:5432/admitto"),
-    ).not.toThrow();
+    ).toThrow(/Refusing Prisma setup.*localhost.*"admitto"/);
   });
 
-  it("allows 127.0.0.1 and ::1 hosts", () => {
+  it("allows 127.0.0.1 and IPv6 [::1] hosts when the database name contains _test", () => {
     expect(() =>
       assertTestDatabaseUrl("postgresql://admitto:admitto@127.0.0.1:5432/admitto_db_test"),
     ).not.toThrow();

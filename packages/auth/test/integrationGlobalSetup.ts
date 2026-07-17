@@ -39,10 +39,13 @@ function pgConnectionEnv(databaseUrl: string): NodeJS.ProcessEnv {
 }
 
 export default async function integrationGlobalSetup(): Promise<void> {
+  // Fixed, not `process.env["DATABASE_URL"] ?? ...` - globalSetup runs in Vitest's main
+  // process, before vitest.integration.config.ts's `test.env` override reaches worker
+  // processes, so an ambient DATABASE_URL (CI's job-level default, a developer's shell) would
+  // otherwise flow straight into this destructive migrate/reset flow unredirected.
   const env = {
     ...process.env,
-    DATABASE_URL:
-      process.env["DATABASE_URL"] ?? "postgresql://admitto:admitto@localhost:5432/admitto_auth_test",
+    DATABASE_URL: "postgresql://admitto:admitto@localhost:5432/admitto_auth_test",
   };
   assertTestDatabaseUrl(env.DATABASE_URL!);
   try {

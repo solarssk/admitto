@@ -11,7 +11,17 @@
  * subpath instead, which never touches index.js.
  */
 
-/** Refuse Prisma setup unless DATABASE_URL targets a local or `*_test` database. */
+/**
+ * Refuse Prisma setup unless DATABASE_URL targets a `*_test` database.
+ *
+ * The database name is the only signal checked - a `localhost`-or-similar host used to be
+ * trusted on its own, but a developer's real dev database (`packages/db/.env`'s
+ * `DATABASE_URL`, e.g. `localhost:5432/admitto`) is *also* on localhost, so that bypass let
+ * every destructive `db push --force-reset` call site proceed against it whenever tests ran
+ * unscoped (e.g. from the repo root, or via a config that forwards an ambient DATABASE_URL -
+ * see packages/auth/vitest.integration.config.ts). Matches infra/scripts/reset-test-db.sh's
+ * own independent name check.
+ */
 export function assertTestDatabaseUrl(databaseUrl: string): void {
   let parsed: URL;
   try {
@@ -22,10 +32,9 @@ export function assertTestDatabaseUrl(databaseUrl: string): void {
 
   const host = parsed.hostname.toLowerCase();
   const dbName = parsed.pathname.replace(/^\//, '').toLowerCase();
-  const isTestHost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-  const isTestDb = dbName.includes('_test') || dbName.endsWith('_test');
+  const isTestDb = dbName.includes('_test');
 
-  if (isTestHost || isTestDb) return;
+  if (isTestDb) return;
 
   throw new Error(
     `Refusing Prisma setup: DATABASE_URL host "${host}" database "${dbName || '(default)'}" does not look like a test target`,
