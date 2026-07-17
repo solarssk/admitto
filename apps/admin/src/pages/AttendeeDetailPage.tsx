@@ -196,7 +196,7 @@ function MoreActionsMenu({
               </button>
             )}
           </ArchivedGuard>
-          <div className="more-actions-menu__divider" role="separator" />
+          <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd, unlike Resend ticket above — GDPR erasure requests can
            * legally arrive after an event ends, and the DELETE endpoint itself doesn't block
            * on archived_at (see docs/DSAR-PROCEDURE.md). */}

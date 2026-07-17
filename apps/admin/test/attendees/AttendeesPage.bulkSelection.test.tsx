@@ -282,7 +282,7 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
     await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
@@ -306,7 +306,7 @@ describe("AttendeesPage bulk delete (#356 follow-up)", () => {
 
     renderPage();
 
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 

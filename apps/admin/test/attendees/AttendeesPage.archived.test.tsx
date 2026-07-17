@@ -173,7 +173,7 @@ describe("AttendeesPage archived lockdown", () => {
     });
 
     renderPage();
-    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+    await screen.findByText("Jane Doe");
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
