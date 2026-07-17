@@ -1,38 +1,15 @@
 import type { AttendeeStatus } from "@admitto/db/status";
 import type { AttendeeActionLogEntryDto, RsvpStatus } from "../api/types.js";
-import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
+import { formatEventDateTime } from "../utils/event-dates.js";
 import { RSVP_LABELS } from "./rsvpStatusBadge.js";
 import { PASS_STATUS_LABELS } from "./passStatusBadge.js";
 
-/** Event-day operational actions — show in event timezone (Category 1). */
-const EVENT_OPERATIONAL_ACTIONS = new Set([
-  "check_in",
-  "admitted",
-  "check_in_undo",
-  "check_in_undone",
-  "check_in_revoked",
-  "note_added",
-  "item_issued",
-  "item_state_changed",
-  "item_returned",
-  "item_revoked",
-  "scan_preview",
-]);
-
-export function isEventOperationalActivity(actionType: string): boolean {
-  return EVENT_OPERATIONAL_ACTIONS.has(actionType);
-}
-
-/** Activity row timestamp: event TZ for on-site ops, UTC for mail/import/admin rows. */
-export function formatActivityTimestamp(
-  iso: string,
-  actionType: string,
-  eventTimezone: string,
-): string {
-  if (isEventOperationalActivity(actionType)) {
-    return formatEventDateTime(iso, eventTimezone);
-  }
-  return formatUtcDateTime(iso);
+/** Activity row timestamp, always in the event's own timezone (PO review): admins managing
+ * an event travel, so a fixed UTC or the admin's own browser-local time either forces manual
+ * conversion or drifts as they move - the event's timezone is the one stable reference that
+ * stays meaningful regardless of where the admin currently is. */
+export function formatActivityTimestamp(iso: string, eventTimezone: string): string {
+  return formatEventDateTime(iso, eventTimezone);
 }
 
 function formatRsvpStatus(value: unknown): string {

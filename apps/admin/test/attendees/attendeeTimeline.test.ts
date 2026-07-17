@@ -4,25 +4,8 @@ import {
   getTimelineDetail,
   getTimelineIcon,
   getTimelineLabel,
-  isEventOperationalActivity,
 } from "../../src/attendees/attendeeTimeline.js";
 import { setPreferredLocale } from "../../src/utils/locale-store.js";
-
-describe("isEventOperationalActivity", () => {
-  it("treats check-in and item actions as event-operational", () => {
-    expect(isEventOperationalActivity("admitted")).toBe(true);
-    expect(isEventOperationalActivity("item_issued")).toBe(true);
-  });
-
-  it("treats mail and import actions as system rows", () => {
-    expect(isEventOperationalActivity("ticket_sent")).toBe(false);
-    expect(isEventOperationalActivity("attendee_imported")).toBe(false);
-  });
-
-  it("treats an admin revoke as event-operational, same as undo (#449 review)", () => {
-    expect(isEventOperationalActivity("check_in_revoked")).toBe(true);
-  });
-});
 
 describe("check_in_revoked timeline mapping (#449 review)", () => {
   it("gets a ban icon and a capitalized label", () => {
@@ -40,8 +23,7 @@ describe("check_in_revoked timeline mapping (#449 review)", () => {
 });
 
 describe("item_revoked timeline mapping (bot review, #457)", () => {
-  it("is event-operational, gets an undo icon and a capitalized label, not the generic fallback", () => {
-    expect(isEventOperationalActivity("item_revoked")).toBe(true);
+  it("gets an undo icon and a capitalized label, not the generic fallback", () => {
     expect(getTimelineIcon("item_revoked")).toBe("arrow-back-up");
     expect(
       getTimelineLabel({
@@ -52,13 +34,6 @@ describe("item_revoked timeline mapping (bot review, #457)", () => {
         created_at: "2026-06-28T13:00:00.000Z",
       }),
     ).toBe("Item reset to pending");
-  });
-
-  it("uses event timezone for item_revoked, not UTC", () => {
-    setPreferredLocale("en-GB");
-    const result = formatActivityTimestamp("2026-06-28T13:00:00.000Z", "item_revoked", "Europe/Warsaw");
-    expect(result).toMatch(/15:00/);
-    expect(result).toMatch(/CEST|GMT\+2/);
   });
 });
 
@@ -168,28 +143,18 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
   });
 });
 
-describe("formatActivityTimestamp", () => {
+describe("formatActivityTimestamp (PO review — always event timezone, not UTC)", () => {
   afterEach(() => setPreferredLocale(null));
 
   const ISO = "2026-06-28T13:00:00.000Z";
 
-  it("uses event timezone for operational rows", () => {
+  it("uses the event's own timezone regardless of the row's action type", () => {
     setPreferredLocale("en-GB");
-    const result = formatActivityTimestamp(ISO, "admitted", "Europe/Warsaw");
-    expect(result).toMatch(/15:00/);
-    expect(result).toMatch(/CEST|GMT\+2/);
-  });
-
-  it("uses UTC for system rows", () => {
-    setPreferredLocale("en-GB");
-    const result = formatActivityTimestamp(ISO, "ticket_sent", "Europe/Warsaw");
-    expect(result).toMatch(/13:00/);
-    expect(result).toMatch(/UTC/);
-  });
-
-  it("uses event timezone for check_in_revoked, not UTC (#449 review)", () => {
-    setPreferredLocale("en-GB");
-    const result = formatActivityTimestamp(ISO, "check_in_revoked", "Europe/Warsaw");
+    // An admin travels; a fixed UTC (or the admin's own browser-local time) either forces
+    // manual conversion or drifts as they move. The event's timezone is the one stable
+    // reference that stays meaningful — every row on this page uses it now, not just
+    // on-site check-in/item actions.
+    const result = formatActivityTimestamp(ISO, "Europe/Warsaw");
     expect(result).toMatch(/15:00/);
     expect(result).toMatch(/CEST|GMT\+2/);
   });

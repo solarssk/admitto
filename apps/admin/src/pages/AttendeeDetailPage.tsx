@@ -29,7 +29,7 @@ import {
   toAttendeeForm,
   type AttendeeFormState,
 } from "../attendees/attendeeDetailForm.js";
-import { formatAdmissionDisplay, formatUtcDateTime } from "../utils/event-dates.js";
+import { formatAdmissionDisplay, formatEventDateTime } from "../utils/event-dates.js";
 import {
   deriveAttendeeSource,
   getTimelineDetail,
@@ -797,7 +797,7 @@ export function AttendeeDetailPage() {
                 )}
                 <div className="attendee-detail-row">
                   <span>Registered on</span>
-                  <span className="mono">{formatUtcDateTime(detail.created_at)}</span>
+                  <span className="mono">{formatEventDateTime(detail.created_at, event.timezone)}</span>
                 </div>
               </div>
             </Card>
@@ -877,7 +877,10 @@ export function AttendeeDetailPage() {
                       <div className="attendee-delivery__meta">
                         <MailStatusBadge status={delivery.status} />
                         <span className="mono">
-                          {formatUtcDateTime(delivery.sent_at ?? delivery.accepted_at ?? delivery.queued_at)}
+                          {formatEventDateTime(
+                            delivery.sent_at ?? delivery.accepted_at ?? delivery.queued_at,
+                            event.timezone,
+                          )}
                         </span>
                         {delivery.recipient_email && delivery.recipient_email !== detail.email && (
                           <span>to {delivery.recipient_email}</span>
@@ -915,7 +918,7 @@ export function AttendeeDetailPage() {
                     <span>{getTimelineDetail(entry)}</span>
                   </div>
                   <time className="at-tl-time" dateTime={entry.created_at}>
-                    {formatActivityTimestamp(entry.created_at, entry.action_type, event.timezone)}
+                    {formatActivityTimestamp(entry.created_at, event.timezone)}
                   </time>
                 </li>
               ))}
