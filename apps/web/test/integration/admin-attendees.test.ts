@@ -640,21 +640,19 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     return row.updated_at.toISOString();
   }
 
-  it("updates attendee and writes audit without PII in metadata", async () => {
+  it("updates attendee and writes audit without leaking the new name value (PII-safe)", async () => {
     const expectedUpdatedAt = await currentUpdatedAt(ATT_A2);
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         name: "Bob Updated",
-        company: "Beta Updated",
         expected_updated_at: expectedUpdatedAt,
       }),
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { name: string; company: string | null };
+    const body = (await res.json()) as { name: string };
     expect(body.name).toBe("Bob Updated");
-    expect(body.company).toBe("Beta Updated");
 
     const log = await prisma.attendeeActionLog.findFirst({
       where: { attendee_id: ATT_A2, action_type: "attendee_edited" },
@@ -662,9 +660,44 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     });
     expect(log).not.toBeNull();
     const meta = log!.metadata as { fields?: string[] };
-    expect(meta.fields).toEqual(expect.arrayContaining(["name", "company"]));
+    expect(meta.fields).toEqual(expect.arrayContaining(["name"]));
+    // name is deliberately never one of LOGGED_VALUE_FIELDS - only the fixed business/contact
+    // fields below (email/company/department/ticket_type) get their value logged (PO review).
     expect(JSON.stringify(meta)).not.toContain("Bob Updated");
-    expect(JSON.stringify(meta)).not.toContain("bob@example.com");
+  });
+
+  it("logs before/after values for the approved safe subset - email/company/department/ticket_type (PO review)", async () => {
+    // Explicit known starting state, not whatever earlier tests in this file left ATT_A2 in -
+    // company/department can resolve from custom_data (operator-parity sync), so a value read
+    // straight off the scalar columns wouldn't reliably match what computePatchChanges compares.
+    await prisma.attendee.update({
+      where: { id: ATT_A2 },
+      data: { company: "Beta Ltd", custom_data: { company: "Beta Ltd" }, department: null },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        company: "Beta Value-Logged Co",
+        department: "Value-Logged Dept",
+        expected_updated_at: await currentUpdatedAt(ATT_A2),
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_A2, action_type: "attendee_edited" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    const meta = log!.metadata as {
+      field_changes?: Record<string, { from: string | null; to: string | null }>;
+    };
+    expect(meta.field_changes?.company).toEqual({ from: "Beta Ltd", to: "Beta Value-Logged Co" });
+    expect(meta.field_changes?.department).toEqual({ from: null, to: "Value-Logged Dept" });
+    // custom_data field edits stay values-never-logged even in the same request shape -
+    // covered by "audits custom_data field names without PII values" below.
+    expect(meta.field_changes?.name).toBeUndefined();
   });
 
   it("returns 409 on email conflict", async () => {

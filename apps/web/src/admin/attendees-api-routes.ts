@@ -878,7 +878,16 @@ export async function handleGetEventAttendee(c: Context, db: PrismaClient): Prom
 
 type PatchInput = z.infer<typeof patchAttendeeFieldsSchema>;
 
-/** Compute Prisma update payload and changed field names from a PATCH body. */
+/** Fields whose before/after value is safe to log verbatim in AttendeeActionLog.metadata: fixed
+ * business/contact fields, never free text a guest or admin could have put anything sensitive
+ * into. Deliberately excludes `name` (kept name-only, no value, matching the existing PII-cautious
+ * default) and every custom_data field (can hold accessibility needs, emergency contacts, etc. -
+ * #364's whole point). PO review, round 2: extends #364's "field names only" rule rather than
+ * reverting it - only these four get real values now. */
+const LOGGED_VALUE_FIELDS = new Set(["email", "company", "department", "ticket_type"]);
+
+/** Compute Prisma update payload, changed field names, and before/after values (for
+ * LOGGED_VALUE_FIELDS only) from a PATCH body. */
 function computePatchChanges(
   existing: {
     name: string;
@@ -889,8 +898,16 @@ function computePatchChanges(
     custom_data: unknown;
   },
   patch: PatchInput,
-): { data: Prisma.AttendeeUncheckedUpdateInput; fields: string[] } | null {
+): {
+  data: Prisma.AttendeeUncheckedUpdateInput;
+  fields: string[];
+  valueChanges: Record<string, { from: string | null; to: string | null }>;
+} | null {
   const fields: string[] = [];
+  const valueChanges: Record<string, { from: string | null; to: string | null }> = {};
+  const logValue = (field: string, from: string | null, to: string | null) => {
+    if (LOGGED_VALUE_FIELDS.has(field)) valueChanges[field] = { from, to };
+  };
   // Unchecked: ticket_type is now also a scalar FK column for the (event_id, ticket_type)
   // relation to TicketType, so Prisma's relation-aware AttendeeUpdateInput no longer exposes it
   // as a plain settable field - this function only ever sets raw scalar columns directly (never
@@ -911,6 +928,7 @@ function computePatchChanges(
   if (patch.email !== undefined && patch.email !== existing.email) {
     data.email = patch.email;
     fields.push("email");
+    logValue("email", existing.email, patch.email);
   }
   if (patch.company !== undefined && patch.company !== resolved.company) {
     data.company = patch.company;
@@ -918,6 +936,7 @@ function computePatchChanges(
     if (patch.company === null || patch.company === "") delete raw.company;
     else raw.company = patch.company;
     fields.push("company");
+    logValue("company", resolved.company, patch.company);
   }
   if (patch.department !== undefined && patch.department !== resolved.department) {
     data.department = patch.department;
@@ -925,10 +944,12 @@ function computePatchChanges(
     if (patch.department === null || patch.department === "") delete raw.department;
     else raw.department = patch.department;
     fields.push("department");
+    logValue("department", resolved.department, patch.department);
   }
   if (patch.ticket_type !== undefined && patch.ticket_type !== existing.ticket_type) {
     data.ticket_type = patch.ticket_type;
     fields.push("ticket_type");
+    logValue("ticket_type", existing.ticket_type, patch.ticket_type);
   }
   if (patch.custom_data_fields) {
     for (const [sourceField, next] of Object.entries(patch.custom_data_fields)) {
@@ -951,7 +972,7 @@ function computePatchChanges(
   }
 
   if (fields.length === 0) return null;
-  return { data, fields };
+  return { data, fields, valueChanges };
 }
 
 
@@ -1195,7 +1216,7 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
           attendee_id: attendeeId,
           action_type: "attendee_edited",
           audit: adminAuditFromContext(c),
-          metadata: { fields: profileChanges.fields },
+          metadata: { fields: profileChanges.fields, field_changes: profileChanges.valueChanges },
         });
       }
 

@@ -56,6 +56,24 @@ function fieldChangeLabel(key: string, customFieldLabels: Map<string, string>): 
   return PROFILE_FIELD_LABELS[key] ?? customFieldLabels.get(key) ?? humanizeFieldKey(key);
 }
 
+/** Reads `metadata.field_changes[key]` for `attendee_edited` rows, if present - the backend only
+ * populates this for a fixed safe subset (email/company/department/ticket_type, see
+ * LOGGED_VALUE_FIELDS in attendees-api-routes.ts); `name` and every custom_data field are
+ * deliberately never in there (PII-safe by construction, #364), so this returns null for those
+ * and the caller falls back to showing just the field name. */
+function fieldValueChange(
+  fieldChanges: unknown,
+  key: string,
+): { from: string | null; to: string | null } | null {
+  if (!fieldChanges || typeof fieldChanges !== "object") return null;
+  const change = (fieldChanges as Record<string, unknown>)[key];
+  if (!change || typeof change !== "object") return null;
+  const { from, to } = change as { from?: unknown; to?: unknown };
+  if (typeof from !== "string" && from !== null) return null;
+  if (typeof to !== "string" && to !== null) return null;
+  return { from, to };
+}
+
 const ITEM_STATE_ACTIONS = new Set(["item_issued", "item_returned", "item_revoked"]);
 
 export type TimelineTone = "ok" | "warn" | "error" | "neutral";
@@ -184,13 +202,19 @@ export function getTimelineActor(entry: AttendeeActionLogEntryDto): string {
 
 /** Human-readable diff for the activity log row - who did it is getTimelineActor's job, not
  * this function's; empty string means there's nothing beyond the headline to show. PII-safe by
- * construction: profile edits show which fields changed, never the old/new values themselves
- * (custom_data can hold sensitive text like accessibility notes or emergency contacts - #364).
- * `customFields` is the event's custom-field registry (same list `allCustomDataEntries` uses) -
- * passing it lets a changed custom field show its real configured label instead of a humanized
- * guess at its slugified source_field key (PO review, see fieldChangeLabel). `eventItems` is the
- * same registry-backed list the Event-day items card renders (detail.event_items) - same
- * reasoning, an item's real configured label (e.g. "Gratis") beats humanizing its raw key. */
+ * construction: `name` and every custom_data field only ever show which field changed, never
+ * the old/new values themselves (custom_data can hold sensitive text like accessibility notes or
+ * emergency contacts - #364). email/company/department/ticket_type are the one approved
+ * exception (PO review, round 2) - fixed business/contact fields, never free text a guest could
+ * have put anything sensitive into - and show their real before/after value when the backend
+ * captured one (see fieldValueChange, LOGGED_VALUE_FIELDS in attendees-api-routes.ts). Rows
+ * written before that capture existed just show the field name, same as name/custom_data always
+ * has. `customFields` is the event's custom-field registry (same list `allCustomDataEntries`
+ * uses) - passing it lets a changed custom field show its real configured label instead of a
+ * humanized guess at its slugified source_field key (PO review, see fieldChangeLabel).
+ * `eventItems` is the same registry-backed list the Event-day items card renders
+ * (detail.event_items) - same reasoning, an item's real configured label (e.g. "Gratis") beats
+ * humanizing its raw key. */
 export function getTimelineDetail(
   entry: AttendeeActionLogEntryDto,
   customFields: CustomDataFieldDef[] = [],
@@ -211,7 +235,14 @@ export function getTimelineDetail(
     const fields = meta.fields;
     if (Array.isArray(fields) && fields.length > 0) {
       const customFieldLabels = new Map(customFields.map((f) => [f.source_field, f.label]));
-      return fields.map((f) => fieldChangeLabel(String(f), customFieldLabels)).join(", ");
+      return fields
+        .map((f) => {
+          const key = String(f);
+          const label = fieldChangeLabel(key, customFieldLabels);
+          const change = fieldValueChange(meta.field_changes, key);
+          return change ? `${label}: ${change.from ?? "—"} → ${change.to ?? "—"}` : label;
+        })
+        .join(", ");
     }
   }
 

@@ -120,6 +120,51 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
     ).toBe("Email, Company");
   });
 
+  it("shows before/after values for the safe subset the backend captured (PO review, round 2)", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "attendee_edited",
+          metadata: {
+            fields: ["email", "company"],
+            field_changes: {
+              email: { from: "old@example.com", to: "new@example.com" },
+              company: { from: "Old Co", to: "New Co" },
+            },
+          },
+        }),
+      ),
+    ).toBe("Email: old@example.com → new@example.com, Company: Old Co → New Co");
+  });
+
+  it("shows an em dash for a null before/after value in a captured change (e.g. company set for the first time)", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "attendee_edited",
+          metadata: {
+            fields: ["company"],
+            field_changes: { company: { from: null, to: "New Co" } },
+          },
+        }),
+      ),
+    ).toBe("Company: — → New Co");
+  });
+
+  it("falls back to the field name alone when field_changes has nothing for it - name and custom_data stay values-never-shown (PII-safe)", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "attendee_edited",
+          metadata: {
+            fields: ["name", "shirt_size", "email"],
+            field_changes: { email: { from: "old@example.com", to: "new@example.com" } },
+          },
+        }),
+      ),
+    ).toBe("Name, Shirt size, Email: old@example.com → new@example.com");
+  });
+
   it("humanizes an unlabeled custom_data field key for attendee_edited", () => {
     expect(
       getTimelineDetail(
