@@ -6,6 +6,7 @@ vi.mock("../../src/api/client.js", () => ({
 }));
 
 const {
+  allCustomDataEntries,
   fetchAttendeeCustomFields,
   initialCustomFieldValues,
   readCustomDataField,
@@ -102,5 +103,52 @@ describe("validateCustomFieldsForm", () => {
 
   it("returns null when all values are valid", () => {
     expect(validateCustomFieldsForm([sizeField], { size: "M" })).toBeNull();
+  });
+});
+
+describe("allCustomDataEntries", () => {
+  const lunchField = {
+    label: "Lunch",
+    source_field: "lunch",
+    type: "boolean" as const,
+    required: false,
+  };
+
+  it("shows Yes/No for a boolean field instead of the raw stored true/false string", () => {
+    expect(allCustomDataEntries({ lunch: "true" }, [lunchField], (k) => k)).toEqual([
+      ["lunch", "Lunch", "Yes"],
+    ]);
+    expect(allCustomDataEntries({ lunch: "false" }, [lunchField], (k) => k)).toEqual([
+      ["lunch", "Lunch", "No"],
+    ]);
+  });
+
+  it("also normalizes yes/no/1/0 aliases a CSV import could have written directly", () => {
+    expect(allCustomDataEntries({ lunch: "YES" }, [lunchField], (k) => k)).toEqual([
+      ["lunch", "Lunch", "Yes"],
+    ]);
+    expect(allCustomDataEntries({ lunch: "0" }, [lunchField], (k) => k)).toEqual([
+      ["lunch", "Lunch", "No"],
+    ]);
+  });
+
+  it("leaves non-boolean fields untouched", () => {
+    expect(
+      allCustomDataEntries(
+        { dietary: "vegan" },
+        [{ label: "Dietary", source_field: "dietary", type: "text", required: false }],
+        (k) => k,
+      ),
+    ).toEqual([["dietary", "Dietary", "vegan"]]);
+  });
+
+  it("excludes company/department and humanizes unregistered keys", () => {
+    expect(
+      allCustomDataEntries(
+        { company: "Globex", department: "Ops", shirt_size: "L" },
+        [],
+        (k) => k.replace(/_/g, " "),
+      ),
+    ).toEqual([["shirt_size", "shirt size", "L"]]);
   });
 });

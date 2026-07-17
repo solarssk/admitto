@@ -73,6 +73,21 @@ export function validateCustomFieldsForm(
   return null;
 }
 
+const TRUTHY_BOOLEAN_ALIASES = new Set(["true", "yes", "1"]);
+const FALSY_BOOLEAN_ALIASES = new Set(["false", "no", "0"]);
+
+/** Display value for a custom_data entry - a `boolean`-type field is stored as the raw string its
+ * Select writes ("true"/"false", see CustomDataFieldInput), or possibly "yes"/"no"/"1"/"0" from a
+ * CSV import that never went through that control (same aliases validateCustomFieldsForm already
+ * accepts). Read-only display shows "Yes"/"No" either way, not the raw stored string. */
+function formatCustomDataValue(value: string, type: CustomDataFieldDef["type"] | undefined): string {
+  if (type !== "boolean") return value;
+  const lower = value.trim().toLowerCase();
+  if (TRUTHY_BOOLEAN_ALIASES.has(lower)) return "Yes";
+  if (FALSY_BOOLEAN_ALIASES.has(lower)) return "No";
+  return value;
+}
+
 /** Every custom_data entry, labeled - a configured attribute field gets its registry label,
  * anything else (a CSV import column with no matching event item, or a field removed from the
  * event's requirements after import) is humanized from its raw key. Mirrors the design mockup's
@@ -86,13 +101,16 @@ export function allCustomDataEntries(
   humanizeKey: (key: string) => string,
 ): Array<[string, string, string]> {
   if (!customData || typeof customData !== "object" || Array.isArray(customData)) return [];
-  const labels = new Map(attributeFields.map((f) => [f.source_field, f.label]));
+  const fieldsByKey = new Map(attributeFields.map((f) => [f.source_field, f]));
   return Object.entries(customData as Record<string, unknown>)
     .filter(
       (pair): pair is [string, string] =>
         pair[0] !== "company" && pair[0] !== "department" && typeof pair[1] === "string" && pair[1].trim() !== "",
     )
-    .map(([key, value]) => [key, labels.get(key) ?? humanizeKey(key), value]);
+    .map(([key, value]) => {
+      const field = fieldsByKey.get(key);
+      return [key, field?.label ?? humanizeKey(key), formatCustomDataValue(value, field?.type)];
+    });
 }
 
 export { fieldLabel as customDataFieldLabel };
