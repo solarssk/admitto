@@ -583,6 +583,28 @@ describe("DELETE /api/admin/events/:eventId/attendees/:id", () => {
     });
     expect(JSON.stringify(metadata)).not.toContain("erase-me@example.com");
     expect(JSON.stringify(metadata)).not.toContain("Erase Me");
+
+    const adminAudit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_A, action_type: "attendee_erased" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(adminAudit).not.toBeNull();
+    expect(adminAudit?.actor_user_id).toBe(adminId);
+    // Unlike the per-attendee AttendeeActionLog entry above, the central admin audit log
+    // deliberately does include the erased attendee's identity (PO review: needed to answer
+    // "who was deleted" for incident response / GDPR Art. 33-34 breach-notification duties).
+    const adminMeta = adminAudit!.metadata as {
+      event_id?: string;
+      event_title?: string;
+      attendee_id?: string;
+      attendee_name?: string;
+      attendee_email?: string;
+    };
+    expect(adminMeta.event_id).toBe(EVENT_A);
+    expect(adminMeta.event_title).toBe("Event A");
+    expect(adminMeta.attendee_id).toBe(ERASE_ATTENDEE);
+    expect(adminMeta.attendee_name).toBe("Erase Me");
+    expect(adminMeta.attendee_email).toBe("erase-me@example.com");
   });
 
   it("returns 403 for cross-event attendee", async () => {
@@ -628,6 +650,201 @@ describe("DELETE /api/admin/events/:eventId/attendees/:id", () => {
 
     expect(res.status).toBe(403);
     expect(await prisma.attendee.findUnique({ where: { id: ATT_A2 } })).not.toBeNull();
+  });
+});
+
+describe("POST /api/admin/events/:eventId/attendees/bulk-delete", () => {
+  async function seedBulkErasable(ids: string[]) {
+    await prisma.attendee.createMany({
+      data: ids.map((id, i) => ({
+        id,
+        event_id: EVENT_A,
+        email: `bulk-erase-${i}@example.com`,
+        name: `Bulk Erase ${i}`,
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+      })),
+    });
+  }
+
+  /** Dependent rows on the first of `ids` — proves bulk-delete's cleanup actually runs, not just
+   * that the attendee rows themselves disappear (Codecov review). */
+  async function seedBulkErasableDependents(firstId: string) {
+    await prisma.$transaction([
+      prisma.emailDelivery.create({
+        data: {
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          attendee_id: firstId,
+          purpose: "initial",
+          provider: "export_only",
+          status: "sent",
+          recipient_email: "bulk-erase-0@example.com",
+          rendered_subject: "Bulk erase ticket",
+          rendered_html: "<p>Bulk Erase ticket</p>",
+        },
+      }),
+      prisma.walletPass.create({
+        data: {
+          attendee_id: firstId,
+          pass_type_id: "pass.example.admitto",
+          serial_number: `bulk-erase-serial-${firstId}`,
+          auth_token: "bulk-erase-auth-token",
+        },
+      }),
+      prisma.checkIn.create({
+        data: {
+          attendee_id: firstId,
+          event_id: EVENT_A,
+          status: "VALID",
+          checked_in_by: adminId,
+        },
+      }),
+    ]);
+  }
+
+  it("erases every requested attendee and writes one bulk + one central audit row", async () => {
+    const ids = ["att-bulk-erase-1", "att-bulk-erase-2"];
+    await seedBulkErasable(ids);
+    await seedBulkErasableDependents(ids[0]!);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ids }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deletedCount: 2 });
+    expect(await prisma.attendee.count({ where: { id: { in: ids } } })).toBe(0);
+    expect(await prisma.emailDelivery.count({ where: { attendee_id: ids[0] } })).toBe(0);
+    expect(await prisma.walletPass.count({ where: { attendee_id: ids[0] } })).toBe(0);
+    expect(await prisma.checkIn.count({ where: { attendee_id: ids[0] } })).toBe(0);
+
+    const audit = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_A, attendee_id: null, action_type: "attendees_bulk_erased" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit).not.toBeNull();
+    const meta = audit!.metadata as {
+      attendee_ids?: string[];
+      removed?: { email_deliveries?: number; wallet_passes?: number; check_ins?: number };
+    };
+    expect(meta.attendee_ids?.sort()).toEqual([...ids].sort());
+    expect(meta.removed).toMatchObject({ email_deliveries: 1, wallet_passes: 1, check_ins: 1 });
+
+    const adminAudit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_A, action_type: "attendees_bulk_erased" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(adminAudit).not.toBeNull();
+    expect(adminAudit?.actor_user_id).toBe(adminId);
+    // Same PO-review rationale as the single-attendee case above - the central log
+    // deliberately keeps each erased attendee's name/email for incident-response purposes.
+    const adminMeta = adminAudit!.metadata as {
+      event_id?: string;
+      event_title?: string;
+      count?: number;
+      attendees?: { id: string; name: string; email: string }[];
+    };
+    expect(adminMeta.event_id).toBe(EVENT_A);
+    expect(adminMeta.event_title).toBe("Event A");
+    expect(adminMeta.count).toBe(2);
+    expect(adminMeta.attendees?.map((a) => a.id).sort()).toEqual([...ids].sort());
+    expect(adminMeta.attendees?.map((a) => a.email).sort()).toEqual(
+      ["bulk-erase-0@example.com", "bulk-erase-1@example.com"].sort(),
+    );
+  });
+
+  it("reports only the attendees this request actually deleted when one is erased by a concurrent request mid-transaction (CodeRabbit review)", async () => {
+    const ids = ["att-bulk-erase-race-1", "att-bulk-erase-race-2", "att-bulk-erase-race-3"];
+    await seedBulkErasable(ids);
+
+    // Simulates another admin's request (or a separate DSAR erasure) committing a delete for
+    // one of the selected attendees between this request's findMany and its own DELETE
+    // statement - exactly the TOCTOU window CodeRabbit flagged. Prisma middleware also runs
+    // for queries issued inside `$transaction` callbacks, so this intercepts the route
+    // handler's own `tx.attendee.findMany`. Fires once, then becomes a permanent no-op, since
+    // `prisma` is shared for the rest of this file and `$use` middleware can't be unregistered.
+    let armed = true;
+    prisma.$use(async (params, next) => {
+      const result = await next(params);
+      if (armed && params.model === "Attendee" && params.action === "findMany") {
+        armed = false;
+        await prisma.attendee.delete({ where: { id: ids[1]! } });
+      }
+      return result;
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ids }),
+    });
+
+    expect(armed).toBe(false); // sanity check: the injected concurrent delete actually ran
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deletedCount: 2 });
+
+    const bulkLog = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_A, attendee_id: null, action_type: "attendees_bulk_erased" },
+      orderBy: { created_at: "desc" },
+    });
+    const bulkMeta = bulkLog!.metadata as { attendee_ids?: string[] };
+    expect(bulkMeta.attendee_ids?.sort()).toEqual([ids[0], ids[2]].sort());
+
+    const adminAudit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_A, action_type: "attendees_bulk_erased" },
+      orderBy: { created_at: "desc" },
+    });
+    const adminMeta = adminAudit!.metadata as {
+      count?: number;
+      attendees?: { id: string; name: string; email: string }[];
+    };
+    // Must reflect exactly what this request deleted - not the pre-race selection, which would
+    // over-report the concurrently-erased attendee as removed by this action.
+    expect(adminMeta.count).toBe(2);
+    expect(adminMeta.attendees?.map((a) => a.id).sort()).toEqual([ids[0], ids[2]].sort());
+  });
+
+  it("silently ignores an id from a different event instead of failing the whole request", async () => {
+    const ownId = "att-bulk-erase-own";
+    await seedBulkErasable([ownId]);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [ownId, ATT_B1] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deletedCount: 1 });
+    expect(await prisma.attendee.findUnique({ where: { id: ownId } })).toBeNull();
+    expect(await prisma.attendee.findUnique({ where: { id: ATT_B1 } })).not.toBeNull();
+  });
+
+  it("rejects an empty selection", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: [] }),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects operator", async () => {
+    const ids = ["att-bulk-erase-op"];
+    await seedBulkErasable(ids);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
+      method: "POST",
+      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ids }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(await prisma.attendee.findUnique({ where: { id: ids[0] } })).not.toBeNull();
   });
 });
 
@@ -1945,6 +2162,25 @@ describe("Attendees v2 — RSVP and manual create", () => {
       where: { attendee_id: body.id, action_type: "attendee_created_manual" },
     });
     expect(log).not.toBeNull();
+
+    const adminAudit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_A, action_type: "attendee_created_manual" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(adminAudit).not.toBeNull();
+    expect(adminAudit?.actor_user_id).toBe(adminId);
+    const adminMeta = adminAudit!.metadata as {
+      event_id?: string;
+      event_title?: string;
+      attendee_id?: string;
+      attendee_name?: string;
+      attendee_email?: string;
+    };
+    expect(adminMeta.event_id).toBe(EVENT_A);
+    expect(adminMeta.event_title).toBe("Event A");
+    expect(adminMeta.attendee_id).toBe(body.id);
+    expect(adminMeta.attendee_name).toBe("Manual Guest");
+    expect(adminMeta.attendee_email).toBe("manual@example.com");
 
     await prisma.attendee.delete({ where: { id: body.id } });
   });

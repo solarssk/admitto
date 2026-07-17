@@ -14,6 +14,7 @@ import {
 } from "@admitto/ui";
 import {
   ApiError,
+  deleteAttendee,
   fetchAttendeeDetail,
   fetchTicketTypes,
   resendTicket,
@@ -143,15 +144,13 @@ function RevokeActionMenu({
 function MoreActionsMenu({
   event,
   onResend,
-  disabled = false,
+  onDelete,
   mailConfigured,
-  "aria-describedby": ariaDescribedBy,
 }: Readonly<{
   event: ArchivedGuardEvent;
   onResend: () => void;
-  disabled?: boolean;
+  onDelete: () => void;
   mailConfigured: boolean | undefined;
-  "aria-describedby"?: string;
 }>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
@@ -165,8 +164,6 @@ function MoreActionsMenu({
         hasMenu
         aria-haspopup="menu"
         aria-expanded={open}
-        disabled={disabled}
-        aria-describedby={ariaDescribedBy}
         onClick={() => setOpen((o) => !o)}
       >
         More actions
@@ -199,6 +196,21 @@ function MoreActionsMenu({
               </button>
             )}
           </ArchivedGuard>
+          <hr className="more-actions-menu__divider" />
+          {/* Not ArchivedGuard'd, unlike Resend ticket above — GDPR erasure requests can
+           * legally arrive after an event ends, and the DELETE endpoint itself doesn't block
+           * on archived_at (see docs/DSAR-PROCEDURE.md). */}
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item more-actions-menu__item--danger"
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+          >
+            <i className="ti ti-trash" aria-hidden="true" /> Delete attendee
+          </button>
         </div>
       )}
     </div>
@@ -293,6 +305,9 @@ export function AttendeeDetailPage() {
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [restoreCapacityBlocked, setRestoreCapacityBlocked] = useState<EventFullMeta | null>(null);
   const [restoreForceCapacity, setRestoreForceCapacity] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   /** Guards async handlers when route params change before a request completes. */
   const selectionRef = useRef({ eventId, attendeeId });
@@ -388,6 +403,24 @@ export function AttendeeDetailPage() {
       goBack();
     }
   };
+
+  async function handleDeleteConfirm() {
+    if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteAttendee(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
+      addToast("Attendee permanently deleted", "success");
+      navigate(`/admin/events/${eventId}/attendees`);
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setDeleteError(operatorApiErrorMessage(err, "Delete failed"));
+    } finally {
+      if (isStillSelected(target)) setDeleting(false);
+    }
+  }
 
   function handleCancelEdit() {
     if (isDirty) {
@@ -722,16 +755,15 @@ export function AttendeeDetailPage() {
                 )}
               </ArchivedGuard>
             )}
-            <ArchivedGuard event={event} reasonId="more-actions-reason" placement="below">
-              {(guard) => (
-                <MoreActionsMenu
-                  event={event}
-                  mailConfigured={mailConfigured}
-                  onResend={() => setResendOpen(true)}
-                  {...guard}
-                />
-              )}
-            </ArchivedGuard>
+            <MoreActionsMenu
+              event={event}
+              mailConfigured={mailConfigured}
+              onResend={() => setResendOpen(true)}
+              onDelete={() => {
+                setDeleteError(null);
+                setDeleteOpen(true);
+              }}
+            />
             <Button variant="secondary" onClick={handleBack}>
               Back
             </Button>
@@ -1230,6 +1262,32 @@ export function AttendeeDetailPage() {
           }
         }}
       />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Permanently delete this attendee?"
+        message={`This cannot be undone. Deleting ${detail.name} permanently removes:`}
+        errorMessage={deleteError}
+        confirmLabel="Delete attendee"
+        confirmVariant="danger"
+        loading={deleting}
+        confirmationValue={detail.name}
+        confirmationLabel={`Type the attendee's name to confirm: "${detail.name}"`}
+        onConfirm={() => void handleDeleteConfirm()}
+        onCancel={() => {
+          if (!deleting) {
+            setDeleteOpen(false);
+            setDeleteError(null);
+          }
+        }}
+      >
+        <ul className="confirm-dialog__list">
+          <li>Profile and contact details</li>
+          <li>Ticket deliveries</li>
+          <li>Wallet pass</li>
+          <li>Check-in history</li>
+        </ul>
+      </ConfirmDialog>
     </div>
   );
 }

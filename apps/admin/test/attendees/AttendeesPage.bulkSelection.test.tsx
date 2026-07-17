@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { createMemoryRouter, MemoryRouter, RouterProvider, Route, Routes } from "react-router-dom";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
 import { mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
@@ -9,6 +9,7 @@ import type { AttendeeRowDto } from "../../src/api/types.js";
 const fetchEventAttendees = vi.fn();
 const fetchEventMailSettings = vi.fn();
 const sendEventBulk = vi.fn();
+const bulkDeleteAttendees = vi.fn();
 const addToast = vi.fn();
 const reportApiError = vi.fn();
 
@@ -71,6 +72,7 @@ vi.mock("../../src/api/client.js", () => ({
   exportAttendees: vi.fn(),
   bulkResendTickets: vi.fn(),
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
+  bulkDeleteAttendees: (...args: unknown[]) => bulkDeleteAttendees(...args),
   updateAttendee: vi.fn(),
 }));
 
@@ -106,6 +108,22 @@ function bulkBar() {
   const bar = document.querySelector(".attendees-bulkbar");
   if (!bar) throw new Error("Bulk bar not found");
   return within(bar as HTMLElement);
+}
+
+/** Delete lives behind the bulk bar's "More actions" menu (not a bare button) - open it first.
+ * The bulk-delete dialog's confirm button then stays disabled for 10s after opening
+ * (ConfirmDialog's confirmDelaySeconds - an "arm before confirming" pause). Fake-timers just
+ * the open+arm step, matching EventSettingsPage's own bulk-danger-action tests. */
+function openAndArmDeleteDialog() {
+  fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+  vi.useFakeTimers();
+  fireEvent.click(bulkBar().getByRole("menuitem", { name: "Delete" }));
+  const dialog = screen.getByRole("dialog");
+  act(() => {
+    vi.advanceTimersByTime(10_000);
+  });
+  vi.useRealTimers();
+  return dialog;
 }
 
 beforeEach(() => {
@@ -254,5 +272,209 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
       );
     });
     expect(document.querySelector(".attendees-bulkbar")).toBeNull();
+  });
+});
+
+describe("AttendeesPage bulk delete (#356 follow-up)", () => {
+  it("deletes the selected attendees via bulkDeleteAttendees, toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkDeleteAttendees.mockResolvedValue({ deletedCount: 2 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
+
+    const dialog = openAndArmDeleteDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete attendees" }));
+
+    await waitFor(() => {
+      expect(bulkDeleteAttendees).toHaveBeenCalledWith("evt-1", ["att-1", "att-2"]);
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("2 attendees permanently deleted", "success");
+    });
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("shows an operator-safe error inside the dialog and keeps the selection when bulkDeleteAttendees fails", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkDeleteAttendees.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openAndArmDeleteDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete attendees" }));
+
+    // Inline in the dialog, not a toast - matches the attendee detail page's single-delete
+    // flow and the project's own "destructive actions don't also toast" convention.
+    await screen.findByText("Delete failed.");
+    expect(addToast).not.toHaveBeenCalled();
+    expect(screen.getByText("Permanently delete 1 attendee?")).toBeTruthy();
+    expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
+  });
+
+  it("Cancel closes the bulk-delete dialog without calling bulkDeleteAttendees", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openAndArmDeleteDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByText("Permanently delete 1 attendee?")).toBeNull();
+    expect(bulkDeleteAttendees).not.toHaveBeenCalled();
+  });
+
+  it("redirects to /login on a 401 instead of showing an inline error", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/events/evt-1/attendees", assign: assignSpy },
+    });
+    try {
+      fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+      bulkDeleteAttendees.mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+
+      renderPage();
+
+      await screen.findByText("Jane Doe");
+      fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+      await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+      const dialog = openAndArmDeleteDialog();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Delete attendees" }));
+
+      await waitFor(() => {
+        expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next="));
+      });
+      expect(reportApiError).toHaveBeenCalledWith(401);
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
+  });
+
+  it("shows a generic inline error when bulkDeleteAttendees rejects with something other than ApiError", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkDeleteAttendees.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openAndArmDeleteDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete attendees" }));
+
+    await screen.findByText("Failed to delete attendees.");
+    expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
+  });
+
+  it("uses singular wording when exactly one attendee is deleted", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkDeleteAttendees.mockResolvedValueOnce({ deletedCount: 1 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openAndArmDeleteDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete attendees" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("1 attendee permanently deleted", "success");
+    });
+  });
+
+  it("ignores a stale bulk-delete completion after navigating to a different event mid-request (CodeRabbit review)", async () => {
+    let resolveDelete!: (value: { deletedCount: number }) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkDeleteAttendees.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveDelete = resolve;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openAndArmDeleteDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete attendees" }));
+
+    // Navigate to a different event while the bulk-delete request is still in flight — the
+    // completion below must not toast, close the dialog, or clear the selection on behalf of
+    // an event that's no longer the one being viewed.
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      resolveDelete({ deletedCount: 1 });
+      await Promise.resolve();
+    });
+
+    expect(addToast).not.toHaveBeenCalledWith(expect.stringContaining("permanently deleted"), "success");
+  });
+
+  it("ignores a stale bulk-delete failure after navigating to a different event mid-request (CodeRabbit review)", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    let rejectDelete!: (err: unknown) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkDeleteAttendees.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectDelete = reject;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openAndArmDeleteDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete attendees" }));
+
+    // Navigate away before the bulk-delete request rejects — the failure below must not set an
+    // inline error on a dialog that belonged to an event the operator has since left.
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      rejectDelete(new ApiError(500, "secret_internal"));
+      await Promise.resolve().catch(() => {});
+    });
+
+    expect(screen.queryByText("Delete failed.")).toBeNull();
   });
 });

@@ -22,6 +22,7 @@ import {
   customDataValue,
   parseCustomData,
   writeActionLog,
+  writeAdminAuditLog,
   writeBulkActionLog,
   type EventItemContent,
   ATTENDEE_EXPORT_RSVP_STATUSES,
@@ -1274,7 +1275,12 @@ export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): P
   const result = await db.$transaction(async (tx) => {
     const existing = await tx.attendee.findUnique({
       where: { id: attendeeId },
-      select: { event_id: true },
+      select: {
+        event_id: true,
+        name: true,
+        email: true,
+        event: { select: { organization_id: true, title: true } },
+      },
     });
     if (!existing || existing.event_id !== eventId) return "forbidden" as const;
 
@@ -1287,10 +1293,11 @@ export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): P
     const attendeeDelete = await tx.attendee.deleteMany({ where: { id: attendeeId, event_id: eventId } });
     if (attendeeDelete.count === 0) return "gone" as const;
 
+    const audit = adminAuditFromContext(c);
     await writeBulkActionLog(tx, {
       event_id: eventId,
       action_type: "attendee_erased",
-      audit: adminAuditFromContext(c),
+      audit,
       metadata: {
         attendee_id: attendeeId,
         removed: {
@@ -1300,11 +1307,124 @@ export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): P
         },
       },
     });
+    // Also written to the central admin audit log (Instance Settings → Audit log) - the
+    // attendee's own AttendeeActionLog trail disappears along with the row it's about (PO
+    // review: no central record of who erased an attendee, unlike event/user/session actions).
+    // Deliberately includes the erased attendee's name/email here, unlike
+    // writeBulkActionLog's own erasure entry above - a superadmin-only security/incident
+    // record needs to answer "who was deleted" (e.g. a compromised admin account mass-erasing
+    // attendees) to meet GDPR Art. 33/34 breach-notification duties, which is impossible if
+    // the identity is gone from every table. Lawful basis: Art. 6(1)(f) legitimate interest
+    // (security monitoring), scoped to this one admin-only log - not the erasure action itself.
+    await writeAdminAuditLog(tx, {
+      organizationId: existing.event.organization_id,
+      actorUserId: audit.operator ?? c.get("auth").userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "attendee_erased",
+      metadata: {
+        event_id: eventId,
+        event_title: existing.event.title,
+        attendee_id: attendeeId,
+        attendee_name: existing.name,
+        attendee_email: existing.email,
+      },
+    });
     return "deleted" as const;
   });
 
   if (result === "forbidden") return c.json({ error: "forbidden" }, 403);
   return c.body(null, 204);
+}
+
+const bulkDeleteAttendeesBodySchema = z
+  .object({
+    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+  })
+  .strict();
+
+/** POST /api/admin/events/:eventId/attendees/bulk-delete — GDPR erasure for a selection of
+ * attendees at once, from the Attendees list's row-selection bulk bar. Same per-attendee
+ * cleanup and audit trail as the single-attendee DELETE above, just batched; ids that don't
+ * belong to this event are silently ignored rather than failing the whole request (the UI can
+ * only ever select rows already scoped to the current event's current page). */
+export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = bulkDeleteAttendeesBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+
+  const deletedCount = await db.$transaction(async (tx) => {
+    const owned = await tx.attendee.findMany({
+      where: { id: { in: parsed.data.attendeeIds }, event_id: eventId },
+      select: { id: true, name: true, email: true },
+    });
+    if (owned.length === 0) return 0;
+    const ids = owned.map((a) => a.id);
+
+    const [emailDeliveries, walletPasses, checkIns] = await Promise.all([
+      tx.emailDelivery.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
+      tx.walletPass.deleteMany({ where: { attendee_id: { in: ids } } }),
+      tx.checkIn.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
+    ]);
+
+    // Raw DELETE ... RETURNING instead of deleteMany: a concurrent request can erase an
+    // overlapping attendee between the findMany above and this statement, and deleteMany only
+    // reports a count, not which rows it actually removed. RETURNING captures exactly what this
+    // statement deleted, so the audit entries below can't over-report who this request erased
+    // (CodeRabbit review).
+    const deleted = await tx.$queryRaw<{ id: string; name: string; email: string }[]>`
+      DELETE FROM "Attendee" WHERE id IN (${Prisma.join(ids)}) AND event_id = ${eventId}
+      RETURNING id, name, email
+    `;
+    if (deleted.length === 0) return 0;
+
+    const audit = adminAuditFromContext(c);
+    await writeBulkActionLog(tx, {
+      event_id: eventId,
+      action_type: "attendees_bulk_erased",
+      audit,
+      metadata: {
+        attendee_ids: deleted.map((a) => a.id),
+        removed: {
+          email_deliveries: emailDeliveries.count,
+          wallet_passes: walletPasses.count,
+          check_ins: checkIns.count,
+        },
+      },
+    });
+    const event = await tx.event.findUnique({ where: { id: eventId }, select: { organization_id: true, title: true } });
+    // See the matching note on attendee_erased above - name/email are deliberately included in
+    // this one central, superadmin-only log (not the erasure action's own AttendeeActionLog
+    // entry) so a security incident affecting multiple attendees at once is investigable.
+    await writeAdminAuditLog(tx, {
+      organizationId: event?.organization_id ?? null,
+      actorUserId: audit.operator ?? c.get("auth").userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      actionType: "attendees_bulk_erased",
+      metadata: {
+        event_id: eventId,
+        event_title: event?.title,
+        count: deleted.length,
+        attendees: deleted.map((a) => ({ id: a.id, name: a.name, email: a.email })),
+      },
+    });
+    return deleted.length;
+  });
+
+  return c.json({ deletedCount });
 }
 
 
@@ -1393,11 +1513,12 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
         select: ATTENDEE_DETAIL_SELECT,
       });
 
+      const audit = adminAuditFromContext(c);
       await writeActionLog(tx, {
         event_id: eventId,
         attendee_id: row.id,
         action_type: "attendee_created_manual",
-        audit: adminAuditFromContext(c),
+        audit,
         ...(capacityForced
           ? {
               metadata: {
@@ -1407,6 +1528,24 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
               },
             }
           : {}),
+      });
+      // Also written to the central admin audit log (Instance Settings → Audit log) - see
+      // the matching note on attendee_erased above for why attendee lifecycle events need a
+      // record outside the attendee's own (deletable) AttendeeActionLog trail.
+      const event = await tx.event.findUnique({ where: { id: eventId }, select: { organization_id: true, title: true } });
+      await writeAdminAuditLog(tx, {
+        organizationId: event?.organization_id ?? null,
+        actorUserId: audit.operator ?? c.get("auth").userId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        actionType: "attendee_created_manual",
+        metadata: {
+          event_id: eventId,
+          event_title: event?.title,
+          attendee_id: row.id,
+          attendee_name: row.name,
+          attendee_email: row.email,
+        },
       });
 
       return row;

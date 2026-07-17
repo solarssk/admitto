@@ -3,6 +3,7 @@ import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom
 import { Button, EmptyState, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
 import {
   ApiError,
+  bulkDeleteAttendees,
   bulkResendTickets,
   exportAttendees,
   fetchEventAttendees,
@@ -32,6 +33,9 @@ import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
 
 const DEBOUNCE_MS = 300;
+/** Matches EventSettingsPage's Danger Zone bulk actions — a brief "don't act on reflex" pause
+ * before a bulk, irreversible action's confirm button becomes clickable. */
+const BULK_DELETE_CONFIRM_DELAY_SECONDS = 10;
 
 function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): AttendeeRowDto {
   return {
@@ -234,6 +238,10 @@ export function AttendeesPage() {
   const { reportApiError } = useConnectionState();
   const listAbortRef = useRef<AbortController | null>(null);
   const exportAbortRef = useRef<AbortController | null>(null);
+  /** Guards handleBulkDeleteSelected against completing after the operator has navigated to a
+   * different event's Attendees list while the request was still in flight (CodeRabbit review). */
+  const eventIdRef = useRef(eventId);
+  eventIdRef.current = eventId;
 
   const [items, setItems] = useState<AttendeeRowDto[]>([]);
   const [total, setTotal] = useState(0);
@@ -264,6 +272,9 @@ export function AttendeesPage() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [bulkSendBusy, setBulkSendBusy] = useState(false);
   const [bulkSendConfirmOpen, setBulkSendConfirmOpen] = useState(false);
+  const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<AttendeeRowDto | null>(null);
@@ -559,6 +570,43 @@ export function AttendeesPage() {
     }
   };
 
+  /** Bulk GDPR erasure for an explicit subset of selected attendees — same effect as running
+   * the attendee detail page's "Delete attendee" once per selected row. Guards every
+   * completion effect against the operator navigating to a different event's Attendees list
+   * before the request resolves (CodeRabbit review); the dialog stays open on failure with an
+   * inline error, matching the project's own ConfirmDialog convention (destructive actions
+   * don't also toast the same message) and the attendee detail page's single-delete flow. */
+  const handleBulkDeleteSelected = async () => {
+    if (!eventId || selectedIds.size === 0) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    setBulkDeleteBusy(true);
+    setBulkDeleteError(null);
+    try {
+      const { deletedCount } = await bulkDeleteAttendees(initiatingEventId, [...selectedIds]);
+      if (!isStillOnEvent()) return;
+      addToast(`${deletedCount} attendee${deletedCount === 1 ? "" : "s"} permanently deleted`, "success");
+      setBulkDeleteConfirmOpen(false);
+      clearSelection();
+      setReloadToken((n) => n + 1);
+    } catch (err) {
+      if (!isStillOnEvent()) return;
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        if (err.status === 401) {
+          const next = encodeURIComponent(window.location.pathname);
+          window.location.assign(`/login?next=${next}`);
+          return;
+        }
+        setBulkDeleteError(operatorApiErrorMessage(err, "Delete failed."));
+      } else {
+        setBulkDeleteError("Failed to delete attendees.");
+      }
+    } finally {
+      if (isStillOnEvent()) setBulkDeleteBusy(false);
+    }
+  };
+
   const isUnfilteredEmpty =
     total === 0 && !searchQuery && statusFilter === "all" && !ticketTypeFilter && !rsvpStatusFilter;
 
@@ -691,6 +739,10 @@ export function AttendeesPage() {
         onBulkSendTickets={() => setBulkSendConfirmOpen(true)}
         bulkSendBusy={bulkSendBusy}
         canBulkSend={mailConfigured !== false}
+        onBulkDelete={() => {
+          setBulkDeleteError(null);
+          setBulkDeleteConfirmOpen(true);
+        }}
         eventTimezone={event.timezone}
         event={event}
       />
@@ -753,6 +805,31 @@ export function AttendeesPage() {
           if (!bulkSendBusy) setBulkSendConfirmOpen(false);
         }}
       />
+
+      <ConfirmDialog
+        open={bulkDeleteConfirmOpen}
+        title={`Permanently delete ${selectedIds.size} attendee${selectedIds.size === 1 ? "" : "s"}?`}
+        message="This cannot be undone. For each selected attendee, this permanently removes:"
+        errorMessage={bulkDeleteError}
+        confirmLabel="Delete attendees"
+        confirmVariant="danger"
+        loading={bulkDeleteBusy}
+        confirmDelaySeconds={BULK_DELETE_CONFIRM_DELAY_SECONDS}
+        onConfirm={() => void handleBulkDeleteSelected()}
+        onCancel={() => {
+          if (!bulkDeleteBusy) {
+            setBulkDeleteConfirmOpen(false);
+            setBulkDeleteError(null);
+          }
+        }}
+      >
+        <ul className="confirm-dialog__list">
+          <li>Profile and contact details</li>
+          <li>Ticket deliveries</li>
+          <li>Wallet pass</li>
+          <li>Check-in history</li>
+        </ul>
+      </ConfirmDialog>
     </>
   );
 }

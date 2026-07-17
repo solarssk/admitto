@@ -17,6 +17,7 @@
 | Random token / QR code | Ticket identifier — **no personal data embedded** | Non-personal |
 | OIDC IdP group membership (`ExternalIdentity.groups`) | Role mapping at OIDC login | Personal data (access metadata) |
 | `AttendeeActionLog.metadata` (admin audit trail) | Accountability — who changed an attendee's email/company/department/ticket type, from what, to what, and when | Personal data — see **Admin audit trail** below |
+| `AdminAuditLog.metadata` for attendee create/erase (central audit log) | Security/incident-response — which attendee (name, email) was created or permanently erased, from which event, by whom | Personal data — see **Central admin audit log** below |
 
 `AttendeeNote.body` is a free-text operator note. It may contain special-category data
 (for example accessibility, dietary, or medical information) if staff enter it. Operators
@@ -66,6 +67,55 @@ above is about:
   special-category data (GDPR Art. 9) a guest typed into a form field, which this fixed
   before/after list is not meant to capture. `ticket_type` is a catalog key, not free text.
 
+## Central admin audit log (`AdminAuditLog`)
+
+Separate from the per-attendee `AttendeeActionLog` above: a single, instance-wide, **superadmin-
+only** table (Instance Settings → Audit log) that already records event/user/session/settings
+actions. Attendee **creation** and **erasure** write here too, and — unlike the per-attendee log —
+deliberately include the attendee's name and email in `metadata`, plus the event's title (not just
+its opaque id).
+
+This is a narrower, more deliberate exception than it looks:
+
+- **Why erasure needs it:** the whole point of `AttendeeActionLog.attendee_id` cascading away with
+  its `Attendee` row (see above) is that the per-attendee trail disappears too — which is correct
+  for a legitimate DSAR erasure, but means there is otherwise **no record anywhere** of who was
+  erased, from which event, or by whom. If an attacker compromises an admin session and mass-erases
+  attendees, that is unrecoverable without this log. GDPR Art. 33/34 (breach notification to the
+  supervisory authority and to affected individuals) require being able to identify who was
+  affected — a design that erases that ability by construction cannot meet that duty.
+- **Lawful basis:** Art. 6(1)(f) legitimate interest — security monitoring and incident response —
+  scoped to this one admin-only log, not to the erasure action itself (the attendee's own data is
+  still genuinely gone from every attendee-facing table and surface).
+- **Access:** superadmin-only (`GET /api/admin/organizations`-tier gate), stricter than the
+  admin-level access the per-attendee log gets.
+- **Retention — operator-run, not automated (no scheduled purge job exists for this table):** the
+  Retention table below already lists "IP addresses in admin audit log… operator, 30 days or your
+  policy, product does not auto-purge" — the same applies to the name/email fields added here, and
+  is worth being explicit about rather than assuming: run this after your chosen retention window
+  elapses, scoped to just the fields this section is about (never truncate the whole table — that
+  destroys the accountability record itself, defeating the point):
+
+  ```sql
+  -- Single-attendee actions: metadata.attendee_name / .attendee_email.
+  UPDATE "AdminAuditLog"
+  SET metadata = metadata - 'attendee_name' - 'attendee_email'
+  WHERE action_type IN ('attendee_erased', 'attendee_created_manual')
+    AND created_at < now() - interval '30 days';
+
+  -- Bulk erasure: metadata.attendees is an array of {id, name, email} objects.
+  UPDATE "AdminAuditLog"
+  SET metadata = jsonb_set(metadata, '{attendees}', (
+        SELECT jsonb_agg(a - 'name' - 'email')
+        FROM jsonb_array_elements(metadata->'attendees') a
+      ))
+  WHERE action_type = 'attendees_bulk_erased'
+    AND created_at < now() - interval '30 days';
+  ```
+
+  An automated version of this (or of the broader attendee-PII purge already listed below) is
+  v1.0-planned work, not shipped today.
+
 ## Retention
 
 Retention uses two responsibility layers: **product-automated** cleanup (best-effort at container
@@ -77,17 +127,17 @@ periods for different categories are intentional — not an inconsistency.
 | Login sessions, trusted devices | Product — automatic | Best-effort purge at container startup when expired/revoked |
 | Email bodies (`rendered_html`, `rendered_subject`) | Product — automatic | Nullified **60 days** after terminal delivery (`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) |
 | IP addresses in admin audit log and check-in history | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge |
-| Event attendee list (PII) | Operator | Export via admin UI; erasure via `DELETE` API per [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md) (no delete button in SPA yet) |
+| Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Delete attendee** (single) or the Attendees list's row-selection bulk bar (multiple at once), or the `DELETE` API directly — see [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md) |
 
 Automated post-event attendee purge is planned for **v1.0**. Until then, use **Attendees → Export**,
-then erase individual records with `DELETE /api/admin/events/:eventId/attendees/:id` as described in
-[DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md). Bulk post-event cleanup has no admin UI workflow yet.
+then erase records via the admin SPA (single or bulk) or `DELETE /api/admin/events/:eventId/attendees/:id`
+directly, as described in [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md).
 
 | Mechanism | Status |
 |-----------|--------|
 | Policy documented | Yes (this document + GDPR one-pager) |
 | Organizer export before purge | Admin UI — **Attendees → Export** (CSV/XLSX/PDF; v0.4.2+) |
-| Per-attendee erasure | `DELETE` API only (v0.4.6+); admin SPA delete action planned for a follow-up release |
+| Per-attendee erasure | Admin SPA (single and bulk) + `DELETE` API (v0.4.6+ API, SPA delete action added in this batch) |
 | Automated purge job | Partial — auth-state and email delivery snapshot cleanup at container startup; full attendee PII purge planned for v1.0 |
 
 ## Data subject rights

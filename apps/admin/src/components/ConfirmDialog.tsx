@@ -29,7 +29,8 @@ export type ConfirmDialogProps = {
    * dialog itself. Restarts every time the dialog re-opens.
    */
   confirmDelaySeconds?: number;
-  /** Extra fields rendered between the error message and the action buttons (e.g. a step-up code input). */
+  /** Extra content rendered between the message and the error/confirmation input (e.g. an
+   * itemized list of what an irreversible action removes, or a step-up code input). */
   children?: ReactNode;
   /** External confirm-disabled condition (e.g. a required field in `children` is still empty), ORed with the built-in checks. */
   disableConfirm?: boolean;
@@ -103,6 +104,7 @@ export function ConfirmDialog({
         <p id={descriptionId} className="confirm-dialog__message">
           {message}
         </p>
+        {children}
         {errorMessage && (
           <p className="confirm-dialog__error" role="alert">
             {errorMessage}
@@ -117,7 +119,6 @@ export function ConfirmDialog({
             onChange={(e) => setTypedValue(e.target.value)}
           />
         )}
-        {children}
         <div className="confirm-dialog__actions">
           <Button type="button" variant="secondary" disabled={loading} onClick={onCancel}>
             {cancelLabel}

@@ -590,6 +590,21 @@
   background: none;
 }
 
+.more-actions-menu__divider {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--border);
+  border: none;
+}
+
+.more-actions-menu__item--danger {
+  color: var(--status-error);
+}
+
+.more-actions-menu__item--danger:hover {
+  background: var(--status-error-tint);
+}
+
 .attendees-export-menu {
   position: relative;
   display: inline-flex;
