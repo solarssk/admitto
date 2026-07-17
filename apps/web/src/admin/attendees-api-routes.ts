@@ -1379,8 +1379,16 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
       tx.checkIn.deleteMany({ where: { event_id: eventId, attendee_id: { in: ids } } }),
     ]);
 
-    const attendeeDelete = await tx.attendee.deleteMany({ where: { id: { in: ids }, event_id: eventId } });
-    if (attendeeDelete.count === 0) return 0;
+    // Raw DELETE ... RETURNING instead of deleteMany: a concurrent request can erase an
+    // overlapping attendee between the findMany above and this statement, and deleteMany only
+    // reports a count, not which rows it actually removed. RETURNING captures exactly what this
+    // statement deleted, so the audit entries below can't over-report who this request erased
+    // (CodeRabbit review).
+    const deleted = await tx.$queryRaw<{ id: string; name: string; email: string }[]>`
+      DELETE FROM "Attendee" WHERE id IN (${Prisma.join(ids)}) AND event_id = ${eventId}
+      RETURNING id, name, email
+    `;
+    if (deleted.length === 0) return 0;
 
     const audit = adminAuditFromContext(c);
     await writeBulkActionLog(tx, {
@@ -1388,7 +1396,7 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
       action_type: "attendees_bulk_erased",
       audit,
       metadata: {
-        attendee_ids: ids,
+        attendee_ids: deleted.map((a) => a.id),
         removed: {
           email_deliveries: emailDeliveries.count,
           wallet_passes: walletPasses.count,
@@ -1409,11 +1417,11 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
       metadata: {
         event_id: eventId,
         event_title: event?.title,
-        count: attendeeDelete.count,
-        attendees: owned.map((a) => ({ id: a.id, name: a.name, email: a.email })),
+        count: deleted.length,
+        attendees: deleted.map((a) => ({ id: a.id, name: a.name, email: a.email })),
       },
     });
-    return attendeeDelete.count;
+    return deleted.length;
   });
 
   return c.json({ deletedCount });

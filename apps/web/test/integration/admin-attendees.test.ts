@@ -756,6 +756,57 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-delete", () => {
     );
   });
 
+  it("reports only the attendees this request actually deleted when one is erased by a concurrent request mid-transaction (CodeRabbit review)", async () => {
+    const ids = ["att-bulk-erase-race-1", "att-bulk-erase-race-2", "att-bulk-erase-race-3"];
+    await seedBulkErasable(ids);
+
+    // Simulates another admin's request (or a separate DSAR erasure) committing a delete for
+    // one of the selected attendees between this request's findMany and its own DELETE
+    // statement - exactly the TOCTOU window CodeRabbit flagged. Prisma middleware also runs
+    // for queries issued inside `$transaction` callbacks, so this intercepts the route
+    // handler's own `tx.attendee.findMany`. Fires once, then becomes a permanent no-op, since
+    // `prisma` is shared for the rest of this file and `$use` middleware can't be unregistered.
+    let armed = true;
+    prisma.$use(async (params, next) => {
+      const result = await next(params);
+      if (armed && params.model === "Attendee" && params.action === "findMany") {
+        armed = false;
+        await prisma.attendee.delete({ where: { id: ids[1]! } });
+      }
+      return result;
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ids }),
+    });
+
+    expect(armed).toBe(false); // sanity check: the injected concurrent delete actually ran
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deletedCount: 2 });
+
+    const bulkLog = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_A, attendee_id: null, action_type: "attendees_bulk_erased" },
+      orderBy: { created_at: "desc" },
+    });
+    const bulkMeta = bulkLog!.metadata as { attendee_ids?: string[] };
+    expect(bulkMeta.attendee_ids?.sort()).toEqual([ids[0], ids[2]].sort());
+
+    const adminAudit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_A, action_type: "attendees_bulk_erased" },
+      orderBy: { created_at: "desc" },
+    });
+    const adminMeta = adminAudit!.metadata as {
+      count?: number;
+      attendees?: { id: string; name: string; email: string }[];
+    };
+    // Must reflect exactly what this request deleted - not the pre-race selection, which would
+    // over-report the concurrently-erased attendee as removed by this action.
+    expect(adminMeta.count).toBe(2);
+    expect(adminMeta.attendees?.map((a) => a.id).sort()).toEqual([ids[0], ids[2]].sort());
+  });
+
   it("silently ignores an id from a different event instead of failing the whole request", async () => {
     const ownId = "att-bulk-erase-own";
     await seedBulkErasable([ownId]);
