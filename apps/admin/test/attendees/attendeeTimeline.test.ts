@@ -38,6 +38,27 @@ describe("item_revoked timeline mapping (bot review, #457)", () => {
   });
 });
 
+describe("item_issued/item_state_changed timeline label (PO review)", () => {
+  it("says 'Item issued' generically instead of the old hardcoded 'Badge/Gift bag issued'", () => {
+    // Event-day items are a configurable registry (any admin-defined item, not just a fixed
+    // Badge/Gift bag pair) - the old label was a leftover from before that, and read as wrong
+    // for any other configured item (e.g. "Gratis"). The detail line already names the actual
+    // item; the headline just needs to be generic, matching "Item returned"/"Item reset to
+    // pending" right next to it.
+    for (const actionType of ["item_issued", "item_state_changed"]) {
+      expect(
+        getTimelineLabel({
+          id: "log-1",
+          action_type: actionType,
+          actor_display: "admin",
+          metadata: null,
+          created_at: "2026-06-28T13:00:00.000Z",
+        }),
+      ).toBe("Item issued");
+    }
+  });
+});
+
 describe("getTimelineDetail — pre-existing rsvp_status_changed rendering", () => {
   it("still shows the RSVP transition after the #364 refactor", () => {
     expect(
@@ -152,6 +173,30 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
         }),
       ),
     ).toBe("Badge · operator 1");
+  });
+
+  it("uses the item's real registry label over a humanized guess at its key (PO review)", () => {
+    // "gratis" humanizes to "Gratis" by coincidence, matching the configured label - but the
+    // registry lookup must still be what actually produces it, not the humanize fallback, since
+    // most keys (e.g. "gift_bag") don't humanize to their real label ("Gift bag" vs "Gift bag" is
+    // a coincidence too; a differently-worded label like "Free gift" would expose the bug).
+    expect(
+      getTimelineDetail(
+        entry({ action_type: "item_issued", metadata: { event_item_key: "gratis" } }),
+        [],
+        [{ key: "gratis", label: "Free gift", icon: null, state: "issued" }],
+      ),
+    ).toBe("Free gift · operator 1");
+  });
+
+  it("falls back to humanizing the key when the item isn't in the registry (e.g. removed after this log entry was written)", () => {
+    expect(
+      getTimelineDetail(
+        entry({ action_type: "item_issued", metadata: { event_item_key: "gratis" } }),
+        [],
+        [],
+      ),
+    ).toBe("Gratis · operator 1");
   });
 });
 

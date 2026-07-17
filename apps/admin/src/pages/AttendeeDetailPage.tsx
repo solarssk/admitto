@@ -988,7 +988,7 @@ export function AttendeeDetailPage() {
                   </div>
                   <div className="at-tl-body">
                     <b>{getTimelineLabel(entry)}</b>
-                    <span>{getTimelineDetail(entry, attributeFields)}</span>
+                    <span>{getTimelineDetail(entry, attributeFields, eventItems)}</span>
                   </div>
                   <time className="at-tl-time" dateTime={entry.created_at}>
                     {formatActivityTimestamp(entry.created_at, entry.client_timezone, event.timezone)}

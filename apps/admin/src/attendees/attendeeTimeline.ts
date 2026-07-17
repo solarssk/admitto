@@ -1,5 +1,5 @@
 import type { AttendeeStatus } from "@admitto/db/status";
-import type { AttendeeActionLogEntryDto, RsvpStatus } from "../api/types.js";
+import type { AttendeeActionLogEntryDto, AttendeeDetailItemDto, RsvpStatus } from "../api/types.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
 import type { CustomDataFieldDef } from "./customData.js";
 import { RSVP_LABELS } from "./rsvpStatusBadge.js";
@@ -157,7 +157,7 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
       return "Note added";
     case "item_issued":
     case "item_state_changed":
-      return "Badge/Gift bag issued";
+      return "Item issued";
     case "item_returned":
       return "Item returned";
     case "item_revoked":
@@ -180,10 +180,13 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
  * text like accessibility notes or emergency contacts - #364). `customFields` is the event's
  * custom-field registry (same list `allCustomDataEntries` uses) - passing it lets a changed
  * custom field show its real configured label instead of a humanized guess at its slugified
- * source_field key (PO review, see fieldChangeLabel). */
+ * source_field key (PO review, see fieldChangeLabel). `eventItems` is the same registry-backed
+ * list the Event-day items card renders (detail.event_items) - same reasoning, an item's real
+ * configured label (e.g. "Gratis") beats humanizing its raw key. */
 export function getTimelineDetail(
   entry: AttendeeActionLogEntryDto,
   customFields: CustomDataFieldDef[] = [],
+  eventItems: AttendeeDetailItemDto[] = [],
 ): string {
   const actor = entry.actor_display ?? "System";
   const meta = entry.metadata;
@@ -216,7 +219,8 @@ export function getTimelineDetail(
   if (ITEM_STATE_ACTIONS.has(entry.action_type)) {
     const itemKey = meta.event_item_key;
     if (typeof itemKey === "string" && itemKey) {
-      return `${humanizeFieldKey(itemKey)} · ${actor}`;
+      const itemLabels = new Map(eventItems.map((i) => [i.key, i.label]));
+      return `${itemLabels.get(itemKey) ?? humanizeFieldKey(itemKey)} · ${actor}`;
     }
   }
 
