@@ -8,7 +8,7 @@ describe("assertTestDatabaseUrl", () => {
     ).toThrow(/Refusing Prisma setup.*localhost.*"admitto"/);
   });
 
-  it("allows 127.0.0.1 and IPv6 [::1] hosts when the database name contains _test", () => {
+  it("allows 127.0.0.1 and IPv6 [::1] hosts when the database name ends with _test", () => {
     expect(() =>
       assertTestDatabaseUrl("postgresql://admitto:admitto@127.0.0.1:5432/admitto_db_test"),
     ).not.toThrow();
@@ -17,10 +17,16 @@ describe("assertTestDatabaseUrl", () => {
     ).not.toThrow();
   });
 
-  it("allows a non-local host when the database name contains _test", () => {
+  it("allows a non-local host when the database name ends with _test", () => {
     expect(() =>
       assertTestDatabaseUrl("postgresql://admitto:admitto@ci-postgres:5432/admitto_auth_test"),
     ).not.toThrow();
+  });
+
+  it("refuses a name that merely contains _test as a substring without ending in it (Codex review)", () => {
+    expect(() =>
+      assertTestDatabaseUrl("postgresql://admitto:admitto@localhost:5432/admitto_test_restore"),
+    ).toThrow(/Refusing Prisma setup.*admitto_test_restore/);
   });
 
   it("refuses a non-local host with a non-test database name", () => {

@@ -32,7 +32,10 @@ export function assertTestDatabaseUrl(databaseUrl: string): void {
 
   const host = parsed.hostname.toLowerCase();
   const dbName = parsed.pathname.replace(/^\//, '').toLowerCase();
-  const isTestDb = dbName.includes('_test');
+  // endsWith, not includes - a name like `admitto_test_restore` contains `_test` but isn't
+  // one of the dedicated *_test databases; matches infra/scripts/reset-test-db.sh's own
+  // stricter `^[A-Za-z0-9_]+_test$` anchor.
+  const isTestDb = dbName.endsWith('_test');
 
   if (isTestDb) return;
 
