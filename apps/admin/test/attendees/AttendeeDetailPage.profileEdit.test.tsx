@@ -521,6 +521,19 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     expect(screen.getByText("No additional information")).toBeTruthy();
   });
 
+  it("shows a Wallet card with an empty-state placeholder below Additional information (PO review)", async () => {
+    // No wallet-pass integration exists yet - this is a static placeholder, not a real empty
+    // state. Deliberately titled "Wallet", not "Wallet pass", so it doesn't read as the same
+    // thing as the app's own QR admission pass (Revoke menu's "Pass", the Registration chip).
+    mockLoad(baseDetail());
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Anna" })).toBeTruthy());
+
+    // "Wallet" also appears as the status-strip chip's own label - scope to the card title.
+    expect(screen.getAllByText("Wallet")).toHaveLength(2);
+    expect(screen.getByText("Not added to a wallet")).toBeTruthy();
+  });
+
   it("shows an empty-state placeholder in Event-day items when the event has no configured items", async () => {
     mockLoad(baseDetail({ event_items: [] }));
     renderPage();

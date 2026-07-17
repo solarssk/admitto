@@ -827,6 +827,14 @@ export function AttendeeDetailPage() {
                 </div>
               )}
             </Card>
+
+            <Card title="Wallet">
+              <EmptyState
+                icon={<i className="ti ti-wallet" aria-hidden="true" />}
+                title="Not added to a wallet"
+                description="Apple Wallet and Google Wallet support isn't available yet."
+              />
+            </Card>
           </div>
 
           <div className="attendee-detail-side">
