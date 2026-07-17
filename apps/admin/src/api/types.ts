@@ -183,6 +183,8 @@ export interface DeliveryDto {
   sent_at: string | null;
   failed_at: string | null;
   error_code: string | null;
+  /** Triggering admin's IANA timezone at send time, when known. */
+  client_timezone: string | null;
 }
 
 export interface AttendeeActionLogEntryDto {
@@ -191,6 +193,8 @@ export interface AttendeeActionLogEntryDto {
   actor_display: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
+  /** Acting admin's IANA timezone at write time, when known. */
+  client_timezone: string | null;
 }
 
 export interface AttendeeDetailItemDto {
@@ -211,6 +215,8 @@ export interface AttendeeDetailDto {
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
   created_at: string;
+  /** Acting admin's IANA timezone at attendee-creation time, when known (manual add / import). */
+  client_timezone: string | null;
   updated_at: string;
   rsvp_status: RsvpStatus;
   rsvp_updated_at: string | null;

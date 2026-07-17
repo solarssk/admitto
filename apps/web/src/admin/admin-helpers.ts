@@ -3,6 +3,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { canManageEvent, canManageInstance } from "@admitto/auth";
 import { IllegalItemTransitionError, type OpsAuditContext } from "@admitto/tickets";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
+import { isValidIanaTimezone } from "./timezone.js";
 import {
   InstanceUrlRequiredError,
   resolveInstanceBaseUrl,
@@ -38,6 +39,14 @@ export async function assertEventManageAccess(
   return null;
 }
 
+/** Client-supplied IANA timezone (X-Client-Timezone header), validated - null when missing or
+ * not a real timezone. Best-effort audit metadata: never blocks the request either way. */
+export function resolveClientTimezone(c: Context): string | null {
+  const raw = c.req.header("x-client-timezone");
+  if (!raw || !isValidIanaTimezone(raw)) return null;
+  return raw;
+}
+
 /** Build ops audit context from the authenticated admin request. */
 export function adminAuditFromContext(c: Context): OpsAuditContext {
   const auth = c.get("auth");
@@ -45,6 +54,7 @@ export function adminAuditFromContext(c: Context): OpsAuditContext {
     operator: auth.userId,
     sessionId: auth.sessionId,
     ip: resolveClientIp(c),
+    timezone: resolveClientTimezone(c) ?? undefined,
   };
 }
 

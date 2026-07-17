@@ -20,6 +20,7 @@ import {
   adminAuditFromContext,
   assertEventManageAccess,
   requireEventId,
+  resolveClientTimezone,
 } from "./admin-helpers.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock } from "./event-capacity.js";
 
@@ -548,6 +549,7 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
             ownedTransaction: true,
             attributeFields,
             ticketTypes,
+            timezone: resolveClientTimezone(c) ?? undefined,
           },
           tx,
         );

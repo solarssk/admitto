@@ -180,6 +180,7 @@ function jsonPostInit(body: unknown): RequestInit {
     headers: {
       "Content-Type": "application/json",
       Origin: window.location.origin,
+      "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
     body: JSON.stringify(body),
   };
@@ -191,6 +192,7 @@ function jsonDeleteInit(): RequestInit {
     credentials: "same-origin",
     headers: {
       Origin: window.location.origin,
+      "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
   };
 }
@@ -202,6 +204,7 @@ function jsonPatchInit(body: unknown): RequestInit {
     headers: {
       "Content-Type": "application/json",
       Origin: window.location.origin,
+      "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
     body: JSON.stringify(body),
   };
@@ -214,6 +217,7 @@ function jsonPutInit(body: unknown): RequestInit {
     headers: {
       "Content-Type": "application/json",
       Origin: window.location.origin,
+      "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
     body: JSON.stringify(body),
   };
@@ -231,6 +235,7 @@ function multipartPostInit(formData: FormData): RequestInit {
     credentials: "same-origin",
     headers: {
       Origin: window.location.origin,
+      "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
     body: formData,
   };

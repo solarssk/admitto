@@ -195,6 +195,9 @@ model Attendee {
   admitted_at         DateTime?
   admitted_by         String?
   created_at          DateTime            @default(now())
+  // Acting admin's IANA timezone at the moment this row was created (manual add / import
+  // commit) — null for rows predating this column or created outside a browser request.
+  client_timezone     String?
   updated_at          DateTime            @default(now()) @updatedAt
   email_deliveries    EmailDelivery[]
   wallet_pass         WalletPass?
@@ -260,6 +263,9 @@ model EmailDelivery {
   opened_at           DateTime?
   clicked_at          DateTime?
   created_at          DateTime      @default(now())
+  // Triggering admin's IANA timezone at send/resend time — null for rows predating this
+  // column or created outside a browser request.
+  client_timezone     String?
   updated_at          DateTime      @updatedAt
 
   @@index([organization_id])
@@ -339,18 +345,21 @@ model AttendeeNote {
 
 // Append-only audit log for event-day ops — ADR 0010.
 model AttendeeActionLog {
-  id            String    @id @default(cuid())
-  event_id      String
-  attendee_id   String?
-  event         Event     @relation(fields: [event_id], references: [id], onDelete: Cascade)
-  attendee      Attendee? @relation(fields: [attendee_id], references: [id], onDelete: Cascade)
-  action_type   String
-  actor_user_id String?
-  session_id    String?
-  device_id     String?
-  ip            String?
-  metadata      Json?
-  created_at    DateTime  @default(now())
+  id              String    @id @default(cuid())
+  event_id        String
+  attendee_id     String?
+  event           Event     @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  attendee        Attendee? @relation(fields: [attendee_id], references: [id], onDelete: Cascade)
+  action_type     String
+  actor_user_id   String?
+  session_id      String?
+  device_id       String?
+  ip              String?
+  metadata        Json?
+  created_at      DateTime  @default(now())
+  // Actor's IANA timezone at write time — null for rows predating this column or written
+  // outside a browser request. See OpsAuditContext.timezone.
+  client_timezone String?
 
   @@index([event_id, created_at(sort: Desc)])
   @@index([attendee_id, created_at(sort: Desc)])

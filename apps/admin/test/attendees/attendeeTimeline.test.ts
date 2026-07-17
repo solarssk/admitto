@@ -143,18 +143,25 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
   });
 });
 
-describe("formatActivityTimestamp (PO review — always event timezone, not UTC)", () => {
+describe("formatActivityTimestamp (PO review, round 2 — actor's timezone at write time)", () => {
   afterEach(() => setPreferredLocale(null));
 
   const ISO = "2026-06-28T13:00:00.000Z";
 
-  it("uses the event's own timezone regardless of the row's action type", () => {
+  it("uses the entry's captured timezone over the event's, when both are known", () => {
     setPreferredLocale("en-GB");
-    // An admin travels; a fixed UTC (or the admin's own browser-local time) either forces
-    // manual conversion or drifts as they move. The event's timezone is the one stable
-    // reference that stays meaningful — every row on this page uses it now, not just
-    // on-site check-in/item actions.
-    const result = formatActivityTimestamp(ISO, "Europe/Warsaw");
+    // An admin managing a Bangalore event from Zurich should see that edit as CEST, not
+    // IST — the entry's own captured timezone wins over the event's.
+    const result = formatActivityTimestamp(ISO, "Europe/Warsaw", "Asia/Kolkata");
+    expect(result).toMatch(/15:00/);
+    expect(result).toMatch(/CEST|GMT\+2/);
+  });
+
+  it("falls back to the event's timezone when the entry has none captured", () => {
+    setPreferredLocale("en-GB");
+    // Pre-migration rows and non-browser write paths never had a timezone to capture —
+    // those keep displaying in the event's own timezone, same as before this feature.
+    const result = formatActivityTimestamp(ISO, null, "Europe/Warsaw");
     expect(result).toMatch(/15:00/);
     expect(result).toMatch(/CEST|GMT\+2/);
   });

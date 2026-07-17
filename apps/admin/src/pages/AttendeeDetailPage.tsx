@@ -797,7 +797,9 @@ export function AttendeeDetailPage() {
                 )}
                 <div className="attendee-detail-row">
                   <span>Registered on</span>
-                  <span className="mono">{formatEventDateTime(detail.created_at, event.timezone)}</span>
+                  <span className="mono">
+                    {formatEventDateTime(detail.created_at, detail.client_timezone ?? event.timezone)}
+                  </span>
                 </div>
               </div>
             </Card>
@@ -879,7 +881,7 @@ export function AttendeeDetailPage() {
                         <span className="mono">
                           {formatEventDateTime(
                             delivery.sent_at ?? delivery.accepted_at ?? delivery.queued_at,
-                            event.timezone,
+                            delivery.client_timezone ?? event.timezone,
                           )}
                         </span>
                         {delivery.recipient_email && delivery.recipient_email !== detail.email && (
@@ -918,7 +920,7 @@ export function AttendeeDetailPage() {
                     <span>{getTimelineDetail(entry)}</span>
                   </div>
                   <time className="at-tl-time" dateTime={entry.created_at}>
-                    {formatActivityTimestamp(entry.created_at, event.timezone)}
+                    {formatActivityTimestamp(entry.created_at, entry.client_timezone, event.timezone)}
                   </time>
                 </li>
               ))}

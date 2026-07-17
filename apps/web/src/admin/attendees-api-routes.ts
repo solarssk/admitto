@@ -56,6 +56,7 @@ import {
   itemTransitionErrorResponse,
   positiveIntQuery,
   requireEventId,
+  resolveClientTimezone,
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
 import { mailNotConfiguredResponse } from "./mail-settings-shared.js";
@@ -76,6 +77,7 @@ const ATTENDEE_DETAIL_SELECT = {
   admitted_at: true,
   custom_data: true,
   created_at: true,
+  client_timezone: true,
   updated_at: true,
   rsvp_status: true,
   rsvp_updated_at: true,
@@ -407,6 +409,8 @@ export type AttendeeActionLogEntryDto = {
   actor_display: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
+  /** Acting admin's IANA timezone at write time, when known. */
+  client_timezone: string | null;
 };
 
 export type AttendeeDetailItemDto = {
@@ -427,6 +431,8 @@ export type AttendeeDetailDto = {
   check_in_status: "admitted" | "not_admitted";
   admitted_at: string | null;
   created_at: string;
+  /** Acting admin's IANA timezone at attendee-creation time, when known (manual add / import). */
+  client_timezone: string | null;
   updated_at: string;
   rsvp_status: RsvpStatus;
   rsvp_updated_at: string | null;
@@ -609,6 +615,7 @@ async function loadAttendeeActionLogEntries(
       actor_user_id: true,
       metadata: true,
       created_at: true,
+      client_timezone: true,
     },
   });
 
@@ -637,6 +644,7 @@ async function loadAttendeeActionLogEntries(
           ? (log.metadata as Record<string, unknown>)
           : null,
       created_at: log.created_at.toISOString(),
+      client_timezone: log.client_timezone,
     };
   });
 }
@@ -690,6 +698,7 @@ async function buildAttendeeDetailDto(
     admitted_at: Date | null;
     custom_data: unknown;
     created_at: Date;
+    client_timezone: string | null;
     updated_at: Date;
     rsvp_status: string;
     rsvp_updated_at: Date | null;
@@ -716,6 +725,7 @@ async function buildAttendeeDetailDto(
     check_in_status: checkInStatus(row.admitted_at),
     admitted_at: row.admitted_at ? row.admitted_at.toISOString() : null,
     created_at: row.created_at.toISOString(),
+    client_timezone: row.client_timezone,
     updated_at: row.updated_at.toISOString(),
     rsvp_status: row.rsvp_status as RsvpStatus,
     rsvp_updated_at: row.rsvp_updated_at ? row.rsvp_updated_at.toISOString() : null,
@@ -1355,6 +1365,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
           ...(customData !== undefined ? { custom_data: customData } : {}),
           rsvp_status: "none",
           rsvp_source: "admin",
+          client_timezone: resolveClientTimezone(c),
         },
         select: ATTENDEE_DETAIL_SELECT,
       });
@@ -1439,6 +1450,7 @@ export async function handleResendEventAttendeeTicket(
     sendResult = await resendTicketEmail(attendeeId, db, process.env, mailDeps, {
       to,
       baseUrl: baseUrlOrRes,
+      timezone: resolveClientTimezone(c) ?? undefined,
     });
   } catch (err) {
     const mailErr = mailNotConfiguredResponse(c, err);
@@ -1642,6 +1654,7 @@ export async function handleBulkResendTickets(
         attendeeIds,
         purpose: mailPurpose,
         baseUrl: baseUrlOrRes,
+        timezone: resolveClientTimezone(c) ?? undefined,
       },
       db,
       process.env,
