@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
@@ -69,6 +69,7 @@ vi.mock("../../src/api/client.js", () => ({
   exportAttendees: vi.fn(),
   bulkResendTickets: vi.fn(),
   sendEventBulk: vi.fn(),
+  bulkDeleteAttendees: vi.fn(),
   updateAttendee: vi.fn(),
 }));
 
@@ -161,5 +162,31 @@ describe("AttendeesPage archived lockdown", () => {
     expect(screen.getByRole("menuitem", { name: /^PDF/ })).toBeTruthy();
     const viewButtons = screen.getAllByRole("button", { name: "View attendee" });
     expect(viewButtons.every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
+  });
+
+  it("locks the bulk bar's Send tickets but leaves Delete reachable (#356 follow-up)", async () => {
+    fetchEventAttendees.mockResolvedValue({
+      items: [registeredRow, revokedRow],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Jane Doe")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    const bar = document.querySelector(".attendees-bulkbar") as HTMLElement;
+
+    const bulkSendButton = within(bar).getByRole("button", { name: "Send tickets" });
+    expect((bulkSendButton as HTMLButtonElement).disabled).toBe(true);
+    // GDPR erasure requests can legally arrive after an event ends; the bulk-delete endpoint
+    // doesn't block on archived_at either (matches the single-attendee Delete attendee action).
+    const moreActionsButton = within(bar).getByRole("button", { name: "More actions" });
+    expect((moreActionsButton as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(moreActionsButton);
+    const deleteItem = within(bar).getByRole("menuitem", { name: "Delete" });
+    expect((deleteItem as HTMLButtonElement).disabled).toBe(false);
   });
 });

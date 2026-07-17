@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Button, Card, Checkbox, EmptyState, IconButton, Input, Select, Skeleton } from "@admitto/ui";
 import type { AttendeeRowDto, AttendeeSortBy, AttendeeSortDir, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { ArchivedGuard, type ArchivedGuardEvent } from "../components/ArchivedGuard.js";
+import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { PassStatusBadge } from "./passStatusBadge.js";
@@ -271,6 +272,7 @@ export interface AttendeesTableProps {
   onBulkSendTickets: () => void;
   bulkSendBusy: boolean;
   canBulkSend: boolean;
+  onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
 }
@@ -351,8 +353,52 @@ function AttendeeCard({
   );
 }
 
-/** Selection count + "Send tickets" — replaces the search/filter toolbar in place while rows
- * are selected, so the card never grows taller just because something is selected. */
+/** Bulk "More actions" — today just Delete, but styled as a menu (not a bare button) so a
+ * destructive bulk action takes an extra click to even reach, matching the design mockup's
+ * More actions panel and the same danger-item treatment already used on the attendee detail
+ * page's own More actions menu. Room to grow: the mockup also shows ticket-type changes,
+ * reminders, and wallet-pass actions in this same menu — not built yet, out of scope here. */
+function BulkMoreActionsMenu({ onDelete }: Readonly<{ onDelete: () => void }>) {
+  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+
+  return (
+    <div className="more-actions-menu" ref={rootRef}>
+      <Button
+        ref={triggerRef}
+        type="button"
+        variant="ghost"
+        icon={<i className="ti ti-dots-vertical" aria-hidden="true" />}
+        hasMenu
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        More actions
+      </Button>
+      {open && (
+        <div className="more-actions-menu__panel" role="menu" ref={panelRef}>
+          {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
+           * ends; the DELETE endpoint doesn't block on archived_at either. */}
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item more-actions-menu__item--danger"
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+          >
+            <i className="ti ti-trash" aria-hidden="true" /> Delete
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Selection count + "Send tickets" / "More actions" — replaces the search/filter toolbar in
+ * place while rows are selected, so the card never grows taller just because something is
+ * selected. */
 function BulkBar({
   selectedIds,
   onClearSelection,
@@ -360,6 +406,7 @@ function BulkBar({
   bulkSendBusy,
   canBulkSend,
   onBulkSendTickets,
+  onBulkDelete,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
   onClearSelection: () => void;
@@ -367,6 +414,7 @@ function BulkBar({
   bulkSendBusy: boolean;
   canBulkSend: boolean;
   onBulkSendTickets: () => void;
+  onBulkDelete: () => void;
 }>) {
   return (
     <div className="attendees-bulkbar">
@@ -404,6 +452,7 @@ function BulkBar({
           </Button>
         )}
       </ArchivedGuard>
+      <BulkMoreActionsMenu onDelete={onBulkDelete} />
     </div>
   );
 }
@@ -780,6 +829,7 @@ export function AttendeesTable({
   onBulkSendTickets,
   bulkSendBusy,
   canBulkSend,
+  onBulkDelete,
   eventTimezone,
   event,
 }: AttendeesTableProps) {
@@ -798,6 +848,7 @@ export function AttendeesTable({
           bulkSendBusy={bulkSendBusy}
           canBulkSend={canBulkSend}
           onBulkSendTickets={onBulkSendTickets}
+          onBulkDelete={onBulkDelete}
         />
       ) : (
         <FilterToolbar

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
@@ -105,12 +105,11 @@ function expectArchivedLock(control: HTMLElement) {
 }
 
 describe("AttendeeDetailPage archived lockdown", () => {
-  it("disables More actions (resend ticket), revoke menu, and Edit for a registered attendee", async () => {
+  it("disables the revoke menu and Edit for a registered attendee", async () => {
     mockLoad(baseDetail());
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expectArchivedLock(screen.getByRole("button", { name: "More actions" }));
     expectArchivedLock(screen.getByRole("button", { name: "Revoke" }));
     // Edit mode can't be entered at all on an archived event — the read-only
     // view stays up, no Save button ever renders, and the RSVP select (now
@@ -130,5 +129,22 @@ describe("AttendeeDetailPage archived lockdown", () => {
     await screen.findByRole("heading", { name: "Anna" });
 
     expectArchivedLock(screen.getByRole("button", { name: "Restore pass" }));
+  });
+
+  it("keeps the More actions trigger and Delete attendee open, but still locks Resend ticket (#356)", async () => {
+    // The trigger itself must stay clickable on an archived event - GDPR erasure requests can
+    // legally arrive after an event ends, and the DELETE endpoint doesn't block on archived_at.
+    // Resend ticket keeps its own inner archived lock; Delete attendee has none.
+    mockLoad(baseDetail());
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    const trigger = screen.getByRole("button", { name: "More actions" });
+    expect((trigger as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(trigger);
+
+    expectArchivedLock(await screen.findByRole("menuitem", { name: "Resend ticket" }));
+    const deleteItem = screen.getByRole("menuitem", { name: /Delete attendee/ });
+    expect((deleteItem as HTMLButtonElement).disabled).toBe(false);
   });
 });

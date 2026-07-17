@@ -45,6 +45,14 @@
   line-height: 1.4;
 }
 
+.confirm-dialog__list {
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
 .confirm-dialog__actions {
   display: flex;
   justify-content: flex-end;

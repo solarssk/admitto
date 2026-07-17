@@ -723,6 +723,38 @@ export async function updateAttendee(
   return parseJson<AttendeeDetailDto>(res);
 }
 
+/** Permanently erase an attendee's record (GDPR erasure) — profile, deliveries, wallet pass,
+ * and check-ins. Irreversible; see docs/DSAR-PROCEDURE.md. */
+export async function deleteAttendee(eventId: string, attendeeId: string): Promise<void> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}`,
+    jsonDeleteInit(),
+  );
+  if (!res.ok) {
+    let message = res.statusText || `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as ApiErrorBody;
+      message = messageFromApiErrorBody(body) ?? message;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+}
+
+/** Permanently erase a selection of attendees at once (GDPR erasure), from the Attendees
+ * list's row-selection bulk bar. Same effect as calling `deleteAttendee` once per id. */
+export async function bulkDeleteAttendees(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<{ deletedCount: number }> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-delete`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<{ deletedCount: number }>(res);
+}
+
 export async function resendTicket(
   eventId: string,
   attendeeId: string,

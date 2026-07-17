@@ -109,6 +109,7 @@ import {
   handleGetEventAttendee,
   handlePatchEventAttendee,
   handleDeleteEventAttendee,
+  handleBulkDeleteEventAttendees,
   handleResendEventAttendeeTicket,
   handleBulkResendTickets,
   handleExportAttendees,
@@ -672,6 +673,12 @@ export function createApp(options: CreateAppOptions = {}) {
   ));
   app.delete("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, (c) =>
     handleDeleteEventAttendee(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-delete",
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handleBulkDeleteEventAttendees(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/resend",

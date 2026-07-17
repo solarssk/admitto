@@ -46,11 +46,18 @@ flowchart TD
 ## 4. Erasure
 
 - After legal confirms erasure is required and no retention exception applies:
-  1. Delete the attendee record via the admin **`DELETE` API** (preferred — removes dependent
-     delivery, wallet, and check-in rows in one transaction and writes an audit log entry):
-     `DELETE /api/admin/events/:eventId/attendees/:id` with an authenticated staff session and
-     CSRF token (same session model as other admin mutations). The admin SPA does not expose a
-     delete button yet; use your internal tooling, runbook script, or API client.
+  1. Delete the attendee record from **Admin → Attendees → attendee detail → More actions →
+     Delete attendee** (type the attendee's name to confirm), or for multiple data subjects at
+     once, select their rows on the **Attendees** list and use the bulk bar's **More actions →
+     Delete** (10-second arm delay before the confirm button unlocks, no typed confirmation since
+     there's no single name to type). Both call the same `DELETE`/`bulk-delete`
+     `/api/admin/events/:eventId/attendees/...` endpoints used by the API client below — they
+     remove dependent delivery, wallet, and check-in rows in one transaction and write an audit
+     log entry (per-attendee, plus a central admin-audit-log entry naming the erased attendee(s)
+     and event — see [DATA-PROTECTION.md](../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)
+     for why that one retains identity, unlike the per-attendee trail). Not blocked by the event
+     being archived. If the SPA is unavailable, call the endpoint directly with an authenticated
+     staff session and CSRF token (same session model as other admin mutations).
   2. Remove copies from local exports, mail logs, and backup retention per your backup policy.
 - Document completion date and responsible person.
 
